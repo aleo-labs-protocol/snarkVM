@@ -339,8 +339,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     }
 
     /// Compress every two elements if possible.
-    /// Provides a vector of (limb, num_of_additions), both of which are F.
-    pub fn compress_elements<TargetField: PrimeField, I: Iterator<Item = (F, F)>>(
+    /// Takes an iterator of limbs, and returns the compressed limbs.
+    fn compress_elements<TargetField: PrimeField, I: Iterator<Item = F>>(
         &self,
         mut src_limbs: Peekable<I>,
         ty: OptimizationType,
@@ -350,30 +350,29 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
 
         let params = get_params(TargetField::size_in_bits(), F::size_in_bits(), ty);
 
-        // Prepare a reusable vector to be used in overhead calculation.
-        let mut num_bits = Vec::new();
+        // Every limb carries a single addition, so the overhead is the same for all of
+        // them and only needs to be computed once. Note: the `num_bits` vector
+        // that `overhead!` writes into exists to be reused across repeated
+        // calls, which is moot for a single one.
+        let overhead = crate::overhead!(F::one() + F::one(), &mut Vec::new());
 
         while let Some(first) = src_limbs.next() {
             let second = src_limbs.peek();
 
-            let first_max_bits_per_limb = params.bits_per_limb + crate::overhead!(first.1 + F::one(), &mut num_bits);
-            let second_max_bits_per_limb = if let Some(second) = second {
-                params.bits_per_limb + crate::overhead!(second.1 + F::one(), &mut num_bits)
-            } else {
-                0
-            };
+            let first_max_bits_per_limb = params.bits_per_limb + overhead;
+            let second_max_bits_per_limb = if second.is_some() { first_max_bits_per_limb } else { 0 };
 
             if let Some(second) = second {
                 if first_max_bits_per_limb + second_max_bits_per_limb <= capacity {
                     let adjustment_factor = &self.adjustment_factor_lookup_table[second_max_bits_per_limb];
 
-                    dest_limbs.push(first.0 * adjustment_factor + second.0);
+                    dest_limbs.push(first * adjustment_factor + second);
                     src_limbs.next();
                 } else {
-                    dest_limbs.push(first.0);
+                    dest_limbs.push(first);
                 }
             } else {
-                dest_limbs.push(first.0);
+                dest_limbs.push(first);
             }
         }
 
@@ -430,10 +429,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
             .into_iter()
             .flat_map(|elem| {
                 let limbs = Self::get_limbs_representations(&elem, ty);
-                limbs.into_iter().map(|limb| (limb, F::one()))
-                // specifically set to one, since most gadgets in the constraint
-                // world would not have zero noise (due to the relatively weak
-                // normal form testing in `alloc`)
+                limbs.into_iter()
             })
             .peekable();
 
