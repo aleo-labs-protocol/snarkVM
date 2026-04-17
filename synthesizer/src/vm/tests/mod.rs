@@ -49,5 +49,8 @@ mod test_v20;
 #[cfg(feature = "test")]
 mod test_v22;
 
+#[cfg(feature = "test")]
+mod ternary_plaintext;
+
 use super::*;
 use crate::vm::test_helpers::*;

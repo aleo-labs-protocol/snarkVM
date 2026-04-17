@@ -13,12 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::Stack;
+use crate::{Stack, process::FinalizeTypes};
 use console::{
     prelude::{Network, cfg_iter},
-    program::{EntryType, FinalizeType, Identifier, Locator, PlaintextType, ProgramID, RegisterType, ValueType},
+    program::{
+        EntryType,
+        FinalizeType,
+        Identifier,
+        LiteralType,
+        Locator,
+        PlaintextType,
+        ProgramID,
+        RegisterType,
+        ValueType,
+    },
 };
-use snarkvm_synthesizer_program::{Program, StackTrait};
+use snarkvm_synthesizer_program::{Command, Instruction, Program, StackTrait};
 
 use anyhow::{Result, anyhow, bail, ensure};
 
@@ -273,4 +283,98 @@ fn plaintext_size_in_bits_raw<N: Network>(
             Ok((total, element_height + 1))
         }
     }
+}
+
+/// Rejects ternary branch types that are not supported before `ConsensusVersion::V23`.
+pub fn check_no_non_literal_ternary<N: Network>(program: &Program<N>, stack: &Stack<N>) -> Result<()> {
+    const ERROR_MSG: &str = "ternary on this operand type is not allowed before `ConsensusVersion::V23`";
+
+    // Returns whether the given plaintext type was a valid ternary branch operand before V23.
+    let is_pre_v23_supported = |plaintext_type: &PlaintextType<N>| -> bool {
+        matches!(
+            plaintext_type,
+            PlaintextType::Literal(
+                LiteralType::Address
+                    | LiteralType::Boolean
+                    | LiteralType::Field
+                    | LiteralType::Group
+                    | LiteralType::I8
+                    | LiteralType::I16
+                    | LiteralType::I32
+                    | LiteralType::I64
+                    | LiteralType::I128
+                    | LiteralType::U8
+                    | LiteralType::U16
+                    | LiteralType::U32
+                    | LiteralType::U64
+                    | LiteralType::U128
+                    | LiteralType::Scalar
+                    | LiteralType::Signature
+            )
+        )
+    };
+
+    // Checks the ternary instructions within the given function or closure instruction sequence.
+    let check_instructions = |name: &Identifier<N>, instructions: &[Instruction<N>]| -> Result<()> {
+        let register_types = stack.get_register_types(name)?;
+        for instruction in instructions {
+            if let Instruction::Ternary(ternary) = instruction {
+                // The ternary operands are `[condition, first, second]`.
+                for operand in &ternary.operands()[1..3] {
+                    let reg_type = register_types.get_type_from_operand(stack, operand)?;
+                    match reg_type {
+                        RegisterType::Plaintext(plaintext_type) => {
+                            ensure!(is_pre_v23_supported(&plaintext_type), "{ERROR_MSG}");
+                        }
+                        _ => bail!("{ERROR_MSG}"),
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
+
+    // Checks the ternary instructions within the given finalize or constructor command sequence.
+    let check_commands = |finalize_types: &FinalizeTypes<N>, commands: &[Command<N>]| -> Result<()> {
+        for command in commands {
+            if let Command::Instruction(Instruction::Ternary(ternary)) = command {
+                // The ternary operands are `[condition, first, second]`.
+                for operand in &ternary.operands()[1..3] {
+                    let finalize_type = finalize_types.get_type_from_operand(stack, operand)?;
+                    match finalize_type {
+                        FinalizeType::Plaintext(plaintext_type) => {
+                            ensure!(is_pre_v23_supported(&plaintext_type), "{ERROR_MSG}");
+                        }
+                        _ => bail!("{ERROR_MSG}"),
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
+
+    // Check every function body and its finalize scope (if any).
+    for (name, function) in program.functions() {
+        check_instructions(name, function.instructions())?;
+        if let Some(finalize) = function.finalize_logic() {
+            let finalize_types = stack.get_finalize_types(name)?;
+            check_commands(&finalize_types, finalize.commands())?;
+        }
+    }
+    // Check every closure body.
+    for (name, closure) in program.closures() {
+        check_instructions(name, closure.instructions())?;
+    }
+    // Check every view body.
+    for (name, view) in program.views() {
+        let view_types = stack.get_view_types(name)?;
+        check_commands(&view_types, view.commands())?;
+    }
+    // Check the program's constructor, if any.
+    if let Some(constructor) = program.constructor() {
+        let constructor_types = stack.get_constructor_types()?;
+        check_commands(&constructor_types, constructor.commands())?;
+    }
+
+    Ok(())
 }

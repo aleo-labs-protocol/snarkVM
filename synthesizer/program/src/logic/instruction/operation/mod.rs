@@ -57,6 +57,9 @@ pub use sign_verify::*;
 mod snark_verify;
 pub use snark_verify::*;
 
+mod ternary;
+pub use ternary::Ternary;
+
 use crate::Opcode;
 use console::network::prelude::*;
 
@@ -747,31 +750,6 @@ crate::operation!(
         (U32, U32) => U32,
         (U64, U64) => U64,
         (U128, U128) => U128,
-    }
-);
-
-/// Selects `first`, if `condition` is true, otherwise selects `second`, storing the result in `destination`.
-pub type Ternary<N> = TernaryLiteral<N, TernaryOperation<N>>;
-
-crate::operation!(
-    pub struct TernaryOperation<console::prelude::Ternary, circuit::traits::Ternary, ternary, "ternary"> {
-        (Boolean, Address, Address) => Address,
-        (Boolean, Boolean, Boolean) => Boolean,
-        (Boolean, Field, Field) => Field,
-        (Boolean, Group, Group) => Group,
-        (Boolean, I8, I8) => I8,
-        (Boolean, I16, I16) => I16,
-        (Boolean, I32, I32) => I32,
-        (Boolean, I64, I64) => I64,
-        (Boolean, I128, I128) => I128,
-        (Boolean, U8, U8) => U8,
-        (Boolean, U16, U16) => U16,
-        (Boolean, U32, U32) => U32,
-        (Boolean, U64, U64) => U64,
-        (Boolean, U128, U128) => U128,
-        (Boolean, Scalar, Scalar) => Scalar,
-        (Boolean, Signature, Signature) => Signature,
-        // (Boolean, StringType, StringType) => StringType,
     }
 );
 
