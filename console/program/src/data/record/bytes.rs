@@ -37,6 +37,12 @@ impl<N: Network, Private: Visibility> FromBytes for Record<N, Private> {
 
         // Read the number of entries in the record data.
         let num_entries = u8::read_le(&mut reader)?;
+
+        // Ensure the number of entries is within the maximum limit.
+        if num_entries as usize > N::MAX_DATA_ENTRIES {
+            return Err(error("Failed to parse record - too many entries"));
+        }
+
         // Read the record data.
         let mut data = IndexMap::with_capacity(num_entries as usize);
         for _ in 0..num_entries {
@@ -71,10 +77,6 @@ impl<N: Network, Private: Visibility> FromBytes for Record<N, Private> {
         // Ensure the entries has no duplicate names.
         if has_duplicates(data.keys().chain(reserved.iter())) {
             return Err(error("Duplicate entry type found in record"));
-        }
-        // Ensure the number of entries is within the maximum limit.
-        if data.len() > N::MAX_DATA_ENTRIES {
-            return Err(error("Failed to parse record - too many entries"));
         }
 
         Ok(Self { owner, data, nonce, version })
