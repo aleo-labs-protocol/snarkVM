@@ -119,7 +119,8 @@ pub type FiatShamirParameters<N> = <FiatShamir<N> as AlgebraicSponge<Fq<N>, 2>>:
 pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::PairingCurve, VarunaHidingMode>;
 pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::PairingCurve>;
 
-/// A list of consensus versions and their corresponding block heights.
+/// Explicitly configured or test consensus version heights, shared across networks.
+#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
 static CONSENSUS_VERSION_HEIGHTS: OnceLock<[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]> = OnceLock::new();
 
 pub trait Network:
@@ -354,8 +355,13 @@ pub trait Network:
     #[allow(non_snake_case)]
     #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
-        // Initialize the consensus version heights directly from the constant.
-        CONSENSUS_VERSION_HEIGHTS.get_or_init(|| Self::_CONSENSUS_VERSION_HEIGHTS)
+        // Explicit WebAssembly heights override the network defaults.
+        #[cfg(feature = "wasm")]
+        if let Some(heights) = CONSENSUS_VERSION_HEIGHTS.get() {
+            return heights;
+        }
+        // Default heights belong to this network and must not initialize a shared cache.
+        &Self::_CONSENSUS_VERSION_HEIGHTS
     }
     /// Returns the list of test consensus versions.
     #[allow(non_snake_case)]

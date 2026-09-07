@@ -522,6 +522,22 @@ mod tests {
     const EXPECTED_MAX_STAKING_REWARD: u64 = 142_694_063;
 
     #[test]
+    #[cfg(not(feature = "test"))]
+    fn test_consensus_heights_are_network_specific() -> Result<()> {
+        // The network crate is a dependency here, so its non-test implementation is exercised.
+        for _ in 0..2 {
+            assert_eq!(TestnetV0::CONSENSUS_VERSION_HEIGHTS(), &TestnetV0::_CONSENSUS_VERSION_HEIGHTS);
+            assert_eq!(CanaryV0::CONSENSUS_VERSION_HEIGHTS(), &CanaryV0::_CONSENSUS_VERSION_HEIGHTS);
+            assert_eq!(MainnetV0::CONSENSUS_VERSION_HEIGHTS(), &MainnetV0::_CONSENSUS_VERSION_HEIGHTS);
+
+            for (version, height) in MainnetV0::_CONSENSUS_VERSION_HEIGHTS {
+                assert_eq!(MainnetV0::CONSENSUS_HEIGHT(version)?, height);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_anchor_block_reward_v1() {
         // Check the anchor block reward at block 1.
         let reward_at_block_1 = anchor_block_reward_at_height(
