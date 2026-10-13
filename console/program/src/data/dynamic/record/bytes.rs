@@ -69,8 +69,18 @@ impl<N: Network> DynamicRecord<N> {
             // Read the entry bytes.
             let mut bytes = Vec::new();
             (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
+            // Ensure the declared region is entirely present.
+            if bytes.len() != num_bytes as usize {
+                return Err(error("Failed to read dynamic record: entry is truncated"));
+            }
             // Recover the entry value.
-            let entry = Entry::read_le(&mut bytes.as_slice())?;
+            let mut slice = bytes.as_slice();
+            let entry = Entry::read_le(&mut slice)?;
+            // Ensure the entry fills its region. Bytes left unread would be dropped on
+            // re-serialization, giving one value a second encoding.
+            if !slice.is_empty() {
+                return Err(error("Failed to read dynamic record: entry has trailing bytes"));
+            }
             // Add the entry.
             data.insert(identifier, entry);
         }
@@ -271,5 +281,57 @@ mod tests {
 
         let error = DynamicRecord::<CurrentNetwork>::read_le(&bytes[..]).unwrap_err();
         assert!(error.to_string().contains("does not match"));
+    }
+
+    #[test]
+    fn test_read_le_version_2_rejects_malformed_entry_regions() {
+        let rng = &mut TestRng::default();
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+        let bytes = write_v2(&expected);
+
+        // Locate the sole data entry by its own encoding: the two bytes in front of it
+        // are the `u16` that delimits its region.
+        let entry_bytes = expected
+            .data()
+            .as_ref()
+            .and_then(|data| data.values().next())
+            .expect("expected populated dynamic record data")
+            .to_bytes_le()
+            .unwrap();
+        let at = bytes
+            .windows(entry_bytes.len())
+            .position(|window| window == entry_bytes.as_slice())
+            .expect("the entry's bytes appear in the dynamic record's bytes");
+        assert!(at >= 2);
+        assert_eq!(u16::from_le_bytes([bytes[at - 2], bytes[at - 1]]) as usize, entry_bytes.len());
+
+        // Declaring more bytes for the entry than the buffer holds truncates the payload.
+        let mut truncated = bytes.clone();
+        let declared = u16::try_from(entry_bytes.len() + 1).unwrap();
+        truncated[at - 2..at].copy_from_slice(&declared.to_le_bytes());
+        assert!(
+            DynamicRecord::<CurrentNetwork>::read_le(&truncated[..]).is_err(),
+            "an entry declaring more bytes than it occupies must be rejected"
+        );
+
+        // Declaring fewer bytes for the entry than it occupies leaves bytes unread.
+        let mut padded = bytes.clone();
+        let declared = u16::try_from(entry_bytes.len() - 1).unwrap();
+        padded[at - 2..at].copy_from_slice(&declared.to_le_bytes());
+        assert!(
+            DynamicRecord::<CurrentNetwork>::read_le(&padded[..]).is_err(),
+            "an entry declaring fewer bytes than it occupies must be rejected"
+        );
     }
 }
