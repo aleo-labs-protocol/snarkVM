@@ -206,8 +206,44 @@ impl<N: Network> DynamicRecord<N> {
         write!(f, "\n{:indent$}_root: {},", "", self.root, indent = (depth + 1) * INDENT)?;
         // Print the nonce with a comma.
         write!(f, "\n{:indent$}_nonce: {},", "", self.nonce, indent = (depth + 1) * INDENT)?;
-        // Print the version without a comma.
-        write!(f, "\n{:indent$}_version: {}", "", self.version, indent = (depth + 1) * INDENT)?;
+        // Print the version, with a comma when the entry data follows.
+        let separator = match self.data {
+            // The string form omits the entry data.
+            None => "",
+            // The string form carries the entry data.
+            Some(_) => ",",
+        };
+        write!(f, "\n{:indent$}_version: {}{separator}", "", self.version, indent = (depth + 1) * INDENT)?;
+        // Print the optional entry data, when it is present.
+        if let Some(data) = &self.data {
+            // Print the "_data" tag.
+            write!(f, "\n{:indent$}_data: {{", "", indent = (depth + 1) * INDENT)?;
+            // Print the entries.
+            for (i, (identifier, entry)) in data.iter().enumerate() {
+                // Print the identifier.
+                write!(f, "\n{:indent$}{identifier}: ", "", indent = (depth + 2) * INDENT)?;
+                // Print the entry.
+                match entry {
+                    // If the entry is a literal, print the entry without indentation.
+                    Entry::Constant(Plaintext::Literal(..))
+                    | Entry::Public(Plaintext::Literal(..))
+                    | Entry::Private(Plaintext::Literal(..)) => write!(f, "{entry}")?,
+                    // If the entry is a struct or an array, print the entry with indentation.
+                    Entry::Constant(Plaintext::Struct(..))
+                    | Entry::Public(Plaintext::Struct(..))
+                    | Entry::Private(Plaintext::Struct(..))
+                    | Entry::Constant(Plaintext::Array(..))
+                    | Entry::Public(Plaintext::Array(..))
+                    | Entry::Private(Plaintext::Array(..)) => entry.fmt_internal(f, depth + 2)?,
+                }
+                // Print the comma, except after the final entry.
+                if i + 1 < data.len() {
+                    write!(f, ",")?;
+                }
+            }
+            // Print the closing brace of the entry data.
+            write!(f, "\n{:indent$}}}", "", indent = (depth + 1) * INDENT)?;
+        }
         // Print the closing brace.
         write!(f, "\n{:indent$}}}", "", indent = depth * INDENT)
     }
@@ -226,7 +262,7 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_parse_display_roundtrip() {
+    fn test_parse_display_roundtrip_with_data() {
         let rng = &mut TestRng::default();
 
         // Create a simple record.
@@ -245,17 +281,19 @@ mod tests {
         // Convert to dynamic record.
         let expected = DynamicRecord::from_record(&record).unwrap();
 
-        // Convert to string.
+        // Convert to string. The string form carries the entry data.
         let expected_string = expected.to_string();
+        assert!(expected_string.contains("_data:"));
 
         // Parse the string.
         let candidate = DynamicRecord::<CurrentNetwork>::from_str(&expected_string).unwrap();
 
-        // Verify the fields match.
+        // Verify the fields and data match.
         assert_eq!(expected.owner(), candidate.owner());
         assert_eq!(expected.root(), candidate.root());
         assert_eq!(expected.nonce(), candidate.nonce());
         assert_eq!(expected.version(), candidate.version());
+        assert_eq!(expected.data(), candidate.data());
     }
 
     #[test]
@@ -465,5 +503,6 @@ mod tests {
         assert!(display.contains("_root:"));
         assert!(display.contains("_nonce:"));
         assert!(display.contains("_version:"));
+        assert!(display.contains("_data:"));
     }
 }
