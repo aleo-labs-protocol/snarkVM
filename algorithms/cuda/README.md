@@ -6,7 +6,7 @@
 
 ## Build Requirements
 
-- Cuda `sm_70` or later
+- Cuda `sm_86` or later
 - [Cuda Toolkit (nvcc)](https://docs.nvidia.com/cuda/index.html#installation-guides)
 
 ## Usage Guide
