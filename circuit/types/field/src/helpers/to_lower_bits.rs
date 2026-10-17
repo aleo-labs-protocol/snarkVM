@@ -22,6 +22,10 @@ impl<E: Environment> ToLowerBits for Field<E> {
     /// Outputs the lower `k` bits of an `n`-bit field element in little-endian representation.
     /// Enforces that the upper `n - k` bits are zero.
     ///
+    /// The decomposition is unique: for `k < n`, the bits encode an integer less than
+    /// the modulus, and for `k == n`, the unique decomposition from `to_bits_le` is
+    /// returned, which enforces that the bits are less than the modulus.
+    ///
     fn to_lower_bits_le(&self, k: usize) -> Vec<Self::Boolean> {
         // Ensure the size is within the allowed capacity.
         if k > E::BaseField::size_in_bits() {
@@ -59,6 +63,8 @@ impl<E: Environment> ToLowerBits for Field<E> {
     ///
     /// Outputs the lower `k` bits of an `n`-bit field element in big-endian representation.
     /// Enforces that the upper `n - k` bits are zero.
+    ///
+    /// The decomposition is unique, as this returns the little-endian decomposition in reverse order.
     ///
     fn to_lower_bits_be(&self, k: usize) -> Vec<Self::Boolean> {
         let mut bits_be = self.to_lower_bits_le(k);

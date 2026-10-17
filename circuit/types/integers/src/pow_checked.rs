@@ -99,6 +99,14 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
 impl<E: Environment, I: IntegerType> Integer<E, I> {
     /// Multiply the integer bits of `this` and `that`, returning a flag indicating whether the product overflowed.
     /// This method assumes that the `this` and `that` are both positive.
+    ///
+    /// For integer types below 128 bits, the flag is only constrained to indicate that
+    /// the witnessed product differs from the product computed in the base field: a
+    /// prover may witness any product, setting the flag even when the true product does
+    /// not overflow. This is safe in the only caller, `pow_checked`, which asserts that
+    /// the flag is unset exactly on the iterations whose product is selected, so a
+    /// lying flag forces the witnessed product to equal the true product wherever the
+    /// product is used.
     #[inline]
     fn mul_with_flags(this: &Integer<E, I>, that: &Integer<E, I>) -> (Integer<E, I>, Boolean<E>) {
         // Case 1 - 2 integers fit in 1 field element (u8, u16, u32, u64, i8, i16, i32, i64).

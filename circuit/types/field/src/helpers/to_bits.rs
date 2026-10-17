@@ -64,6 +64,11 @@ impl<E: Environment> ToBits for &Field<E> {
 
 impl<E: Environment> Field<E> {
     /// Outputs a non-unique little-endian bit representation of `self` *without* trailing zeros.
+    ///
+    /// The bits are only constrained to reconstruct `self` modulo the modulus, so a
+    /// prover may assign the bits of `self + modulus` when they fit in `n` bits.
+    /// This is safe in the only caller, `to_bits_le`, which immediately asserts
+    /// that the bits are at most `modulus - 1`, restoring uniqueness.
     #[doc(hidden)]
     fn to_non_unique_bits_le(&self) -> Vec<Boolean<E>> {
         // Construct a vector of `Boolean`s comprising the bits of the field value.

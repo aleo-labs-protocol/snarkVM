@@ -22,6 +22,11 @@ impl<E: Environment> ToUpperBits for Field<E> {
     /// Outputs the upper `k` bits of an `n`-bit field element in little-endian representation.
     /// Enforces that the lower `n - k` bits are zero.
     ///
+    /// Also enforces that the shifted value is less than the modulus, by asserting
+    /// that the bits are at most the upper `k` bits of `modulus - 1`. Without this
+    /// assertion, a prover could assign the bits of `value + modulus`, shifted by
+    /// `2^(n - k)`, which reconstructs `value` modulo the modulus.
+    ///
     fn to_upper_bits_le(&self, k: usize) -> Vec<Self::Boolean> {
         let mut bits_le = self.to_upper_bits_be(k);
         bits_le.reverse();
@@ -31,6 +36,9 @@ impl<E: Environment> ToUpperBits for Field<E> {
     ///
     /// Outputs the upper `k` bits of an `n`-bit field element in big-endian representation.
     /// Enforces that the lower `n - k` bits are zero.
+    ///
+    /// Also enforces that the shifted value is less than the modulus, as this returns
+    /// the little-endian decomposition in reverse order.
     ///
     fn to_upper_bits_be(&self, k: usize) -> Vec<Self::Boolean> {
         // Ensure the size is within the allowed capacity.
