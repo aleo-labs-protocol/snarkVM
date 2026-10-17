@@ -77,12 +77,12 @@ default-features = false
 features = ["json", "rustls"]
 optional = true
 
-[target.'cfg(target_arch="wasm32")'.dependencies.ureq]
+[target.'cfg(any(target_arch="wasm32", target_arch="wasm64"))'.dependencies.ureq]
 workspace = true
 features = ["json", "gzip"]
 optional = true
 
-[target.'cfg(not(target_arch="wasm32"))'.dependencies.ureq]
+[target.'cfg(not(any(target_arch="wasm32", target_arch="wasm64")))'.dependencies.ureq]
 workspace = true
 features = ["json", "gzip", "rustls"]
 optional = true

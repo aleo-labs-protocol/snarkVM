@@ -98,7 +98,7 @@ impl<N: Network> RestQuery<N> {
         let builder = reqwest::Client::builder();
         // reqwest's wasm `ClientBuilder` has neither method (the browser owns the connection);
         // the total bound is set per request, which both backends support.
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
         let builder = builder.connect_timeout(self.connect).read_timeout(self.stall);
         let built = builder.build().with_context(|| format!("Failed to build an HTTP client for {}", self.base_url))?;
         Ok(self.client.get_or_init(|| built))
@@ -283,14 +283,14 @@ impl<N: Network> RestQuery<N> {
     }
 
     /// What is left of the total bound for a request that started at `started`.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
     fn remaining(&self, started: std::time::Instant) -> Duration {
         self.total.saturating_sub(started.elapsed())
     }
 
     /// Calls `endpoint`, asking once more if the request was lost on a pooled connection the peer
     /// had closed; the second attempt gets only what is left of the total bound.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
     fn call(&self, endpoint: &str) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
         let started = std::time::Instant::now();
         match self.agent.get(endpoint).call() {
@@ -302,7 +302,7 @@ impl<N: Network> RestQuery<N> {
     }
 
     /// On wasm there is no clock to budget a retry with, and no connection pool to lose one on.
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_arch = "wasm64"))]
     fn call(&self, endpoint: &str) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
         self.agent.get(endpoint).call()
     }
@@ -353,7 +353,7 @@ impl<N: Network> RestQuery<N> {
 
     /// Async counterpart of [`Self::call`]. hyper-util retries only a request it never began
     /// writing; one written to a closed pooled socket surfaces as a plain request error.
-    #[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "async", not(any(target_arch = "wasm32", target_arch = "wasm64"))))]
     async fn send(&self, endpoint: &str) -> Result<reqwest::Response> {
         let started = std::time::Instant::now();
         match self.request(endpoint, self.total)?.send().await {
@@ -365,7 +365,7 @@ impl<N: Network> RestQuery<N> {
     }
 
     /// On wasm the browser owns the connection, and there is no clock to budget a retry with.
-    #[cfg(all(feature = "async", target_arch = "wasm32"))]
+    #[cfg(all(feature = "async", any(target_arch = "wasm32", target_arch = "wasm64")))]
     async fn send(&self, endpoint: &str) -> Result<reqwest::Response> {
         Ok(self.request(endpoint, self.total)?.send().await?)
     }

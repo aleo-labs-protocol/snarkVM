@@ -1,3 +1,3 @@
 # Note: override by setting RUSTFLAGS
-[target.'cfg(not(target_arch = "wasm32"))']
+[target.'cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))']
 rustflags = ["-C", "target-cpu=native"]
