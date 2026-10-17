@@ -137,13 +137,16 @@ jobs:
           - name: ledger
             runs: |
               nextest run -p snarkvm-ledger
-              nextest run -p snarkvm-ledger --features test valid_solutions
+              nextest run -p snarkvm-ledger --features test -E test(/^tests::valid_solutions::/)
+          # ledger-query's async tests bound wall-clock time, which a loaded
+          # hosted runner can exceed.
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
-              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test --no-tests fail -E test(test_genesis_commitment_checks_passed_block_tree_root)
+              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)
               nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
               nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch
+              nextest run -p snarkvm-ledger-query --features async
           - name: synthesizer
             runs: nextest run -p snarkvm-synthesizer --lib --bins -j 16
           - name: synthesizer-process
@@ -183,7 +186,7 @@ jobs:
           # ~/.aleo/resources would otherwise skip.
           FRESH_HOME: ${{ matrix.name == 'parameters-uncached' }}
           NEXTEST_PROFILE: ci
-          NEXTEST_NO_TESTS: pass
+          NEXTEST_NO_TESTS: fail
         run: |
           if [ "$FRESH_HOME" = true ]; then
             export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
@@ -243,7 +246,7 @@ jobs:
               nextest run -p snarkvm-ledger-authority -p snarkvm-ledger-committee -p snarkvm-ledger-narwhal
               -p snarkvm-ledger-narwhal-batch-certificate -p snarkvm-ledger-narwhal-batch-header
               -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission
-              -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-ledger-query -p snarkvm-synthesizer-snark
+              -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-synthesizer-snark
               -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
     name: test (${{ matrix.name }})
     steps: *test-steps
@@ -263,7 +266,7 @@ jobs:
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only valid_solutions
+              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only -E test(/^tests::valid_solutions::/)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-block
           - name: parameters
@@ -277,9 +280,7 @@ jobs:
               nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
           - name: synthesizer-integration
-            runs: >-
-              nextest run -p snarkvm-synthesizer --features test,dev-print -j 4
-              -E test(/test_command_parse|test_instruction_parse|test_process_execute|test_program_parse|test_vm_execute_and_finalize/)
+            runs: nextest run -p snarkvm-synthesizer --features test,dev-print -j 4 --test *
           - name: synthesizer-program
             runs: |
               nextest run -p snarkvm-synthesizer-program --test lib -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)
