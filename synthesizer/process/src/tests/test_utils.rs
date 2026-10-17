@@ -27,9 +27,17 @@ use snarkvm_ledger_store::{BlockStore, FinalizeStorage, FinalizeStore, helpers::
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
 
 use indexmap::IndexMap;
+use std::sync::OnceLock;
 
 pub type CurrentNetwork = MainnetV0;
 pub type CurrentAleo = AleoV0;
+
+/// Returns a process loaded once and shared by every later caller in the same test process.
+/// Only use it where the test never mutates the process, e.g. via `add_program` or `execute`.
+pub fn shared_process() -> &'static Process<CurrentNetwork> {
+    static PROCESS: OnceLock<Process<CurrentNetwork>> = OnceLock::new();
+    PROCESS.get_or_init(|| Process::load().unwrap())
+}
 
 /// Samples a new finalize store.
 macro_rules! sample_finalize_store {

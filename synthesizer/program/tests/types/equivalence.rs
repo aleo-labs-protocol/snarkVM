@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::helpers::sample::shared_process;
+
 use console::{
     network::MainnetV0,
     prelude::*,
@@ -29,7 +31,7 @@ const CYCLIC_STRUCT_CHILD: &str = "SNARKVM_CYCLIC_STRUCT_EQUIVALENCE_CHILD";
 // ---------- Helper ----------
 fn sample_stack(program_text: &str) -> Result<Stack<CurrentNetwork>> {
     let program = Program::from_str(program_text)?;
-    let stack = Stack::new(&Process::load()?, &program)?;
+    let stack = Stack::new(shared_process(), &program)?;
     Ok(stack)
 }
 

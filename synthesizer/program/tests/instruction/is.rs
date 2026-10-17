@@ -15,7 +15,7 @@
 
 include!("../helpers/macros.rs");
 
-use crate::helpers::sample::{sample_finalize_registers, sample_registers};
+use crate::helpers::sample::{sample_finalize_registers, sample_registers, shared_process};
 
 use circuit::AleoV0;
 use console::{
@@ -23,7 +23,7 @@ use console::{
     prelude::*,
     program::{Identifier, Literal, LiteralType, Plaintext, Register, Value},
 };
-use snarkvm_synthesizer_process::{Process, Stack};
+use snarkvm_synthesizer_process::Stack;
 use snarkvm_synthesizer_program::{
     IsEq,
     IsInstruction,
@@ -85,7 +85,7 @@ fn sample_stack(
     let operands = vec![operand_a, operand_b];
 
     // Initialize the stack.
-    let stack = Stack::new(&Process::load().unwrap(), &program)?;
+    let stack = Stack::new(shared_process(), &program)?;
 
     Ok((stack, operands, r2))
 }
