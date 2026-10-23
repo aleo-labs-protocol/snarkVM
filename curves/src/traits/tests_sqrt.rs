@@ -30,6 +30,7 @@ use snarkvm_fields::{
     Fp256Parameters,
     Fp384Parameters,
     LegendreSymbol,
+    One,
     PrimeField,
     SqrtTables,
     SquareRootField,
@@ -313,4 +314,44 @@ fn test_sqrt_tables_edwards_bls12_fr() {
             non_residues += 1;
         }
     }
+}
+
+/// The tables of BLS12-377 Fq and Fr hold the roots of unity of order `2^8`. The keys below agree
+/// with the default key on those roots and send every other element to the key of `1`, so a
+/// look-up of a non-root always matches a slot by key. `SqrtTables::sqrt` must still return
+/// `None` for every non-residue and the root of `sqrt` for every residue.
+fn check_key_collisions<F: PrimeField + SquareRootField>(tables: &SqrtTables<F>, rng: &mut TestRng) {
+    let (mut residues, mut non_residues) = (0, 0);
+    while residues < RANDOM_INPUTS || non_residues < RANDOM_INPUTS {
+        let a = F::rand(rng);
+        if a.legendre().is_qr() {
+            assert_eq!(tables.sqrt(&a), a.sqrt(), "SqrtTables::sqrt({a}) differs from sqrt");
+            residues += 1;
+        } else {
+            assert_eq!(tables.sqrt(&a), None, "SqrtTables::sqrt({a}) is not None for a non-square");
+            non_residues += 1;
+        }
+    }
+}
+
+#[test]
+fn test_sqrt_tables_key_collisions_bls12_377_fq() {
+    let tables =
+        SqrtTables::<Fq>::with_key(
+            |element| {
+                if element.pow([256]).is_one() { element.0.0[0] } else { Fq::one().0.0[0] }
+            },
+        );
+    check_key_collisions(&tables, &mut TestRng::default());
+}
+
+#[test]
+fn test_sqrt_tables_key_collisions_bls12_377_fr() {
+    let tables =
+        SqrtTables::<Fr>::with_key(
+            |element| {
+                if element.pow([256]).is_one() { element.0.0[0] } else { Fr::one().0.0[0] }
+            },
+        );
+    check_key_collisions(&tables, &mut TestRng::default());
 }

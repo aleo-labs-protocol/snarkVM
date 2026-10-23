@@ -88,7 +88,10 @@ impl<P: Fp384Parameters> Default for SqrtTables<Fp384<P>> {
 }
 
 impl<F: PrimeField> SqrtTables<F> {
-    fn with_key(key: fn(&F) -> u64) -> Self {
+    /// Computes the tables with `key` as the hash of an element. `key` must be a function of the
+    /// element's value, and must differ between the roots of unity in the look-up table.
+    #[doc(hidden)]
+    pub fn with_key(key: fn(&F) -> u64) -> Self {
         let n = <F as FftField>::FftParameters::TWO_ADICITY;
         assert!(n < 64, "the 2-adicity must be less than 64");
         let g = F::two_adic_root_of_unity();
