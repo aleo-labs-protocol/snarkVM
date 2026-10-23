@@ -50,7 +50,8 @@ use zeroize::Zeroize;
 /// which breaks such implementations. Code that needs to implement it should define its own
 /// trait instead. Bounds on it and calls through it are unaffected.
 pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {
-    /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
+    /// Returns the tables that `sqrt` uses without a Legendre test, or `None` for `sqrt` to test the
+    /// Legendre symbol and then run Algorithm 1 of Sarkar without tables.
     ///
     /// The next major release makes this method required and changes its return type to
     /// `&'static SqrtTables<Fp384<Self>>`, so that `sqrt` always uses tables.

@@ -215,9 +215,9 @@ impl<F: PrimeField> SqrtTables<F> {
         }
 
         // Multiplying `bases[j]` by the corrections for windows `0..j` leaves `h^(-(t_j << (max_window - bits_j)))`,
-        // where `t_j` holds the bits of window `j`. A non-square has odd `t`; then the last window
-        // multiplies `x` by even powers of `g`, which leaves an element of order `2^n` that is not in
-        // the look-up table.
+        // where `t_j` holds the bits of window `j`. A non-square has odd `t`. Then the corrections
+        // leave bit 0 of `t` in place, and window `j` leaves an element of order `2^end_j`. That element
+        // is not in the look-up table once `end_j` exceeds `max_window`, which holds at the last window.
         let mut digits = [0u64; MAX_WINDOWS];
         let mut t = 0u64;
         for j in 0..k {
