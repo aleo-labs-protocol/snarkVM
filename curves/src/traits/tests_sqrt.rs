@@ -143,9 +143,12 @@ fn check<F: PrimeField + SquareRootField>(a: &F, tables: &SqrtTables<F>) {
     let root = a.sqrt();
     assert_eq!(root, sarkar_reference(a), "sqrt({a}) differs from the reference");
     assert_eq!(tables.sqrt(a), root, "SqrtTables::sqrt({a}) differs from sqrt");
-    match root {
-        Some(root) => assert_eq!(root.square(), *a, "sqrt({a})^2 != {a}"),
-        None => assert!(a.legendre().is_qnr(), "sqrt({a}) is None for a square"),
+    match a.legendre() {
+        LegendreSymbol::Zero => assert_eq!(root, Some(F::zero()), "sqrt(0) is not Some(0)"),
+        LegendreSymbol::QuadraticNonResidue => assert_eq!(root, None, "sqrt({a}) is not None for a non-square"),
+        LegendreSymbol::QuadraticResidue => {
+            assert_eq!(root.map(|root| root.square()), Some(*a), "sqrt({a})^2 != {a}")
+        }
     }
 }
 
