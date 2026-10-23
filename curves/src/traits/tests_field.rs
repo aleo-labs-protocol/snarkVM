@@ -720,6 +720,34 @@ fn inverse_test<F: PrimeField>(
         assert!(repr(&inverse) < modulus, "{:?}", repr(&a));
         assert_eq!(a * inverse, F::one(), "{:?}", repr(&a));
     };
+    for edge in edges::<F>() {
+        check(raw(edge));
+        if let Some(canonical) = F::from_bigint(edge) {
+            check(canonical);
+        }
+    }
+    let bits = 64 * F::BigInteger::NUM_LIMBS as u32;
+    for i in 0..10_000 {
+        let mut short = F::BigInteger::rand(rng);
+        short.divn(i % bits);
+        if short < modulus {
+            check(raw(short));
+        }
+        check(F::rand(rng));
+    }
+
+    let mut values: Vec<F> = (0..1000).map(|i| if i % 97 == 0 { F::zero() } else { F::rand(rng) }).collect();
+    let originals = values.clone();
+    batch_inversion(&mut values);
+    for (original, inverse) in originals.iter().zip(&values) {
+        assert_eq!(*original * inverse, if original.is_zero() { F::zero() } else { F::one() });
+    }
+}
+
+/// Returns R, R², the powers of two and their neighbours, and the 64 values below the modulus, all
+/// less than the modulus.
+fn edges<F: PrimeField>() -> Vec<F::BigInteger> {
+    let modulus = F::Parameters::MODULUS;
     let one = F::BigInteger::from(1);
     let bits = 64 * F::BigInteger::NUM_LIMBS as u32;
 
@@ -737,25 +765,60 @@ fn inverse_test<F: PrimeField>(
         near_p.sub_noborrow(&F::BigInteger::from(i));
         edges.push(near_p);
     }
-    for edge in edges.into_iter().filter(|e| *e < modulus) {
+    edges.retain(|e| *e < modulus);
+    edges
+}
+
+pub fn fp256_legendre_test<P: Fp256Parameters>(rng: &mut TestRng) {
+    legendre_test(rng, |x| Fp256::<P>(x, PhantomData));
+}
+
+pub fn fp384_legendre_test<P: Fp384Parameters>(rng: &mut TestRng) {
+    legendre_test(rng, |x| Fp384::<P>(x, PhantomData));
+}
+
+/// Checks `legendre` against Euler's criterion. `raw` makes an element from its Montgomery representation.
+fn legendre_test<F: PrimeField + SquareRootField>(rng: &mut TestRng, raw: impl Fn(F::BigInteger) -> F) {
+    let euler = |a: &F| {
+        let s = a.pow(F::Parameters::MODULUS_MINUS_ONE_DIV_TWO);
+        if s.is_zero() {
+            LegendreSymbol::Zero
+        } else if s.is_one() {
+            LegendreSymbol::QuadraticResidue
+        } else {
+            assert_eq!(s, -F::one());
+            LegendreSymbol::QuadraticNonResidue
+        }
+    };
+    let check = |a: F| {
+        let symbol = a.legendre();
+        assert_eq!(symbol, euler(&a), "{a:?}");
+        symbol
+    };
+
+    assert_eq!(check(F::zero()), LegendreSymbol::Zero);
+    assert_eq!(check(F::one()), LegendreSymbol::QuadraticResidue);
+    check(-F::one());
+    for i in 2..=64u64 {
+        check(F::from(i));
+        check(-F::from(i));
+    }
+    for edge in edges::<F>() {
         check(raw(edge));
         if let Some(canonical) = F::from_bigint(edge) {
             check(canonical);
         }
     }
-    for i in 0..10_000 {
-        let mut short = F::BigInteger::rand(rng);
-        short.divn(i % bits);
-        if short < modulus {
-            check(raw(short));
-        }
-        check(F::rand(rng));
-    }
 
-    let mut values: Vec<F> = (0..1000).map(|i| if i % 97 == 0 { F::zero() } else { F::rand(rng) }).collect();
-    let originals = values.clone();
-    batch_inversion(&mut values);
-    for (original, inverse) in originals.iter().zip(&values) {
-        assert_eq!(*original * inverse, if original.is_zero() { F::zero() } else { F::one() });
+    // A generator of the multiplicative group is a non-residue.
+    let generator = F::multiplicative_generator();
+    assert_eq!(check(generator), LegendreSymbol::QuadraticNonResidue);
+    for _ in 0..10_000 {
+        let a = F::rand(rng);
+        check(a);
+        if !a.is_zero() {
+            assert_eq!(check(a.square()), LegendreSymbol::QuadraticResidue);
+            assert_eq!(check(a.square() * generator), LegendreSymbol::QuadraticNonResidue);
+        }
     }
 }
