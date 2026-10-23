@@ -770,15 +770,20 @@ fn edges<F: PrimeField>() -> Vec<F::BigInteger> {
 }
 
 pub fn fp256_legendre_test<P: Fp256Parameters>(rng: &mut TestRng) {
-    legendre_test(rng, |x| Fp256::<P>(x, PhantomData));
+    legendre_test(rng, |x| Fp256::<P>(x, PhantomData), |a, iterations| a.legendre_with_iterations(iterations));
 }
 
 pub fn fp384_legendre_test<P: Fp384Parameters>(rng: &mut TestRng) {
-    legendre_test(rng, |x| Fp384::<P>(x, PhantomData));
+    legendre_test(rng, |x| Fp384::<P>(x, PhantomData), |a, iterations| a.legendre_with_iterations(iterations));
 }
 
-/// Checks `legendre` against Euler's criterion. `raw` makes an element from its Montgomery representation.
-fn legendre_test<F: PrimeField + SquareRootField>(rng: &mut TestRng, raw: impl Fn(F::BigInteger) -> F) {
+/// Checks `legendre` against Euler's criterion. `raw` makes an element from its Montgomery representation,
+/// and `with_iterations` limits the rounds before the fallback to Euler's criterion.
+fn legendre_test<F: PrimeField + SquareRootField>(
+    rng: &mut TestRng,
+    raw: impl Fn(F::BigInteger) -> F,
+    with_iterations: impl Fn(&F, usize) -> LegendreSymbol,
+) {
     let euler = |a: &F| {
         let s = a.pow(F::Parameters::MODULUS_MINUS_ONE_DIV_TWO);
         if s.is_zero() {
@@ -791,8 +796,13 @@ fn legendre_test<F: PrimeField + SquareRootField>(rng: &mut TestRng, raw: impl F
         }
     };
     let check = |a: F| {
-        let symbol = a.legendre();
-        assert_eq!(symbol, euler(&a), "{a:?}");
+        let symbol = euler(&a);
+        assert_eq!(a.legendre(), symbol, "{a:?}");
+        // Every input falls back after 0 rounds. 12 and 18 rounds are the medians for Fr and Fq,
+        // so about half of the inputs fall back.
+        for iterations in [0, 12, 18] {
+            assert_eq!(with_iterations(&a, iterations), symbol, "{a:?} after {iterations} rounds");
+        }
         symbol
     };
 
