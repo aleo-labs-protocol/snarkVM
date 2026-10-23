@@ -47,7 +47,8 @@ use std::{
 use zeroize::Zeroize;
 
 pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {
-    /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
+    /// Returns the tables that `sqrt` uses without a Legendre test, or `None` for `sqrt` to test the
+    /// Legendre symbol and then run Algorithm 1 of Sarkar without tables.
     fn sqrt_tables() -> Option<&'static SqrtTables<Fp384<Self>>> {
         None
     }

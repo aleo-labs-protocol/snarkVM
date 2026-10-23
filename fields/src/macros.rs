@@ -87,15 +87,15 @@ macro_rules! impl_primefield_from_int {
 macro_rules! sqrt_impl {
     ($Self:ident, $P:tt, $self:expr) => {{
         use crate::LegendreSymbol::*;
+        if let Some(tables) = $P::sqrt_tables() {
+            return tables.sqrt($self);
+        }
+
         // https://eprint.iacr.org/2020/1407.pdf (page 4, algorithm 1)
         match $self.legendre() {
             Zero => Some(*$self),
             QuadraticNonResidue => None,
             QuadraticResidue => {
-                if let Some(tables) = $P::sqrt_tables() {
-                    return tables.sqrt($self);
-                }
-
                 let n = $P::TWO_ADICITY as u64;
                 // `T` is equivalent to `m` in the paper.
                 let v = $self.pow($P::T_MINUS_ONE_DIV_TWO);
