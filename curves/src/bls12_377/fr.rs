@@ -55,9 +55,9 @@ pub type Fr = Fp256<FrParameters>;
 pub struct FrParameters;
 
 impl Fp256Parameters for FrParameters {
-    fn sqrt_tables() -> Option<&'static SqrtTables<Fr>> {
+    fn sqrt_tables() -> &'static SqrtTables<Fr> {
         static TABLES: OnceLock<SqrtTables<Fr>> = OnceLock::new();
-        Some(TABLES.get_or_init(SqrtTables::<Fr>::new))
+        TABLES.get_or_init(SqrtTables::<Fr>::new)
     }
 }
 

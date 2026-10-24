@@ -285,27 +285,26 @@ fn test_sqrt_matches_reference_bls12_377_fr() {
 }
 
 /// Edwards-BLS12 Fr has 2-adicity 1, so a square `a` has the root `a^((p+1)/4)`.
-/// `sqrt` does not compile for this field, so the tables are tested directly.
+/// `sarkar_reference` needs a 2-adicity of at least 2, so `sqrt` is checked against that root instead.
 #[test]
-fn test_sqrt_tables_edwards_bls12_fr() {
+fn test_sqrt_edwards_bls12_fr() {
     let rng = &mut TestRng::default();
     assert_eq!(two_adicity::<EdwardsFr>(), 1);
-    let tables = SqrtTables::<EdwardsFr>::new();
     let mut p_plus_one_div_four = EdwardsFr::modulus_minus_one_div_two();
     p_plus_one_div_four.add_nocarry(&1u64.into());
     p_plus_one_div_four.div2();
 
-    assert_eq!(tables.sqrt(&EdwardsFr::zero()), Some(EdwardsFr::zero()));
+    assert_eq!(EdwardsFr::zero().sqrt(), Some(EdwardsFr::zero()));
     let (mut residues, mut non_residues) = (0, 0);
     while residues < RANDOM_INPUTS || non_residues < RANDOM_INPUTS {
         let a = EdwardsFr::rand(rng);
         if a.legendre().is_qr() {
             let root = a.pow(p_plus_one_div_four);
             assert_eq!(root.square(), a);
-            assert_eq!(tables.sqrt(&a), Some(root));
+            assert_eq!(a.sqrt(), Some(root), "sqrt({a}) is not a^((p+1)/4)");
             residues += 1;
         } else {
-            assert_eq!(tables.sqrt(&a), None);
+            assert_eq!(a.sqrt(), None, "sqrt({a}) is not None for a non-square");
             non_residues += 1;
         }
     }

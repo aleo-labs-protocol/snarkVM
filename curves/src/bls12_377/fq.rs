@@ -32,9 +32,9 @@ pub type Fq = Fp384<FqParameters>;
 pub struct FqParameters;
 
 impl Fp384Parameters for FqParameters {
-    fn sqrt_tables() -> Option<&'static SqrtTables<Fq>> {
+    fn sqrt_tables() -> &'static SqrtTables<Fq> {
         static TABLES: OnceLock<SqrtTables<Fq>> = OnceLock::new();
-        Some(TABLES.get_or_init(SqrtTables::<Fq>::new))
+        TABLES.get_or_init(SqrtTables::<Fq>::new)
     }
 }
 
