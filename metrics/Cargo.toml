@@ -24,4 +24,4 @@ license = "Apache-2.0"
 edition = "2024"
 
 [dependencies.metrics]
-version = "0.22"
+version = "0.24"
