@@ -22,7 +22,7 @@ use crate::{
 };
 use hashbrown::HashMap;
 use itertools::Itertools;
-use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
+use snarkvm_curves::traits::{PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, Zero};
 use snarkvm_utilities::defer;
 
@@ -526,8 +526,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut randomizer = E::Fr::one();
 
         let mut combined_comms = BTreeMap::new();
-        let mut combined_witness = E::G1Projective::zero();
-        let mut combined_adjusted_witness = E::G1Projective::zero();
+        let mut witnesses = WitnessTerms::<E>::with_capacity(proof.0.len());
 
         for ((_query_name, (query, labels)), p) in query_to_labels_map.into_iter().zip_eq(&proof.0) {
             let mut comms_to_combine: Vec<&'_ LabeledCommitment<_>> = Vec::new();
@@ -546,14 +545,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
             Self::accumulate_elems(
                 &mut combined_comms,
-                &mut combined_witness,
-                &mut combined_adjusted_witness,
-                vk,
+                &mut witnesses,
                 comms_to_combine.into_iter(),
                 *query,
                 values_to_combine.into_iter(),
                 p,
-                Some(randomizer),
+                randomizer,
                 fs_rng,
             )?;
 
@@ -562,6 +559,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             randomizer = private_sponge.squeeze_short_nonnative_field_element::<E::Fr>();
         }
 
+        let (combined_witness, combined_adjusted_witness) = witnesses.combine(vk);
         Self::check_elems(vk, combined_comms, combined_witness, combined_adjusted_witness)
     }
 
@@ -744,18 +742,77 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     }
 }
 
+/// The terms of a `batch_check` that no commitment challenge scales, each
+/// multiplied by the randomizer of its pass: the claimed evaluations, the
+/// proofs' `random_v`, and the witnesses. `combine` sums them in one
+/// multi-scalar multiplication per G2 element they pair with.
+struct WitnessTerms<E: PairingEngine> {
+    /// The coefficient of `g`: the randomized sum of the claimed evaluations.
+    g: E::Fr,
+    /// The coefficient of `gamma_g`: the randomized sum of the proofs'
+    /// `random_v`.
+    gamma_g: E::Fr,
+    /// One row per pass: the witness, the pass randomizer and the query point.
+    passes: Vec<(E::G1Affine, E::Fr, E::Fr)>,
+}
+
+impl<E: PairingEngine> WitnessTerms<E> {
+    fn with_capacity(num_passes: usize) -> Self {
+        Self { g: E::Fr::zero(), gamma_g: E::Fr::zero(), passes: Vec::with_capacity(num_passes) }
+    }
+
+    /// Returns the combined witness, which pairs with `beta_h`, and the
+    /// combined adjusted witness, which pairs with `h`:
+    ///
+    /// `Σ r_p w_p` and `(Σ r_p v_p) g + (Σ r_p ρ_p) gamma_g - Σ r_p z_p w_p`.
+    fn combine(self, vk: &UniversalVerifier<E>) -> (E::G1Projective, E::G1Projective) {
+        let combine_time = start_timer!(|| "Combining witnesses");
+        defer! { end_timer!(combine_time); }
+        let Self { g, gamma_g, passes } = self;
+
+        // A unit randomizer, which the first pass has, adds its witness as is.
+        let mut combined_witness = E::G1Projective::zero();
+        let mut bases = Vec::with_capacity(passes.len());
+        let mut scalars = Vec::with_capacity(passes.len());
+        for (w, randomizer, _) in &passes {
+            if randomizer.is_one() {
+                combined_witness.add_assign_mixed(w);
+            } else {
+                bases.push(*w);
+                scalars.push((*randomizer).into());
+            }
+        }
+        if !bases.is_empty() {
+            combined_witness += VariableBase::msm(&bases, &scalars);
+        }
+
+        let mut bases = Vec::with_capacity(passes.len() + 2);
+        let mut scalars = Vec::with_capacity(passes.len() + 2);
+        bases.push(vk.vk.g);
+        scalars.push(g.into());
+        if !gamma_g.is_zero() {
+            bases.push(vk.vk.gamma_g);
+            scalars.push(gamma_g.into());
+        }
+        for (w, randomizer, point) in &passes {
+            bases.push(*w);
+            scalars.push((-(*randomizer * point)).into());
+        }
+        let combined_adjusted_witness = VariableBase::msm(&bases, &scalars);
+        (combined_witness, combined_adjusted_witness)
+    }
+}
+
 impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     #[allow(clippy::too_many_arguments)]
     fn accumulate_elems<'a>(
         combined_comms: &mut BTreeMap<Option<usize>, E::G1Projective>,
-        combined_witness: &mut E::G1Projective,
-        combined_adjusted_witness: &mut E::G1Projective,
-        vk: &UniversalVerifier<E>,
+        witnesses: &mut WitnessTerms<E>,
         commitments: impl ExactSizeIterator<Item = &'a LabeledCommitment<Commitment<E>>>,
         point: E::Fr,
         values: impl ExactSizeIterator<Item = E::Fr>,
         proof: &kzg10::KZGProof<E>,
-        randomizer: Option<E::Fr>,
+        randomizer: E::Fr,
         fs_rng: &mut S,
     ) -> Result<()> {
         let acc_time = start_timer!(|| "Accumulating elements");
@@ -776,7 +833,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let degree_bound = labeled_comm.degree_bound();
 
             // Applying opening challenge and randomness (used in batch_checking)
-            let coeff = randomizer.unwrap_or_else(E::Fr::one) * curr_challenge;
+            let coeff = randomizer * curr_challenge;
             let comm_with_challenge: E::G1Projective = comm.0.mul(coeff);
 
             // Accumulate values in the BTreeMap
@@ -784,22 +841,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             end_timer!(acc_timer);
         }
 
-        // Push expected results into list of elems. Power will be the negative of the
-        // expected power
-        let mut bases = vec![vk.vk.g, -proof.w];
-        let mut coeffs = vec![combined_values, point];
+        witnesses.g += randomizer * combined_values;
         if let Some(random_v) = proof.random_v {
-            bases.push(vk.vk.gamma_g);
-            coeffs.push(random_v);
+            witnesses.gamma_g += randomizer * random_v;
         }
-        *combined_witness += if let Some(randomizer) = randomizer {
-            coeffs.iter_mut().for_each(|c| *c *= randomizer);
-            proof.w.mul(randomizer)
-        } else {
-            proof.w.to_projective()
-        };
-        let coeffs = coeffs.into_iter().map(|c| c.into()).collect::<Vec<_>>();
-        *combined_adjusted_witness += VariableBase::msm(&bases, &coeffs);
+        witnesses.passes.push((proof.w, randomizer, point));
         Ok(())
     }
 
@@ -1226,5 +1272,57 @@ mod tests {
         crate::polycommit::test_templates::lagrange_test_template::<Bls12_377, Sponge>()
             .expect("test failed for bls12-377");
         println!("Finished bls12-377");
+    }
+
+    /// `batch_check` folds the witnesses of every query point into two
+    /// multi-scalar multiplications, so each term has to stay bound: a wrong
+    /// evaluation, a wrong witness in any pass, and a wrong `random_v` in any
+    /// pass are each rejected.
+    #[test]
+    fn test_batch_check_rejects_a_tampered_pass() {
+        use super::{BatchProof, Evaluations};
+        use crate::AlgebraicSponge;
+        use snarkvm_curves::{AffineCurve, ProjectiveCurve, bls12_377::Fr};
+        use snarkvm_fields::One;
+
+        let components = quadratic_poly_degree_bound_multiple_queries_test::<Bls12_377, Sponge>()
+            .expect("test failed for bls12-377");
+        let mut most_passes = 0;
+        for TestComponents { verification_key, commitments, query_set, evaluations, batch_proof, .. } in components {
+            // `test_template` fills `batch_proof` for every component it returns.
+            let proof = batch_proof.unwrap();
+            let check = |evaluations: &Evaluations<Fr>, proof: &BatchProof<Bls12_377>| {
+                // The template's own check passed with these labels, so the only
+                // errors `batch_check` returns, missing labels, cannot occur.
+                PC_Bls12_377::batch_check(
+                    &verification_key,
+                    &commitments,
+                    &query_set,
+                    evaluations,
+                    proof,
+                    &mut Sponge::new(),
+                )
+                .unwrap()
+            };
+            assert!(check(&evaluations, &proof));
+
+            let mut wrong_evaluations = evaluations.clone();
+            // The template evaluates at least one polynomial at one point.
+            *wrong_evaluations.values_mut().next().unwrap() += Fr::one();
+            assert!(!check(&wrong_evaluations, &proof), "a wrong evaluation passed");
+
+            for pass in 0..proof.0.len() {
+                let mut wrong_witness = proof.clone();
+                wrong_witness.0[pass].w = wrong_witness.0[pass].w.to_projective().double().to_affine();
+                assert!(!check(&evaluations, &wrong_witness), "a wrong witness in pass {pass} passed");
+
+                let mut wrong_random_v = proof.clone();
+                // The template commits with a hiding bound, so every proof carries `random_v`.
+                *wrong_random_v.0[pass].random_v.as_mut().unwrap() += Fr::one();
+                assert!(!check(&evaluations, &wrong_random_v), "a wrong random_v in pass {pass} passed");
+            }
+            most_passes = most_passes.max(proof.0.len());
+        }
+        assert!(most_passes >= 2, "no component had two query points, so no randomizer was exercised");
     }
 }
