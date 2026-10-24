@@ -235,6 +235,7 @@ impl<F: PrimeField> SqrtTables<F> {
         for &(start, bits, table) in &self.half_windows {
             root *= self.powers[table][((half_t >> start) & ((1 << bits) - 1)) as usize];
         }
+        debug_assert_eq!(root.square(), *u, "the look-ups accepted a non-square");
         Some(root)
     }
 }
