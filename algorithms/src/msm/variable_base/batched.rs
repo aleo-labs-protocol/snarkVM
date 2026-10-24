@@ -15,7 +15,9 @@
 
 use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{Field, One, PrimeField, Zero};
-use snarkvm_utilities::{BigInteger, BitIteratorBE, cfg_into_iter};
+use snarkvm_utilities::{BigInteger, cfg_into_iter};
+
+use itertools::Itertools;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -369,31 +371,140 @@ fn batched_window<G: AffineCurve>(
     (res, window_size)
 }
 
-pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    // Below 32 bases, each window of the bucket method holds too few points to
-    // amortize its batched inversions, and double-and-add is several times
-    // faster.
-    if bases.len() < 32 {
-        let num_bits = G::ScalarField::size_in_bits();
-        let bigint_size = <G::ScalarField as PrimeField>::BigInteger::NUM_LIMBS * 64;
-        let mut bits =
-            scalars.iter().map(|s| BitIteratorBE::new(s.as_ref()).skip(bigint_size - num_bits)).collect::<Vec<_>>();
-        let mut sum = G::Projective::zero();
+/// The signed-digit window of `straus`.
+///
+/// Every nonzero digit is odd and below `2^(STRAUS_WINDOW - 1)` in magnitude,
+/// so each base needs a table of `2^(STRAUS_WINDOW - 2)` odd multiples.
+const STRAUS_WINDOW: usize = 5;
 
-        let mut encountered_one = false;
-        for _ in 0..num_bits {
-            if encountered_one {
-                sum.double_in_place();
-            }
-            for (bits, base) in bits.iter_mut().zip(bases) {
-                if let Some(true) = bits.next() {
-                    sum.add_assign_mixed(base);
-                    encountered_one = true;
+/// Writes the width-`window` non-adjacent form of the low `num_bits` bits of
+/// `scalar` into `digits`, least significant digit first.
+///
+/// Every nonzero digit is odd and below `2^(window - 1)` in magnitude, and two
+/// nonzero digits are at least `window` positions apart. `digits` holds one
+/// position more than `num_bits`, for the carry out of the top window.
+fn recode_naf<B: BigInteger>(scalar: &B, window: usize, num_bits: usize, digits: &mut [i8]) {
+    debug_assert_eq!(digits.len(), num_bits + 1);
+    let limbs = scalar.as_ref();
+    let half = 1u64 << (window - 1);
+    let full = 1u64 << window;
+    // The `window` bits of the scalar from bit `i` up, with every bit at or
+    // above `num_bits` read as zero.
+    let bits_at = |i: usize| -> u64 {
+        let (limb, shift) = (i / 64, i % 64);
+        let mut value = limbs[limb] >> shift;
+        if shift + window > 64 && limb + 1 < limbs.len() {
+            value |= limbs[limb + 1] << (64 - shift);
+        }
+        let width = window.min(num_bits - i);
+        value & ((1u64 << width) - 1)
+    };
+    let mut carry = 0u64;
+    let mut i = 0;
+    while i < num_bits {
+        let bit = (limbs[i / 64] >> (i % 64)) & 1;
+        if (bit + carry) & 1 == 0 {
+            digits[i] = 0;
+            carry = (bit + carry) >> 1;
+            i += 1;
+            continue;
+        }
+        // Odd, so a window of bits: `value` is odd and below `full`.
+        let value = bits_at(i) + carry;
+        if value >= half {
+            digits[i] = (value as i64 - full as i64) as i8;
+            carry = 1;
+        } else {
+            digits[i] = value as i8;
+            carry = 0;
+        }
+        // The digits under the rest of the window are zero.
+        let end = (i + window).min(num_bits);
+        digits[i + 1..end].fill(0);
+        i = end;
+    }
+    digits[num_bits] = carry as i8;
+}
+
+/// Computes the MSM by Straus's method: one shared doubling per digit
+/// position, and for every base a table of odd multiples that a nonzero digit
+/// selects from.
+#[doc(hidden)]
+pub fn straus<G: AffineCurve, const WINDOW: usize>(
+    bases: &[G],
+    scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+) -> G::Projective {
+    const { assert!(WINDOW >= 2 && WINDOW <= 8) };
+    let table_len = 1usize << (WINDOW - 2);
+    let n = bases.len().min(scalars.len());
+    let (bases, scalars) = (&bases[..n], &scalars[..n]);
+
+    // Tables: the odd multiples `[1, 3, ..., 2 * table_len - 1] * base`, built
+    // from an affine `2 * base` by mixed additions and normalized in one batch.
+    let doubles = G::Projective::batch_normalization_into_affine(
+        bases.iter().map(|base| base.to_projective().double()).collect(),
+    );
+    let mut tables = Vec::with_capacity(n * table_len);
+    for (base, double) in bases.iter().zip_eq(&doubles) {
+        let mut multiple = base.to_projective();
+        tables.push(multiple);
+        for _ in 1..table_len {
+            multiple.add_assign_mixed(double);
+            tables.push(multiple);
+        }
+    }
+    let tables = G::Projective::batch_normalization_into_affine(tables);
+
+    // Digits: one row per scalar, most significant position last.
+    let num_bits = G::ScalarField::size_in_bits();
+    let stride = num_bits + 1;
+    let mut digits = vec![0i8; n * stride];
+    for (scalar, row) in scalars.iter().zip_eq(digits.chunks_exact_mut(stride)) {
+        recode_naf(scalar, WINDOW, num_bits, row);
+    }
+
+    let mut sum = G::Projective::zero();
+    let mut encountered_nonzero = false;
+    for position in (0..stride).rev() {
+        if encountered_nonzero {
+            sum.double_in_place();
+        }
+        for (row, table) in digits.chunks_exact(stride).zip_eq(tables.chunks_exact(table_len)) {
+            let digit = row[position];
+            if digit != 0 {
+                let entry = table[usize::from(digit.unsigned_abs()) >> 1];
+                if digit > 0 {
+                    sum.add_assign_mixed(&entry)
+                } else {
+                    sum.add_assign_mixed(&-entry)
                 }
+                encountered_nonzero = true;
             }
         }
-        debug_assert!(bits.iter_mut().all(|b| b.next().is_none()));
-        sum
+    }
+    sum
+}
+
+pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
+    // Below 32 bases, each window of the bucket method holds too few points to
+    // amortize its batched inversions, and Straus's method is several times
+    // faster.
+    if bases.len() < 32 {
+        // One base shares no doublings, so a unit scalar is the base itself
+        // and any other goes through the curve's own scalar multiplication,
+        // GLV on BLS12-377, which halves the doublings.
+        if let ([base], [scalar]) = (bases, scalars) {
+            if scalar.is_zero() {
+                return G::Projective::zero();
+            }
+            if *scalar == G::ScalarField::one().to_bigint() {
+                return base.to_projective();
+            }
+            if let Some(scalar) = G::ScalarField::from_bigint(*scalar) {
+                return base.to_projective() * scalar;
+            }
+        }
+        straus::<G, STRAUS_WINDOW>(bases, scalars)
     } else {
         // Determine the bucket size `c` (chosen empirically).
         let c = crate::msm::ln_without_floats(scalars.len()) + 2;
@@ -417,5 +528,45 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
             }
             total
         }) + lowest.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    /// Every digit is zero or odd and below `2^(window - 1)` in magnitude, two
+    /// nonzero digits are at least `window` apart, and the digits read back as
+    /// the scalar.
+    #[test]
+    fn test_recode_naf() {
+        let mut rng = TestRng::default();
+        let num_bits = Fr::size_in_bits();
+        let two = Fr::from(2u64);
+        let mut scalars = vec![Fr::zero(), Fr::one(), -Fr::one(), two.pow([252]), -two.pow([252]), Fr::from(u64::MAX)];
+        scalars.extend((0..200).map(|_| Fr::rand(&mut rng)));
+        for window in 2..=8 {
+            let bound = 1i16 << (window - 1);
+            let mut digits = vec![0i8; num_bits + 1];
+            for scalar in &scalars {
+                recode_naf(&scalar.to_bigint(), window, num_bits, &mut digits);
+                let mut last_nonzero = None;
+                let mut value = Fr::zero();
+                for (i, &digit) in digits.iter().enumerate().rev() {
+                    value = value.double()
+                        + Fr::from(digit.unsigned_abs() as u64) * if digit < 0 { -Fr::one() } else { Fr::one() };
+                    if digit != 0 {
+                        assert!(digit % 2 != 0 && i16::from(digit).abs() < bound, "window {window}: digit {digit}");
+                        if let Some(next) = last_nonzero {
+                            assert!(next - i >= window, "window {window}: digits at {i} and {next}");
+                        }
+                        last_nonzero = Some(i);
+                    }
+                }
+                assert_eq!(value, *scalar, "window {window}");
+            }
+        }
     }
 }
