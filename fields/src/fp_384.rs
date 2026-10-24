@@ -50,14 +50,8 @@ use zeroize::Zeroize;
 /// which breaks such implementations. Code that needs to implement it should define its own
 /// trait instead. Bounds on it and calls through it are unaffected.
 pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {
-    /// Returns the tables that `sqrt` uses without a Legendre test, or `None` for `sqrt` to test the
-    /// Legendre symbol and then run Algorithm 1 of Sarkar without tables.
-    ///
-    /// The next major release makes this method required and changes its return type to
-    /// `&'static SqrtTables<Fp384<Self>>`, so that `sqrt` always uses tables.
-    fn sqrt_tables() -> Option<&'static SqrtTables<Fp384<Self>>> {
-        None
-    }
+    /// Returns the tables that `sqrt` uses. The 2-adicity of the field must be less than 64.
+    fn sqrt_tables() -> &'static SqrtTables<Fp384<Self>>;
 }
 
 // The CUDA FFI reads this by bytes.
@@ -541,7 +535,7 @@ impl<P: Fp384Parameters> SquareRootField for Fp384<P> {
 
     #[inline]
     fn sqrt(&self) -> Option<Self> {
-        sqrt_impl!(Self, P, self)
+        sqrt_impl!(P, self)
     }
 
     fn sqrt_in_place(&mut self) -> Option<&mut Self> {
