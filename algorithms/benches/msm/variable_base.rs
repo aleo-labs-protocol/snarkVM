@@ -14,9 +14,9 @@
 // limitations under the License.
 
 use snarkvm_algorithms::msm::*;
-use snarkvm_curves::AffineCurve;
-use snarkvm_fields::PrimeField;
-use snarkvm_utilities::TestRng;
+use snarkvm_curves::{AffineCurve, ProjectiveCurve};
+use snarkvm_fields::{PrimeField, Zero};
+use snarkvm_utilities::{BigInteger, BitIteratorBE, TestRng, Uniform};
 
 use criterion::Criterion;
 
@@ -55,10 +55,59 @@ fn variable_base_edwards_bls12(c: &mut Criterion) {
     }
 }
 
+/// The bit-serial Shamir loop `batched::msm` ran below 32 bases before Straus's
+/// method replaced it, kept as the baseline arm.
+fn double_and_add<G: AffineCurve>(
+    bases: &[G],
+    scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+) -> G::Projective {
+    let num_bits = G::ScalarField::size_in_bits();
+    let bigint_size = <G::ScalarField as PrimeField>::BigInteger::NUM_LIMBS * 64;
+    let mut bits =
+        scalars.iter().map(|s| BitIteratorBE::new(s.as_ref()).skip(bigint_size - num_bits)).collect::<Vec<_>>();
+    let mut sum = G::Projective::zero();
+
+    let mut encountered_one = false;
+    for _ in 0..num_bits {
+        if encountered_one {
+            sum.double_in_place();
+        }
+        for (bits, base) in bits.iter_mut().zip(bases) {
+            if let Some(true) = bits.next() {
+                sum.add_assign_mixed(base);
+                encountered_one = true;
+            }
+        }
+    }
+    sum
+}
+
+fn small_variable_base_bls12_377(c: &mut Criterion) {
+    use snarkvm_curves::bls12_377::{Fr, G1Affine};
+    let mut rng = TestRng::default();
+    let bases = (0..1024).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+    let scalars = (0..1024).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
+
+    let mut group = c.benchmark_group("small_msm");
+    group.sample_size(60);
+    group.bench_function("glv_mul/1", |b| b.iter(|| bases[0].to_projective() * Fr::from_bigint(scalars[0]).unwrap()));
+    for n in [1, 2, 3, 4, 5, 7, 13, 14, 25, 26, 31, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024] {
+        let (bases, scalars) = (&bases[..n], &scalars[..n]);
+        if n <= 32 {
+            group.bench_function(format!("double_and_add/{n}"), |b| b.iter(|| double_and_add(bases, scalars)));
+            group.bench_function(format!("straus4/{n}"), |b| b.iter(|| batched::straus::<G1Affine, 4>(bases, scalars)));
+            group.bench_function(format!("straus6/{n}"), |b| b.iter(|| batched::straus::<G1Affine, 6>(bases, scalars)));
+        }
+        group.bench_function(format!("straus5/{n}"), |b| b.iter(|| batched::straus::<G1Affine, 5>(bases, scalars)));
+        group.bench_function(format!("batched/{n}"), |b| b.iter(|| batched::msm(bases, scalars)));
+    }
+    group.finish();
+}
+
 criterion_group! {
     name = variable_base_group;
     config = Criterion::default().sample_size(10);
-    targets = variable_base_bls12_377, variable_base_edwards_bls12
+    targets = small_variable_base_bls12_377, variable_base_bls12_377, variable_base_edwards_bls12
 }
 
 criterion_main!(variable_base_group);
