@@ -41,9 +41,6 @@ impl Fp256Parameters for FrParameters {
 impl FftParameters for FrParameters {
     type BigInteger = BigInteger;
 
-    // `cargo doc` will fail without this attribute
-    #[doc(hidden)]
-    const POWERS_OF_ROOTS_OF_UNITY: &'static [BigInteger] = unimplemented!();
     const TWO_ADICITY: u32 = 1;
     #[rustfmt::skip]
     const TWO_ADIC_ROOT_OF_UNITY: BigInteger = BigInteger([
