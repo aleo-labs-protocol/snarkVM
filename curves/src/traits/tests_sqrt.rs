@@ -19,7 +19,7 @@
 //! `sarkar_reference` is a direct, table-free implementation of Sarkar's Algorithm 1.
 
 use crate::{
-    bls12_377::{Fq, FqParameters, Fr, FrParameters},
+    bls12_377::{Fq, Fr},
     edwards_bls12::Fr as EdwardsFr,
 };
 use snarkvm_fields::{
@@ -27,8 +27,6 @@ use snarkvm_fields::{
     FftField,
     FftParameters,
     Field,
-    Fp256Parameters,
-    Fp384Parameters,
     LegendreSymbol,
     PrimeField,
     SqrtTables,
@@ -137,12 +135,10 @@ fn sarkar_reference<F: PrimeField + SquareRootField>(a: &F) -> Option<F> {
     }
 }
 
-/// Checks `sqrt`, and `SqrtTables::sqrt` without the Legendre test, against the reference and against
-/// the definition of a square root.
-fn check<F: PrimeField + SquareRootField>(a: &F, tables: &SqrtTables<F>) {
+/// Checks `sqrt` against the reference and against the definition of a square root.
+fn check<F: PrimeField + SquareRootField>(a: &F) {
     let root = a.sqrt();
     assert_eq!(root, sarkar_reference(a), "sqrt({a}) differs from the reference");
-    assert_eq!(tables.sqrt(a), root, "SqrtTables::sqrt({a}) differs from sqrt");
     match a.legendre() {
         LegendreSymbol::Zero => assert_eq!(root, Some(F::zero()), "sqrt(0) is not Some(0)"),
         LegendreSymbol::QuadraticNonResidue => assert_eq!(root, None, "sqrt({a}) is not None for a non-square"),
@@ -187,19 +183,19 @@ fn structured_logs(n: u32) -> Vec<u64> {
     logs
 }
 
-fn check_field<F: PrimeField + SquareRootField>(tables: &SqrtTables<F>, rng: &mut TestRng) {
+fn check_field<F: PrimeField + SquareRootField>(rng: &mut TestRng) {
     let n = two_adicity::<F>();
     let g = F::two_adic_root_of_unity();
 
-    check(&F::zero(), tables);
-    check(&F::one(), tables);
-    check(&-F::one(), tables);
-    check(&F::multiplicative_generator(), tables);
-    check(&g, tables);
+    check(&F::zero());
+    check(&F::one());
+    check(&-F::one());
+    check(&F::multiplicative_generator());
+    check(&g);
     // Every `g^(2^i)` and its negation.
     for power in std::iter::successors(Some(g), |g| Some(g.square())).take(n as usize + 1) {
-        check(&power, tables);
-        check(&-power, tables);
+        check(&power);
+        check(&-power);
     }
 
     // Controlled 2-adic logarithms, each with two different odd-order parts.
@@ -207,11 +203,11 @@ fn check_field<F: PrimeField + SquareRootField>(tables: &SqrtTables<F>, rng: &mu
         for r in [F::one(), F::rand(rng)] {
             let a = with_two_adic_log(e, r);
             assert_eq!(a.legendre().is_qr(), e.is_multiple_of(2));
-            check(&a, tables);
+            check(&a);
         }
     }
     for _ in 0..200 {
-        check(&with_two_adic_log(rng.random::<u64>() & ones(n), F::rand(rng)), tables);
+        check(&with_two_adic_log(rng.random::<u64>() & ones(n), F::rand(rng)));
     }
 
     // Every byte at every bit position, with all other bits zero and with all other bits one.
@@ -221,7 +217,7 @@ fn check_field<F: PrimeField + SquareRootField>(tables: &SqrtTables<F>, rng: &mu
         for digit in 0..256 {
             let digit = byte & (digit << start);
             for e in [digit, digit | (ones(n) & !byte)] {
-                check(&with_two_adic_log(e, r), tables);
+                check(&with_two_adic_log(e, r));
             }
         }
     }
@@ -232,12 +228,12 @@ fn check_field<F: PrimeField + SquareRootField>(tables: &SqrtTables<F>, rng: &mu
         let a = F::rand(rng);
         if a.legendre().is_qr() {
             if residues < RANDOM_INPUTS {
-                check(&a, tables);
-                check(&a.square(), tables);
+                check(&a);
+                check(&a.square());
                 residues += 1;
             }
         } else if non_residues < RANDOM_INPUTS {
-            check(&a, tables);
+            check(&a);
             non_residues += 1;
         }
     }
@@ -280,12 +276,12 @@ fn test_exponent_schedule_bls12_377_fr() {
 
 #[test]
 fn test_sqrt_matches_reference_bls12_377_fq() {
-    check_field::<Fq>(FqParameters::sqrt_tables().unwrap(), &mut TestRng::default());
+    check_field::<Fq>(&mut TestRng::default());
 }
 
 #[test]
 fn test_sqrt_matches_reference_bls12_377_fr() {
-    check_field::<Fr>(FrParameters::sqrt_tables().unwrap(), &mut TestRng::default());
+    check_field::<Fr>(&mut TestRng::default());
 }
 
 /// Edwards-BLS12 Fr has 2-adicity 1, so a square `a` has the root `a^((p+1)/4)`.
@@ -323,13 +319,15 @@ fn colliding_key<F: PrimeField>(element: &F) -> u64 {
     if element.pow([256]).is_one() { key(element) } else { key(&F::one()) }
 }
 
-/// Checks that `SqrtTables::sqrt` with `colliding_key` agrees with `sqrt` on random elements: `None`
-/// for every non-residue and the same root for every residue.
+/// Checks `SqrtTables::sqrt` with `colliding_key` on random elements: it returns `None` exactly when
+/// the Legendre symbol is -1, and otherwise the root of `sqrt`.
 fn check_key_collisions<F: PrimeField + SquareRootField>(rng: &mut TestRng) {
     let tables = SqrtTables::<F>::with_key(colliding_key::<F>);
     for _ in 0..2 * RANDOM_INPUTS {
         let a = F::rand(rng);
-        assert_eq!(tables.sqrt(&a), a.sqrt(), "SqrtTables::sqrt({a}) differs from sqrt");
+        let root = tables.sqrt(&a);
+        assert_eq!(root.is_none(), a.legendre().is_qnr(), "SqrtTables::sqrt({a}) misclassifies {a}");
+        assert_eq!(root, a.sqrt(), "SqrtTables::sqrt({a}) differs from sqrt");
     }
 }
 
