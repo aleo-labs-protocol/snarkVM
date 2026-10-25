@@ -24,6 +24,31 @@ use snarkvm_fields::PrimeField;
 
 use core::any::TypeId;
 
+#[cfg(any(all(feature = "cuda", target_arch = "x86_64"), test))]
+const DEFAULT_CUDA_MSM_THRESHOLD: usize = 1024;
+#[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+const CUDA_MSM_THRESHOLD_ENV: &str = "SNARKVM_CUDA_MSM_THRESHOLD";
+
+#[cfg(any(all(feature = "cuda", target_arch = "x86_64"), test))]
+fn parse_cuda_msm_threshold(value: Option<&str>) -> usize {
+    value
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|threshold| *threshold > 0)
+        .unwrap_or(DEFAULT_CUDA_MSM_THRESHOLD)
+}
+
+#[cfg(any(all(feature = "cuda", target_arch = "x86_64"), test))]
+fn should_use_cuda_msm(input_len: usize, threshold: usize) -> bool {
+    input_len > threshold
+}
+
+#[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+fn cuda_msm_threshold() -> usize {
+    static THRESHOLD: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+    *THRESHOLD.get_or_init(|| parse_cuda_msm_threshold(std::env::var(CUDA_MSM_THRESHOLD_ENV).ok().as_deref()))
+}
+
 pub struct VariableBase;
 
 impl VariableBase {
@@ -32,8 +57,7 @@ impl VariableBase {
         // technique.
         if TypeId::of::<G>() == TypeId::of::<G1Affine>() {
             #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-            // TODO SNP: where to set the threshold
-            if scalars.len() > 1024 {
+            if should_use_cuda_msm(scalars.len(), cuda_msm_threshold()) {
                 let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, <G::ScalarField as PrimeField>::BigInteger>(
                     bases, scalars,
                 );
@@ -73,6 +97,27 @@ mod tests {
     use snarkvm_curves::bls12_377::{Fr, G1Affine};
     use snarkvm_fields::PrimeField;
     use snarkvm_utilities::rand::TestRng;
+
+    #[test]
+    fn cuda_msm_threshold_defaults_when_missing_or_invalid() {
+        for value in [None, Some(""), Some("invalid"), Some("0"), Some(" 8192 ")] {
+            assert_eq!(parse_cuda_msm_threshold(value), DEFAULT_CUDA_MSM_THRESHOLD);
+        }
+    }
+
+    #[test]
+    fn cuda_msm_threshold_accepts_positive_values() {
+        assert_eq!(parse_cuda_msm_threshold(Some("8192")), 8192);
+        assert_eq!(parse_cuda_msm_threshold(Some("1")), 1);
+    }
+
+    #[test]
+    fn cuda_msm_dispatch_starts_above_the_threshold() {
+        assert!(!should_use_cuda_msm(1024, DEFAULT_CUDA_MSM_THRESHOLD));
+        assert!(should_use_cuda_msm(1025, DEFAULT_CUDA_MSM_THRESHOLD));
+        assert!(!should_use_cuda_msm(8192, 8192));
+        assert!(should_use_cuda_msm(8193, 8192));
+    }
 
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     use snarkvm_curves::ProjectiveCurve;
