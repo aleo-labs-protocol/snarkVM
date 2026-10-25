@@ -810,3 +810,146 @@ mod gpu_fourth_round_chain_contract {
         }
     }
 }
+
+/// The chain reading a registered key's evaluations from the device, against
+/// the same call uploading a copy of them. Residency needs exactly one GPU, so
+/// each test returns early on any other count.
+#[cfg(all(test, feature = "cuda", target_arch = "x86_64"))]
+mod gpu_resident_evals {
+    use snarkvm_algorithms_cuda::resident_evals::{self, Evals};
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_fields::{One, Zero};
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+    use std::sync::{Arc, RwLock, RwLockReadGuard, Weak};
+
+    const LG: u32 = 10;
+
+    /// Stands in for a `Circuit`: `row`, `col` and `row_col_val` for each of
+    /// three matrices. Behind a lock, so a test can change them in place.
+    struct Key(RwLock<[[Vec<Fr>; 3]; 3]>);
+
+    impl Key {
+        fn arrays(&self) -> RwLockReadGuard<'_, [[Vec<Fr>; 3]; 3]> {
+            self.0.read().unwrap()
+        }
+    }
+
+    impl Evals for Key {
+        fn evals(&self) -> [[(*const u8, usize); 3]; 3] {
+            self.arrays().each_ref().map(|m| m.each_ref().map(|a| (a.as_ptr() as *const u8, size_of_val(&a[..]))))
+        }
+    }
+
+    fn one_gpu() -> bool {
+        snarkvm_algorithms_cuda::device_count() == 1
+    }
+
+    fn key(rng: &mut TestRng, len: usize) -> Arc<Key> {
+        let mut array = || (0..len).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+        let mut matrix = || [array(), array(), array()];
+        let key = Arc::new(Key(RwLock::new([matrix(), matrix(), matrix()])));
+        resident_evals::offer(&key);
+        key
+    }
+
+    type Out = (Vec<Fr>, Vec<Fr>, Vec<Fr>, Vec<Fr>, Fr);
+
+    /// The chain's outputs for one matrix, with arguments the divide accepts.
+    fn chain(lg: u32, [row, col, rcv]: &[Vec<Fr>; 3]) -> Out {
+        let rng = &mut TestRng::fixed(lg as u64);
+        let (alpha, beta, coeff, b_scale, selector_mult) =
+            (Fr::rand(rng), Fr::rand(rng), Fr::rand(rng), Fr::rand(rng), Fr::rand(rng));
+        let n = 1usize << lg;
+        let (mut a, mut b, mut g, mut lhs, mut f0) =
+            (vec![Fr::zero(); n], vec![Fr::zero(); n], vec![Fr::zero(); n - 1], vec![Fr::zero(); n - 1], Fr::zero());
+        snarkvm_algorithms_cuda::fourth_round_chain(
+            &mut a,
+            &mut b,
+            &mut g,
+            &mut lhs,
+            &mut f0,
+            row,
+            col,
+            rcv,
+            lg,
+            lg + 1,
+            &alpha,
+            &beta,
+            &coeff,
+            &b_scale,
+            &(b_scale * coeff),
+            &selector_mult,
+        )
+        .map_err(|e| e.code)
+        .expect("the chain runs");
+        (a, b, g, lhs, f0)
+    }
+
+    /// Twice per matrix, so a kernel that wrote its inputs would fail the
+    /// second call.
+    #[test]
+    fn resident_evaluations_match_an_upload() {
+        if !one_gpu() {
+            return;
+        }
+        let rng = &mut TestRng::default();
+        for (lg, len) in [(LG, 1usize << LG), (12, (1 << 12) - 1025)] {
+            let key = key(rng, len);
+            for m in 0..3 {
+                let want = chain(lg, &key.arrays()[m].clone());
+                for call in 0..2 {
+                    assert!(chain(lg, &key.arrays()[m]) == want, "lg {lg} len {len} matrix {m} call {call}");
+                }
+            }
+            assert_eq!(resident_evals::resident_bytes_of(&key), 9 * len * 32, "lg {lg}: every matrix was resident");
+        }
+    }
+
+    /// After the upload, the host arrays change and the chain does not.
+    #[test]
+    fn the_device_copy_is_what_the_chain_reads() {
+        if !one_gpu() {
+            return;
+        }
+        let key = key(&mut TestRng::default(), 1 << LG);
+        let want = chain(LG, &key.arrays()[0]);
+        key.0.write().unwrap()[0][0].iter_mut().for_each(|r| *r += Fr::one());
+        assert!(chain(LG, &key.arrays()[0].clone()) != want, "the change moves the host path");
+        assert!(chain(LG, &key.arrays()[0]) == want, "the chain read the host arrays");
+    }
+
+    #[test]
+    fn a_key_is_freed_after_its_last_reference() {
+        if !one_gpu() {
+            return;
+        }
+        let key = key(&mut TestRng::default(), 1 << LG);
+        chain(LG, &key.arrays()[0]);
+        assert!(resident_evals::resident_bytes_of(&key) > 0);
+        let weak: Weak<Key> = Arc::downgrade(&key);
+        drop(key);
+        resident_evals::sweep();
+        assert!(!resident_evals::is_registered(&weak), "a dead key's evaluations were kept");
+    }
+
+    #[test]
+    fn a_key_dropped_while_a_proof_holds_it_stays_resident() {
+        if !one_gpu() {
+            return;
+        }
+        let key = key(&mut TestRng::default(), 1 << LG);
+        let want = chain(LG, &key.arrays()[0].clone());
+        chain(LG, &key.arrays()[0]);
+        let bytes = resident_evals::resident_bytes_of(&key);
+        let proof = Arc::clone(&key);
+        let weak: Weak<Key> = Arc::downgrade(&key);
+        drop(key);
+        resident_evals::sweep();
+        assert!(resident_evals::is_registered(&weak), "evicted under a proof");
+        assert_eq!(resident_evals::resident_bytes_of(&proof), bytes);
+        assert!(chain(LG, &proof.arrays()[0]) == want);
+        drop(proof);
+        resident_evals::sweep();
+        assert!(!resident_evals::is_registered(&weak));
+    }
+}

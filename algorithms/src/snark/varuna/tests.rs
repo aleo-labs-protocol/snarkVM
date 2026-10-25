@@ -1394,16 +1394,45 @@ mod proof_vector {
     fn a_fixed_input_proves_to_a_fixed_proof() {
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_NON_ZERO)
             .expect("the test circuit has a max degree");
-        prove_and_check(Inst::universal_setup(max_degree).expect("the SRS for the test circuit"));
+        prove_and_check(Inst::universal_setup(max_degree).expect("the SRS for the test circuit"), false);
     }
 
-    fn prove_and_check(srs: crate::snark::varuna::UniversalSRS<Bls12_377>) {
+    /// The same proof with the key's MSMs read from the device-resident
+    /// windows: 2^15 points each, which the bundled SRS holds and this circuit
+    /// fits.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn a_fixed_input_proves_to_the_same_proof_from_the_windows() {
+        // The windows load once per process, at one length and from one SRS
+        // instance, so any other unit test in this crate that loads them is
+        // refused with `LoadError::OtherSrs`.
+        const W: usize = 1 << 15;
+        let pp = crate::polycommit::kzg10::KZG10::<Bls12_377>::load_srs(W - 1).expect("the bundled SRS loads");
+        crate::polycommit::resident::load_windows_of(&pp, W).expect("the windows load");
+        prove_and_check(pp, true);
+    }
+
+    /// `resident` says whether the key must be read from the windows, which
+    /// only a test that loaded them may say: `circuit_setup` cuts it from the
+    /// snapshots they were uploaded from.
+    fn prove_and_check(
+        srs: crate::snark::varuna::UniversalSRS<Bls12_377>,
+        #[cfg_attr(not(all(feature = "cuda", target_arch = "x86_64")), allow(unused_variables))] resident: bool,
+    ) {
         let setup = &mut TestRng::fixed(SETUP_SEED);
         let prover = &srs.to_universal_prover().expect("a prover from the SRS");
         let verifier = &srs.to_universal_verifier().expect("a verifier from the SRS");
         let fs = FS::sample_parameters();
         let (circuit, inputs) = TestCircuit::gen_rand(MUL_DEPTH, NUM_CONSTRAINTS, NUM_VARIABLES, setup);
         let (pk, vk) = Inst::circuit_setup(&srs, &circuit).expect("the keys for the test circuit");
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if resident {
+            assert!(
+                snarkvm_algorithms_cuda::resident::is_resident(&pk.committer_key.powers_of_beta_g),
+                "circuit_setup's key does not share the windows' snapshots"
+            );
+        }
+
         for (version, expected) in EXPECTED {
             let rng = &mut TestRng::fixed(PROVE_SEED);
             let proof = Inst::prove(prover, &fs, &pk, version, &circuit, rng).expect("the test circuit proves");
@@ -1420,5 +1449,11 @@ mod proof_vector {
                 "the {version:?} proof for a fixed input changed; see this constant's documentation"
             );
         }
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        assert!(
+            snarkvm_algorithms_cuda::device_count() != 1
+                || snarkvm_algorithms_cuda::resident_evals::resident_bytes_of(&pk.circuit) > 0,
+            "proving did not keep the key's round-four evaluations on the device"
+        );
     }
 }

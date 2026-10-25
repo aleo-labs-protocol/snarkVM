@@ -35,6 +35,10 @@ pub mod kzg10;
 /// [al]: https://eprint.iacr.org/2019/601
 pub mod sonic_pc;
 
+/// Device-resident SRS windows.
+#[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+pub use snarkvm_algorithms_cuda::resident;
+
 /// Errors pertaining to query sets.
 pub mod error;
 pub use error::*;

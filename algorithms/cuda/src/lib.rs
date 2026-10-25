@@ -47,6 +47,8 @@ unsafe extern "C" {
 
     fn snarkvm_cuda_pool_elements() -> usize;
 
+    fn snarkvm_cuda_device_memory(free: *mut usize, total: *mut usize) -> bool;
+
     #[allow(clippy::too_many_arguments)]
     fn snarkvm_lineval_interpolate_mul(
         out: *mut core::ffi::c_void,
@@ -68,6 +70,7 @@ unsafe extern "C" {
         row: *const core::ffi::c_void,
         col: *const core::ffi::c_void,
         rcv: *const core::ffi::c_void,
+        d_evals: *const core::ffi::c_void,
         len: usize,
         lg_domain_size: u32,
         lg_mul_domain: u32,
@@ -127,6 +130,8 @@ unsafe extern "C" {
         bases: *const core::ffi::c_void,
         nbases: usize,
         ffi_affine_size: usize,
+        d_bases: *const core::ffi::c_void,
+        d_offset: usize,
     ) -> cuda::Error;
 
     fn snarkvm_msm(
@@ -136,7 +141,32 @@ unsafe extern "C" {
         scalars: *const c_void,
         ffi_affine_sz: usize,
         mont: bool,
+        d_bases: *const c_void,
+        d_offset: usize,
     ) -> cuda::Error;
+
+    fn snarkvm_bases_status() -> cuda::Error;
+
+    fn snarkvm_bases_alloc(d_out: *mut *mut c_void, bytes_out: *mut usize, npoints: usize) -> cuda::Error;
+
+    fn snarkvm_bases_upload_at(
+        d: *mut c_void,
+        offset: usize,
+        points: *const c_void,
+        npoints: usize,
+        ffi_affine_sz: usize,
+    ) -> cuda::Error;
+
+    fn snarkvm_cuda_window_points() -> usize;
+
+    fn snarkvm_resident_upload(
+        d_out: *mut *mut c_void,
+        srcs: *const *const c_void,
+        count: usize,
+        bytes: usize,
+    ) -> cuda::Error;
+
+    fn snarkvm_bases_release(d: *mut c_void);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -171,6 +201,14 @@ fn assert_type<T: 'static, Expected: 'static>() {
 /// capability 7.0 or later that support cooperative launch.
 pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
+}
+
+/// Device 0's free and total memory in bytes, or `None` if the runtime cannot
+/// say.
+pub fn device_memory() -> Option<(usize, usize)> {
+    let (mut free, mut total) = (0, 0);
+    // SAFETY: writes two `usize`s.
+    unsafe { snarkvm_cuda_device_memory(&mut free, &mut total) }.then_some((free, total))
 }
 
 /// The largest constraint domain a proof can multiply here, as an element
@@ -303,6 +341,7 @@ pub fn fourth_round_chain<T: 'static>(
     }
     // Below the early return: an empty input never reaches the transform.
     assert!(lg_domain_size > 0, "the interpolations fault on a one-element domain");
+    let hit = resident_evals::lookup([row, col, rcv]);
     let err = unsafe {
         snarkvm_fourth_round_chain(
             a_out.as_mut_ptr() as *mut core::ffi::c_void,
@@ -313,6 +352,7 @@ pub fn fourth_round_chain<T: 'static>(
             row.as_ptr() as *const core::ffi::c_void,
             col.as_ptr() as *const core::ffi::c_void,
             rcv.as_ptr() as *const core::ffi::c_void,
+            hit.ptr(),
             len,
             lg_domain_size,
             lg_mul_domain,
@@ -517,6 +557,7 @@ where
     assert!(out_len >= 2, "a quotient needs at least two coefficients");
     assert!(bases.len() >= out_len - 1, "{} bases for a quotient of {}", bases.len(), out_len - 1);
 
+    let hit = resident::lookup(&bases[..out_len - 1]);
     let mut polys: Vec<*const core::ffi::c_void> = Vec::with_capacity(terms.len());
     let mut lens: Vec<usize> = Vec::with_capacity(terms.len());
     let mut coeffs: Vec<F> = Vec::with_capacity(terms.len());
@@ -541,6 +582,8 @@ where
             bases as *const _ as *const core::ffi::c_void,
             bases.len(),
             std::mem::size_of::<Affine>(),
+            hit.ptr(),
+            hit.offset(),
         )
     };
     if err.code != 0 {
@@ -573,6 +616,7 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     if npoints > points.len() {
         panic!("length mismatch {} points < {} scalars", points.len(), scalars.len())
     }
+    let hit = resident::lookup(&points[..npoints]);
     let mut ret = std::mem::MaybeUninit::<Projective>::uninit();
     let err = unsafe {
         snarkvm_msm(
@@ -582,6 +626,8 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
             scalars as *const _ as *const c_void,
             std::mem::size_of::<Affine>(),
             mont,
+            hit.ptr(),
+            hit.offset(),
         )
     };
     if err.code != 0 {
@@ -596,6 +642,10 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
 pub fn blst_platform_cap() -> i32 {
     unsafe { snarkvm_blst_platform_cap() }
 }
+
+pub mod resident;
+
+pub mod resident_evals;
 
 /// Argument guards that a caller can trip.
 ///

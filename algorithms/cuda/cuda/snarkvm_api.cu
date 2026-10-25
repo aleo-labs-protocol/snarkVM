@@ -146,6 +146,21 @@ extern "C" {
         }
     }
 
+    // Device 0's free and total bytes. False if the runtime cannot say.
+    bool snarkvm_cuda_device_memory(size_t* free_out, size_t* total_out)
+    {
+        return cudaSetDevice(0) == cudaSuccess
+            && cudaMemGetInfo(free_out, total_out) == cudaSuccess;
+    }
+
+    // The resident windows' length: the pool's NTT bound, 2^(MAX_LG_DOMAIN+2),
+    // from the build alone. Unlike `snarkvm_cuda_pool_elements` it builds
+    // nothing, so it is safe to ask before the device is ready.
+    size_t snarkvm_cuda_window_points()
+    {
+        return size_t(1) << (MAX_LG_DOMAIN + 2);
+    }
+
     RustError snarkvm_ntt(fr_t* inout, uint32_t lg_domain_size,
                           NTT::InputOutputOrder ntt_order, NTT::Direction ntt_direction,
                           NTT::Type ntt_type)
@@ -178,8 +193,8 @@ extern "C" {
     RustError snarkvm_fourth_round_chain(fr_t* a_out, fr_t* b_out, fr_t* g_out,
                                          fr_t* lhs_out, fr_t* f0_out,
                                          const fr_t* row, const fr_t* col,
-                                         const fr_t* rcv, size_t len,
-                                         uint32_t lg_domain_size,
+                                         const fr_t* rcv, const fr_t* d_evals,
+                                         size_t len, uint32_t lg_domain_size,
                                          uint32_t lg_mul_domain, size_t q_len,
                                          const fr_t* alpha, const fr_t* beta,
                                          const fr_t* coeff, const fr_t* b_scale,
@@ -191,7 +206,7 @@ extern "C" {
                 return snarkvm_g.failure();
             }
             return snarkvm_g->FourthRoundChain(a_out, b_out, g_out, lhs_out,
-                                               f0_out, row, col, rcv, len,
+                                               f0_out, row, col, rcv, d_evals, len,
                                                lg_domain_size, lg_mul_domain,
                                                q_len, alpha, beta, coeff,
                                                b_scale, a_scale, selector_mult);
@@ -236,7 +251,8 @@ extern "C" {
                                       const size_t* lens, const fr_t* coeffs,
                                       const fr_t* z,
                                       const affine_t bases[], size_t nbases,
-                                      size_t ffi_affine_size)
+                                      size_t ffi_affine_size,
+                                      const void* d_bases, size_t d_offset)
     {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
@@ -244,7 +260,7 @@ extern "C" {
             }
             return snarkvm_g->AccumulateOpen(out, out_len, nterms, polys, lens,
                                              coeffs, z, bases, nbases,
-                                             ffi_affine_size);
+                                             ffi_affine_size, d_bases, d_offset);
         });
     }
 
@@ -252,14 +268,67 @@ extern "C" {
     /// them in its digit-extraction kernel.
     RustError snarkvm_msm(point_t* out, const affine_t points[], size_t npoints,
                           const scalar_t scalars[], size_t ffi_affine_size,
-                          bool mont) {
+                          bool mont, const void* d_bases, size_t d_offset) {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
                 return snarkvm_g.failure();
             }
             return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size,
-                                  mont);
+                                  mont, d_bases, d_offset);
         });
+    }
+
+    // Whether resident windows can be loaded: the device singleton's own
+    // failure if it did not build (latched, like every entry point's), and
+    // cudaErrorNotSupported if MSMs split across more than one GPU.
+    RustError snarkvm_bases_status() {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return RustError{snarkvm_g->BasesSupported() ? cudaSuccess : cudaErrorNotSupported};
+        });
+    }
+
+    RustError snarkvm_bases_alloc(void** d_out, size_t* bytes_out, size_t npoints) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->AllocBases(d_out, bytes_out, npoints);
+        });
+    }
+
+    RustError snarkvm_bases_upload_at(void* d, size_t offset,
+                                      const affine_t points[], size_t npoints,
+                                      size_t ffi_affine_size) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->UploadBasesAt(d, offset, points, npoints,
+                                            ffi_affine_size);
+        });
+    }
+
+    RustError snarkvm_resident_upload(void** d_out, const void* const* srcs,
+                                      size_t count, size_t bytes) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->UploadResident(d_out, srcs, count, bytes);
+        });
+    }
+
+    void snarkvm_bases_release(void* d) {
+        RustError e = catch_all([&] {
+            if (snarkvm_g.ok()) {
+                snarkvm_g->ReleaseBases(d);
+            }
+            return RustError{cudaSuccess};
+        });
+        free(e.message);
     }
 }
 #endif // __CUDA_ARCH__

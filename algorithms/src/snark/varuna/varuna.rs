@@ -369,6 +369,10 @@ where
         for (pk, constraints) in keys_to_constraints {
             circuits_to_constraints.insert(pk.circuit.deref(), *constraints);
         }
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if crate::fft::is_cuda_field::<E::Fr>() {
+            keys_to_constraints.keys().for_each(|pk| snarkvm_algorithms_cuda::resident_evals::offer(&pk.circuit));
+        }
         let prover_state = AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, zk_rng)?;
 
         // extract information from the prover key and state to consume in further

@@ -3016,6 +3016,7 @@ dependencies = [
 name = "snarkvm-algorithms-cuda"
 version = "4.12.0"
 dependencies = [
+ "anyhow",
  "blst",
  "cc",
  "snarkvm-curves",
