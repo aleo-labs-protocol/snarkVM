@@ -42,6 +42,19 @@ pub use data_structures::*;
 mod polynomial;
 pub use polynomial::*;
 
+/// What `combine_group` produced.
+///
+/// The host path returns the combined polynomial for `KZG10::open` to divide
+/// and commit to. The device path does both itself, so what comes back is the
+/// commitment to the quotient and the polynomial never reaches the host.
+enum Combined<E: PairingEngine> {
+    Host(DensePolynomial<E::Fr>),
+    /// Constructed only with the `cuda` feature, but read by a match arm that
+    /// is not cfg-gated.
+    #[allow(dead_code)]
+    WitnessCommitment(E::G1Projective),
+}
+
 /// A linear combination whose polynomial has not been formed.
 ///
 /// `open_combinations` resolves each combination to the polynomials it names
@@ -402,25 +415,26 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             }
 
             let combine_time = start_timer!(|| format!("Combining {} combinations for the opening", group.len()));
-            let mut polynomial = DensePolynomial::zero();
             let mut rand = Randomness::empty();
             for (c, challenge) in group.iter().zip_eq(challenges.iter()) {
                 rand += (*challenge, &c.randomness);
-                for (coeff, p) in &c.terms {
-                    let scale = *challenge * coeff;
-                    if scale.is_one() {
-                        polynomial += p.polynomial();
-                    } else {
-                        polynomial += (scale, p.polynomial());
-                    }
-                }
             }
+            let polynomial = Self::combine_group(ck, &group, &challenges, query)?;
             end_timer!(combine_time);
 
             let proof = {
                 let proof_time = start_timer!(|| "Creating proof");
                 defer! { end_timer!(proof_time); }
-                kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?
+                match polynomial {
+                    Combined::Host(polynomial) => kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?,
+                    // The device returned the commitment to the quotient, so
+                    // only the hiding term remains.
+                    Combined::WitnessCommitment(w) => {
+                        let hiding_witness =
+                            rand.is_hiding().then(|| rand.blinding_polynomial.divide_by_monic_linear(query).0);
+                        kzg10::KZG10::finish_open(&ck.powers(), query, &rand, w, hiding_witness.as_ref())
+                    }
+                }
             };
             proofs.push(proof);
 
@@ -635,6 +649,68 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Ok(BatchLCProof { proof })
     }
 
+    /// The opening's per-group work: `Σ (challenge_j · coeff_ji) · P_ji` over
+    /// every term of every combination. The device path also divides by
+    /// `X - z` and commits to the quotient.
+    fn combine_group(
+        ck: &CommitterUnionKey<E>,
+        group: &[&LazyCombination<'_, E>],
+        challenges: &[E::Fr],
+        query: E::Fr,
+    ) -> Result<Combined<E>> {
+        // With `cuda` and BLS12-377 the device path is unconditional. The host
+        // path runs without `cuda` or for any other field.
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if core::any::TypeId::of::<E::Fr>() == core::any::TypeId::of::<snarkvm_curves::bls12_377::Fr>() {
+            // `to_dense` borrows a dense polynomial and converts a sparse one,
+            // such as `mask_poly`, as the host path's `AddAssign` does. The
+            // `Cow`s are held for the call because `terms` borrows from them.
+            let densified: Vec<(E::Fr, std::borrow::Cow<'_, DensePolynomial<E::Fr>>)> = group
+                .iter()
+                .zip_eq(challenges.iter())
+                .flat_map(|(c, challenge)| {
+                    c.terms.iter().map(move |(coeff, p)| (*challenge * coeff, p.polynomial().to_dense()))
+                })
+                .collect();
+            let out_len = densified.iter().map(|(_, p)| p.coeffs.len()).max().unwrap_or(0);
+
+            // A quotient needs two coefficients. Below that only the host path
+            // is defined.
+            if out_len >= 2 {
+                let terms: Vec<(E::Fr, &[E::Fr])> = densified.iter().map(|(c, p)| (*c, p.coeffs.as_slice())).collect();
+
+                let powers = ck.powers();
+                // `KZG10::open`'s check, against the bound `out_len - 1` rather
+                // than the trimmed degree, so it can only reject more.
+                kzg10::KZG10::<E>::check_degree_is_too_large(out_len - 1, powers.size())?;
+
+                let result = snarkvm_algorithms_cuda::accumulate_open(
+                    out_len,
+                    &terms,
+                    &query,
+                    &powers.powers_of_beta_g[..out_len - 1],
+                );
+                let w = crate::cuda_must_succeed!(result, "accumulate_open");
+                return Ok(Combined::WitnessCommitment(w));
+            }
+        }
+
+        let mut polynomial = DensePolynomial::zero();
+        for (c, challenge) in group.iter().zip_eq(challenges.iter()) {
+            for (coeff, p) in &c.terms {
+                let scale = *challenge * coeff;
+                if scale.is_one() {
+                    polynomial += p.polynomial();
+                } else {
+                    polynomial += (scale, p.polynomial());
+                }
+            }
+        }
+        // Live on the device path; unused only when the `cuda` cfg is off.
+        let _ = (ck, query);
+        Ok(Combined::Host(polynomial))
+    }
+
     /// Checks that `values` are the true evaluations at `query_set` of the
     /// polynomials committed in `labeled_commitments`.
     pub fn check_combinations<'a>(
@@ -843,6 +919,83 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         ensure!(g1_prepared_elems_iter.len() == g2_prepared_elems.len());
         let g1_g2_prepared = g1_prepared_elems_iter.iter().zip_eq(g2_prepared_elems.iter());
         Ok(E::product_of_pairings(g1_g2_prepared).is_one())
+    }
+}
+
+/// Contract tests for the device accumulation against the host sequence. They
+/// require a device.
+#[cfg(all(test, feature = "cuda", target_arch = "x86_64"))]
+mod cuda_tests {
+    use crate::fft::DensePolynomial;
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_fields::Zero;
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+
+    /// The fused chain has to reproduce all three host steps: the sum, the
+    /// division by `X - z`, and the commitment to the quotient.
+    #[test]
+    fn accumulate_open_matches_the_host_sequence() {
+        use crate::msm::variable_base::VariableBase;
+        use snarkvm_curves::{ProjectiveCurve, bls12_377::G1Projective};
+        use snarkvm_fields::PrimeField;
+
+        let rng = &mut TestRng::default();
+        let mut bad: Vec<String> = Vec::new();
+
+        // The last case is the size of the largest query group in a real proof,
+        // which the `varuna` suite's small circuits do not reach.
+        for (out_len, lens) in [
+            (1usize << 10, vec![1usize << 10]),
+            (1 << 10, vec![1 << 10, 1 << 9, 700]),
+            (1 << 12, vec![1 << 12, 1 << 11, 1 << 12, 3000]),
+            (1 << 19, vec![1 << 19, 1 << 18, 1 << 18, 524287]),
+        ] {
+            let polys: Vec<DensePolynomial<Fr>> = lens
+                .iter()
+                .map(|n| DensePolynomial::from_coefficients_vec((0..*n).map(|_| Fr::rand(rng)).collect()))
+                .collect();
+            let coeffs: Vec<Fr> = lens.iter().map(|_| Fr::rand(rng)).collect();
+            let z = Fr::rand(rng);
+            // `bases[i] = (i + 1) · P`, built by repeated addition. The sum is
+            // `(Σ (i + 1) · s_i) · P`, so any shift or mis-slice of the scalars
+            // changes the result.
+            let bases: Vec<_> = {
+                let p = G1Projective::rand(rng);
+                let mut acc = G1Projective::zero();
+                let mut v = Vec::with_capacity(out_len - 1);
+                for _ in 0..out_len - 1 {
+                    acc += p;
+                    v.push(acc);
+                }
+                G1Projective::batch_normalization_into_affine(v)
+            };
+
+            // The host sequence, written out.
+            let mut combined = DensePolynomial::zero();
+            for (c, p) in coeffs.iter().zip(&polys) {
+                combined += (*c, p);
+            }
+            let (quotient, _) = combined.divide_by_monic_linear(z);
+            let want = {
+                let ints: Vec<_> = quotient.coeffs.iter().map(|c| c.to_bigint()).collect();
+                VariableBase::msm(&bases[..ints.len()], &ints)
+            };
+
+            let terms: Vec<(Fr, &[Fr])> = coeffs.iter().zip(&polys).map(|(c, p)| (*c, p.coeffs.as_slice())).collect();
+            match snarkvm_algorithms_cuda::accumulate_open::<_, G1Projective, _>(out_len, &terms, &z, &bases) {
+                Err(_) => bad.push(format!("out {out_len}: the device call failed")),
+                // The device commits to the untrimmed quotient and the host to
+                // the trimmed one; zero scalars contribute nothing, so the
+                // commitments agree.
+                Ok(got) => {
+                    if got.to_affine() != want.to_affine() {
+                        bad.push(format!("out {out_len}: commitment differs"));
+                    }
+                }
+            }
+        }
+
+        assert!(bad.is_empty(), "{}", bad.join("; "));
     }
 }
 

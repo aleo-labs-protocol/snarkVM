@@ -21,6 +21,11 @@ pub mod prefetch;
 
 use snarkvm_curves::{bls12_377::G1Affine, traits::AffineCurve};
 use snarkvm_fields::PrimeField;
+use snarkvm_utilities::cfg_iter;
+
+// `cfg_iter!` needs rayon only without the `serial` feature.
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 use core::any::TypeId;
 
@@ -45,6 +50,20 @@ impl VariableBase {
         else {
             standard::msm(bases, scalars)
         }
+    }
+
+    /// Multi-scalar multiplication over field elements.
+    ///
+    /// On the GPU path the digit-extraction kernel reduces the scalars out of
+    /// Montgomery form. Elsewhere this converts them and calls [`Self::msm`].
+    pub fn msm_field<G: AffineCurve>(bases: &[G], scalars: &[G::ScalarField]) -> G::Projective {
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if TypeId::of::<G>() == TypeId::of::<G1Affine>() && scalars.len() > 1024 {
+            let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, G::ScalarField>(bases, scalars);
+            return crate::cuda_must_succeed!(result, "MSM");
+        }
+        let bigints = cfg_iter!(scalars).map(|s| s.to_bigint()).collect::<Vec<_>>();
+        Self::msm(bases, &bigints)
     }
 
     #[cfg(test)]
@@ -73,6 +92,8 @@ mod tests {
     use snarkvm_curves::bls12_377::{Fr, G1Affine};
     use snarkvm_fields::PrimeField;
     use snarkvm_utilities::rand::TestRng;
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    use snarkvm_utilities::rand::Uniform;
 
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     use snarkvm_curves::ProjectiveCurve;
@@ -103,6 +124,26 @@ mod tests {
 
             let candidate = batched::msm(bases.as_slice(), scalars.as_slice()).to_affine();
             assert_eq!(naive_a, candidate, "MSM size: {msm_size}");
+        }
+    }
+
+    /// `msm_field` on Montgomery-form scalars matches `msm` on reduced ones.
+    ///
+    /// Sized over the `> 1024` threshold, because below it `msm_field` calls
+    /// `msm`.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_msm_field_matches_msm() {
+        let mut rng = TestRng::default();
+        for i in 11..15 {
+            let size = 1 << i;
+            let bases = (0..size).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+            let fields = (0..size).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+            let bigints = fields.iter().map(|s| s.to_bigint()).collect::<Vec<_>>();
+
+            let reduced_on_the_cpu = VariableBase::msm::<G1Affine>(&bases, &bigints);
+            let reduced_on_the_gpu = VariableBase::msm_field::<G1Affine>(&bases, &fields);
+            assert_eq!(reduced_on_the_cpu.to_affine(), reduced_on_the_gpu.to_affine(), "size {size}");
         }
     }
 

@@ -47,6 +47,55 @@ unsafe extern "C" {
 
     fn snarkvm_cuda_pool_elements() -> usize;
 
+    #[allow(clippy::too_many_arguments)]
+    fn snarkvm_lineval_interpolate_mul(
+        out: *mut core::ffi::c_void,
+        evals: *const core::ffi::c_void,
+        ncols: usize,
+        assignment: *const core::ffi::c_void,
+        assignment_len: usize,
+        lg_domain_size: u32,
+        lg_mul_domain: u32,
+    ) -> cuda::Error;
+
+    #[allow(clippy::too_many_arguments)]
+    fn snarkvm_fourth_round_chain(
+        a_out: *mut core::ffi::c_void,
+        b_out: *mut core::ffi::c_void,
+        g_out: *mut core::ffi::c_void,
+        lhs_out: *mut core::ffi::c_void,
+        f0_out: *mut core::ffi::c_void,
+        row: *const core::ffi::c_void,
+        col: *const core::ffi::c_void,
+        rcv: *const core::ffi::c_void,
+        len: usize,
+        lg_domain_size: u32,
+        lg_mul_domain: u32,
+        q_len: usize,
+        alpha: *const core::ffi::c_void,
+        beta: *const core::ffi::c_void,
+        coeff: *const core::ffi::c_void,
+        b_scale: *const core::ffi::c_void,
+        a_scale: *const core::ffi::c_void,
+        selector_mult: *const core::ffi::c_void,
+    ) -> cuda::Error;
+
+    fn snarkvm_fourth_round_polys(
+        a_out: *mut core::ffi::c_void,
+        b_out: *mut core::ffi::c_void,
+        f_out: *mut core::ffi::c_void,
+        row: *const core::ffi::c_void,
+        col: *const core::ffi::c_void,
+        rcv: *const core::ffi::c_void,
+        len: usize,
+        lg_domain_size: u32,
+        alpha: *const core::ffi::c_void,
+        beta: *const core::ffi::c_void,
+        coeff: *const core::ffi::c_void,
+        b_scale: *const core::ffi::c_void,
+        a_scale: *const core::ffi::c_void,
+    ) -> cuda::Error;
+
     fn snarkvm_ntt(
         inout: *mut core::ffi::c_void,
         lg_domain_size: u32,
@@ -67,6 +116,18 @@ unsafe extern "C" {
     ) -> cuda::Error;
 
     fn snarkvm_blst_platform_cap() -> core::ffi::c_int;
+    fn snarkvm_accumulate_open(
+        out: *mut core::ffi::c_void,
+        out_len: usize,
+        nterms: usize,
+        polys: *const *const core::ffi::c_void,
+        lens: *const usize,
+        coeffs: *const core::ffi::c_void,
+        z: *const core::ffi::c_void,
+        bases: *const core::ffi::c_void,
+        nbases: usize,
+        ffi_affine_size: usize,
+    ) -> cuda::Error;
 
     fn snarkvm_msm(
         out: *mut c_void,
@@ -74,6 +135,7 @@ unsafe extern "C" {
         npoints: usize,
         scalars: *const c_void,
         ffi_affine_sz: usize,
+        mont: bool,
     ) -> cuda::Error;
 }
 
@@ -111,15 +173,16 @@ pub fn device_count() -> usize {
     unsafe { snarkvm_cuda_device_count() }
 }
 
-/// The largest domain a proof can multiply here, as an element count. Zero
-/// means there is no usable pool.
+/// The largest constraint domain a proof can multiply here, as an element
+/// count. Zero means there is no usable pool.
 ///
-/// The prover multiplies over the constraint domain in round two, the variable
-/// domain in round three, and each matrix's non-zero domain in round four, so
-/// all three must fit. Compare `CircuitInfo::num_constraints`,
-/// `num_public_and_private_variables` and each of `num_non_zero_a`,
-/// `num_non_zero_b` and `num_non_zero_c`, rounded up to a power of two, and
-/// refuse above it. No consensus limit caps the non-zero counts.
+/// Compare `CircuitInfo::num_constraints`, rounded up to a power of two, and
+/// refuse above it. Round two's `z_a * z_b` is over the constraint domain and
+/// always reaches the pool guard, so anything this refuses would have failed.
+///
+/// Passing does not promise the proof fits. Rounds three and four allocate
+/// from the async mempool and do not consult the pool, so the variable and
+/// non-zero domains are not bounded by this number.
 ///
 /// `snarkvm_t::PolyMul` admits a domain up to a quarter of
 /// [`pool_elements()`], and `PolyMultiplier::multiply` asks for `2n` to
@@ -142,6 +205,186 @@ pub fn max_domain() -> usize {
 /// for [`max_domain()`].
 pub fn pool_elements() -> usize {
     unsafe { snarkvm_cuda_pool_elements() }
+}
+
+/// Interpolate `evals` over the variable domain and multiply by `assignment`,
+/// without the interpolated polynomial leaving the device.
+///
+/// The result is the product over the multiply's domain, untrimmed: the caller
+/// trims it.
+#[allow(clippy::too_many_arguments)]
+pub fn lineval_interpolate_mul<T: 'static>(
+    out: &mut [T],
+    evals: &[T],
+    assignment: &[T],
+    lg_domain_size: u32,
+    lg_mul_domain: u32,
+) -> Result<(), cuda::Error> {
+    assert_type::<T, Fr>();
+    assert!(lg_domain_size > 0, "the interpolation faults on a one-element domain");
+    let domain = 1usize << lg_domain_size;
+    let mul_domain = 1usize << lg_mul_domain;
+    assert_eq!(evals.len(), domain, "the evaluations must fill the variable domain exactly");
+    assert!(assignment.len() <= domain, "the assignment does not fit the variable domain");
+    assert!(mul_domain >= 2 * domain, "the product does not fit its domain");
+    assert_eq!(out.len(), mul_domain, "the output is the multiply's domain");
+    let err = unsafe {
+        snarkvm_lineval_interpolate_mul(
+            out.as_mut_ptr() as *mut core::ffi::c_void,
+            evals.as_ptr() as *const core::ffi::c_void,
+            evals.len(),
+            assignment.as_ptr() as *const core::ffi::c_void,
+            assignment.len(),
+            lg_domain_size,
+            lg_mul_domain,
+        )
+    };
+    if err.code != 0 { Err(err) } else { Ok(()) }
+}
+
+/// The fourth round's chain, from the evaluations to the selector's output,
+/// without the polynomials leaving the device.
+///
+/// Where [`fourth_round_polys`] returns `a`, `b` and `f`, this continues
+/// through the shift into `g`, the `b*f` multiply, the subtraction and the
+/// vanishing divide with its scaling.
+///
+/// # Contracts
+///
+/// - `selector_mult` is `combiner * src_domain.size_as_field_element *
+///   target_domain.size_inv`, not the combiner. A wrong value is not detected.
+/// - `q_len`, which is `lhs_out.len()`, is an upper bound on the quotient's
+///   length for `h = a_poly - b*f`. Pass `domain - 1`, which always holds since
+///   `deg(b*f) <= 2 * domain - 2`. A bound that is too small is refused with
+///   `cudaErrorAssert`.
+/// - `g_out` receives `domain - 1` untrimmed coefficients. Build `g` through
+///   something that trims, or `check_degrees_and_bounds` rejects it against
+///   `g_m`'s degree bound.
+///
+/// # Errors
+///
+/// `cudaErrorAssert` means the vanishing polynomial did not divide `h` exactly:
+/// a non-zero remainder, or a quotient with terms above `q_len`.
+/// `cudaErrorInvalidValue` means a shape was invalid.
+#[allow(clippy::too_many_arguments)]
+pub fn fourth_round_chain<T: 'static>(
+    a_out: &mut [T],
+    b_out: &mut [T],
+    g_out: &mut [T],
+    lhs_out: &mut [T],
+    f0_out: &mut T,
+    row: &[T],
+    col: &[T],
+    rcv: &[T],
+    lg_domain_size: u32,
+    lg_mul_domain: u32,
+    alpha: &T,
+    beta: &T,
+    coeff: &T,
+    b_scale: &T,
+    a_scale: &T,
+    selector_mult: &T,
+) -> Result<(), cuda::Error> {
+    assert_type::<T, Fr>();
+    let len = row.len();
+    assert_eq!(col.len(), len, "row and col are evaluations over the same domain");
+    assert_eq!(rcv.len(), len, "row_col_val is over the same domain");
+    let domain = 1usize << lg_domain_size;
+    let mul_domain = 1usize << lg_mul_domain;
+    assert!(len <= domain, "evaluations do not fit the domain they interpolate over");
+    assert_eq!(a_out.len(), domain, "a and b are domain-sized");
+    assert_eq!(b_out.len(), domain);
+    assert_eq!(g_out.len(), domain - 1, "g is f without its constant term");
+    assert!(mul_domain >= 2 * domain, "the product does not fit its domain");
+    assert!(lhs_out.len() <= domain, "the single-step branch needs q_len <= domain");
+    assert!(lhs_out.len() + domain <= mul_domain);
+    if len == 0 {
+        return Ok(());
+    }
+    // Below the early return: an empty input never reaches the transform.
+    assert!(lg_domain_size > 0, "the interpolations fault on a one-element domain");
+    let err = unsafe {
+        snarkvm_fourth_round_chain(
+            a_out.as_mut_ptr() as *mut core::ffi::c_void,
+            b_out.as_mut_ptr() as *mut core::ffi::c_void,
+            g_out.as_mut_ptr() as *mut core::ffi::c_void,
+            lhs_out.as_mut_ptr() as *mut core::ffi::c_void,
+            f0_out as *mut _ as *mut core::ffi::c_void,
+            row.as_ptr() as *const core::ffi::c_void,
+            col.as_ptr() as *const core::ffi::c_void,
+            rcv.as_ptr() as *const core::ffi::c_void,
+            len,
+            lg_domain_size,
+            lg_mul_domain,
+            lhs_out.len(),
+            alpha as *const _ as *const core::ffi::c_void,
+            beta as *const _ as *const core::ffi::c_void,
+            coeff as *const _ as *const core::ffi::c_void,
+            b_scale as *const _ as *const core::ffi::c_void,
+            a_scale as *const _ as *const core::ffi::c_void,
+            selector_mult as *const _ as *const core::ffi::c_void,
+        )
+    };
+    if err.code != 0 { Err(err) } else { Ok(()) }
+}
+
+/// The fourth round's `a`, `b` and `f` polynomials on K for one
+/// `(circuit, matrix)`, interpolated on the device.
+///
+/// Outputs are domain-sized, not `len`-sized: the interpolation runs over the
+/// whole domain, as `interpolate_with_pc` does after resizing with zeros.
+///
+/// Only tests call this. It is the first half of [`fourth_round_chain`], whose
+/// vanishing division refuses inputs that are not a valid round-four state, so
+/// tests that drive the first half with arbitrary inputs need it on its own.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn fourth_round_polys<T: 'static>(
+    a_out: &mut [T],
+    b_out: &mut [T],
+    f_out: &mut [T],
+    row: &[T],
+    col: &[T],
+    rcv: &[T],
+    lg_domain_size: u32,
+    alpha: &T,
+    beta: &T,
+    coeff: &T,
+    b_scale: &T,
+    a_scale: &T,
+) -> Result<(), cuda::Error> {
+    assert_type::<T, Fr>();
+    let len = row.len();
+    assert_eq!(col.len(), len, "row and col are evaluations over the same domain");
+    assert_eq!(rcv.len(), len, "row_col_val is over the same domain");
+    let domain = 1usize << lg_domain_size;
+    assert!(len <= domain, "evaluations do not fit the domain they interpolate over");
+    assert_eq!(a_out.len(), domain, "outputs are domain-sized, not len-sized");
+    assert_eq!(b_out.len(), domain);
+    assert_eq!(f_out.len(), domain);
+    if len == 0 {
+        return Ok(());
+    }
+    // Below the early return: an empty input never reaches the transform.
+    assert!(lg_domain_size > 0, "the interpolations fault on a one-element domain");
+    let err = unsafe {
+        snarkvm_fourth_round_polys(
+            a_out.as_mut_ptr() as *mut core::ffi::c_void,
+            b_out.as_mut_ptr() as *mut core::ffi::c_void,
+            f_out.as_mut_ptr() as *mut core::ffi::c_void,
+            row.as_ptr() as *const core::ffi::c_void,
+            col.as_ptr() as *const core::ffi::c_void,
+            rcv.as_ptr() as *const core::ffi::c_void,
+            len,
+            lg_domain_size,
+            alpha as *const _ as *const core::ffi::c_void,
+            beta as *const _ as *const core::ffi::c_void,
+            coeff as *const _ as *const core::ffi::c_void,
+            b_scale as *const _ as *const core::ffi::c_void,
+            a_scale as *const _ as *const core::ffi::c_void,
+        )
+    };
+    if err.code != 0 { Err(err) } else { Ok(()) }
 }
 
 /// Compute an in-place NTT on the input data.
@@ -246,15 +489,85 @@ pub fn polymul<T: std::clone::Clone + 'static>(
     Ok(out)
 }
 
-/// Compute a multi-scalar multiplication over scalars reduced out of
-/// Montgomery form.
+/// The opening's chain in one call: accumulate `Σ coeffs[j] · polys[j]`, divide
+/// the result by `X - z`, and commit to the quotient, without the polynomial
+/// leaving the device.
+///
+/// Returns the same curve point as
+/// `VariableBase::msm_field(&bases[..out_len - 1], &quotient.coeffs)`
+/// where `quotient` is `combined.divide_by_monic_linear(z).0`;
+/// `accumulate_open_matches_the_host_sequence` checks it.
+///
+/// # Panics
+///
+/// If any term is longer than `out_len`, or `bases` is shorter than
+/// `out_len - 1`.
+pub fn accumulate_open<Affine: 'static, Projective: 'static, F>(
+    out_len: usize,
+    terms: &[(F, &[F])],
+    z: &F,
+    bases: &[Affine],
+) -> Result<Projective, cuda::Error>
+where
+    F: Copy + 'static,
+{
+    assert_type::<Affine, G1Affine>();
+    assert_type::<Projective, G1Projective>();
+    assert_type::<F, Fr>();
+    assert!(out_len >= 2, "a quotient needs at least two coefficients");
+    assert!(bases.len() >= out_len - 1, "{} bases for a quotient of {}", bases.len(), out_len - 1);
+
+    let mut polys: Vec<*const core::ffi::c_void> = Vec::with_capacity(terms.len());
+    let mut lens: Vec<usize> = Vec::with_capacity(terms.len());
+    let mut coeffs: Vec<F> = Vec::with_capacity(terms.len());
+    for (coeff, poly) in terms {
+        assert!(poly.len() <= out_len, "term of {} exceeds the output of {}", poly.len(), out_len);
+        polys.push(poly.as_ptr() as *const core::ffi::c_void);
+        lens.push(poly.len());
+        coeffs.push(*coeff);
+    }
+
+    // Assumed initialised only after the call succeeds, as in `msm`.
+    let mut ret = std::mem::MaybeUninit::<Projective>::uninit();
+    let err = unsafe {
+        snarkvm_accumulate_open(
+            ret.as_mut_ptr() as *mut core::ffi::c_void,
+            out_len,
+            terms.len(),
+            polys.as_ptr(),
+            lens.as_ptr(),
+            coeffs.as_ptr() as *const core::ffi::c_void,
+            z as *const _ as *const core::ffi::c_void,
+            bases as *const _ as *const core::ffi::c_void,
+            bases.len(),
+            std::mem::size_of::<Affine>(),
+        )
+    };
+    if err.code != 0 {
+        return Err(err);
+    }
+    // SAFETY: the C++ writes `*out` on every success path, the same guarantee
+    // `msm` relies on.
+    Ok(unsafe { ret.assume_init() })
+}
+
+/// Compute a multi-scalar multiplication.
+///
+/// `Fr` scalars are in Montgomery form, and the GPU kernel that extracts
+/// Pippenger digits reduces them. `BigInteger256` scalars were reduced on the
+/// CPU.
 pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
     points: &[Affine],
     scalars: &[Scalar],
 ) -> Result<Projective, cuda::Error> {
     assert_type::<Affine, G1Affine>();
     assert_type::<Projective, G1Projective>();
-    assert_type::<Scalar, BigInteger256>();
+    let mont = TypeId::of::<Scalar>() == TypeId::of::<Fr>();
+    assert!(
+        mont || TypeId::of::<Scalar>() == TypeId::of::<BigInteger256>(),
+        "the C++ reads these scalars as Fr or BigInteger256, got {}",
+        std::any::type_name::<Scalar>()
+    );
 
     let npoints = scalars.len();
     if npoints > points.len() {
@@ -268,6 +581,7 @@ pub fn msm<Affine: 'static, Projective: 'static, Scalar: 'static>(
             npoints,
             scalars as *const _ as *const c_void,
             std::mem::size_of::<Affine>(),
+            mont,
         )
     };
     if err.code != 0 {
@@ -370,10 +684,10 @@ mod argument_guards {
         );
     }
 
-    /// A scalar the width of `fr_t` that is not `BigInteger256` is read as a
-    /// different integer.
+    /// A scalar the width of `fr_t` that is neither `Fr` nor `BigInteger256`
+    /// is read as a different integer.
     #[test]
-    #[should_panic(expected = "BigInteger256, got")]
+    #[should_panic(expected = "the C++ reads these scalars as Fr or BigInteger256")]
     fn msm_refuses_scalars_of_another_type() {
         let _ = super::msm::<super::G1Affine, super::G1Projective, snarkvm_curves::edwards_bls12::Fr>(&[], &[]);
     }
@@ -392,5 +706,35 @@ mod argument_guards {
         let one = [Fr::default()];
         let polys: Vec<&[Fr]> = vec![&one, &one];
         let _ = super::polymul(1, &polys, &[], &Fr::default());
+    }
+
+    #[test]
+    #[should_panic(expected = "one-element domain")]
+    fn lineval_refuses_a_one_element_domain() {
+        let mut out = vec![Fr::default(); 2];
+        let one = [Fr::default()];
+        let _ = super::lineval_interpolate_mul(&mut out, &one, &one, 0, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "one-element domain")]
+    fn fourth_round_chain_refuses_a_one_element_domain() {
+        let one = [Fr::default()];
+        let (mut a, mut b) = (vec![Fr::default(); 1], vec![Fr::default(); 1]);
+        let (mut g, mut lhs) = (Vec::new(), vec![Fr::default(); 1]);
+        let mut f0 = Fr::default();
+        let z = Fr::default();
+        let _ = super::fourth_round_chain(
+            &mut a, &mut b, &mut g, &mut lhs, &mut f0, &one, &one, &one, 0, 1, &z, &z, &z, &z, &z, &z,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "one-element domain")]
+    fn fourth_round_polys_refuses_a_one_element_domain() {
+        let one = [Fr::default()];
+        let (mut a, mut b, mut f) = (vec![Fr::default(); 1], vec![Fr::default(); 1], vec![Fr::default(); 1]);
+        let z = Fr::default();
+        let _ = super::fourth_round_polys(&mut a, &mut b, &mut f, &one, &one, &one, 0, &z, &z, &z, &z, &z);
     }
 }

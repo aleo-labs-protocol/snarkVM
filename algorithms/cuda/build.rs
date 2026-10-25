@@ -93,7 +93,13 @@ fn main() {
         if let Some(include) = env::var_os("DEP_SPPARK_ROOT") {
             nvcc.include(include);
         }
-        nvcc.file("cuda/snarkvm_api.cu").compile("snarkvm_algorithms_cuda");
+        // Separate translation units: ptxas optimises per module, so a kernel
+        // added beside the NTT and MSM kernels perturbs their register
+        // allocation.
+        nvcc.file("cuda/snarkvm_api.cu")
+            .file("cuda/batchinv.cu")
+            .file("cuda/div.cu")
+            .compile("snarkvm_algorithms_cuda");
 
         println!("cargo:rustc-cfg=feature=\"cuda\"");
     } else {

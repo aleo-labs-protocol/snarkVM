@@ -369,6 +369,41 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .collect();
         end_timer!(m_at_alpha_evals_time);
 
+        // Interpolate and multiply on the device without the polynomial coming
+        // back to the host in between. The matvec above stays on the host.
+        //
+        // This is not a V1-only path. `prover_prepare_third_round` also calls
+        // this function, and it runs for V2 and V3.
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if core::any::TypeId::of::<F>() == core::any::TypeId::of::<snarkvm_curves::bls12_377::Fr>()
+            && m_at_alpha_evals.len() == variable_domain.size()
+            && variable_domain.size().is_power_of_two()
+            // The device refuses a domain of one; the host path handles it.
+            && variable_domain.size() > 1
+            // The device aborts on a longer assignment; the host path handles it.
+            && assignment.coeffs.len() <= variable_domain.size()
+        {
+            let lg_domain = variable_domain.size().trailing_zeros();
+            let lg_mul = lg_domain + 1;
+            let z_m_at_alpha_time =
+                start_timer!(|| format!("Interpolate and multiply on the device for {_matrix_label}"));
+            let mut out = vec![F::zero(); 1usize << lg_mul];
+            let result = snarkvm_algorithms_cuda::lineval_interpolate_mul(
+                &mut out,
+                &m_at_alpha_evals,
+                &assignment.coeffs,
+                lg_domain,
+                lg_mul,
+            );
+            crate::cuda_must_succeed!(result, "lineval_interpolate_mul");
+            end_timer!(z_m_at_alpha_time);
+
+            // `from_coefficients_vec` trims, as `PolyMultiplier::multiply` does.
+            // `apply_randomized_selector` and `check_degrees_and_bounds`
+            // downstream depend on the degree.
+            return Ok(DensePolynomial::from_coefficients_vec(out));
+        }
+
         let z_m_at_alpha_time = start_timer!(|| format!("Compute z_m_at_alpha_time for {_matrix_label}"));
         let m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain)
             .interpolate_with_pc(ifft_precomputation);
@@ -403,5 +438,93 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let xg_1_i = xg_1_i.ok_or(anyhow::anyhow!("Expected remainder when applying selector."))?;
 
         Ok(LinevalInstance { h_1_i, xg_1_i, sum })
+    }
+}
+
+/// `lineval_interpolate_mul` against the host sequence.
+///
+/// `interpolate_with_pc` and `PolyMultiplier::multiply` both run on the device
+/// under `cuda`, so the reference uses `in_order_ifft_in_place_with_pc_on_host`
+/// and a schoolbook multiply.
+///
+/// These tests drive the FFI function, not its caller, so the preconditions on
+/// the device branch are not exercised here.
+#[cfg(all(test, feature = "cuda", target_arch = "x86_64"))]
+mod gpu_lineval_interpolate_mul_contract {
+    use crate::fft::{DensePolynomial, EvaluationDomain};
+    use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_fields::Zero;
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+
+    /// Schoolbook multiplication, because `PolyMultiplier` runs on the device
+    /// under `cuda`. It costs `a.len() * b.len()`.
+    fn naive_mul(a: &[Fr], b: &[Fr]) -> Vec<Fr> {
+        if a.is_empty() || b.is_empty() {
+            return Vec::new();
+        }
+        let mut out = vec![Fr::zero(); a.len() + b.len() - 1];
+        for (i, x) in a.iter().enumerate() {
+            for (j, y) in b.iter().enumerate() {
+                out[i + j] += *x * y;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn interpolate_mul_matches_the_host_sequence() {
+        let rng = &mut TestRng::default();
+        let mut bad: Vec<String> = Vec::new();
+
+        // `(lg_domain, assignment_len)`. Short and empty assignments exercise
+        // the zero-padding. 2^17 exercises a large grid, since
+        // `polynomial_inner_multiply` is not grid-stride.
+        for (lg, assignment_len) in [
+            (5u32, 1usize << 5),
+            (10, 1 << 10),
+            (12, 1 << 12),
+            (10, (1 << 10) - 7),
+            (12, (1 << 12) - 1025),
+            (10, 1),
+            (10, 0),
+            (17, 32),
+        ] {
+            let domain = 1usize << lg;
+            let lg_mul = lg + 1;
+            let mul_domain = 1usize << lg_mul;
+
+            let evals: Vec<Fr> = (0..domain).map(|_| Fr::rand(rng)).collect();
+            let assignment: Vec<Fr> = (0..assignment_len).map(|_| Fr::rand(rng)).collect();
+
+            // The host sequence, written out.
+            let eval_domain = EvaluationDomain::<Fr>::new(domain).unwrap();
+            let pc = eval_domain.precompute_ifft();
+            let mut m_at_alpha = evals.clone();
+            eval_domain.in_order_ifft_in_place_with_pc_on_host(&mut m_at_alpha, &pc);
+            let m_at_alpha = DensePolynomial::from_coefficients_vec(m_at_alpha);
+            let want = DensePolynomial::from_coefficients_vec(naive_mul(&m_at_alpha.coeffs, &assignment));
+
+            let mut got = vec![Fr::zero(); mul_domain];
+            if snarkvm_algorithms_cuda::lineval_interpolate_mul(&mut got, &evals, &assignment, lg, lg_mul).is_err() {
+                bad.push(format!("lg {lg} n {assignment_len}: the call failed"));
+                continue;
+            }
+
+            // The device does not trim, so compare over the host length and
+            // require the rest to be zero.
+            if want.coeffs.len() > got.len() {
+                bad.push(format!("lg {lg} n {assignment_len}: {} coeffs against {}", got.len(), want.coeffs.len()));
+                continue;
+            }
+            if let Some(i) = (0..want.coeffs.len()).find(|&i| want.coeffs[i] != got[i]) {
+                bad.push(format!("lg {lg} n {assignment_len}: coeff {i} differs"));
+            }
+            if let Some(i) = (want.coeffs.len()..got.len()).find(|&i| !got[i].is_zero()) {
+                bad.push(format!("lg {lg} n {assignment_len}: coeff {i} past the degree is non-zero"));
+            }
+        }
+
+        // Every failing case in one run, not just the first.
+        assert!(bad.is_empty(), "{}", bad.join("; "));
     }
 }

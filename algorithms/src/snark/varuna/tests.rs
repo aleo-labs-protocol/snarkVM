@@ -1346,7 +1346,8 @@ mod varuna_test_vectors {
 /// A proof, pinned by its hash, so the device and the host must agree on it.
 ///
 /// This checks the whole pipeline's output rather than one kernel. The circuit
-/// is sized so that every device entry point runs: `msm`, `ntt` and `polymul`.
+/// is sized so that every device entry point runs: `msm`, `ntt`, `polymul`,
+/// `lineval_interpolate_mul`, the fourth-round chain and `accumulate_open`.
 /// The prover's randomness comes from the `rng` argument alone, so a fixed
 /// seed fixes the proof.
 mod proof_vector {

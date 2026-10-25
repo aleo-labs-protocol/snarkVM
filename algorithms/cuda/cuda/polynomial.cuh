@@ -48,43 +48,12 @@ void polynomial_inner_multiply(size_t domain_size, fr_t* out, fr_t* in0, fr_t* i
 
 class Polynomial : public NTT {
 protected:
-    // // out will be in lg_domain_size
-    // static void MulDev(stream_t& stream,
-    //                    fr_t* d_out, fr_t* d_in0, fr_t* d_in1, // Device pointers
-    //                    uint32_t lg_domain_size) {
-    //     size_t domain_size = (size_t)1 << lg_domain_size;
-        
-    //     // Perform NTT on the input data
-    //     NTT_internal(d_in0, lg_domain_size,
-    //                  NTT::InputOutputOrder::NR,
-    //                  NTT::Direction::forward,
-    //                  NTT::Type::standard,
-    //                  stream);
-    //     NTT_internal(d_in1, lg_domain_size,
-    //                  NTT::InputOutputOrder::NR,
-    //                  NTT::Direction::forward,
-    //                  NTT::Type::standard,
-    //                  stream);
-
-    //     // Inner multiply
-    //     polynomial_inner_multiply<<<(domain_size + 1023) / 1024, 1024, 0, stream>>>
-    //         (domain_size, d_out, d_in0, d_in1);
-        
-    //     // Perform iNTT on the result
-    //     NTT_internal(d_out, lg_domain_size,
-    //                  NTT::InputOutputOrder::RN,
-    //                  NTT::Direction::inverse,
-    //                  NTT::Type::standard,
-    //                  stream);
-    //}
-
     static void mul_copy_poly(fr_t* hmem, fr_t* dmem, fr_t* poly, size_t len,
                               stream_t& stream, uint32_t lg_domain_size) {
         size_t domain_size = (size_t)1 << lg_domain_size;
-        // Copy the data to the GPU
-        //memcpy(hmem, poly, sizeof(fr_t) * len);
+        // Stage into the pinned buffer, then transfer. The first copy is
+        // host-to-host and charges the caller; only the second crosses the bus.
         cudaMemcpyAsync(hmem, poly, sizeof(fr_t) * len, cudaMemcpyHostToHost, stream);
-        //cudaMemsetAsync(dmem, 0, sizeof(fr_t) * domain_size, stream);
         stream.HtoD(dmem, hmem, len);
         cudaMemsetAsync(&dmem[len], 0, sizeof(fr_t) * (domain_size - len), stream);
     }
@@ -92,15 +61,47 @@ protected:
                               fr_t* eval, size_t len,
                               stream_t& stream, uint32_t lg_domain_size) {
         size_t domain_size = (size_t)1 << lg_domain_size;
+        // Evaluations fill the domain exactly, so unlike `mul_copy_poly` there
+        // is no tail to zero.
         assert (len == domain_size);
-        // Copy the data to the GPU
         cudaMemcpyAsync(hmem, eval, sizeof(fr_t) * len, cudaMemcpyHostToHost, stream);
         stream.HtoD(dmem, hmem, len);
-        //cudaMemsetAsync(&dmem[len], 0, sizeof(fr_t) * (domain_size - len), stream);
     }
     
 public:
-    // out will be in lg_domain_size
+    // A polymul on data that is already on the device.
+    //
+    // The same transform `Mul` runs, minus the staging, the transfers and the
+    // sync, so a caller already holding the inputs drives it directly.
+    //
+    // `d_in0` and `d_in1` are consumed: both are left transformed rather than as
+    // the caller passed them. `d_out` may alias neither.
+    static void MulDev(stream_t& stream,
+                       fr_t* d_out, fr_t* d_in0, fr_t* d_in1,
+                       uint32_t lg_domain_size)
+    {
+        size_t domain_size = (size_t)1 << lg_domain_size;
+
+        NTT::Base_dev_ptr(stream, d_in0, lg_domain_size, NTT::InputOutputOrder::NR,
+                          NTT::Direction::forward, NTT::Type::standard);
+        NTT::Base_dev_ptr(stream, d_in1, lg_domain_size, NTT::InputOutputOrder::NR,
+                          NTT::Direction::forward, NTT::Type::standard);
+
+        // Full coverage, not the `sm_count * 8` cap the launchers in
+        // batchinv.cu use: `polynomial_inner_multiply` is **not** grid-stride --
+        // it returns when `idx >= domain_size` and never loops. Capping the grid
+        // here would silently drop every coefficient past the cap.
+        int block = 1024;
+        int grid = (int)((domain_size + block - 1) / block);
+        polynomial_inner_multiply<<<grid, block, 0, stream>>>
+            (domain_size, d_out, d_in0, d_in1);
+        CUDA_OK(cudaGetLastError());
+
+        NTT::Base_dev_ptr(stream, d_out, lg_domain_size, NTT::InputOutputOrder::RN,
+                          NTT::Direction::inverse, NTT::Type::standard);
+    }
+
+    // `hmem0` receives `1 << lg_domain_size` coefficients.
     static RustError Mul(const gpu_t& gpu, stream_t& stream,
                          fr_t* hmem0, fr_t* hmem1, fr_t* hmem2,
                          fr_t* dmem0, fr_t* dmem1, fr_t* dmem2, fr_t* dmem3,
@@ -157,95 +158,45 @@ public:
                 alt.sync();
                 // And the compute stream to ensure the compute buffers can be overwritten
                 stream.sync();
-                //printf("SYNC\n");
 
-                // // Start the next data copy concurrently (if there is another to do)
-                // if (pcur < pcount) {
-                //     printf("  poly copy pcur %ld, plen %ld\n", pcur, plens[pcur]);
-                //     mul_copy_poly(hmem_copy, dmem_copy, polynomials[pcur], plens[pcur],
-                //                   alt, lg_domain_size);
-                //     pcur++;
-                // } else if (ecur < ecount) {
-                //     printf("  eval copy ecur %ld, elen %ld\n", ecur, elens[ecur]);
-                //     mul_copy_eval(hmem_copy, dmem_copy, evaluations[ecur], elens[ecur],
-                //                   alt, lg_domain_size);
-                //     ecur++;
-                // }
-
-
-                
                 // Start the computation
                 fr_t* mul_src = nullptr;
                 if (pcomp < pcount) {
-                    //printf("  poly comp mem2 %d, pcomp %ld\n", comp_on_mem2, pcomp);
                     // Perform NTT on the input data
                     NTT_internal(dmem_comp, lg_domain_size, NTT::InputOutputOrder::NR,
                                  NTT::Direction::forward, NTT::Type::standard, stream);
                     mul_src = dmem_comp;
                     pcomp++;
                 } else {
-                    //printf("  eval comp mem2 %d, pcomp %ld\n", comp_on_mem2, pcomp);
                     // Bit reversal into an aux buffer
                     bit_rev(dmem3, dmem_comp, lg_domain_size, stream);
                     mul_src = dmem3;
-
-                    // stream.DtoH(hmem0, dmem3, domain_size);
-                    // cudaDeviceSynchronize();
-                    // printf("After bit_rev aux\n");
-                    // for (size_t i = 0; i < domain_size; i++) {
-                    //     printf("  %5ld: ", i);
-                    //     host_print_fr(hmem0[i]);
-                    // }
-                    
-                    // bit_rev(dmem_comp, dmem_comp, lg_domain_size, stream);
-                    // mul_src = dmem_comp;
-
-                    // stream.DtoH(hmem0, dmem_comp, domain_size);
-                    // cudaDeviceSynchronize();
-                    // printf("After bit_rev\n");
-                    // for (size_t i = 0; i < domain_size; i++) {
-                    //     printf("  %5ld: ", i);
-                    //     host_print_fr(hmem0[i]);
-                    // }
-
                     ecomp++;
                 }
-                //cudaDeviceSynchronize();
-                
+
                 // Inner multiply
                 polynomial_inner_multiply<<<(domain_size + 1023) / 1024, 1024, 0, stream>>>
                     (domain_size, dmem0, dmem0, mul_src);
                 CUDA_OK(cudaGetLastError());
 
-                //alt.sync();
-                //stream.sync();
-                //cudaDeviceSynchronize();
-                
-                // Start the next data copy concurrently (if there is another to do)
+                // Start the next copy on `alt`, so it overlaps the compute just
+                // queued on `stream`.
                 if (pcur < pcount) {
-                    //printf("  poly copy pcur %ld, plen %ld\n", pcur, plens[pcur]);
                     mul_copy_poly(hmem_copy, dmem_copy, polynomials[pcur], plens[pcur],
                                   alt, lg_domain_size);
                     pcur++;
                 } else if (ecur < ecount) {
-                    //printf("  eval copy ecur %ld, elen %ld\n", ecur, elens[ecur]);
                     mul_copy_eval(hmem_copy, dmem_copy, evaluations[ecur], elens[ecur],
                                   alt, lg_domain_size);
                     ecur++;
                 }
-
-                //cudaDeviceSynchronize();
 
                 // Swap buffers
                 std::swap(hmem_comp, hmem_copy);
                 std::swap(dmem_comp, dmem_copy);
                 comp_on_mem2 = !comp_on_mem2;
             }
-            //cudaDeviceSynchronize();
 
-            // alt.sync();
-            // stream.sync();
-            
             // Perform iNTT on the result
             NTT_internal(dmem0, lg_domain_size,
                          NTT::InputOutputOrder::RN, NTT::Direction::inverse,
@@ -256,8 +207,9 @@ public:
             stream.sync();
         } catch (const cuda_error& e) {
             // A throwing drain must not replace the error it is draining for.
-            // `gpu_t::sync()` covers every flip-flop stream, so it can fail on
-            // a fault raised by a different slot running concurrently.
+            // This one is wider than the others: `gpu_t::sync()` covers every
+            // flip-flop stream, so it can fail on a fault raised by a different
+            // slot running concurrently.
             try {
                 gpu.sync();
             } catch (...) {

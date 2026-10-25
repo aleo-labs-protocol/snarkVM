@@ -32,6 +32,9 @@
 //
 // The pool costs `allocated_elements * FLIP_FLOP * sizeof(fr_t)` of device and
 // pinned host memory per GPU, which is 3 GiB of each at 23.
+//
+// 23 covers `MAX_DEPLOYMENT_CONSTRAINTS_V2` (2^22). Rounds three and four
+// allocate outside the pool.
 #ifndef MAX_LG_DOMAIN
 #define MAX_LG_DOMAIN 23
 #endif
@@ -156,6 +159,63 @@ extern "C" {
         });
     }
 
+    RustError snarkvm_lineval_interpolate_mul(fr_t* out, const fr_t* evals,
+                                              size_t ncols, const fr_t* assignment,
+                                              size_t assignment_len,
+                                              uint32_t lg_domain_size,
+                                              uint32_t lg_mul_domain)
+    {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->LinevalInterpolateMul(out, evals, ncols, assignment,
+                                                    assignment_len, lg_domain_size,
+                                                    lg_mul_domain);
+        });
+    }
+
+    RustError snarkvm_fourth_round_chain(fr_t* a_out, fr_t* b_out, fr_t* g_out,
+                                         fr_t* lhs_out, fr_t* f0_out,
+                                         const fr_t* row, const fr_t* col,
+                                         const fr_t* rcv, size_t len,
+                                         uint32_t lg_domain_size,
+                                         uint32_t lg_mul_domain, size_t q_len,
+                                         const fr_t* alpha, const fr_t* beta,
+                                         const fr_t* coeff, const fr_t* b_scale,
+                                         const fr_t* a_scale,
+                                         const fr_t* selector_mult)
+    {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->FourthRoundChain(a_out, b_out, g_out, lhs_out,
+                                               f0_out, row, col, rcv, len,
+                                               lg_domain_size, lg_mul_domain,
+                                               q_len, alpha, beta, coeff,
+                                               b_scale, a_scale, selector_mult);
+        });
+    }
+
+    RustError snarkvm_fourth_round_polys(fr_t* a_out, fr_t* b_out, fr_t* f_out,
+                                         const fr_t* row, const fr_t* col,
+                                         const fr_t* rcv, size_t len,
+                                         uint32_t lg_domain_size,
+                                         const fr_t* alpha, const fr_t* beta,
+                                         const fr_t* coeff, const fr_t* b_scale,
+                                         const fr_t* a_scale)
+    {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->FourthRoundPolys(a_out, b_out, f_out, row, col,
+                                               rcv, len, lg_domain_size, alpha,
+                                               beta, coeff, b_scale, a_scale);
+        });
+    }
+
     RustError snarkvm_polymul(fr_t* out,
                               size_t pcount, fr_t** polynomials, size_t* plens,
                               size_t ecount, fr_t** evaluations, size_t* elens,
@@ -171,13 +231,34 @@ extern "C" {
         });
     }
 
-    RustError snarkvm_msm(point_t* out, const affine_t points[], size_t npoints,
-                          const scalar_t scalars[], size_t ffi_affine_size) {
+    RustError snarkvm_accumulate_open(point_t* out, size_t out_len,
+                                      size_t nterms, const fr_t* const* polys,
+                                      const size_t* lens, const fr_t* coeffs,
+                                      const fr_t* z,
+                                      const affine_t bases[], size_t nbases,
+                                      size_t ffi_affine_size)
+    {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
                 return snarkvm_g.failure();
             }
-            return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size);
+            return snarkvm_g->AccumulateOpen(out, out_len, nterms, polys, lens,
+                                             coeffs, z, bases, nbases,
+                                             ffi_affine_size);
+        });
+    }
+
+    /// `mont` says the scalars arrive in Montgomery form, and sppark reduces
+    /// them in its digit-extraction kernel.
+    RustError snarkvm_msm(point_t* out, const affine_t points[], size_t npoints,
+                          const scalar_t scalars[], size_t ffi_affine_size,
+                          bool mont) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size,
+                                  mont);
         });
     }
 }
