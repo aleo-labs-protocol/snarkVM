@@ -37,6 +37,7 @@ use snarkvm_utilities::{
 use std::{
     cmp::{Ord, Ordering, PartialOrd},
     fmt::{Debug, Display, Formatter, Result as FmtResult},
+    hint::select_unpredictable,
     io::{Read, Result as IoResult, Write},
     marker::PhantomData,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -266,8 +267,17 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
     fn double_in_place(&mut self) {
         // This cannot exceed the backing capacity.
         self.0.mul2();
-        // However, it may need to be reduced.
-        self.reduce();
+        // However, it may need to be reduced. If subtracting the modulus borrows, the double is already reduced.
+        // About half of all doubles need the reduction, so this selects without a branch, unlike `reduce`.
+        let mut reduced = self.0;
+        let borrow = reduced.sub_noborrow(&P::MODULUS);
+        let limbs = &mut (self.0).0;
+        limbs[0] = select_unpredictable(borrow, limbs[0], reduced.0[0]);
+        limbs[1] = select_unpredictable(borrow, limbs[1], reduced.0[1]);
+        limbs[2] = select_unpredictable(borrow, limbs[2], reduced.0[2]);
+        limbs[3] = select_unpredictable(borrow, limbs[3], reduced.0[3]);
+        limbs[4] = select_unpredictable(borrow, limbs[4], reduced.0[4]);
+        limbs[5] = select_unpredictable(borrow, limbs[5], reduced.0[5]);
     }
 
     #[inline]
@@ -743,20 +753,37 @@ impl<P: Fp384Parameters> AddAssign<&'_ Self> for Fp384<P> {
     fn add_assign(&mut self, other: &Self) {
         // This cannot exceed the backing capacity.
         self.0.add_nocarry(&other.0);
-        // However, it may need to be reduced.
-        self.reduce();
+        // However, it may need to be reduced. If subtracting the modulus borrows, the sum is already reduced.
+        // About half of all sums need the reduction, so this selects without a branch, unlike `reduce`.
+        // LLVM compiles a loop over the limbs, or a select through an and/or mask, to a branch here.
+        let mut reduced = self.0;
+        let borrow = reduced.sub_noborrow(&P::MODULUS);
+        let limbs = &mut (self.0).0;
+        limbs[0] = select_unpredictable(borrow, limbs[0], reduced.0[0]);
+        limbs[1] = select_unpredictable(borrow, limbs[1], reduced.0[1]);
+        limbs[2] = select_unpredictable(borrow, limbs[2], reduced.0[2]);
+        limbs[3] = select_unpredictable(borrow, limbs[3], reduced.0[3]);
+        limbs[4] = select_unpredictable(borrow, limbs[4], reduced.0[4]);
+        limbs[5] = select_unpredictable(borrow, limbs[5], reduced.0[5]);
     }
 }
 
 impl<P: Fp384Parameters> SubAssign<&'_ Self> for Fp384<P> {
     #[inline]
     fn sub_assign(&mut self, other: &Self) {
-        // If `other` is larger than `self`, add the modulus to self first.
-        if other.0 > self.0 {
-            self.0.add_nocarry(&P::MODULUS);
-        }
-
-        self.0.sub_noborrow(&other.0);
+        // If `other` is larger than `self`, the subtraction borrows, and the result is the difference plus the modulus.
+        // About half of all inputs borrow, so this selects without a branch.
+        // LLVM compiles a loop over the limbs, or a select between the modulus and zero, to a branch here.
+        let borrow = self.0.sub_noborrow(&other.0);
+        let mut wrapped = self.0;
+        wrapped.add_nocarry(&P::MODULUS);
+        let limbs = &mut (self.0).0;
+        limbs[0] = select_unpredictable(borrow, wrapped.0[0], limbs[0]);
+        limbs[1] = select_unpredictable(borrow, wrapped.0[1], limbs[1]);
+        limbs[2] = select_unpredictable(borrow, wrapped.0[2], limbs[2]);
+        limbs[3] = select_unpredictable(borrow, wrapped.0[3], limbs[3]);
+        limbs[4] = select_unpredictable(borrow, wrapped.0[4], limbs[4]);
+        limbs[5] = select_unpredictable(borrow, wrapped.0[5], limbs[5]);
     }
 }
 

@@ -58,6 +58,7 @@ use snarkvm_fields::{
     Field,
     FieldParameters,
     Fp2Parameters,
+    Fp384,
     LegendreSymbol::*,
     One,
     PrimeField,
@@ -74,6 +75,7 @@ use snarkvm_utilities::{
 use rand::RngExt;
 use std::{
     cmp::Ordering,
+    marker::PhantomData,
     ops::{AddAssign, Mul, MulAssign, SubAssign},
 };
 
@@ -251,6 +253,59 @@ fn test_fq_sub_assign() {
 
         tmp1.add_assign(tmp2);
         assert!(tmp1.is_zero());
+    }
+}
+
+#[test]
+fn test_fq_add_sub_double_against_biguint() {
+    let mut rng = TestRng::default();
+
+    let fq = |repr: BigInteger384| Fp384::<FqParameters>(repr, PhantomData);
+    let modulus = FqParameters::MODULUS;
+    let modulus_minus = |n: u64| {
+        let mut repr = modulus;
+        repr.sub_noborrow(&BigInteger384::from(n));
+        repr
+    };
+
+    // Checks each operation on the raw representations against `BigUint` arithmetic modulo the modulus.
+    let check = |a: BigInteger384, b: BigInteger384| {
+        let p = modulus.to_biguint();
+        let (a_big, b_big) = (a.to_biguint(), b.to_biguint());
+
+        let mut sum = fq(a);
+        sum.add_assign(&fq(b));
+        assert_eq!(sum.0.to_biguint(), (&a_big + &b_big) % &p, "{a} + {b}");
+
+        let mut difference = fq(a);
+        difference.sub_assign(&fq(b));
+        assert_eq!(difference.0.to_biguint(), (&a_big + &p - &b_big) % &p, "{a} - {b}");
+
+        let mut double = fq(a);
+        double.double_in_place();
+        assert_eq!(double.0.to_biguint(), (&a_big + &a_big) % &p, "2 * {a}");
+    };
+
+    let edge_cases =
+        [BigInteger384::from(0), BigInteger384::from(1), BigInteger384::from(2), modulus_minus(2), modulus_minus(1)];
+    for a in edge_cases {
+        for b in edge_cases {
+            check(a, b);
+        }
+    }
+
+    for _ in 0..10_000 {
+        let a = Fq::rand(&mut rng).0;
+        let b = Fq::rand(&mut rng).0;
+        check(a, b);
+        check(b, a);
+        check(a, a);
+        // The sum of `a` and `p - a` is exactly `p`.
+        if !a.is_zero() {
+            let mut complement = modulus;
+            complement.sub_noborrow(&a);
+            check(a, complement);
+        }
     }
 }
 
