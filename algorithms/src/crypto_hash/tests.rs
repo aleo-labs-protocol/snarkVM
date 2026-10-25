@@ -14,8 +14,8 @@
 // limitations under the License.
 
 use crate::{AlgebraicSponge, DuplexSpongeMode, crypto_hash::PoseidonSponge};
-use snarkvm_curves::bls12_377::Fr;
-use snarkvm_fields::{PoseidonDefaultField, PoseidonGrainLFSR};
+use snarkvm_curves::bls12_377::{Fq, Fr};
+use snarkvm_fields::{One, PoseidonDefaultField, PoseidonGrainLFSR, Zero};
 
 use anyhow::Result;
 use itertools::Itertools;
@@ -68,6 +68,27 @@ fn test_poseidon_sponge_consistency() {
             }
         }
     }
+}
+
+#[test]
+fn test_poseidon_sponge_fq_consistency() {
+    const RATE: usize = 2;
+    let sponge_param = Arc::new(Fq::default_poseidon_parameters::<RATE>().unwrap());
+    let mut outputs = Vec::with_capacity(64);
+    for absorb in 0..8u64 {
+        for squeeze in 0..8 {
+            let mut sponge = PoseidonSponge::<Fq, RATE, 1>::new_with_parameters(&sponge_param);
+            sponge.absorb_native_field_elements(&(0..absorb).map(|i| Fq::from(1237812 + i)).collect::<Vec<_>>());
+            outputs.push(sponge.squeeze_native_field_elements(squeeze).to_vec());
+        }
+    }
+    expect_file_with_name("Fq rate 2 absorb and squeeze", outputs);
+
+    // A chain of 1,000 permutations from a state of p - 1, 0 and 1.
+    let mut sponge = PoseidonSponge::<Fq, RATE, 1>::new_with_parameters(&sponge_param);
+    sponge.absorb_native_field_elements(&[-Fq::one(), Fq::zero()]);
+    sponge.absorb_native_field_elements(&[Fq::one()]);
+    expect_file_with_name("Fq rate 2 chain", sponge.squeeze_native_field_elements(2001)[1998..].to_vec());
 }
 
 #[test]
