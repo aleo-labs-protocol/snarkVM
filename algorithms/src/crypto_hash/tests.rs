@@ -92,6 +92,22 @@ fn test_poseidon_sponge_fq_consistency() {
 }
 
 #[test]
+fn test_poseidon_sponge_fq_rate_4_consistency() {
+    const RATE: usize = 4;
+    let sponge_param = Arc::new(Fq::default_poseidon_parameters::<RATE>().unwrap());
+    assert_eq!((sponge_param.alpha, sponge_param.full_rounds, sponge_param.partial_rounds), (5, 8, 56));
+    let mut outputs = Vec::with_capacity(16);
+    for absorb in [0, 1, 4, 9u64] {
+        for squeeze in [1, 4, 5, 13] {
+            let mut sponge = PoseidonSponge::<Fq, RATE, 1>::new_with_parameters(&sponge_param);
+            sponge.absorb_native_field_elements(&(0..absorb).map(|i| Fq::from(1237812 + i)).collect::<Vec<_>>());
+            outputs.push(sponge.squeeze_native_field_elements(squeeze).to_vec());
+        }
+    }
+    expect_file_with_name("Fq rate 4 absorb and squeeze", outputs);
+}
+
+#[test]
 fn bls12_377_fr_poseidon_default_parameters_test() {
     fn single_rate_test<const RATE: usize>() {
         let params = Fr::default_poseidon_parameters::<RATE>().unwrap();
