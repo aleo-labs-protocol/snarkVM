@@ -199,7 +199,8 @@ extern "C" {
                                          const fr_t* alpha, const fr_t* beta,
                                          const fr_t* coeff, const fr_t* b_scale,
                                          const fr_t* a_scale,
-                                         const fr_t* selector_mult)
+                                         const fr_t* selector_mult,
+                                         void* const* keep, size_t* kept_lens)
     {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
@@ -209,7 +210,8 @@ extern "C" {
                                                f0_out, row, col, rcv, d_evals, len,
                                                lg_domain_size, lg_mul_domain,
                                                q_len, alpha, beta, coeff,
-                                               b_scale, a_scale, selector_mult);
+                                               b_scale, a_scale, selector_mult,
+                                               keep, kept_lens);
         });
     }
 
@@ -252,7 +254,8 @@ extern "C" {
                                       const fr_t* z,
                                       const affine_t bases[], size_t nbases,
                                       size_t ffi_affine_size,
-                                      const void* d_bases, size_t d_offset)
+                                      const void* d_bases, size_t d_offset,
+                                      const fr_t* const* d_polys)
     {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
@@ -260,7 +263,8 @@ extern "C" {
             }
             return snarkvm_g->AccumulateOpen(out, out_len, nterms, polys, lens,
                                              coeffs, z, bases, nbases,
-                                             ffi_affine_size, d_bases, d_offset);
+                                             ffi_affine_size, d_bases, d_offset,
+                                             d_polys);
         });
     }
 
@@ -268,13 +272,14 @@ extern "C" {
     /// them in its digit-extraction kernel.
     RustError snarkvm_msm(point_t* out, const affine_t points[], size_t npoints,
                           const scalar_t scalars[], size_t ffi_affine_size,
-                          bool mont, const void* d_bases, size_t d_offset) {
+                          bool mont, const void* d_bases, size_t d_offset,
+                          const scalar_t* d_scalars) {
         return catch_all([&] {
             if (!snarkvm_g.ok()) {
                 return snarkvm_g.failure();
             }
             return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size,
-                                  mont, d_bases, d_offset);
+                                  mont, d_bases, d_offset, d_scalars);
         });
     }
 
@@ -318,6 +323,47 @@ extern "C" {
                 return snarkvm_g.failure();
             }
             return snarkvm_g->UploadResident(d_out, srcs, count, bytes);
+        });
+    }
+
+    RustError snarkvm_resident_download(void* out, const void* d, size_t bytes) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->DownloadResident(out, d, bytes);
+        });
+    }
+
+    RustError snarkvm_resident_reserve(void** out, size_t n, size_t bytes) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->ReserveResident(out, n, bytes);
+        });
+    }
+
+    RustError snarkvm_device_evaluate(fr_t* out, const fr_t* d, size_t len,
+                                      const fr_t* z) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->DeviceEvaluate(out, d, len, z);
+        });
+    }
+
+    RustError snarkvm_device_combine(void** keep, size_t* trimmed, size_t nterms,
+                                     const fr_t* const* d_polys,
+                                     const size_t* lens, const fr_t* coeffs,
+                                     size_t out_len) {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->DeviceCombine(keep, trimmed, nterms, d_polys, lens,
+                                            coeffs, out_len);
         });
     }
 

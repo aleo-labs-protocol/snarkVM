@@ -284,6 +284,32 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                                 ck.powers()
                             };
 
+                            // A device-only polynomial without hiding is committed
+                            // from the device, as `KZG10::commit` would.
+                            #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+                            let polynomial = match p.info.device().device_only() {
+                                Some(d) if hiding_bound.is_none() => {
+                                    kzg10::KZG10::<E>::check_degree_is_too_large(
+                                        d.len().saturating_sub(1),
+                                        powers.size(),
+                                    )?;
+                                    let result = snarkvm_algorithms_cuda::msm_device::<E::G1Affine, E::G1Projective>(
+                                        &powers.powers_of_beta_g[..d.len()],
+                                        d,
+                                    );
+                                    let comm = crate::cuda_must_succeed!(result, "msm_device");
+                                    let comm = kzg10::KZGCommitment(comm.to_affine());
+                                    return Ok((
+                                        LabeledCommitment::new(label, comm, degree_bound),
+                                        Randomness::empty(),
+                                    ));
+                                }
+                                _ => self::polynomial::host_of(&p.info).map_or(polynomial, std::borrow::Cow::Borrowed),
+                            };
+                            #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+                            let _lend = polynomial
+                                .as_dense()
+                                .map(|d| snarkvm_algorithms_cuda::lend(p.info.device(), &d.coeffs));
                             kzg10::KZG10::commit(&powers, &polynomial, hiding_bound, rng_ref)?
                         }
                     }
@@ -665,20 +691,26 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             // `to_dense` borrows a dense polynomial and converts a sparse one,
             // such as `mask_poly`, as the host path's `AddAssign` does. The
             // `Cow`s are held for the call because `terms` borrows from them.
-            let densified: Vec<(E::Fr, std::borrow::Cow<'_, DensePolynomial<E::Fr>>)> = group
+            // A device-only term has none.
+            let densified: Vec<(E::Fr, Option<std::borrow::Cow<'_, DensePolynomial<E::Fr>>>, _)> = group
                 .iter()
                 .zip_eq(challenges.iter())
                 .flat_map(|(c, challenge)| {
-                    c.terms.iter().map(move |(coeff, p)| (*challenge * coeff, p.polynomial().to_dense()))
+                    c.terms.iter().map(move |(coeff, p)| {
+                        let d = p.info.device();
+                        (*challenge * coeff, d.device_only().is_none().then(|| p.polynomial().to_dense()), d)
+                    })
                 })
                 .collect();
-            let out_len = densified.iter().map(|(_, p)| p.coeffs.len()).max().unwrap_or(0);
+            let terms: Vec<(E::Fr, &[E::Fr], _)> = densified
+                .iter()
+                .map(|(c, p, d)| (*c, p.as_ref().map_or(&[][..], |p| p.coeffs.as_slice()), *d))
+                .collect();
+            let out_len = terms.iter().map(|(_, p, d)| d.coeffs_len(p)).max().unwrap_or(0);
 
             // A quotient needs two coefficients. Below that only the host path
             // is defined.
             if out_len >= 2 {
-                let terms: Vec<(E::Fr, &[E::Fr])> = densified.iter().map(|(c, p)| (*c, p.coeffs.as_slice())).collect();
-
                 let powers = ck.powers();
                 // `KZG10::open`'s check, against the bound `out_len - 1` rather
                 // than the trimmed degree, so it can only reject more.
@@ -928,7 +960,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 mod cuda_tests {
     use crate::fft::DensePolynomial;
     use snarkvm_curves::bls12_377::Fr;
-    use snarkvm_fields::Zero;
+    use snarkvm_fields::{One, Zero};
     use snarkvm_utilities::rand::{TestRng, Uniform};
 
     /// The fused chain has to reproduce all three host steps: the sum, the
@@ -981,7 +1013,9 @@ mod cuda_tests {
                 VariableBase::msm(&bases[..ints.len()], &ints)
             };
 
-            let terms: Vec<(Fr, &[Fr])> = coeffs.iter().zip(&polys).map(|(c, p)| (*c, p.coeffs.as_slice())).collect();
+            let none = snarkvm_algorithms_cuda::DeviceCopy::default();
+            let terms: Vec<(Fr, &[Fr], _)> =
+                coeffs.iter().zip(&polys).map(|(c, p)| (*c, p.coeffs.as_slice(), &none)).collect();
             match snarkvm_algorithms_cuda::accumulate_open::<_, G1Projective, _>(out_len, &terms, &z, &bases) {
                 Err(_) => bad.push(format!("out {out_len}: the device call failed")),
                 // The device commits to the untrimmed quotient and the host to
@@ -996,6 +1030,203 @@ mod cuda_tests {
         }
 
         assert!(bad.is_empty(), "{}", bad.join("; "));
+    }
+
+    /// The chain's outputs `[a, b, g, lhs]` on the device, and their
+    /// coefficients downloaded. Retention needs exactly one GPU.
+    fn chain(lg: u32) -> ([Vec<Fr>; 4], [snarkvm_algorithms_cuda::DevicePoly; 4]) {
+        let rng = &mut TestRng::fixed(lg as u64);
+        let n = 1usize << lg;
+        let mut array = || (0..n).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+        let (row, col, rcv) = (array(), array(), array());
+        let [alpha, beta, coeff, b_scale, selector_mult] = [(); 5].map(|_| Fr::rand(rng));
+        let mut f0 = Fr::zero();
+        let kept = snarkvm_algorithms_cuda::fourth_round_chain(
+            n - 1,
+            &mut f0,
+            &row,
+            &col,
+            &rcv,
+            lg,
+            lg + 1,
+            &alpha,
+            &beta,
+            &coeff,
+            &b_scale,
+            &(b_scale * coeff),
+            &selector_mult,
+        )
+        .map_err(|e| e.code)
+        .expect("the chain runs")
+        .expect("one GPU keeps the outputs");
+        let host = kept.each_ref().map(|d| {
+            let mut v = vec![Fr::zero(); d.len()];
+            d.download(&mut v).map_err(|e| e.code).expect("the download runs");
+            v
+        });
+        (host, kept)
+    }
+
+    /// `commit` reads a degree-bounded polynomial's device copy, from past its
+    /// leading zeros, and `polynomial_mut` drops the copy.
+    #[test]
+    fn commit_reads_the_device_copy() {
+        use super::{CommitterUnionKey, LabeledPolynomial, SonicKZG10};
+        use crate::{crypto_hash::PoseidonSponge, srs::UniversalProver};
+        use snarkvm_algorithms_cuda::device_poly::stats;
+        use snarkvm_curves::bls12_377::{Bls12_377, Fq};
+
+        type PC = SonicKZG10<Bls12_377, PoseidonSponge<Fq, 2, 1>>;
+        const LG: u32 = 11;
+
+        if snarkvm_algorithms_cuda::device_count() != 1 {
+            return;
+        }
+        let rng = &mut TestRng::default();
+        let n = 1usize << LG;
+        let ([.., mut g, _], [.., d_g, _]) = chain(LG);
+        g[..2].fill(Fr::zero());
+
+        let pp = PC::load_srs(n).unwrap();
+        let bound = n - 2;
+        let (ck, _) = PC::trim(&pp, n, [], 1, Some(&[bound])).unwrap();
+        let ck = CommitterUnionKey::union(std::iter::once(&ck));
+        let prover = UniversalProver::<Bls12_377> { max_degree: pp.max_degree(), _unused: None };
+        let commit = |p: &LabeledPolynomial<Fr>| *PC::commit(&prover, &ck, [p.into()], None).unwrap().0[0].commitment();
+        let host = |g: &[Fr]| LabeledPolynomial::new("g", DensePolynomial::from_coefficients_slice(g), bound, None);
+
+        let want = commit(&host(&g));
+        let mut p =
+            LabeledPolynomial::new("g", DensePolynomial::from_coefficients_vec(g), bound, None).with_device(d_g);
+        let reads = stats().device_reads;
+        assert_eq!(commit(&p), want);
+        assert!(stats().device_reads > reads, "the MSM read the device copy");
+        let coeffs = &mut p.polynomial_mut().as_dense_mut().unwrap().coeffs;
+        coeffs[5] += Fr::rand(rng);
+        let changed = commit(&host(coeffs));
+        assert_ne!(changed, want, "the change moves the commitment");
+        assert!(p.info().device().is_empty(), "the change left a stale device copy");
+        assert_eq!(commit(&p), changed);
+    }
+
+    /// Every host accessor of a device-only polynomial agrees with the same
+    /// polynomial built on the host.
+    #[test]
+    fn a_device_only_polynomial_matches_its_host_twin() {
+        use super::{CommitterUnionKey, LabeledPolynomial, LabeledPolynomialWithBasis, SonicKZG10};
+        use crate::{
+            crypto_hash::PoseidonSponge,
+            polycommit::sonic_pc::LinearCombination,
+            snark::varuna::EvaluationsProvider,
+            srs::UniversalProver,
+        };
+        use snarkvm_curves::bls12_377::{Bls12_377, Fq};
+        use snarkvm_utilities::{CanonicalSerialize, Compress};
+
+        type PC = SonicKZG10<Bls12_377, PoseidonSponge<Fq, 2, 1>>;
+        const LG: u32 = 11;
+
+        if snarkvm_algorithms_cuda::device_count() != 1 {
+            return;
+        }
+        let rng = &mut TestRng::default();
+        let n = 1usize << LG;
+        let ([a, _, g, _], [d_a, _, d_g, _]) = chain(LG);
+        let bound = n - 2;
+        let twins = [
+            (LabeledPolynomial::new("a", DensePolynomial::from_coefficients_vec(a), None, None), d_a, None),
+            (LabeledPolynomial::new("g", DensePolynomial::from_coefficients_vec(g), bound, None), d_g, Some(bound)),
+        ];
+
+        let pp = PC::load_srs(n).unwrap();
+        let (ck, _) = PC::trim(&pp, n, [], 1, Some(&[bound])).unwrap();
+        let ck = CommitterUnionKey::union(std::iter::once(&ck));
+        let prover = UniversalProver::<Bls12_377> { max_degree: pp.max_degree(), _unused: None };
+        let commit = |p: &LabeledPolynomial<Fr>| *PC::commit(&prover, &ck, [p.into()], None).unwrap().0[0].commitment();
+        let bytes = |p: &LabeledPolynomial<Fr>| {
+            let mut out = Vec::new();
+            p.serialize_with_mode(&mut out, Compress::No).unwrap();
+            assert_eq!(out.len(), p.serialized_size(Compress::No));
+            out
+        };
+
+        for (host, d, bound) in twins {
+            let label = host.label().to_string();
+            let p = LabeledPolynomial::device_only(label.as_str(), d.clone(), bound);
+            let z = Fr::rand(rng);
+            assert_eq!(p.degree(), host.degree(), "{label}");
+            assert_eq!(p.evaluate(z), host.evaluate(z), "{label}");
+            let with_basis = LabeledPolynomialWithBasis::from(&p);
+            assert_eq!(with_basis.degree(), host.degree(), "{label}");
+            assert_eq!(with_basis.evaluate(z), host.evaluate(z), "{label}");
+            assert_eq!(commit(&p), commit(&host), "{label}");
+            let lc = LinearCombination::new(label.as_str(), [(Fr::one(), label.as_str())]);
+            let polys = vec![p.clone()];
+            assert!(polys.has_lc_eval(&lc, z), "{label}");
+            assert_eq!(polys.get_lc_eval(&lc, z).unwrap(), host.evaluate(z), "{label}");
+            assert!(p.polynomial() == host.polynomial(), "{label}: polynomial()");
+            assert!(*p == *host, "{label}: deref");
+            assert!(p == host, "{label}: eq");
+            assert_eq!(bytes(&p), bytes(&host), "{label}: serialization");
+            let mut q = LabeledPolynomial::device_only(label.as_str(), d.clone(), bound);
+            assert!(*q.polynomial_mut() == *host.polynomial(), "{label}: polynomial_mut");
+            assert!(q.info().device().is_empty(), "{label}: a mutable borrow left the device copy");
+            assert!(q.with_device(d).info().device().device_only().is_none(), "{label}: re-attached as device-only");
+        }
+    }
+
+    /// An opening over device-only polynomials is the opening over the same
+    /// polynomials built on the host.
+    #[test]
+    fn the_opening_reads_device_only_terms() {
+        use super::{CommitterUnionKey, LabeledPolynomial, LinearCombination, QuerySet, Randomness, SonicKZG10};
+        use crate::{crypto_hash::PoseidonSponge, srs::UniversalProver, traits::AlgebraicSponge};
+        use snarkvm_algorithms_cuda::device_poly::stats;
+        use snarkvm_curves::bls12_377::{Bls12_377, Fq};
+
+        type FS = PoseidonSponge<Fq, 2, 1>;
+        type PC = SonicKZG10<Bls12_377, FS>;
+        const LG: u32 = 11;
+
+        if snarkvm_algorithms_cuda::device_count() != 1 {
+            return;
+        }
+        let rng = &mut TestRng::default();
+        let n = 1usize << LG;
+        let ([a, b, g, _], [d_a, _, d_g, _]) = chain(LG);
+        let bound = n - 2;
+        let host = [
+            LabeledPolynomial::new("a", DensePolynomial::from_coefficients_vec(a), None, None),
+            LabeledPolynomial::new("b", DensePolynomial::from_coefficients_vec(b), None, None),
+            LabeledPolynomial::new("g", DensePolynomial::from_coefficients_vec(g), bound, None),
+        ];
+        let device = [
+            LabeledPolynomial::device_only("a", d_a, None),
+            host[1].clone(),
+            LabeledPolynomial::device_only("g", d_g, bound),
+        ];
+        let (z, c) = (Fr::rand(rng), Fr::rand(rng));
+        let lcs = [
+            LinearCombination::new("g", [(Fr::one(), "g")]),
+            LinearCombination::new("ab", [(c, "a"), (-Fr::one(), "b")]),
+        ];
+        let query_set: QuerySet<Fr> =
+            ["g", "ab"].into_iter().map(|l| (l.to_string(), ("gamma".to_string(), z))).collect();
+
+        let pp = PC::load_srs(n).unwrap();
+        let (ck, _) = PC::trim(&pp, n, [], 1, Some(&[bound])).unwrap();
+        let ck = CommitterUnionKey::union(std::iter::once(&ck));
+        let prover = UniversalProver::<Bls12_377> { max_degree: pp.max_degree(), _unused: None };
+        let rands = vec![Randomness::<Bls12_377>::empty(); 3];
+        let fs = FS::sample_parameters();
+        let open = |polys: [LabeledPolynomial<Fr>; 3]| {
+            let mut sponge = FS::new_with_parameters(&fs);
+            PC::open_combinations(&prover, &ck, &lcs, polys, &rands, &query_set, &mut sponge).unwrap()
+        };
+        let want = open(host);
+        let reads = stats().device_reads;
+        assert_eq!(open(device), want);
+        assert!(stats().device_reads >= reads + 2, "the device-only terms were read");
     }
 }
 

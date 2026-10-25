@@ -47,6 +47,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<prover::FifthOracles<F>, AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FifthRound");
 
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if let Some(h_2) = Self::h_2_on_device(&verifier_message, &state) {
+            let oracles = prover::FifthOracles { h_2 };
+            assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
+            end_timer!(round_time);
+            return Ok(oracles);
+        }
+
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(
             cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
                 |(delta, mut lhs)| {
@@ -68,6 +76,23 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         end_timer!(round_time);
         Ok(oracles)
+    }
+
+    /// `h_2` built on the device, if every `lhs` is on the device and the
+    /// device can hold `h_2`.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    fn h_2_on_device(
+        verifier_message: &verifier::FourthMessage<F>,
+        state: &prover::State<'_, F, SM>,
+    ) -> Option<LabeledPolynomial<F>> {
+        let terms = verifier_message
+            .clone()
+            .into_iter()
+            .zip_eq(state.lhs_polys())
+            .map(|(delta, lhs)| lhs.info().device().device_only().map(|d| (delta, d)))
+            .collect::<Option<Vec<_>>>()?;
+        let h_2 = crate::cuda_must_succeed!(snarkvm_algorithms_cuda::device_poly::combine(&terms), "combine")?;
+        Some(LabeledPolynomial::device_only("h_2", h_2, None))
     }
 
     /// Output the degree bounds of oracles in the last round.

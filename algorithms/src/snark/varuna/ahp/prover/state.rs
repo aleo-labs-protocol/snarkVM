@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::{
-    fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
+    fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, Polynomial},
     polycommit::sonic_pc::LabeledPolynomial,
     r1cs::{SynthesisError, SynthesisResult},
     snark::varuna::{AHPError, AHPForR1CS, Circuit, SNARKMode},
@@ -73,7 +73,7 @@ pub struct CircuitSpecificState<F: PrimeField> {
     pub(in crate::snark) b_polys: Option<[LabeledPolynomial<F>; 3]>,
 
     /// Intermediary polynomials of the matrix sumcheck.
-    pub(super) lhs_polynomials: Option<[DensePolynomial<F>; 3]>,
+    pub(super) lhs_polynomials: Option<[LabeledPolynomial<F>; 3]>,
 }
 
 /// State for the AHP prover.
@@ -216,8 +216,16 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
         self.circuit_specific_states.get(circuit).map(|s| s.padded_public_variables.as_slice())
     }
 
+    /// Iterate over the lhs_polynomials, in the order of `lhs_polys_into_iter`.
+    pub fn lhs_polys(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+        self.circuit_specific_states.values().flat_map(|s| s.lhs_polynomials.iter().flatten())
+    }
+
     /// Iterate over the lhs_polynomials
     pub fn lhs_polys_into_iter(self) -> impl Iterator<Item = DensePolynomial<F>> + 'a {
-        self.circuit_specific_states.into_values().flat_map(|s| s.lhs_polynomials.unwrap().into_iter())
+        self.circuit_specific_states
+            .into_values()
+            .flat_map(|s| s.lhs_polynomials.unwrap().into_iter())
+            .map(|mut p| std::mem::replace(p.polynomial_mut(), Polynomial::zero()).into())
     }
 }

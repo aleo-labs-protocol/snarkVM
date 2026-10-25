@@ -1433,6 +1433,8 @@ mod proof_vector {
             );
         }
 
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        let before = snarkvm_algorithms_cuda::device_poly::stats();
         for (version, expected) in EXPECTED {
             let rng = &mut TestRng::fixed(PROVE_SEED);
             let proof = Inst::prove(prover, &fs, &pk, version, &circuit, rng).expect("the test circuit proves");
@@ -1455,5 +1457,15 @@ mod proof_vector {
                 || snarkvm_algorithms_cuda::resident_evals::resident_bytes_of(&pk.circuit) > 0,
             "proving did not keep the key's round-four evaluations on the device"
         );
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if snarkvm_algorithms_cuda::device_count() == 1 {
+            let after = snarkvm_algorithms_cuda::device_poly::stats();
+            assert!(after.retained >= before.retained + 8, "each proof keeps its three matrices' outputs and h_2");
+            assert!(
+                after.device_reads >= before.device_reads + 34,
+                "each proof reads them for h_2, its commitments and its opening"
+            );
+            assert_eq!((after.retain_failures, after.host_fallbacks), (0, 0));
+        }
     }
 }

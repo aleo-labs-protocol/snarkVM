@@ -142,6 +142,14 @@ jobs:
             --features snarkvm-algorithms/cuda 2>&1 \
             | tee "${RUNNER_TEMP}/gpu-test.log"
 
+      # `TestCircuit` needs the `test` feature, so the step above builds this
+      # file empty. It runs alone because it counts device bytes process-wide.
+      - name: Run whole proofs against the device-copy counters
+        run: |
+          set -o pipefail
+          cargo test --release -p snarkvm-algorithms --features cuda,test --test device_poly 2>&1 \
+            | tee -a "${RUNNER_TEMP}/gpu-test.log"
+
       # A kernel built for the wrong arch does not run, and the failure is
       # silent unless every launch is error-checked.
       - name: Confirm the tested binary really was sm_86
