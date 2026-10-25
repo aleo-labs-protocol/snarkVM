@@ -15,7 +15,9 @@
 
 use crate::vm::*;
 use console::network::prelude::Network;
+use snarkvm_ledger_store::helpers::Map;
 
+use core::{fmt::Debug, hash::Hash};
 use std::{fmt, thread};
 use tokio::sync::oneshot;
 
@@ -46,6 +48,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
                         let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
                         SequentialOperationResult::AtomicSpeculate(ret)
+                    }
+                    SequentialOperation::PruneRocksDBState(prune_fn) => {
+                        let ret = prune_fn();
+                        SequentialOperationResult::PruneRocksDBState(ret)
                     }
                 };
 
@@ -89,12 +95,43 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             *self.sequential_ops_thread_id.get().expect("Sequential ops thread not initialized")
         );
     }
+
+    /// Prunes all key-value pairs for the given keys from the provided store, performing the
+    /// operation in the sequential processing thread to avoid concurrent storage modifications.
+    ///
+    /// # Arguments
+    /// * `store` - The map from which entries are to be pruned.
+    /// * `keys` - An iterator of keys whose corresponding entries will be removed.
+    pub fn prune_rocksdb_state<S, T, V>(
+        &self,
+        store: S,
+        keys: impl IntoIterator<Item = T> + Send + 'static,
+    ) -> Option<SequentialOperationResult<N>>
+    where
+        for<'a> S: Map<'a, T, V>,
+        S: Clone + Send + 'static,
+        T: Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync + 'static,
+        V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
+    {
+        // Collect the keys to delete up front so that the closure owns them.
+        let keys: Vec<T> = keys.into_iter().collect();
+        // Queue the pruning operation to be executed sequentially.
+        let op = SequentialOperation::PruneRocksDBState(Box::new(move || {
+            for key in &keys {
+                store.remove(key)?;
+            }
+            Ok(())
+        }));
+        self.run_sequential_operation(op)
+    }
 }
 
 /// An operation intended to be executed only in a sequential fashion.
 pub enum SequentialOperation<N: Network> {
     AddNextBlock(Block<N>),
     AtomicSpeculate(FinalizeGlobalState, i64, Option<u64>, Vec<Ratify<N>>, Solutions<N>, Vec<Transaction<N>>),
+    /// An operation that prunes entries from a rocksdb store.
+    PruneRocksDBState(Box<dyn FnOnce() -> Result<()> + Send>),
 }
 
 impl<N: Network> fmt::Display for SequentialOperation<N> {
@@ -106,6 +143,7 @@ impl<N: Network> fmt::Display for SequentialOperation<N> {
             SequentialOperation::AtomicSpeculate(state, ..) => {
                 write!(f, "atomic speculate (height {}, round {})", state.block_height(), state.block_round())
             }
+            SequentialOperation::PruneRocksDBState(_) => write!(f, "prune rocksdb state"),
         }
     }
 }
@@ -127,6 +165,8 @@ pub enum SequentialOperationResult<N: Network> {
             Vec<FinalizeOperation<N>>,
         )>,
     ),
+    /// The result of a prune operation.
+    PruneRocksDBState(Result<()>),
 }
 
 /// Owned only by external VM clones. Arc runs this destructor exactly once,

@@ -1354,6 +1354,16 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     pub fn get_block_tree_root(&self) -> Field<N> {
         *self.tree.read().root()
     }
+
+    /// Returns the authority map.
+    pub fn authority_map(&self) -> &B::AuthorityMap {
+        self.storage.authority_map()
+    }
+
+    /// Returns the certificate map.
+    pub fn certificate_map(&self) -> &B::CertificateMap {
+        self.storage.certificate_map()
+    }
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
