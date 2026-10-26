@@ -212,7 +212,7 @@ impl Database for RocksDB {
                 Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
             // Refuse a database written by a newer build before any map is opened.
-            // A secondary instance is read-only, so the primary is the one that stamps `V0`.
+            // A secondary instance is read-only, so the primary is the one that stamps the version.
             if secondary_path.is_some() {
                 schema::get_storage_version(&rocksdb, network_id)?;
             } else {
