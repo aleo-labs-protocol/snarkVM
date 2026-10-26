@@ -210,17 +210,20 @@ fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
 /// `heights.end` is pruned. Call it inside an atomic batch scope. Genesis is never pruned, and a
 /// certificate index that points to another block is logged and kept.
 ///
-/// The keys it reads are never in the pending batch, so it reads confirmed state: a speculative read
-/// scans the batch, which grows with every removal and would make a chunk quadratic.
+/// Certificate indexes are read from confirmed state: a speculative read scans the pending batch,
+/// which grows with every removal and would make a chunk quadratic, and an expired block's indexes
+/// are never pending. The watermark it advances is visible to the next scope only once this scope's
+/// batch has been handed to the database, so callers that pause atomic writes must keep one block
+/// per paused span, as `VM::add_next_block` does.
 #[cfg(feature = "prune-authority-data")]
 fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights: core::ops::Range<u32>) -> Result<()> {
     for height in heights.start.max(1)..heights.end {
-        let Some(block_hash) = storage.id_map().get_confirmed(&height)? else {
+        let Some(block_hash) = storage.id_map().get_speculative(&height)? else {
             warn!("Not pruning the authority of block {height}: it has no hash recorded");
             continue;
         };
         let block_hash = *block_hash;
-        let Some(authority) = storage.authority_map().get_confirmed(&block_hash)? else {
+        let Some(authority) = storage.authority_map().get_speculative(&block_hash)? else {
             continue;
         };
         for certificate_id in certificate_ids(&authority) {
@@ -1767,7 +1770,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             #[cfg(feature = "prune-authority-data")]
             Err(error) => match self.storage.get_block_height(block_hash)? {
                 Some(height)
-                    if self.storage.authority_pruned_below()?.is_some_and(|below| height < below)
+                    if self.storage.authority_pruned_below()?.is_some_and(|below| (1..below).contains(&height))
                         && self.storage.get_block_authority(block_hash)?.is_none() =>
                 {
                     self.check_block_data_without_authority(block_hash)?;
@@ -2241,9 +2244,20 @@ mod tests {
     fn check_startup_pruning_closes_multi_chunk_gap<B: BlockStorage<CurrentNetwork>>(storage: B) {
         let latest_height = 3 * AUTHORITY_PRUNING_CHUNK_HEIGHTS + AUTHORITY_RETENTION_BLOCKS + 1;
         fill_authorities(&storage, latest_height + 1);
+        // One expired block in the last chunk carries a quorum authority with indexed certificates.
+        let quorum_height = 3 * AUTHORITY_PRUNING_CHUNK_HEIGHTS;
+        let quorum = snarkvm_ledger_authority::test_helpers::sample_quorum_authority(&mut TestRng::default());
+        let quorum_certificates = certificate_ids(&quorum);
+        storage.authority_map().insert(hash_at(quorum_height), quorum).unwrap();
+        for certificate_id in &quorum_certificates {
+            storage.certificate_map().insert(*certificate_id, (quorum_height, 1)).unwrap();
+        }
 
         assert!(!storage.is_authority_pruned().unwrap());
         prune_expired_authorities(&storage, latest_height).unwrap();
+        for certificate_id in &quorum_certificates {
+            assert!(!storage.certificate_map().contains_key_confirmed(certificate_id).unwrap());
+        }
 
         let floor = oldest_retained_authority_height(latest_height);
         assert_eq!(storage.authority_pruned_below().unwrap(), Some(floor));
@@ -2258,11 +2272,9 @@ mod tests {
         assert_eq!(storage.authority_map().len_confirmed(), AUTHORITY_RETENTION_BLOCKS as usize + 1);
     }
 
-    /// Ensures an interrupted startup resumes from the watermark instead of rescanning.
+    /// Checks that an interrupted startup resumes from the watermark instead of rescanning.
     #[cfg(feature = "prune-authority-data")]
-    #[test]
-    fn test_startup_pruning_resumes_from_watermark() {
-        let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
+    fn check_startup_pruning_resumes_from_watermark<B: BlockStorage<CurrentNetwork>>(storage: B) {
         let latest_height = AUTHORITY_PRUNING_CHUNK_HEIGHTS + AUTHORITY_RETENTION_BLOCKS + 1;
         fill_authorities(&storage, latest_height + 1);
 
@@ -2277,6 +2289,25 @@ mod tests {
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(resume - 1)).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&hash_at(resume)).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&hash_at(floor - 1)).unwrap());
+    }
+
+    /// Ensures an interrupted startup resumes from the watermark with in-memory storage.
+    #[cfg(feature = "prune-authority-data")]
+    #[test]
+    fn test_startup_pruning_resumes_from_watermark() {
+        check_startup_pruning_resumes_from_watermark(
+            BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap(),
+        );
+    }
+
+    /// Ensures an interrupted startup resumes from the watermark with RocksDB storage.
+    #[cfg(all(feature = "prune-authority-data", feature = "rocks"))]
+    #[test]
+    fn test_startup_pruning_resumes_from_watermark_rocksdb() {
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        check_startup_pruning_resumes_from_watermark(
+            BlockDB::<CurrentNetwork>::open(StorageMode::new_test(Some(temp_dir))).unwrap(),
+        );
     }
 
     /// Ensures a failed chunk rolls back its deletions and leaves the watermark unchanged.
@@ -2307,11 +2338,13 @@ mod tests {
         }
         assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(3));
 
-        // Emulate a startup catch-up that never ran: the watermark is gone, so pruning is behind.
-        clear_authority_pruned(&block_store.storage);
+        // Emulate a startup catch-up that stopped part-way: the watermark lags the expiring height.
+        let storage = &block_store.storage;
+        clear_authority_pruned(storage);
+        atomic_batch_scope!(storage, { storage.set_authority_pruned_below(2) }).unwrap();
         block_store.insert(&blocks[103]).unwrap();
         assert!(block_store.get_block_authority(&blocks[3].hash()).unwrap().is_some());
-        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), None);
+        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(2));
     }
 
     /// Ensures an empty marker, written before the watermark existed, reads as a watermark of 1.
