@@ -319,10 +319,16 @@ fn colliding_key<F: PrimeField>(element: &F) -> u64 {
     if element.pow([256]).is_one() { key(element) } else { key(&F::one()) }
 }
 
-/// Checks `SqrtTables::sqrt` with `colliding_key` on random elements: it returns `None` exactly when
-/// the Legendre symbol is -1, and otherwise the root of `sqrt`.
-fn check_key_collisions<F: PrimeField + SquareRootField>(rng: &mut TestRng) {
-    let tables = SqrtTables::<F>::with_key(colliding_key::<F>);
+/// Returns the lowest limb with its low 10 bits set. The tables of BLS12-377 Fq and Fr have 1,024
+/// slots, so every look-up starts at the last slot, and the probes wrap around to slot 0.
+fn last_slot_key<F: PrimeField>(element: &F) -> u64 {
+    element.to_bigint().as_ref()[0] | 0x3ff
+}
+
+/// Checks `SqrtTables::sqrt` with `key` on random elements: it returns `None` exactly when the
+/// Legendre symbol is -1, and otherwise the root of `sqrt`.
+fn check_with_key<F: PrimeField + SquareRootField>(key: fn(&F) -> u64, rng: &mut TestRng) {
+    let tables = SqrtTables::<F>::with_key(key);
     for _ in 0..2 * RANDOM_INPUTS {
         let a = F::rand(rng);
         let root = tables.sqrt(&a);
@@ -333,10 +339,20 @@ fn check_key_collisions<F: PrimeField + SquareRootField>(rng: &mut TestRng) {
 
 #[test]
 fn test_sqrt_tables_key_collisions_bls12_377_fq() {
-    check_key_collisions::<Fq>(&mut TestRng::default());
+    check_with_key::<Fq>(colliding_key, &mut TestRng::default());
 }
 
 #[test]
 fn test_sqrt_tables_key_collisions_bls12_377_fr() {
-    check_key_collisions::<Fr>(&mut TestRng::default());
+    check_with_key::<Fr>(colliding_key, &mut TestRng::default());
+}
+
+#[test]
+fn test_sqrt_tables_probe_wraps_bls12_377_fq() {
+    check_with_key::<Fq>(last_slot_key, &mut TestRng::default());
+}
+
+#[test]
+fn test_sqrt_tables_probe_wraps_bls12_377_fr() {
+    check_with_key::<Fr>(last_slot_key, &mut TestRng::default());
 }
