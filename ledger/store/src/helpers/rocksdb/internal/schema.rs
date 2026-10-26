@@ -22,9 +22,10 @@
 //! Ledgers written before this record existed have no version key. Those databases are
 //! [`StorageVersion::V0`].
 
-use super::{MapID, MetadataMap, PREFIX_LEN};
+use super::{MapID, MetadataMap, PREFIX_LEN, RocksDB};
 
 use anyhow::{Result, anyhow, bail};
+use std::sync::atomic::Ordering;
 
 /// The on-disk schema versions a ledger can be at.
 ///
@@ -113,9 +114,16 @@ pub(crate) fn is_authority_pruned(database: &rocksdb::DB, network_id: u16) -> Re
     Ok(database.get(metadata_key(network_id, MetadataKey::AuthorityPruned))?.is_some())
 }
 
-/// Records that authority data has been pruned from the database.
-pub(crate) fn set_authority_pruned(database: &rocksdb::DB, network_id: u16) -> Result<()> {
-    Ok(database.put(metadata_key(network_id, MetadataKey::AuthorityPruned), [1u8])?)
+/// Records that authority data has been pruned from the database. The marker joins the atomic
+/// batch in progress, if any, so it is exactly as durable as the deletes it describes.
+pub(crate) fn set_authority_pruned(database: &RocksDB, network_id: u16) -> Result<()> {
+    let key = metadata_key(network_id, MetadataKey::AuthorityPruned);
+    if database.atomic_depth.load(Ordering::SeqCst) > 0 {
+        database.atomic_batch.lock().put(key, [1u8]);
+        Ok(())
+    } else {
+        Ok(database.put(key, [1u8])?)
+    }
 }
 
 /// Brings `database` up to [`STORAGE_VERSION`].

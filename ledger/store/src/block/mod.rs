@@ -427,8 +427,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns `true` if authority data has been pruned from this storage.
     fn is_authority_pruned(&self) -> Result<bool>;
     /// Records that authority data has been pruned from this storage, which a build without
-    /// `prune-authority-data` then refuses to open. The marker is written before the deletes it
-    /// describes, so a rolled-back deletion leaves the store marked; that only costs the downgrade.
+    /// `prune-authority-data` then refuses to open. RocksDB writes the marker through the atomic
+    /// batch in progress, so it is exactly as durable as the deletes; the memory backend sets it at once.
     fn mark_authority_pruned(&self) -> Result<()>;
     /// Returns the transaction store.
     fn transaction_store(&self) -> &TransactionStore<N, Self::TransactionStorage>;
@@ -1808,9 +1808,18 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         if let Some(cache) = self.block_cache.as_ref()
             && let Some(block) = cache.read().get_block_by_hash(block_hash)
         {
-            Ok(Some(block.clone()))
-        } else {
-            self.storage.get_block(block_hash)
+            return Ok(Some(block.clone()));
+        }
+        match self.storage.get_block(block_hash) {
+            // A block below the retained window has no authority to reconstruct it from.
+            #[cfg(feature = "prune-authority-data")]
+            Err(error) => match (self.storage.get_block_height(block_hash)?, self.max_height()) {
+                (Some(height), Some(latest)) if height < oldest_retained_authority_height(latest) => {
+                    bail!("The authority of block {height} ('{block_hash}') has been pruned")
+                }
+                _ => Err(error),
+            },
+            result => result,
         }
     }
 
@@ -2119,13 +2128,37 @@ mod tests {
         assert!(!storage.reverse_id_map().contains_key_confirmed(&candidate_hash).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&candidate_hash).unwrap());
         assert!(!storage.reverse_state_root_map().contains_key_confirmed(&candidate_state_root).unwrap());
-        // The marker is written before the deletes, so it survives their rollback.
-        assert!(storage.is_authority_pruned().unwrap());
-
         storage.insert(candidate_state_root, candidate).unwrap();
         assert!(!storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(!storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
+    }
+
+    /// Ensures a rolled-back insertion also rolls back the pruning marker in RocksDB.
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
+    #[test]
+    fn test_insertion_failure_rolls_back_pruning_marker() {
+        let rng = &mut TestRng::default();
+        let (blocks, _) = sample_block_chain_with_quorum(103, rng);
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        let storage = BlockDB::<CurrentNetwork>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
+        let state_root = |block: &Block<CurrentNetwork>| {
+            <CurrentNetwork as Network>::StateRoot::from(Field::from_u32(block.height()))
+        };
+        for block in blocks.iter().take(101) {
+            storage.insert(state_root(block), block).unwrap();
+        }
+
+        let candidate = &blocks[101];
+        let result: Result<()> = atomic_batch_scope!(storage, {
+            storage.insert(state_root(candidate), candidate)?;
+            bail!("Injected failure after block insertion")
+        });
+        assert!(result.is_err());
+        assert!(!storage.is_authority_pruned().unwrap());
+
+        storage.insert(state_root(candidate), candidate).unwrap();
+        assert!(storage.is_authority_pruned().unwrap());
     }
 
     /// Ensures certificate pruning tolerates a missing index and keeps one that points to a different block.

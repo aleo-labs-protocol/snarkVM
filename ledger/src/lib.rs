@@ -251,16 +251,22 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         Ok(ledger)
     }
 
-    /// Spot checks the integrity of random blocks whose authority data is retained.
+    /// Spot checks the integrity of random blocks. Below the retained authority window, only the
+    /// permanent block data is checked.
     fn check_random_blocks(&self) -> Result<()> {
         const NUM_BLOCKS: usize = 10;
         let latest_height = self.current_block.read().height();
         debug_assert_eq!(latest_height, self.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        let earliest_height = oldest_retained_authority_height(latest_height);
-        let num_blocks = usize::try_from(latest_height - earliest_height)?.min(NUM_BLOCKS);
-        let block_heights: Vec<u32> = (earliest_height..=latest_height).sample(&mut rand::rng(), num_blocks);
+        let oldest_retained_height = oldest_retained_authority_height(latest_height);
+        let num_blocks = usize::try_from(latest_height)?.min(NUM_BLOCKS);
+        let block_heights: Vec<u32> = (0..=latest_height).sample(&mut rand::rng(), num_blocks);
         cfg_into_iter!(block_heights).try_for_each(|height| {
-            self.get_block(height)?;
+            if height >= oldest_retained_height {
+                self.get_block(height)?;
+            } else {
+                self.get_header(height)?;
+                self.get_transactions(height)?;
+            }
             Ok::<_, Error>(())
         })
     }
