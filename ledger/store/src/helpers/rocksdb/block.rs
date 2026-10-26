@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use crate::{
+    BlockMetadataKey,
     BlockStorage,
     ConfirmedTxType,
     TransactionStore,
@@ -79,8 +80,8 @@ pub struct BlockDB<N: Network> {
         DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>,
     /// The rejected deployment or execution map.
     rejected_deployment_or_execution_map: DataMap<Field<N>, Rejected<N>>,
-    /// The authority-pruned marker map.
-    authority_pruned_map: DataMap<u8, bool>,
+    /// The block metadata map.
+    block_metadata_map: DataMap<BlockMetadataKey, Vec<u8>>,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
@@ -104,7 +105,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type RejectedOrAbortedTransactionIDMap = DataMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     type RejectedDeploymentOrExecutionMap = DataMap<Field<N>, Rejected<N>>;
-    type AuthorityPrunedMap = DataMap<u8, bool>;
+    type BlockMetadataMap = DataMap<BlockMetadataKey, Vec<u8>>;
     type TransactionStorage = TransactionDB<N>;
     type TransitionStorage = TransitionDB<N>;
 
@@ -134,7 +135,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             rejected_or_aborted_transaction_id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedOrAbortedTransactionID))?,
             confirmed_transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ConfirmedTransactions))?,
             rejected_deployment_or_execution_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedDeploymentOrExecution))?,
-            authority_pruned_map: internal::RocksDB::open_map(N::ID, storage, MapID::Block(BlockMap::AuthorityPruned))?,
+            block_metadata_map: internal::RocksDB::open_map(N::ID, storage, MapID::Block(BlockMap::Metadata))?,
             transaction_store,
         })
     }
@@ -224,9 +225,9 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         &self.rejected_deployment_or_execution_map
     }
 
-    /// Returns the authority-pruned marker map.
-    fn authority_pruned_map(&self) -> &Self::AuthorityPrunedMap {
-        &self.authority_pruned_map
+    /// Returns the block metadata map.
+    fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
+        &self.block_metadata_map
     }
 
     /// Returns the transaction store.

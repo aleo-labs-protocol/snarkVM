@@ -35,9 +35,9 @@ use anyhow::{Result, anyhow, bail};
 pub enum StorageVersion {
     /// No schema record, or a database stamped by the build that introduced the record.
     V0 = 0,
-    /// Adds the optional authority-pruning marker map. A store without the marker is unpruned, so
-    /// the upgrade from `V0` is the stamp alone. Builds that predate the marker refuse this version
-    /// instead of opening a pruned store.
+    /// Adds the block metadata map, which holds the authority-pruning marker. A store without the
+    /// marker is unpruned, so the upgrade from `V0` is the stamp alone. Builds that predate the
+    /// marker refuse this version instead of opening a pruned store.
     V1 = 1,
 }
 
@@ -120,8 +120,8 @@ pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result
         );
     }
     let version = get_storage_version(database, network_id)?;
-    // `V0` to `V1` adds only the optional authority-pruning marker map, which an unpruned store
-    // leaves empty, so there is nothing to rewrite before the stamp.
+    // `V0` to `V1` adds only the block metadata map, which an unpruned store leaves empty, so there
+    // is nothing to rewrite before the stamp.
     if version < STORAGE_VERSION {
         set_storage_version(database, network_id, STORAGE_VERSION)?;
     }

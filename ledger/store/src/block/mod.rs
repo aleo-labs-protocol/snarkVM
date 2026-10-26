@@ -172,8 +172,14 @@ pub const AUTHORITY_RETENTION_BLOCKS: u32 = 500_000;
 #[cfg(test)]
 pub const AUTHORITY_RETENTION_BLOCKS: u32 = 100;
 
-/// The key of the single entry in the authority-pruned marker map.
-const AUTHORITY_PRUNED_KEY: u8 = 0;
+/// The keys of the block metadata map. Each key's value is raw bytes whose encoding is owned by
+/// that key's getter and setter on [`BlockStorage`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum BlockMetadataKey {
+    /// Present once authority data has been pruned. See [`BlockStorage::is_authority_pruned`].
+    AuthorityPruned = 0,
+}
 
 /// Returns the lowest block height whose authority data is retained when the chain is at
 /// `latest_height`. Without `prune-authority-data`, every height is retained.
@@ -384,8 +390,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     type ConfirmedTransactionsMap: for<'a> Map<'a, N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     /// The rejected deployment or execution map.
     type RejectedDeploymentOrExecutionMap: for<'a> Map<'a, Field<N>, Rejected<N>>;
-    /// The authority-pruned marker map, with the single key `AUTHORITY_PRUNED_KEY`.
-    type AuthorityPrunedMap: for<'a> Map<'a, u8, bool>;
+    /// The block metadata map: block-store state that shares the block store's atomic batches.
+    type BlockMetadataMap: for<'a> Map<'a, BlockMetadataKey, Vec<u8>>;
     /// The transaction storage.
     type TransactionStorage: TransactionStorage<N, TransitionStorage = Self::TransitionStorage>;
     /// The transition storage.
@@ -428,12 +434,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn confirmed_transactions_map(&self) -> &Self::ConfirmedTransactionsMap;
     /// Returns the rejected deployment or execution map.
     fn rejected_deployment_or_execution_map(&self) -> &Self::RejectedDeploymentOrExecutionMap;
-    /// Returns the authority-pruned marker map.
-    fn authority_pruned_map(&self) -> &Self::AuthorityPrunedMap;
+    /// Returns the block metadata map.
+    fn block_metadata_map(&self) -> &Self::BlockMetadataMap;
 
     /// Returns `true` if authority data has been pruned from this storage.
     fn is_authority_pruned(&self) -> Result<bool> {
-        Ok(self.authority_pruned_map().get_confirmed(&AUTHORITY_PRUNED_KEY)?.is_some_and(|pruned| *pruned))
+        // The key's presence is the marker; its value is empty.
+        Ok(self.block_metadata_map().get_confirmed(&BlockMetadataKey::AuthorityPruned)?.is_some())
     }
 
     /// Records that authority data has been pruned from this storage, which a build without
@@ -441,10 +448,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn mark_authority_pruned(&self) -> Result<()> {
         debug_assert!(self.is_atomic_in_progress(), "The pruned marker must share the batch of the deletes");
         // The speculative read also sees a marker queued earlier in this batch.
-        if self.authority_pruned_map().get_speculative(&AUTHORITY_PRUNED_KEY)?.is_some_and(|pruned| *pruned) {
+        if self.block_metadata_map().get_speculative(&BlockMetadataKey::AuthorityPruned)?.is_some() {
             return Ok(());
         }
-        self.authority_pruned_map().insert(AUTHORITY_PRUNED_KEY, true)
+        self.block_metadata_map().insert(BlockMetadataKey::AuthorityPruned, Vec::new())
     }
     /// Returns the transaction store.
     fn transaction_store(&self) -> &TransactionStore<N, Self::TransactionStorage>;
@@ -478,7 +485,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().start_atomic();
         self.confirmed_transactions_map().start_atomic();
         self.rejected_deployment_or_execution_map().start_atomic();
-        self.authority_pruned_map().start_atomic();
+        self.block_metadata_map().start_atomic();
         self.transaction_store().start_atomic();
     }
 
@@ -501,7 +508,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             || self.rejected_or_aborted_transaction_id_map().is_atomic_in_progress()
             || self.confirmed_transactions_map().is_atomic_in_progress()
             || self.rejected_deployment_or_execution_map().is_atomic_in_progress()
-            || self.authority_pruned_map().is_atomic_in_progress()
+            || self.block_metadata_map().is_atomic_in_progress()
             || self.transaction_store().is_atomic_in_progress()
     }
 
@@ -524,7 +531,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().atomic_checkpoint();
         self.confirmed_transactions_map().atomic_checkpoint();
         self.rejected_deployment_or_execution_map().atomic_checkpoint();
-        self.authority_pruned_map().atomic_checkpoint();
+        self.block_metadata_map().atomic_checkpoint();
         self.transaction_store().atomic_checkpoint();
     }
 
@@ -547,7 +554,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().clear_latest_checkpoint();
         self.confirmed_transactions_map().clear_latest_checkpoint();
         self.rejected_deployment_or_execution_map().clear_latest_checkpoint();
-        self.authority_pruned_map().clear_latest_checkpoint();
+        self.block_metadata_map().clear_latest_checkpoint();
         self.transaction_store().clear_latest_checkpoint();
     }
 
@@ -570,7 +577,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().atomic_rewind();
         self.confirmed_transactions_map().atomic_rewind();
         self.rejected_deployment_or_execution_map().atomic_rewind();
-        self.authority_pruned_map().atomic_rewind();
+        self.block_metadata_map().atomic_rewind();
         self.transaction_store().atomic_rewind();
     }
 
@@ -593,7 +600,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().abort_atomic();
         self.confirmed_transactions_map().abort_atomic();
         self.rejected_deployment_or_execution_map().abort_atomic();
-        self.authority_pruned_map().abort_atomic();
+        self.block_metadata_map().abort_atomic();
         self.transaction_store().abort_atomic();
     }
 
@@ -616,7 +623,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().finish_atomic()?;
         self.confirmed_transactions_map().finish_atomic()?;
         self.rejected_deployment_or_execution_map().finish_atomic()?;
-        self.authority_pruned_map().finish_atomic()?;
+        self.block_metadata_map().finish_atomic()?;
         self.transaction_store().finish_atomic()
     }
 
@@ -2391,7 +2398,8 @@ mod tests {
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage_mode = StorageMode::new_test(Some(temp_dir));
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
-        block_store.storage.authority_pruned_map().insert(AUTHORITY_PRUNED_KEY, true).unwrap();
+        let storage = &block_store.storage;
+        atomic_batch_scope!(storage, { storage.mark_authority_pruned() }).unwrap();
         drop(block_store);
 
         let error = match BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode) {
