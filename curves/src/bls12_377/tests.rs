@@ -647,6 +647,11 @@ fn test_g1_projective_group() {
 }
 
 #[test]
+fn test_g1_serialization_round_trip() {
+    serialization_round_trip_test::<G1Affine>();
+}
+
+#[test]
 fn test_g1_generator() {
     let generator = G1Affine::prime_subgroup_generator();
     assert!(generator.is_on_curve());
@@ -668,6 +673,11 @@ fn test_g2_projective_group() {
     let a: G2Projective = rng.random();
     let b: G2Projective = rng.random();
     projective_test(a, b, &mut rng);
+}
+
+#[test]
+fn test_g2_serialization_round_trip() {
+    serialization_round_trip_test::<G2Affine>();
 }
 
 #[test]

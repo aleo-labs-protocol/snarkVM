@@ -16,13 +16,25 @@
 use super::*;
 
 impl<N: Network> FromBytes for Signature<N> {
-    /// Reads an account signature from a buffer.
+    /// Reads an account signature from a buffer, either with or without checking the data.
     #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         let challenge = Scalar::new(FromBytes::read_le(&mut reader)?);
         let response = Scalar::new(FromBytes::read_le(&mut reader)?);
-        let compute_key = ComputeKey::read_le(&mut reader)?;
+        let compute_key = ComputeKey::read_le_with_unchecked(&mut reader, unchecked)?;
         Ok(Self { challenge, response, compute_key })
+    }
+
+    /// Reads an account signature from a buffer.
+    #[inline]
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads an account signature from a buffer, without computing `sk_prf`.
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 

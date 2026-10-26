@@ -171,9 +171,7 @@ impl<'de, T: FromBytes> FromBytesDeserializer<T> {
 
     /// Deserializes a dynamically-sized byte array.
     pub fn deserialize_with_size_encoding<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
-        let mut buffer = Vec::with_capacity(32);
-        deserializer.deserialize_bytes(FromBytesVisitor::new(&mut buffer, name))?;
-        FromBytes::read_le(&*buffer).map_err(de::Error::custom)
+        deserializer.deserialize_bytes(FromBytesValueVisitor::new(name, false))
     }
 
     /// Attempts to deserialize a byte array (without length encoding).
@@ -218,14 +216,47 @@ pub struct FromBytesUncheckedDeserializer<T: FromBytes>(PhantomData<T>);
 impl<'de, T: FromBytes> FromBytesUncheckedDeserializer<T> {
     /// Deserializes a dynamically-sized byte array.
     pub fn deserialize_with_size_encoding<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
-        let mut buffer = Vec::with_capacity(32);
-        deserializer.deserialize_bytes(FromBytesVisitor::new(&mut buffer, name))?;
+        deserializer.deserialize_bytes(FromBytesValueVisitor::new(name, UNCHECKED_DESERIALIZE.get()))
+    }
+}
 
-        if UNCHECKED_DESERIALIZE.get() {
-            FromBytes::read_le_unchecked(&*buffer).map_err(de::Error::custom)
-        } else {
-            FromBytes::read_le(&*buffer).map_err(de::Error::custom)
+struct FromBytesValueVisitor<T: FromBytes>(SmolStr, bool, PhantomData<T>);
+
+impl<T: FromBytes> FromBytesValueVisitor<T> {
+    fn new(name: &str, unchecked: bool) -> Self {
+        Self(SmolStr::new(name), unchecked, PhantomData)
+    }
+
+    fn read<E: de::Error>(&self, bytes: &[u8]) -> Result<T, E> {
+        FromBytes::read_le_with_unchecked(bytes, self.1).map_err(de::Error::custom)
+    }
+}
+
+impl<'de, T: FromBytes> Visitor<'de> for FromBytesValueVisitor<T> {
+    type Value = T;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_fmt(format_args!("a valid {} ", self.0))
+    }
+
+    fn visit_borrowed_bytes<E: de::Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
+        self.read(bytes)
+    }
+
+    fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+        self.read(bytes)
+    }
+
+    fn visit_byte_buf<E: de::Error>(self, bytes: Vec<u8>) -> Result<Self::Value, E> {
+        self.read(&bytes)
+    }
+
+    fn visit_seq<S: SeqAccess<'de>>(self, mut seq: S) -> Result<Self::Value, S::Error> {
+        let mut bytes = Vec::with_capacity(32);
+        while let Some(byte) = seq.next_element()? {
+            bytes.push(byte);
         }
+        self.read(&bytes)
     }
 }
 
@@ -581,8 +612,70 @@ mod test {
     use crate::TestRng;
 
     use rand::RngExt;
+    use serde::{Deserialize, Serialize};
 
     const ITERATIONS: usize = 1000;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct DeserializedBytes(#[serde(deserialize_with = "deserialize_bytes")] [u8; 4]);
+
+    #[derive(Serialize)]
+    struct SerializedBytes<'a>(#[serde(serialize_with = "serialize_bytes")] &'a [u8]);
+
+    #[derive(Debug, PartialEq)]
+    struct UncheckedBytes([u8; 4]);
+
+    impl FromBytes for UncheckedBytes {
+        fn read_le<R: Read>(_reader: R) -> IoResult<Self> {
+            Err(std::io::Error::other("checked deserialization"))
+        }
+
+        fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+            Ok(Self(FromBytes::read_le(reader)?))
+        }
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct UncheckedDeserializedBytes(#[serde(deserialize_with = "deserialize_unchecked_bytes")] UncheckedBytes);
+
+    fn deserialize_bytes<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u8; 4], D::Error> {
+        FromBytesDeserializer::deserialize_with_size_encoding(deserializer, "bytes")
+    }
+
+    fn serialize_bytes<S: Serializer>(bytes: &&[u8], serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(bytes)
+    }
+
+    fn deserialize_unchecked_bytes<'de, D: Deserializer<'de>>(deserializer: D) -> Result<UncheckedBytes, D::Error> {
+        FromBytesUncheckedDeserializer::deserialize_with_size_encoding(deserializer, "bytes")
+    }
+
+    #[test]
+    fn test_deserialize_with_size_encoding() -> anyhow::Result<()> {
+        let expected = [1, 2, 3, 4];
+
+        let bincode = bincode::serialize(&SerializedBytes(&expected))?;
+        assert_eq!(bincode::deserialize::<DeserializedBytes>(&bincode)?, DeserializedBytes(expected));
+
+        let json = serde_json::to_string(&SerializedBytes(&expected))?;
+        assert_eq!(serde_json::from_str::<DeserializedBytes>(&json)?, DeserializedBytes(expected));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_with_size_encoding_unchecked() -> anyhow::Result<()> {
+        let expected = [1, 2, 3, 4];
+        let bincode = bincode::serialize(&SerializedBytes(&expected))?;
+
+        assert!(bincode::deserialize::<UncheckedDeserializedBytes>(&bincode).is_err());
+        assert_eq!(
+            unchecked_deserialize::<UncheckedDeserializedBytes>(&bincode)?,
+            UncheckedDeserializedBytes(UncheckedBytes(expected))
+        );
+
+        Ok(())
+    }
 
     #[test]
     fn test_macro_empty() {

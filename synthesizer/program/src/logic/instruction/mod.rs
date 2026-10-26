@@ -25,7 +25,7 @@ pub use operation::*;
 mod bytes;
 mod parse;
 
-use crate::{FinalizeRegistersState, FinalizeStoreTrait, RegistersCircuit, RegistersSigner, StackTrait, instruction};
+use crate::{FinalizeRegistersState, FinalizeStoreTrait, RegistersCircuit, RegistersSigner, StackTrait};
 use console::{
     network::Network,
     prelude::{

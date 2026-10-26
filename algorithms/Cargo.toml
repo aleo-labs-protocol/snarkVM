@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-algorithms"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -43,13 +43,13 @@ bench = false
 name = "varuna"
 path = "benches/snark/varuna.rs"
 harness = false
-required-features = [ "test" ]
+required-features = [ "test", "filesystem" ]
 
 [[bench]]
 name = "varuna_verifier"
 path = "benches/snark/varuna_verifier.rs"
 harness = false
-required-features = [ "test" ]
+required-features = [ "test", "filesystem" ]
 
 [dependencies.snarkvm-curves]
 workspace = true
@@ -67,6 +67,11 @@ workspace = true
 workspace = true
 optional = true
 
+[dependencies.ahash]
+version = "0.8"
+default-features = false
+features = [ "std", "no-rng" ]
+
 [dependencies.aleo-std]
 workspace = true
 
@@ -80,11 +85,8 @@ default-features = true
 [dependencies.cfg-if]
 workspace = true
 
-[dependencies.fxhash]
-version = "0.2.1"
-
 [dependencies.hashbrown]
-version = "0.15"
+version = "0.17"
 
 [dependencies.hex]
 workspace = true
@@ -118,6 +120,10 @@ workspace = true
 [dependencies.num-traits]
 workspace = true
 
+[dev-dependencies.aleo-std]
+workspace = true
+features = [ "storage" ]
+
 [dev-dependencies.expect-test]
 workspace = true
 
@@ -134,12 +140,9 @@ features = [ "preserve_order" ]
 [dev-dependencies.serial_test]
 workspace = true
 
-[dev-dependencies.snarkvm-parameters]
-workspace = true
-features = [ "filesystem" ]
-
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
+filesystem = [ "snarkvm-parameters/filesystem" ]
 locktick = [ "snarkvm-parameters/locktick" ]
 profiler = [ "aleo-std/profiler" ]
 test = [ ]

@@ -40,7 +40,7 @@ pub enum CallOperator<N: Network> {
 impl<N: Network> Parser for CallOperator<N> {
     /// Parses a string into an operator.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((map(Locator::parse, CallOperator::Locator), map(Identifier::parse, CallOperator::Resource)))(string)
     }
 }
@@ -373,9 +373,9 @@ impl<N: Network> Call<N> {
 impl<N: Network> Parser for Call<N> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses an operand from the string.
-        fn parse_operand<N: Network>(string: &str) -> ParserResult<Operand<N>> {
+        fn parse_operand<N: Network>(string: &str) -> ParserResult<'_, Operand<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the operand from the string.
@@ -383,7 +383,7 @@ impl<N: Network> Parser for Call<N> {
         }
 
         /// Parses a destination register from the string.
-        fn parse_destination<N: Network>(string: &str) -> ParserResult<Register<N>> {
+        fn parse_destination<N: Network>(string: &str) -> ParserResult<'_, Register<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the destination from the string.

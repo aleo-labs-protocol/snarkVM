@@ -264,22 +264,20 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
         // Construct the execution.
         let execution = Execution::from(transitions.into_iter(), global_state_root, proof)?;
 
-        // Construct the transaction.
-        let transaction = match has_fee {
-            // Retrieve the fee.
-            true => match self.fee_store().get_fee(transaction_id)? {
-                // Construct the transaction.
-                Some(fee) => Transaction::from_execution(execution, Some(fee))?,
-                None => bail!("Failed to get the fee for transaction '{transaction_id}'"),
-            },
-            false => Transaction::from_execution(execution, None)?,
+        // Retrieve the fee.
+        let fee = match has_fee {
+            true => {
+                let Some(fee) = self.fee_store().get_fee(transaction_id)? else {
+                    bail!("Failed to get the fee for transaction '{transaction_id}'");
+                };
+                Some(fee)
+            }
+            false => None,
         };
 
-        // Ensure the transaction ID matches.
-        match *transaction_id == transaction.id() {
-            true => Ok(Some(transaction)),
-            false => bail!("Mismatching transaction ID for transaction '{transaction_id}'"),
-        }
+        // Construct the transaction.
+        let execution_id = execution.to_execution_id()?;
+        Ok(Some(Transaction::Execute(*transaction_id, execution_id, Box::new(execution), fee)))
     }
 }
 

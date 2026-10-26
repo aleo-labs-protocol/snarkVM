@@ -115,7 +115,7 @@ fn test_program_with_output_scalar_from_atomic() {
 
     let mut transactions = Vec::with_capacity(cases.len());
     for (function, input, expected) in cases {
-        let inputs = vec![Value::<CurrentNetwork>::from_str(input).unwrap()];
+        let inputs = [Value::<CurrentNetwork>::from_str(input).unwrap()];
         let transaction =
             vm.execute(&caller_private_key, ("test_0.aleo", function), inputs.iter(), None, 0, None, rng).unwrap();
         let expected_output = Plaintext::<CurrentNetwork>::from_str(expected).unwrap();
@@ -188,7 +188,7 @@ fn test_program_with_output_scalar_from_record() {
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
     let mut records = Vec::with_capacity(2);
     for amount in ["7scalar", "8scalar"] {
-        let mint_inputs = vec![Value::<CurrentNetwork>::from_str(amount).unwrap()];
+        let mint_inputs = [Value::<CurrentNetwork>::from_str(amount).unwrap()];
         let mint_tx = vm
             .execute(&caller_private_key, ("test_scalar_record_0.aleo", "mint"), mint_inputs.iter(), None, 0, None, rng)
             .unwrap();
@@ -203,7 +203,7 @@ fn test_program_with_output_scalar_from_record() {
     }
 
     // Read the scalar entry with a public output and confirm its value.
-    let read_pub_inputs = vec![Value::Record(records[0].clone())];
+    let read_pub_inputs = [Value::Record(records[0].clone())];
     let read_pub_tx = vm
         .execute(
             &caller_private_key,
@@ -222,7 +222,7 @@ fn test_program_with_output_scalar_from_record() {
     );
 
     // Read the scalar entry with a private output.
-    let read_pri_inputs = vec![Value::Record(records[1].clone())];
+    let read_pri_inputs = [Value::Record(records[1].clone())];
     let read_pri_tx = vm
         .execute(
             &caller_private_key,
@@ -311,7 +311,7 @@ fn test_program_with_output_scalar_from_dynamic_record() {
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
     let mut dynamic_records = Vec::with_capacity(2);
     for amount in ["9scalar", "10scalar"] {
-        let mint_inputs = vec![Value::<CurrentNetwork>::from_str(amount).unwrap()];
+        let mint_inputs = [Value::<CurrentNetwork>::from_str(amount).unwrap()];
         let mint_tx = vm
             .execute(
                 &caller_private_key,
@@ -335,7 +335,7 @@ fn test_program_with_output_scalar_from_dynamic_record() {
 
     // Read the scalar entry with a public output and confirm its value. The root
     // transition is the last one (the `call.dynamic` to `consume` comes first).
-    let read_pub_inputs = vec![Value::DynamicRecord(dynamic_records[0].clone())];
+    let read_pub_inputs = [Value::DynamicRecord(dynamic_records[0].clone())];
     let read_pub_tx = vm
         .execute(
             &caller_private_key,
@@ -354,7 +354,7 @@ fn test_program_with_output_scalar_from_dynamic_record() {
     );
 
     // Read the scalar entry with a private output.
-    let read_pri_inputs = vec![Value::DynamicRecord(dynamic_records[1].clone())];
+    let read_pri_inputs = [Value::DynamicRecord(dynamic_records[1].clone())];
     let read_pri_tx = vm
         .execute(
             &caller_private_key,
@@ -435,7 +435,7 @@ fn test_program_with_output_scalar_from_array() {
 
     // Execute the array-reading functions with a fixed `[scalar; 4]` input and confirm
     // the first element (`1scalar`) is returned by both the direct and closure paths.
-    let array_input = vec![Value::<CurrentNetwork>::from_str("[1scalar, 2scalar, 3scalar, 4scalar]").unwrap()];
+    let array_input = [Value::<CurrentNetwork>::from_str("[1scalar, 2scalar, 3scalar, 4scalar]").unwrap()];
     let expected_output = Plaintext::<CurrentNetwork>::from_str("1scalar").unwrap();
 
     let mut transactions = Vec::with_capacity(2);
@@ -529,7 +529,7 @@ fn test_program_with_output_scalar_from_struct() {
 
     // Execute the struct-reading functions with a fixed `wrapper` input and confirm
     // the scalar field (`1scalar`) is returned by both the direct and closure paths.
-    let struct_input = vec![Value::<CurrentNetwork>::from_str("{ amount: 1scalar }").unwrap()];
+    let struct_input = [Value::<CurrentNetwork>::from_str("{ amount: 1scalar }").unwrap()];
     let expected_output = Plaintext::<CurrentNetwork>::from_str("1scalar").unwrap();
 
     let mut transactions = Vec::with_capacity(2);

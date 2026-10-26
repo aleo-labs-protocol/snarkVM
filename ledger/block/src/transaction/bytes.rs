@@ -16,9 +16,9 @@
 use super::*;
 
 impl<N: Network> FromBytes for Transaction<N> {
-    /// Reads the transaction from the buffer.
+    /// Reads the transaction from the buffer, recomputing the transaction ID unless `unchecked` is set.
     #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -36,12 +36,18 @@ impl<N: Network> FromBytes for Transaction<N> {
                 // Read the owner.
                 let owner = ProgramOwner::read_le(&mut reader)?;
                 // Read the deployment.
-                let deployment = Deployment::read_le(&mut reader)?;
+                let deployment = Deployment::read_le_with_unchecked(&mut reader, unchecked)?;
                 // Read the fee.
-                let fee = Fee::read_le(&mut reader)?;
+                let fee = Fee::read_le_with_unchecked(&mut reader, unchecked)?;
 
                 // Initialize the transaction.
-                let transaction = Self::from_deployment(owner, deployment, fee).map_err(|e| error(e.to_string()))?;
+                let transaction = match unchecked {
+                    true => deployment
+                        .to_deployment_id()
+                        .map(|deployment_id| Self::Deploy(id, deployment_id, owner, Box::new(deployment), fee)),
+                    false => Self::from_deployment(owner, deployment, fee),
+                }
+                .map_err(|e| error(e.to_string()))?;
                 // Return the ID and the transaction.
                 (id, transaction)
             }
@@ -49,19 +55,25 @@ impl<N: Network> FromBytes for Transaction<N> {
                 // Read the ID.
                 let id = N::TransactionID::read_le(&mut reader)?;
                 // Read the execution.
-                let execution = Execution::read_le(&mut reader)?;
+                let execution = Execution::read_le_with_unchecked(&mut reader, unchecked)?;
 
                 // Read the fee variant.
                 let fee_variant = u8::read_le(&mut reader)?;
                 // Read the fee.
                 let fee = match fee_variant {
                     0u8 => None,
-                    1u8 => Some(Fee::read_le(&mut reader)?),
+                    1u8 => Some(Fee::read_le_with_unchecked(&mut reader, unchecked)?),
                     _ => return Err(error("Invalid fee variant")),
                 };
 
                 // Initialize the transaction.
-                let transaction = Self::from_execution(execution, fee).map_err(|e| error(e.to_string()))?;
+                let transaction = match unchecked {
+                    true => execution
+                        .to_execution_id()
+                        .map(|execution_id| Self::Execute(id, execution_id, Box::new(execution), fee)),
+                    false => Self::from_execution(execution, fee),
+                }
+                .map_err(|e| error(e.to_string()))?;
                 // Return the ID and the transaction.
                 (id, transaction)
             }
@@ -69,10 +81,14 @@ impl<N: Network> FromBytes for Transaction<N> {
                 // Read the ID.
                 let id = N::TransactionID::read_le(&mut reader)?;
                 // Read the fee.
-                let fee = Fee::read_le(&mut reader)?;
+                let fee = Fee::read_le_with_unchecked(&mut reader, unchecked)?;
 
                 // Initialize the transaction.
-                let transaction = Self::from_fee(fee).map_err(|e| error(e.to_string()))?;
+                let transaction = match unchecked {
+                    true => Ok(Self::Fee(id, fee)),
+                    false => Self::from_fee(fee),
+                }
+                .map_err(|e| error(e.to_string()))?;
                 // Return the ID and the transaction.
                 (id, transaction)
             }
@@ -85,6 +101,18 @@ impl<N: Network> FromBytes for Transaction<N> {
             true => Ok(transaction),
             false => Err(error("Transaction ID mismatch")),
         }
+    }
+
+    /// Reads the transaction from the buffer.
+    #[inline]
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the transaction from the buffer without checking the data, trusting the stored transaction ID.
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -143,6 +171,8 @@ impl<N: Network> ToBytes for Transaction<N> {
 mod tests {
     use super::*;
 
+    type CurrentNetwork = console::network::MainnetV0;
+
     #[test]
     fn test_bytes() -> Result<()> {
         let rng = &mut TestRng::default();
@@ -162,6 +192,28 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Transaction::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, Transaction::read_le_unchecked(&expected_bytes[..])?);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_unchecked_trusts_id() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for transaction in [
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
+            crate::transaction::test_helpers::sample_fee_public_transaction(rng),
+        ] {
+            let mut bytes = transaction.to_bytes_le()?;
+            let id: <CurrentNetwork as Network>::TransactionID = Field::<CurrentNetwork>::rand(rng).into();
+            bytes[2..34].copy_from_slice(&id.to_bytes_le()?);
+
+            assert!(Transaction::<CurrentNetwork>::read_le(&bytes[..]).is_err());
+            let candidate = Transaction::<CurrentNetwork>::read_le_unchecked(&bytes[..])?;
+            assert_eq!(candidate.id(), id);
+            assert_eq!(candidate.to_bytes_le()?, bytes);
         }
         Ok(())
     }

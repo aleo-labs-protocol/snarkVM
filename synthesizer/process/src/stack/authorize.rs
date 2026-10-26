@@ -278,8 +278,31 @@ impl<N: Network> Stack<N> {
             return Err(anyhow!("No requests provided").into());
         }
 
+        // A root request has no caller, so it cannot be dynamic.
+        if requests[0].is_dynamic() {
+            return Err(anyhow!(
+                "The root request for '{}/{}' is flagged dynamic",
+                requests[0].program_id(),
+                requests[0].function_name()
+            )
+            .into());
+        }
+
         if *requests[0].program_id() != *self.program.id() {
             return Err(anyhow!("Program ID mismatch in 'authorize_requests'").into());
+        }
+
+        // Ensure each request's signer commitment `scm` is `Hash(signer || root_tvk)`.
+        let root_tvk = *requests[0].tvk();
+        for (index, request) in requests.iter().enumerate() {
+            if *request.scm() != N::hash_psd2(&[request.signer().to_x_coordinate(), root_tvk])? {
+                return Err(anyhow!(
+                    "The request at index {index} for '{}/{}' has a signer commitment that does not match its signer and root 'tvk'",
+                    request.program_id(),
+                    request.function_name()
+                )
+                .into());
+            }
         }
 
         // This index, passed to the call stack, tracks the element in the requests array currently

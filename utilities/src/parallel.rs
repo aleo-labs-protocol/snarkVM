@@ -55,12 +55,21 @@ impl<T> Default for ExecutionPool<'_, T> {
 #[cfg(not(feature = "serial"))]
 pub fn max_available_threads() -> usize {
     use aleo_std::Cpu;
-    let rayon_threads = rayon::current_num_threads();
+    use std::sync::OnceLock;
 
-    match aleo_std::get_cpu() {
-        Cpu::Intel => num_cpus::get_physical().min(rayon_threads),
-        Cpu::AMD | Cpu::Unknown => rayon_threads,
-    }
+    // On Linux, `num_cpus::get_physical` reads and parses `/proc/cpuinfo` on every call, which
+    // takes milliseconds on a many-core machine. Hot paths such as SNARK verification call this
+    // function several times per proof.
+    static INTEL_PHYSICAL_CORES: OnceLock<Option<usize>> = OnceLock::new();
+    let intel_physical_cores = *INTEL_PHYSICAL_CORES.get_or_init(|| match aleo_std::get_cpu() {
+        Cpu::Intel => Some(num_cpus::get_physical()),
+        Cpu::AMD | Cpu::Unknown => None,
+    });
+
+    // Read on every call, not cached: this is the size of the caller's pool, which may be
+    // smaller than the global one, such as a pool `execute_with_threads` installs.
+    let rayon_threads = rayon::current_num_threads();
+    intel_physical_cores.map_or(rayon_threads, |cores| cores.min(rayon_threads))
 }
 
 #[inline(always)]
@@ -338,4 +347,21 @@ macro_rules! cfg_sorted_by {
             $self.par_sorted_by($closure)
         }
     }};
+}
+
+#[cfg(all(test, not(feature = "serial")))]
+mod tests {
+    use super::*;
+    use aleo_std::Cpu;
+
+    #[test]
+    fn max_available_threads_matches_uncached_count() {
+        let rayon_threads = rayon::current_num_threads();
+        let expected = match aleo_std::get_cpu() {
+            Cpu::Intel => num_cpus::get_physical().min(rayon_threads),
+            Cpu::AMD | Cpu::Unknown => rayon_threads,
+        };
+        assert_eq!(max_available_threads(), expected);
+        assert_eq!(max_available_threads(), expected);
+    }
 }

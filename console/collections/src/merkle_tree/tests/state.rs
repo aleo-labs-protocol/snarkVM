@@ -54,6 +54,27 @@ fn check_state_round_trip<
         assert!(proof.verify(leaf_hasher, path_hasher, recreated.root(), leaf));
     }
 
+    // Taking ownership must be indistinguishable on the wire; it exists only so that the state can
+    // outlive the borrow, not to describe the tree differently.
+    let serialized_owned = bincode::serialize(&merkle_tree.to_state().into_owned())?;
+    assert_eq!(serialized, serialized_owned);
+
+    // ...and it must recreate the same tree.
+    let owned_state: MerkleTreeState<E> = bincode::deserialize(&serialized_owned)?;
+    let from_owned = MerkleTree::<E, LH, PH, DEPTH>::from_state(leaf_hasher, path_hasher, owned_state)?;
+    assert_eq!(recreated.root(), from_owned.root());
+    assert_eq!(recreated.tree(), from_owned.tree());
+
+    // An owned state borrows nothing, so it may be used after the tree it came from is gone.
+    let outliving_state = merkle_tree.to_state().into_owned();
+    drop(merkle_tree);
+    let from_outliving = MerkleTree::<E, LH, PH, DEPTH>::from_state(leaf_hasher, path_hasher, outliving_state)?;
+    assert_eq!(recreated.root(), from_outliving.root());
+
+    // Taking ownership of an already-owned state is a no-op.
+    let twice_owned = from_outliving.to_state().into_owned().into_owned();
+    assert_eq!(serialized, bincode::serialize(&twice_owned)?);
+
     Ok(())
 }
 

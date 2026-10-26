@@ -69,7 +69,7 @@ fn mint_record(
     let tx = vm
         .execute(caller_private_key, ("credits.aleo", "transfer_public_to_private"), inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(vm, caller_private_key, Some(&[&inputs]), &[tx.clone()], rng);
+    add_and_test_with_costs(vm, caller_private_key, Some(&[&inputs]), std::slice::from_ref(&tx), rng);
     let record = extract_record(&tx, &view_key);
     (tx, record)
 }
@@ -271,7 +271,7 @@ fn test_compare_transfer_public() {
         )
         .unwrap();
 
-    let dynamic_inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
+    let dynamic_inputs = [Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
     let dynamic_tx = vm
         .execute(
             &caller_private_key,
@@ -409,7 +409,7 @@ fn test_compare_transfer_public_as_signer() {
         )
         .unwrap();
 
-    let dynamic_inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
+    let dynamic_inputs = [Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
     let dynamic_tx = vm
         .execute(
             &caller_private_key,
@@ -553,7 +553,7 @@ fn test_compare_transfer_public_to_private() {
         )
         .unwrap();
 
-    let dynamic_inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
+    let dynamic_inputs = [Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
     let dynamic_tx = vm
         .execute(
             &caller_private_key,

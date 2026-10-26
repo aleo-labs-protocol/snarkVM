@@ -120,7 +120,7 @@ constructor:
     let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
     // Attempt to add the V3 deployment before V14 - it should be aborted.
-    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction.clone()], rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&v3_transaction), rng)?;
     assert_eq!(block.transactions().num_accepted(), 0, "V3 should be rejected before V14");
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 1, "V3 should be aborted before V14");

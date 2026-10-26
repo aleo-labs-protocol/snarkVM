@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-types"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console types for a decentralized virtual machine"
 homepage = "https://aleo.org"

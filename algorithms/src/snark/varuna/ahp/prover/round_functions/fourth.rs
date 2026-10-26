@@ -32,7 +32,7 @@ use crate::{
     },
 };
 use snarkvm_fields::{PrimeField, batch_inversion_and_mul};
-use snarkvm_utilities::ExecutionPool;
+use snarkvm_utilities::{ExecutionPool, defer};
 
 use anyhow::Result;
 use core::convert::TryInto;
@@ -80,6 +80,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         _r: &mut R,
     ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FourthRound");
+        defer! { end_timer!(round_time); }
 
         let verifier::SecondMessage { alpha, .. } = second_message;
         let verifier::ThirdMessage { beta } = third_message;
@@ -142,8 +143,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(oracles.matches_info(&Self::fourth_round_polynomial_info(
             state.circuit_specific_states.keys().map(|c| (c.id, &c.index_info))
         )));
-
-        end_timer!(round_time);
 
         Ok((msg, oracles, state))
     }

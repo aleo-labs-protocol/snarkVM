@@ -21,6 +21,9 @@ mod macros;
 mod program;
 pub use program::*;
 
+mod history;
+pub use history::*;
+
 mod rewards;
 pub use rewards::*;
 

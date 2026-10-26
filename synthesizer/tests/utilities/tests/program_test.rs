@@ -217,6 +217,8 @@ impl ExpectedTest for ProgramTest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_yaml::{Mapping, Value};
+    use std::path::PathBuf;
 
     // Constructs a minimal `ProgramTest` for exercising `save`; only `path` and `rewrite` are used.
     fn program_test_for_save(path: PathBuf, rewrite: bool) -> ProgramTest {

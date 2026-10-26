@@ -156,7 +156,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // If the block is the start of a new epoch, or the epoch hash has not been set,
         // update the current epoch hash and clear the epoch prover cache.
-        if block.height() % N::NUM_BLOCKS_PER_EPOCH == 0 || self.current_epoch_hash.read().is_none() {
+        if block.height().is_multiple_of(N::NUM_BLOCKS_PER_EPOCH) || self.current_epoch_hash.read().is_none() {
             // Update and log the current epoch hash.
             match self.get_epoch_hash(block.height()).ok() {
                 Some(epoch_hash) => {
@@ -416,7 +416,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let (block_spend_limit, block_synthesis_limit) = if let Some(subdag) = subdag {
             (subdag.spend_limit(next_height), subdag.synthesis_limit(next_height))
         } else {
-            (None, None)
+            (Subdag::<N>::min_spend_limit(next_height), Subdag::<N>::min_synthesis_limit(next_height))
         };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(

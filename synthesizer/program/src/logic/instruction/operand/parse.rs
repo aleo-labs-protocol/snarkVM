@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Operand<N> {
     /// Parses a string into a operand.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse to determine the operand (order matters).
         alt((
             // Parse special operands before literals, registers, and program IDs.

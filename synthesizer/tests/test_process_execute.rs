@@ -146,7 +146,6 @@ fn run_test(process: &Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml
                                     response
                                         .outputs()
                                         .iter()
-                                        .cloned()
                                         .map(|output| serde_yaml::Value::String(output.to_string()))
                                         .collect_vec(),
                                 ),

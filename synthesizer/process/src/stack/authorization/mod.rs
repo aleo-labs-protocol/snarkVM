@@ -553,13 +553,7 @@ pub(crate) mod test_helpers {
 
         // Generate the Authorization
         let authorization = process
-            .authorize::<CurrentAleo, _>(
-                &private_key,
-                &program_id,
-                &function_name,
-                vec![destination, amount].iter(),
-                rng,
-            )
+            .authorize::<CurrentAleo, _>(&private_key, &program_id, &function_name, [destination, amount].iter(), rng)
             .unwrap();
 
         // Assert there is only 1 transition

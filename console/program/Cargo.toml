@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-program"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -54,7 +54,7 @@ workspace = true
 workspace = true
 
 [dependencies.num-derive]
-version = "0.4"
+version = "0.5"
 
 [dependencies.num-traits]
 workspace = true

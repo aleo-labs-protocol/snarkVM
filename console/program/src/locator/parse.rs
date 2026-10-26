@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Locator<N> {
     /// Parses a string into a locator of the form `{program_id}/{resource}`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the program ID from the string.
         let (string, id) = ProgramID::parse(string)?;
         // Parse the "/" and resource from the string.

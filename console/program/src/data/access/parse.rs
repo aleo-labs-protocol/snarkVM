@@ -16,7 +16,7 @@
 use super::*;
 
 impl<N: Network> Parser for Access<N> {
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((
             map(pair(tag("["), pair(U32::parse, tag("]"))), |(_, (index, _))| Self::Index(index)),
             map(pair(tag("."), Identifier::parse), |(_, identifier)| Self::Member(identifier)),

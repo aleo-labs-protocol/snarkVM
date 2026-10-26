@@ -60,20 +60,38 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
     /// The minimum number of input bits (at least one window).
     const MIN_BITS: usize = WINDOW_SIZE as usize * BHP_CHUNK_SIZE;
 
+    /// Largest absolute value of one window sum, `4 * (16^window_size - 1) / 15`.
+    ///
+    /// Chunk `j` contributes a coefficient in `{±1, ±2, ±3, ±4}` times `16^j`.
+    /// Returns an error when that sum does not fit in `E::BigInteger`.
+    fn window_sum_bound(window_size: u8) -> Result<E::BigInteger> {
+        let mut place = E::BigInteger::from(1_u64);
+        let mut sum = E::BigInteger::from(0_u64);
+        for index in 0..u32::from(window_size) {
+            let mut term = place;
+            term.muln(2);
+            ensure!(term > place, "BHP window sum exceeds the integer width");
+            ensure!(!sum.add_nocarry(&term), "BHP window sum exceeds the integer width");
+            if index + 1 < u32::from(window_size) {
+                let previous = place;
+                place.muln(4);
+                ensure!(place > previous, "BHP window sum exceeds the integer width");
+            }
+        }
+        Ok(sum)
+    }
+
     /// Initializes a new instance of BHP with the given domain.
     pub fn setup(domain: &str) -> Result<Self> {
         #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
-        // Calculate the maximum window size.
-        let mut maximum_window_size = 0;
-        let mut range = E::BigInteger::from(2_u64);
-        while range < E::Scalar::modulus_minus_one_div_two() {
-            // range < (p-1)/2
-            range.muln(4); // range * 2^4
-            maximum_window_size += 1;
-        }
-        ensure!(WINDOW_SIZE <= maximum_window_size, "The maximum BHP window size is {maximum_window_size}");
+        // Chunk `j` contributes a coefficient in {±1, ±2, ±3, ±4} times `16^j`.
+        // The absolute value of one window is at most `4 * (16^WINDOW_SIZE - 1) / 15`.
+        // Incomplete Montgomery addition divides by a difference of x-coordinates.
+        // The division is defined when that bound is below the group order and no base is the identity.
+        let window_sum = Self::window_sum_bound(WINDOW_SIZE)?;
+        ensure!(window_sum < E::Scalar::modulus(), "BHP window sum must be below the group order");
 
         // Compute the bases.
         let bases = (0..NUM_WINDOWS)
@@ -97,6 +115,11 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         ensure!(bases.len() == NUM_WINDOWS as usize, "Incorrect number of BHP windows ({})", bases.len());
         for window in &bases {
             ensure!(window.len() == WINDOW_SIZE as usize, "Incorrect BHP window size ({})", window.len());
+            // Hash-to-curve clears the cofactor and resamples the identity.
+            // A stored identity has no Montgomery coordinates.
+            for base in window {
+                ensure!(!base.is_zero(), "BHP base point is the identity");
+            }
         }
 
         // Compute the bases lookup.
@@ -172,6 +195,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             "Incorrect number of BHP random base powers ({})",
             random_base.len()
         );
+        for base in &random_base {
+            ensure!(!base.is_zero(), "BHP random base point is the identity");
+        }
 
         #[cfg(feature = "dev-print")]
         {

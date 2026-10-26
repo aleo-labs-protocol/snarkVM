@@ -387,9 +387,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             // Note that we do not need to check the quorum requirement for the previous certificates
             // because that is done during construction in `BatchCertificate::new`.
             cfg_iter!(certificates).try_for_each(|certificate| {
-                // Collect the certificate signers.
-                let mut signers: HashSet<_> =
-                    certificate.signatures().map(|signature| signature.to_address()).collect();
+                // Collect the certificate signers. Note that `signers` is cached on the
+                // certificate, so this does not re-derive an address per signature.
+                let mut signers: HashSet<_> = certificate.signers().iter().copied().collect();
                 // Append the certificate author.
                 signers.insert(certificate.author());
 

@@ -32,10 +32,7 @@ use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejec
 use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use snarkvm_ledger_narwhal::{BatchHeader, Data, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_store::ConsensusStore;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_ledger_store::helpers::MapRead;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_synthesizer::bonded_map_into_stakers;
+
 use snarkvm_synthesizer::{
     program::Program,
     vm::{TransactionCacheKey, VM},
@@ -128,6 +125,36 @@ fn test_load_unchecked() {
     assert_eq!(ledger.latest_height(), genesis.height());
     assert_eq!(ledger.latest_round(), genesis.round());
     assert_eq!(ledger.latest_block(), genesis);
+}
+
+/// Loads a ledger whose genesis state root is `Field::one()`.
+#[cfg(feature = "dev_genesis_state_root")]
+#[test]
+fn test_load_dev_genesis_state_root() {
+    let rng = &mut TestRng::default();
+
+    // Sample the genesis private key.
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    // Initialize the store.
+    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None)).unwrap();
+    // Create a genesis block.
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+
+    // Initialize the ledger with the genesis block.
+    let storage_mode = StorageMode::new_test(None);
+    let ledger = CurrentLedger::load(genesis.clone(), storage_mode.clone()).unwrap();
+    assert_eq!(ledger.latest_height(), 0);
+    assert_eq!(ledger.latest_block(), genesis);
+    assert_eq!(ledger.get_state_root(0).unwrap().unwrap(), console::types::Field::<CurrentNetwork>::one().into());
+    // Block 1 speculation treats genesis as inserted when this lookup finds a height.
+    assert_eq!(ledger.find_block_height_from_state_root(ledger.latest_state_root()).unwrap(), Some(0));
+    drop(ledger);
+
+    // Load the same storage mode again while the chain is still at height 0.
+    let ledger = CurrentLedger::load(genesis.clone(), storage_mode).unwrap();
+    assert_eq!(ledger.latest_height(), 0);
+    assert_eq!(ledger.latest_block(), genesis);
+    assert_eq!(ledger.get_state_root(0).unwrap().unwrap(), console::types::Field::<CurrentNetwork>::one().into());
 }
 
 #[test]
@@ -653,34 +680,6 @@ fn test_bond_and_unbond_validator() {
         Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
             .unwrap();
 
-    // Check the initial historical mapping values.
-    #[cfg(feature = "history")]
-    {
-        let initial_mapping_value = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let initial_mapping_value_overshot = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 10)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let initial_mapping_heights = ledger
-            .vm()
-            .finalize_store()
-            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_heights, &[0]);
-    }
-
     // Check that the next block is valid.
     ledger.check_next_block(&transfer_block, rng).unwrap();
 
@@ -714,50 +713,6 @@ fn test_bond_and_unbond_validator() {
 
     // Add the bond public block to the ledger.
     ledger.advance_to_next_block(&bond_validator_block).unwrap();
-
-    // Check the historical mapping values after the bonding.
-    #[cfg(feature = "history")]
-    {
-        let initial_mapping_value = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let initial_mapping_value_overshot = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 1)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let post_bond_mapping_value = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 2)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_bond_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
-
-        let post_bond_mapping_value_overshot = ledger
-            .vm()
-            .finalize_store()
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 5)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_bond_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
-
-        let post_bond_mapping_heights = ledger
-            .vm()
-            .finalize_store()
-            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_bond_mapping_heights, &[0, 2]);
-    }
 
     // Check that the committee is updated with the new member.
     let committee = ledger.latest_committee().unwrap();
@@ -805,71 +760,6 @@ fn test_bond_and_unbond_validator() {
 
     // Add the bond public block to the ledger.
     ledger.advance_to_next_block(&unbond_public_block).unwrap();
-
-    // Check the historical mapping values after the unbonding.
-    #[cfg(feature = "history")]
-    {
-        let store = ledger.vm().finalize_store();
-        let initial_mapping_value = store
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let initial_mapping_value_overshot = store
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 1)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let post_bond_mapping_value = store
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 2)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_bond_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
-
-        let post_unbond_mapping_value = store
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 3)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_unbond_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let post_unbond_mapping_value_overshot = store
-            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 100)
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_unbond_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
-
-        let post_unbond_mapping_heights = store
-            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
-            .unwrap()
-            .unwrap();
-        assert_eq!(&*post_unbond_mapping_heights, &[0, 2, 3]);
-    }
-
-    // Check the historical rewards after the (un)bonding operations.
-    #[cfg(feature = "history-staking-rewards")]
-    {
-        let store = ledger.vm().finalize_store();
-        let program_id = ProgramID::from_str("credits.aleo").unwrap();
-        let bonded_mapping = Identifier::from_str("bonded").unwrap();
-        let bonded_map = store.get_mapping_speculative(program_id, bonded_mapping).unwrap();
-        let stakers = bonded_map_into_stakers(bonded_map).unwrap();
-
-        let initial_stake = MIN_VALIDATOR_STAKE;
-        let mut cumulative_reward = 0;
-        for height in 1..=3 {
-            for (i, staker) in stakers.keys().enumerate() {
-                let (validator, reward, new_stake) =
-                    store.staking_rewards_map().get_confirmed(&(*staker, height)).unwrap().unwrap().into_owned();
-                if i == 0 {
-                    cumulative_reward += reward;
-                }
-                assert_eq!(*staker, validator);
-                assert_eq!(initial_stake + cumulative_reward, new_stake);
-            }
-        }
-    }
 
     // Check that the committee does not include the new member.
     let committee = ledger.latest_committee().unwrap();
@@ -2168,7 +2058,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &first_private_key,
             ("credits.aleo", "bond_validator"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&first_withdrawal_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u8").unwrap(),
@@ -2212,7 +2102,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &second_private_key,
             ("credits.aleo", "bond_validator"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&second_withdrawal_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u8").unwrap(),
@@ -2260,7 +2150,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &first_withdrawal_private_key,
             ("credits.aleo", "unbond_public"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&first_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
             ]
@@ -2278,7 +2168,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &second_private_key,
             ("credits.aleo", "bond_validator"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&second_withdrawal_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u8").unwrap(),
@@ -2467,7 +2357,7 @@ finalize foo:
         let mut confirmed_transaction_ids = transactions.iter().map(Transaction::id).collect::<Vec<_>>();
 
         // Randomly insert the aborted transactions.
-        let mut aborted_transactions = vec![aborted_transfer.clone(), aborted_deployment.clone()];
+        let mut aborted_transactions = [aborted_transfer.clone(), aborted_deployment.clone()];
         aborted_transactions.shuffle(rng);
 
         // Randomly insert the aborted transactions.
@@ -3691,8 +3581,8 @@ fn test_forged_block_subdags() -> Result<()> {
         // Build new set of transmissions that matches the modified DAG
         // (we cannot just remove it, because transmissions might be in other batches as well)
         let transmissions: IndexMap<_, _> = subdag
-            .iter()
-            .flat_map(|(_, batches)| batches.iter())
+            .values()
+            .flat_map(|batches| batches.iter())
             .flat_map(|batch| batch.transmission_ids().iter())
             .map(|tid| (*tid, block_2_transmissions.get(tid).unwrap().clone()))
             .collect();
@@ -3776,8 +3666,8 @@ fn test_subdag_with_gc_length() -> Result<()> {
         // Build new set of transmissions that matches the modified DAG
         // (we cannot just remove it, because transmissions might be in other batches as well)
         let transmissions: IndexMap<_, _> = forged_subdag
-            .iter()
-            .flat_map(|(_, batches)| batches.iter())
+            .values()
+            .flat_map(|batches| batches.iter())
             .flat_map(|batch| batch.transmission_ids().iter())
             .map(|tid| (*tid, transmissions.get(tid).unwrap().clone()))
             .collect();
@@ -3945,7 +3835,7 @@ function create_and_consume:
     let record = block.records().collect_vec().last().unwrap().1.decrypt(&view_key).unwrap();
     let transaction = ledger
         .vm()
-        .execute(&private_key, ("child.aleo", "burn"), vec![Value::Record(record)].iter(), None, 0, None, rng)
+        .execute(&private_key, ("child.aleo", "burn"), [Value::Record(record)].iter(), None, 0, None, rng)
         .unwrap();
     let block =
         ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
@@ -3994,7 +3884,7 @@ function create_and_consume:
         .execute(
             &private_key,
             ("parent.aleo", "consume_without_call"),
-            vec![Value::Record(mint_record.clone())].iter(),
+            [Value::Record(mint_record.clone())].iter(),
             None,
             0,
             None,
@@ -4018,7 +3908,7 @@ function create_and_consume:
     // Call the `consume` function.
     let transaction = ledger
         .vm()
-        .execute(&private_key, ("parent.aleo", "consume"), vec![Value::Record(mint_record)].iter(), None, 0, None, rng)
+        .execute(&private_key, ("parent.aleo", "consume"), [Value::Record(mint_record)].iter(), None, 0, None, rng)
         .unwrap();
     let block =
         ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();

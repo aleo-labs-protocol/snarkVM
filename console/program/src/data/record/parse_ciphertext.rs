@@ -20,7 +20,7 @@ static RECORD_CIPHERTEXT_PREFIX: &str = "record";
 impl<N: Network> Parser for Record<N, Ciphertext<N>> {
     /// Parses a string into an ciphertext.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the record ciphertext.
         let parse_record_ciphertext = recognize(pair(
             pair(tag(RECORD_CIPHERTEXT_PREFIX), tag("1")),

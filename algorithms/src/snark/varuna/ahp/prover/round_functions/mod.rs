@@ -28,7 +28,7 @@ use itertools::Itertools;
 use rand::{CryptoRng, Rng};
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::dev_println;
+use snarkvm_utilities::{defer, dev_println};
 
 mod fifth;
 mod first;
@@ -44,6 +44,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         rng: &mut R,
     ) -> Result<prover::State<'a, F, SM>, AHPError> {
         let init_time = start_timer!(|| "AHP::Prover::Init");
+        defer! { end_timer!(init_time); }
 
         let mut randomizing_assignments = Vec::with_capacity(circuits_to_constraints.len());
         for constraints in circuits_to_constraints.values() {
@@ -70,38 +71,42 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
         let indices_and_assignments = circuits_to_constraints
             .iter()
-            .zip_eq(randomizing_assignments.into_iter())
+            .zip_eq(randomizing_assignments)
             .map(|((circuit, constraints), circuit_rand_assignments)| {
                 let assignments = constraints
                     .iter()
                     .zip(circuit_rand_assignments)
                     .enumerate()
                     .map(|(i, (instance, rand_assignments))| {
-                        let constraint_time = start_timer!(|| format!(
-                            "Generating constraints and witnesses for {:?} and index {i}",
-                            circuit.id
-                        ));
+                        let mut pcs = {
+                            let constraint_time = start_timer!(|| format!(
+                                "Generating constraints and witnesses for {:?} and index {i}",
+                                circuit.id
+                            ));
+                            defer! { end_timer!(constraint_time); }
 
-                        // i may not be used if the timer feature is disabled.
-                        #[allow(unused_variables)]
-                        let _ = i;
+                            // i may not be used if the timer feature is disabled.
+                            #[allow(unused_variables)]
+                            let _ = i;
 
-                        let mut pcs = prover::ConstraintSystem::new();
-                        instance.generate_constraints(&mut pcs)?;
-                        end_timer!(constraint_time);
+                            let mut pcs = prover::ConstraintSystem::new();
+                            instance.generate_constraints(&mut pcs)?;
+                            pcs
+                        };
 
-                        let padding_time =
-                            start_timer!(|| format!("Padding matrices for {:?} and index {i}", circuit.id));
+                        {
+                            let padding_time =
+                                start_timer!(|| format!("Padding matrices for {:?} and index {i}", circuit.id));
+                            defer! { end_timer!(padding_time); }
 
-                        SM::ZK.then(|| {
-                            crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(
-                                &mut pcs,
-                                rand_assignments,
-                            )
-                        });
-                        crate::snark::varuna::ahp::matrices::pad_input_for_indexer_and_prover(&mut pcs)?;
-
-                        end_timer!(padding_time);
+                            SM::ZK.then(|| {
+                                crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(
+                                    &mut pcs,
+                                    rand_assignments,
+                                )
+                            });
+                            crate::snark::varuna::ahp::matrices::pad_input_for_indexer_and_prover(&mut pcs)?;
+                        }
 
                         let prover::ConstraintSystem {
                             public_variables: padded_public_variables,
@@ -170,7 +175,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .collect::<Result<BTreeMap<&'a Circuit<F, SM>, Vec<prover::Assignments<F>>>, AHPError>>()?;
 
         let state = prover::State::initialize(indices_and_assignments)?;
-        end_timer!(init_time);
 
         Ok(state)
     }

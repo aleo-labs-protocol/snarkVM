@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-store"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A data store for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -18,10 +18,9 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
-history = [ ]
-history-staking-rewards = [ ]
-slipstream-plugins = [ "dep:snarkvm-slipstream-plugin-manager" ]
+dev_genesis_state_root = [ ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
+metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]
 serial = [
   "snarkvm-console/serial",
@@ -43,7 +42,7 @@ wasm = [
 ]
 test = [ ]
 
-[dependencies.snarkvm-slipstream-plugin-manager]
+[dependencies.snarkvm-metrics]
 workspace = true
 optional = true
 
@@ -99,7 +98,7 @@ workspace = true
 workspace = true
 
 [dependencies.rocksdb]
-version = "0.24"
+version = "0.25"
 default-features = false
 features = [ "lz4" ]
 optional = true

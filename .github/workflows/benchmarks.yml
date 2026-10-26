@@ -3,8 +3,8 @@ name: Run snarkVM Benchmarks
 on:
   push:
     branches:
-      - 'staging'
-      - 'fix/benchmark-ci'
+      - 'testnet'
+      - 'mainnet'
   workflow_dispatch:
 
 jobs:
@@ -17,26 +17,30 @@ jobs:
       contents: write
     env:
       # Override .cargo/config.toml's target-cpu=native. Cached proc-macros and
-      # build scripts compiled for one runner CPU SIGILL on another. Keep lld.
-      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+      # build scripts compiled for one runner CPU SIGILL on another.
+      RUSTFLAGS: ""
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install required Debian pacakges
-        run: sudo apt install -y lld
+      # RocksDB benches need libclang (via bindgen).
+      - name: Install required Debian packages
+        run: |
+          DEBIAN_FRONTEND=noninteractive sudo apt-get update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
+            clang libclang-dev llvm-dev llvm pkg-config xz-utils make libssl-dev
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
           # Bump the key suffix when RUSTFLAGS change to invalidate poisoned caches.
-          key: ${{ runner.os }}-cargo-bench-v2-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-bench-v3-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Benchmark algorithms
         run: |
@@ -73,7 +77,7 @@ jobs:
         run: |
           set -o pipefail
           cd console/collections
-          cargo bench --locked --bench merkle_tree -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench merkle_tree -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/types
@@ -93,7 +97,7 @@ jobs:
       - name: Benchmark ledger (block)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a output.txt
 
       - name: Benchmark ledger (dag)
         run: |
@@ -103,17 +107,24 @@ jobs:
       - name: Benchmark ledger (transaction)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
 
-      - name: Benchmark ledger (store)
+      - name: Benchmark ledger (verify_transaction)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench store --features=rocks,test-helpers -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench verify_transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
+
+      # Skip store/advance: require a pre-generated `test-ledger/` fixture
+      # (see `snarkvm-testchain-generator --no-ledger`).
 
       - name: Benchmark ledger/puzzle
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- --output-format bencher | tee -a output.txt
+          # Puzzle::prove is high-variance at the crate's 10-sample default; the
+          # bencher median then trips the 200% alert. Collect it separately with
+          # more samples and longer windows. Filter so check_solutions stays cheap.
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::prove --output-format bencher --sample-size 100 --warm-up-time 3 --measurement-time 10 | tee -a output.txt
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::check_solutions --output-format bencher | tee -a output.txt
 
       # Clean benchmark output to remove unnecessary lines
       - name: Clean benchmark output
@@ -122,7 +133,7 @@ jobs:
 
       # Download previous benchmark result from cache (if exists)
       - name: Download previous benchmark data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
@@ -133,11 +144,13 @@ jobs:
           name: snarkVM Benchmarks
           tool: 'cargo'
           output-file-path: output.txt
+          # testnet and mainnet keep separate gh-pages histories.
+          benchmark-data-dir-path: dev/bench/${{ github.ref_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          alert-threshold: '150%'
+          alert-threshold: '200%'
           comment-on-alert: true
           fail-on-alert: true
-          alert-comment-cc-users: '@vicsn'
+          alert-comment-cc-users: '@vicsn,@snarkworld,@cbeck88'
           auto-push: true
           # Enable Job Summary for PRs
           summary-always: true

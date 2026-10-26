@@ -229,7 +229,7 @@ pub mod string_parser {
 #[test]
 fn test_parse_string() {
     // to use parse_string_wrapper instead of string_parser::parse_string::<nom::error::VerboseError<&str>> in the tests below:
-    fn parse_string_wrapper(input: &str) -> crate::ParserResult<String> {
+    fn parse_string_wrapper(input: &str) -> crate::ParserResult<'_, String> {
         string_parser::parse_string(input)
     }
 

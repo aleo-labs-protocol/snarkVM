@@ -13,15 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Detect the rustc channel
-use rustc_version::{Channel, version_meta};
+// Tests that the translation-marked variants of Input and Output are checked correctly.
+mod translated_type_checks;
 
-fn main() {
-    // Set cfg flags depending on release channel
-    match version_meta().unwrap().channel {
-        Channel::Stable => println!("cargo:rustc-cfg=stable"),
-        Channel::Beta => println!("cargo:rustc-cfg=beta"),
-        Channel::Nightly => println!("cargo:rustc-cfg=nightly"),
-        Channel::Dev => println!("cargo:rustc-cfg=rustc_dev"),
-    }
-}
+// Tests for the V20 plaintext-type size bound.
+mod plaintext_size;
+
+// Tests on the deployment of programs with non-deterministic dynamic-call targets. The relevant
+// changes are not ConsensusVersion::V19-gated, but they were introduced at that point in time.
+mod non_deterministic_dynamic_targets;
+
+use super::*;

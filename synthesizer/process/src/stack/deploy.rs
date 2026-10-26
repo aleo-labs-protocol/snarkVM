@@ -89,7 +89,10 @@ impl<N: Network> Stack<N> {
         &self,
         consensus_version: ConsensusVersion,
         deployment: &Deployment<N>,
-        rng: &mut R,
+        // Retained for API compatibility. Deployment verification is intentionally deterministic:
+        // all randomness is drawn from `seeded_rng` (seeded by the deployment ID) so that every
+        // validator computes the same result.
+        _rng: &mut R,
     ) -> Result<()> {
         let timer = timer!("Stack::verify_deployment");
 
@@ -120,11 +123,26 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        if consensus_version < ConsensusVersion::V18 {
-            // Check that the number of combined variables does not exceed the deployment limit.
-            ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
-            // Check that the number of combined constraints does not exceed the deployment limit.
-            ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
+        // Enforce per-transaction variable and constraint limits, except at V18 where a block-wide
+        // synthesis limit is used instead.
+        let (variable_limit, constraint_limit) = if consensus_version >= ConsensusVersion::V19 {
+            (Some(N::MAX_DEPLOYMENT_VARIABLES_V2), Some(N::MAX_DEPLOYMENT_CONSTRAINTS_V2))
+        } else if consensus_version >= ConsensusVersion::V18 {
+            (None, None)
+        } else {
+            (Some(N::MAX_DEPLOYMENT_VARIABLES), Some(N::MAX_DEPLOYMENT_CONSTRAINTS))
+        };
+        if let Some(variable_limit) = variable_limit {
+            ensure!(
+                deployment.num_combined_variables()? <= variable_limit,
+                "The number of combined variables exceeds the deployment limit"
+            );
+        }
+        if let Some(constraint_limit) = constraint_limit {
+            ensure!(
+                deployment.num_combined_constraints()? <= constraint_limit,
+                "The number of combined constraints exceeds the deployment limit"
+            );
         }
 
         // Construct the call stacks and assignments used to verify the certificates.
@@ -155,12 +173,15 @@ impl<N: Network> Stack<N> {
         let seed = u64::from_bytes_le(&deployment.to_deployment_id()?.to_bytes_le()?[0..8])?;
         let mut seeded_rng = rand_chacha::ChaChaRng::seed_from_u64(seed);
 
+        // Seed a new RNG to sample some of the random values without altering `seeded_rng`.
+        let mut sub_seeded_rng = rand_chacha::ChaChaRng::seed_from_u64(seeded_rng.random());
+
         // Iterate through the program functions and construct the callstacks and corresponding assignments.
         for (function, (_, (verifying_key, _))) in
             deployment.program().functions().values().zip_eq(deployment.function_verifying_keys())
         {
             // Initialize a burner private key.
-            let burner_private_key = PrivateKey::new(rng)?;
+            let burner_private_key = PrivateKey::new(&mut sub_seeded_rng)?;
             // Compute the burner address.
             let burner_address = Address::try_from(&burner_private_key)?;
             // Retrieve the input types.
@@ -188,7 +209,7 @@ impl<N: Network> Stack<N> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             lap!(timer, "Sample the inputs");
-            // Sample a dummy 'is_root'.
+            // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
             let is_root = true;
 
             // Compute the request, with a burner private key.
@@ -202,7 +223,9 @@ impl<N: Network> Stack<N> {
                 is_root,
                 program_checksum,
                 false,
-                rng,
+                // Draw the request nonce from the secondary seeded RNG as well, so no part of the
+                // `CheckDeployment` synthesis depends on the ambient RNG. See the burner note above.
+                &mut sub_seeded_rng,
             )?;
             lap!(timer, "Compute the request for {}", function.name());
             // Initialize the assignments.
@@ -284,25 +307,33 @@ impl<N: Network> Stack<N> {
                 .iter()
                 .map(|(record_name, _record_type)| {
                     // Construct a random `TranslationAssignment`.
+                    // Note: All randomness here is drawn from `seeded_rng` (seeded by the deployment
+                    // ID), not the ambient `_rng`, so that the translation assignment — and thus the
+                    // certificate check below — is identical across all validators.
                     let program_id = *self.program_id();
-                    let function_id = Field::<N>::from_u64(Uniform::rand(rng));
+                    let function_id = Field::<N>::from_u64(Uniform::rand(&mut sub_seeded_rng));
                     let record_name = *record_name;
-                    let record_static = self.sample_record(&Address::rand(rng), &record_name, Group::rand(rng), rng)?;
+                    let record_static = self.sample_record(
+                        &Address::rand(&mut sub_seeded_rng),
+                        &record_name,
+                        Group::rand(&mut sub_seeded_rng),
+                        &mut sub_seeded_rng,
+                    )?;
                     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                    let translation_index: u16 = Uniform::rand(rng);
-                    let tvk = Uniform::rand(rng);
-                    let record_register_index = Uniform::rand(rng);
-                    let record_view_key: Option<Field<N>> = UniformExt::rand_option(rng);
-                    let gamma: Option<Group<N>> = UniformExt::rand_option(rng);
+                    let translation_index: u16 = Uniform::rand(&mut sub_seeded_rng);
+                    let tvk = Uniform::rand(&mut sub_seeded_rng);
+                    let record_register_index = Uniform::rand(&mut sub_seeded_rng);
+                    let record_view_key: Option<Field<N>> = UniformExt::rand_option(&mut sub_seeded_rng);
+                    let gamma: Option<Group<N>> = UniformExt::rand_option(&mut sub_seeded_rng);
                     let id_dynamic = compute_console_dynamic_or_external_record_id(
                         function_id,
                         record_dynamic.to_fields()?,
                         tvk,
                         U16::new(record_register_index),
                     )?;
-                    let is_to_static = Uniform::rand(rng);
-                    let is_external_record = Uniform::rand(rng);
-                    let id_static = Uniform::rand(rng);
+                    let is_to_static = Uniform::rand(&mut sub_seeded_rng);
+                    let is_external_record = Uniform::rand(&mut sub_seeded_rng);
+                    let id_static = Uniform::rand(&mut sub_seeded_rng);
 
                     lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
 

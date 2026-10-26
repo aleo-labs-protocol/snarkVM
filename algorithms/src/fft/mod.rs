@@ -30,9 +30,17 @@ mod tests;
 
 use snarkvm_fields::FftField;
 
+/// Whether the CUDA kernels, which are compiled for BLS12-377's `Fr`, can read
+/// a buffer of `T`.
+#[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+pub(crate) fn is_cuda_field<T: 'static>() -> bool {
+    core::any::TypeId::of::<T>() == core::any::TypeId::of::<snarkvm_curves::bls12_377::Fr>()
+}
+
 /// Types that can be FFT-ed must implement this trait.
 pub trait DomainCoeff<F: FftField>:
-    Copy
+    'static
+    + Copy
     + Send
     + Sync
     + core::ops::Add<Output = Self>
@@ -47,7 +55,8 @@ pub trait DomainCoeff<F: FftField>:
 impl<T, F> DomainCoeff<F> for T
 where
     F: FftField,
-    T: Copy
+    T: 'static
+        + Copy
         + Send
         + Sync
         + snarkvm_fields::Zero

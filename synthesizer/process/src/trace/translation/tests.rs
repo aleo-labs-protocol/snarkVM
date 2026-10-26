@@ -142,6 +142,50 @@ fn test_translation_simple() {
 }
 
 #[test]
+fn test_varuna_v3_translation_key_reuse() -> Result<()> {
+    use circuit::Environment;
+    use snarkvm_algorithms::snark::varuna::VarunaVersion;
+    use snarkvm_synthesizer_snark::UniversalSRS;
+
+    let rng = &mut TestRng::fixed(3106);
+    let record = r"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }";
+    let srs = UniversalSRS::<CurrentNetwork>::load()?;
+    let mut expected_key = None;
+    for is_to_static in [false, true] {
+        for is_external in [false, true] {
+            CurrentAleo::reset();
+            let (mut translation, index) =
+                translation_assignment_from_record_str(record, is_to_static, is_external, None, rng);
+            if is_external {
+                translation.id_static = compute_console_dynamic_or_external_record_id(
+                    translation.function_id,
+                    translation.record_static.to_fields()?,
+                    translation.tvk,
+                    U16::new(translation.record_register_index),
+                )?;
+            }
+            let assignment = translation.to_circuit_assignment::<CurrentAleo>(index, None, None, None)?;
+            let (pk, vk) = srs.to_circuit_key("translation", &assignment)?;
+            if let Some(expected_key) = &expected_key {
+                assert!(expected_key == &vk);
+            } else {
+                expected_key = Some(vk.clone());
+            }
+            let inputs = assignment.public_inputs().iter().map(|variable| variable.value()).collect::<Vec<_>>();
+            for version in [VarunaVersion::V2, VarunaVersion::V3] {
+                let proof = pk.prove("translation", version, &assignment, rng)?;
+                assert!(vk.verify("translation", version, &inputs, &proof));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn test_translation_recursive() {
     let mut rng = TestRng::default();
 

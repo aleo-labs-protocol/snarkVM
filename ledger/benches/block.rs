@@ -19,7 +19,8 @@ extern crate criterion;
 use snarkvm_console::{account::PrivateKey, network::MainnetV0, prelude::*};
 use snarkvm_ledger::test_helpers::sample_genesis_block;
 
-use criterion::Criterion;
+use criterion::{Criterion, measurement::WallTime};
+use std::time::Duration;
 
 type CurrentNetwork = MainnetV0;
 
@@ -38,11 +39,6 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 
     // bincode::serialize
     c.bench_function(&format!("{name}::serialize (bincode)"), |b| b.iter(|| bincode::serialize(&object).unwrap()));
-
-    // serde_json::to_string
-    c.bench_function(&format!("{name}::to_string (serde_json)"), |b| {
-        b.iter(|| serde_json::to_string(&object).unwrap())
-    });
 
     /////////////////
     // Deserialize //
@@ -63,13 +59,6 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
         let buffer = bincode::serialize(&object).unwrap();
         c.bench_function(&format!("{name}::deserialize (bincode)"), move |b| {
             b.iter(|| bincode::deserialize::<T>(&buffer).unwrap())
-        });
-    }
-    // serde_json::from_str
-    {
-        let object = serde_json::to_string(&object).unwrap();
-        c.bench_function(&format!("{name}::from_str (serde_json)"), move |b| {
-            b.iter(|| serde_json::from_str::<T>(&object).unwrap())
         });
     }
 }
@@ -103,7 +92,7 @@ fn signature_serialization(c: &mut Criterion) {
 
 criterion_group! {
     name = block;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::<WallTime>::default().sample_size(10).measurement_time(Duration::from_secs(2));
     targets = block_and_nested_serialization, signature_serialization,
 }
 

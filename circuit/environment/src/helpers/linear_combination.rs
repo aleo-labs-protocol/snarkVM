@@ -188,7 +188,7 @@ impl<F: PrimeField> From<Variable<F>> for LinearCombination<F> {
 
 impl<F: PrimeField> From<&Variable<F>> for LinearCombination<F> {
     fn from(variable: &Variable<F>) -> Self {
-        Self::from(&[variable.clone()])
+        Self::from(std::slice::from_ref(variable))
     }
 }
 

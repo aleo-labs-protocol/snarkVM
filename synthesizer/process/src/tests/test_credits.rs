@@ -2844,7 +2844,7 @@ fn test_bond_validator_with_different_commission_fails() {
 
 mod sanity_checks {
     use super::*;
-    use crate::{Assignments, CallStack, Stack};
+    use crate::{Assignments, CallStack, Stack, tests::test_utils::shared_process};
     use circuit::Assignment;
     use console::{program::Request, types::Field};
     use snarkvm_synthesizer_program::StackTrait;
@@ -2869,7 +2869,7 @@ mod sanity_checks {
         };
         // Sample 'root_tvk'.
         let root_tvk = None;
-        // Sample 'is_root'.
+        // Set 'is_root' to true.
         let is_root = true;
         // Compute the request.
         let request = Request::sign(
@@ -2903,10 +2903,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let caller = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("transfer_private").unwrap();
@@ -2936,10 +2934,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let caller = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("transfer_public").unwrap();
@@ -2964,10 +2960,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let signer = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("transfer_public_as_signer").unwrap();
@@ -2992,10 +2986,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let caller = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("fee_private").unwrap();
@@ -3025,10 +3017,8 @@ mod sanity_checks {
         // Initialize a new caller account.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("fee_public").unwrap();

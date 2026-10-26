@@ -552,6 +552,27 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Retrieve the callee's request (without popping it).
                         let callee_request = authorization.peek_next()?;
+                        // Ensure the request is for the resolved target of the dynamic call.
+                        if *callee_request.signer() != registers.signer()? {
+                            return Err(anyhow!("[execute CallDynamic] Retrieved a request with a different signer than the signer in the registers").into());
+                        }
+                        if !callee_request.is_dynamic() {
+                            return Err(anyhow!("[execute CallDynamic] Retrieved a static request").into());
+                        }
+                        if callee_request.program_id() != target.substack().program_id() {
+                            return Err(anyhow!("[execute CallDynamic] Retrieved a request with a different program ID than the target of the dynamic call").into());
+                        }
+                        if callee_request.function_name() != target.function_name() {
+                            return Err(anyhow!("[execute CallDynamic] Retrieved a request with a different function name than the target of the dynamic call").into());
+                        }
+                        // Retrieve the callee's input types.
+                        let callee_input_types = callee_function.input_types();
+                        // The request holds the callee's view of the inputs, so convert the caller's view to compare them.
+                        let callee_input_view =
+                            convert_caller_inputs_to_callee_inputs(&inputs, &callee_input_types, target.substack())?;
+                        if callee_request.inputs() != callee_input_view {
+                            return Err(anyhow!("[execute CallDynamic] Retrieved a request with different inputs than the ones passed to the call instruction").into());
+                        }
 
                         // Construct the request verification inputs.
                         let callee_request_verification_inputs = CalleeDynamicRequest::from(&callee_request)?;
@@ -618,7 +639,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             self.operand_types(),
                             callee_request.inputs(),
                             callee_console_input_ids,
-                            &callee_function.input_types(),
+                            &callee_input_types,
                             callee_request.program_id(),
                             callee_console_function_id,
                             *callee_request.tvk(),
@@ -740,7 +761,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Inject the `tcm` (from the request) as `Mode::Public`.
             let tcm = circuit::Field::new(circuit::Mode::Public, request.tcm);
             // Compute the transition commitment as `Hash(tvk)`.
-            let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
+            let candidate_tcm = A::hash_psd2(std::slice::from_ref(&tvk));
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm)?;
 
@@ -978,11 +999,12 @@ impl<'a, N: Network> ResolvedTarget<'a, N> {
     }
 }
 
-// A helper function that attempts to resolve the target of a dynamic call.
-// This function returns:
-// - Ok(Some(ResolvedTarget)) if the target is successfully resolved.
+// A helper function that attempts to resolve the target of a dynamic call. This function returns:
+// - Ok(Some(ResolvedTarget)) if the target is successfully resolved to a non-closure.
 // - Ok(None) in `Synthesize` or `CheckDeployment` mode when the target cannot be resolved.
-// - Err(_) in other modes when the target cannot be resolved.
+// - Err(_) in
+//    - `Synthesize` or `CheckDeployment` mode when the target is resolved to a closure.
+//    - other modes when the target cannot be resolved or it is resolved to a closure.
 fn resolve_dynamic_target<'a, N: Network>(
     call_stack: &'a CallStack<N>,
     stack: &'a Stack<N>,

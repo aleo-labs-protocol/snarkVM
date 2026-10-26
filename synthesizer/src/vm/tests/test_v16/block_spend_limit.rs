@@ -100,7 +100,7 @@ fn test_quorum_block_spend_limit_aborts_excess_transactions() {
             None,
             Vec::new(),
             &Solutions::from(None),
-            vec![transaction_0.clone(), transaction_1.clone()].iter(),
+            [transaction_0.clone(), transaction_1.clone()].iter(),
             rng,
         )
         .unwrap();

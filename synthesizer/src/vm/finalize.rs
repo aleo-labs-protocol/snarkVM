@@ -17,8 +17,7 @@ use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 use snarkvm_ledger_puzzle::SolutionID;
-#[cfg(feature = "history-staking-rewards")]
-use snarkvm_ledger_store::helpers::Map;
+
 use snarkvm_synthesizer_error::{
     FinalizeError,
     IndexedFinalizeError,
@@ -263,7 +262,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Committee lookback for `block.round()` semantics matching `Ledger::get_committee_lookback_for_round`.
     #[cfg(any(test, feature = "test"))]
     fn committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
-        let previous_round = match round % 2 == 0 {
+        let previous_round = match round.is_multiple_of(2) {
             true => round.saturating_sub(1),
             false => round.saturating_sub(2),
         };
@@ -311,7 +310,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
             (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
         } else {
-            (None, None)
+            Authority::<N>::beacon_limits(block.height())
         };
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
@@ -545,13 +544,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             rejected_reasons.clear();
         }
 
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
-        self.store
-            .finalize_store()
-            .current_block_height()
-            .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
-
         // Perform the finalize operation on the preset finalize mode.
         atomic_finalize!(self.finalize_store(), FinalizeMode::DryRun, {
             // Ensure the number of solutions does not exceed the maximum.
@@ -659,15 +651,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // per-certificate basis whether or not transactions
                         // exceed it.
                         if consensus_version >= ConsensusVersion::V16 {
-                            if let Some(block_spend_limit) = block_spend_limit {
-                                if block_spend.saturating_add(compute_spend) > block_spend_limit {
-                                    aborted.push((
-                                        transaction.clone(),
-                                        format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
-                                    ));
-                                    // Continue to the next transaction.
-                                    continue 'outer;
-                                }
+                            if let Some(block_spend_limit) = block_spend_limit
+                                && block_spend.saturating_add(compute_spend) > block_spend_limit
+                            {
+                                aborted.push((
+                                    transaction.clone(),
+                                    format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
+                                ));
+                                // Continue to the next transaction.
+                                continue 'outer;
                             }
                             // Track the compute_spend used so far.
                             block_spend = block_spend.saturating_add(compute_spend);
@@ -908,7 +900,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let post_ratifications = reward_ratifications.iter().chain(post_ratifications);
 
             // Process the post-ratifications.
-            match Self::atomic_post_ratify::<false>(&self.puzzle, store, state, post_ratifications, &solutions) {
+            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, &solutions, false) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -949,18 +941,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         let timer = timer!("VM::atomic_finalize");
 
-        // Update the block height used for the purposes of historical mapping accounting.
-        #[cfg(feature = "history")]
-        self.store
-            .finalize_store()
-            .current_block_height()
-            .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
-
-        // Signal to Slipstream plugins that canonical finalize is starting.
-        #[cfg(feature = "slipstream-plugins")]
-        {
-            self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
-        }
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Perform the finalize operation on the preset finalize mode.
@@ -1182,7 +1162,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the ratifications after finalize. */
 
-            match Self::atomic_post_ratify::<true>(&self.puzzle, store, state, post_ratifications, solutions) {
+            match Self::atomic_post_ratify(
+                &self.puzzle,
+                store,
+                state,
+                post_ratifications,
+                solutions,
+                store.record_history_json(),
+            ) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -1198,12 +1185,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             Ok(ratified_finalize_operations)
         });
-
-        // Reset the canonical finalize flag regardless of whether finalize succeeded or failed.
-        #[cfg(feature = "slipstream-plugins")]
-        {
-            self.store.finalize_store().is_finalize_mode().store(false, std::sync::atomic::Ordering::SeqCst);
-        }
 
         finalize_result
     }
@@ -1375,12 +1356,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
         if let Transaction::Deploy(_, _, _, _, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
-            if let Some(payer) = fee.payer() {
-                if candidate_transaction_details.deployment_payers.contains(&payer) {
-                    return ShouldAbortResult::Abort(format!(
-                        "Another deployment in the block from the same public fee payer {payer}"
-                    ));
-                }
+            if let Some(payer) = fee.payer()
+                && candidate_transaction_details.deployment_payers.contains(&payer)
+            {
+                return ShouldAbortResult::Abort(format!(
+                    "Another deployment in the block from the same public fee payer {payer}"
+                ));
             }
         }
 
@@ -1400,8 +1381,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     "Exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
                 ));
             }
-            // In consensus version >= V18, if we are keeping track of block-wide circuit density and this transaction
-            // contains a deployment, make sure its density does not make the running total exceed the limit.
+            // If we are keeping track of block-wide circuit density and this transaction contains a
+            // deployment, make sure its density does not make the running total exceed the limit.
+            // This applies for V18 and the first V19 block, where `block_synthesis_limit` is `Some`.
             if consensus_version >= ConsensusVersion::V18
                 && let Transaction::Deploy(_, _, _, deployment, _) = transaction
                 && let Some(synthesis_limit) = block_synthesis_limit
@@ -1794,12 +1776,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Performs the post-ratifications after finalizing transactions.
     #[inline]
-    fn atomic_post_ratify<'a, const IS_FINALIZE: bool>(
+    fn atomic_post_ratify<'a>(
         puzzle: &Puzzle<N>,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         state: FinalizeGlobalState,
         post_ratifications: impl Iterator<Item = &'a Ratify<N>>,
         solutions: &Solutions<N>,
+        write_history_json: bool,
     ) -> Result<Vec<FinalizeOperation<N>>> {
         // Construct the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
@@ -1849,34 +1832,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
 
-                    #[cfg(feature = "history-staking-rewards")]
-                    {
-                        let height = state.block_height();
-                        for (curr_stake, (staker, (validator, new_stake))) in
-                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
-                        {
-                            let reward = new_stake - curr_stake;
-                            store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
-                            // Notify Slipstream plugins of the staking reward, if in canonical finalize mode.
-                            #[cfg(feature = "slipstream-plugins")]
-                            if IS_FINALIZE {
-                                store.notify_staking_reward(staker, validator, reward, *new_stake, height);
-                            }
-                        }
-                    }
-
-                    // When history-staking-rewards is disabled, notify Slipstream plugins directly.
-                    #[cfg(all(feature = "slipstream-plugins", not(feature = "history-staking-rewards")))]
-                    if IS_FINALIZE {
-                        let height = state.block_height();
-                        for (curr_stake, (staker, (validator, new_stake))) in
-                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
-                        {
-                            let reward = new_stake - curr_stake;
-                            store.notify_staking_reward(staker, validator, reward, *new_stake, height);
-                        }
-                    }
-
                     // Compute the updated delegated amounts, using the next_stakers updated amounts.
                     let next_delegated = to_next_delegated(&next_stakers);
 
@@ -1889,6 +1844,33 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), next_committee)?;
+
+                    // Canonical finalize writes the credits.aleo snapshots for this block.
+                    // A failed write is reported and the block continues. A later finalize of this
+                    // height overwrites any files left by an attempt that did not become canonical.
+                    if write_history_json {
+                        let height = state.block_height();
+                        let written = (|| -> Result<()> {
+                            let history = History::new(N::ID, store.storage_mode());
+                            history.store_mapping(height, MappingName::Delegated, &next_delegated_map)?;
+                            history.store_mapping(height, MappingName::Bonded, &next_bonded_map)?;
+                            let metadata_mapping = Identifier::from_str("metadata")?;
+                            let metadata_map = store.get_mapping_speculative(program_id, metadata_mapping)?;
+                            history.store_mapping(height, MappingName::Metadata, &metadata_map)?;
+                            let unbonding_mapping = Identifier::from_str("unbonding")?;
+                            let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
+                            history.store_mapping(height, MappingName::Unbonding, &unbonding_map)?;
+                            let withdraw_mapping = Identifier::from_str("withdraw")?;
+                            let withdraw_map = store.get_mapping_speculative(program_id, withdraw_mapping)?;
+                            history.store_mapping(height, MappingName::Withdraw, &withdraw_map)?;
+                            let rewards = staking_rewards_historical_mapping(&current_stakers, &next_stakers);
+                            history.store_mapping(height, MappingName::StakingRewards, &rewards)?;
+                            Ok(())
+                        })();
+                        if let Err(error) = written {
+                            warn!("Failed to write JSON history for block {height}: {error}");
+                        }
+                    }
 
                     // Store the finalize operations for updating the committee and bonded mapping.
                     finalize_operations.extend(&[
@@ -2502,11 +2484,10 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // TODO: Fix this test by adding additional constraints to `Committee::new_genesis`
-        // Initialize the validators with the maximum number of validators before consensus v3.
-        let validators = sample_validators::<CurrentNetwork>(
-            consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, 0).unwrap() as usize + 5,
-            rng,
-        );
+        // Initialize more validators than the maximum committee size. `Committee::new_genesis`
+        // bounds the committee by `LATEST_MAX_CERTIFICATES`, not by the limit at height 0.
+        let validators =
+            sample_validators::<CurrentNetwork>(Committee::<CurrentNetwork>::max_committee_size() as usize + 1, rng);
 
         // Construct the committee.
         // Track the allocated amount.
@@ -3962,7 +3943,7 @@ finalize compute:
 
         // Generate the next block.
         let next_block =
-            sample_next_block(&vm, validators.keys().next().unwrap(), &vec![transaction], &block, &mut vec![], rng)
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &block, &mut vec![], rng)
                 .unwrap();
 
         // Add the next block.
@@ -4000,15 +3981,9 @@ finalize compute:
             .unwrap();
 
         // Generate the next block.
-        let next_block = sample_next_block(
-            &vm,
-            validators.keys().next().unwrap(),
-            &vec![transaction],
-            &next_block,
-            &mut vec![],
-            rng,
-        )
-        .unwrap();
+        let next_block =
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &next_block, &mut vec![], rng)
+                .unwrap();
 
         // Add the next block.
         vm.add_next_block(&next_block).unwrap();

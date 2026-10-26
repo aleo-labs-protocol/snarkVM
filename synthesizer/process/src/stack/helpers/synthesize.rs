@@ -59,7 +59,7 @@ impl<N: Network> Stack<N> {
                 _ => self.sample_value(&burner_address, &input_type.into(), rng),
             })
             .collect::<Result<Vec<_>>>()?;
-        // Sample a dummy 'is_root'.
+        // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
         let is_root = true;
         // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;

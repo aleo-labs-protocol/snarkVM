@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-process"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A process for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -44,7 +44,6 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 test = [ "snarkvm-console/test", "snarkvm-circuit/test" ]
-history = [ "snarkvm-ledger-store/history" ]
 timer = [ "aleo-std/timer" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ ]

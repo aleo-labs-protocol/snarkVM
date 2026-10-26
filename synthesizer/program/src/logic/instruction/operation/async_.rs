@@ -223,9 +223,9 @@ impl<N: Network> Async<N> {
 impl<N: Network> Parser for Async<N> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses an operand.
-        fn parse_operand<N: Network>(string: &str) -> ParserResult<Operand<N>> {
+        fn parse_operand<N: Network>(string: &str) -> ParserResult<'_, Operand<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the operand from the string.

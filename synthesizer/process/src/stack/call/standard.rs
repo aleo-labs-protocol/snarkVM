@@ -436,6 +436,19 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     CallStack::Execute(authorization, ..) => {
                         // Retrieve the next request (without popping it).
                         let request = authorization.peek_next()?;
+                        // Ensure the request is for the target of the call instruction.
+                        if *request.signer() != registers.signer()? {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different signer than the signer in the registers").into());
+                        }
+                        if request.is_dynamic() {
+                            return Err(anyhow!("[execute Standard] Retrieved a dynamic request").into());
+                        }
+                        if request.program_id() != substack.program_id() {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different program ID than the one in the call instruction").into());
+                        }
+                        if request.function_name() != function.name() {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different function name than the one in the call instruction").into());
+                        }
                         // Ensure the inputs match the original inputs.
                         if request.inputs().len() != inputs.len() {
                             return Err(anyhow!(
@@ -506,7 +519,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Inject the `tcm` (from the request) as `Mode::Public`.
             let tcm = circuit::Field::new(circuit::Mode::Public, *request.tcm());
             // Compute the transition commitment as `Hash(tvk)`.
-            let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
+            let candidate_tcm = A::hash_psd2(std::slice::from_ref(&tvk));
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm)?;
             // Inject the input IDs (from the request) as `Mode::Public`.

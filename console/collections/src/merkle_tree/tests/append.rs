@@ -13,11 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::{
+    Arc,
+    atomic::{AtomicIsize, Ordering},
+};
+
 use super::*;
 use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon};
 use snarkvm_console_types::prelude::Console;
 
 type CurrentEnvironment = Console;
+type LeafHasher = Poseidon<CurrentEnvironment, 4>;
+type PathHasher = Poseidon<CurrentEnvironment, 2>;
+type PoseidonLeaf = Vec<Field<CurrentEnvironment>>;
+type PoseidonTree = MerkleTree<CurrentEnvironment, LeafHasher, PathHasher, 32>;
 
 const ITERATIONS: u128 = 10;
 
@@ -575,6 +584,132 @@ fn test_merkle_tree_depth_4_poseidon() -> Result<()> {
         &(0..4).map(|_| vec![Uniform::rand(&mut rng)]).collect::<Vec<_>>(),
         &(0..2).map(|_| vec![Uniform::rand(&mut rng)]).collect::<Vec<_>>(),
     )
+}
+
+fn poseidon_setup(rng: &mut TestRng) -> Result<(LeafHasher, PathHasher, Vec<PoseidonLeaf>)> {
+    let leaves = (0..40).map(|_| vec![Uniform::rand(rng)]).collect();
+    Ok((Poseidon::setup("AleoMerkleTreeTest0")?, Poseidon::setup("AleoMerkleTreeTest1")?, leaves))
+}
+
+fn assert_same<const DEPTH: u8>(
+    actual: &MerkleTree<CurrentEnvironment, LeafHasher, PathHasher, DEPTH>,
+    expected: &MerkleTree<CurrentEnvironment, LeafHasher, PathHasher, DEPTH>,
+) {
+    assert_eq!(actual.tree(), expected.tree());
+    assert_eq!(actual.root(), expected.root());
+    assert_eq!(actual.number_of_leaves(), expected.number_of_leaves());
+}
+
+#[test]
+fn test_append_matches_new() -> Result<()> {
+    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
+    let new = |n: usize| PoseidonTree::new(&lh, &ph, &leaves[..n]);
+
+    for old in 0..=17 {
+        for k in 0..=17 {
+            let mut tree = new(old)?;
+            tree.append(&leaves[old..old + k])?;
+            assert_same(&tree, &new(old + k)?);
+        }
+    }
+
+    for chunk in [1, 3] {
+        let mut tree = new(0)?;
+        for (i, appended) in leaves.chunks(chunk).enumerate() {
+            tree.append(appended)?;
+            assert_same(&tree, &new(i * chunk + appended.len())?);
+        }
+    }
+
+    let mut removed = new(9)?;
+    removed.remove_last_n(4)?;
+    let mut removed_within = new(7)?;
+    removed_within.remove_last_n(2)?;
+    for tree in [&mut removed, &mut removed_within] {
+        tree.append(&leaves[5..7])?;
+        assert_same(tree, &new(7)?);
+    }
+
+    let mut updated = new(5)?;
+    updated.update(1, &leaves[30])?;
+    updated.append(&leaves[5..7])?;
+    let mut expected = leaves[..7].to_vec();
+    expected[1] = leaves[30].clone();
+    assert_same(&updated, &PoseidonTree::new(&lh, &ph, &expected)?);
+    Ok(())
+}
+
+#[test]
+fn test_append_fills_a_shallow_tree() -> Result<()> {
+    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
+    let new = |n: usize| MerkleTree::<CurrentEnvironment, LeafHasher, PathHasher, 5>::new(&lh, &ph, &leaves[..n]);
+
+    let mut tree = new(0)?;
+    for n in 1..=32 {
+        tree.append(&leaves[n - 1..n])?;
+        assert_same(&tree, &new(n)?);
+    }
+    assert!(tree.append(&leaves[32..33]).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_append_if_matches() -> Result<()> {
+    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
+    let new = |n: usize| PoseidonTree::new(&lh, &ph, &leaves[..n]);
+
+    for (old, k) in [(5, 2), (5, 4), (0, 1), (1, 1), (5, 0)] {
+        let expected = new(old + k)?;
+        let mut tree = new(old)?;
+        assert!(tree.append_if_matches(&leaves[old..old + k], &Field::zero()).is_err());
+        assert_same(&tree, &new(old)?);
+        tree.append_if_matches(&leaves[old..old + k], expected.root())?;
+        assert_same(&tree, &expected);
+    }
+    Ok(())
+}
+
+/// A path hasher that fails once it has hashed `budget` pairs.
+#[derive(Clone)]
+struct FailingPathHasher(PathHasher, Arc<AtomicIsize>);
+
+impl PathHash for FailingPathHasher {
+    type Hash = Field<CurrentEnvironment>;
+
+    fn hash_children(&self, left: &Self::Hash, right: &Self::Hash) -> Result<Self::Hash> {
+        ensure!(self.1.fetch_sub(1, Ordering::Relaxed) > 0, "out of budget");
+        self.0.hash_children(left, right)
+    }
+}
+
+#[test]
+fn test_append_that_fails_leaves_the_tree() -> Result<()> {
+    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
+    let budget = Arc::new(AtomicIsize::new(isize::MAX));
+    let ph = FailingPathHasher(ph, budget.clone());
+
+    for (old, k) in [(17, 4), (5, 4)] {
+        let mut tree = MerkleTree::<_, _, _, 32>::new(&lh, &ph, &leaves[..old])?;
+        let (root, nodes) = (*tree.root(), tree.tree().to_vec());
+        budget.store(3, Ordering::Relaxed);
+        assert!(tree.append(&leaves[old..old + k]).is_err());
+        assert_eq!((*tree.root(), tree.tree(), tree.number_of_leaves()), (root, nodes.as_slice(), old));
+        budget.store(isize::MAX, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+#[test]
+fn test_append_within_power_of_two_keeps_allocation() -> Result<()> {
+    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
+    let mut tree = PoseidonTree::new(&lh, &ph, &leaves[..17])?;
+    tree.append(&leaves[17..18])?;
+    let allocation = tree.tree().as_ptr();
+    for i in 18..32 {
+        tree.append(&leaves[i..i + 1])?;
+        assert_eq!(tree.tree().as_ptr(), allocation);
+    }
+    Ok(())
 }
 
 /// Use `cargo test profiler --features timer` to run this test.

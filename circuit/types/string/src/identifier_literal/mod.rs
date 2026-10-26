@@ -90,7 +90,7 @@ impl<E: Environment> Eject for IdentifierLiteral<E> {
 impl<E: Environment> Parser for IdentifierLiteral<E> {
     /// Parses a string into an identifier literal circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the content from the string.
         let (string, content) = console::IdentifierLiteral::parse(string)?;
         // Parse the mode from the string.

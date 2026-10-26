@@ -184,7 +184,7 @@ impl<A: Aleo> Eject for Literal<A> {
 impl<A: Aleo> Parser for Literal<A> {
     /// Parses a string into a literal.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((
             map(Address::parse, |literal| Self::Address(literal)),
             map(Boolean::parse, |literal| Self::Boolean(literal)),

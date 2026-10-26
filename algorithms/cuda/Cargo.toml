@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-algorithms-cuda"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Cuda optimizations for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -30,10 +30,16 @@ quiet = [ ]
 
 [dependencies.blst]
 version = "0.3.11"
-features = [ ]
+features = [ "portable" ]
+
+[dependencies.snarkvm-curves]
+workspace = true
+
+[dependencies.snarkvm-utilities]
+workspace = true
 
 [dependencies.sppark]
-version = "0.1.5"
+version = "0.1.16"
 
 [build-dependencies.cc]
 version = "^1.0.83"

@@ -129,7 +129,7 @@ fn forge_and_check(
     // Assemble the forged transaction with a valid public fee.
     let execution = Execution::from(transitions.into_iter(), global_state_root, Some(proof)).unwrap();
     let execution_id = execution.to_execution_id().unwrap();
-    let (base_fee, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V19).unwrap();
+    let (base_fee, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V20).unwrap();
     let fee_authorization = vm.authorize_fee_public(caller_private_key, base_fee, 0, execution_id, rng).unwrap();
     let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
     let transaction = Transaction::from_execution(execution, Some(fee)).unwrap();
@@ -240,8 +240,8 @@ fn test_dynamic_id_variant_checks() {
     )
     .unwrap();
 
-    // Initialize the VM at V18 and deploy the three programs.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
+    // Initialize the VM at V20 and deploy the three programs.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V20).unwrap(), rng);
     for program in [&issuer, &checker, &top] {
         let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
         add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
@@ -303,7 +303,7 @@ fn test_dynamic_id_variant_checks() {
             &caller_private_key,
             issuer.id(),
             "consume",
-            &[record_value.clone()],
+            std::slice::from_ref(&record_value),
             &["Incorrect input variant", "record_with_dynamic_id", "ticket.record"],
             |transitions| {
                 let index = transitions.len() - 1;

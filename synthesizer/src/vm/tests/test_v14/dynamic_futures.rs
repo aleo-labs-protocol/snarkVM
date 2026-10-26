@@ -464,7 +464,7 @@ fn test_dynamic_future_finalize_failure() {
         )
         .unwrap();
 
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction_fail.clone()], rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&transaction_fail), rng).unwrap();
 
     // The transaction should be rejected due to finalize failure
     assert_eq!(block.transactions().num_accepted(), 0);

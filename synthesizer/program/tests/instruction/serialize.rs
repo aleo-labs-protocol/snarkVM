@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::sample::{sample_finalize_registers, sample_registers};
+use crate::helpers::sample::{sample_finalize_registers, sample_registers, shared_process};
 
 use circuit::{AleoV0, Eject};
 use console::{
@@ -21,7 +21,7 @@ use console::{
     prelude::*,
     program::{ArrayType, Identifier, LiteralType, Locator, PlaintextType, Register, U32, Value},
 };
-use snarkvm_synthesizer_process::{Process, Stack};
+use snarkvm_synthesizer_process::Stack;
 use snarkvm_synthesizer_program::{
     Opcode,
     Operand,
@@ -75,7 +75,7 @@ fn sample_stack(
     let operands = vec![Operand::Register(r0)];
 
     // Initialize the stack.
-    let stack = Stack::new(&Process::load()?, &program)?;
+    let stack = Stack::new(shared_process(), &program)?;
 
     Ok((stack, operands, r1))
 }

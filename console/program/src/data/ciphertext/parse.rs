@@ -20,7 +20,7 @@ static CIPHERTEXT_PREFIX: &str = "ciphertext";
 impl<N: Network> Parser for Ciphertext<N> {
     /// Parses a string into an ciphertext.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo ciphertext.
         let parse_ciphertext = recognize(pair(
             pair(tag(CIPHERTEXT_PREFIX), tag("1")),

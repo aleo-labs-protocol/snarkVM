@@ -87,6 +87,11 @@ fn test_affine_group() {
 }
 
 #[test]
+fn test_serialization_round_trip() {
+    serialization_round_trip_test::<EdwardsAffine>();
+}
+
+#[test]
 fn test_generator() {
     let generator = EdwardsAffine::prime_subgroup_generator();
     assert!(generator.is_on_curve());

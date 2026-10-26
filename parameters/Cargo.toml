@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-parameters"
-version = "4.9.0"
+version = "4.12.0"
 authors = ["The Aleo Team <hello@aleo.org>"]
 description = "Parameters for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -23,8 +23,26 @@ include = ["Cargo.toml", "src", "README.md", "LICENSE.md"]
 license = "Apache-2.0"
 edition = "2024"
 
+[[example]]
+name = "inclusion"
+required-features = ["filesystem"]
+
+[[example]]
+name = "setup"
+required-features = ["filesystem"]
+
+[[example]]
+name = "srs_shared_keys"
+required-features = ["filesystem"]
+
+[[example]]
+name = "translation"
+required-features = ["filesystem"]
+
 [features]
-filesystem = ["aleo-std/storage"]
+# On native builds, `filesystem` controls the whole default loader: the cache in
+# `~/.aleo/resources` and the remote fetch. Without it, the crate does no I/O.
+filesystem = ["aleo-std/storage", "dep:ureq"]
 large_params = []
 locktick = ["dep:locktick"]
 no_std_out = []
@@ -97,10 +115,16 @@ optional = true
 [target.'cfg(all(any(target_os = "android", target_os = "ios"), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.ureq]
 workspace = true
 features = ["native-tls"]
+optional = true
 
 [target.'cfg(all(not(any(target_os = "android", target_os = "ios")), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.ureq]
 workspace = true
 features = ["rustls"]
+optional = true
+
+[dev-dependencies.aleo-std]
+workspace = true
+features = ["storage"]
 
 [dev-dependencies.snarkvm-algorithms]
 path = "../algorithms"
@@ -111,6 +135,8 @@ path = "../circuit"
 
 [dev-dependencies.snarkvm-console]
 path = "../console"
+default-features = false
+features = ["account", "algorithms", "collections", "network", "program", "types"]
 
 [dev-dependencies.snarkvm-ledger-block]
 path = "../ledger/block"

@@ -52,6 +52,10 @@ impl<E: Environment> Inject for Scalar<E> {
     type Primitive = console::Scalar<E::Network>;
 
     /// Initializes a scalar circuit from a console scalar.
+    ///
+    /// Note: The scalar is stored as a base field element, and is not range-checked on injection.
+    /// Callers must convert the scalar to bits during synthesis, which enforces that it is less than
+    /// the scalar field modulus. Otherwise, a prover can assign any base field element to it.
     fn new(mode: Mode, scalar: Self::Primitive) -> Self {
         debug_assert!(console::Scalar::<E::Network>::size_in_bits() < console::Field::<E::Network>::size_in_bits());
 
@@ -83,7 +87,7 @@ impl<E: Environment> Eject for Scalar<E> {
 impl<E: Environment> Parser for Scalar<E> {
     /// Parses a string into a scalar circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the scalar from the string.
         let (string, scalar) = console::Scalar::parse(string)?;
         // Parse the mode from the string.

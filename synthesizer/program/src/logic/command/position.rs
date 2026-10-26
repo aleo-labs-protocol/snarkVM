@@ -56,7 +56,7 @@ impl<N: Network> Position<N> {
 impl<N: Network> Parser for Position<N> {
     /// Parses a string into a command.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the opcode from the string.

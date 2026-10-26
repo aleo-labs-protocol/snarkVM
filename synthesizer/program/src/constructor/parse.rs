@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ConstructorCore<N> {
     /// Parses a string into constructor.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the 'constructor' keyword from the string.

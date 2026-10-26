@@ -421,7 +421,7 @@ impl<N: Network> TestChainBuilder<N> {
                 cert_count += 1;
 
                 // Check if this batch was an anchor.
-                if round % 2 == 0 {
+                if round.is_multiple_of(2) {
                     let leader = committee.get_leader(round).unwrap();
                     if leader == Address::try_from(private_key_1).unwrap() {
                         created_anchor = true;
@@ -430,7 +430,7 @@ impl<N: Network> TestChainBuilder<N> {
             }
 
             // Anchor was confirmed by more than a third of the validators.
-            if created_anchor && round % 2 == 0 && self.last_block_round < round {
+            if created_anchor && round.is_multiple_of(2) && self.last_block_round < round {
                 self.last_block_round = round;
                 break;
             }

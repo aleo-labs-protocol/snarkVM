@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Literal<N> {
     /// Parses a string into a literal.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((
             map(Address::<N>::parse, |literal| Self::Address(literal)),
             map(Boolean::<N>::parse, |literal| Self::Boolean(literal)),

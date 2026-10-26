@@ -44,9 +44,15 @@ pub struct ThirdMessage<F: PrimeField> {
 impl<F: PrimeField> ThirdMessage<F> {
     // Compute the batched sum `sigma` of all the `sigma_{M, i, j}` using the
     // coefficients mu_i (to batch circuits), rho_{i, j} (to batch instances of
-    // the same circuit) and (eta_B, eta_C) (to batch the three matrices within
-    // the same instance).
-    pub(crate) fn sum(&self, batch_combiners: &BTreeMap<CircuitId, BatchCombiners<F>>, eta_b: F, eta_c: F) -> F {
+    // the same circuit) and (eta_A, eta_B, eta_C) (to batch the three matrices
+    // within the same instance).
+    pub(crate) fn sum(
+        &self,
+        batch_combiners: &BTreeMap<CircuitId, BatchCombiners<F>>,
+        eta_a: F,
+        eta_b: F,
+        eta_c: F,
+    ) -> F {
         self.sums
             .iter()
             .zip(batch_combiners.values())
@@ -55,7 +61,9 @@ impl<F: PrimeField> ThirdMessage<F> {
                     * circuit_sums
                         .iter()
                         .zip(&combiners.instance_combiners)
-                        .map(|(sums, combiner)| (sums.sum_a + eta_b * sums.sum_b + eta_c * sums.sum_c) * combiner)
+                        .map(|(sums, combiner)| {
+                            (eta_a * sums.sum_a + eta_b * sums.sum_b + eta_c * sums.sum_c) * combiner
+                        })
                         .sum::<F>()
             })
             .sum()

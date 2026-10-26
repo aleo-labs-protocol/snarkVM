@@ -16,7 +16,7 @@
 use super::verifier::QueryPoints;
 use crate::fft::{DensePolynomial, EvaluationDomain};
 use snarkvm_fields::{PrimeField, batch_inversion};
-use snarkvm_utilities::cfg_into_iter;
+use snarkvm_utilities::{cfg_into_iter, defer};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -92,6 +92,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // Substituting in s_i, we get that poly_i * s_i / v_H = poly_i / v_H_i *
         // (H_i.size() / H.size());
         let selector_time = start_timer!(|| "Compute selector without remainder witness");
+        defer! { end_timer!(selector_time); }
 
         let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
         ensure!(
@@ -102,7 +103,6 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
         h_i.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
-        end_timer!(selector_time);
         Ok((h_i, None))
     } else {
         // Substituting in s_i, we get that:
@@ -115,6 +115,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // (\sum_i{c_i*s_i*poly_i})/v_H = h_1*v_H + x_g_1
         // That's what we're computing here.
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
+        defer! { end_timer!(selector_time); }
 
         let multiplier = if src_domain.size == target_domain.size {
             combiner
@@ -133,18 +134,31 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let updated_xg_i = if src_domain.size == target_domain.size {
             xg_i
         } else {
-            let xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
-
-            let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
+            // With `m = |H_i|` and `n = |H|`, both powers of two and `m` dividing `n`, the
+            // quotient `v_H / v_H_i` is `(X^n - 1) / (X^m - 1) = 1 + X^m + X^2m + ... +
+            // X^(n-m)`. Multiplying `xg_i` by that places a copy of `xg_i` at every
+            // multiple of `m`, and since `deg(xg_i) < m` the copies do not
+            // overlap and nothing has to be added. So the result is `xg_i`'s
+            // coefficients repeated `n/m` times.
+            let m = src_domain.size();
+            let n = target_domain.size();
             ensure!(
-                remainder.is_zero(),
-                "[Returning remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+                m > 0 && m <= n && n.is_multiple_of(m),
+                "[Returning remainder witness] Source domain {m} does not divide target domain {n}"
+            );
+            ensure!(
+                xg_i.coeffs.len() <= m,
+                "[Returning remainder witness] Remainder has {} coefficients, expected at most {m}; the copies would overlap",
+                xg_i.coeffs.len()
             );
 
-            xg_i
+            let mut coeffs = vec![F::zero(); n];
+            for block in coeffs.chunks_exact_mut(m) {
+                block[..xg_i.coeffs.len()].copy_from_slice(&xg_i.coeffs);
+            }
+            DensePolynomial::from_coefficients_vec(coeffs)
         };
 
-        end_timer!(selector_time);
         Ok((h_i, Some(updated_xg_i)))
     }
 }
@@ -156,6 +170,46 @@ mod tests {
     use snarkvm_curves::bls12_377::fr::Fr;
     use snarkvm_fields::{One, Zero};
     use snarkvm_utilities::rand::TestRng;
+
+    #[test]
+    fn repeat_matches_multiply_then_divide() {
+        let mut rng = TestRng::default();
+
+        for lg_m in 1..7 {
+            for lg_n in lg_m..9 {
+                let src = EvaluationDomain::<Fr>::new(1 << lg_m).unwrap();
+                let tgt = EvaluationDomain::<Fr>::new(1 << lg_n).unwrap();
+                let (m, n) = (src.size(), tgt.size());
+
+                for len in [0, 1, m / 2, m] {
+                    let xg = DensePolynomial::<Fr>::rand(len.saturating_sub(1), &mut rng);
+                    let xg = if len == 0 { DensePolynomial::from_coefficients_vec(vec![]) } else { xg };
+
+                    let mut coeffs = vec![Fr::zero(); n];
+                    for block in coeffs.chunks_exact_mut(m) {
+                        block[..xg.coeffs.len()].copy_from_slice(&xg.coeffs);
+                    }
+                    let repeated = DensePolynomial::from_coefficients_vec(coeffs);
+
+                    let (expected, remainder) = xg.mul_by_vanishing_poly(tgt).divide_by_vanishing_poly(src).unwrap();
+                    assert!(remainder.is_zero(), "m={m} n={n} len={len}");
+                    assert_eq!(repeated, expected, "m={m} n={n} len={len}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn repeat_rejects_a_source_domain_larger_than_the_target() {
+        let mut rng = TestRng::default();
+        let src = EvaluationDomain::<Fr>::new(8).unwrap();
+        let tgt = EvaluationDomain::<Fr>::new(4).unwrap();
+
+        let mut poly = DensePolynomial::<Fr>::rand(15, &mut rng);
+        let err = apply_randomized_selector(&mut poly, Fr::one(), &tgt, &src, true)
+            .expect_err("a source domain larger than the target must not produce a polynomial");
+        assert!(err.to_string().contains("does not divide"), "{err}");
+    }
 
     /// Given two domains H and K such that H \subseteq K,
     /// evaluate polynomial that outputs 0 on all elements in K \ H, but 1 on

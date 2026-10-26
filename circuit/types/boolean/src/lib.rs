@@ -104,7 +104,7 @@ impl<E: Environment> Eject for Boolean<E> {
 impl<E: Environment> Parser for Boolean<E> {
     /// Parses a string into a boolean circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the boolean from the string.
         let (string, boolean) = console::Boolean::<E::Network>::parse(string)?;
         // Parse the mode from the string.

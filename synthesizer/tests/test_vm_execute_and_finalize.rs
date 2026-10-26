@@ -88,7 +88,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             .execute(
                 &genesis_private_key,
                 ("credits.aleo", "transfer_public"),
-                vec![
+                [
                     Value::Plaintext(Plaintext::from(Literal::Address(Address::try_from(key).unwrap()))),
                     Value::Plaintext(Plaintext::from(Literal::U64(U64::new(1_000_000_000_000)))),
                 ]
@@ -607,7 +607,7 @@ fn split<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
     amount: u64,
     rng: &mut R,
 ) -> (Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>, Vec<Transaction<CurrentNetwork>>) {
-    let inputs = vec![Value::Record(record), Value::Plaintext(Plaintext::from(Literal::U64(U64::new(amount))))];
+    let inputs = [Value::Record(record), Value::Plaintext(Plaintext::from(Literal::U64(U64::new(amount))))];
     let transaction = vm.execute(private_key, ("credits.aleo", "split"), inputs.iter(), None, 0, None, rng).unwrap();
     let records = transaction
         .records()

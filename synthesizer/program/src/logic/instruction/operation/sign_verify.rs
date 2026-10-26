@@ -208,7 +208,7 @@ impl<N: Network> SignatureVerification<N> {
 impl<N: Network> Parser for SignatureVerification<N> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.

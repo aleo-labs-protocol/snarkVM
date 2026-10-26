@@ -20,7 +20,7 @@ static PROVING_KEY: &str = "prover";
 impl<N: Network> Parser for ProvingKey<N> {
     /// Parses a string into the proving key.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo proving key.
         let parse_key = recognize(pair(
             pair(tag(PROVING_KEY), tag("1")),

@@ -29,6 +29,7 @@ use console::{
         LiteralType,
         Locator,
         PlaintextType,
+        ProgramID,
         RecordType,
         Register,
         RegisterType,
@@ -53,6 +54,8 @@ use snarkvm_synthesizer_program::{
 use snarkvm_utilities::dev_eprintln;
 
 use indexmap::{IndexMap, IndexSet};
+
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegisterTypes<N: Network> {

@@ -272,13 +272,13 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                 self.reverse_id_map().remove(&output_id)?;
 
                 // If the output is a record, remove the record nonce and record sender.
-                if let Some(record) = self.record_map().get_confirmed(&output_id)? {
-                    if let Some(record) = &record.1 {
-                        // Remove the record nonce.
-                        self.record_nonce_map().remove(record.nonce())?;
-                        // Remove the record sender, if it exists.
-                        self.record_sender_map().remove(record.nonce())?;
-                    }
+                if let Some(record) = self.record_map().get_confirmed(&output_id)?
+                    && let Some(record) = &record.1
+                {
+                    // Remove the record nonce.
+                    self.record_nonce_map().remove(record.nonce())?;
+                    // Remove the record sender, if it exists.
+                    self.record_sender_map().remove(record.nonce())?;
                 }
 
                 // Remove the output.
@@ -731,7 +731,7 @@ mod tests {
             assert!(candidate.is_empty());
 
             // Insert the transition output.
-            output_store.insert(transition_id, &[output.clone()]).unwrap();
+            output_store.insert(transition_id, std::slice::from_ref(&output)).unwrap();
 
             // Retrieve the transition output.
             let candidate = output_store.get(&transition_id).unwrap();
@@ -762,7 +762,7 @@ mod tests {
             assert!(candidate.is_none());
 
             // Insert the transition output.
-            output_store.insert(transition_id, &[output.clone()]).unwrap();
+            output_store.insert(transition_id, std::slice::from_ref(&output)).unwrap();
 
             // Find the transition ID.
             let candidate = output_store.find_transition_id(output.id()).unwrap();

@@ -238,10 +238,10 @@ impl<N: Network> FinalizeTypes<N> {
             // program ID, ensure that the program ID is imported by the current program.
             match operand {
                 Operand::Checksum(program_id) | Operand::Edition(program_id) | Operand::ProgramOwner(program_id) => {
-                    if let Some(program_id) = program_id {
-                        if stack.get_external_stack(program_id).is_err() {
-                            bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
-                        }
+                    if let Some(program_id) = program_id
+                        && stack.get_external_stack(program_id).is_err()
+                    {
+                        bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
                     }
                 }
                 // If the operand is `Operand::ComponentChecksum`, ensure the referenced component exists.
@@ -866,9 +866,7 @@ impl<N: Network> FinalizeTypes<N> {
         };
 
         // Insert the destination register.
-        for (destination, destination_type) in
-            instruction.destinations().into_iter().zip_eq(destination_types.into_iter())
-        {
+        for (destination, destination_type) in instruction.destinations().into_iter().zip_eq(destination_types) {
             // Ensure the destination register is a locator (and does not reference an access).
             ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
             // Ensure that the destination type is a plaintext type.

@@ -22,7 +22,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
     /// - Human-readable: `{ _program_id: foo.aleo, _function_name: bar, _checksum: 0field }`
     /// - Raw field: `{ _program_name: 0field, _program_network: 0field, _function_name: 0field, _checksum: 0field }`
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Try to parse the human-readable format first.
         if let Ok(result) = Self::parse_human_readable(string) {
             return Ok(result);
@@ -34,7 +34,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
 
 impl<N: Network> DynamicFuture<N> {
     /// Parses the human-readable format: `{ _program_id: foo.aleo, _function_name: bar, _checksum: 0field }`.
-    fn parse_human_readable(string: &str) -> ParserResult<Self> {
+    fn parse_human_readable(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.
@@ -102,7 +102,7 @@ impl<N: Network> DynamicFuture<N> {
     }
 
     /// Parses the raw field format: `{ _program_name: 0field, _program_network: 0field, _function_name: 0field, _checksum: 0field }`.
-    fn parse_raw_fields(string: &str) -> ParserResult<Self> {
+    fn parse_raw_fields(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.
@@ -217,14 +217,14 @@ impl<N: Network> Display for DynamicFuture<N> {
         let function_name_id = Identifier::<N>::from_field(&self.function_name);
 
         // If all conversions succeed, display human-readable format.
-        if let (Ok(name), Ok(network), Ok(function)) = (program_name_id, program_network_id, function_name_id) {
-            if let Ok(program_id) = ProgramID::try_from((name, network)) {
-                return write!(
-                    f,
-                    "{{ _program_id: {program_id}, _function_name: {function}, _checksum: {} }}",
-                    self.checksum()
-                );
-            }
+        if let (Ok(name), Ok(network), Ok(function)) = (program_name_id, program_network_id, function_name_id)
+            && let Ok(program_id) = ProgramID::try_from((name, network))
+        {
+            return write!(
+                f,
+                "{{ _program_id: {program_id}, _function_name: {function}, _checksum: {} }}",
+                self.checksum()
+            );
         }
 
         // Fall back to raw field format.

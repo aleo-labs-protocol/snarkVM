@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-account"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Account circuit library for a decentralized virtual machine"
 homepage = "https://aleo.org"

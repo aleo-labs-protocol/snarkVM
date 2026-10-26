@@ -32,7 +32,9 @@ use rand::{
 };
 use std::io::{Read, Result as IoResult, Write};
 
+// The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Debug)]
+#[repr(C)]
 pub struct Projective<P: Parameters> {
     pub x: P::BaseField,
     pub y: P::BaseField,

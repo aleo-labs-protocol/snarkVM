@@ -37,8 +37,7 @@ mod evaluate;
 mod execute;
 mod finalize;
 mod view;
-#[cfg(feature = "history")]
-pub use view::evaluate_view_with_stack_at_height;
+
 mod verify_deployment;
 mod verify_execution;
 mod verify_fee;
@@ -100,6 +99,15 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+
+/// The kind of a key that [`Process::execution_keys`] returns.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ExecutionKeyKind {
+    /// A function's key, which `execute` synthesizes unless its proving key is held.
+    Function,
+    /// A record's translation key, which `execute` synthesizes unless its proving and verifying keys are held.
+    Translation,
+}
 
 // Note: a `Process` and all of its fields are meant to be completely stateless. They have no
 // notion of block height or consensus version.
@@ -638,6 +646,64 @@ impl<N: Network> Process<N> {
     pub fn remove_verifying_key(&self, program_id: &ProgramID<N>, function_name: &Identifier<N>) -> Result<()> {
         self.get_stack(program_id)?.remove_verifying_key(function_name);
         Ok(())
+    }
+
+    /// Returns the keys that executing the given authorization uses, as pairs of a program ID and a function or
+    /// record name, each mapped to its [`ExecutionKeyKind`] and whether `execute` needs to synthesize it.
+    ///
+    /// These are the function key of each request, and the translation key of each record in the inputs and
+    /// outputs of a dynamic callee's function. The inclusion key is not among them: it is a network parameter, not a
+    /// key a stack holds, and `execute` neither uses nor synthesizes it.
+    ///
+    /// This takes each request's target and `is_dynamic` flag as given, without checking them against the call that
+    /// takes the request. The result is exact for requests that `Stack::authorize_requests` accepts.
+    ///
+    /// `execute` consumes the requests, and clones of an authorization share them. Call this before executing the
+    /// authorization or any clone of it.
+    ///
+    /// Fails if a request or a translated record type names a program that is not loaded, a request names no function,
+    /// a translated record type names no record, or a program replaced during the call changes a key's kind.
+    #[inline]
+    pub fn execution_keys(
+        &self,
+        authorization: &Authorization<N>,
+    ) -> Result<IndexMap<(ProgramID<N>, Identifier<N>), (ExecutionKeyKind, bool)>> {
+        let mut keys = IndexMap::new();
+        // The bail is unreachable unless a program is replaced during this call without the upgrade checks.
+        let mut insert = |key: (ProgramID<N>, Identifier<N>), kind, missing| match keys.insert(key, (kind, missing)) {
+            Some((previous, _)) if previous != kind => bail!("'{}/{}' changed kind during this call", key.0, key.1),
+            _ => Ok(()),
+        };
+        for (index, request) in authorization.to_vec_deque().into_iter().enumerate() {
+            let stack = self.get_stack(request.program_id())?;
+            let function = stack.get_function_ref(request.function_name())?;
+            insert(
+                (*request.program_id(), *request.function_name()),
+                ExecutionKeyKind::Function,
+                !stack.contains_proving_key(request.function_name()),
+            )?;
+            // The root request has no caller, so `execute` translates none of its records.
+            if index == 0 || !request.is_dynamic() {
+                continue;
+            }
+            let inputs = function.inputs().iter().map(|input| input.value_type());
+            for value_type in inputs.chain(function.outputs().iter().map(|output| output.value_type())) {
+                let (program_id, record_name) = match value_type {
+                    ValueType::Record(record_name) => (*request.program_id(), *record_name),
+                    ValueType::ExternalRecord(locator) => (*locator.program_id(), *locator.resource()),
+                    _ => continue,
+                };
+                let record_stack = self.get_stack(program_id)?;
+                ensure!(
+                    record_stack.program().contains_record(&record_name),
+                    "Record '{program_id}/{record_name}' is not defined."
+                );
+                let held = record_stack.contains_proving_key(&record_name)
+                    && record_stack.contains_verifying_key(&record_name);
+                insert((program_id, record_name), ExecutionKeyKind::Translation, !held)?;
+            }
+        }
+        Ok(keys)
     }
 
     /// Synthesizes the proving and verifying key for the given program ID and function name.

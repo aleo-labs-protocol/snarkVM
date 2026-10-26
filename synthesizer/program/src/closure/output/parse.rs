@@ -19,7 +19,7 @@ impl<N: Network> Parser for Output<N> {
     /// Parses a string into an output statement.
     /// The output statement is of the form `output {operand} as {register_type};`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the output keyword from the string.

@@ -32,8 +32,9 @@ use std::{
     collections::{BTreeMap, btree_map},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Instant,
 };
 
 #[derive(Clone)]
@@ -46,6 +47,8 @@ pub struct MemoryMap<
     // with fast lookups and the keys could be typed (i.e. just `K` instead of `Vec<u8>`).
     map: Arc<RwLock<BTreeMap<Vec<u8>, V>>>,
     batch_in_progress: Arc<AtomicBool>,
+    /// Owner of the in-progress atomic batch (`0` = none).
+    atomic_owner: Arc<AtomicU64>,
     atomic_batch: Arc<Mutex<Vec<(K, Option<V>)>>>,
     checkpoint: Arc<Mutex<Vec<usize>>>,
 }
@@ -59,6 +62,7 @@ impl<
         Self {
             map: Default::default(),
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoint: Default::default(),
         }
@@ -79,6 +83,7 @@ impl<
         Self {
             map: Arc::new(RwLock::new(map)),
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoint: Default::default(),
         }
@@ -99,7 +104,9 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key-value pair to the batch.
             true => {
+                let start = Instant::now();
                 self.atomic_batch.lock().push((key, Some(value)));
+                crate::helpers::atomic_owner::record_lock_wait(start);
             }
             // Otherwise, insert the key-value pair directly into the map.
             false => {
@@ -136,6 +143,7 @@ impl<
     fn start_atomic(&self) {
         // Set the atomic batch flag to `true`.
         self.batch_in_progress.store(true, Ordering::SeqCst);
+        crate::helpers::atomic_owner::claim(&self.atomic_owner);
         // Ensure that the atomic batch is empty.
         assert!(
             self.atomic_batch.lock().is_empty(),
@@ -194,6 +202,7 @@ impl<
         *self.checkpoint.lock() = Default::default();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
     }
 
     ///
@@ -235,6 +244,7 @@ impl<
         *self.checkpoint.lock() = Default::default();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
 
         Ok(())
     }
@@ -298,11 +308,14 @@ impl<
         K: Borrow<Q>,
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
-        // If a batch is in progress, check the atomic batch first.
-        if self.is_atomic_in_progress() {
+        // If this thread owns an in-progress batch, check the atomic batch first.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // If the key is present in the atomic batch, then check if the value is 'Some(V)'.
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            if let Some((_, value)) = self.atomic_batch.lock().iter().rev().find(|&(k, _)| k.borrow() == key) {
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            if let Some((_, value)) = batch.iter().rev().find(|&(k, _)| k.borrow() == key) {
                 // If the value is 'Some(V)', then the key exists.
                 // If the value is 'Some(None)', then the key is scheduled to be removed.
                 return Ok(value.is_some());
@@ -337,10 +350,13 @@ impl<
         K: Borrow<Q>,
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
-        // Return early if there is no atomic batch in progress.
-        if self.is_atomic_in_progress() {
+        // Return early if there is no atomic batch in progress on this thread.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            self.atomic_batch.lock().iter().rev().find(|&(k, _)| k.borrow() == key).map(|(_, value)| value).cloned()
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            batch.iter().rev().find(|&(k, _)| k.borrow() == key).map(|(_, value)| value).cloned()
         } else {
             None
         }

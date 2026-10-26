@@ -911,7 +911,7 @@ fn test_complex_dynamic_graph_construction_internal(
     assert_eq!(graph[tids[6]], &[]);
     assert_eq!(graph[tids[7]], &[]);
 
-    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction.clone()], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), std::slice::from_ref(&transaction), rng);
 }
 
 // Tests execution graph construction with all-static, all-dynamic, and random combinations of call types.
@@ -2397,7 +2397,7 @@ fn test_replay_attack_prevention_across_blocks() {
     let inputs = vec![Value::from_str("1000u64").unwrap()];
     let mint_tx =
         vm.execute(&caller_private_key, ("replay_base.aleo", "mint"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[mint_tx.clone()], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), std::slice::from_ref(&mint_tx), rng);
 
     // Extract the minted record
     let record = mint_tx

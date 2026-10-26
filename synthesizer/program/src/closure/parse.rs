@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ClosureCore<N> {
     /// Parses a string into a closure.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the 'closure' keyword from the string.

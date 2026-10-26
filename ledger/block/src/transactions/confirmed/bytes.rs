@@ -16,15 +16,15 @@
 use super::*;
 
 impl<N: Network> FromBytes for ConfirmedTransaction<N> {
-    /// Reads the confirmed transaction from a buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    /// Reads the confirmed transaction from a buffer, either with or without checking the data.
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         let variant = u8::read_le(&mut reader)?;
         match variant {
             0 => {
                 // Read the index.
                 let index = u32::read_le(&mut reader)?;
                 // Read the transaction.
-                let transaction = Transaction::<N>::read_le(&mut reader)?;
+                let transaction = Transaction::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
                 // Ensure the number of finalize operations is within bounds.
@@ -45,7 +45,7 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
                 // Read the index.
                 let index = u32::read_le(&mut reader)?;
                 // Read the transaction.
-                let transaction = Transaction::<N>::read_le(&mut reader)?;
+                let transaction = Transaction::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
                 // Ensure the number of finalize operations is within bounds.
@@ -66,9 +66,9 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
                 // Read the index.
                 let index = u32::read_le(&mut reader)?;
                 // Read the transaction.
-                let transaction = Transaction::<N>::read_le(&mut reader)?;
+                let transaction = Transaction::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
                 // Read the rejected deployment.
-                let rejected = Rejected::<N>::read_le(&mut reader)?;
+                let rejected = Rejected::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
                 // Ensure the number of finalize operations is within bounds.
@@ -89,9 +89,9 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
                 // Read the index.
                 let index = u32::read_le(&mut reader)?;
                 // Read the transaction.
-                let transaction = Transaction::<N>::read_le(&mut reader)?;
+                let transaction = Transaction::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
                 // Read the rejected execution.
-                let rejected = Rejected::<N>::read_le(&mut reader)?;
+                let rejected = Rejected::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
                 // Ensure the number of finalize operations is within bounds.
@@ -110,6 +110,16 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
             }
             4.. => Err(error(format!("Failed to decode confirmed transaction variant {variant}"))),
         }
+    }
+
+    /// Reads the confirmed transaction from a buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the confirmed transaction from a buffer without checking the data.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -183,6 +193,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, ConfirmedTransaction::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, ConfirmedTransaction::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

@@ -25,10 +25,10 @@ use std::{
 use walkdir::WalkDir;
 
 // The following license text that should be present at the beginning of every source file.
-const EXPECTED_LICENSE_TEXT: &[u8] = include_bytes!(".resources/license_header");
+const EXPECTED_LICENSE_TEXT: &[u8] = include_bytes!("../.resources/license_header");
 
 // The following directories will be excluded from the license scan.
-const DIRS_TO_SKIP: [&str; 5] = [".cargo", ".circleci", ".git", ".github", "target"];
+const DIRS_TO_SKIP: [&str; 4] = [".cargo", ".git", ".github", "target"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ImportOfInterest {
@@ -187,10 +187,16 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
     }
 }
 
-// The build script; it currently only checks the licenses.
-fn main() {
-    // Check licenses in the current folder.
-    check_file_licenses(".");
-    // Ensure that lock imports have locktick counterparts.
-    check_locktick_imports(".");
+// `CARGO_MANIFEST_DIR` rather than ".": a build script's working directory was
+// the package root by definition, a test binary's is only that when cargo runs
+// it, and against the wrong tree these walk nothing and pass.
+
+#[test]
+fn licenses_are_present() {
+    check_file_licenses(env!("CARGO_MANIFEST_DIR"));
+}
+
+#[test]
+fn locks_have_locktick_counterparts() {
+    check_locktick_imports(env!("CARGO_MANIFEST_DIR"));
 }

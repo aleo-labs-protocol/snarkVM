@@ -288,7 +288,13 @@ fn test_translation(
         .unwrap();
 
     println!("Verifying transaction...");
-    add_and_test_with_costs(&vm, caller_private_key, Some(&[&computed_input_values]), &[transaction.clone()], rng);
+    add_and_test_with_costs(
+        &vm,
+        caller_private_key,
+        Some(&[&computed_input_values]),
+        std::slice::from_ref(&transaction),
+        rng,
+    );
 
     if let Some(expected_public_outputs) = expected_public_outputs {
         println!("Asserting output correctness on {} expected public outputs...", expected_public_outputs.len());

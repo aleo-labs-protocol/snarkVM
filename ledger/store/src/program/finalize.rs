@@ -18,8 +18,7 @@ use crate::{
     helpers::{Map, MapRead, NestedMap, NestedMapRead},
     program::{CommitteeStorage, CommitteeStore},
 };
-#[cfg(any(feature = "history-staking-rewards", feature = "slipstream-plugins"))]
-use console::types::Address;
+
 use console::{
     network::prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
@@ -32,36 +31,11 @@ use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
-#[cfg(all(feature = "slipstream-plugins", feature = "locktick"))]
-use locktick::parking_lot::RwLock;
-#[cfg(all(feature = "slipstream-plugins", not(feature = "locktick")))]
-use parking_lot::RwLock;
-#[cfg(feature = "slipstream-plugins")]
-use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
-#[cfg(feature = "slipstream-plugins")]
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, atomic::AtomicU32};
-#[cfg(any(feature = "history", feature = "history-staking-rewards", feature = "slipstream-plugins"))]
-use std::{borrow::Cow, sync::atomic::Ordering};
 
-/// Serialized form of a mapping replacement, captured before storage consumes the entries.
-#[cfg(feature = "slipstream-plugins")]
-struct SerializedMappingEntries {
-    program_id: Vec<u8>,
-    mapping_name: Vec<u8>,
-    entries: Vec<(Vec<u8>, Vec<u8>)>,
-}
-
-/// The block height component of a [`FinalizeStorage::MappingUpdateMap`] key, stored as 4 raw bytes.
-///
-/// New entries encode the height in **big-endian** order so that lexicographic key order matches
-/// numeric height order, enabling O(log n) floor seeks via `get_floor_confirmed`.
-///
-/// Legacy entries (written before this schema change) use **little-endian** order (the `bincode`
-/// default for `u32`).  They are distinguished at read time by the presence of an entry in
-/// `mapping_update_heights_map`; see `get_historical_mapping_value` for details.
-#[cfg(feature = "history")]
-pub(crate) type HeightBytes = [u8; 4];
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32, Ordering},
+};
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -111,25 +85,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     /// The mapping of `transaction ID` to `rejection reason`.
     type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
-    /// The mapping of `(program ID, mapping name, key, height)` to `value`.
-    ///
-    /// The height component is a [`HeightBytes`]: big-endian for new entries, little-endian
-    /// for legacy entries (detected via `mapping_update_heights_map`).
-    ///
-    /// Big-endian encoding lets lexicographic key order match numeric height order, enabling
-    /// O(log n) floor lookups via `get_floor_confirmed`.
-    #[cfg(feature = "history")]
-    type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
-    /// The mapping of `(program ID, mapping name, key)` to `[height]`.
-    ///
-    /// Present only for keys written before the big-endian schema change. Acts as a
-    /// "legacy sentinel": if an entry exists here the key still uses the old LE encoding,
-    /// and `get_historical_mapping_value` falls back to the O(n) binary-search path.
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
-    /// The mapping of `(staker address, height)` to `(validator address, block reward, new stake)`.
-    #[cfg(feature = "history-staking-rewards")]
-    type StakingRewardsMap: for<'a> Map<'a, (Address<N>, u32), (Address<N>, u64, u64)>;
 
     /// Initializes the program state storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -142,15 +97,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn key_value_map(&self) -> &Self::KeyValueMap;
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap;
-    /// Returns the historical mapping value map.
-    #[cfg(feature = "history")]
-    fn mapping_update_map(&self) -> &Self::MappingUpdateMap;
-    /// Returns the historical mapping update heights map (legacy: present only for pre-schema-change keys).
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap;
-    /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
-    fn staking_rewards_map(&self) -> &Self::StakingRewardsMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
@@ -161,29 +107,14 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
         self.rejected_reason_map().start_atomic();
-        #[cfg(feature = "history")]
-        {
-            self.mapping_update_map().start_atomic();
-            self.mapping_update_heights_map().start_atomic();
-        }
-        #[cfg(feature = "history-staking-rewards")]
-        self.staking_rewards_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
     fn is_atomic_in_progress(&self) -> bool {
-        let ret = self.committee_store().is_atomic_in_progress()
+        self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
             || self.key_value_map().is_atomic_in_progress()
-            || self.rejected_reason_map().is_atomic_in_progress();
-        #[cfg(feature = "history")]
-        let ret = ret
-            || self.mapping_update_map().is_atomic_in_progress()
-            || self.mapping_update_heights_map().is_atomic_in_progress();
-        #[cfg(feature = "history-staking-rewards")]
-        let ret = ret || self.staking_rewards_map().is_atomic_in_progress();
-
-        ret
+            || self.rejected_reason_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -192,13 +123,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
         self.rejected_reason_map().atomic_checkpoint();
-        #[cfg(feature = "history")]
-        {
-            self.mapping_update_map().atomic_checkpoint();
-            self.mapping_update_heights_map().atomic_checkpoint();
-        }
-        #[cfg(feature = "history-staking-rewards")]
-        self.staking_rewards_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -207,13 +131,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
         self.rejected_reason_map().clear_latest_checkpoint();
-        #[cfg(feature = "history")]
-        {
-            self.mapping_update_map().clear_latest_checkpoint();
-            self.mapping_update_heights_map().clear_latest_checkpoint();
-        }
-        #[cfg(feature = "history-staking-rewards")]
-        self.staking_rewards_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -222,13 +139,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
         self.rejected_reason_map().atomic_rewind();
-        #[cfg(feature = "history")]
-        {
-            self.mapping_update_map().atomic_rewind();
-            self.mapping_update_heights_map().atomic_rewind();
-        }
-        #[cfg(feature = "history-staking-rewards")]
-        self.staking_rewards_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -237,13 +147,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
         self.rejected_reason_map().abort_atomic();
-        #[cfg(feature = "history")]
-        {
-            self.mapping_update_map().abort_atomic();
-            self.mapping_update_heights_map().abort_atomic();
-        }
-        #[cfg(feature = "history-staking-rewards")]
-        self.staking_rewards_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -252,19 +155,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.program_id_map().finish_atomic()?;
         self.key_value_map().finish_atomic()?;
         self.rejected_reason_map().finish_atomic()?;
-        #[cfg(feature = "history")]
-        {
-            self.mapping_update_map().finish_atomic()?;
-            self.mapping_update_heights_map().finish_atomic()?;
-        }
-        #[cfg(feature = "history-staking-rewards")]
-        self.staking_rewards_map().finish_atomic()?;
+
         Ok(())
     }
-
-    /// Returns the current block height.
-    #[cfg(feature = "history")]
-    fn current_block_height(&self) -> &AtomicU32;
 
     /// Initializes the given `program ID` and `mapping name` in storage.
     /// If the `mapping name` is already initialized, an error is returned.
@@ -323,17 +216,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
-            // Record the value at the current height in the historical map.
-            // The update heights are reconstructed on read by scanning this map's height suffix,
-            // so no separate (and ever-growing) per-key heights vector is maintained here.
-            #[cfg(feature = "history")]
-            {
-                let current_height = self.current_block_height().load(Ordering::SeqCst);
-                // Record the value at the current height using big-endian encoding.
-                self.mapping_update_map()
-                    .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
-            }
-
             // Update the key-value map with the new key-value.
             self.key_value_map().insert((program_id, mapping_name), key, value)?;
 
@@ -366,30 +248,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
-            // Record the updated value at the current height in the historical map.
-            // The update heights are reconstructed on read by scanning this map's height suffix,
-            // so no separate (and ever-growing) per-key heights vector is maintained here.
-            #[cfg(feature = "history")]
-            {
-                let current_height = self.current_block_height().load(Ordering::SeqCst);
-                let heights_key = (program_id, mapping_name, key.clone());
-
-                // If this key has a legacy heights-map entry it was written before the BE schema
-                // change; continue appending to the heights vec and write with the original LE
-                // encoding so that reads using the heights-map path remain correct.
-                if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                    let mut heights = heights.into_owned();
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_le_bytes()), value.clone())?;
-                    heights.push(current_height);
-                    self.mapping_update_heights_map().insert(heights_key, heights)?;
-                } else {
-                    // New key: use the big-endian encoding so floor seeks work correctly.
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
-                }
-            }
-
             // Update the key-value map with the new key-value.
             self.key_value_map().insert((program_id, mapping_name), key, value)?;
 
@@ -450,32 +308,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
             // Insert the new key-value entries.
             for (key, value) in entries {
-                // Record the updated value at the current height in the historical map.
-                // The update heights are reconstructed on read by scanning this map's height suffix,
-                // so no separate (and ever-growing) per-key heights vector is maintained here.
-                #[cfg(feature = "history")]
-                {
-                    let current_height = self.current_block_height().load(Ordering::SeqCst);
-                    let heights_key = (program_id, mapping_name, key.clone());
-
-                    // Legacy keys (pre-BE schema) continue using LE encoding + heights vec.
-                    if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
-                        let mut heights = heights.into_owned();
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_le_bytes()),
-                            value.clone(),
-                        )?;
-                        heights.push(current_height);
-                        self.mapping_update_heights_map().insert(heights_key, heights)?;
-                    } else {
-                        // New key: big-endian encoding.
-                        self.mapping_update_map().insert(
-                            (program_id, mapping_name, key.clone(), current_height.to_be_bytes()),
-                            value.clone(),
-                        )?;
-                    }
-                }
-
                 // Insert the key-value entry.
                 self.key_value_map().insert((program_id, mapping_name), key, value)?;
             }
@@ -703,18 +535,11 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     storage: P,
     /// PhantomData.
     _phantom: PhantomData<N>,
-    /// Indicates that canonical finalize is currently in progress.
-    /// When `true`, storage writes notify registered Slipstream plugins.
-    #[cfg(feature = "slipstream-plugins")]
-    is_finalize_mode: Arc<AtomicBool>,
     /// Tracks the current block height.
     /// Updated by the VM at the start of each canonical finalize
     block_height: Arc<AtomicU32>,
-    /// Optional plugin manager for streaming canonical mapping and staking updates.
-    /// Wrapped in `Arc` so that all clones of `FinalizeStore` share the same instance;
-    /// the `RwLock` allows installation from a shared reference after construction.
-    #[cfg(feature = "slipstream-plugins")]
-    slipstream_plugin_manager: Arc<RwLock<Option<SlipstreamPluginManager>>>,
+    /// When set, canonical finalize writes credits.aleo history as JSON.
+    record_history_json: Arc<AtomicBool>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -729,12 +554,19 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         Ok(Self {
             storage,
             _phantom: PhantomData,
-            #[cfg(feature = "slipstream-plugins")]
-            is_finalize_mode: Arc::new(AtomicBool::new(false)),
             block_height: Arc::new(AtomicU32::new(0)),
-            #[cfg(feature = "slipstream-plugins")]
-            slipstream_plugin_manager: Arc::new(RwLock::new(None)),
+            record_history_json: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// Enables or disables JSON history for later canonical finalizes.
+    pub fn set_record_history_json(&self, enabled: bool) {
+        self.record_history_json.store(enabled, Ordering::SeqCst);
+    }
+
+    /// Returns whether canonical finalize writes JSON history.
+    pub fn record_history_json(&self) -> bool {
+        self.record_history_json.load(Ordering::SeqCst)
     }
 
     /// Starts an atomic batch write operation.
@@ -783,177 +615,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     }
 
     /// Returns the current block height.
-    #[cfg(feature = "history")]
-    pub fn current_block_height(&self) -> &AtomicU32 {
-        self.storage.current_block_height()
-    }
-
-    /// Returns a reference to the canonical finalize mode flag.
-    ///
-    /// When `true`, storage writes notify registered Slipstream plugins.
-    /// Set to `true` by the VM before canonical finalize runs and reset to `false` afterwards.
-    #[cfg(feature = "slipstream-plugins")]
-    pub fn is_finalize_mode(&self) -> &Arc<AtomicBool> {
-        &self.is_finalize_mode
-    }
-
-    /// Returns the current block height.
     pub fn block_height(&self) -> &AtomicU32 {
         &self.block_height
-    }
-
-    /// Installs a Slipstream plugin manager to receive canonical mapping and staking updates.
-    ///
-    /// May be called from a shared reference. Logs a warning if called more than once.
-    #[cfg(feature = "slipstream-plugins")]
-    pub fn set_slipstream_plugin_manager(&self, manager: SlipstreamPluginManager) {
-        let mut guard = self.slipstream_plugin_manager.write();
-        if guard.is_some() {
-            tracing::warn!("Slipstream plugin manager is already set; ignoring subsequent call.");
-            return;
-        }
-        *guard = Some(manager);
-    }
-
-    /// Returns a handle to the Slipstream plugin manager cell.
-    ///
-    /// The returned `Arc` is a lightweight additional handle to the same shared instance;
-    /// acquire a read or write lock on it to inspect or replace the manager.
-    #[cfg(feature = "slipstream-plugins")]
-    pub fn slipstream_plugin_manager(&self) -> Arc<RwLock<Option<SlipstreamPluginManager>>> {
-        Arc::clone(&self.slipstream_plugin_manager)
-    }
-
-    /// Notifies all interested plugins of a staking reward, if canonical finalize is active.
-    ///
-    /// Errors from plugin calls are logged but never propagated.
-    #[cfg(feature = "slipstream-plugins")]
-    pub fn notify_staking_reward(
-        &self,
-        staker: &Address<N>,
-        validator: &Address<N>,
-        reward: u64,
-        new_stake: u64,
-        block_height: u32,
-    ) {
-        if !self.is_finalize_mode.load(Ordering::SeqCst) {
-            return;
-        }
-
-        let spm_guard = self.slipstream_plugin_manager.read();
-        if let Some(mgr) = spm_guard.as_ref() {
-            if mgr.has_subscribers(BroadcastEventKind::StakingReward) {
-                // Address serializes to a fixed 32-byte array; this cannot fail.
-                let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
-                let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
-                mgr.broadcast(BroadcastEvent::StakingReward {
-                    staker: &staker_bytes,
-                    validator: &validator_bytes,
-                    reward,
-                    new_stake,
-                    block_height,
-                });
-            }
-        }
-    }
-
-    /// Returns the historical value of a mapping at or before the given block height.
-    ///
-    /// **Fast path** (new keys, no `mapping_update_heights_map` entry): single O(log n)
-    /// floor seek on `mapping_update_map`, which uses big-endian height encoding.
-    ///
-    /// **Legacy path** (keys written before the BE schema change, heights-map entry
-    /// present): O(n) binary search over the heights `Vec`, then a point lookup using
-    /// the original little-endian encoding. Correct but slower; these keys stay on this
-    /// path until the node is resynced or an offline migration is performed.
-    #[cfg(feature = "history")]
-    pub fn get_historical_mapping_value(
-        &self,
-        program_id: ProgramID<N>,
-        mapping_name: Identifier<N>,
-        mapping_key: Plaintext<N>,
-        height: u32,
-    ) -> Result<Option<Cow<'_, Value<N>>>, Error> {
-        // Return nothing for future heights, as the mapping value might change by then.
-        if height > self.current_block_height().load(Ordering::SeqCst) {
-            return Ok(None);
-        }
-
-        // Check for a legacy heights-map entry (pre-BE schema change).
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            // Legacy O(n) path: binary search on the heights Vec.
-            let heights = heights.into_owned();
-            let applicable_height = match heights.binary_search(&height) {
-                Ok(_) => height,
-                Err(0) => return Ok(None),
-                Err(idx) => heights[idx - 1],
-            };
-            // Look up with the original little-endian encoding.
-            return self.storage.mapping_update_map().get_confirmed(&(
-                program_id,
-                mapping_name,
-                mapping_key,
-                applicable_height.to_le_bytes(),
-            ));
-        }
-
-        // New fast path: O(log n) floor seek with big-endian encoding.
-        let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
-        match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
-            Some((found_key, found_value)) => {
-                let (p, m, k, _h) = found_key.into_owned();
-                if p == program_id && m == mapping_name && k == mapping_key { Ok(Some(found_value)) } else { Ok(None) }
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Returns the heights at which past mapping updates occurred, in ascending order.
-    ///
-    /// For legacy keys (heights-map entry present) the list is read directly from the
-    /// heights map. For new keys it is reconstructed by scanning `mapping_update_map`.
-    /// Either way this is O(n updates) and is intended for diagnostic / test use only.
-    #[cfg(feature = "history")]
-    pub fn get_mapping_update_heights(
-        &self,
-        program_id: ProgramID<N>,
-        mapping_name: Identifier<N>,
-        mapping_key: Plaintext<N>,
-    ) -> Result<Option<Cow<'_, Vec<u32>>>, Error> {
-        // Legacy path: heights are stored explicitly in the heights map.
-        let heights_key = (program_id, mapping_name, mapping_key.clone());
-        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
-            return Ok(Some(heights));
-        }
-
-        // New path: reconstruct from mapping_update_map keys (big-endian encoded heights).
-        let mut heights: Vec<u32> = self
-            .storage
-            .mapping_update_map()
-            .iter_confirmed()
-            .filter_map(|(k, _v)| {
-                let (p, m, key, h_be) = k.into_owned();
-                if p == program_id && m == mapping_name && key == mapping_key {
-                    Some(u32::from_be_bytes(h_be))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if heights.is_empty() {
-            return Ok(None);
-        }
-
-        heights.sort_unstable();
-        Ok(Some(Cow::Owned(heights)))
-    }
-
-    /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
-    pub fn staking_rewards_map(&self) -> &P::StakingRewardsMap {
-        self.storage.staking_rewards_map()
     }
 }
 
@@ -1019,46 +682,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         key: Plaintext<N>,
         value: Value<N>,
     ) -> Result<FinalizeOperation<N>> {
-        // Serialize before moving, if a plugin notification may be needed.
-        #[cfg(feature = "slipstream-plugins")]
-        let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
-            let spm_guard = self.slipstream_plugin_manager.read();
-            if let Some(mgr) = spm_guard.as_ref() {
-                if mgr.has_subscribers(BroadcastEventKind::MappingUpdate) {
-                    Some((
-                        program_id.to_bytes_le()?,
-                        mapping_name.to_bytes_le()?,
-                        key.to_bytes_le()?,
-                        value.to_bytes_le()?,
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let result = self.storage.update_key_value(program_id, mapping_name, key, value)?;
-
-        // Notify plugins of the update if in canonical finalize mode.
-        #[cfg(feature = "slipstream-plugins")]
-        if let Some((pid, mname, k, v)) = plugin_data {
-            let height = self.block_height().load(Ordering::SeqCst);
-            let spm_guard = self.slipstream_plugin_manager.read();
-            if let Some(mgr) = spm_guard.as_ref() {
-                mgr.broadcast(BroadcastEvent::MappingUpdate {
-                    program_id: &pid,
-                    mapping_name: &mname,
-                    key: &k,
-                    value: &v,
-                    block_height: height,
-                });
-            }
-        }
-        Ok(result)
+        self.storage.update_key_value(program_id, mapping_name, key, value)
     }
 
     /// Removes the key-value pair for the given `program ID`, `mapping name`, and `key` from storage.
@@ -1091,53 +715,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
-        // Serialize mapping identity and all entries before moving them into storage,
-        // so they are available for plugin notification after the storage call.
-        #[cfg(feature = "slipstream-plugins")]
-        let plugin_data: Option<SerializedMappingEntries> = if self.is_finalize_mode.load(Ordering::SeqCst) {
-            let spm_guard = self.slipstream_plugin_manager.read();
-            if let Some(mgr) = spm_guard.as_ref() {
-                if mgr.has_subscribers(BroadcastEventKind::MappingUpdate) {
-                    let mut entries_bytes = Vec::with_capacity(entries.len());
-                    for (key, value) in &entries {
-                        entries_bytes.push((key.to_bytes_le()?, value.to_bytes_le()?));
-                    }
-                    Some(SerializedMappingEntries {
-                        program_id: program_id.to_bytes_le()?,
-                        mapping_name: mapping_name.to_bytes_le()?,
-                        entries: entries_bytes,
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let result = self.storage.replace_mapping(program_id, mapping_name, entries)?;
-
-        // Notify plugins of each updated key-value pair if in canonical finalize mode.
-        #[cfg(feature = "slipstream-plugins")]
-        if let Some(data) = plugin_data {
-            let height = self.block_height().load(Ordering::SeqCst);
-            let spm_guard = self.slipstream_plugin_manager.read();
-            if let Some(mgr) = spm_guard.as_ref() {
-                for (k, v) in &data.entries {
-                    mgr.broadcast(BroadcastEvent::MappingUpdate {
-                        program_id: &data.program_id,
-                        mapping_name: &data.mapping_name,
-                        key: k,
-                        value: v,
-                        block_height: height,
-                    });
-                }
-            }
-        }
-
-        Ok(result)
+        self.storage.replace_mapping(program_id, mapping_name, entries)
     }
 
     /// Removes the mapping for the given `program ID` and `mapping name` from storage,
@@ -1229,7 +807,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     pub fn insert_rejected_reason(&self, transaction_id: Field<N>, reason: RejectedReason<N>) -> Result<()> {
         let height = self.block_height.load(std::sync::atomic::Ordering::SeqCst);
         let consensus_version = N::CONSENSUS_VERSION(height)?;
-        if cfg!(any(feature = "history", feature = "test")) || consensus_version >= ConsensusVersion::V15 {
+        if cfg!(feature = "test") || consensus_version >= ConsensusVersion::V15 {
             self.storage.rejected_reason_map().insert(transaction_id, reason)
         } else {
             Ok(())
@@ -1877,160 +1455,5 @@ mod tests {
         let timer = std::time::Instant::now();
         finalize_store.remove_program(&program_id).unwrap();
         println!("FinalizeStore::remove_program - {} μs", timer.elapsed().as_micros());
-    }
-
-    /// Verifies `get_historical_mapping_value` returns the floor value for the requested height.
-    #[test]
-    #[cfg(feature = "history")]
-    fn test_get_historical_mapping_value() {
-        use std::sync::atomic::Ordering;
-
-        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
-        let mapping_name = Identifier::from_str("account").unwrap();
-        let key = Plaintext::from_str("1field").unwrap();
-
-        let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
-        let finalize_store = FinalizeStore::from(program_memory).unwrap();
-
-        // Initialize program and mapping.
-        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
-
-        // Insert at block height 10.
-        finalize_store.storage.current_block_height().store(10, Ordering::SeqCst);
-        let value_10 = Value::from_str("10u64").unwrap();
-        finalize_store.insert_key_value(program_id, mapping_name, key.clone(), value_10.clone()).unwrap();
-
-        // Update at block height 20.
-        finalize_store.storage.current_block_height().store(20, Ordering::SeqCst);
-        let value_20 = Value::from_str("20u64").unwrap();
-        finalize_store.update_key_value(program_id, mapping_name, key.clone(), value_20.clone()).unwrap();
-
-        // Update at block height 50.
-        finalize_store.storage.current_block_height().store(50, Ordering::SeqCst);
-        let value_50 = Value::from_str("50u64").unwrap();
-        finalize_store.update_key_value(program_id, mapping_name, key.clone(), value_50.clone()).unwrap();
-
-        // Update at block height 100.
-        finalize_store.storage.current_block_height().store(100, Ordering::SeqCst);
-        let value_100 = Value::from_str("100u64").unwrap();
-        finalize_store.update_key_value(program_id, mapping_name, key.clone(), value_100.clone()).unwrap();
-
-        // Height 0 (before first insert) => None.
-        assert!(
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 0).unwrap().is_none()
-        );
-
-        // Height 9 (just before first insert) => None.
-        assert!(
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 9).unwrap().is_none()
-        );
-
-        // Height 10 (exact match) => value_10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 10).unwrap().unwrap();
-        assert_eq!(*v, value_10);
-
-        // Height 15 (floor → 10) => value_10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 15).unwrap().unwrap();
-        assert_eq!(*v, value_10);
-
-        // Height 20 (exact match) => value_20.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 20).unwrap().unwrap();
-        assert_eq!(*v, value_20);
-
-        // Height 49 (floor → 20) => value_20.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 49).unwrap().unwrap();
-        assert_eq!(*v, value_20);
-
-        // Height 50 (exact match) => value_50.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 50).unwrap().unwrap();
-        assert_eq!(*v, value_50);
-
-        // Height 75 (floor → 50) => value_50.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 75).unwrap().unwrap();
-        assert_eq!(*v, value_50);
-
-        // Height 100 (exact match) => value_100.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 100).unwrap().unwrap();
-        assert_eq!(*v, value_100);
-
-        // Advance chain past last update height; querying height 150 should floor to 100.
-        finalize_store.storage.current_block_height().store(200, Ordering::SeqCst);
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 150).unwrap().unwrap();
-        assert_eq!(*v, value_100);
-
-        // get_mapping_update_heights returns all heights sorted ascending.
-        let heights =
-            finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
-        assert_eq!(&*heights, &[10, 20, 50, 100]);
-    }
-
-    /// Verifies the legacy (pre-BE schema) read path: keys whose heights are stored in
-    /// `mapping_update_heights_map` continue to be found correctly via binary search.
-    #[test]
-    #[cfg(feature = "history")]
-    fn test_get_historical_mapping_value_legacy() {
-        use std::sync::atomic::Ordering;
-
-        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
-        let mapping_name = Identifier::from_str("account").unwrap();
-        let key = Plaintext::from_str("1field").unwrap();
-
-        let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
-        let finalize_store = FinalizeStore::from(program_memory).unwrap();
-
-        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
-
-        // Simulate legacy writes: insert directly into the LE-keyed update map AND into the heights map,
-        // exactly as the old code did.
-        let v5 = Value::from_str("5u64").unwrap();
-        let v10 = Value::from_str("10u64").unwrap();
-        finalize_store
-            .storage
-            .mapping_update_map()
-            .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), v5.clone())
-            .unwrap();
-        finalize_store
-            .storage
-            .mapping_update_map()
-            .insert((program_id, mapping_name, key.clone(), 10u32.to_le_bytes()), v10.clone())
-            .unwrap();
-        finalize_store
-            .storage
-            .mapping_update_heights_map()
-            .insert((program_id, mapping_name, key.clone()), vec![5, 10])
-            .unwrap();
-        finalize_store.storage.current_block_height().store(20, Ordering::SeqCst);
-
-        // Height before first update → None.
-        assert!(
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 4).unwrap().is_none()
-        );
-        // Height 5 (exact) → v5.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 5).unwrap().unwrap();
-        assert_eq!(*v, v5);
-        // Height 7 (floor → 5) → v5.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 7).unwrap().unwrap();
-        assert_eq!(*v, v5);
-        // Height 10 (exact) → v10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 10).unwrap().unwrap();
-        assert_eq!(*v, v10);
-        // Height 15 (floor → 10) → v10.
-        let v =
-            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 15).unwrap().unwrap();
-        assert_eq!(*v, v10);
-
-        // Heights list comes from the heights map.
-        let heights =
-            finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
-        assert_eq!(&*heights, &[5, 10]);
     }
 }

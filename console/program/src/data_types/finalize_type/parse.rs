@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for FinalizeType<N> {
     /// Parses a string into a finalize type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the mode from the string (ordering matters).
         alt((
             map(tag("dynamic.future"), |_| Self::DynamicFuture),

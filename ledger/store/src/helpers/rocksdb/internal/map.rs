@@ -23,7 +23,7 @@ use snarkvm_utilities::{bytes::unchecked_deserialize, flatten_error};
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use indexmap::IndexMap;
 use smallvec::SmallVec;
-use std::{borrow::Cow, ops::Deref, path::Path, sync::atomic::Ordering};
+use std::{borrow::Cow, ops::Deref, path::Path, sync::atomic::Ordering, time::Instant};
 use tracing::error;
 
 #[derive(Clone)]
@@ -44,6 +44,8 @@ pub struct InnerDataMap<K: Serialize + DeserializeOwned, V: Serialize + Deserial
     pub(super) context: Vec<u8>,
     /// The tracker for whether a database transaction is in progress.
     pub(super) batch_in_progress: AtomicBool,
+    /// Owner of the in-progress atomic batch (`0` = none).
+    pub(super) atomic_owner: AtomicU64,
     /// The database transaction.
     pub(super) atomic_batch: Mutex<Vec<(K, Option<V>)>>,
     /// The checkpoint stack for the batched operations within the map.
@@ -54,6 +56,20 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
     pub fn backup_database<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
         let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.database)?;
         checkpoint.create_checkpoint(path).map_err(|e| e.into_string())
+    }
+
+    /// Catches up with the primary instance; only applicable to secondary instances.
+    pub fn catch_up_with_primary(&self) -> Result<()> {
+        self.database
+            .try_catch_up_with_primary()
+            .map_err(|e| anyhow::anyhow!("Failed to catch up with the primary: {e}"))
+    }
+
+    /// Reads RocksDB internal properties and publishes them to the metrics registry.
+    /// Any map can be used since they all share the same underlying `RocksDB` instance.
+    #[cfg(feature = "metrics")]
+    pub fn export_rocksdb_metrics(&self) {
+        self.database.export_rocksdb_metrics();
     }
 }
 
@@ -71,7 +87,9 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key-value pair to the batch.
             true => {
+                let start = Instant::now();
                 self.atomic_batch.lock().push((key, Some(value)));
+                crate::helpers::atomic_owner::record_lock_wait(start);
             }
             // Otherwise, insert the key-value pair directly into the map.
             false => {
@@ -113,6 +131,7 @@ impl<
     fn start_atomic(&self) {
         // Set the atomic batch flag to `true`.
         self.batch_in_progress.store(true, Ordering::SeqCst);
+        crate::helpers::atomic_owner::claim(&self.atomic_owner);
         // Increment the atomic depth index.
         self.database.atomic_depth.fetch_add(1, Ordering::SeqCst);
 
@@ -183,6 +202,7 @@ impl<
         self.checkpoints.lock().clear();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
         // Clear the database-wide atomic batch.
         self.database.atomic_batch.lock().clear();
         // Reset the atomic batch depth.
@@ -229,6 +249,7 @@ impl<
         self.checkpoints.lock().clear();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
 
         // Subtract the atomic depth index.
         let previous_atomic_depth = self.database.atomic_depth.fetch_sub(1, Ordering::SeqCst);
@@ -339,11 +360,14 @@ impl<
         K: Borrow<Q>,
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
-        // If a batch is in progress, check the atomic batch first.
-        if self.is_atomic_in_progress() {
+        // If this thread owns an in-progress batch, check the atomic batch first.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // If the key is present in the atomic batch, then check if the value is 'Some(V)'.
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            if let Some((_, value)) = self.atomic_batch.lock().iter().rev().find(|&(k, _)| k.borrow() == key) {
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            if let Some((_, value)) = batch.iter().rev().find(|&(k, _)| k.borrow() == key) {
                 // If the value is 'Some(V)', then the key exists.
                 // If the value is 'Some(None)', then the key is scheduled to be removed.
                 return Ok(value.is_some());
@@ -382,10 +406,13 @@ impl<
         K: Borrow<Q>,
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
-        // Return early if there is no atomic batch in progress.
-        if self.is_atomic_in_progress() {
+        // Return early if there is no atomic batch in progress on this thread.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            self.atomic_batch.lock().iter().rev().find(|&(k, _)| k.borrow() == key).map(|(_, value)| value).cloned()
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            batch.iter().rev().find(|&(k, _)| k.borrow() == key).map(|(_, value)| value).cloned()
         } else {
             None
         }
@@ -618,7 +645,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         Ok(raw_key)
     }
 
-    fn get_raw<Q>(&self, key: &Q) -> Result<Option<rocksdb::DBPinnableSlice>>
+    fn get_raw<Q>(&self, key: &Q) -> Result<Option<rocksdb::DBPinnableSlice<'_>>>
     where
         K: Borrow<Q>,
         Q: Serialize + ?Sized,
@@ -674,6 +701,7 @@ mod tests {
             context,
             atomic_batch: Default::default(),
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             checkpoints: Default::default(),
         }))
     }

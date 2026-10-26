@@ -17,6 +17,10 @@ use super::*;
 
 impl<E: Environment, const DEPTH: u8> MerklePath<E, DEPTH> {
     /// Returns `true` if the Merkle path is valid for the given root and leaf.
+    ///
+    /// Note: The circuit only constrains the lower `DEPTH` bits of the leaf index. The check that the leaf index
+    /// is less than `2^DEPTH` runs outside the circuit, so a prover can set the upper bits freely.
+    /// Callers that use the leaf index beyond this verification must constrain bits `DEPTH..64` to zero.
     #[must_use = "This method returns a Boolean circuit variable which should be handled"]
     pub fn verify<LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Field<E>>>(
         &self,

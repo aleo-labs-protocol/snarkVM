@@ -18,7 +18,7 @@ use super::*;
 impl<E: Environment> Parser for Field<E> {
     /// Parses a string into a field circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the optional negative sign '-' from the string.
         let (string, negation) = map(opt(tag("-")), |neg: Option<&str>| neg.is_some())(string)?;
         // Parse the digits from the string.

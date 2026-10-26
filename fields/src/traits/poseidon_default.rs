@@ -16,6 +16,7 @@
 use crate::{PoseidonGrainLFSR, PrimeField, serial_batch_inversion_and_mul};
 use aleo_std::{end_timer, start_timer};
 use itertools::Itertools;
+use snarkvm_utilities::defer;
 
 use anyhow::{Result, bail};
 
@@ -55,18 +56,23 @@ pub trait PoseidonDefaultField {
                 PoseidonGrainLFSR::new(false, F::size_in_bits() as u64, (RATE + 1) as u64, full_rounds, partial_rounds);
             end_timer!(lfsr_time);
 
-            let ark_time = start_timer!(|| "Constructing ARK");
-            let mut ark = Vec::with_capacity((full_rounds + partial_rounds) as usize);
-            for _ in 0..(full_rounds + partial_rounds) {
-                ark.push(lfsr.get_field_elements_rejection_sampling(RATE + 1)?);
-            }
-            end_timer!(ark_time);
+            let ark = {
+                let ark_time = start_timer!(|| "Constructing ARK");
+                defer! { end_timer!(ark_time); }
+                let mut ark = Vec::with_capacity((full_rounds + partial_rounds) as usize);
+                for _ in 0..(full_rounds + partial_rounds) {
+                    ark.push(lfsr.get_field_elements_rejection_sampling(RATE + 1)?);
+                }
+                ark
+            };
 
-            let skip_time = start_timer!(|| "Skipping matrices");
-            for _ in 0..skip_matrices {
-                let _ = lfsr.get_field_elements_mod_p::<F>(2 * (RATE + 1))?;
+            {
+                let skip_time = start_timer!(|| "Skipping matrices");
+                defer! { end_timer!(skip_time); }
+                for _ in 0..skip_matrices {
+                    let _ = lfsr.get_field_elements_mod_p::<F>(2 * (RATE + 1))?;
+                }
             }
-            end_timer!(skip_time);
 
             // A qualifying matrix must satisfy the following requirements:
             // - There is no duplication among the elements in x or y.

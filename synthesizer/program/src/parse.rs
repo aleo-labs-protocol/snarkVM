@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ProgramCore<N> {
     /// Parses a string into a program.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // A helper to parse a program.
         enum P<N: Network> {
             Constructor(ConstructorCore<N>),
@@ -45,7 +45,7 @@ impl<N: Network> Parser for ProgramCore<N> {
         // Parse the semicolon ';' keyword from the string.
         let (string, _) = tag(";")(string)?;
 
-        fn intermediate<N: Network>(string: &str) -> ParserResult<P<N>> {
+        fn intermediate<N: Network>(string: &str) -> ParserResult<'_, P<N>> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
 
@@ -526,9 +526,9 @@ function compute:
         // A program with more than MAX_RECORDS should fail.
         test_parse("", &gen_record_string(CurrentNetwork::MAX_RECORDS + 1), false);
         // A program with MAX_MAPPINGS should succeed.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS), true);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()), true);
         // A program with more than MAX_MAPPINGS should fail.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS + 1), false);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS() + 1), false);
         // A program with MAX_CLOSURES should succeed.
         test_parse("", &gen_closure_string(CurrentNetwork::MAX_CLOSURES), true);
         // A program with more than MAX_CLOSURES should fail.
@@ -543,7 +543,7 @@ function compute:
             "{} {} {} {} {}",
             gen_struct_string(CurrentNetwork::MAX_STRUCTS),
             gen_record_string(CurrentNetwork::MAX_RECORDS),
-            gen_mapping_string(CurrentNetwork::MAX_MAPPINGS),
+            gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()),
             gen_closure_string(CurrentNetwork::MAX_CLOSURES),
             gen_function_string(CurrentNetwork::MAX_FUNCTIONS)
         );

@@ -245,9 +245,9 @@ impl<N: Network> CallDynamic<N> {
 impl<N: Network> Parser for CallDynamic<N> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses an operand from the string.
-        fn parse_operand<N: Network>(string: &str) -> ParserResult<Operand<N>> {
+        fn parse_operand<N: Network>(string: &str) -> ParserResult<'_, Operand<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the operand from the string.
@@ -255,7 +255,7 @@ impl<N: Network> Parser for CallDynamic<N> {
         }
 
         /// Parses a destination register from the string.
-        fn parse_destination<N: Network>(string: &str) -> ParserResult<Register<N>> {
+        fn parse_destination<N: Network>(string: &str) -> ParserResult<'_, Register<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the destination from the string.
@@ -263,7 +263,7 @@ impl<N: Network> Parser for CallDynamic<N> {
         }
 
         /// Parses a value type from the string.
-        fn parse_value_type<N: Network>(string: &str) -> ParserResult<ValueType<N>> {
+        fn parse_value_type<N: Network>(string: &str) -> ParserResult<'_, ValueType<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the destination type from the string.
@@ -272,7 +272,7 @@ impl<N: Network> Parser for CallDynamic<N> {
 
         /// A helper function to parse a non-empty, parenthesis-delimited sequence of value types.
         /// For example, `(as u64.public dynamic.future)`.
-        fn parse_value_types<N: Network>(string: &str) -> ParserResult<Vec<ValueType<N>>> {
+        fn parse_value_types<N: Network>(string: &str) -> ParserResult<'_, Vec<ValueType<N>>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the "(" from the string.

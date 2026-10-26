@@ -119,7 +119,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
 /// Perform the snark verification based on the variant.
 #[rustfmt::skip]
 macro_rules! do_snark_verification {
-    ($variant: expr, $function_name: expr, $verifying_key: expr, $varuna_version: expr, $inputs: expr, $proof: expr) => {{
+    ($variant: expr, $function_name: expr, $verifying_key: expr, $varuna_version: expr, $inputs: expr, $proof: expr, $consensus_version: expr) => {{
         let verifying_key = || match $verifying_key {
             Value::Plaintext(plaintext) => VerifyingKey::<N>::from_bytes_le(&plaintext.as_byte_array()?),
             _ => bail!("Expected the first operand to be a byte array."),
@@ -137,7 +137,22 @@ macro_rules! do_snark_verification {
         };
 
         let varuna_version = || match $varuna_version {
-            Value::Plaintext(Plaintext::Literal(Literal::U8(version), _)) => VarunaVersion::from_bytes_le(&[*version]),
+            Value::Plaintext(Plaintext::Literal(Literal::U8(version), _)) => {
+                let version = VarunaVersion::from_bytes_le(&[*version])?;
+                match version {
+                    VarunaVersion::V1 | VarunaVersion::V2 => {
+                        if $consensus_version.is_some_and(|version| version >= ConsensusVersion::V21) {
+                            return Err(io_error("Varuna V3 is required for snark verification").into());
+                        }
+                    }
+                    VarunaVersion::V3 => {
+                        if $consensus_version.is_some_and(|version| version < ConsensusVersion::V21) {
+                            return Err(io_error("Invalid Varuna version").into());
+                        }
+                    }
+                }
+                Ok(version)
+            }
             _ => bail!("Expected the Varuna version to be a U8 literal."),
         };
 
@@ -247,7 +262,7 @@ pub fn evaluate_varuna_proof<N: Network>(
     inputs: &Value<N>,
     proof: &Value<N>,
 ) -> Result<bool> {
-    evaluate_varuna_proof_internal(variant, _function_name, verifying_key, varuna_version, inputs, proof)
+    evaluate_varuna_proof_internal(variant, _function_name, verifying_key, varuna_version, inputs, proof, None)
 }
 
 fn evaluate_varuna_proof_internal<N: Network>(
@@ -257,8 +272,9 @@ fn evaluate_varuna_proof_internal<N: Network>(
     varuna_version: Value<N>,
     inputs: &Value<N>,
     proof: &Value<N>,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<bool> {
-    Ok(do_snark_verification!(variant, _function_name, verifying_key, varuna_version, inputs, proof))
+    Ok(do_snark_verification!(variant, _function_name, verifying_key, varuna_version, inputs, proof, consensus_version))
 }
 
 // Helper function to check if a type is a N-dimensional array of a given base literal type.
@@ -336,6 +352,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
             varuna_version,
             &inputs,
             &proof,
+            Some(N::CONSENSUS_VERSION(registers.state().block_height())?),
         )?;
         let output = Literal::Boolean(Boolean::new(output));
 
@@ -469,7 +486,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
 impl<N: Network, const VARIANT: u8> Parser for SnarkVerification<N, VARIANT> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.

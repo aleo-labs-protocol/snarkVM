@@ -53,7 +53,7 @@ fn prepare_check_deployment<N: Network, A: snarkvm_circuit::Aleo<Network = N>>(
     };
     // Sample 'root_tvk'.
     let root_tvk = None;
-    // Sample 'is_root'.
+    // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
     let is_root = true;
     // Compute the request.
     let request = Request::sign(

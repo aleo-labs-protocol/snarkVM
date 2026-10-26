@@ -13,15 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(target_arch = "wasm32")]
-compile_error!(
-    "snarkvm-slipstream-plugin-manager uses libloading for dynamic plugin \
-     loading, which is not supported on wasm32 targets. Do not enable the \
-     `history`, `history-staking-rewards`, or `slipstream-plugins` features \
-     when targeting wasm32."
-);
+// Tests on the new costing of the rand.chacha opcode.
+mod rand_chacha_cost;
 
-pub mod slipstream_manager;
-
-pub use slipstream_manager::{LoadedSlipstreamPlugin, SlipstreamPluginManager};
-pub use snarkvm_slipstream_plugin_interface::{BroadcastEvent, BroadcastEventKind};
+use super::*;

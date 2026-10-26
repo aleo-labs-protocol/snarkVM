@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-test-helpers"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Test helpers for a decentralized virtual machine"
 homepage = "https://aleo.org"

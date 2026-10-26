@@ -24,6 +24,9 @@ pub trait PathHash: Clone + Send + Sync {
     type Hash: FieldTrait;
 
     /// Returns the empty hash.
+    ///
+    /// Every `MerkleTree::new` calls this, so an implementation that can remember the
+    /// value overrides it.
     fn hash_empty(&self) -> Result<Self::Hash> {
         self.hash_children(&Self::Hash::zero(), &Self::Hash::zero())
     }
@@ -44,7 +47,15 @@ pub trait PathHash: Clone + Send + Sync {
 impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> PathHash for BHP<E, NUM_WINDOWS, WINDOW_SIZE> {
     type Hash = Field<E>;
 
+    /// Returns the empty hash this instance remembers.
+    fn hash_empty(&self) -> Result<Self::Hash> {
+        self.merkle_empty_hash()
+    }
+
     /// Returns the hash of the given child nodes.
+    ///
+    /// `BHP::merkle_empty_hash` spells out this same encoding for two zero children; a
+    /// change here has to be made there too.
     fn hash_children(&self, left: &Self::Hash, right: &Self::Hash) -> Result<Self::Hash> {
         let mut input = Vec::with_capacity(1 + <Self::Hash as SizeInBits>::size_in_bits() * 2);
         // Prepend the nodes with a `true` bit.
@@ -59,7 +70,15 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> PathHash for 
 impl<E: Environment, const RATE: usize> PathHash for Poseidon<E, RATE> {
     type Hash = Field<E>;
 
+    /// Returns the empty hash this instance remembers.
+    fn hash_empty(&self) -> Result<Self::Hash> {
+        self.merkle_empty_hash()
+    }
+
     /// Returns the hash of the given child nodes.
+    ///
+    /// `Poseidon::merkle_empty_hash` spells out this same encoding for two zero children;
+    /// a change here has to be made there too.
     fn hash_children(&self, left: &Self::Hash, right: &Self::Hash) -> Result<Self::Hash> {
         // Prepend the nodes with a `1field` byte.
         let input = &[Self::Hash::one(), *left, *right];

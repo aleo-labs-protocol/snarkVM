@@ -44,7 +44,7 @@ impl ArgumentLocator {
 impl Parser for ArgumentLocator {
     /// Parses a string into an argument locator of the form `{is_input}/{index}`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the `is_input` from the string.
         let (string, is_input) = alt((map(tag("true"), |_| true), map(tag("false"), |_| false)))(string)?;
         // Parse the `/` from the string.

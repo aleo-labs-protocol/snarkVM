@@ -44,6 +44,8 @@ use console::{
         Value,
     },
 };
+use rand::SeedableRng;
+use rand_chacha::ChaChaRng;
 
 use indexmap::IndexMap;
 
@@ -396,10 +398,21 @@ impl<N: Network> GetRecordDynamic<N> {
             }
             None => {
                 // Sample an arbitrary value for the entry, consistent with the specified type.
+                // Note: This MUST be deterministic across all validators verifying the same deployment.
+                // The not-present branch is reached during `CheckDeployment` synthesis (a sampled dynamic
+                // record carries no data), and the sampled value is stored to a register that a program
+                // can feed into a `call.dynamic` target. Drawing it from the ambient `rand::rng()` would
+                // let the same deployment verify on some validators and fail on others. We therefore seed
+                // a deterministic RNG from the (deterministic) record root and entry identifier; the
+                // concrete value is a dummy witness used only for synthesis, so only its determinism matters.
                 let value = {
-                    let rng = &mut rand::rng();
-                    let address = Address::<N>::rand(rng);
-                    stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), rng)?
+                    let root_bytes = root.to_bytes_le()?;
+                    let entry_bytes = entry_identifier.to_field()?.to_bytes_le()?;
+                    let root_seed = u64::from_bytes_le(&root_bytes[..8])?;
+                    let entry_seed = u64::from_bytes_le(&entry_bytes[..8])?;
+                    let mut rng = ChaChaRng::seed_from_u64(root_seed ^ entry_seed);
+                    let address = Address::<N>::rand(&mut rng);
+                    stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), &mut rng)?
                 };
 
                 let entry = match value {
@@ -427,7 +440,7 @@ impl<N: Network> GetRecordDynamic<N> {
 
 impl<N: Network> Parser for GetRecordDynamic<N> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the opcode from the string.

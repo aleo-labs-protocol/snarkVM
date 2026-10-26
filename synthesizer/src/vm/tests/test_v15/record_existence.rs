@@ -595,7 +595,7 @@ fn test_existence_check() {
     let mint_planet_4_tx =
         vm.execute(&caller_private_key, ("base.aleo", "mint_rover"), inputs.iter(), None, 0, None, rng).unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[mint_planet_4_tx.clone()], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), std::slice::from_ref(&mint_planet_4_tx), rng);
 
     let mint_planet_4_output = mint_planet_4_tx.transitions().next().unwrap().outputs().first().unwrap();
     let mint_planet_4_record = match mint_planet_4_output {

@@ -17,8 +17,8 @@
 mod record_existence_stacks;
 
 // Tests with Aleo functions which output scalars.
-// These changes are not ConsensusVersion::V18-gated, but they were introduced at that point in
-// time.
+// The relevant changes are not ConsensusVersion::V18-gated, but they were introduced at that point
+// in time.
 mod scalar_outputs;
 
 // Tests for block-wide synthesis limits.

@@ -643,4 +643,63 @@ function caller_func:
             }
         }
     }
+
+    fn declared_held(stack: &Stack<CurrentNetwork>) -> usize {
+        let program = stack.program();
+        program
+            .functions()
+            .keys()
+            .chain(program.records().keys())
+            .filter(|name| stack.contains_proving_key(name))
+            .count()
+    }
+
+    fn listed(stack: &Stack<CurrentNetwork>) -> Vec<Identifier<CurrentNetwork>> {
+        stack.proving_keys().into_iter().map(|(name, _)| name).collect()
+    }
+
+    #[test]
+    fn test_proving_keys_lists_the_held_function_and_translation_keys() {
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program listing.aleo;
+
+record token:
+    owner as address.private;
+
+function held:
+    input r0 as u8.public;
+
+function verifying_only:
+    input r0 as u8.public;",
+        )
+        .unwrap();
+        let process = crate::test_helpers::sample_process(&program);
+        let stack = process.get_stack(program.id()).unwrap();
+        let (_, proving_key, verifying_key) = crate::test_helpers::sample_key();
+        let [held, verifying_only, token] =
+            ["held", "verifying_only", "token"].map(|n| Identifier::from_str(n).unwrap());
+        let token_key = ProvingKey::new(Arc::new((*proving_key).clone()));
+        stack.insert_proving_key(&held, proving_key.clone()).unwrap();
+        stack.insert_proving_key(&token, token_key.clone()).unwrap();
+        stack.insert_verifying_key(&verifying_only, verifying_key).unwrap();
+        let keys = stack.proving_keys();
+        assert_eq!(keys.iter().map(|(name, _)| *name).collect::<Vec<_>>(), [held, token]);
+        assert!(std::ptr::eq(&*keys[0].1, &*proving_key));
+        assert!(std::ptr::eq(&*keys[1].1, &*token_key));
+    }
+
+    #[test]
+    fn test_proving_keys_loads_no_credits_key_and_omits_a_removed_one() {
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        let stack = process.get_stack("credits.aleo").unwrap();
+        assert_eq!(declared_held(&stack), 0);
+        let transfer_public = Identifier::from_str("transfer_public").unwrap();
+        stack.insert_proving_key(&transfer_public, crate::test_helpers::sample_key().1).unwrap();
+        assert_eq!(listed(&stack), [transfer_public]);
+        assert_eq!(declared_held(&stack), 1);
+        process.remove_proving_key(stack.program_id(), &transfer_public).unwrap();
+        assert!(listed(&stack).is_empty());
+        assert_eq!(declared_held(&stack), 0);
+    }
 }

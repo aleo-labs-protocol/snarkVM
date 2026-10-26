@@ -163,7 +163,7 @@ impl<N: Network> Subdag<N> {
             "Subdag cannot exceed the maximum number of rounds"
         );
         // Ensure the anchor round is even.
-        ensure!(subdag.iter().next_back().map_or(0, |(r, _)| *r) % 2 == 0, "Anchor round must be even");
+        ensure!(subdag.iter().next_back().map_or(0, |(r, _)| *r).is_multiple_of(2), "Anchor round must be even");
         // Ensure there is only one leader certificate.
         ensure!(subdag.iter().next_back().map_or(0, |(_, c)| c.len()) == 1, "Subdag cannot have multiple leaders");
         // Ensure the rounds are sequential.
@@ -233,10 +233,16 @@ impl<N: Network> Subdag<N> {
 
     /// Returns the synthesis limit for this subdag at `block_height`.
     // Note: This limit refers to the total number of non-zero entries across all circuits in all deployments in the subdag.
+    // It is enforced for every V18 block and for the first V19 block. `check_transaction` reads the
+    // consensus version from the previous block, so the first V19 block would otherwise skip both
+    // the V18 block-wide limit and the V19 per-transaction limits. From the second V19 block,
+    // per-transaction variable and constraint limits apply instead.
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
     pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
-        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap() {
+        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap()
+            && block_height <= N::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap()
+        {
             // One full round of consensus has a synthesis budget of 5 seconds.
             let synthesis_per_second_runtime = 5_f64 * N::SYNTHESIS_PER_SECOND_OF_RUNTIME as f64;
             // A certificate therefore has a synthesis budget of 5 seconds / MAX_CERTIFICATES.
@@ -247,6 +253,53 @@ impl<N: Network> Subdag<N> {
                 self.values().map(|certificates| certificates.len() as u64).sum::<u64>() as f64;
             // The synthesis limit is the number of certificates times the synthesis budget per certificate.
             Some((synthesis_per_certificate * subdag_certificates_count) as u64)
+        } else {
+            None
+        }
+    }
+
+    /// Returns a lower-bound certificate count for a subdag with `max_certificates` per round.
+    ///
+    /// For `N = max_certificates` written as `N = 3f + 1`, this is the integer `2 * (f + 1)`.
+    /// In general (including `N = 3f + 1 + k` with `0 <= k < 3`), this is two rounds of the
+    /// availability threshold: `2 * ((N + 2) / 3)`.
+    #[inline]
+    pub fn min_certificates(max_certificates: u16) -> u64 {
+        let n = max_certificates as u64;
+        // `(N + 2) / 3 = f + 1` when `N = 3f + 1 + k` with `0 <= k < 3`.
+        n.saturating_add(2).saturating_div(3).saturating_mul(2)
+    }
+
+    /// Returns the block spend limit for a subdag with `min_certificates` at `block_height`.
+    ///
+    /// Used for beacon blocks, which have no subdag but must still enforce block-wide limits.
+    #[inline]
+    pub fn min_spend_limit(block_height: u32) -> Option<u64> {
+        // unwrap: `CONSENSUS_HEIGHT` is defined for every `ConsensusVersion`.
+        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
+            // unwrap: `MAX_CERTIFICATES` is defined for every consensus height.
+            let max_certs = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap();
+            Some(Self::min_certificates(max_certs).saturating_mul(BatchHeader::<N>::batch_spend_limit(block_height)))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the synthesis limit for a subdag with `min_certificates` at `block_height`.
+    ///
+    /// Used for beacon blocks, which have no subdag but must still enforce block-wide limits.
+    #[inline]
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn min_synthesis_limit(block_height: u32) -> Option<u64> {
+        // unwrap: `CONSENSUS_HEIGHT` is defined for every `ConsensusVersion`.
+        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap()
+            && block_height <= N::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap()
+        {
+            let synthesis_per_second_runtime = 5_f64 * N::SYNTHESIS_PER_SECOND_OF_RUNTIME as f64;
+            // unwrap: `MAX_CERTIFICATES` is defined for every consensus height.
+            let max_certificates = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap();
+            let synthesis_per_certificate = synthesis_per_second_runtime / max_certificates as f64;
+            Some((synthesis_per_certificate * Self::min_certificates(max_certificates) as f64) as u64)
         } else {
             None
         }
@@ -540,6 +593,54 @@ mod tests {
         );
     }
 
+    /// `synthesis_limit` must return `None` for any block height that predates V18.
+    #[test]
+    fn test_synthesis_limit_returns_none_before_v18() {
+        let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+        let mut rng = TestRng::default();
+        let subdag = test_helpers::sample_subdag(&mut rng);
+
+        assert!(subdag.synthesis_limit(0).is_none(), "height 0 must return None");
+        if v18_height > 0 {
+            assert!(subdag.synthesis_limit(v18_height - 1).is_none(), "height V18-1 must return None");
+        }
+    }
+
+    /// `synthesis_limit` must return `Some` from V18 through the first V19 block.
+    #[test]
+    fn test_synthesis_limit_returns_some_from_v18_through_first_v19_block() {
+        let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+        let v19_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+        let mut rng = TestRng::default();
+        let subdag = test_helpers::sample_subdag(&mut rng);
+
+        assert!(subdag.synthesis_limit(v18_height).is_some(), "height V18 must return Some");
+        assert!(
+            subdag.synthesis_limit(v19_height).is_some(),
+            "the first V19 block must retain the block-wide synthesis limit"
+        );
+        if v19_height > v18_height.saturating_add(1) {
+            assert!(
+                subdag.synthesis_limit(v18_height.saturating_add(1)).is_some(),
+                "height V18+1 must return Some while still in V18"
+            );
+        }
+    }
+
+    /// `synthesis_limit` must return `None` after the first V19 block.
+    #[test]
+    fn test_synthesis_limit_returns_none_after_first_v19_block() {
+        let v19_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap();
+        // When V19 is unreleased (`u32::MAX`), there is no subsequent height to check.
+        if v19_height == u32::MAX {
+            return;
+        }
+        let mut rng = TestRng::default();
+        let subdag = test_helpers::sample_subdag(&mut rng);
+
+        assert!(subdag.synthesis_limit(v19_height.saturating_add(1)).is_none(), "height V19+1 must return None");
+    }
+
     /// `spend_limit` must return `None` for any block height that predates V16.
     #[test]
     fn test_spend_limit_returns_none_before_v16() {
@@ -601,6 +702,18 @@ mod tests {
             let limit = subdag_with_cert_count(n, &mut rng).spend_limit(v16_height).unwrap();
             assert!(limit >= previous, "spend_limit must not decrease: n={n}, limit={limit}, previous={previous}");
             previous = limit;
+        }
+    }
+
+    /// Minimum certificates must be equal to 2*(f+1) for N=3f+1+k with 0<=k<3.
+    #[test]
+    fn test_min_certificates() {
+        for n in 1u16..=200 {
+            let n_u64 = n as u64;
+            let min_certs = n_u64.saturating_add(2).saturating_div(3).saturating_mul(2);
+            let f = n_u64.saturating_sub(1) / 3;
+            assert_eq!(min_certs, 2 * (f + 1), "min_certificates must equal 2*(f+1) for N={n}");
+            assert_eq!(Subdag::<CurrentNetwork>::min_certificates(n), min_certs);
         }
     }
 }

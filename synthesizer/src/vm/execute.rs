@@ -985,11 +985,24 @@ finalize test:
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
                 Some(finalize_logic) => {
+                    // We derive the consensus version, as it may have changed due to the short
+                    // block span of test consensus versions
+                    let consensus_version =
+                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
+
                     // Aggregate the cost of all commands in the program.
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2))
+                        .map(|command| {
+                            cost_per_command(
+                                &stack,
+                                &finalize_types,
+                                command,
+                                ConsensusFeeVersion::V2,
+                                Some(consensus_version),
+                            )
+                        })
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
@@ -1103,7 +1116,7 @@ constructor:
             .execute(
                 &caller_private_key,
                 (format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1), "test"),
-                vec![Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
+                [Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
                 None,
                 0,
                 None,
@@ -1134,11 +1147,24 @@ constructor:
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
                 Some(finalize_logic) => {
+                    // We derive the consensus version, as it may have changed due to the short
+                    // block span of test consensus versions
+                    let consensus_version =
+                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
+
                     // Aggregate the cost of all commands in the program.
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2))
+                        .map(|command| {
+                            cost_per_command(
+                                &stack,
+                                &finalize_types,
+                                command,
+                                ConsensusFeeVersion::V2,
+                                Some(consensus_version),
+                            )
+                        })
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })

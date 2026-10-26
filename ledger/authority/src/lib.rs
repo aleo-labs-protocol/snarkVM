@@ -115,6 +115,11 @@ impl<N: Network> Authority<N> {
             Self::Quorum(subdag) => subdag.leader_address(),
         }
     }
+
+    /// Returns spend and synthesis limits for a beacon block at `block_height`.
+    pub fn beacon_limits(block_height: u32) -> (Option<u64>, Option<u64>) {
+        (Subdag::<N>::min_spend_limit(block_height), Subdag::<N>::min_synthesis_limit(block_height))
+    }
 }
 
 #[cfg(any(test, feature = "test-helpers"))]

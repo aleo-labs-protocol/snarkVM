@@ -32,9 +32,11 @@ macro_rules! checksum_error {
 macro_rules! remove_file {
     ($filepath:expr) => {
         // Safely remove the corrupt file, if it exists.
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
         if std::path::PathBuf::from(&$filepath).exists() {
-            match std::fs::remove_file(&$filepath) {
+            let _removed = std::fs::remove_file(&$filepath);
+            #[cfg(not(feature = "no_std_out"))]
+            match _removed {
                 Ok(()) => println!("Removed {:?}. Please retry the command.", $filepath),
                 Err(err) => eprintln!("Failed to remove {:?}: {err}", $filepath),
             }
@@ -44,7 +46,7 @@ macro_rules! remove_file {
 
 macro_rules! impl_store_and_remote_fetch {
     () => {
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
         fn store_bytes(buffer: &[u8], file_path: &std::path::Path) -> Result<(), $crate::errors::ParameterError> {
             use snarkvm_utilities::Write;
 
@@ -58,17 +60,71 @@ macro_rules! impl_store_and_remote_fetch {
             // Ensure the folders up to the file path all exist.
             let mut directory_path = file_path.to_path_buf();
             directory_path.pop();
-            let _ = std::fs::create_dir_all(directory_path)?;
+            let _ = std::fs::create_dir_all(&directory_path)?;
 
-            // Attempt to write the parameter buffer to a file.
-            match std::fs::File::create(file_path) {
-                Ok(mut file) => file.write_all(&buffer)?,
+            // Write to `<file name>.param.<process id>.<thread id>.tmp`, then rename it into place,
+            // so a concurrent reader sees either no file or the complete file.
+            let mut temp_prefix = file_path.file_name().unwrap_or_default().to_owned();
+            temp_prefix.push(".param.");
+            let mut temp_path = file_path.as_os_str().to_owned();
+            temp_path.push(format!(".param.{}.{:?}.tmp", std::process::id(), std::thread::current().id()));
+            match std::fs::File::create(&temp_path) {
+                Ok(mut file) => {
+                    // Sync before the rename, so a crash cannot leave a truncated file under the final name.
+                    let written = file.write_all(buffer).and_then(|()| file.sync_all());
+                    drop(file);
+                    if let Err(error) = written.and_then(|()| std::fs::rename(&temp_path, file_path)) {
+                        let _ = std::fs::remove_file(&temp_path);
+                        // A concurrent writer stored this file first and removed this temporary file in its cleanup.
+                        if file_path.exists() {
+                            return Ok(());
+                        }
+                        return Err(error.into());
+                    }
+                    // Remove temporary files that writers of this file left behind when they died before the rename.
+                    // A writer that dies after this pass leaves its temporary file, and nothing removes it.
+                    if let Ok(entries) = std::fs::read_dir(&directory_path) {
+                        for entry in entries.flatten() {
+                            let name = entry.file_name();
+                            let name = name.as_encoded_bytes();
+                            if name.starts_with(temp_prefix.as_encoded_bytes()) && name.ends_with(b".tmp") {
+                                let _ = std::fs::remove_file(entry.path());
+                            }
+                        }
+                    }
+                }
                 Err(error) => eprintln!("{}", error),
             }
             Ok(())
         }
 
-        #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
+        /// Returns an exclusive lock on `<file path>.lock`, waiting while another loader holds it,
+        /// or `None` if the lock is unavailable, e.g. on a filesystem without lock support.
+        #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
+        fn lock_download(file_path: &std::path::Path) -> Option<std::fs::File> {
+            std::fs::create_dir_all(file_path.parent()?).ok()?;
+
+            // The lock file is never removed. Removing it lets a waiter that opened it lock the removed file
+            // while a new loader locks a new one, and both download.
+            let mut lock_path = file_path.as_os_str().to_owned();
+            lock_path.push(".lock");
+            let file = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(lock_path).ok()?;
+            match file.try_lock() {
+                Ok(()) => Some(file),
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    #[cfg(not(feature = "no_std_out"))]
+                    {
+                        use colored::*;
+                        let output = format!("{:>15} - Waiting for a concurrent download of {:?}", "Installation", file_path);
+                        println!("{}", output.dimmed());
+                    }
+                    file.lock().ok().map(|()| file)
+                }
+                Err(std::fs::TryLockError::Error(_)) => None,
+            }
+        }
+
+        #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
             use std::io::Read;
 
@@ -79,14 +135,35 @@ macro_rules! impl_store_and_remote_fetch {
                 println!("{}", output.dimmed());
             }
 
+            use std::time::Duration;
+            const CONNECT: Option<Duration> = Some(Duration::from_secs(10));
+            const HEADERS: Option<Duration> = Some(Duration::from_secs(30));
+
+            // `CONNECT` covers the DNS lookup, the TCP connect and the TLS handshake (ureq 3.4).
+            let agent: ureq::Agent = ureq::Agent::config_builder()
+                .max_redirects(10)
+                .timeout_resolve(CONNECT)
+                .timeout_connect(CONNECT)
+                .timeout_send_request(CONNECT)
+                .timeout_recv_response(HEADERS)
+                .build()
+                .into();
+
+            // A mid-body stall is not bounded: ureq 3.4's `timeout_recv_body` is a total budget and these files
+            // reach 12.9 GB. A per-chunk bound on `Range` requests would close it.
+            let fetch_once = |buffer: &mut Vec<u8>| -> Result<(), ureq::Error> {
+                let mut response = agent.get(url).call()?;
+                // Read inside the retried unit, so a mid-body failure reaches the retry arms below.
+                buffer.clear();
+                response.body_mut().as_reader().read_to_end(buffer)?;
+                Ok(())
+            };
+
             // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
             let mut attempts = 3u32;
             loop {
-                match ureq::get(url).config().max_redirects(10).build().call() {
-                    Ok(mut response) => {
-                        response.body_mut().as_reader().read_to_end(buffer)?;
-                        break;
-                    }
+                match fetch_once(buffer) {
+                    Ok(()) => break,
                     Err(ureq::Error::StatusCode(code)) if attempts > 0 && (code >= 500 || code == 429) => {
                         attempts -= 1;
                     }
@@ -181,7 +258,15 @@ macro_rules! impl_load_bytes_logic_remote {
                 file_path.push($local_dir);
                 file_path.push($filename);
 
+                // A loader that finds the file missing holds this lock until the file is stored, so the first
+                // downloads it and the rest wait, then read and verify the stored file concurrently.
+                // A download that stalls blocks every waiting loader until the stalled process exits.
+                #[cfg(not(target_env = "sgx"))]
+                let lock = if file_path.exists() { None } else { Self::lock_download(&file_path) };
+
                 let buffer = if file_path.exists() {
+                    #[cfg(not(target_env = "sgx"))]
+                    drop(lock);
                     // Attempts to load the parameter file locally with an absolute path.
                     std::fs::read(&file_path)?
                 } else {
@@ -247,7 +332,9 @@ macro_rules! impl_load_bytes_logic_remote {
                                 return Err(err);
                             }
 
-                            match Self::store_bytes(&buffer, &file_path) {
+                            let stored = Self::store_bytes(&buffer, &file_path);
+                            drop(lock);
+                            match stored {
                                 Ok(()) => buffer,
                                 Err(_) => {
                                     eprintln!(
@@ -272,12 +359,15 @@ macro_rules! impl_load_bytes_logic_remote {
                 // Ensure the checksum matches.
                 let candidate_checksum = checksum!(buffer.as_slice());
                 if $expected_checksum != candidate_checksum {
+                    remove_file!(file_path);
                     return checksum_error!($expected_checksum, candidate_checksum)
                 }
                 return Ok(buffer);
             } else {
                 cfg_if::cfg_if! {
                     if #[cfg(feature = "wasm")] {
+                        // This arm keeps the download in memory and stores no file, so it takes no download lock,
+                        // and concurrent loaders each download the file.
                         // Try each URL in order, falling back to the next if one fails.
                         let remote_urls: &[&str] = &$remote_urls;
                         let mut buffer = vec![];
@@ -319,6 +409,7 @@ macro_rules! impl_load_bytes_logic_remote {
 
                         return Ok(buffer)
                     } else {
+                        let _ = (&$remote_urls, &$filename, &$expected_size);
                         return Err($crate::errors::ParameterError::FilesystemDisabled);
                     }
                 }
@@ -417,7 +508,7 @@ macro_rules! impl_remote {
             }
         }
         paste::item! {
-            #[cfg(test)]
+            #[cfg(all(test, feature = "filesystem"))]
             #[test]
             fn [< test_ $fname _usrs >]() {
                 assert!($name::load_bytes().is_ok());
@@ -448,8 +539,7 @@ macro_rules! impl_remote {
                 impl_load_bytes_logic_remote!($remote_url, $local_dir, &filename, metadata, expected_checksum, expected_size);
             }
 
-            #[cfg(feature = "wasm")]
-            /// Verify external bytes.
+            /// Checks `buffer` against this file's size and checksum in `METADATA`.
             pub fn verify_bytes(buffer: &[u8]) -> Result<(), $crate::errors::ParameterError> {
                 let metadata: serde_json::Value = serde_json::from_str(Self::METADATA).expect("Metadata was not well-formatted");
                 let expected_checksum: String =
@@ -472,7 +562,7 @@ macro_rules! impl_remote {
         }
 
         paste::item! {
-            #[cfg(test)]
+            #[cfg(all(test, feature = "filesystem"))]
             #[test]
             fn [< test_ $credits_version _ $fname _ $ftype >]() {
                 if let Err(err) = $name::load_bytes() {

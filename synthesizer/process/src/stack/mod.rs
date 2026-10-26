@@ -439,9 +439,8 @@ impl<N: Network> Stack<N> {
             }
         }
 
-        // Type-check every view function and cache the result. The cached types are read by
-        // both the external view path (`evaluate_view_at_height`) and the in-block call path
-        // when finalize calls a view, so we avoid recomputing them on every invocation.
+        // Type-check every view function and cache the result. Finalize reads the cached types
+        // when it calls a view, so the types are not recomputed on every invocation.
         for view in self.program.views().values() {
             let name = view.name();
             ensure!(!view_types.contains_key(name), "View '{name}' already exists");
@@ -501,6 +500,12 @@ impl<N: Network> Stack<N> {
             Some(view_types) => Ok(view_types.clone()),
             None => bail!("View types for '{name}' do not exist"),
         }
+    }
+
+    /// Returns the proving keys this stack holds, by function or record name, without loading any.
+    #[inline]
+    pub fn proving_keys(&self) -> Vec<(Identifier<N>, ProvingKey<N>)> {
+        self.proving_keys.read().iter().map(|(name, key)| (*name, key.clone())).collect()
     }
 
     /// Inserts the proving key if the program ID is 'credits.aleo'.

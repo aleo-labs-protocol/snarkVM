@@ -16,8 +16,8 @@
 use super::*;
 
 impl<N: Network> FromBytes for Deployment<N> {
-    /// Reads the deployment from a buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    /// Reads the deployment from a buffer, either with or without checking the data.
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version and ensure the version is valid.
         let version = match u8::read_le(&mut reader)? {
             1 => DeploymentVersion::V1,
@@ -46,9 +46,9 @@ impl<N: Network> FromBytes for Deployment<N> {
             // Read the identifier.
             let identifier = Identifier::<N>::read_le(&mut reader)?;
             // Read the verifying key.
-            let verifying_key = VerifyingKey::<N>::read_le(&mut reader)?;
+            let verifying_key = VerifyingKey::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
             // Read the certificate.
-            let certificate = Certificate::<N>::read_le(&mut reader)?;
+            let certificate = Certificate::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
             // Add the entry.
             verifying_keys.push((identifier, (verifying_key, certificate)));
         }
@@ -85,6 +85,16 @@ impl<N: Network> FromBytes for Deployment<N> {
         // Return the deployment.
         Self::new(edition, program, verifying_keys, program_checksum, program_owner)
             .map_err(|err| error(format!("{err}")))
+    }
+
+    /// Reads the deployment from a buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the deployment from a buffer without checking the data.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -146,6 +156,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Deployment::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, Deployment::read_le_unchecked(&expected_bytes[..])?);
         }
 
         Ok(())

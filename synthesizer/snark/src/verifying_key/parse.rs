@@ -20,7 +20,7 @@ static VERIFYING_KEY: &str = "verifier";
 impl<N: Network> Parser for VerifyingKey<N> {
     /// Parses a string into the verifying key.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo verifying key.
         let parse_key = recognize(pair(
             pair(tag(VERIFYING_KEY), tag("1")),

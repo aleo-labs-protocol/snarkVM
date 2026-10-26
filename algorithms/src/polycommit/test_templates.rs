@@ -35,6 +35,7 @@ use crate::{
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, Zero};
+use snarkvm_parameters::mainnet::PowersFile;
 use snarkvm_utilities::rand::{TestRng, Uniform};
 
 use itertools::Itertools;
@@ -43,6 +44,18 @@ use rand::{
     distr::{self, Distribution},
 };
 use std::marker::PhantomData;
+
+/// The bytes of `file`. Without `filesystem`, they are read from
+/// `~/.aleo/resources`, where a test run with `filesystem` leaves them.
+pub fn cached_file_bytes(file: &PowersFile) -> Vec<u8> {
+    #[cfg(feature = "filesystem")]
+    return snarkvm_parameters::mainnet::default_load_powers_file_sync(file).unwrap();
+    #[cfg(not(feature = "filesystem"))]
+    {
+        let path = aleo_std::aleo_dir().join("resources").join(file.name());
+        std::fs::read(&path).unwrap_or_else(|error| panic!("Run the tests with `filesystem` first: {path:?}: {error}"))
+    }
+}
 
 #[derive(Default)]
 struct TestInfo {

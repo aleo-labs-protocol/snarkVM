@@ -24,7 +24,8 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::ExecutionPool;
+use snarkvm_utilities::{ExecutionPool, defer};
+use std::sync::Arc;
 
 use anyhow::Result;
 use itertools::Itertools;
@@ -44,14 +45,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
     ) -> Result<(prover::ThirdMessage<F>, prover::State<'a, F, SM>), AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
+        let round_time = start_timer!(|| "AHP::Prover::PrepareThirdRound");
+        defer! { end_timer!(round_time); }
 
         let verifier::FirstMessage { first_round_batch_combiners } = verifier_message;
         let verifier::SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
 
         if eta_b.is_some() || eta_c.is_some() {
             return Err(AHPError::AnyhowError(anyhow::anyhow!(
-                "Did not expect eta_b,c in SecondMessage in VarunaVersion::V2"
+                "Did not expect eta_b,c in SecondMessage in VarunaVersion::V2 or greater"
             )));
         }
 
@@ -65,8 +67,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             matrix_transposes,
             alpha,
         )?;
-
-        end_timer!(round_time);
 
         Ok((msg, state))
     }
@@ -82,10 +82,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let total_instances = num_instances.iter().sum::<usize>();
         let matrix_labels = ["a", "b", "c"];
 
+        // Borrowed, not cloned. Each precomputation holds a root-of-unity table sized
+        // by the circuit's largest multiplicative domain, so cloning copies
+        // megabytes per circuit per proof to produce a byte-identical result --
+        // the tables are circuit data, fixed for the life of the process.
         let fft_precomputations = state
             .circuit_specific_states
             .keys()
-            .map(|circuit| (circuit.fft_precomputation.clone(), circuit.ifft_precomputation.clone()))
+            .map(|circuit| (&circuit.fft_precomputation, &circuit.ifft_precomputation))
             .collect_vec();
 
         // Compute lineval sumcheck witnesses
@@ -116,21 +120,29 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .zip_eq(assignments.values())
             .zip_eq(matrix_transposes.values())
         {
+            // One Lagrange vector per circuit rather than one per matrix: it depends only
+            // on the constraint domain and alpha, both of which are fixed
+            // across the jobs below.
+            let lagrange_time = start_timer!(|| "Lagrange coefficients at alpha");
+            let l_at_alpha =
+                Arc::new(circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
+            end_timer!(lagrange_time);
+
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
                 // Iterate for each R1CS matrix corresponding to the circuit and instance.
                 for label in matrix_labels {
                     let matrix_transpose = &matrix_transposes_i[label];
+                    let l_at_alpha = l_at_alpha.clone();
                     job_pool.add_job(move || {
                         let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
                             label,
-                            &circuit_specific_state.constraint_domain,
+                            &l_at_alpha,
                             &circuit_specific_state.variable_domain,
-                            &precomp.0,
-                            &precomp.1,
+                            precomp.0,
+                            precomp.1,
                             assignment,
                             matrix_transpose,
-                            *alpha,
                         )?;
                         // sum_{h in H} f(h) = n*(c_0 + c_n) for deg(p) < 2n, where c_0 and c_n are the
                         // coeffs of f at degree 0 and n, resp. and in [0, 2n-2]

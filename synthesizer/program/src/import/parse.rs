@@ -19,7 +19,7 @@ impl<N: Network> Parser for Import<N> {
     /// Parses a string into an import statement of the form `import {name}.{network};`.
     /// If no `network`-level domain is specified, the default network is used.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the import keyword from the string.

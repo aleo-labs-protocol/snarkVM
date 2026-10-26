@@ -396,8 +396,8 @@ impl<E: PairingEngine> FromBytes for Proof<E> {
 ///  - `hiding`: indicates whether the proof system is run in ZK mode
 ///
 /// *Returns*:
-///  - `Ok(size)` for `VarunaVersion::V2`, where `size` is the size of the proof
-///    in bytes.
+///  - `Ok(size)` for `VarunaVersion::V2` and `VarunaVersion::V3`, where `size`
+///    is the size of the proof in bytes.
 ///  - `Err` for `VarunaVersion::V1`.
 pub fn proof_size<E: PairingEngine>(
     batch_sizes: &[usize],
@@ -409,7 +409,7 @@ pub fn proof_size<E: PairingEngine>(
 
     match varuna_version {
         VarunaVersion::V1 => Err(anyhow!("Proof-size calculation not implemented for Varuna version V1")),
-        VarunaVersion::V2 => {
+        VarunaVersion::V2 | VarunaVersion::V3 => {
             // All fields are serialised in Compressed mode The breakdown is as
             // follows:
             // - batch sizes: one `usize` (which is serialised as a `u64`) for each batch

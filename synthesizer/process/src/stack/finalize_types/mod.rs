@@ -95,6 +95,11 @@ impl<N: Network> FinalizeTypes<N> {
         Self::initialize_finalize_types_from_view(stack, view)
     }
 
+    /// Returns the number of declared input and destination registers.
+    pub(super) fn num_registers(&self) -> usize {
+        self.inputs.len() + self.destinations.len()
+    }
+
     /// Returns `true` if the given register exists.
     pub fn contains(&self, register: &Register<N>) -> bool {
         // Retrieve the register locator.

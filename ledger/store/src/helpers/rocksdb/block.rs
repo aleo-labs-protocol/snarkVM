@@ -232,6 +232,12 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.id_map().backup_database(path)
     }
 
+    /// Catches up with the primary instance; only applicable to secondary instances.
+    fn catch_up_with_primary(&self) -> Result<()> {
+        // Any map can be used to retrieve the common RocksDB instance.
+        self.id_map().catch_up_with_primary()
+    }
+
     /// Creates the block tree based on the contents of the storage.
     fn create_block_tree(&self) -> Result<BlockTree<N>> {
         fn construct_from_scratch<N: Network>(storage: &BlockDB<N>) -> Result<BlockTree<N>> {
@@ -248,7 +254,8 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         }
 
         let Some(path) = block_tree_cache_path::<N, _>(self) else {
-            bail!("Failed to determine the block tree cache path");
+            debug!("Creating the block tree from scratch");
+            return construct_from_scratch(self);
         };
 
         if let Ok(cached) = fs::read(&path) {
@@ -280,5 +287,14 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             debug!("Creating the block tree from scratch");
             construct_from_scratch(self)
         }
+    }
+}
+
+#[cfg(all(feature = "rocks", feature = "metrics"))]
+impl<N: Network> BlockDB<N> {
+    /// Reads RocksDB internal properties and publishes them to the metrics registry.
+    /// Any map can be used since they all share the same underlying RocksDB instance.
+    pub fn export_rocksdb_metrics(&self) {
+        self.id_map.export_rocksdb_metrics();
     }
 }

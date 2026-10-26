@@ -22,7 +22,7 @@ use snarkvm_utilities::{bytes::unchecked_deserialize, flatten_error};
 
 use anyhow::Context;
 use core::{fmt, fmt::Debug, hash::Hash, mem};
-use std::{borrow::Cow, sync::atomic::Ordering};
+use std::{borrow::Cow, sync::atomic::Ordering, time::Instant};
 use tracing::error;
 
 #[cfg(not(feature = "serial"))]
@@ -40,6 +40,8 @@ pub struct NestedDataMap<
     pub(super) context: Vec<u8>,
     /// The tracker for whether a database transaction is in progress.
     pub(super) batch_in_progress: Arc<AtomicBool>,
+    /// Owner of the in-progress atomic batch (`0` = none).
+    pub(super) atomic_owner: Arc<AtomicU64>,
     /// The database transaction.
     pub(super) atomic_batch: Arc<Mutex<Vec<(M, Option<K>, Option<V>)>>>,
     /// The checkpoint stack for the batched operations within the map.
@@ -77,7 +79,7 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
     }
 
     #[inline]
-    fn get_map_key_raw(&self, map: &M, key: &K) -> Result<Option<rocksdb::DBPinnableSlice>> {
+    fn get_map_key_raw(&self, map: &M, key: &K) -> Result<Option<rocksdb::DBPinnableSlice<'_>>> {
         let raw_map_key = self.create_prefixed_map_key(map, key)?;
         match self.database.get_pinned_opt(&raw_map_key, &self.database.default_readopts)? {
             Some(data) => Ok(Some(data)),
@@ -118,7 +120,11 @@ impl<
         // Determine if an atomic batch is in progress.
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the map-key-value pair to the batch.
-            true => self.atomic_batch.lock().push((map, Some(key), Some(value))),
+            true => {
+                let start = Instant::now();
+                self.atomic_batch.lock().push((map, Some(key), Some(value)));
+                crate::helpers::atomic_owner::record_lock_wait(start);
+            }
             // Otherwise, insert the key-value pair directly into the map.
             false => {
                 // Prepare the prefixed map-key and serialized value.
@@ -200,6 +206,7 @@ impl<
     fn start_atomic(&self) {
         // Set the atomic batch flag to `true`.
         self.batch_in_progress.store(true, Ordering::SeqCst);
+        crate::helpers::atomic_owner::claim(&self.atomic_owner);
         // Increment the atomic depth index.
         self.database.atomic_depth.fetch_add(1, Ordering::SeqCst);
 
@@ -269,6 +276,7 @@ impl<
         self.checkpoints.lock().clear();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
         // Clear the database-wide atomic batch.
         self.database.atomic_batch.lock().clear();
         // Reset the atomic batch depth.
@@ -327,6 +335,7 @@ impl<
         self.checkpoints.lock().clear();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
 
         // Subtract the atomic depth index.
         let previous_atomic_depth = self.database.atomic_depth.fetch_sub(1, Ordering::SeqCst);
@@ -420,10 +429,13 @@ impl<
     /// This method first checks the atomic batch, and if it does not exist, then checks the map.
     ///
     fn contains_key_speculative(&self, map: &M, key: &K) -> Result<bool> {
-        // If a batch is in progress, check the atomic batch first.
-        if self.is_atomic_in_progress() {
+        // If this thread owns an in-progress batch, check the atomic batch first.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            for (m, k, v) in self.atomic_batch.lock().iter().rev() {
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            for (m, k, v) in batch.iter().rev() {
                 // If the map does not match the given map, then continue.
                 if m != map {
                     continue;
@@ -496,8 +508,15 @@ impl<
         // Retrieve the confirmed key-value pairs for the given map.
         let mut key_values = self.get_map_confirmed(map)?;
 
+        // If this thread does not own an in-progress batch, return confirmed pairs.
+        if !crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
+            return Ok(key_values);
+        }
+
         // Retrieve the atomic batch.
+        let start = Instant::now();
         let operations = self.atomic_batch.lock().clone();
+        crate::helpers::atomic_owner::record_lock_wait(start);
 
         if !operations.is_empty() {
             // Traverse the queued operations.
@@ -551,10 +570,13 @@ impl<
     /// If the key is inserted in the batch, returns `Some(Some(value))`.
     ///
     fn get_value_pending(&self, map: &M, key: &K) -> Option<Option<V>> {
-        // Return early if there is no atomic batch in progress.
-        if self.is_atomic_in_progress() {
+        // Return early if there is no atomic batch in progress on this thread.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            for (m, k, v) in self.atomic_batch.lock().iter().rev() {
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            for (m, k, v) in batch.iter().rev() {
                 // If the map does not match the given map, then continue.
                 if m != map {
                     continue;
@@ -824,6 +846,7 @@ mod tests {
             context,
             atomic_batch: Default::default(),
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             checkpoints: Default::default(),
         }
     }
@@ -846,6 +869,7 @@ mod tests {
             context,
             atomic_batch: Default::default(),
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             checkpoints: Default::default(),
         }))
     }

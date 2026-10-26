@@ -275,6 +275,49 @@ macro_rules! bhp_hasher_uncompressed_vector_test {
     };
 }
 
+fn assert_bases_are_nonzero<const NUM_WINDOWS: u8, const WINDOW_SIZE: u8>(
+    hasher: &BHPHasher<Console, NUM_WINDOWS, WINDOW_SIZE>,
+) {
+    for window in hasher.bases().iter() {
+        for base in window {
+            assert!(!base.is_zero());
+        }
+    }
+    for base in hasher.random_base().iter() {
+        assert!(!base.is_zero());
+    }
+}
+
+#[test]
+fn test_window_sum_is_below_the_group_order() -> Result<()> {
+    let modulus = <Console as Environment>::Scalar::modulus();
+    for window_size in 1..=63 {
+        let bound = BHPHasher::<Console, 1, 1>::window_sum_bound(window_size)?;
+        assert!(bound < modulus, "window {window_size} sum meets the group order");
+    }
+    let bound = BHPHasher::<Console, 1, 1>::window_sum_bound(64)?;
+    assert!(bound >= modulus, "window 64 is the first sum that meets the group order");
+    assert!(BHPHasher::<Console, 1, 1>::window_sum_bound(65).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_setup_rejects_a_window_past_the_cap() {
+    let error = BHPHasher::<Console, 1, 64>::setup("BHPWindowCap").unwrap_err().to_string();
+    assert!(
+        error.contains("BHP window sum must be below the group order"),
+        "window 64 must fail the group-order check, got {error}"
+    );
+}
+
+#[test]
+fn test_setup_bases_are_nonzero() -> Result<()> {
+    // The deployed 256-bit parameters, and the largest window this scalar field accepts.
+    assert_bases_are_nonzero(&BHPHasher::<Console, 3, 57>::setup("AleoBHP256")?);
+    assert_bases_are_nonzero(&BHPHasher::<Console, 1, 63>::setup("BHPWindowCap")?);
+    Ok(())
+}
+
 bhp_hasher_uncompressed_vector_test!(test_bhp_vector_256, 3, 57, "BHPVec256", EXPECTATIONS_256);
 bhp_hasher_uncompressed_vector_test!(test_bhp_vector_512, 6, 43, "BHPVec512", EXPECTATIONS_512);
 bhp_hasher_uncompressed_vector_test!(test_bhp_vector_768, 15, 23, "BHPVec768", EXPECTATIONS_768);

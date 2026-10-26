@@ -20,7 +20,7 @@ static PROOF_PREFIX: &str = "proof";
 impl<N: Network> Parser for Proof<N> {
     /// Parses a string into an proof.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo proof.
         let parse_proof = recognize(pair(
             pair(tag(PROOF_PREFIX), tag("1")),

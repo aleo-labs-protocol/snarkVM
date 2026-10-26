@@ -22,7 +22,7 @@ impl<N: Network> Parser for Input<N> {
     /// # Errors
     /// This function will halt if the given register is a register member.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the input keyword from the string.

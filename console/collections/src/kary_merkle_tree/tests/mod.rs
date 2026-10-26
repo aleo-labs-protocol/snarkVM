@@ -26,7 +26,6 @@ macro_rules! run_tests {
         $( assert!(run_test::<$i, $i>($rng).is_ok()); )*
     };
 }
-use run_tests;
 
 /// Runs the following test:
 /// 1. Construct the Merkle tree for the leaves.

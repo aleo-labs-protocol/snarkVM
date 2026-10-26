@@ -107,10 +107,10 @@ impl<N: Network> FinalizeCore<N> {
     /// Returns `true` if the finalize scope contains an identifier type in its inputs or commands.
     pub fn contains_identifier_type(&self) -> Result<bool> {
         for input_type in self.input_types() {
-            if let FinalizeType::Plaintext(plaintext_type) = input_type {
-                if plaintext_type.contains_identifier_type()? {
-                    return Ok(true);
-                }
+            if let FinalizeType::Plaintext(plaintext_type) = input_type
+                && plaintext_type.contains_identifier_type()?
+            {
+                return Ok(true);
             }
         }
         // Check commands for identifier types in cast destinations.

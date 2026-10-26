@@ -165,7 +165,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>() -> Result<(Assignme
     Ok((assignment, state_path, serial_number, is_record_block_height_reached, upgrade_block_height))
 }
 
-/// Synthesizes the circuit keys for the inclusion circuit. (cargo run --release --example inclusion [network])
+/// Synthesizes the circuit keys for the inclusion circuit. (cargo run --release --features filesystem --example inclusion [network])
 pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     // Load the universal SRS.
     let universal_srs = UniversalSRS::<N>::load()?;
@@ -246,7 +246,7 @@ pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
 }
 
 /// Run the following command to generate the inclusion circuit keys.
-/// `cargo run --example inclusion [network]`
+/// `cargo run --features filesystem --example inclusion [network]`
 pub fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 

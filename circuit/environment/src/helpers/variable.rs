@@ -119,8 +119,10 @@ impl<F: PrimeField> Ord for Variable<F> {
             (Self::Constant(..), Self::Private(..)) => Ordering::Less,
             (Self::Public(..), Self::Constant(..)) => Ordering::Greater,
             (Self::Private(..), Self::Constant(..)) => Ordering::Greater,
-            (Self::Public(i1, ..), Self::Public(i2, ..)) => i1.cmp(i2),
-            (Self::Private(i1, ..), Self::Private(i2, ..)) => i1.cmp(i2),
+            (Self::Public(a), Self::Public(b)) | (Self::Private(a), Self::Private(b)) => {
+                // `a.cmp(b)` orders the same, but `F::cmp` takes both sides out of Montgomery form, even when equal.
+                a.0.cmp(&b.0).then_with(|| if a.1 == b.1 { Ordering::Equal } else { a.1.cmp(&b.1) })
+            }
             (Self::Public(..), Self::Private(..)) => Ordering::Less,
             (Self::Private(..), Self::Public(..)) => Ordering::Greater,
         }
@@ -298,9 +300,52 @@ impl<F: PrimeField> fmt::Display for Variable<F> {
 #[cfg(test)]
 mod tests {
     use crate::*;
+    use snarkvm_fields::One;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use core::cmp::Ordering;
+    use std::sync::Arc;
+
+    type F = <Circuit as Environment>::BaseField;
+
+    /// Orders by kind, then constants by value, then variables by their `(index, value)` tuple.
+    fn reference_cmp(a: &Variable<F>, b: &Variable<F>) -> Ordering {
+        match (a, b) {
+            (Variable::Constant(v1), Variable::Constant(v2)) => v1.cmp(v2),
+            (Variable::Constant(..), _) => Ordering::Less,
+            (_, Variable::Constant(..)) => Ordering::Greater,
+            (Variable::Public(i1), Variable::Public(i2)) => i1.cmp(i2),
+            (Variable::Private(i1), Variable::Private(i2)) => i1.cmp(i2),
+            (Variable::Public(..), Variable::Private(..)) => Ordering::Less,
+            (Variable::Private(..), Variable::Public(..)) => Ordering::Greater,
+        }
+    }
 
     #[test]
     fn test_size() {
         assert_eq!(16, std::mem::size_of::<Variable<<Circuit as Environment>::BaseField>>());
+    }
+
+    #[test]
+    fn test_cmp_matches_reference() {
+        let mut rng = TestRng::default();
+        for _ in 0..100 {
+            let mut pool = vec![Variable::Public(Arc::new((0, F::one())))];
+            for index in 0..4 {
+                let value = F::rand(&mut rng);
+                pool.push(Variable::Constant(Arc::new(F::from(u32::rand(&mut rng) as u128 % 3))));
+                pool.push(Variable::Public(Arc::new((index, value))));
+                pool.push(Variable::Public(Arc::new((index, value))));
+                pool.push(Variable::Public(Arc::new((index, F::rand(&mut rng)))));
+                pool.push(Variable::Private(Arc::new((index, value))));
+                pool.push(Variable::Private(Arc::new((index, value))));
+                pool.push(Variable::Private(Arc::new((index, F::rand(&mut rng)))));
+            }
+            for a in &pool {
+                for b in &pool {
+                    assert_eq!(reference_cmp(a, b), a.cmp(b), "{a:?} vs {b:?}");
+                }
+            }
+        }
     }
 }

@@ -121,10 +121,10 @@ impl<N: Network> FunctionCore<N> {
                 return Ok(true);
             }
         }
-        if let Some(finalize) = &self.finalize_logic {
-            if finalize.contains_identifier_type()? {
-                return Ok(true);
-            }
+        if let Some(finalize) = &self.finalize_logic
+            && finalize.contains_identifier_type()?
+        {
+            return Ok(true);
         }
         Ok(false)
     }

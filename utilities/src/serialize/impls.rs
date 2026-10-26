@@ -421,7 +421,11 @@ impl<T: CanonicalDeserialize> CanonicalDeserialize for Vec<T> {
     ) -> Result<Self, SerializationError> {
         let len = u64::deserialize_with_mode(&mut reader, compress, validate)?;
         let mut values = Vec::new();
-        let _ = values.try_reserve(len as usize);
+        // `len` comes straight off the wire, so only pre-reserve a small hint from it; a huge
+        // value must not force a large upfront allocation. The vector still reaches its real
+        // size via `push`, which only grows as far as the reader actually has data for. The hint is
+        // exact: an amortised reserve rounds a short vector up to `Vec`'s minimum capacity.
+        let _ = values.try_reserve_exact(len.min(1024) as usize);
         for _ in 0..len {
             values.push(T::deserialize_with_mode(&mut reader, compress, Validate::No)?);
         }
@@ -500,7 +504,7 @@ impl<T: CanonicalSerialize> CanonicalSerialize for [T; 32] {
 
     #[inline]
     fn serialized_size(&self, compress: Compress) -> usize {
-        8 + self.iter().map(|item| item.serialized_size(compress)).sum::<usize>()
+        self.iter().map(|item| item.serialized_size(compress)).sum()
     }
 }
 
@@ -683,13 +687,25 @@ mod test {
 
     #[test]
     fn test_string() {
+        test_serialize(String::new());
         test_serialize("asdf".to_owned());
+        test_serialize("Aleo 🦀".to_owned());
     }
 
     #[test]
     fn test_vec() {
         test_serialize(vec![1u64, 2, 3, 4, 5]);
         test_serialize(Vec::<u64>::new());
+    }
+
+    #[test]
+    fn test_vec_capacity() {
+        for len in [1, 2, 3, 5] {
+            let mut bytes = vec![];
+            vec![0u64; len].serialize_compressed(&mut bytes).expect("a vec writes");
+            let read = Vec::<u64>::deserialize_compressed(&bytes[..]).expect("a vec reads");
+            assert_eq!(read.capacity(), len);
+        }
     }
 
     #[test]
@@ -700,7 +716,9 @@ mod test {
 
     #[test]
     fn test_tuple() {
+        test_serialize((0u8, u64::MAX));
         test_serialize((123u64, 234u32, 999u16));
+        test_serialize((Some(123u64), String::new(), vec![1u16, 2], false));
     }
 
     #[test]
@@ -717,5 +735,73 @@ mod test {
     #[test]
     fn test_phantomdata() {
         test_serialize(std::marker::PhantomData::<u64>);
+    }
+
+    #[test]
+    fn test_array() {
+        test_serialize([0u8; 32]);
+        test_serialize([u64::MAX; 32]);
+        let data: [Option<String>; 32] =
+            std::array::from_fn(|index| if index % 2 == 0 { None } else { Some("a".repeat(index)) });
+        test_serialize(data.clone());
+        test_serialize(Some(data.clone()));
+        test_serialize(vec![data]);
+    }
+
+    #[test]
+    fn test_arc() {
+        test_serialize(Arc::new(Vec::<u64>::new()));
+        test_serialize(Arc::new(vec![None, Some(String::new()), Some("Aleo 🦀".to_owned())]));
+    }
+
+    #[test]
+    fn test_btree_map() {
+        test_serialize(BTreeMap::<u64, String>::new());
+        test_serialize(BTreeMap::from([(2u64, Some("Aleo 🦀".to_owned())), (0, None), (1, Some(String::new()))]));
+    }
+
+    #[test]
+    fn test_serialization_wrappers() -> Result<(), SerializationError> {
+        for data in [Vec::<Option<String>>::new(), vec![None, Some(String::new()), Some("Aleo 🦀".to_owned())]] {
+            let rc = Rc::new(data.clone());
+            let slice = data.as_slice();
+            for compress in [Compress::No, Compress::Yes] {
+                let mut expected = Vec::new();
+                data.serialize_with_mode(&mut expected, compress)?;
+
+                let mut serialized = Vec::new();
+                rc.serialize_with_mode(&mut serialized, compress)?;
+                assert_eq!(serialized, expected);
+                assert_eq!(rc.serialized_size(compress), serialized.len());
+
+                serialized.clear();
+                <[Option<String>]>::serialize_with_mode(slice, &mut serialized, compress)?;
+                assert_eq!(serialized, expected);
+                assert_eq!(<[Option<String>]>::serialized_size(slice, compress), serialized.len());
+
+                serialized.clear();
+                <&[Option<String>]>::serialize_with_mode(&slice, &mut serialized, compress)?;
+                assert_eq!(serialized, expected);
+                assert_eq!(<&[Option<String>]>::serialized_size(&slice, compress), serialized.len());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_cow_serialization() -> Result<(), SerializationError> {
+        for data in [(None, String::new()), (Some(u64::MAX), "Aleo 🦀".to_owned())] {
+            for compress in [Compress::No, Compress::Yes] {
+                let mut expected = Vec::new();
+                data.serialize_with_mode(&mut expected, compress)?;
+                for wrapper in [Cow::Borrowed(&data), Cow::Owned(data.clone())] {
+                    let mut serialized = Vec::new();
+                    wrapper.serialize_with_mode(&mut serialized, compress)?;
+                    assert_eq!(serialized, expected);
+                    assert_eq!(wrapper.serialized_size(compress), serialized.len());
+                }
+            }
+        }
+        Ok(())
     }
 }

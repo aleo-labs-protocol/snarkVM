@@ -167,7 +167,7 @@ impl<N: Network> GetDynamic<N> {
 impl<N: Network> Parser for GetDynamic<N> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the opcode from the string.

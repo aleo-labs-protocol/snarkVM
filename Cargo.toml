@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -22,7 +22,7 @@ categories = [
 include = [ "Cargo.toml", "vm", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.88.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
+rust-version = "1.96.0" # Attention - Change the MSRV in rust-toolchain as well
 
 [workspace]
 members = [
@@ -87,9 +87,7 @@ members = [
   "synthesizer/snark",
   "utilities",
   "utilities/derives",
-  "wasm",
-  "plugins/slipstream_plugin_interface",
-  "plugins/slipstream_plugin_manager"
+  "wasm"
 ]
 
 [lib]
@@ -129,9 +127,6 @@ package = [
 
 async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-history = [ "snarkvm-ledger?/history", "snarkvm-synthesizer/history" ]
-history-staking-rewards = [ "snarkvm-synthesizer/history-staking-rewards" ]
-slipstream-plugins = [ "snarkvm-synthesizer/slipstream-plugins", "dep:snarkvm-slipstream-plugin-interface", "dep:snarkvm-slipstream-plugin-manager" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 no-embedded-srs = [ "snarkvm-parameters/no-embedded-srs" ]
 locktick = [
@@ -141,6 +136,7 @@ locktick = [
   "snarkvm-parameters?/locktick",
   "snarkvm-synthesizer?/locktick"
 ]
+# No-op: Cargo features are not evaluated in `[target.<cfg>]` selectors.
 noconfig = [ ]
 prop-tests = [ "snarkvm-ledger?/prop-tests" ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
@@ -183,6 +179,7 @@ dev_skip_checks = [
   "snarkvm-synthesizer/dev_skip_checks"
 ]
 dev-committee = [ "snarkvm-ledger/dev-committee" ]
+dev_genesis_state_root = [ "snarkvm-ledger/dev_genesis_state_root" ]
 save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
 test_exports = [ "snarkvm-algorithms/test_exports" ]
 test_targets = [ "snarkvm-console/test_targets" ]
@@ -190,270 +187,262 @@ test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-sy
 
 [workspace.dependencies.snarkvm-algorithms]
 path = "algorithms"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-algorithms-cuda]
 path = "algorithms/cuda"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit]
 path = "circuit"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-account]
 path = "circuit/account"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-algorithms]
 path = "circuit/algorithms"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-collections]
 path = "circuit/collections"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-environment]
 path = "circuit/environment"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-environment-witness]
 path = "circuit/environment/witness"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-circuit-network]
 path = "circuit/network"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-program]
 path = "circuit/program"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types]
 path = "circuit/types"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types-address]
 path = "circuit/types/address"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types-boolean]
 path = "circuit/types/boolean"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types-field]
 path = "circuit/types/field"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types-scalar]
 path = "circuit/types/scalar"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types-string]
 path = "circuit/types/string"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console]
 path = "console"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-console-account]
 path = "console/account"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-algorithms]
 path = "console/algorithms"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-collections]
 path = "console/collections"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-network]
 path = "console/network"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-network-environment]
 path = "console/network/environment"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-program]
 path = "console/program"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-types]
 path = "console/types"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-console-types-address]
 path = "console/types/address"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-types-boolean]
 path = "console/types/boolean"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-types-field]
 path = "console/types/field"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-types-group]
 path = "console/types/group"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-types-integers]
 path = "console/types/integers"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-types-scalar]
 path = "console/types/scalar"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-console-types-string]
 path = "console/types/string"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types-group]
 path = "circuit/types/group"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-circuit-types-integers]
 path = "circuit/types/integers"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-curves]
 path = "curves"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-fields]
 path = "fields"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-ledger]
 path = "ledger"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-authority]
 path = "ledger/authority"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-block]
 path = "ledger/block"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-committee]
 path = "ledger/committee"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-ledger-narwhal]
 path = "ledger/narwhal"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-data]
 path = "ledger/narwhal/data"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-batch-header]
 path = "ledger/narwhal/batch-header"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-batch-certificate]
 path = "ledger/narwhal/batch-certificate"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-subdag]
 path = "ledger/narwhal/subdag"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-transmission]
 path = "ledger/narwhal/transmission"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-transmission-id]
 path = "ledger/narwhal/transmission-id"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-puzzle]
 path = "ledger/puzzle"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-puzzle-epoch]
 path = "ledger/puzzle/epoch"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-query]
 path = "ledger/query"
-version = "=4.9.0"
+version = "=4.12.0"
 default-features = false
 
 [workspace.dependencies.snarkvm-ledger-store]
 path = "ledger/store"
-version = "=4.9.0"
-
-[workspace.dependencies.snarkvm-slipstream-plugin-interface]
-path = "plugins/slipstream_plugin_interface"
-version = "=4.9.0"
-
-[workspace.dependencies.snarkvm-slipstream-plugin-manager]
-path = "plugins/slipstream_plugin_manager"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-ledger-test-helpers]
 path = "ledger/test-helpers"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-metrics]
 path = "metrics"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-parameters]
 path = "parameters"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-synthesizer]
 path = "synthesizer"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-synthesizer-error]
 path = "synthesizer/error"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-synthesizer-process]
 path = "synthesizer/process"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-synthesizer-program]
 path = "synthesizer/program"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-synthesizer-snark]
 path = "synthesizer/snark"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-utilities]
 path = "utilities"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-utilities-derives]
 path = "utilities/derives"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.snarkvm-wasm]
 path = "wasm"
-version = "=4.9.0"
+version = "=4.12.0"
 
 [workspace.dependencies.aleo-std]
-version = "1.0.1"
+version = "=1.0.4"
 
 [workspace.dependencies.aleo-std-storage]
 default-features=false
-version = "1.0.1"
+version = "=1.0.4"
 
 [workspace.dependencies.anyhow]
 version = "1.0.73"
@@ -469,7 +458,7 @@ version = "1"
 version = "1.0.0"
 
 [workspace.dependencies.criterion]
-version = "0.7"
+version = "0.8"
 
 [workspace.dependencies.colored]
 version = "3"
@@ -490,7 +479,7 @@ version = "0.4.3"
 version = "2.0"
 
 [workspace.dependencies.itertools]
-version = "0.14"
+version = "0.15"
 
 [workspace.dependencies.k256]
 version = "0.14.0"
@@ -501,10 +490,10 @@ default-features = false
 version = "1.4"
 
 [workspace.dependencies.locktick]
-version = "0.5"
+version = "0.6"
 
 [workspace.dependencies.lru]
-version = "0.16"
+version = "0.19"
 
 [workspace.dependencies.num-traits]
 version = "0.2"
@@ -520,7 +509,7 @@ version = "1"
 
 [workspace.dependencies.proptest]
 # Pin to 1.6 to avoid pulling in rand >=0.9.
-version = "=1.6"
+version = "=1.12"
 
 [workspace.dependencies.rand]
 version = "0.10"
@@ -538,7 +527,7 @@ version = "1.0.188"
 version = "1.0"
 
 [workspace.dependencies.serial_test]
-version = "2.0"
+version = "4.0"
 
 [workspace.dependencies.sha2]
 version = "0.11"
@@ -563,7 +552,7 @@ version = "0.1"
 version = "0.2.5"
 
 [workspace.dependencies.ureq]
-version = "3"
+version = "3.4"
 default-features = false
 
 [workspace.dependencies.zeroize]
@@ -599,14 +588,6 @@ workspace = true
 optional = true
 
 [dependencies.snarkvm-parameters]
-workspace = true
-optional = true
-
-[dependencies.snarkvm-slipstream-plugin-interface]
-workspace = true
-optional = true
-
-[dependencies.snarkvm-slipstream-plugin-manager]
 workspace = true
 optional = true
 
@@ -655,31 +636,14 @@ version = "0.11.2"
 [dev-dependencies.tempfile]
 workspace = true
 
-[build-dependencies.walkdir]
+[dev-dependencies.walkdir]
 version = "2"
 
 [profile.release]
-opt-level = 3
 lto = "thin"
-incremental = true
-
-[profile.bench]
-opt-level = 3
-debug = false
-rpath = false
-lto = "thin"
-incremental = true
-debug-assertions = false
 
 [profile.dev]
-opt-level = 3
-lto = "off"
-incremental = true
+debug = "line-tables-only"
 
 [profile.test]
-opt-level = 3
-lto = "thin"
-incremental = true
-debug = true
-debug-assertions = true
-
+opt-level = 2

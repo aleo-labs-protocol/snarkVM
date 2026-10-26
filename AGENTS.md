@@ -46,15 +46,33 @@ There are deployed versions of this software in the wild. Changes that alter con
 
 See @CONTRIBUTING.md for detailed memory and performance guidelines.
 
+## Code comments
+
+Comments must describe the state of the code today -- not a previous state or an
+alternative state.
+
+Exception: Comments may describe an alternative possible state of the code,
+*if* they are documenting a hazard that a future developer may otherwise walk into.
+
+Comments must not describe the rationale for a change.
+
+**Rationale may appear in: the commit message and the pull request.**
+You may self-comment on your own github pull request at select positions in the code to aide reviewers.
+
+Comments must help someone who has never heard of this change you are making.
+
+Comments must not state the obvious. Comments that explain what attributes
+do or how language constructs work are unhelpful.
+
 ## Testing
 
 **Synthesizer tests are slow** — run only the specific test function.
-Use `--features test,dev_println` for integration tests.
+Use `--features test,dev-print` for integration tests.
 
 ```bash
 cargo test -p <crate>                                           # Run crate tests
 cargo test -p <crate> -- test_name                              # Run specific test
-cargo test -p snarkvm-synthesizer --features test,dev_println   # Integration tests
+cargo test -p snarkvm-synthesizer --features test,dev-print     # Integration tests
 ```
 
 ## Validation
@@ -63,18 +81,26 @@ Run in order:
 ```bash
 cargo check -p <crate>
 cargo clippy -p <crate> -- -D warnings
-cargo +nightly fmt --check
+cargo +nightly-2026-04-02 fmt --check
 cargo test -p <crate>
 ```
 
-Clippy warnings are errors. Formatting requires nightly (`cargo +nightly fmt --all` to fix).
+Clippy warnings are errors. Formatting requires the nightly `.github/workflows/ci.yml` pins as
+`FMT_TOOLCHAIN` (`cargo +nightly-2026-04-02 fmt --all` to fix) -- `.rustfmt.toml` uses
+nightly-only options, and plain `cargo fmt` drops them silently rather than refusing.
 
-Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly fmt --all -- --check`
+Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly-2026-04-02 fmt --all -- --check`
 
 ## Git
 - Never commit unless explicitly asked.
 - Stage with `git add` only if requested.
-- Run `cargo +nightly fmt --all` before staging.
+- Run `cargo +nightly-2026-04-02 fmt --all` before staging.
+
+## Pull requests
+- Follow `.github/PULL_REQUEST_TEMPLATE.md`.
+- Write the PR README in Simplified Technical English. Use short sentences, the active voice, and one idea per sentence.
+- Keep the pull request description succinct and DRY.
+- Explain each commit in one line.
 
 ## Style
 - One blank line between functions.
@@ -83,7 +109,7 @@ Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --a
 - Match existing file patterns exactly — if the file uses `Self::`, you use `Self::`.
 - Comments must be concise, complete, punctuated sentences.
 - `#![forbid(unsafe_code)]` in all crates unless approved.
-- License header required (enforced by `build.rs`).
+- License header required (enforced by `tests/sources.rs`).
 
 ## Review Checklist
 

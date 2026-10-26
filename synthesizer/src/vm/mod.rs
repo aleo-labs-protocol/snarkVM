@@ -102,15 +102,15 @@ use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
-    sync::{Arc, mpsc},
+    sync::{Arc, OnceLock, mpsc},
     thread,
 };
 
@@ -138,9 +138,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
     pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
     /// A sender to the channel for operations that must be performed sequentially.
-    sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
-    /// The handle to the thread which processes operations sequentially.
-    sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    sequential_ops_tx: Option<Arc<SequentialOperationQueue<N>>>,
+    /// The identity of the thread which processes operations sequentially.
+    sequential_ops_thread_id: Arc<OnceLock<thread::ThreadId>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -203,7 +203,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             })
             .collect::<Result<Vec<_>>>()?;
         // Sort the deployment transaction IDs by their block heights.
-        deployment_ids.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
+        deployment_ids.sort_unstable_by_key(|(_, h)| *h);
 
         // Load the deployments in order of their block heights.
         const PARALLELIZATION_FACTOR: usize = 256;
@@ -230,7 +230,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Construct the VM object.
-        let vm = Self {
+        let mut vm = Self {
             process: Arc::new(process),
             puzzle: Self::new_puzzle()?,
             store,
@@ -240,7 +240,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             restrictions: Restrictions::load()?,
             sequential_ops_tx: Default::default(),
             pending_rejected_reasons: Default::default(),
-            sequential_ops_thread: Default::default(),
+            sequential_ops_thread_id: Default::default(),
         };
 
         // Spawn a thread for sequential operations.
@@ -248,8 +248,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
 
         // Populate the fields related to the sequential operations.
-        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
-        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
+        let _ = vm.sequential_ops_thread_id.set(sequential_ops_thread.thread().id());
+        vm.sequential_ops_tx = Some(Arc::new(SequentialOperationQueue {
+            sender: Some(sequential_ops_tx),
+            thread: Some(sequential_ops_thread),
+        }));
 
         // Return the new VM.
         Ok(vm)
@@ -305,120 +308,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn transaction_store(&self) -> &TransactionStore<N, C::TransactionStorage> {
         self.store.transaction_store()
-    }
-
-    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
-    ///
-    /// Returns an error if no block exists at `height`. Views reuse the same shape that
-    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
-    /// cumulative weights, and the previous-block hash from the actual block — so any
-    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
-    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
-    #[cfg(feature = "history")]
-    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
-        let block_hash =
-            self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
-        let block = self
-            .block_store()
-            .get_block(&block_hash)?
-            .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
-        // Match the consensus path's gating: the timestamp is only included from V12 onward.
-        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-            .then_some(block.timestamp());
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            (None, None)
-        };
-        FinalizeGlobalState::new::<N>(
-            block.round(),
-            block.height(),
-            block_timestamp,
-            block.cumulative_weight(),
-            block.cumulative_proof_target(),
-            block.previous_hash(),
-            block_spend_limit,
-            block_synthesis_limit,
-        )
-    }
-
-    /// Evaluates a view function against finalize-store state at the given block `height`.
-    /// Returns the typed outputs.
-    ///
-    /// Mapping reads are pinned to `height` via the per-key historical update map, and the
-    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
-    /// `--features history`.
-    ///
-    /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
-    /// for historic views. `height` must satisfy `height <= current_block_height()`.
-    ///
-    /// The view body is taken from the program edition live at `height`.
-    #[cfg(feature = "history")]
-    #[inline]
-    pub fn evaluate_view_at_height(
-        &self,
-        program_id: impl TryInto<ProgramID<N>>,
-        view_name: impl TryInto<Identifier<N>>,
-        inputs: Vec<Value<N>>,
-        height: u32,
-    ) -> Result<Vec<Value<N>>> {
-        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
-        let state = self.finalize_state_for_block(height)?;
-        let edition = self.resolve_program_edition_at_height(&program_id, height)?;
-        let latest_stack = self.process.get_stack(program_id)?;
-        let stack = if *latest_stack.program_edition() == edition {
-            // The historic edition is already the loaded one.
-            latest_stack
-        } else {
-            // Build a one-off stack for the historic edition. `new_raw` skips upgrade validation, as the
-            // process holds a newer edition; views can't `call`, so the live (latest) imports resolve
-            // identically (struct, record, and mapping types are frozen across upgrades).
-            let program = self
-                .transaction_store()
-                .deployment_store()
-                .get_program_for_edition(&program_id, edition)?
-                .ok_or_else(|| anyhow!("Program '{program_id}' (edition {edition}) was not found in storage"))?;
-            let stack = Stack::new_raw(&self.process, &program, edition)?;
-            stack.initialize_and_check(&self.process)?;
-            Arc::new(stack)
-        };
-        snarkvm_synthesizer_process::evaluate_view_with_stack_at_height(
-            state,
-            self.finalize_store(),
-            &stack,
-            &view_name,
-            inputs,
-            height,
-        )
-    }
-
-    /// Returns the program edition live at block `height`: the newest edition whose original
-    /// deployment was confirmed at or before `height`. Editions deploy in increasing block order.
-    #[cfg(feature = "history")]
-    fn resolve_program_edition_at_height(&self, program_id: &ProgramID<N>, height: u32) -> Result<u16> {
-        let deployment_store = self.transaction_store().deployment_store();
-        let block_store = self.block_store();
-        let latest_edition = deployment_store
-            .get_latest_edition_for_program(program_id)?
-            .ok_or_else(|| anyhow!("Program '{program_id}' has not been deployed"))?;
-        for edition in (0..=latest_edition).rev() {
-            let Some(transaction_id) =
-                deployment_store.find_original_transaction_id_from_program_id_and_edition(program_id, edition)?
-            else {
-                continue;
-            };
-            let Some(block_hash) = block_store.find_block_hash(&transaction_id)? else {
-                continue;
-            };
-            let Some(deployment_height) = block_store.get_block_height(&block_hash)? else {
-                continue;
-            };
-            if deployment_height <= height {
-                return Ok(edition);
-            }
-        }
-        bail!("Program '{program_id}' was not deployed at or before height {height}")
     }
 
     /// Returns the transition store.
@@ -616,7 +505,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
             (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
         } else {
-            (None, None)
+            Authority::<N>::beacon_limits(block.height())
         };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
@@ -693,24 +582,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
                 // Return the finalize error.
                 Err(finalize_error)
-            }
-        }
-    }
-}
-
-impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
-    fn drop(&mut self) {
-        // Check if this the final external reference to `VM`.
-        if Arc::strong_count(&self.sequential_ops_tx) == 1 {
-            // If the background thread exists, shut it down.
-            if let Some(thread) = self.sequential_ops_thread.lock().take() {
-                // First, close the channel.
-                self.sequential_ops_tx.write().take();
-                // Wait for the thread to terminate.
-                trace!("Waiting for sequential ops thread to terminate");
-                thread.join().expect("Sequential ops thread had an error");
-            } else {
-                debug!("No sequential ops background thread existed durign shutdown");
             }
         }
     }
@@ -1757,7 +1628,8 @@ function c:
             .unwrap();
 
         // Deploy the first program.
-        let deployment_block = sample_next_block(&vm, &caller_private_key, &[deployment_1.clone()], rng).unwrap();
+        let deployment_block =
+            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_1), rng).unwrap();
         vm.add_next_block(&deployment_block).unwrap();
 
         // Create the deployment for the second program.
@@ -1777,7 +1649,8 @@ function b:
             .unwrap();
 
         // Deploy the second program.
-        let deployment_block = sample_next_block(&vm, &caller_private_key, &[deployment_2.clone()], rng).unwrap();
+        let deployment_block =
+            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_2), rng).unwrap();
         vm.add_next_block(&deployment_block).unwrap();
 
         // Create the deployment for the third program.
@@ -3015,7 +2888,7 @@ finalize transfer_public_to_private:
         vm.check_transaction(&transaction, None, rng).unwrap();
 
         // Add the transaction to a block and update the VM.
-        let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
+        let block = sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&transaction), rng).unwrap();
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
@@ -3704,13 +3577,7 @@ function check:
 
         // Generate the authorization that will contain multiple transitions
         let authorization = process
-            .authorize::<CurrentAleo, _>(
-                &private_key,
-                grandparent_program.id(),
-                &function_name,
-                vec![input].iter(),
-                rng,
-            )
+            .authorize::<CurrentAleo, _>(&private_key, grandparent_program.id(), &function_name, [input].iter(), rng)
             .unwrap();
 
         // Assert the Authorization has more than 1 transitions

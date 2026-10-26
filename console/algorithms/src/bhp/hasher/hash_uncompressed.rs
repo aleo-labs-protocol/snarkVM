@@ -48,7 +48,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
             let padding = BHP_CHUNK_SIZE - (input.len() % BHP_CHUNK_SIZE);
             let mut padded_input = vec![false; input.len() + padding];
             padded_input[..input.len()].copy_from_slice(input);
-            ensure!((padded_input.len() % BHP_CHUNK_SIZE) == 0, "Input must be a multiple of {BHP_CHUNK_SIZE}");
+            ensure!(padded_input.len().is_multiple_of(BHP_CHUNK_SIZE), "Input must be a multiple of {BHP_CHUNK_SIZE}");
             Cow::Owned(padded_input)
         } else {
             Cow::Borrowed(input)

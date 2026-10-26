@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-curves"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Curves for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -57,11 +57,11 @@ workspace = true
 [dev-dependencies.criterion]
 workspace = true
 
-[dev-dependencies.rand]
+[dev-dependencies.proptest]
 workspace = true
 
-[build-dependencies]
-rustc_version = "0.4"
+[dev-dependencies.rand]
+workspace = true
 
 [features]
 serial = [ "snarkvm-fields/serial" ]

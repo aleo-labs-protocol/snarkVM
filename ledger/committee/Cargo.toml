@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-committee"
-version = "4.9.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A committee for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -74,7 +74,7 @@ optional = true
 workspace = true
 
 [dependencies.test-strategy]
-version = "0.3.1"
+version = "0.4.5"
 optional = true
 
 [dev-dependencies.bincode]

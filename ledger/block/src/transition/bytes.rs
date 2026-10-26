@@ -16,8 +16,8 @@
 use super::*;
 
 impl<N: Network> FromBytes for Transition<N> {
-    /// Reads the output from a buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    /// Reads the transition from a buffer, recomputing the transition ID unless `unchecked` is set.
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Validate the version.
@@ -73,6 +73,10 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
+        if unchecked {
+            return Ok(Self::new_unchecked(transition_id, program_id, function_name, inputs, outputs, tpk, tcm, scm));
+        }
+
         // Construct the candidate transition.
         let transition =
             Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm).map_err(|e| error(e.to_string()))?;
@@ -81,6 +85,16 @@ impl<N: Network> FromBytes for Transition<N> {
             true => Ok(transition),
             false => Err(error("Transition ID is incorrect, possible data corruption")),
         }
+    }
+
+    /// Reads the transition from a buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the transition from a buffer without checking the data, trusting the stored transition ID.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -122,6 +136,8 @@ impl<N: Network> ToBytes for Transition<N> {
 mod tests {
     use super::*;
 
+    type CurrentNetwork = console::network::MainnetV0;
+
     #[test]
     fn test_bytes() -> Result<()> {
         let rng = &mut TestRng::default();
@@ -132,6 +148,22 @@ mod tests {
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;
         assert_eq!(expected, Transition::read_le(&expected_bytes[..])?);
+        assert_eq!(expected, Transition::read_le_unchecked(&expected_bytes[..])?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_unchecked_trusts_id() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        let transition = crate::transition::test_helpers::sample_transition(rng);
+        let mut bytes = transition.to_bytes_le()?;
+        let id: <CurrentNetwork as Network>::TransitionID = Field::<CurrentNetwork>::rand(rng).into();
+        bytes[1..33].copy_from_slice(&id.to_bytes_le()?);
+
+        assert!(Transition::<CurrentNetwork>::read_le(&bytes[..]).is_err());
+        assert_eq!(*Transition::<CurrentNetwork>::read_le_unchecked(&bytes[..])?.id(), id);
 
         Ok(())
     }

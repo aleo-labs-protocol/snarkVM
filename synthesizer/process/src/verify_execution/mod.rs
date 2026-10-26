@@ -186,8 +186,8 @@ impl<N: Network> Process<N> {
             let is_root_transition =
                 transition.id() == execution.transitions().last().expect("Execution contains no transitions").id();
 
-            // Before ConsensusVersion::V19, we check the input and output types match the ones
-            // defined in the function under the weaker type equivalence. At ConsensusVersion::V19
+            // Before ConsensusVersion::V20, we check the input and output types match the ones
+            // defined in the function under the weaker type equivalence. At ConsensusVersion::V20
             // and higher, we perform strict type checking for the root transition only: for
             // non-root transitions, strict type checking happens at the call site in
             // `to_transition_verifier_inputs` instead.
@@ -195,10 +195,10 @@ impl<N: Network> Process<N> {
             // hashes in the `Input::verify` and `Output::verify` functions. Note: The length checks
             // above already verify that the counts match, so `zip_eq` here is safe and acts as a
             // defense-in-depth assertion.
-            if consensus_version < ConsensusVersion::V19 || is_root_transition {
+            if consensus_version < ConsensusVersion::V20 || is_root_transition {
                 // Flag for `matches_as_argument` and `matches_as_output`: None for weak equivalence,
                 // Some(false) for strict static-call type equivalence.
-                let is_dynamic_for_types = if consensus_version < ConsensusVersion::V19 { None } else { Some(false) };
+                let is_dynamic_for_types = if consensus_version < ConsensusVersion::V20 { None } else { Some(false) };
 
                 for (input_index, (function_input, transition_input)) in
                     function.input_types().iter().zip_eq(transition.inputs().iter()).enumerate()
@@ -477,10 +477,10 @@ impl<N: Network> Process<N> {
 
             // Ensure the child transition's input and output variants correspond to the child
             // function's declared types, enforcing strict matching depending on whether this is a
-            // static or dynamic call. This check only happens at ConsensusVersion >= V19.
+            // static or dynamic call. This check only happens at ConsensusVersion >= V20.
             // Note: The counts are already validated for every transition in the main verification
             // loop, so `zip_eq` is safe.
-            if consensus_version >= ConsensusVersion::V19 {
+            if consensus_version >= ConsensusVersion::V20 {
                 let is_dynamic = Some(call_dynamic.is_some());
                 let call_kind = if call_dynamic.is_some() { "dynamic" } else { "static" };
                 for (function_input, transition_input) in

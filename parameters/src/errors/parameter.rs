@@ -39,7 +39,7 @@ pub enum ParameterError {
     FilesystemDisabled,
 }
 
-#[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
+#[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
 impl From<ureq::Error> for ParameterError {
     fn from(error: ureq::Error) -> Self {
         ParameterError::Crate("ureq", format!("{error}"))

@@ -31,7 +31,7 @@ use crate::{
 use anyhow::Result;
 use rand::Rng;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_reduce};
+use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_reduce, defer};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -54,6 +54,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         _r: &mut R,
     ) -> Result<(prover::SecondOracles<F>, prover::State<'a, F, SM>)> {
         let round_time = start_timer!(|| "AHP::Prover::SecondRound");
+        defer! { end_timer!(round_time); }
 
         let zk_bound = Self::zk_bound();
 
@@ -67,8 +68,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let oracles = prover::SecondOracles { h_0: LabeledPolynomial::new("h_0", h_0, None, None) };
         assert!(oracles.matches_info(&Self::second_round_polynomial_info()));
-
-        end_timer!(round_time);
 
         Ok((oracles, state))
     }
@@ -97,7 +96,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 itertools::izip!(instance_combiners, z_a, z_b, z_c).enumerate()
             {
                 job_pool.add_job(move || {
-                    let mut instance_lhs = DensePolynomial::zero();
                     let za_label = witness_label(circuit.id, "z_a", j);
                     let zb_label = witness_label(circuit.id, "z_b", j);
                     let zc_label = witness_label(circuit.id, "z_c", j);
@@ -111,7 +109,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let mut rowcheck = multiplier_2.multiply().unwrap();
                     rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
 
-                    instance_lhs += &(&rowcheck * instance_combiner);
+                    // Initialise `instance_lhs` as `instance_combiner * rowcheck`: one job
+                    // contributes one term, so there is nothing to accumulate onto. The trim is
+                    // necessary because `apply_randomized_selector` below is degree-sensitive,
+                    // and the `AddAssign` this replaced used to do it.
+                    let mut instance_lhs = rowcheck;
+                    instance_lhs.coeffs.iter_mut().for_each(|c| *c *= instance_combiner);
+                    instance_lhs.trim_trailing_zeros();
 
                     let (h_0_i, remainder) = apply_randomized_selector(
                         &mut instance_lhs,
@@ -127,6 +131,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         let h_sum_time = start_timer!(|| "AHP::Prover::SecondRound h_sum");
+        defer! { end_timer!(h_sum_time); }
         let h_sum: DensePolynomial<F> =
             cfg_reduce!(cfg_into_iter!(job_pool.execute_all()), || Ok(DensePolynomial::zero()), |a, b| {
                 a.and_then(|a| {
@@ -136,8 +141,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     })
                 })
             })?;
-        end_timer!(h_sum_time);
-
         Ok(h_sum)
     }
 

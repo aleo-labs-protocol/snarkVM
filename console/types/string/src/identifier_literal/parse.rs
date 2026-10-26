@@ -19,7 +19,7 @@ impl<E: Environment> Parser for IdentifierLiteral<E> {
     /// Parses a string into an identifier literal.
     /// Syntax: `'<identifier>'` where identifier matches `[a-zA-Z][a-zA-Z0-9_]*`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Match the opening single quote.
         let (string, _) = tag("'")(string)?;
         // Match identifier content: starts with a letter, followed by alphanumeric or underscore.

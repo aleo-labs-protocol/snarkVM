@@ -16,8 +16,8 @@
 use super::*;
 
 impl<N: Network> FromBytes for Execution<N> {
-    /// Reads the execution from a buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    /// Reads the execution from a buffer, either with or without checking the data.
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -39,8 +39,9 @@ impl<N: Network> FromBytes for Execution<N> {
             )));
         }
         // Read the transitions.
-        let transitions =
-            (0..num_transitions).map(|_| Transition::read_le(&mut reader)).collect::<IoResult<Vec<_>>>()?;
+        let transitions = (0..num_transitions)
+            .map(|_| Transition::read_le_with_unchecked(&mut reader, unchecked))
+            .collect::<IoResult<Vec<_>>>()?;
         // Read the global state root.
         let global_state_root = N::StateRoot::read_le(&mut reader)?;
         // Read the proof variant.
@@ -48,11 +49,21 @@ impl<N: Network> FromBytes for Execution<N> {
         // Read the proof.
         let proof = match proof_variant {
             0 => None,
-            1 => Some(Proof::read_le(&mut reader)?),
+            1 => Some(Proof::read_le_with_unchecked(&mut reader, unchecked)?),
             _ => return Err(error(format!("Invalid proof variant '{proof_variant}'"))),
         };
         // Return the new `Execution` instance.
         Self::from(transitions.into_iter(), global_state_root, proof).map_err(|e| error(e.to_string()))
+    }
+
+    /// Reads the execution from a buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the execution from a buffer without checking the data.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -95,6 +106,7 @@ mod tests {
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;
         assert_eq!(expected, Execution::read_le(&expected_bytes[..])?);
+        assert_eq!(expected, Execution::read_le_unchecked(&expected_bytes[..])?);
         Ok(())
     }
 }

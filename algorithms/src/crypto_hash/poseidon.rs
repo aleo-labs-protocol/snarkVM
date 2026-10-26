@@ -275,7 +275,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
                 (num_elements_remaining / RATE) +
                 // And also add 1 if the last chunk is non-empty
                 // (i.e. if `num_elements_remaining` is not a multiple of `RATE`)
-                usize::from((num_elements_remaining % RATE) != 0);
+                usize::from(!num_elements_remaining.is_multiple_of(RATE));
 
             // Absorb the input elements, `RATE` elements at a time, except for the first
             // chunk, which is of size `RATE - rate_start`.
@@ -313,7 +313,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
                 (num_output_remaining / RATE) +
                 // And also add 1 if the last chunk is non-empty
                 // (i.e. if `num_output_remaining` is not a multiple of `RATE`)
-                usize::from((num_output_remaining % RATE) != 0);
+                usize::from(!num_output_remaining.is_multiple_of(RATE));
 
             // Absorb the input output, `RATE` output at a time, except for the first chunk,
             // which is of size `RATE - rate_start`.

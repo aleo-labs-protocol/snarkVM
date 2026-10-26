@@ -252,7 +252,7 @@ fn main() {
         println!("Deploying program one_to_many_records.aleo (generating block)");
         let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
-        let deployment_block = sample_next_block(&vm, &private_key, &[deployment.clone()], rng).unwrap();
+        let deployment_block = sample_next_block(&vm, &private_key, std::slice::from_ref(&deployment), rng).unwrap();
         assert_eq!(deployment_block.transactions().num_accepted(), 1);
         vm.add_next_block(&deployment_block).unwrap();
 

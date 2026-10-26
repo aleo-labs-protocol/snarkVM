@@ -17,6 +17,12 @@ use super::*;
 
 impl<A: Aleo> Entry<A, Plaintext<A>> {
     /// Returns this entry as a list of field elements, with the specified mode.
+    ///
+    /// # Hazards
+    /// In `Public` and `Private` mode, the two visibility bits are witnesses constrained only to
+    /// be 0 or 1, not to this entry's actual visibility. They are sound solely when the returned
+    /// fields are hash-bound to committed state, as in `get.record.dynamic`. See
+    /// `write_bits_le_with_visibility_as_mode` for details.
     pub fn to_fields_with_visibility_as_mode(&self, mode: Mode) -> Vec<Field<A>> {
         // Encode the data as little-endian bits.
         let mut bits_le = vec![];

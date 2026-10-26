@@ -17,6 +17,7 @@ flamegraph.svg
 !**/neg-powers-of-beta.usrs
 **/proptest-regressions/
 artifacts
+/.rusty-hook.toml
 
 # Claude Code
 **/CLAUDE.md

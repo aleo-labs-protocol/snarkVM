@@ -106,7 +106,7 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
     };
 
     let storage_mode = if let Some(path) = args.storage_path.clone() {
-        StorageMode::Custom(path.into())
+        StorageMode::Custom(path.into(), None)
     } else {
         StorageMode::Development(0)
     };

@@ -90,7 +90,7 @@ mod tests {
         mode: Mode,
         _: &mut TestRng,
     ) -> (console_root::types::Boolean<MainnetV0>, Boolean<Circuit>) {
-        (console_root::types::Boolean::new(i % 2 == 0), Boolean::new(mode, i % 2 == 0))
+        (console_root::types::Boolean::new(i.is_multiple_of(2)), Boolean::new(mode, i.is_multiple_of(2)))
     }
 
     check_cast_lossy!(cast_lossy, Boolean<Circuit>, console_root::types::Boolean::<MainnetV0>);

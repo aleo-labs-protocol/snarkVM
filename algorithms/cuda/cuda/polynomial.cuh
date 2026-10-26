@@ -215,6 +215,7 @@ public:
                 // Inner multiply
                 polynomial_inner_multiply<<<(domain_size + 1023) / 1024, 1024, 0, stream>>>
                     (domain_size, dmem0, dmem0, mul_src);
+                CUDA_OK(cudaGetLastError());
 
                 //alt.sync();
                 //stream.sync();
@@ -254,7 +255,13 @@ public:
             stream.DtoH(hmem0, dmem0, domain_size);
             stream.sync();
         } catch (const cuda_error& e) {
-            gpu.sync();
+            // A throwing drain must not replace the error it is draining for.
+            // `gpu_t::sync()` covers every flip-flop stream, so it can fail on
+            // a fault raised by a different slot running concurrently.
+            try {
+                gpu.sync();
+            } catch (...) {
+            }
 #ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
             return RustError{e.code(), e.what()};
 #else
