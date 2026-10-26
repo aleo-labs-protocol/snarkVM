@@ -102,16 +102,9 @@ impl<N: Network> BlockCache<N> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::test_helpers::{CurrentNetwork, sample_block_chain};
 
-    use crate::test_helpers::CurrentNetwork;
-
-    use snarkvm_console::{
-        account::{Field, PrivateKey},
-        prelude::{Rng, TestRng},
-    };
-    use snarkvm_ledger_authority::Authority;
-    use snarkvm_ledger_block::{Header, Metadata, Ratifications, Transactions};
+    use snarkvm_console::prelude::TestRng;
 
     type BlockCache = super::BlockCache<CurrentNetwork>;
 
@@ -123,64 +116,7 @@ mod tests {
         const { assert!(NUM_BLOCKS > BlockCache::BLOCK_CACHE_SIZE) };
 
         let rng = &mut TestRng::default();
-        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-
-        // Construct a chain of blocks.
-        let mut previous_hash = None;
-        let blocks: Vec<_> = (0..NUM_BLOCKS)
-            .map(|h| {
-                let transactions = Transactions::from(&[]);
-                let ratifications = Ratifications::try_from(vec![]).unwrap();
-                let header = if h == 0 {
-                    Header::genesis(&ratifications, &transactions, vec![]).unwrap()
-                } else {
-                    // Use mock metadata to save compute time.
-                    let metadata = Metadata::new(
-                        CurrentNetwork::ID,
-                        (h * 2) as u64,
-                        h,
-                        0,
-                        (h * 1000) as u128,
-                        CurrentNetwork::GENESIS_COINBASE_TARGET,
-                        CurrentNetwork::GENESIS_PROOF_TARGET + 1,
-                        CurrentNetwork::GENESIS_COINBASE_TARGET,
-                        CurrentNetwork::GENESIS_TIMESTAMP + ((h - 1) * 100) as i64,
-                        CurrentNetwork::GENESIS_TIMESTAMP + (h * 100) as i64,
-                    )
-                    .unwrap();
-
-                    let previous_state_root: <CurrentNetwork as Network>::StateRoot = rng.random();
-                    Header::<CurrentNetwork>::from(
-                        previous_state_root,
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        metadata,
-                    )
-                    .unwrap()
-                };
-                let block_hash = rng.random();
-                let authority = Authority::<CurrentNetwork>::new_beacon(&private_key, block_hash, rng).unwrap();
-
-                let block = Block::from_unchecked(
-                    block_hash.into(),
-                    previous_hash.unwrap_or_default(),
-                    header,
-                    authority,
-                    ratifications,
-                    None.into(),
-                    vec![],
-                    transactions,
-                    vec![],
-                )
-                .unwrap();
-
-                previous_hash = Some(block.hash());
-                block
-            })
-            .collect();
+        let blocks = sample_block_chain(NUM_BLOCKS, rng);
 
         let mut cache = BlockCache::new(vec![]).unwrap();
         let mut blocks = blocks.into_iter().skip(1);

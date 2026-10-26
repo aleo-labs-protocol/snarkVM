@@ -34,9 +34,68 @@ pub enum ConfirmedTxType<N: Network> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use console::network::MainnetV0;
+    use console::{account::PrivateKey, network::MainnetV0, prelude::*, types::Field};
+    use snarkvm_ledger_authority::Authority;
+    use snarkvm_ledger_block::{Block, Header, Metadata, Ratifications, Transactions};
 
     pub(crate) type CurrentNetwork = MainnetV0;
+
+    /// Samples a chain of `num_blocks` blocks with beacon authorities and mock headers.
+    pub(crate) fn sample_block_chain(num_blocks: u32, rng: &mut TestRng) -> Vec<Block<CurrentNetwork>> {
+        assert!(num_blocks > 0, "The block chain must not be empty");
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let mut previous_hash = <CurrentNetwork as Network>::BlockHash::default();
+        (0..num_blocks)
+            .map(|height| {
+                let transactions = Transactions::from(&[]);
+                let ratifications = Ratifications::try_from(vec![]).unwrap();
+                let header = if height == 0 {
+                    Header::genesis(&ratifications, &transactions, vec![]).unwrap()
+                } else {
+                    // Mock metadata saves compute time.
+                    let metadata = Metadata::new(
+                        CurrentNetwork::ID,
+                        u64::from(height) * 2,
+                        height,
+                        0,
+                        u128::from(height) * 1000,
+                        CurrentNetwork::GENESIS_COINBASE_TARGET,
+                        CurrentNetwork::GENESIS_PROOF_TARGET + 1,
+                        CurrentNetwork::GENESIS_COINBASE_TARGET,
+                        CurrentNetwork::GENESIS_TIMESTAMP + i64::from(height - 1) * 100,
+                        CurrentNetwork::GENESIS_TIMESTAMP + i64::from(height) * 100,
+                    )
+                    .unwrap();
+                    Header::from(
+                        rng.random(),
+                        Field::from_u32(1),
+                        Field::from_u32(1),
+                        Field::from_u32(1),
+                        Field::from_u32(1),
+                        Field::from_u32(1),
+                        metadata,
+                    )
+                    .unwrap()
+                };
+                let block_hash = Field::rand(rng);
+                let authority = Authority::new_beacon(&private_key, block_hash, rng).unwrap();
+                let block = Block::from_unchecked(
+                    block_hash.into(),
+                    previous_hash,
+                    header,
+                    authority,
+                    ratifications,
+                    None.into(),
+                    vec![],
+                    transactions,
+                    vec![],
+                )
+                .unwrap();
+                previous_hash = block.hash();
+                block
+            })
+            .collect()
+    }
 
     /// Samples an accepted deploy.
     pub(crate) fn sample_accepted_deploy(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {

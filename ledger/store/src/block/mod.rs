@@ -49,12 +49,16 @@ use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 
 use aleo_std_storage::StorageMode;
 #[cfg(feature = "rocks")]
-use aleo_std_storage::{aleo_ledger_dir, aleo_secondary_ledger_dir};
+use aleo_std_storage::aleo_ledger_dir;
+#[cfg(any(feature = "rocks", feature = "prune-authority-data"))]
+use aleo_std_storage::aleo_secondary_ledger_dir;
 use anyhow::{Context, Result};
 #[cfg(feature = "locktick")]
 use locktick::{LockGuard, parking_lot::RwLock};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
+#[cfg(feature = "prune-authority-data")]
+use serde::{Serialize, de::DeserializeOwned};
 use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
@@ -121,27 +125,13 @@ fn to_confirmed_transaction<N: Network>(
 #[cfg(feature = "rocks")]
 pub(crate) const BLOCK_TREE_CACHE_PREFIX: &[u8; 12] = b"aleo.tree.01";
 
-/// Returns `true` if the storage is a read-only secondary RocksDB instance.
-#[cfg(any(feature = "rocks", feature = "prune-authority-data"))]
-fn is_secondary_instance<N: Network, B: BlockStorage<N>>(storage: &B) -> bool {
-    #[cfg(feature = "rocks")]
-    {
-        aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_some()
-    }
-    #[cfg(not(feature = "rocks"))]
-    {
-        let _ = storage;
-        false
-    }
-}
-
 /// Returns the path to the block tree cache file, or `None` if the block tree is not to be cached.
 pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
     #[cfg(feature = "rocks")]
     {
         // A secondary instance must not touch the primary's cache, and it can't keep one of its own
         // either, as it catches up with the primary on startup, which would make its cache stale.
-        if is_secondary_instance::<N, _>(storage) {
+        if aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_some() {
             return None;
         }
 
@@ -175,17 +165,22 @@ fn missing_block_in_tree_error(height: u32, block_tree_cache_path: Option<&std::
 /// At the ideal block time of 2.5 seconds, the network produces `60 * 60 * 24 / 2.5 = 34,560` blocks
 /// per day, so retaining 500,000 blocks keeps roughly two weeks of authority data before pruning.
 ///
-/// This constant exists in all builds because it also describes the retention window of pruned
-/// peers, which any node needs when requesting authority data during sync.
+/// Defined in every build because snarkOS uses it to decide which peers can still serve a block range.
 #[cfg(not(test))]
 pub const AUTHORITY_RETENTION_BLOCKS: u32 = 500_000;
 /// A reduced retention window for unit tests, so pruning can be exercised without building 500,000 blocks.
 #[cfg(test)]
 pub const AUTHORITY_RETENTION_BLOCKS: u32 = 100;
 
-/// The key in the storage metadata map under which a store records that authority data has been
-/// pruned. Mirrors `MetadataKey::AuthorityPruned` in the RocksDB schema.
-pub(crate) const METADATA_KEY_AUTHORITY_PRUNED: u8 = 1;
+/// Returns the lowest block height whose authority data is retained when the chain is at
+/// `latest_height`. Without `prune-authority-data`, every height is retained.
+pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
+    if cfg!(feature = "prune-authority-data") {
+        latest_height.saturating_sub(AUTHORITY_RETENTION_BLOCKS - 1)
+    } else {
+        0
+    }
+}
 
 /// The target maximum number of map deletions in one startup pruning batch.
 #[cfg(feature = "prune-authority-data")]
@@ -195,72 +190,66 @@ const AUTHORITY_PRUNING_BATCH_SIZE: usize = 10_000;
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_LOG_INTERVAL: u32 = 10_000;
 
-/// Returns the certificate IDs to remove with an expired authority: those whose index points to
-/// `block_height`. An index that points to another block is logged and kept.
+/// Returns the IDs of the certificates committed by an authority.
+fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
+    match authority {
+        Authority::Beacon(_) => Vec::new(),
+        Authority::Quorum(subdag) => subdag.certificate_ids().collect(),
+    }
+}
+
+/// The hash of an expired block and the certificate IDs to remove with its authority.
+#[cfg(feature = "prune-authority-data")]
+type ExpiredAuthority<N> = (<N as Network>::BlockHash, Vec<Field<N>>);
+
+/// Returns the expired authority at `expired_height`, or `None` if there is nothing to prune. An
+/// inconsistency is logged and leaves the data in place.
 #[cfg(feature = "prune-authority-data")]
 fn prepare_authority_for_pruning<N: Network, B: BlockStorage<N>>(
     storage: &B,
-    block_height: u32,
-    block_hash: &N::BlockHash,
-) -> Result<Option<Vec<Field<N>>>> {
-    let Some(authority) = storage.authority_map().get_speculative(block_hash)? else {
+    expired_height: u32,
+) -> Result<Option<ExpiredAuthority<N>>> {
+    let Some(block_hash) = storage.id_map().get_speculative(&expired_height)? else {
+        warn!("Not pruning the authority of block {expired_height}: it has no hash recorded");
+        return Ok(None);
+    };
+    let Some(authority) = storage.authority_map().get_speculative(&block_hash)? else {
         return Ok(None);
     };
 
-    let certificate_ids: Vec<_> = match authority.as_ref() {
-        Authority::Beacon(_) => Vec::new(),
-        Authority::Quorum(subdag) => subdag.certificate_ids().collect(),
-    };
-
-    let mut certificate_ids_to_remove = Vec::with_capacity(certificate_ids.len());
-    for certificate_id in certificate_ids {
+    // An index that points to another block is kept.
+    let mut certificate_ids_to_remove = Vec::new();
+    for certificate_id in certificate_ids(&authority) {
         match storage.certificate_map().get_speculative(&certificate_id)? {
-            Some(index) if index.0 != block_height => warn!(
-                "Keeping certificate '{certificate_id}' of block {block_height}: its index points to block {}",
+            Some(index) if index.0 != expired_height => warn!(
+                "Keeping certificate '{certificate_id}' of block {expired_height}: its index points to block {}",
                 index.0
             ),
             _ => certificate_ids_to_remove.push(certificate_id),
         }
     }
-
-    Ok(Some(certificate_ids_to_remove))
+    Ok(Some((*block_hash, certificate_ids_to_remove)))
 }
 
-/// Removes one batch of expired certificate indexes and records the pruning.
+/// Removes one batch of expired `keys` from `map`, after marking the storage as pruned.
 #[cfg(feature = "prune-authority-data")]
-fn remove_certificate_batch<N: Network, B: BlockStorage<N>>(
-    storage: &B,
-    certificate_ids: &[Field<N>],
-    removed: &mut usize,
-) -> Result<()> {
+fn remove_batch<N, B, K, V, M>(storage: &B, map: &M, keys: &[K], removed: &mut usize, what: &str) -> Result<()>
+where
+    N: Network,
+    B: BlockStorage<N>,
+    K: 'static + Clone + PartialEq + Eq + core::hash::Hash + Serialize + DeserializeOwned + Send + Sync,
+    V: 'static + Clone + Serialize + DeserializeOwned + Send + Sync,
+    M: for<'a> Map<'a, K, V>,
+{
+    storage.mark_authority_pruned()?;
     atomic_batch_scope!(storage, {
-        for certificate_id in certificate_ids {
-            storage.certificate_map().remove(certificate_id)?;
+        for key in keys {
+            map.remove(key)?;
         }
-        storage.mark_authority_pruned()?;
         Ok(())
     })?;
-    *removed += certificate_ids.len();
-    debug!("Pruned {removed} expired certificate indexes so far");
-    Ok(())
-}
-
-/// Removes one batch of expired authorities and records the pruning.
-#[cfg(feature = "prune-authority-data")]
-fn remove_authority_batch<N: Network, B: BlockStorage<N>>(
-    storage: &B,
-    block_hashes: &[N::BlockHash],
-    removed: &mut usize,
-) -> Result<()> {
-    atomic_batch_scope!(storage, {
-        for block_hash in block_hashes {
-            storage.authority_map().remove(block_hash)?;
-        }
-        storage.mark_authority_pruned()?;
-        Ok(())
-    })?;
-    *removed += block_hashes.len();
-    debug!("Pruned {removed} expired authorities so far");
+    *removed += keys.len();
+    debug!("Pruned {removed} expired {what} so far");
     Ok(())
 }
 
@@ -269,7 +258,7 @@ fn remove_authority_batch<N: Network, B: BlockStorage<N>>(
 /// An entry whose block indexes disagree is logged and kept; only I/O errors are returned.
 #[cfg(feature = "prune-authority-data")]
 fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest_height: u32) -> Result<()> {
-    let oldest_retained_height = latest_height.saturating_sub(AUTHORITY_RETENTION_BLOCKS - 1);
+    let oldest_retained_height = oldest_retained_authority_height(latest_height);
 
     if oldest_retained_height <= 1 {
         return Ok(());
@@ -288,12 +277,24 @@ fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest
 
         certificate_ids_to_remove.push(certificate_id.into_owned());
         if certificate_ids_to_remove.len() == AUTHORITY_PRUNING_BATCH_SIZE {
-            remove_certificate_batch(storage, &certificate_ids_to_remove, &mut removed_certificates)?;
+            remove_batch(
+                storage,
+                storage.certificate_map(),
+                &certificate_ids_to_remove,
+                &mut removed_certificates,
+                "certificate indexes",
+            )?;
             certificate_ids_to_remove.clear();
         }
     }
     if !certificate_ids_to_remove.is_empty() {
-        remove_certificate_batch(storage, &certificate_ids_to_remove, &mut removed_certificates)?;
+        remove_batch(
+            storage,
+            storage.certificate_map(),
+            &certificate_ids_to_remove,
+            &mut removed_certificates,
+            "certificate indexes",
+        )?;
     }
 
     let mut removed_authorities = 0;
@@ -307,27 +308,31 @@ fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest
         if block_height == 0 || block_height >= oldest_retained_height {
             continue;
         }
-
-        match storage.id_map().get_confirmed(&block_height)? {
-            Some(indexed_hash) if *indexed_hash == block_hash => {}
-            Some(indexed_hash) => {
-                warn!("Keeping authority '{block_hash}': block {block_height} is indexed as '{indexed_hash}'");
-                continue;
-            }
-            None => {
-                warn!("Keeping authority '{block_hash}': block {block_height} has no hash recorded");
-                continue;
-            }
+        if storage.id_map().get_confirmed(&block_height)?.as_deref() != Some(&block_hash) {
+            warn!("Keeping authority '{block_hash}': block {block_height} is not indexed under it");
+            continue;
         }
 
         block_hashes_to_remove.push(block_hash);
         if block_hashes_to_remove.len() == AUTHORITY_PRUNING_BATCH_SIZE {
-            remove_authority_batch(storage, &block_hashes_to_remove, &mut removed_authorities)?;
+            remove_batch(
+                storage,
+                storage.authority_map(),
+                &block_hashes_to_remove,
+                &mut removed_authorities,
+                "authorities",
+            )?;
             block_hashes_to_remove.clear();
         }
     }
     if !block_hashes_to_remove.is_empty() {
-        remove_authority_batch(storage, &block_hashes_to_remove, &mut removed_authorities)?;
+        remove_batch(
+            storage,
+            storage.authority_map(),
+            &block_hashes_to_remove,
+            &mut removed_authorities,
+            "authorities",
+        )?;
     }
 
     if removed_certificates + removed_authorities > 0 {
@@ -377,9 +382,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     type ConfirmedTransactionsMap: for<'a> Map<'a, N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     /// The rejected deployment or execution map.
     type RejectedDeploymentOrExecutionMap: for<'a> Map<'a, Field<N>, Rejected<N>>;
-    /// The storage metadata map. It shares its prefix with the storage schema version, which is
-    /// not readable through this map; only `METADATA_KEY_AUTHORITY_PRUNED` is.
-    type MetadataMap: for<'a> Map<'a, u8, bool>;
     /// The transaction storage.
     type TransactionStorage: TransactionStorage<N, TransitionStorage = Self::TransitionStorage>;
     /// The transition storage.
@@ -422,22 +424,12 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn confirmed_transactions_map(&self) -> &Self::ConfirmedTransactionsMap;
     /// Returns the rejected deployment or execution map.
     fn rejected_deployment_or_execution_map(&self) -> &Self::RejectedDeploymentOrExecutionMap;
-    /// Returns the storage metadata map.
-    fn metadata_map(&self) -> &Self::MetadataMap;
-
     /// Returns `true` if authority data has been pruned from this storage.
-    fn is_authority_pruned(&self) -> Result<bool> {
-        Ok(self.metadata_map().get_confirmed(&METADATA_KEY_AUTHORITY_PRUNED)?.is_some_and(|pruned| *pruned))
-    }
-
-    /// Records that authority data has been pruned from this storage.
-    #[cfg(feature = "prune-authority-data")]
-    fn mark_authority_pruned(&self) -> Result<()> {
-        if self.metadata_map().get_speculative(&METADATA_KEY_AUTHORITY_PRUNED)?.is_none() {
-            self.metadata_map().insert(METADATA_KEY_AUTHORITY_PRUNED, true)?;
-        }
-        Ok(())
-    }
+    fn is_authority_pruned(&self) -> Result<bool>;
+    /// Records that authority data has been pruned from this storage, which a build without
+    /// `prune-authority-data` then refuses to open. The marker is written before the deletes it
+    /// describes, so a rolled-back deletion leaves the store marked; that only costs the downgrade.
+    fn mark_authority_pruned(&self) -> Result<()>;
     /// Returns the transaction store.
     fn transaction_store(&self) -> &TransactionStore<N, Self::TransactionStorage>;
 
@@ -470,7 +462,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().start_atomic();
         self.confirmed_transactions_map().start_atomic();
         self.rejected_deployment_or_execution_map().start_atomic();
-        self.metadata_map().start_atomic();
         self.transaction_store().start_atomic();
     }
 
@@ -493,7 +484,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             || self.rejected_or_aborted_transaction_id_map().is_atomic_in_progress()
             || self.confirmed_transactions_map().is_atomic_in_progress()
             || self.rejected_deployment_or_execution_map().is_atomic_in_progress()
-            || self.metadata_map().is_atomic_in_progress()
             || self.transaction_store().is_atomic_in_progress()
     }
 
@@ -516,7 +506,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().atomic_checkpoint();
         self.confirmed_transactions_map().atomic_checkpoint();
         self.rejected_deployment_or_execution_map().atomic_checkpoint();
-        self.metadata_map().atomic_checkpoint();
         self.transaction_store().atomic_checkpoint();
     }
 
@@ -539,7 +528,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().clear_latest_checkpoint();
         self.confirmed_transactions_map().clear_latest_checkpoint();
         self.rejected_deployment_or_execution_map().clear_latest_checkpoint();
-        self.metadata_map().clear_latest_checkpoint();
         self.transaction_store().clear_latest_checkpoint();
     }
 
@@ -562,7 +550,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().atomic_rewind();
         self.confirmed_transactions_map().atomic_rewind();
         self.rejected_deployment_or_execution_map().atomic_rewind();
-        self.metadata_map().atomic_rewind();
         self.transaction_store().atomic_rewind();
     }
 
@@ -585,7 +572,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().abort_atomic();
         self.confirmed_transactions_map().abort_atomic();
         self.rejected_deployment_or_execution_map().abort_atomic();
-        self.metadata_map().abort_atomic();
         self.transaction_store().abort_atomic();
     }
 
@@ -608,7 +594,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().finish_atomic()?;
         self.confirmed_transactions_map().finish_atomic()?;
         self.rejected_deployment_or_execution_map().finish_atomic()?;
-        self.metadata_map().finish_atomic()?;
         self.transaction_store().finish_atomic()
     }
 
@@ -652,21 +637,17 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             .map(|tx| tx.to_unconfirmed_transaction_id())
             .collect::<Result<Vec<_>>>()?;
 
-        // Prepare the authority that expires when this block is inserted. An inconsistency is logged
-        // and leaves the data in place; it must not fail the insertion.
+        // Prepare the authority that expires when this block is inserted.
         #[cfg(feature = "prune-authority-data")]
-        let authority_to_prune =
-            match block.height().checked_sub(AUTHORITY_RETENTION_BLOCKS).filter(|height| *height > 0) {
-                Some(expired_height) => match self.id_map().get_speculative(&expired_height)? {
-                    Some(expired_hash) => prepare_authority_for_pruning(self, expired_height, &expired_hash)?
-                        .map(|certificate_ids| (expired_height, *expired_hash, certificate_ids)),
-                    None => {
-                        warn!("Not pruning the authority of block {expired_height}: it has no hash recorded");
-                        None
-                    }
-                },
-                None => None,
-            };
+        let authority_to_prune = match block.height().checked_sub(AUTHORITY_RETENTION_BLOCKS) {
+            Some(expired_height) if expired_height > 0 => prepare_authority_for_pruning(self, expired_height)?
+                .map(|(expired_hash, certificate_ids)| (expired_height, expired_hash, certificate_ids)),
+            _ => None,
+        };
+        #[cfg(feature = "prune-authority-data")]
+        if authority_to_prune.is_some() {
+            self.mark_authority_pruned()?;
+        }
 
         atomic_batch_scope!(self, {
             // Prune expired authority data before storing the incoming block.
@@ -676,7 +657,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                     self.certificate_map().remove(certificate_id)?;
                 }
                 self.authority_map().remove(expired_hash)?;
-                self.mark_authority_pruned()?;
                 if expired_height.is_multiple_of(AUTHORITY_PRUNING_LOG_INTERVAL) {
                     debug!("Pruned authority data up to block {expired_height}");
                 }
@@ -791,12 +771,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
         // Determine the certificate IDs to remove.
         let certificate_ids_to_remove = match self.authority_map().get_confirmed(block_hash)? {
-            Some(authority) => match &authority {
-                Cow::Owned(Authority::Beacon(_)) | Cow::Borrowed(Authority::Beacon(_)) => Vec::new(),
-                Cow::Owned(Authority::Quorum(subdag)) | Cow::Borrowed(Authority::Quorum(subdag)) => {
-                    subdag.values().flatten().map(|c| c.id()).collect()
-                }
-            },
+            Some(authority) => certificate_ids(&authority),
             None => bail!("Failed to remove block: missing authority for block '{block_height}' ('{block_hash}')"),
         };
 
@@ -1385,10 +1360,10 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         let block_cache = RwLock::new(BlockCache::new(initial_cache)?);
 
         // A secondary instance is read-only: the primary prunes, and the secondary sees the result
-        // when it catches up. Block heights start at zero, so the latest height is one less than the
-        // number of leaves.
+        // when it catches up.
         #[cfg(feature = "prune-authority-data")]
-        if !is_secondary_instance::<N, _>(&storage)
+        if aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_none()
+            // Block heights start at zero, so the latest height is one less than the number of leaves.
             && let Some(latest_height) = cache_end_height.checked_sub(1)
             && let Err(error) = prune_expired_authorities(&storage, latest_height)
         {
@@ -1952,121 +1927,42 @@ impl<N: Network> BlockStore<N, crate::helpers::rocksdb::BlockDB<N>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helpers::memory::BlockMemory;
     #[cfg(feature = "rocks")]
     use crate::helpers::rocksdb::BlockDB;
-    #[cfg(any(feature = "prune-authority-data", feature = "rocks"))]
-    use console::account::Address;
-    use console::account::PrivateKey;
-    use snarkvm_ledger_block::Metadata;
+    use crate::{helpers::memory::BlockMemory, test_helpers::sample_block_chain};
     use std::path::Path;
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    fn sample_block_chain(num_blocks: u32, rng: &mut TestRng) -> Vec<Block<CurrentNetwork>> {
-        assert!(num_blocks > 0, "The block chain must not be empty");
-
-        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-        let mut previous_hash = <CurrentNetwork as Network>::BlockHash::default();
-
-        (0..num_blocks)
-            .map(|height| {
-                let transactions = Transactions::from(&[]);
-                let ratifications = Ratifications::try_from(vec![]).unwrap();
-                let header = if height == 0 {
-                    Header::genesis(&ratifications, &transactions, vec![]).unwrap()
-                } else {
-                    let metadata = Metadata::new(
-                        CurrentNetwork::ID,
-                        u64::from(height) * 2,
-                        height,
-                        0,
-                        u128::from(height) * 1000,
-                        CurrentNetwork::GENESIS_COINBASE_TARGET,
-                        CurrentNetwork::GENESIS_PROOF_TARGET + 1,
-                        CurrentNetwork::GENESIS_COINBASE_TARGET,
-                        CurrentNetwork::GENESIS_TIMESTAMP + i64::from(height - 1) * 100,
-                        CurrentNetwork::GENESIS_TIMESTAMP + i64::from(height) * 100,
-                    )
-                    .unwrap();
-
-                    Header::from(
-                        rng.random(),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        metadata,
-                    )
-                    .unwrap()
-                };
-                let block_hash = Field::rand(rng);
-                let authority = Authority::new_beacon(&private_key, block_hash, rng).unwrap();
-                let block = Block::from_unchecked(
-                    block_hash.into(),
-                    previous_hash,
-                    header,
-                    authority,
-                    ratifications,
-                    None.into(),
-                    vec![],
-                    transactions,
-                    vec![],
-                )
-                .unwrap();
-
-                previous_hash = block.hash();
-                block
-            })
-            .collect()
+    /// Returns a chain whose block 1 carries a quorum authority, and one of that authority's certificate IDs.
+    #[cfg(any(feature = "prune-authority-data", feature = "rocks"))]
+    fn sample_block_chain_with_quorum(
+        num_blocks: u32,
+        rng: &mut TestRng,
+    ) -> (Vec<Block<CurrentNetwork>>, Field<CurrentNetwork>) {
+        let mut blocks = sample_block_chain(num_blocks, rng);
+        let authority = snarkvm_ledger_authority::test_helpers::sample_quorum_authority(rng);
+        let certificate_id = certificate_ids(&authority)[0];
+        let block = blocks[1].clone();
+        blocks[1] = Block::from_unchecked(
+            block.hash(),
+            block.previous_hash(),
+            *block.header(),
+            authority,
+            block.ratifications().clone(),
+            block.solutions().clone(),
+            block.aborted_solution_ids().clone(),
+            block.transactions().clone(),
+            block.aborted_transaction_ids().clone(),
+        )
+        .unwrap();
+        (blocks, certificate_id)
     }
 
-    #[cfg(any(feature = "prune-authority-data", feature = "rocks"))]
-    fn sample_quorum_authority(rng: &mut TestRng) -> (Authority<CurrentNetwork>, Field<CurrentNetwork>) {
-        let author_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-        let signer_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-        let author = Address::try_from(&author_private_key).unwrap();
-        let round = 2u64;
-        let timestamp = CurrentNetwork::GENESIS_TIMESTAMP;
-        let committee_id = Field::<CurrentNetwork>::rand(rng);
-        let previous_certificate_id = Field::<CurrentNetwork>::rand(rng);
-
-        let mut preimage = Vec::new();
-        author.write_le(&mut preimage).unwrap();
-        round.write_le(&mut preimage).unwrap();
-        timestamp.write_le(&mut preimage).unwrap();
-        committee_id.write_le(&mut preimage).unwrap();
-        0u32.write_le(&mut preimage).unwrap();
-        1u32.write_le(&mut preimage).unwrap();
-        previous_certificate_id.write_le(&mut preimage).unwrap();
-        let batch_id = CurrentNetwork::hash_bhp1024(&preimage.to_bits_le()).unwrap();
-        let author_signature = author_private_key.sign(&[batch_id], rng).unwrap();
-        let signer_signature = signer_private_key.sign(&[batch_id], rng).unwrap();
-
-        let authority = serde_json::from_value(serde_json::json!({
-            "type": "quorum",
-            "subdag": {
-                "subdag": {
-                    "2": [{
-                        "batch_header": {
-                            "batch_id": batch_id,
-                            "author": author,
-                            "round": round,
-                            "timestamp": timestamp,
-                            "committee_id": committee_id,
-                            "transmission_ids": [],
-                            "previous_certificate_ids": [previous_certificate_id],
-                            "signature": author_signature,
-                        },
-                        "signatures": [signer_signature],
-                    }],
-                },
-            },
-        }))
-        .unwrap();
-
-        (authority, batch_id)
+    /// Returns a block hash derived from a height, for tests that fill the maps directly.
+    #[cfg(feature = "prune-authority-data")]
+    fn hash_at(height: u32) -> <CurrentNetwork as Network>::BlockHash {
+        Field::<CurrentNetwork>::from_u32(height).into()
     }
 
     #[test]
@@ -2177,20 +2073,7 @@ mod tests {
     #[test]
     fn test_certificate_pruning() {
         let rng = &mut TestRng::default();
-        let (authority, certificate_id) = sample_quorum_authority(rng);
-        let mut blocks = sample_block_chain(103, rng);
-        blocks[1] = Block::from_unchecked(
-            blocks[1].hash(),
-            blocks[1].previous_hash(),
-            *blocks[1].header(),
-            authority,
-            blocks[1].ratifications().clone(),
-            blocks[1].solutions().clone(),
-            blocks[1].aborted_solution_ids().clone(),
-            blocks[1].transactions().clone(),
-            blocks[1].aborted_transaction_ids().clone(),
-        )
-        .unwrap();
+        let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
 
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         for block in blocks.iter().take(101) {
@@ -2212,20 +2095,7 @@ mod tests {
     #[test]
     fn test_insertion_failure_rolls_back_authority_pruning() {
         let rng = &mut TestRng::default();
-        let (authority, certificate_id) = sample_quorum_authority(rng);
-        let mut blocks = sample_block_chain(103, rng);
-        blocks[1] = Block::from_unchecked(
-            blocks[1].hash(),
-            blocks[1].previous_hash(),
-            *blocks[1].header(),
-            authority,
-            blocks[1].ratifications().clone(),
-            blocks[1].solutions().clone(),
-            blocks[1].aborted_solution_ids().clone(),
-            blocks[1].transactions().clone(),
-            blocks[1].aborted_transaction_ids().clone(),
-        )
-        .unwrap();
+        let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
 
         let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
         for block in blocks.iter().take(101) {
@@ -2243,16 +2113,16 @@ mod tests {
         });
 
         assert!(result.is_err());
-        assert!(!storage.is_authority_pruned().unwrap());
         assert!(storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
         assert!(!storage.reverse_id_map().contains_key_confirmed(&candidate_hash).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&candidate_hash).unwrap());
         assert!(!storage.reverse_state_root_map().contains_key_confirmed(&candidate_state_root).unwrap());
+        // The marker is written before the deletes, so it survives their rollback.
+        assert!(storage.is_authority_pruned().unwrap());
 
         storage.insert(candidate_state_root, candidate).unwrap();
-        assert!(storage.is_authority_pruned().unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(!storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
@@ -2263,25 +2133,29 @@ mod tests {
     #[test]
     fn test_certificate_pruning_handles_missing_and_mismatched_indexes() {
         let rng = &mut TestRng::default();
-        let (authority, certificate_id) = sample_quorum_authority(rng);
+        let authority = snarkvm_ledger_authority::test_helpers::sample_quorum_authority(rng);
+        let certificate_id = certificate_ids(&authority)[0];
         let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
         let block_hash: <CurrentNetwork as Network>::BlockHash = Field::<CurrentNetwork>::rand(rng).into();
         let block_height = 1;
 
+        storage.id_map().insert(block_height, block_hash).unwrap();
         storage.authority_map().insert(block_hash, authority).unwrap();
         storage.certificate_map().insert(certificate_id, (block_height + 1, 2)).unwrap();
 
         // An index pointing to another block is kept, and the authority can still be pruned without it.
-        let certificate_ids = prepare_authority_for_pruning(&storage, block_height, &block_hash).unwrap().unwrap();
-        assert!(certificate_ids.is_empty());
+        let (hash, to_remove) = prepare_authority_for_pruning(&storage, block_height).unwrap().unwrap();
+        assert_eq!(hash, block_hash);
+        assert!(!to_remove.contains(&certificate_id));
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
-        assert!(storage.authority_map().contains_key_confirmed(&block_hash).unwrap());
 
+        // A missing index does not keep the certificate from being pruned.
         storage.certificate_map().remove(&certificate_id).unwrap();
-        let certificate_ids = prepare_authority_for_pruning(&storage, block_height, &block_hash).unwrap().unwrap();
-        assert_eq!(certificate_ids, vec![certificate_id]);
-        storage.authority_map().remove(&block_hash).unwrap();
-        assert!(!storage.authority_map().contains_key_confirmed(&block_hash).unwrap());
+        let (_, to_remove) = prepare_authority_for_pruning(&storage, block_height).unwrap().unwrap();
+        assert!(to_remove.contains(&certificate_id));
+
+        // A block without a recorded hash has nothing to prune.
+        assert!(prepare_authority_for_pruning(&storage, block_height + 1).unwrap().is_none());
     }
 
     #[cfg(feature = "prune-authority-data")]
@@ -2292,7 +2166,7 @@ mod tests {
 
         atomic_batch_scope!(storage, {
             for height in 0..=latest_height {
-                let block_hash = <CurrentNetwork as Network>::BlockHash::from(Field::from_u32(height));
+                let block_hash = hash_at(height);
                 storage.id_map().insert(height, block_hash)?;
                 storage.reverse_id_map().insert(block_hash, height)?;
                 storage.authority_map().insert(block_hash, authority.clone())?;
@@ -2308,11 +2182,10 @@ mod tests {
         prune_expired_authorities(&storage, latest_height).unwrap();
         assert!(storage.is_authority_pruned().unwrap());
 
-        let oldest_retained_height = latest_height - (AUTHORITY_RETENTION_BLOCKS - 1);
-        let genesis_hash = <CurrentNetwork as Network>::BlockHash::from(Field::from_u32(0));
-        let expired_hash = <CurrentNetwork as Network>::BlockHash::from(Field::from_u32(oldest_retained_height - 1));
-        let oldest_retained_hash =
-            <CurrentNetwork as Network>::BlockHash::from(Field::from_u32(oldest_retained_height));
+        let oldest_retained_height = oldest_retained_authority_height(latest_height);
+        let genesis_hash = hash_at(0);
+        let expired_hash = hash_at(oldest_retained_height - 1);
+        let oldest_retained_hash = hash_at(oldest_retained_height);
         assert!(storage.authority_map().contains_key_confirmed(&genesis_hash).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(storage.authority_map().contains_key_confirmed(&oldest_retained_hash).unwrap());
@@ -2335,7 +2208,6 @@ mod tests {
         let rng = &mut TestRng::default();
         let authority = sample_block_chain(1, rng)[0].authority().clone();
         let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
-        let hash_at = |height: u32| <CurrentNetwork as Network>::BlockHash::from(Field::from_u32(height));
         let latest_height = AUTHORITY_RETENTION_BLOCKS + 10;
         for height in 0..=latest_height {
             storage.id_map().insert(height, hash_at(height)).unwrap();
@@ -2396,7 +2268,7 @@ mod tests {
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage_mode = StorageMode::new_test(Some(temp_dir));
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
-        block_store.storage.metadata_map().insert(METADATA_KEY_AUTHORITY_PRUNED, true).unwrap();
+        block_store.storage.mark_authority_pruned().unwrap();
         drop(block_store);
 
         let error = match BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode) {
@@ -2428,20 +2300,7 @@ mod tests {
     #[test]
     fn test_authority_pruning_on_startup_enabled() {
         let rng = &mut TestRng::default();
-        let (authority, certificate_id) = sample_quorum_authority(rng);
-        let mut blocks = sample_block_chain(103, rng);
-        blocks[1] = Block::from_unchecked(
-            blocks[1].hash(),
-            blocks[1].previous_hash(),
-            *blocks[1].header(),
-            authority,
-            blocks[1].ratifications().clone(),
-            blocks[1].solutions().clone(),
-            blocks[1].aborted_solution_ids().clone(),
-            blocks[1].transactions().clone(),
-            blocks[1].aborted_transaction_ids().clone(),
-        )
-        .unwrap();
+        let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
 
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage_mode = StorageMode::new_test(Some(temp_dir));
@@ -2475,20 +2334,7 @@ mod tests {
     #[test]
     fn test_authority_pruning_on_startup_disabled() {
         let rng = &mut TestRng::default();
-        let (authority, certificate_id) = sample_quorum_authority(rng);
-        let mut blocks = sample_block_chain(103, rng);
-        blocks[1] = Block::from_unchecked(
-            blocks[1].hash(),
-            blocks[1].previous_hash(),
-            *blocks[1].header(),
-            authority,
-            blocks[1].ratifications().clone(),
-            blocks[1].solutions().clone(),
-            blocks[1].aborted_solution_ids().clone(),
-            blocks[1].transactions().clone(),
-            blocks[1].aborted_transaction_ids().clone(),
-        )
-        .unwrap();
+        let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
 
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage_mode = StorageMode::new_test(Some(temp_dir));

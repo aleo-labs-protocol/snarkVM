@@ -50,12 +50,10 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::V1;
 pub(crate) enum MetadataKey {
     /// The [`StorageVersion`] the database was last written under, as a little-endian `u32`.
     StorageVersion = 0,
-    /// Present once authority data has been pruned. The block store writes it through a typed
-    /// map under `block::METADATA_KEY_AUTHORITY_PRUNED`.
+    /// Present once authority data has been pruned, which a build without `prune-authority-data`
+    /// refuses to open.
     AuthorityPruned = 1,
 }
-
-const _: () = assert!(MetadataKey::AuthorityPruned as u8 == crate::block::METADATA_KEY_AUTHORITY_PRUNED);
 
 impl StorageVersion {
     /// Decodes a version this build knows how to open.
@@ -108,6 +106,16 @@ pub(crate) fn get_storage_version(database: &rocksdb::DB, network_id: u16) -> Re
 /// Writes the storage schema version.
 pub(crate) fn set_storage_version(database: &rocksdb::DB, network_id: u16, version: StorageVersion) -> Result<()> {
     Ok(database.put(metadata_key(network_id, MetadataKey::StorageVersion), version.to_bytes())?)
+}
+
+/// Returns `true` if authority data has been pruned from the database.
+pub(crate) fn is_authority_pruned(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
+    Ok(database.get(metadata_key(network_id, MetadataKey::AuthorityPruned))?.is_some())
+}
+
+/// Records that authority data has been pruned from the database.
+pub(crate) fn set_authority_pruned(database: &rocksdb::DB, network_id: u16) -> Result<()> {
+    Ok(database.put(metadata_key(network_id, MetadataKey::AuthorityPruned), [1u8])?)
 }
 
 /// Brings `database` up to [`STORAGE_VERSION`].
@@ -174,6 +182,14 @@ mod tests {
         // `from_bytes` rejects the unknown version, so the raw record is what remains.
         let raw = db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().unwrap();
         assert_eq!(raw, newer.to_le_bytes());
+    }
+
+    #[test]
+    fn test_authority_pruned_marker() {
+        let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
+        assert!(!is_authority_pruned(&db, NETWORK_ID).unwrap());
+        set_authority_pruned(&db, NETWORK_ID).unwrap();
+        assert!(is_authority_pruned(&db, NETWORK_ID).unwrap());
     }
 
     #[test]

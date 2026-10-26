@@ -79,8 +79,8 @@ pub struct BlockDB<N: Network> {
         DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>,
     /// The rejected deployment or execution map.
     rejected_deployment_or_execution_map: DataMap<Field<N>, Rejected<N>>,
-    /// The storage metadata map.
-    metadata_map: DataMap<u8, bool>,
+    /// The database, for the storage metadata.
+    database: internal::RocksDB,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
@@ -104,7 +104,6 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type RejectedOrAbortedTransactionIDMap = DataMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     type RejectedDeploymentOrExecutionMap = DataMap<Field<N>, Rejected<N>>;
-    type MetadataMap = DataMap<u8, bool>;
     type TransactionStorage = TransactionDB<N>;
     type TransitionStorage = TransitionDB<N>;
 
@@ -134,7 +133,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             rejected_or_aborted_transaction_id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedOrAbortedTransactionID))?,
             confirmed_transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ConfirmedTransactions))?,
             rejected_deployment_or_execution_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedDeploymentOrExecution))?,
-            metadata_map: internal::RocksDB::open_map(N::ID, storage, MapID::Metadata(internal::MetadataMap::Metadata))?,
+            database: internal::RocksDB::open(N::ID, storage)?,
             transaction_store,
         })
     }
@@ -224,9 +223,14 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         &self.rejected_deployment_or_execution_map
     }
 
-    /// Returns the storage metadata map.
-    fn metadata_map(&self) -> &Self::MetadataMap {
-        &self.metadata_map
+    /// Returns `true` if authority data has been pruned from this storage.
+    fn is_authority_pruned(&self) -> Result<bool> {
+        internal::is_authority_pruned(&self.database, N::ID)
+    }
+
+    /// Records that authority data has been pruned from this storage.
+    fn mark_authority_pruned(&self) -> Result<()> {
+        internal::set_authority_pruned(&self.database, N::ID)
     }
 
     /// Returns the transaction store.
