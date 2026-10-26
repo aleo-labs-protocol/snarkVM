@@ -231,7 +231,7 @@ fn prepare_authority_for_pruning<N: Network, B: BlockStorage<N>>(
     Ok(Some((*block_hash, certificate_ids_to_remove)))
 }
 
-/// Removes one batch of expired `keys` from `map`, after marking the storage as pruned.
+/// Removes one batch of expired `keys` from `map`, marking the storage as pruned in the same batch.
 #[cfg(feature = "prune-authority-data")]
 fn remove_batch<N, B, K, V, M>(storage: &B, map: &M, keys: &[K], removed: &mut usize, what: &str) -> Result<()>
 where
@@ -241,12 +241,11 @@ where
     V: 'static + Clone + Serialize + DeserializeOwned + Send + Sync,
     M: for<'a> Map<'a, K, V>,
 {
-    storage.mark_authority_pruned()?;
     atomic_batch_scope!(storage, {
         for key in keys {
             map.remove(key)?;
         }
-        Ok(())
+        storage.mark_authority_pruned()
     })?;
     *removed += keys.len();
     debug!("Pruned {removed} expired {what} so far");
@@ -644,11 +643,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                 .map(|(expired_hash, certificate_ids)| (expired_height, expired_hash, certificate_ids)),
             _ => None,
         };
-        #[cfg(feature = "prune-authority-data")]
-        if authority_to_prune.is_some() {
-            self.mark_authority_pruned()?;
-        }
-
         atomic_batch_scope!(self, {
             // Prune expired authority data before storing the incoming block.
             #[cfg(feature = "prune-authority-data")]
@@ -657,6 +651,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                     self.certificate_map().remove(certificate_id)?;
                 }
                 self.authority_map().remove(expired_hash)?;
+                self.mark_authority_pruned()?;
                 if expired_height.is_multiple_of(AUTHORITY_PRUNING_LOG_INTERVAL) {
                     debug!("Pruned authority data up to block {expired_height}");
                 }
@@ -1811,14 +1806,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             return Ok(Some(block.clone()));
         }
         match self.storage.get_block(block_hash) {
-            // A block below the retained window has no authority to reconstruct it from.
+            // A pruned authority is the one expected gap; any other missing component is corruption.
             #[cfg(feature = "prune-authority-data")]
-            Err(error) => match (self.storage.get_block_height(block_hash)?, self.max_height()) {
-                (Some(height), Some(latest)) if height < oldest_retained_authority_height(latest) => {
-                    bail!("The authority of block {height} ('{block_hash}') has been pruned")
-                }
-                _ => Err(error),
-            },
+            Err(_) if self.storage.get_block_authority(block_hash)?.is_none() => {
+                bail!("Block '{block_hash}' cannot be reconstructed: its authority has been pruned")
+            }
             result => result,
         }
     }
@@ -2159,6 +2151,28 @@ mod tests {
 
         storage.insert(state_root(candidate), candidate).unwrap();
         assert!(storage.is_authority_pruned().unwrap());
+    }
+
+    /// Ensures a discarded paused batch, as the VM discards a failed block, also discards the pruning marker.
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
+    #[test]
+    fn test_discarded_paused_batch_discards_pruning_marker() {
+        let rng = &mut TestRng::default();
+        let (blocks, _) = sample_block_chain_with_quorum(103, rng);
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        let block_store =
+            BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
+        for block in blocks.iter().take(101) {
+            block_store.insert(block).unwrap();
+        }
+
+        // The VM pauses atomic writes around insertion and finalization, and discards both on failure.
+        block_store.pause_atomic_writes().unwrap();
+        block_store.insert(&blocks[101]).unwrap();
+        block_store.abort_atomic();
+        block_store.unpause_atomic_writes::<true>().unwrap();
+        assert!(!block_store.storage.is_authority_pruned().unwrap());
+        assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
     }
 
     /// Ensures certificate pruning tolerates a missing index and keeps one that points to a different block.

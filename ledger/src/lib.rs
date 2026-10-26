@@ -264,8 +264,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             if height >= oldest_retained_height {
                 self.get_block(height)?;
             } else {
+                self.get_previous_hash(height)?;
                 self.get_header(height)?;
                 self.get_transactions(height)?;
+                self.get_aborted_transaction_ids(height)?;
+                self.get_solutions(height)?;
             }
             Ok::<_, Error>(())
         })
