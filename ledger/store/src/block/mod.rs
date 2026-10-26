@@ -119,13 +119,27 @@ fn to_confirmed_transaction<N: Network>(
 #[cfg(feature = "rocks")]
 pub(crate) const BLOCK_TREE_CACHE_PREFIX: &[u8; 12] = b"aleo.tree.01";
 
+/// Returns `true` if the storage is a read-only secondary RocksDB instance.
+#[cfg(any(feature = "rocks", feature = "prune-authority-data"))]
+fn is_secondary_instance<N: Network, B: BlockStorage<N>>(storage: &B) -> bool {
+    #[cfg(feature = "rocks")]
+    {
+        aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_some()
+    }
+    #[cfg(not(feature = "rocks"))]
+    {
+        let _ = storage;
+        false
+    }
+}
+
 /// Returns the path to the block tree cache file, or `None` if the block tree is not to be cached.
 pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
     #[cfg(feature = "rocks")]
     {
         // A secondary instance must not touch the primary's cache, and it can't keep one of its own
         // either, as it catches up with the primary on startup, which would make its cache stale.
-        if aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_some() {
+        if is_secondary_instance::<N, _>(storage) {
             return None;
         }
 
@@ -154,25 +168,25 @@ fn missing_block_in_tree_error(height: u32, block_tree_cache_path: Option<&std::
     }
 }
 
-/// The number of recent blocks whose authority data is retained when the `history` feature is disabled.
+/// The number of recent blocks whose authority data is retained with the `prune-authority-data` feature.
 ///
 /// At the ideal block time of 2.5 seconds, the network produces `60 * 60 * 24 / 2.5 = 34,560` blocks
-/// per day, so retaining 100,000 blocks keeps roughly three days of authority data before pruning.
+/// per day, so retaining 500,000 blocks keeps roughly two weeks of authority data before pruning.
 ///
-/// This constant exists in all builds (including `history`) because it also describes the retention
-/// window of pruned peers, which any node needs when requesting authority data during sync.
+/// This constant exists in all builds because it also describes the retention window of pruned
+/// peers, which any node needs when requesting authority data during sync.
 #[cfg(not(test))]
-pub const AUTHORITY_RETENTION_BLOCKS: u32 = 100_000;
-/// A reduced retention window for unit tests, so pruning can be exercised without building 100,000 blocks.
+pub const AUTHORITY_RETENTION_BLOCKS: u32 = 500_000;
+/// A reduced retention window for unit tests, so pruning can be exercised without building 500,000 blocks.
 #[cfg(test)]
 pub const AUTHORITY_RETENTION_BLOCKS: u32 = 100;
 
 /// The target maximum number of map deletions in one startup pruning batch.
-#[cfg(not(feature = "history"))]
+#[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_BATCH_SIZE: usize = 10_000;
 
 /// Returns the certificate IDs for an authority after validating their block indexes.
-#[cfg(not(feature = "history"))]
+#[cfg(feature = "prune-authority-data")]
 fn prepare_authority_for_pruning<N: Network, B: BlockStorage<N>>(
     storage: &B,
     block_height: u32,
@@ -201,7 +215,7 @@ fn prepare_authority_for_pruning<N: Network, B: BlockStorage<N>>(
 }
 
 /// Prunes authority data outside the retained block window when opening storage.
-#[cfg(not(feature = "history"))]
+#[cfg(feature = "prune-authority-data")]
 fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest_height: u32) -> Result<()> {
     let oldest_retained_height = latest_height.saturating_sub(AUTHORITY_RETENTION_BLOCKS - 1);
 
@@ -564,7 +578,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             .collect::<Result<Vec<_>>>()?;
 
         // Prepare the authority that expires when this block is inserted.
-        #[cfg(not(feature = "history"))]
+        #[cfg(feature = "prune-authority-data")]
         let authority_to_prune = {
             match block.height().checked_sub(AUTHORITY_RETENTION_BLOCKS).filter(|height| *height > 0) {
                 Some(expired_height) => {
@@ -580,7 +594,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
         atomic_batch_scope!(self, {
             // Prune expired authority data before storing the incoming block.
-            #[cfg(not(feature = "history"))]
+            #[cfg(feature = "prune-authority-data")]
             if let Some((expired_hash, certificate_ids)) = &authority_to_prune {
                 for certificate_id in certificate_ids {
                     self.certificate_map().remove(certificate_id)?;
@@ -1281,9 +1295,13 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         let block_cache = RwLock::new(BlockCache::new(initial_cache)?);
 
-        #[cfg(not(feature = "history"))]
-        // Block heights start at zero, so the latest height is one less than the number of leaves.
-        if let Some(latest_height) = cache_end_height.checked_sub(1) {
+        // A secondary instance is read-only: the primary prunes, and the secondary sees the result
+        // when it catches up. Block heights start at zero, so the latest height is one less than the
+        // number of leaves.
+        #[cfg(feature = "prune-authority-data")]
+        if !is_secondary_instance::<N, _>(&storage)
+            && let Some(latest_height) = cache_end_height.checked_sub(1)
+        {
             prune_expired_authorities(&storage, latest_height)?;
         }
 
@@ -1846,7 +1864,7 @@ mod tests {
     use crate::helpers::memory::BlockMemory;
     #[cfg(feature = "rocks")]
     use crate::helpers::rocksdb::BlockDB;
-    #[cfg(any(not(feature = "history"), feature = "rocks"))]
+    #[cfg(any(feature = "prune-authority-data", feature = "rocks"))]
     use console::account::Address;
     use console::account::PrivateKey;
     use snarkvm_ledger_block::Metadata;
@@ -1913,7 +1931,7 @@ mod tests {
             .collect()
     }
 
-    #[cfg(any(not(feature = "history"), feature = "rocks"))]
+    #[cfg(any(feature = "prune-authority-data", feature = "rocks"))]
     fn sample_quorum_authority(rng: &mut TestRng) -> (Authority<CurrentNetwork>, Field<CurrentNetwork>) {
         let author_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let signer_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -2002,10 +2020,10 @@ mod tests {
         assert_eq!(None, candidate);
     }
 
-    /// Ensures non-history stores prune authority data outside the retention window while preserving permanent block data.
-    #[cfg(not(feature = "history"))]
+    /// Ensures pruning stores drop authority data outside the retention window while preserving permanent block data.
+    #[cfg(feature = "prune-authority-data")]
     #[test]
-    fn test_authority_retention_without_history() {
+    fn test_authority_retention_with_pruning() {
         const NUM_BLOCKS: u32 = 103;
 
         let rng = &mut TestRng::default();
@@ -2037,10 +2055,10 @@ mod tests {
         assert_eq!(block_store.get_block_transactions(&expired_hash).unwrap(), Some(blocks[1].transactions().clone()));
     }
 
-    /// Ensures history stores retain authority data and continue reconstructing old blocks.
-    #[cfg(feature = "history")]
+    /// Ensures non-pruning stores retain authority data and continue reconstructing old blocks.
+    #[cfg(not(feature = "prune-authority-data"))]
     #[test]
-    fn test_authority_retention_with_history() {
+    fn test_authority_retention_without_pruning() {
         const NUM_BLOCKS: u32 = 103;
 
         let rng = &mut TestRng::default();
@@ -2056,7 +2074,7 @@ mod tests {
         // At height 101, height 1 is still inside the retained window.
         assert!(block_store.get_block_authority(&expired_hash).unwrap().is_some());
 
-        // History builds retain height 1 after height 102 is inserted.
+        // Non-pruning builds retain height 1 after height 102 is inserted.
         block_store.insert(&blocks[102]).unwrap();
 
         assert!(block_store.get_block_authority(&expired_hash).unwrap().is_some());
@@ -2064,7 +2082,7 @@ mod tests {
     }
 
     /// Ensures pruning an expired quorum authority also removes its certificate indexes.
-    #[cfg(not(feature = "history"))]
+    #[cfg(feature = "prune-authority-data")]
     #[test]
     fn test_certificate_pruning() {
         let rng = &mut TestRng::default();
@@ -2099,7 +2117,7 @@ mod tests {
     }
 
     /// Ensures a failed block insertion atomically rolls back authority and certificate pruning.
-    #[cfg(not(feature = "history"))]
+    #[cfg(feature = "prune-authority-data")]
     #[test]
     fn test_insertion_failure_rolls_back_authority_pruning() {
         let rng = &mut TestRng::default();
@@ -2148,7 +2166,7 @@ mod tests {
     }
 
     /// Ensures certificate pruning tolerates missing indexes and rejects indexes for a different block height.
-    #[cfg(not(feature = "history"))]
+    #[cfg(feature = "prune-authority-data")]
     #[test]
     fn test_certificate_pruning_handles_missing_and_mismatched_indexes() {
         let rng = &mut TestRng::default();
@@ -2171,7 +2189,7 @@ mod tests {
         assert!(!storage.authority_map().contains_key_confirmed(&block_hash).unwrap());
     }
 
-    #[cfg(not(feature = "history"))]
+    #[cfg(feature = "prune-authority-data")]
     fn check_authority_pruning_uses_multiple_batches<B: BlockStorage<CurrentNetwork>>(storage: B) {
         let rng = &mut TestRng::default();
         let authority = sample_block_chain(1, rng)[0].authority().clone();
@@ -2214,7 +2232,7 @@ mod tests {
     }
 
     /// Ensures startup pruning spans multiple batches and is idempotent with in-memory storage.
-    #[cfg(not(feature = "history"))]
+    #[cfg(feature = "prune-authority-data")]
     #[test]
     fn test_authority_pruning_uses_multiple_batches() {
         let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
@@ -2222,7 +2240,7 @@ mod tests {
     }
 
     /// Ensures startup pruning spans multiple batches and is idempotent with RocksDB storage.
-    #[cfg(all(not(feature = "history"), feature = "rocks"))]
+    #[cfg(all(feature = "prune-authority-data", feature = "rocks"))]
     #[test]
     fn test_authority_pruning_uses_multiple_rocksdb_batches() {
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
@@ -2230,10 +2248,10 @@ mod tests {
         check_authority_pruning_uses_multiple_batches(storage);
     }
 
-    /// Ensures opening a non-history RocksDB store removes stale authority and certificate data.
-    #[cfg(all(feature = "rocks", not(feature = "history")))]
+    /// Ensures opening a pruning RocksDB store removes stale authority and certificate data.
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
     #[test]
-    fn test_authority_pruning_on_startup_without_history() {
+    fn test_authority_pruning_on_startup_enabled() {
         let rng = &mut TestRng::default();
         let (authority, certificate_id) = sample_quorum_authority(rng);
         let mut blocks = sample_block_chain(103, rng);
@@ -2276,10 +2294,10 @@ mod tests {
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
     }
 
-    /// Ensures opening a history-enabled RocksDB store preserves authority and certificate data.
-    #[cfg(all(feature = "rocks", feature = "history"))]
+    /// Ensures opening a non-pruning RocksDB store preserves authority and certificate data.
+    #[cfg(all(feature = "rocks", not(feature = "prune-authority-data")))]
     #[test]
-    fn test_authority_pruning_on_startup_with_history() {
+    fn test_authority_pruning_on_startup_disabled() {
         let rng = &mut TestRng::default();
         let (authority, certificate_id) = sample_quorum_authority(rng);
         let mut blocks = sample_block_chain(103, rng);
@@ -2312,7 +2330,7 @@ mod tests {
         assert!(block_store.contains_certificate(&certificate_id).unwrap());
         drop(block_store);
 
-        // Reopening with history remains idempotent.
+        // Reopening without pruning remains idempotent.
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
         assert!(block_store.contains_certificate(&certificate_id).unwrap());

@@ -19,6 +19,7 @@ edition = "2024"
 [features]
 default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
+prune-authority-data = [ ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]

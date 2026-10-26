@@ -129,6 +129,7 @@ async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 no-embedded-srs = [ "snarkvm-parameters/no-embedded-srs" ]
+prune-authority-data = [ "snarkvm-ledger?/prune-authority-data" ]
 locktick = [
   "snarkvm-console?/locktick",
   "snarkvm-algorithms?/locktick",

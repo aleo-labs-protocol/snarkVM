@@ -148,6 +148,7 @@ jobs:
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
+              nextest run -p snarkvm-ledger-store --features rocks,prune-authority-data
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)
               nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
               nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch

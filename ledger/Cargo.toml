@@ -99,6 +99,7 @@ metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 # 7, which a benchmark can actually reach.
 bench-prove = [ "test_consensus_heights" ]
 profiler = [ "snarkvm-synthesizer/profiler" ]
+prune-authority-data = [ "snarkvm-ledger-store/prune-authority-data" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
