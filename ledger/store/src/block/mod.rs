@@ -1806,13 +1806,57 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             return Ok(Some(block.clone()));
         }
         match self.storage.get_block(block_hash) {
-            // A pruned authority is the one expected gap; any other missing component is corruption.
+            // Below the retained window a missing authority is expected; report it as pruned only if
+            // it is the sole gap, and surface any other missing component as the error it is.
             #[cfg(feature = "prune-authority-data")]
-            Err(_) if self.storage.get_block_authority(block_hash)?.is_none() => {
-                bail!("Block '{block_hash}' cannot be reconstructed: its authority has been pruned")
-            }
+            Err(error) => match (self.storage.get_block_height(block_hash)?, self.max_height()) {
+                (Some(height), Some(latest))
+                    if height < oldest_retained_authority_height(latest)
+                        && self.storage.get_block_authority(block_hash)?.is_none() =>
+                {
+                    self.check_block_data_without_authority(block_hash)?;
+                    bail!("Block {height} ('{block_hash}') cannot be reconstructed: its authority has been pruned")
+                }
+                _ => Err(error),
+            },
             result => result,
         }
+    }
+
+    /// Checks that every component of a block except its authority is present and consistent, and
+    /// returns the block height. Use it for blocks whose authority may have been pruned.
+    pub fn check_block_data_without_authority(&self, block_hash: &N::BlockHash) -> Result<u32> {
+        let Some(height) = self.storage.get_block_height(block_hash)? else {
+            bail!("Missing block height for block '{block_hash}'");
+        };
+        let Some(header) = self.storage.get_block_header(block_hash)? else {
+            bail!("Missing block header for block {height} ('{block_hash}')");
+        };
+        ensure!(header.height() == height, "Mismatching block height for block {height} ('{block_hash}')");
+        ensure!(
+            self.storage.get_previous_block_hash(height)?.is_some(),
+            "Missing previous block hash for block {height} ('{block_hash}')"
+        );
+        ensure!(
+            self.storage.get_block_ratifications(block_hash)?.is_some(),
+            "Missing ratifications for block {height} ('{block_hash}')"
+        );
+        self.storage
+            .get_block_solutions(block_hash)
+            .with_context(|| format!("Missing solutions for block {height} ('{block_hash}')"))?;
+        ensure!(
+            self.storage.get_block_aborted_solution_ids(block_hash)?.is_some(),
+            "Missing aborted solution IDs for block {height} ('{block_hash}')"
+        );
+        ensure!(
+            self.storage.get_block_transactions(block_hash)?.is_some(),
+            "Missing transactions for block {height} ('{block_hash}')"
+        );
+        ensure!(
+            self.storage.get_block_aborted_transaction_ids(block_hash)?.is_some(),
+            "Missing aborted transaction IDs for block {height} ('{block_hash}')"
+        );
+        Ok(height)
     }
 
     /// Returns the latest edition for the given `program ID`.
@@ -2035,7 +2079,13 @@ mod tests {
         assert!(block_store.get_block_authority(&genesis_hash).unwrap().is_some());
         assert!(block_store.get_block_authority(&expired_hash).unwrap().is_none());
         assert!(block_store.get_block_authority(&boundary_hash).unwrap().is_some());
-        assert!(block_store.get_block(&expired_hash).is_err());
+        let error = block_store.get_block(&expired_hash).unwrap_err().to_string();
+        assert!(error.contains("has been pruned"), "{error}");
+
+        // A missing component other than the authority is reported as itself, not as pruning.
+        block_store.storage.ratifications_map().remove(&expired_hash).unwrap();
+        let error = block_store.get_block(&expired_hash).unwrap_err().to_string();
+        assert!(error.contains("Missing ratifications"), "{error}");
 
         // Permanent block data remains available.
         assert_eq!(block_store.get_block_hash(1).unwrap(), Some(expired_hash));
