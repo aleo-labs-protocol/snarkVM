@@ -46,7 +46,12 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::V0;
 pub(crate) enum MetadataKey {
     /// The [`StorageVersion`] the database was last written under, as a little-endian `u32`.
     StorageVersion = 0,
+    /// Present once authority data has been pruned. The block store writes it through a typed
+    /// map under `block::METADATA_KEY_AUTHORITY_PRUNED`.
+    AuthorityPruned = 1,
 }
+
+const _: () = assert!(MetadataKey::AuthorityPruned as u8 == crate::block::METADATA_KEY_AUTHORITY_PRUNED);
 
 impl StorageVersion {
     /// Decodes a version this build knows how to open.

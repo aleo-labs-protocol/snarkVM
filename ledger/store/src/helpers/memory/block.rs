@@ -70,6 +70,8 @@ pub struct BlockMemory<N: Network> {
         MemoryMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>,
     /// The rejected deployment or execution map.
     rejected_deployment_or_execution_map: MemoryMap<Field<N>, Rejected<N>>,
+    /// The storage metadata map.
+    metadata_map: MemoryMap<u8, bool>,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionMemory<N>>,
 }
@@ -93,6 +95,7 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     type RejectedOrAbortedTransactionIDMap = MemoryMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = MemoryMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     type RejectedDeploymentOrExecutionMap = MemoryMap<Field<N>, Rejected<N>>;
+    type MetadataMap = MemoryMap<u8, bool>;
     type TransactionStorage = TransactionMemory<N>;
     type TransitionStorage = TransitionMemory<N>;
 
@@ -121,6 +124,7 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
             rejected_or_aborted_transaction_id_map: MemoryMap::default(),
             confirmed_transactions_map: MemoryMap::default(),
             rejected_deployment_or_execution_map: MemoryMap::default(),
+            metadata_map: MemoryMap::default(),
             transaction_store,
         })
     }
@@ -208,6 +212,11 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     /// Returns the rejected deployment or execution map.
     fn rejected_deployment_or_execution_map(&self) -> &Self::RejectedDeploymentOrExecutionMap {
         &self.rejected_deployment_or_execution_map
+    }
+
+    /// Returns the storage metadata map.
+    fn metadata_map(&self) -> &Self::MetadataMap {
+        &self.metadata_map
     }
 
     /// Returns the transaction store.
