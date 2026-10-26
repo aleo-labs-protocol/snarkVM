@@ -439,6 +439,11 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Records that authority data has been pruned from this storage, which a build without
     /// `prune-authority-data` then refuses to open. Call it in the batch that deletes the data.
     fn mark_authority_pruned(&self) -> Result<()> {
+        debug_assert!(self.is_atomic_in_progress(), "The pruned marker must share the batch of the deletes");
+        // The speculative read also sees a marker queued earlier in this batch.
+        if self.authority_pruned_map().get_speculative(&AUTHORITY_PRUNED_KEY)?.is_some_and(|pruned| *pruned) {
+            return Ok(());
+        }
         self.authority_pruned_map().insert(AUTHORITY_PRUNED_KEY, true)
     }
     /// Returns the transaction store.
@@ -2386,7 +2391,7 @@ mod tests {
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage_mode = StorageMode::new_test(Some(temp_dir));
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
-        block_store.storage.mark_authority_pruned().unwrap();
+        block_store.storage.authority_pruned_map().insert(AUTHORITY_PRUNED_KEY, true).unwrap();
         drop(block_store);
 
         let error = match BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode) {

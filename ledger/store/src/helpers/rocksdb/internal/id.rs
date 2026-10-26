@@ -223,7 +223,8 @@ pub enum ProgramMap {
 
 /// The RocksDB map prefix for storage metadata.
 ///
-/// One map holds the well-known metadata keys, so later metadata does not need another `DataID`.
+/// One map holds the well-known metadata keys. The authority-pruned marker is the exception: it is
+/// a block map, so it shares the block store's atomic batches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum MetadataMap {
