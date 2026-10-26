@@ -172,6 +172,9 @@ pub const AUTHORITY_RETENTION_BLOCKS: u32 = 500_000;
 #[cfg(test)]
 pub const AUTHORITY_RETENTION_BLOCKS: u32 = 100;
 
+/// The key of the single entry in the authority-pruned marker map.
+const AUTHORITY_PRUNED_KEY: u8 = 0;
+
 /// Returns the lowest block height whose authority data is retained when the chain is at
 /// `latest_height`. Without `prune-authority-data`, every height is retained.
 pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
@@ -381,6 +384,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     type ConfirmedTransactionsMap: for<'a> Map<'a, N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     /// The rejected deployment or execution map.
     type RejectedDeploymentOrExecutionMap: for<'a> Map<'a, Field<N>, Rejected<N>>;
+    /// The authority-pruned marker map, with the single key `AUTHORITY_PRUNED_KEY`.
+    type AuthorityPrunedMap: for<'a> Map<'a, u8, bool>;
     /// The transaction storage.
     type TransactionStorage: TransactionStorage<N, TransitionStorage = Self::TransitionStorage>;
     /// The transition storage.
@@ -423,12 +428,19 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn confirmed_transactions_map(&self) -> &Self::ConfirmedTransactionsMap;
     /// Returns the rejected deployment or execution map.
     fn rejected_deployment_or_execution_map(&self) -> &Self::RejectedDeploymentOrExecutionMap;
+    /// Returns the authority-pruned marker map.
+    fn authority_pruned_map(&self) -> &Self::AuthorityPrunedMap;
+
     /// Returns `true` if authority data has been pruned from this storage.
-    fn is_authority_pruned(&self) -> Result<bool>;
+    fn is_authority_pruned(&self) -> Result<bool> {
+        Ok(self.authority_pruned_map().get_confirmed(&AUTHORITY_PRUNED_KEY)?.is_some_and(|pruned| *pruned))
+    }
+
     /// Records that authority data has been pruned from this storage, which a build without
-    /// `prune-authority-data` then refuses to open. RocksDB writes the marker through the atomic
-    /// batch in progress, so it is exactly as durable as the deletes; the memory backend sets it at once.
-    fn mark_authority_pruned(&self) -> Result<()>;
+    /// `prune-authority-data` then refuses to open. Call it in the batch that deletes the data.
+    fn mark_authority_pruned(&self) -> Result<()> {
+        self.authority_pruned_map().insert(AUTHORITY_PRUNED_KEY, true)
+    }
     /// Returns the transaction store.
     fn transaction_store(&self) -> &TransactionStore<N, Self::TransactionStorage>;
 
@@ -461,6 +473,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().start_atomic();
         self.confirmed_transactions_map().start_atomic();
         self.rejected_deployment_or_execution_map().start_atomic();
+        self.authority_pruned_map().start_atomic();
         self.transaction_store().start_atomic();
     }
 
@@ -483,6 +496,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             || self.rejected_or_aborted_transaction_id_map().is_atomic_in_progress()
             || self.confirmed_transactions_map().is_atomic_in_progress()
             || self.rejected_deployment_or_execution_map().is_atomic_in_progress()
+            || self.authority_pruned_map().is_atomic_in_progress()
             || self.transaction_store().is_atomic_in_progress()
     }
 
@@ -505,6 +519,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().atomic_checkpoint();
         self.confirmed_transactions_map().atomic_checkpoint();
         self.rejected_deployment_or_execution_map().atomic_checkpoint();
+        self.authority_pruned_map().atomic_checkpoint();
         self.transaction_store().atomic_checkpoint();
     }
 
@@ -527,6 +542,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().clear_latest_checkpoint();
         self.confirmed_transactions_map().clear_latest_checkpoint();
         self.rejected_deployment_or_execution_map().clear_latest_checkpoint();
+        self.authority_pruned_map().clear_latest_checkpoint();
         self.transaction_store().clear_latest_checkpoint();
     }
 
@@ -549,6 +565,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().atomic_rewind();
         self.confirmed_transactions_map().atomic_rewind();
         self.rejected_deployment_or_execution_map().atomic_rewind();
+        self.authority_pruned_map().atomic_rewind();
         self.transaction_store().atomic_rewind();
     }
 
@@ -571,6 +588,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().abort_atomic();
         self.confirmed_transactions_map().abort_atomic();
         self.rejected_deployment_or_execution_map().abort_atomic();
+        self.authority_pruned_map().abort_atomic();
         self.transaction_store().abort_atomic();
     }
 
@@ -593,6 +611,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().finish_atomic()?;
         self.confirmed_transactions_map().finish_atomic()?;
         self.rejected_deployment_or_execution_map().finish_atomic()?;
+        self.authority_pruned_map().finish_atomic()?;
         self.transaction_store().finish_atomic()
     }
 
@@ -2164,6 +2183,7 @@ mod tests {
         });
 
         assert!(result.is_err());
+        assert!(!storage.is_authority_pruned().unwrap());
         assert!(storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
@@ -2171,6 +2191,7 @@ mod tests {
         assert!(!storage.authority_map().contains_key_confirmed(&candidate_hash).unwrap());
         assert!(!storage.reverse_state_root_map().contains_key_confirmed(&candidate_state_root).unwrap());
         storage.insert(candidate_state_root, candidate).unwrap();
+        assert!(storage.is_authority_pruned().unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(!storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());

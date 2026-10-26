@@ -88,6 +88,7 @@ pub enum BlockMap {
     RejectedOrAbortedTransactionID = DataID::BlockRejectedOrAbortedTransactionIDMap as u16,
     ConfirmedTransactions = DataID::BlockConfirmedTransactionsMap as u16,
     RejectedDeploymentOrExecution = DataID::BlockRejectedDeploymentOrExecutionMap as u16,
+    AuthorityPruned = DataID::BlockAuthorityPrunedMap as u16,
 }
 
 /// The RocksDB map prefix for committee-related entries.
@@ -358,6 +359,9 @@ enum DataID {
 
     // Storage metadata: the schema version and the history sync cursor.
     StorageMetadataMap,
+
+    // Whether authority data has been pruned.
+    BlockAuthorityPrunedMap,
 
     // Testing
     #[cfg(test)]

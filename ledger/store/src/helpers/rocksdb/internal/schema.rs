@@ -22,10 +22,9 @@
 //! Ledgers written before this record existed have no version key. Those databases are
 //! [`StorageVersion::V0`].
 
-use super::{MapID, MetadataMap, PREFIX_LEN, RocksDB};
+use super::{MapID, MetadataMap, PREFIX_LEN};
 
 use anyhow::{Result, anyhow, bail};
-use std::sync::atomic::Ordering;
 
 /// The on-disk schema versions a ledger can be at.
 ///
@@ -36,9 +35,9 @@ use std::sync::atomic::Ordering;
 pub enum StorageVersion {
     /// No schema record, or a database stamped by the build that introduced the record.
     V0 = 0,
-    /// Adds the optional authority-pruning marker, [`MetadataKey::AuthorityPruned`]. A store
-    /// without the key is unpruned, so the upgrade from `V0` is the stamp alone. Builds that
-    /// predate the marker refuse this version instead of opening a pruned store.
+    /// Adds the optional authority-pruning marker map. A store without the marker is unpruned, so
+    /// the upgrade from `V0` is the stamp alone. Builds that predate the marker refuse this version
+    /// instead of opening a pruned store.
     V1 = 1,
 }
 
@@ -51,9 +50,6 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::V1;
 pub(crate) enum MetadataKey {
     /// The [`StorageVersion`] the database was last written under, as a little-endian `u32`.
     StorageVersion = 0,
-    /// Present once authority data has been pruned, which a build without `prune-authority-data`
-    /// refuses to open.
-    AuthorityPruned = 1,
 }
 
 impl StorageVersion {
@@ -107,23 +103,6 @@ pub(crate) fn get_storage_version(database: &rocksdb::DB, network_id: u16) -> Re
 /// Writes the storage schema version.
 pub(crate) fn set_storage_version(database: &rocksdb::DB, network_id: u16, version: StorageVersion) -> Result<()> {
     Ok(database.put(metadata_key(network_id, MetadataKey::StorageVersion), version.to_bytes())?)
-}
-
-/// Returns `true` if authority data has been pruned from the database.
-pub(crate) fn is_authority_pruned(database: &rocksdb::DB, network_id: u16) -> Result<bool> {
-    Ok(database.get(metadata_key(network_id, MetadataKey::AuthorityPruned))?.is_some())
-}
-
-/// Records that authority data has been pruned from the database. The marker joins the atomic
-/// batch in progress, if any, so it is exactly as durable as the deletes it describes.
-pub(crate) fn set_authority_pruned(database: &RocksDB, network_id: u16) -> Result<()> {
-    let key = metadata_key(network_id, MetadataKey::AuthorityPruned);
-    if database.atomic_depth.load(Ordering::SeqCst) > 0 {
-        database.atomic_batch.lock().put(key, [1u8]);
-        Ok(())
-    } else {
-        Ok(database.put(key, [1u8])?)
-    }
 }
 
 /// Brings `database` up to [`STORAGE_VERSION`].
@@ -190,14 +169,6 @@ mod tests {
         // `from_bytes` rejects the unknown version, so the raw record is what remains.
         let raw = db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().unwrap();
         assert_eq!(raw, newer.to_le_bytes());
-    }
-
-    #[test]
-    fn test_authority_pruned_marker() {
-        let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
-        assert!(!is_authority_pruned(&db, NETWORK_ID).unwrap());
-        set_authority_pruned(&db, NETWORK_ID).unwrap();
-        assert!(is_authority_pruned(&db, NETWORK_ID).unwrap());
     }
 
     #[test]

@@ -24,7 +24,6 @@ pub use nested_map::*;
 
 mod schema;
 pub use schema::{STORAGE_VERSION, StorageVersion};
-pub(crate) use schema::{is_authority_pruned, set_authority_pruned};
 
 #[cfg(test)]
 mod tests;

@@ -70,8 +70,8 @@ pub struct BlockMemory<N: Network> {
         MemoryMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>,
     /// The rejected deployment or execution map.
     rejected_deployment_or_execution_map: MemoryMap<Field<N>, Rejected<N>>,
-    /// Whether authority data has been pruned.
-    authority_pruned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The authority-pruned marker map.
+    authority_pruned_map: MemoryMap<u8, bool>,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionMemory<N>>,
 }
@@ -95,6 +95,7 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     type RejectedOrAbortedTransactionIDMap = MemoryMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = MemoryMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     type RejectedDeploymentOrExecutionMap = MemoryMap<Field<N>, Rejected<N>>;
+    type AuthorityPrunedMap = MemoryMap<u8, bool>;
     type TransactionStorage = TransactionMemory<N>;
     type TransitionStorage = TransitionMemory<N>;
 
@@ -123,7 +124,7 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
             rejected_or_aborted_transaction_id_map: MemoryMap::default(),
             confirmed_transactions_map: MemoryMap::default(),
             rejected_deployment_or_execution_map: MemoryMap::default(),
-            authority_pruned: Default::default(),
+            authority_pruned_map: MemoryMap::default(),
             transaction_store,
         })
     }
@@ -213,15 +214,9 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
         &self.rejected_deployment_or_execution_map
     }
 
-    /// Returns `true` if authority data has been pruned from this storage.
-    fn is_authority_pruned(&self) -> Result<bool> {
-        Ok(self.authority_pruned.load(std::sync::atomic::Ordering::SeqCst))
-    }
-
-    /// Records that authority data has been pruned from this storage.
-    fn mark_authority_pruned(&self) -> Result<()> {
-        self.authority_pruned.store(true, std::sync::atomic::Ordering::SeqCst);
-        Ok(())
+    /// Returns the authority-pruned marker map.
+    fn authority_pruned_map(&self) -> &Self::AuthorityPrunedMap {
+        &self.authority_pruned_map
     }
 
     /// Returns the transaction store.
