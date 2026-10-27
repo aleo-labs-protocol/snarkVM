@@ -535,6 +535,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Records that the authority data of every height in `1..below` has been pruned. Call it in
     /// the batch that deletes the data. The watermark never moves backwards.
+    #[cfg(feature = "prune-authority-data")]
     fn set_authority_pruned_below(&self, below: u32) -> Result<()> {
         debug_assert!(self.is_atomic_in_progress(), "The watermark must share the batch of the deletes");
         if self.authority_pruned_below()?.is_some_and(|current| current >= below) {
@@ -2653,7 +2654,7 @@ mod tests {
         let storage_mode = StorageMode::new_test(Some(temp_dir));
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
         let storage = &block_store.storage;
-        atomic_batch_scope!(storage, { storage.set_authority_pruned_below(2) }).unwrap();
+        storage.block_metadata_map().insert(BlockMetadataKey::AuthorityPruned, 2u32.to_le_bytes().to_vec()).unwrap();
         drop(block_store);
 
         let error = match BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode) {
