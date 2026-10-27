@@ -57,6 +57,8 @@ use anyhow::{Context, Result};
 use locktick::{LockGuard, parking_lot::RwLock};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
+#[cfg(feature = "prune-authority-data")]
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
@@ -222,6 +224,14 @@ pub enum BlockAuthority<N: Network> {
 /// Returns `true` if `height` is below the watermark `below`. Genesis is never pruned.
 fn is_pruned_height(below: u32, height: u32) -> bool {
     (1..below).contains(&height)
+}
+
+/// Decodes the authority-pruning watermark, a little-endian `u32`.
+fn decode_watermark(bytes: &[u8]) -> Result<u32> {
+    let Ok(bytes) = <[u8; 4]>::try_from(bytes) else {
+        bail!("Malformed authority-pruning watermark");
+    };
+    Ok(u32::from_le_bytes(bytes))
 }
 
 /// The components of a block other than its authority.
@@ -508,14 +518,28 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         if !cfg!(feature = "prune-authority-data") {
             return Ok(None);
         }
-        // The value is `W` as a little-endian `u32`.
-        let Some(bytes) = self.block_metadata_map().get_speculative(&BlockMetadataKey::AuthorityPruned)? else {
-            return Ok(None);
-        };
-        let Ok(bytes) = <[u8; 4]>::try_from(bytes.as_slice()) else {
-            bail!("Malformed authority-pruning watermark");
-        };
-        Ok(Some(u32::from_le_bytes(bytes)))
+        self.block_metadata_map()
+            .get_speculative(&BlockMetadataKey::AuthorityPruned)?
+            .map(|b| decode_watermark(&b))
+            .transpose()
+    }
+
+    /// The watermark that certificate lookups filter by, or `0` for none. It is reloaded from
+    /// committed storage after each commit and catch-up, so it may lag storage but never leads it.
+    #[cfg(feature = "prune-authority-data")]
+    fn cached_authority_pruned_below(&self) -> &AtomicU32;
+
+    /// Reloads [`Self::cached_authority_pruned_below`] from committed storage.
+    #[cfg(feature = "prune-authority-data")]
+    fn refresh_cached_authority_pruned_below(&self) {
+        let below = self
+            .block_metadata_map()
+            .get_confirmed(&BlockMetadataKey::AuthorityPruned)
+            .and_then(|bytes| bytes.map(|b| decode_watermark(&b)).transpose());
+        match below {
+            Ok(below) => self.cached_authority_pruned_below().store(below.unwrap_or(0), Ordering::Release),
+            Err(error) => warn!("Failed to reload the authority-pruning watermark: {error}"),
+        }
     }
 
     /// Returns `true` if the authority of the block at `height` has been pruned.
@@ -714,7 +738,11 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.confirmed_transactions_map().finish_atomic()?;
         self.rejected_deployment_or_execution_map().finish_atomic()?;
         self.block_metadata_map().finish_atomic()?;
-        self.transaction_store().finish_atomic()
+        self.transaction_store().finish_atomic()?;
+        // The block store finishes last, so a top-level batch is committed by now unless writes are paused.
+        #[cfg(feature = "prune-authority-data")]
+        self.refresh_cached_authority_pruned_below();
+        Ok(())
     }
 
     /// Pauses atomic writes.
@@ -728,7 +756,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn unpause_atomic_writes<const DISCARD_BATCH: bool>(&self) -> Result<()> {
         // Since this applies to the entire storage, any map can be used; this
         // one is just the first one in the list.
-        self.state_root_map().unpause_atomic_writes::<DISCARD_BATCH>()
+        self.state_root_map().unpause_atomic_writes::<DISCARD_BATCH>()?;
+        #[cfg(feature = "prune-authority-data")]
+        self.refresh_cached_authority_pruned_below();
+        Ok(())
     }
 
     /// Stores the given `(state root, block)` pair into storage.
@@ -1160,7 +1191,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let Some(index) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
             return Ok(None);
         };
-        if self.is_authority_pruned_at(index.0)? {
+        #[cfg(feature = "prune-authority-data")]
+        if is_pruned_height(self.cached_authority_pruned_below().load(Ordering::Acquire), index.0) {
             return Ok(None);
         }
         Ok(Some(index))
@@ -2368,12 +2400,13 @@ mod tests {
         assert!(storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
     }
 
-    /// Ensures a discarded paused batch, as the VM discards a failed block, also discards the pruning marker.
+    /// Ensures a discarded paused batch, as the VM discards a failed block, also discards the pruning
+    /// marker, and the cached watermark follows only the committed batch.
     #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
     #[test]
     fn test_discarded_paused_batch_discards_pruning_marker() {
         let rng = &mut TestRng::default();
-        let (blocks, _) = sample_block_chain_with_quorum(103, rng);
+        let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let block_store =
             BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
@@ -2388,6 +2421,17 @@ mod tests {
         block_store.unpause_atomic_writes::<true>().unwrap();
         assert!(block_store.storage.authority_pruned_below().unwrap().is_none());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
+        assert_eq!(block_store.storage.cached_authority_pruned_below().load(Ordering::Acquire), 0);
+        assert!(block_store.contains_certificate(&certificate_id).unwrap());
+
+        // While paused, nothing is committed, so the cache stays behind until the unpause. The block
+        // goes to storage directly, as the discarded insert left it in the tree and the block cache.
+        block_store.pause_atomic_writes().unwrap();
+        block_store.storage.insert(rng.random(), &blocks[101]).unwrap();
+        assert_eq!(block_store.storage.cached_authority_pruned_below().load(Ordering::Acquire), 0);
+        block_store.unpause_atomic_writes::<false>().unwrap();
+        assert_eq!(block_store.storage.cached_authority_pruned_below().load(Ordering::Acquire), 2);
+        assert!(!block_store.contains_certificate(&certificate_id).unwrap());
     }
 
     /// Ensures height pruning removes an authority without touching its certificate indexes, and
@@ -2420,6 +2464,7 @@ mod tests {
     #[cfg(feature = "prune-authority-data")]
     fn clear_authority_pruned<B: BlockStorage<CurrentNetwork>>(storage: &B) {
         storage.block_metadata_map().remove(&BlockMetadataKey::AuthorityPruned).unwrap();
+        storage.refresh_cached_authority_pruned_below();
     }
 
     /// Fills the maps of `num_heights` blocks with beacon authorities, indexed by height.

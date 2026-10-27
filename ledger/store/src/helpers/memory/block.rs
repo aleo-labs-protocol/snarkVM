@@ -31,6 +31,8 @@ use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
 use aleo_std_storage::StorageMode;
+#[cfg(feature = "prune-authority-data")]
+use std::sync::{Arc, atomic::AtomicU32};
 
 /// An in-memory block storage.
 #[derive(Clone)]
@@ -73,6 +75,9 @@ pub struct BlockMemory<N: Network> {
     rejected_deployment_or_execution_map: MemoryMap<Field<N>, Rejected<N>>,
     /// The block metadata map.
     block_metadata_map: MemoryMap<BlockMetadataKey, Vec<u8>>,
+    /// The cached authority-pruning watermark.
+    #[cfg(feature = "prune-authority-data")]
+    cached_authority_pruned_below: Arc<AtomicU32>,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionMemory<N>>,
 }
@@ -126,6 +131,8 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
             confirmed_transactions_map: MemoryMap::default(),
             rejected_deployment_or_execution_map: MemoryMap::default(),
             block_metadata_map: MemoryMap::default(),
+            #[cfg(feature = "prune-authority-data")]
+            cached_authority_pruned_below: Default::default(),
             transaction_store,
         })
     }
@@ -218,6 +225,11 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     /// Returns the block metadata map.
     fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
         &self.block_metadata_map
+    }
+
+    #[cfg(feature = "prune-authority-data")]
+    fn cached_authority_pruned_below(&self) -> &AtomicU32 {
+        &self.cached_authority_pruned_below
     }
 
     /// Returns the transaction store.
