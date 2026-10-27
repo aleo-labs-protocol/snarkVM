@@ -1872,13 +1872,15 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the block authority for the given `block hash`.
     pub fn get_block_authority(&self, block_hash: &N::BlockHash) -> Result<Option<Authority<N>>> {
-        if let Some(cache) = self.get_block_cache()
-            && let Some(block) = cache.get_block_by_hash(block_hash)
-        {
-            Ok(Some(block.authority().clone()))
-        } else {
-            self.storage.get_block_authority(block_hash)
+        match self.cached_block_authority(block_hash) {
+            Some(authority) => Ok(Some(authority)),
+            None => self.storage.get_block_authority(block_hash),
         }
+    }
+
+    /// Returns the authority of the block `block_hash` from the block cache.
+    fn cached_block_authority(&self, block_hash: &N::BlockHash) -> Option<Authority<N>> {
+        self.get_block_cache()?.get_block_by_hash(block_hash).map(|block| block.authority().clone())
     }
 
     /// Returns the block ratifications for the given `block hash`.
@@ -1977,12 +1979,10 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the authority of the block `block_hash` at `height`, or why it is absent.
     pub fn read_block_authority(&self, block_hash: &N::BlockHash, height: u32) -> Result<BlockAuthority<N>> {
-        if let Some(cache) = self.get_block_cache()
-            && let Some(block) = cache.get_block_by_hash(block_hash)
-        {
-            return Ok(BlockAuthority::Present(block.authority().clone()));
+        match self.cached_block_authority(block_hash) {
+            Some(authority) => Ok(BlockAuthority::Present(authority)),
+            None => self.storage.read_block_authority(block_hash, height),
         }
-        self.storage.read_block_authority(block_hash, height)
     }
 
     /// Prunes the authorities of the blocks below `below`, as startup pruning does. For tests.
