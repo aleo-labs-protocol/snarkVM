@@ -1971,11 +1971,12 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the authority of the block `block_hash` at `height`, or why it is absent.
     pub fn read_block_authority(&self, block_hash: &N::BlockHash, height: u32) -> Result<BlockAuthority<N>> {
-        if let Some(authority) = self.get_block_authority(block_hash)? {
-            return Ok(BlockAuthority::Present(authority));
+        if let Some(cache) = self.get_block_cache()
+            && let Some(block) = cache.get_block_by_hash(block_hash)
+        {
+            return Ok(BlockAuthority::Present(block.authority().clone()));
         }
-        // Read the watermark after the authority; see `BlockStorage::read_block_authority`.
-        Ok(if self.storage.is_authority_pruned_at(height)? { BlockAuthority::Pruned } else { BlockAuthority::Missing })
+        self.storage.read_block_authority(block_hash, height)
     }
 
     /// Prunes the authorities of the blocks below `below`, as startup pruning does. For tests.
