@@ -95,9 +95,19 @@ fn read_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<u32> 
     }
 }
 
-/// Reads the storage schema version. A missing record is [`StorageVersion::V0`].
+/// Reads the storage schema version. A missing record is [`StorageVersion::V0`], and a version newer
+/// than this build is an [`IncompatibleStore`](crate::IncompatibleStore) error.
 pub(crate) fn get_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<StorageVersion> {
-    StorageVersion::from_u32(read_storage_version(database, network_id)?)
+    let version = read_storage_version(database, network_id)?;
+    if version > STORAGE_VERSION as u32 {
+        return Err(crate::IncompatibleStore(format!(
+            "This ledger was written by a newer version of snarkVM (storage schema v{version}; this build understands \
+             v{}). Upgrade snarkVM, or resync from genesis.",
+            STORAGE_VERSION as u32,
+        ))
+        .into());
+    }
+    StorageVersion::from_u32(version)
 }
 
 /// Writes the storage schema version.
@@ -111,15 +121,6 @@ pub(crate) fn set_storage_version(database: &rocksdb::DB, network_id: u16, versi
 /// state of every database created before the record existed and of a database this build has
 /// just created; it is brought forward like any older version.
 pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
-    let version = read_storage_version(database, network_id)?;
-    if version > STORAGE_VERSION as u32 {
-        return Err(crate::IncompatibleStore(format!(
-            "This ledger was written by a newer version of snarkVM (storage schema v{version}; this build understands \
-             v{}). Upgrade snarkVM, or resync from genesis.",
-            STORAGE_VERSION as u32,
-        ))
-        .into());
-    }
     let version = get_storage_version(database, network_id)?;
     // `V0` to `V1` adds only the block metadata map, which an unpruned store leaves empty, so there
     // is nothing to rewrite before the stamp.
@@ -168,6 +169,8 @@ mod tests {
         let error = migrate_storage(&db, NETWORK_ID).unwrap_err();
         assert!(error.is::<crate::IncompatibleStore>(), "{error}");
         assert!(error.to_string().contains("newer version"), "{error}");
+        // A secondary instance only reads the version, and refuses it the same way.
+        assert!(get_storage_version(&db, NETWORK_ID).unwrap_err().is::<crate::IncompatibleStore>());
         // `from_bytes` rejects the unknown version, so the raw record is what remains.
         let raw = db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().unwrap();
         assert_eq!(raw, newer.to_le_bytes());
