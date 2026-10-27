@@ -16,7 +16,7 @@
 // Silences the false positives caused by black_box.
 #![allow(clippy::unit_arg)]
 
-use snarkvm_fields::{Field, Fp256, Fp384, PrimeField};
+use snarkvm_fields::{FftField, Field, Fp256, Fp384, PrimeField, SquareRootField};
 use snarkvm_utilities::TestRng;
 
 use criterion::*;
@@ -69,6 +69,33 @@ fn fp256(c: &mut Criterion) {
         b.iter(|| {
             for v in values.iter() {
                 black_box(v.inverse());
+            }
+        })
+    });
+
+    c.bench_function("fp256_legendre", |b| {
+        b.iter(|| {
+            for v in values.iter() {
+                black_box(v.legendre());
+            }
+        })
+    });
+
+    let squares: Vec<_> = values.iter().map(|v| v.square()).collect();
+    let nonresidues: Vec<_> = squares.iter().map(|s| *s * Fp256::multiplicative_generator()).collect();
+
+    c.bench_function("fp256_sqrt_residue", |b| {
+        b.iter(|| {
+            for v in squares.iter() {
+                black_box(v.sqrt());
+            }
+        })
+    });
+
+    c.bench_function("fp256_sqrt_nonresidue", |b| {
+        b.iter(|| {
+            for v in nonresidues.iter() {
+                black_box(v.sqrt());
             }
         })
     });
@@ -134,6 +161,33 @@ fn fp384(c: &mut Criterion) {
         b.iter(|| {
             for v in values.iter() {
                 black_box(v.inverse());
+            }
+        })
+    });
+
+    c.bench_function("fp384_legendre", |b| {
+        b.iter(|| {
+            for v in values.iter() {
+                black_box(v.legendre());
+            }
+        })
+    });
+
+    let squares: Vec<_> = values.iter().map(|v| v.square()).collect();
+    let nonresidues: Vec<_> = squares.iter().map(|s| *s * Fp384::multiplicative_generator()).collect();
+
+    c.bench_function("fp384_sqrt_residue", |b| {
+        b.iter(|| {
+            for v in squares.iter() {
+                black_box(v.sqrt());
+            }
+        })
+    });
+
+    c.bench_function("fp384_sqrt_nonresidue", |b| {
+        b.iter(|| {
+            for v in nonresidues.iter() {
+                black_box(v.sqrt());
             }
         })
     });

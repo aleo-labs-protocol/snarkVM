@@ -53,6 +53,8 @@ pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {}
 pub struct Fp256<P: Fp256Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
 
 impl<P: Fp256Parameters> Fp256<P> {
+    /// About twice the median number of rounds `safegcd::jacobi` takes for a random input.
+    const JACOBI_ITERATIONS: usize = (P::MODULUS_BITS as usize * 25).div_ceil(256);
     const MODULUS_62: [i64; 5] = safegcd::to_signed62(&P::MODULUS.0);
     const MODULUS_INV_62: u64 = P::INV.wrapping_neg() & safegcd::M62;
     const R2_62: [i64; 5] = safegcd::to_signed62(&P::R2.0);
@@ -133,6 +135,40 @@ impl<P: Fp256Parameters> Fp256<P> {
             BigInteger(safegcd::inverse(&self.0.0, &Self::MODULUS_62, Self::MODULUS_INV_62, &Self::R2_62)),
             PhantomData,
         )
+    }
+
+    /// Returns the Legendre symbol, by Euler's criterion if `safegcd::jacobi` does not find it within
+    /// `iterations` rounds.
+    ///
+    /// Its branches and running time depend on `self`.
+    #[doc(hidden)]
+    pub fn legendre_with_iterations(&self, iterations: usize) -> LegendreSymbol {
+        debug_assert!(self.is_valid());
+        if self.is_zero() {
+            return LegendreSymbol::Zero;
+        }
+        // `self.0` holds `self * R`, and R = 2^256 is a square, so both have the same symbol.
+        match safegcd::jacobi(&self.0.0, &Self::MODULUS_62, iterations) {
+            Some(1) => LegendreSymbol::QuadraticResidue,
+            Some(_) => LegendreSymbol::QuadraticNonResidue,
+            None => self.euler_legendre(),
+        }
+    }
+
+    fn euler_legendre(&self) -> LegendreSymbol {
+        use crate::LegendreSymbol::*;
+
+        // s = self^((MODULUS - 1) // 2)
+        let mut s = self.pow(P::MODULUS_MINUS_ONE_DIV_TWO);
+        s.reduce();
+
+        if s.is_zero() {
+            Zero
+        } else if s.is_one() {
+            QuadraticResidue
+        } else {
+            QuadraticNonResidue
+        }
     }
 }
 
@@ -481,19 +517,7 @@ impl<P: Fp256Parameters> FftField for Fp256<P> {
 impl<P: Fp256Parameters> SquareRootField for Fp256<P> {
     #[inline]
     fn legendre(&self) -> LegendreSymbol {
-        use crate::LegendreSymbol::*;
-
-        // s = self^((MODULUS - 1) // 2)
-        let mut s = self.pow(P::MODULUS_MINUS_ONE_DIV_TWO);
-        s.reduce();
-
-        if s.is_zero() {
-            Zero
-        } else if s.is_one() {
-            QuadraticResidue
-        } else {
-            QuadraticNonResidue
-        }
+        self.legendre_with_iterations(Self::JACOBI_ITERATIONS)
     }
 
     #[inline]
