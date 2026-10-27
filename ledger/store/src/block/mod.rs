@@ -190,12 +190,18 @@ pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
 }
 
 /// The number of heights pruned in one startup batch, one authority deletion each.
-#[cfg(feature = "prune-authority-data")]
+#[cfg(all(feature = "prune-authority-data", not(test)))]
 const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 10_000;
+/// A small chunk for unit tests, so several chunks fit in a short chain.
+#[cfg(all(feature = "prune-authority-data", test))]
+const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 16;
 
 /// The number of certificate index deletions in one startup batch.
-#[cfg(feature = "prune-authority-data")]
+#[cfg(all(feature = "prune-authority-data", not(test)))]
 const CERTIFICATE_PRUNING_BATCH_SIZE: usize = 10_000;
+/// A small batch for unit tests, so the pass flushes while its iterator is open.
+#[cfg(all(feature = "prune-authority-data", test))]
+const CERTIFICATE_PRUNING_BATCH_SIZE: usize = 3;
 
 /// Insert-time pruning logs progress at debug level once per this many blocks.
 #[cfg(feature = "prune-authority-data")]
@@ -1063,6 +1069,11 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         };
         // Retrieve the authority for the given block hash.
         let Some(authority) = self.authority_map().get_confirmed(&block_hash)? else {
+            // Pruning may have removed the authority after the index was read.
+            #[cfg(feature = "prune-authority-data")]
+            if self.get_certificate_index(certificate_id)?.is_none() {
+                return Ok(None);
+            }
             bail!("The authority for '{block_hash}' is missing in block storage")
         };
         // Retrieve the certificate for the given certificate ID.
@@ -2312,6 +2323,14 @@ mod tests {
             storage.certificate_map().insert(*certificate_id, (quorum_height, 1)).unwrap();
         }
 
+        // More expired indexes than one certificate batch holds, so the pass flushes mid-iteration.
+        let expired_indexes: Vec<Field<CurrentNetwork>> = (0..3 * u32::try_from(CERTIFICATE_PRUNING_BATCH_SIZE)
+            .unwrap())
+            .map(|i| Field::from_u32(1_000_000 + i))
+            .collect();
+        for (i, certificate_id) in (1..).zip(&expired_indexes) {
+            storage.certificate_map().insert(*certificate_id, (i, 1)).unwrap();
+        }
         // Indexes of a retained block and of genesis are kept.
         let retained_index = Field::from_u32(u32::MAX);
         storage.certificate_map().insert(retained_index, (latest_height, 1)).unwrap();
@@ -2320,7 +2339,7 @@ mod tests {
 
         assert!(!storage.is_authority_pruned().unwrap());
         prune_expired_authorities(&storage, latest_height).unwrap();
-        for certificate_id in &quorum_certificates {
+        for certificate_id in quorum_certificates.iter().chain(&expired_indexes) {
             assert!(!storage.certificate_map().contains_key_confirmed(certificate_id).unwrap());
         }
         assert!(storage.certificate_map().contains_key_confirmed(&retained_index).unwrap());
@@ -2356,6 +2375,25 @@ mod tests {
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(resume - 1)).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&hash_at(resume)).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&hash_at(floor - 1)).unwrap());
+    }
+
+    /// Ensures a certificate row of a pruned block reads as absent, while a missing authority at or
+    /// above the watermark is still reported as corruption.
+    #[cfg(feature = "prune-authority-data")]
+    #[test]
+    fn test_certificate_reader_errors_only_above_watermark() {
+        let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
+        atomic_batch_scope!(storage, { storage.set_authority_pruned_below(3) }).unwrap();
+        for (height, certificate_id) in [(2, Field::from_u32(2)), (3, Field::from_u32(3))] {
+            storage.id_map().insert(height, hash_at(height)).unwrap();
+            storage.certificate_map().insert(certificate_id, (height, 1)).unwrap();
+        }
+
+        // Height 2 is below the watermark: its authority was pruned.
+        assert!(storage.get_batch_certificate(&Field::from_u32(2)).unwrap().is_none());
+        assert!(!storage.contains_block_for_certificate(&Field::from_u32(2)).unwrap());
+        // Height 3 is retained, so its missing authority is corruption.
+        assert!(storage.get_batch_certificate(&Field::from_u32(3)).is_err());
     }
 
     /// Ensures an interrupted startup resumes from the watermark with in-memory storage.
