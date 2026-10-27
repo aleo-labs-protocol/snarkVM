@@ -47,6 +47,21 @@ impl VariableBase {
         }
     }
 
+    /// Multi-scalar multiplications over field elements, several at once.
+    ///
+    /// Returns the sum of `base * scalar` over each of `msms`, in their
+    /// order. Each MSM goes through [`Self::msm`], which picks its method by
+    /// the MSM's size.
+    pub fn msm_many<G: AffineCurve>(msms: &[&[(G, G::ScalarField)]]) -> Vec<G::Projective> {
+        msms.iter()
+            .map(|terms| {
+                let (bases, scalars): (Vec<_>, Vec<_>) =
+                    terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+                Self::msm(&bases, &scalars)
+            })
+            .collect()
+    }
+
     #[cfg(test)]
     fn msm_naive<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
         use itertools::Itertools;
@@ -153,6 +168,54 @@ mod tests {
             let naive = VariableBase::msm_naive(bases.as_slice(), all_special.as_slice()).to_affine();
             let candidate = batched::msm(bases.as_slice(), all_special.as_slice()).to_affine();
             assert_eq!(naive, candidate, "MSM size: {msm_size}, special scalars");
+        }
+    }
+
+    /// `msm_many` over MSMs of mixed sizes, with an empty MSM, a base at
+    /// infinity and a zero scalar among them, gives each MSM's `msm`.
+    #[test]
+    fn test_msm_many() {
+        use itertools::Itertools;
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::Zero;
+        use snarkvm_utilities::Uniform;
+
+        let mut rng = TestRng::default();
+        let mut msms: Vec<Vec<(G1Affine, Fr)>> = [0, 1, 2, 5, 31, 32, 64]
+            .into_iter()
+            .map(|n| (0..n).map(|_| (G1Affine::rand(&mut rng), Fr::rand(&mut rng))).collect())
+            .collect();
+        msms[3][2].0 = G1Affine::zero();
+        msms[5][7].1 = Fr::zero();
+        let slices: Vec<&[_]> = msms.iter().map(Vec::as_slice).collect();
+        let sums = VariableBase::msm_many(&slices);
+        assert_eq!(sums.len(), msms.len());
+        for (msm, sum) in msms.iter().zip_eq(&sums) {
+            let (bases, scalars): (Vec<_>, Vec<_>) =
+                msm.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+            assert_eq!(sum.to_affine(), VariableBase::msm(&bases, &scalars).to_affine(), "{} bases", msm.len());
+        }
+    }
+
+    /// `msm` and `batched::msm` on more bases than scalars sum over the
+    /// first bases, one per scalar, below and above the bucket method's
+    /// cutoff; `msm_many` of those pairs gives the same sum.
+    #[test]
+    fn test_msm_more_bases_than_scalars() {
+        use snarkvm_curves::ProjectiveCurve;
+
+        let mut rng = TestRng::default();
+        for (num_bases, num_scalars) in [(5, 2), (40, 3), (40, 33)] {
+            let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, num_bases);
+            let (_, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, num_scalars);
+            let naive = VariableBase::msm_naive(&bases[..num_scalars], &scalars).to_affine();
+            let case = format!("{num_bases} bases, {num_scalars} scalars");
+            assert_eq!(VariableBase::msm(&bases, &scalars).to_affine(), naive, "{case}");
+            assert_eq!(batched::msm(&bases, &scalars).to_affine(), naive, "{case}");
+            // `create_scalar_bases` draws each scalar below the modulus.
+            let pairs: Vec<_> =
+                bases.iter().zip(&scalars).map(|(base, scalar)| (*base, Fr::from_bigint(*scalar).unwrap())).collect();
+            assert_eq!(VariableBase::msm_many(&[pairs.as_slice()])[0].to_affine(), naive, "{case}");
         }
     }
 
