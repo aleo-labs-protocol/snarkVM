@@ -1071,7 +1071,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let Some(authority) = self.authority_map().get_confirmed(&block_hash)? else {
             // Pruning may have removed the authority after the index was read.
             #[cfg(feature = "prune-authority-data")]
-            if self.get_certificate_index(certificate_id)?.is_none() {
+            if self.authority_pruned_below()?.is_some_and(|below| (1..below).contains(&block_height)) {
                 return Ok(None);
             }
             bail!("The authority for '{block_hash}' is missing in block storage")
@@ -2314,7 +2314,7 @@ mod tests {
     fn check_startup_pruning_closes_multi_chunk_gap<B: BlockStorage<CurrentNetwork>>(storage: B) {
         let latest_height = 3 * AUTHORITY_PRUNING_CHUNK_HEIGHTS + AUTHORITY_RETENTION_BLOCKS + 1;
         fill_authorities(&storage, latest_height + 1);
-        // One expired block in the last chunk carries a quorum authority with indexed certificates.
+        // One expired block carries a quorum authority with indexed certificates.
         let quorum_height = 3 * AUTHORITY_PRUNING_CHUNK_HEIGHTS;
         let quorum = snarkvm_ledger_authority::test_helpers::sample_quorum_authority(&mut TestRng::default());
         let quorum_certificates = certificate_ids(&quorum);
@@ -2393,7 +2393,8 @@ mod tests {
         assert!(storage.get_batch_certificate(&Field::from_u32(2)).unwrap().is_none());
         assert!(!storage.contains_block_for_certificate(&Field::from_u32(2)).unwrap());
         // Height 3 is retained, so its missing authority is corruption.
-        assert!(storage.get_batch_certificate(&Field::from_u32(3)).is_err());
+        let error = storage.get_batch_certificate(&Field::from_u32(3)).unwrap_err().to_string();
+        assert!(error.contains("authority"), "{error}");
     }
 
     /// Ensures an interrupted startup resumes from the watermark with in-memory storage.
