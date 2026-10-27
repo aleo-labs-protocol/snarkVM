@@ -1455,6 +1455,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         let storage = B::open(storage)?;
 
         // Pruned authority data cannot be restored, so a non-pruning build must not take over the store.
+        // This is checked only here: a secondary that opened before its primary started pruning reports
+        // pruned authorities as corruption after it catches up. Mixed builds are not supported.
         #[cfg(not(feature = "prune-authority-data"))]
         if storage.block_metadata_map().contains_key_confirmed(&BlockMetadataKey::AuthorityPruned)? {
             return Err(crate::IncompatibleStore(
