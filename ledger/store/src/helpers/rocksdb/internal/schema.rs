@@ -36,8 +36,8 @@ pub enum StorageVersion {
     /// No schema record, or a database stamped by the build that introduced the record.
     V0 = 0,
     /// Adds the block metadata map, which holds the authority-pruning marker. A store without the
-    /// marker is unpruned, so the upgrade from `V0` is the stamp alone. Builds that predate the
-    /// marker refuse this version instead of opening a pruned store.
+    /// marker is unpruned, so the upgrade from `V0` is the stamp alone. `V0` builds refuse this
+    /// version; builds from before the version record open a pruned store without noticing.
     V1 = 1,
 }
 
