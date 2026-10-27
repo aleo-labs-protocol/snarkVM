@@ -395,6 +395,14 @@ impl<F: FftField> EvaluationDomain<F> {
         })
     }
 
+    /// Computes the FFT and IFFT precomputations on the calling thread.
+    pub(crate) fn precompute_serial(&self) -> (FFTPrecomputation<F>, IFFTPrecomputation<F>) {
+        let half = self.size() / 2;
+        let fft = FFTPrecomputation { roots: compute_powers_serial(half, self.group_gen), domain: *self };
+        let ifft = IFFTPrecomputation { inverse_roots: compute_powers_serial(half, self.group_gen_inv), domain: *self };
+        (fft, ifft)
+    }
+
     /// Runs an in-order transform on the device, and returns whether it did.
     /// A device error panics.
     ///
@@ -1170,6 +1178,16 @@ mod tests {
             let pc = domain.precompute_ifft();
             let fft_pc = domain.precompute_fft();
             assert_eq!(pc, fft_pc.to_ifft_precomputation())
+        }
+    }
+
+    #[test]
+    fn test_serial_precomputation_matches_parallel() {
+        for log_size in [0, 1, 7, 8, 9, 12, 16] {
+            let domain = EvaluationDomain::<Fr>::new(1 << log_size).expect("a domain");
+            let (fft_pc, ifft_pc) = domain.precompute_serial();
+            assert_eq!(fft_pc, domain.precompute_fft());
+            assert_eq!(ifft_pc, domain.precompute_ifft());
         }
     }
 
