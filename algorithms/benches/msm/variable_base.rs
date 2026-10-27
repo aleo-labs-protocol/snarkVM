@@ -55,8 +55,7 @@ fn variable_base_edwards_bls12(c: &mut Criterion) {
     }
 }
 
-/// The bit-serial Shamir loop `batched::msm` ran below 32 bases before Straus's
-/// method replaced it, kept as the baseline arm.
+/// A bit-serial Shamir loop over all bases, the baseline arm of `small_msm`.
 fn double_and_add<G: AffineCurve>(
     bases: &[G],
     scalars: &[<G::ScalarField as PrimeField>::BigInteger],
@@ -90,6 +89,8 @@ fn small_variable_base_bls12_377(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("small_msm");
     group.sample_size(60);
+    // `scalars[0]` is the big integer of a field element, so it is below the
+    // modulus.
     group.bench_function("glv_mul/1", |b| b.iter(|| bases[0].to_projective() * Fr::from_bigint(scalars[0]).unwrap()));
     for n in [1, 2, 3, 4, 5, 7, 13, 14, 25, 26, 31, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024] {
         let (bases, scalars) = (&bases[..n], &scalars[..n]);
