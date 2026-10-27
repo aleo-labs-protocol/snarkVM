@@ -402,10 +402,10 @@ fn recode_naf<B: BigInteger>(scalar: &B, window: usize, num_bits: usize, digits:
     let mut carry = 0u64;
     let mut i = 0;
     while i < num_bits {
-        let bit = (limbs[i / 64] >> (i % 64)) & 1;
+        let bit = u64::from(scalar.get_bit(i));
         if (bit + carry) & 1 == 0 {
+            // An even sum means `bit == carry`, so the carry is unchanged.
             digits[i] = 0;
-            carry = (bit + carry) >> 1;
             i += 1;
             continue;
         }
