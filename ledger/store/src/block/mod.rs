@@ -472,7 +472,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     type ConfirmedTransactionsMap: for<'a> Map<'a, N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     /// The rejected deployment or execution map.
     type RejectedDeploymentOrExecutionMap: for<'a> Map<'a, Field<N>, Rejected<N>>;
-    /// The block metadata map: block-store state that shares the block store's atomic batches.
+    /// The block metadata map: block-store state that shares the block store's atomic batches. Values
+    /// are raw bytes so that later keys can hold other types than the watermark's `u32`.
     type BlockMetadataMap: for<'a> Map<'a, BlockMetadataKey, Vec<u8>>;
     /// The transaction storage.
     type TransactionStorage: TransactionStorage<N, TransitionStorage = Self::TransitionStorage>;
