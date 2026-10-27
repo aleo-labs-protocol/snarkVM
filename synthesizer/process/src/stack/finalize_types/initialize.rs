@@ -26,7 +26,7 @@ impl<N: Network> FinalizeTypes<N> {
         constructor: &Constructor<N>,
     ) -> Result<Self> {
         // Initialize a map of registers to their types.
-        let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
+        let mut finalize_types = Self { inputs: Arc::new(IndexMap::new()), destinations: Arc::new(IndexMap::new()) };
 
         // Check the commands are well-formed.
         for command in constructor.commands() {
@@ -54,7 +54,7 @@ impl<N: Network> FinalizeTypes<N> {
         stack: &Stack<N>,
         view: &snarkvm_synthesizer_program::ViewCore<N>,
     ) -> Result<Self> {
-        let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
+        let mut finalize_types = Self { inputs: Arc::new(IndexMap::new()), destinations: Arc::new(IndexMap::new()) };
 
         // Type-check the inputs. View inputs are guaranteed to be plaintext at construction time.
         for input in view.inputs() {
@@ -99,7 +99,7 @@ impl<N: Network> FinalizeTypes<N> {
     #[inline]
     pub(super) fn initialize_finalize_types_from_finalize(stack: &Stack<N>, finalize: &Finalize<N>) -> Result<Self> {
         // Initialize a map of registers to their types.
-        let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
+        let mut finalize_types = Self { inputs: Arc::new(IndexMap::new()), destinations: Arc::new(IndexMap::new()) };
 
         // Initialize a list of input futures.
         let mut input_futures = Vec::new();
@@ -161,7 +161,7 @@ impl<N: Network> FinalizeTypes<N> {
                 ensure!(self.inputs.len() as u64 == locator, "Register '{register}' is out of order");
 
                 // Insert the input register and type.
-                match self.inputs.insert(locator, finalize_type) {
+                match Arc::make_mut(&mut self.inputs).insert(locator, finalize_type) {
                     // If the register already exists, throw an error.
                     Some(..) => bail!("Input '{register}' already exists"),
                     // If the register does not exist, return success.
@@ -184,7 +184,7 @@ impl<N: Network> FinalizeTypes<N> {
                 ensure!(expected_locator == locator, "Register '{register}' is out of order");
 
                 // Insert the destination register and type.
-                match self.destinations.insert(locator, finalize_type) {
+                match Arc::make_mut(&mut self.destinations).insert(locator, finalize_type) {
                     // If the register already exists, throw an error.
                     Some(..) => bail!("Destination '{register}' already exists"),
                     // If the register does not exist, return success.
