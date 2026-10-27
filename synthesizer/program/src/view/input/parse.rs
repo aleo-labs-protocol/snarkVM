@@ -19,7 +19,7 @@ impl<N: Network> Parser for Input<N> {
     /// Parses a string into an input statement.
     /// The input statement is of the form `input {register} as {plaintext_type}.public;`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the input keyword from the string.

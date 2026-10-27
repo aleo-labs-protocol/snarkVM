@@ -106,6 +106,14 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
                 };
                 return Ok(Value::Plaintext(Plaintext::from(Literal::Address(address))));
             }
+            // If the operand is a component checksum, load the checksum of the named component.
+            Operand::ComponentChecksum(program_id, name) => {
+                let checksum = match program_id {
+                    Some(program_id) => *stack.get_external_stack(program_id)?.component_checksum(name)?,
+                    None => *stack.component_checksum(name)?,
+                };
+                return Ok(Value::Plaintext(Plaintext::from(checksum)));
+            }
         };
 
         // Retrieve the value.

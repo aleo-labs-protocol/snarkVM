@@ -1,18 +1,5 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    test.aleo/main:
-      outputs:
-      - '{"type":"private","id":"6221683255059026215737335377369163444606772035709738948709105106820888297377field","value":"ciphertext1qyqfxhtmfk5l04zmj36kyegnd4pn2x056xzjzwjc4g9mrk96f4x8qpsv76q9y"}'
-      - '{"type":"future","id":"6480989437968893598258405906025788646162102891623249900145771899245869691677field","value":"{\n  program_id: test.aleo,\n  function_name: main,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: main,\n      arguments: [\n        {\n  x: 42u32\n}\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    child.aleo/main:
-      outputs:
-      - '{"type":"future","id":"3117171360549904084523155777512301446430841562039935870166811980320799391933field","value":"{\n  program_id: child.aleo,\n  function_name: main,\n  arguments: [\n    {\n  x: 42u32\n}\n  ]\n}"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"5642662825639885307618183971055962688248014856051252896119294711339153015716field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2034u64\n  ]\n}"}'

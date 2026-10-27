@@ -78,7 +78,7 @@ impl<N: Network> CastType<N> {
 }
 
 impl<N: Network> Parser for CastType<N> {
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the cast type from the string.
         alt((
             map(tag("group.x"), |_| Self::GroupXCoordinate),
@@ -1135,9 +1135,9 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
 
 impl<N: Network, const VARIANT: u8> Parser for CastOperation<N, VARIANT> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses an operand from the string.
-        fn parse_operand<N: Network>(string: &str) -> ParserResult<Operand<N>> {
+        fn parse_operand<N: Network>(string: &str) -> ParserResult<'_, Operand<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the operand from the string.

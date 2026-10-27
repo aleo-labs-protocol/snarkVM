@@ -81,7 +81,6 @@ fn test_fibonacci() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -90,7 +89,7 @@ fn test_fibonacci() {
     // Deploy the program
     println!("Deploying program {recursive_calls_program_name}.aleo...");
     let deployment = vm.deploy(&caller_private_key, &recursive_calls_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
 
     // Execute the fibonacci function for the given inputs, expected output, and expected number of transitions.
     #[rustfmt::skip]
@@ -131,7 +130,7 @@ fn test_fibonacci() {
                 .unwrap(),
             &Plaintext::from_str(&format!("{expected_output}u64")).unwrap()
         );
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
     }
 }
 
@@ -324,11 +323,11 @@ constructor:
 
     println!("Deploying program {basic_records_ops_program_name}.aleo...");
     let deployment1 = vm.deploy(&caller_private_key, &basic_records_ops_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment1], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment1], rng);
 
     println!("Deploying program {test_functions_program_name}.aleo...");
     let deployment2 = vm.deploy(&caller_private_key, &test_functions_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment2], rng);
 
     // A helper function to mint a record for the caller.
     let mint_record = |rng: &mut TestRng| {
@@ -361,14 +360,7 @@ constructor:
                 _ => None,
             })
             .unwrap();
-        add_and_test_with_costs(
-            &vm,
-            &caller_private_key,
-            &caller_address,
-            Some(&[&mint_inputs]),
-            &[mint_transaction],
-            rng,
-        );
+        add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[mint_transaction], rng);
 
         minted_record
     };
@@ -396,7 +388,7 @@ constructor:
 
         if should_succeed {
             let transaction = result.map_err(|e| anyhow!("{function_name} failed with: {e}")).unwrap();
-            add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
         } else {
             match result {
                 Ok(transaction) => {
@@ -678,7 +670,7 @@ constructor:
     // Deploy the program.
     println!("Deploying record_security.aleo...");
     let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_tx], rng);
 
     // Helper: mint a Data record and add it to the ledger.
     let mint_record = |rng: &mut TestRng| {
@@ -698,7 +690,7 @@ constructor:
                 _ => None,
             })
             .unwrap();
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&mint_inputs]), &[tx], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[tx], rng);
         record
     };
 
@@ -719,7 +711,7 @@ constructor:
 
         if should_succeed {
             let tx = result.unwrap_or_else(|e| panic!("Expected {description} to succeed: {e}"));
-            add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
         } else {
             match result {
                 Ok(tx) => {

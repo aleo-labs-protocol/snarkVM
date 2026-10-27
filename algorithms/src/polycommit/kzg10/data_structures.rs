@@ -19,7 +19,7 @@ use crate::{
 };
 use snarkvm_curves::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{ConstraintFieldError, ToConstraintField, Zero};
-use snarkvm_parameters::mainnet::PowersOfG;
+use snarkvm_parameters::mainnet::{PowersFile, PowersOfG};
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,
@@ -72,6 +72,24 @@ impl<E: PairingEngine> UniversalParams<E> {
         self.powers.download_powers_for(range)
     }
 
+    /// See `PowersOfG::download_powers_for_ends`.
+    pub fn download_powers_for_ends(&self, prefix: usize, suffix: usize) -> Result<()> {
+        self.powers.download_powers_for_ends(prefix, suffix)
+    }
+
+    /// The files this SRS still needs to hold `range`, in the order
+    /// `add_powers_file` accepts them. An embedded file is never listed.
+    pub fn missing_files_for(&self, range: Range<usize>) -> Result<Vec<PowersFile>> {
+        self.powers.missing_files_for(range)
+    }
+
+    /// Reads `file` from `reader`, checks its size and checksum, and appends
+    /// its powers. A file already held is not read. `reader` need not be
+    /// buffered.
+    pub fn add_powers_file(&self, file: &PowersFile, reader: impl Read) -> Result<()> {
+        self.powers.add_powers_file(file, reader)
+    }
+
     pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Result<Vec<E::G1Affine>> {
         let basis = domain
             .ifft(&self.powers_of_beta_g(0, domain.size())?.iter().map(|e| (*e).to_projective()).collect::<Vec<_>>());
@@ -84,6 +102,23 @@ impl<E: PairingEngine> UniversalParams<E> {
 
     pub fn powers_of_beta_g(&self, lower: usize, upper: usize) -> Result<Vec<E::G1Affine>> {
         self.powers.powers_of_beta_g(lower..upper)
+    }
+
+    /// The powers in `lower..upper`, as the SRS snapshot holding them and their
+    /// range within it, fetched first if needed. The snapshot never changes, so
+    /// a key may share it for as long as it lives.
+    pub fn shared_powers_of_beta_g(&self, lower: usize, upper: usize) -> Result<(Arc<Vec<E::G1Affine>>, Range<usize>)> {
+        self.powers.shared_powers_of_beta_g(lower..upper)
+    }
+
+    /// The powers in `lower..upper`, as `shared_powers_of_beta_g` gives them,
+    /// if this SRS already holds them; downloads nothing.
+    pub fn held_shared_powers_of_beta_g(
+        &self,
+        lower: usize,
+        upper: usize,
+    ) -> Option<(Arc<Vec<E::G1Affine>>, Range<usize>)> {
+        self.powers.held_shared_powers_of_beta_g(lower..upper)
     }
 
     pub fn powers_of_beta_times_gamma_g(&self) -> &BTreeMap<usize, E::G1Affine> {
@@ -114,42 +149,6 @@ impl<E: PairingEngine> UniversalParams<E> {
             vk: VerifierKey::<E> { g, gamma_g, h, beta_h, prepared_h, prepared_beta_h },
             prepared_negative_powers_of_beta_h: self.powers.prepared_negative_powers_of_beta_h(),
         })
-    }
-}
-
-impl<E: PairingEngine> FromBytes for UniversalParams<E> {
-    fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
-        // Deserialize `powers`.
-        let powers = Arc::new(PowersOfG::read_le(&mut reader)?);
-
-        // Deserialize `h`.
-        let h: E::G2Affine = FromBytes::read_le(&mut reader)?;
-
-        // Deserialize `prepared_h`.
-        let prepared_h: <E::G2Affine as PairingCurve>::Prepared = FromBytes::read_le(&mut reader)?;
-
-        // Deserialize `prepared_beta_h`.
-        let prepared_beta_h: <E::G2Affine as PairingCurve>::Prepared = FromBytes::read_le(&mut reader)?;
-
-        Ok(Self { powers, h, prepared_h, prepared_beta_h })
-    }
-}
-
-impl<E: PairingEngine> ToBytes for UniversalParams<E> {
-    fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        // Serialize powers.
-        self.powers.write_le(&mut writer)?;
-
-        // Serialize `h`.
-        self.h.write_le(&mut writer)?;
-
-        // Serialize `prepared_h`.
-        self.prepared_h.write_le(&mut writer)?;
-
-        // Serialize `prepared_beta_h`.
-        self.prepared_beta_h.write_le(&mut writer)?;
-
-        Ok(())
     }
 }
 

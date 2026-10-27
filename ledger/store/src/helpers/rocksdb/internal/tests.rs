@@ -183,7 +183,7 @@ fn test_iterator_ordering() {
     map.insert(4, "e".to_string()).expect("Failed to insert");
 
     // Define the expected order of the iterator.
-    let expected_order = vec![
+    let expected_order = [
         (1, "h".to_string()),
         (2, "g".to_string()),
         (3, "f".to_string()),

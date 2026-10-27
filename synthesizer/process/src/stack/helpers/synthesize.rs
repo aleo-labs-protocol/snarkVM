@@ -59,7 +59,7 @@ impl<N: Network> Stack<N> {
                 _ => self.sample_value(&burner_address, &input_type.into(), rng),
             })
             .collect::<Result<Vec<_>>>()?;
-        // Sample a dummy 'is_root'.
+        // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
         let is_root = true;
         // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;
@@ -167,7 +167,8 @@ impl<N: Network> Stack<N> {
         );
 
         // Construct the translation circuit.
-        let circuit_assignment = translation_assignment.to_circuit_assignment::<A>(translation_index)?;
+        let circuit_assignment =
+            translation_assignment.to_circuit_assignment::<A>(translation_index, None, None, None)?;
 
         // Synthesize the proving and verifying key.
         let (proving_key, verifying_key) =

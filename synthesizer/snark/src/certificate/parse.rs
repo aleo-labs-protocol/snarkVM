@@ -20,7 +20,7 @@ static VK_CERTIFICATE_PREFIX: &str = "certificate";
 impl<N: Network> Parser for Certificate<N> {
     /// Parses a string into an certificate.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo certificate.
         let parse_certificate = recognize(pair(
             pair(tag(VK_CERTIFICATE_PREFIX), tag("1")),

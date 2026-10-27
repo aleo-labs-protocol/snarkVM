@@ -57,7 +57,7 @@ fn standard_window<G: AffineCurve>(
     }
 
     // We don't need the "zero" bucket, so we only have 2^c - 1 buckets
-    let window_size = if (w_start % c) != 0 { w_start % c } else { c };
+    let window_size = if !w_start.is_multiple_of(c) { w_start % c } else { c };
     let mut buckets = vec![G::Projective::zero(); (1 << window_size) - 1];
     scalars
         .iter()

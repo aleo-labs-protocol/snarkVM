@@ -43,8 +43,8 @@ impl Ord for BucketPosition {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for BucketPosition {
-    #[allow(clippy::non_canonical_partial_ord_impl)]
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         self.bucket_index.partial_cmp(&other.bucket_index)
     }
@@ -338,7 +338,7 @@ fn batched_window<G: AffineCurve>(
     c: usize,
 ) -> (G::Projective, usize) {
     // We don't need the "zero" bucket, so we only have 2^c - 1 buckets
-    let window_size = if (w_start % c) != 0 { w_start % c } else { c };
+    let window_size = if !w_start.is_multiple_of(c) { w_start % c } else { c };
     let num_buckets = (1 << window_size) - 1;
 
     let mut bucket_positions: Vec<_> = scalars
@@ -370,7 +370,10 @@ fn batched_window<G: AffineCurve>(
 }
 
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    if bases.len() < 15 {
+    // Below 32 bases, each window of the bucket method holds too few points to
+    // amortize its batched inversions, and double-and-add is several times
+    // faster.
+    if bases.len() < 32 {
         let num_bits = G::ScalarField::size_in_bits();
         let bigint_size = <G::ScalarField as PrimeField>::BigInteger::NUM_LIMBS * 64;
         let mut bits =
@@ -393,10 +396,7 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         sum
     } else {
         // Determine the bucket size `c` (chosen empirically).
-        let c = match scalars.len() < 32 {
-            true => 1,
-            false => crate::msm::ln_without_floats(scalars.len()) + 2,
-        };
+        let c = crate::msm::ln_without_floats(scalars.len()) + 2;
 
         let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
 

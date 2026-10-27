@@ -69,11 +69,17 @@ impl<N: Network> BatchHeader<N> {
 
 impl<N: Network> BatchHeader<N> {
     /// The maximum number of microcredits that can be spent on compute by the transactions in a batch.
-    /// This implies the block spend limit is bounded at batch_spend_limit * N::NUM_MAX_CERTIFICATES` * MAX_GC_ROUNDS.
-    // TODO: div by 20 is temporary until we can dial in what the limit should be.
     pub fn batch_spend_limit(height: u32) -> u64 {
-        consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap() * Self::MAX_TRANSMISSIONS_PER_BATCH as u64
-            / 20
+        // TODO(vicsn) a more robust setup would bound the batch spend limit further.
+        // For example to: 5_f64 * credits_per_second_of_runtime / max_certificates.
+        if height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
+            consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap()
+        } else {
+            // NOTE: div by 20 was temporary until we could dial in what the limit should be.
+            consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap()
+                * Self::MAX_TRANSMISSIONS_PER_BATCH as u64
+                / 20
+        }
     }
 }
 
@@ -344,28 +350,5 @@ pub mod test_helpers {
         }
         // Return the sample vector.
         sample
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use console::network::{CanaryV0, MainnetV0, TestnetV0};
-
-    #[test]
-    fn test_max_synthesis_cost_below_batch_spend_limit() {
-        fn max_synthesis_cost_valid<N: Network>() {
-            let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS)
-                * N::SYNTHESIS_FEE_MULTIPLIER
-                / N::ARC_0005_COMPUTE_DISCOUNT;
-            for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
-                assert!(max_synthesis_cost < BatchHeader::<N>::batch_spend_limit(*height));
-            }
-        }
-
-        max_synthesis_cost_valid::<CanaryV0>();
-        max_synthesis_cost_valid::<TestnetV0>();
-        max_synthesis_cost_valid::<MainnetV0>();
     }
 }

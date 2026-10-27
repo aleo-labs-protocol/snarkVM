@@ -131,7 +131,7 @@ fn test_get_record_dynamic() {
     // Deploy the program.
     println!("Deploying program warehouse.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     /************** Case 1: Simple read **************/
 
@@ -154,14 +154,7 @@ fn test_get_record_dynamic() {
 
             let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap().clone();
 
-            add_and_test_with_costs(
-                &vm,
-                &caller_private_key,
-                &caller_address,
-                Some(&[&mint_inputs]),
-                &[transaction_mint],
-                rng,
-            );
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[transaction_mint], rng);
 
             let output_record = match mint_output {
                 Output::Record(_, _, record_ciphertext, _) => {
@@ -189,7 +182,7 @@ fn test_get_record_dynamic() {
         transaction_1.transitions().nth(1).unwrap().outputs()
     );
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_1]), &[transaction_1], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_1]), &[transaction_1], rng);
 
     /************** Case 2: Read from minted records (using polymorphy) **************/
 
@@ -221,7 +214,7 @@ fn test_get_record_dynamic() {
         transaction_2.transitions().next().unwrap().outputs()
     );
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_2]), &[transaction_2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_2]), &[transaction_2], rng);
 
     /************** Case 3: Various incorrect readings **************/
 
@@ -338,6 +331,8 @@ fn test_get_record_dynamic() {
 
 // Translates the output of a call to `credits.aleo/transfer_public_to_private` into a dynamic record.
 // This ensures signature verification has not been broken by the new caller metadata.
+// **** Note **** This test must exceptionally be run at ConsensusVersion::V18 now that credits
+//                translation has been gated by that version.
 #[test]
 fn translate_transfer_public_to_private() {
     let credits_program_str = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
@@ -379,7 +374,7 @@ fn translate_transfer_public_to_private() {
 
     let rng = &mut TestRng::default();
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     let caller_private_key = sample_genesis_private_key(rng);
     let address = Address::try_from(&caller_private_key).unwrap();
@@ -388,7 +383,7 @@ fn translate_transfer_public_to_private() {
     // Deploy the program
     println!("Deploying program dynamic_credits.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     // Print the initial balance
     let Some(Value::Plaintext(Plaintext::Literal(Literal::U64(initial_balance), _))) = vm
@@ -423,7 +418,7 @@ fn translate_transfer_public_to_private() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &address, Some(&[&transfer_public_inputs]), &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&transfer_public_inputs]), &[transaction], rng);
 
     // Execute the dynamic call.
     println!("Executing root function dynamic_credits.aleo/transfer_pub_priv_and_inform...");
@@ -439,14 +434,7 @@ fn translate_transfer_public_to_private() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &address,
-        Some(&[&transfer_inputs]),
-        &[transaction_transfer],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&transfer_inputs]), &[transaction_transfer], rng);
 }
 
 // Tests `dynamic.record` with 10 fields to verify the depth-5 Merkle tree handles larger records correctly.
@@ -513,7 +501,7 @@ fn test_dynamic_record_with_many_fields() {
     // Deploy the program
     println!("Deploying program many_fields.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     let mut dynamic_records = (0..2)
         .map(|_| {
@@ -543,14 +531,7 @@ fn test_dynamic_record_with_many_fields() {
                 _ => panic!("Expected record output"),
             };
 
-            add_and_test_with_costs(
-                &vm,
-                &caller_private_key,
-                &caller_address,
-                Some(&[&mint_inputs]),
-                &[transaction_mint],
-                rng,
-            );
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[transaction_mint], rng);
 
             // Convert to dynamic record
             DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap()
@@ -570,14 +551,7 @@ fn test_dynamic_record_with_many_fields() {
         "Expected field5 = 5u64"
     );
 
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_read5]),
-        &[transaction_read5],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_read5]), &[transaction_read5], rng);
 
     // Read field10 (last private field)
     println!("Reading field10 from dynamic record...");
@@ -592,14 +566,7 @@ fn test_dynamic_record_with_many_fields() {
         "Expected field10 = 10u64"
     );
 
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_read10]),
-        &[transaction_read10],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_read10]), &[transaction_read10], rng);
 }
 
 // Tests dynamic records with nested struct fields to verify complex data structures work correctly.
@@ -668,7 +635,7 @@ fn test_dynamic_record_with_nested_structs() {
     // Deploy the program
     println!("Deploying program nested_structs.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     let mut dynamic_records = (0..2)
         .map(|_| {
@@ -698,14 +665,7 @@ fn test_dynamic_record_with_nested_structs() {
                 _ => panic!("Expected record output"),
             };
 
-            add_and_test_with_costs(
-                &vm,
-                &caller_private_key,
-                &caller_address,
-                Some(&[&mint_inputs]),
-                &[transaction_mint],
-                rng,
-            );
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[transaction_mint], rng);
 
             // Convert to dynamic record
             DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap()
@@ -733,14 +693,7 @@ fn test_dynamic_record_with_nested_structs() {
         "Expected nested.extra = 999field"
     );
 
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_read_nested]),
-        &[transaction_read_nested],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_read_nested]), &[transaction_read_nested], rng);
 
     // Read the simple field
     println!("Reading simple field from dynamic record...");
@@ -763,14 +716,7 @@ fn test_dynamic_record_with_nested_structs() {
         "Expected simple_field = 42u64"
     );
 
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_read_simple]),
-        &[transaction_read_simple],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_read_simple]), &[transaction_read_simple], rng);
 }
 
 // Tests `dynamic.record` with minimal fields (owner only) to verify the smallest possible record structure works.
@@ -822,7 +768,7 @@ fn test_dynamic_record_minimal_fields() {
     // Deploy the program
     println!("Deploying program minimal_record.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     // Mint a minimal record
     println!("Minting minimal record...");
@@ -840,7 +786,7 @@ fn test_dynamic_record_minimal_fields() {
         _ => panic!("Expected record output"),
     };
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&mint_inputs]), &[transaction_mint], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[transaction_mint], rng);
 
     // Convert to dynamic record
     let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap();
@@ -866,14 +812,7 @@ fn test_dynamic_record_minimal_fields() {
         "Minimal record should be consumable as dynamic record"
     );
 
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_consume]),
-        &[transaction_consume],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_consume]), &[transaction_consume], rng);
 }
 
 // Tests `dynamic.record` with 20 fields to verify near-maximum capacity for the depth-5 Merkle tree (max 32 entries).
@@ -957,7 +896,7 @@ fn test_dynamic_record_near_maximum_fields() {
     // Deploy the program
     println!("Deploying program max_fields.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     let mut dynamic_records = (0..3)
         .map(|_| {
@@ -978,14 +917,7 @@ fn test_dynamic_record_near_maximum_fields() {
                 _ => panic!("Expected record output"),
             };
 
-            add_and_test_with_costs(
-                &vm,
-                &caller_private_key,
-                &caller_address,
-                Some(&[&mint_inputs]),
-                &[transaction_mint],
-                rng,
-            );
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[transaction_mint], rng);
 
             DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap()
         })
@@ -1003,14 +935,7 @@ fn test_dynamic_record_near_maximum_fields() {
         matches!(tx_read_first.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f1),
         "Expected f1 = 1u64"
     );
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_read_first]),
-        &[tx_read_first],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_read_first]), &[tx_read_first], rng);
 
     // Read a middle field
     println!("Reading f10 from large record...");
@@ -1024,14 +949,7 @@ fn test_dynamic_record_near_maximum_fields() {
         matches!(tx_read_middle.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f10),
         "Expected f10 = 10u64"
     );
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_read_middle]),
-        &[tx_read_middle],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_read_middle]), &[tx_read_middle], rng);
 
     // Read the last field
     println!("Reading f20 from large record...");
@@ -1045,14 +963,7 @@ fn test_dynamic_record_near_maximum_fields() {
         matches!(tx_read_last.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f20),
         "Expected f20 = 20u64"
     );
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_read_last]),
-        &[tx_read_last],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_read_last]), &[tx_read_last], rng);
 }
 
 // Tests `get.record.dynamic` with exactly 32 data fields — the MAX_DATA_ENTRIES boundary.
@@ -1135,7 +1046,7 @@ fn test_dynamic_record_maximum_fields() {
     // Deploy the program.
     println!("Deploying program max32_record.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     let mut dynamic_records = (0..4)
         .map(|_| {
@@ -1164,14 +1075,7 @@ fn test_dynamic_record_maximum_fields() {
                 _ => panic!("Expected record output"),
             };
 
-            add_and_test_with_costs(
-                &vm,
-                &caller_private_key,
-                &caller_address,
-                Some(&[&mint_inputs]),
-                &[transaction_mint],
-                rng,
-            );
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[transaction_mint], rng);
 
             DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap()
         })
@@ -1189,7 +1093,7 @@ fn test_dynamic_record_maximum_fields() {
         matches!(tx_first.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f1),
         "Expected f1 = 1u64"
     );
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_first]), &[tx_first], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_first]), &[tx_first], rng);
 
     // Read f16 (last public field, value == 16).
     println!("Reading f16 from 32-field record...");
@@ -1203,7 +1107,7 @@ fn test_dynamic_record_maximum_fields() {
         matches!(tx_middle.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f16),
         "Expected f16 = 16u64"
     );
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_middle]), &[tx_middle], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_middle]), &[tx_middle], rng);
 
     // Read f17 (first private field, value == 17, at the public/private visibility boundary).
     println!("Reading f17 from 32-field record (first private field, visibility boundary)...");
@@ -1225,7 +1129,7 @@ fn test_dynamic_record_maximum_fields() {
         matches!(tx_boundary.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f17),
         "Expected f17 = 17u64"
     );
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_boundary]), &[tx_boundary], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_boundary]), &[tx_boundary], rng);
 
     // Read f32 (last field, value == 32, exercising all 32 Merkle leaves).
     println!("Reading f32 from 32-field record...");
@@ -1239,7 +1143,7 @@ fn test_dynamic_record_maximum_fields() {
         matches!(tx_last.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f32),
         "Expected f32 = 32u64"
     );
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_last]), &[tx_last], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_last]), &[tx_last], rng);
 }
 
 // Tests `get.record.dynamic` with explicit visibility suffixes (`.private`, `.public`, `.constant`).
@@ -1322,7 +1226,7 @@ fn test_get_record_dynamic_visibility() {
     // Deploy the program.
     println!("Deploying program visibility_test.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_deploy], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_deploy], rng);
 
     let mut dynamic_records = (0..5)
         .map(|_| {
@@ -1351,14 +1255,7 @@ fn test_get_record_dynamic_visibility() {
                 _ => panic!("Expected record output"),
             };
 
-            add_and_test_with_costs(
-                &vm,
-                &caller_private_key,
-                &caller_address,
-                Some(&[&mint_inputs]),
-                &[transaction_mint],
-                rng,
-            );
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&mint_inputs]), &[transaction_mint], rng);
 
             DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap()
         })
@@ -1385,14 +1282,7 @@ fn test_get_record_dynamic_visibility() {
         matches!(tx_private_match.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_secret),
         "Expected secret = 42u64"
     );
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_private_match]),
-        &[tx_private_match],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_private_match]), &[tx_private_match], rng);
 
     /************** Case 2: Read public field with matching .public visibility **************/
 
@@ -1415,14 +1305,7 @@ fn test_get_record_dynamic_visibility() {
         matches!(tx_public_match.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_visible),
         "Expected visible = 99u64"
     );
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_public_match]),
-        &[tx_public_match],
-        rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_public_match]), &[tx_public_match], rng);
 
     /************** Case 3: Read private field with mismatching .public visibility **************/
 
@@ -1480,5 +1363,5 @@ fn test_get_record_dynamic_visibility() {
         matches!(tx_no_vis.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_secret),
         "Expected secret = 42u64 (no visibility check)"
     );
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_no_vis]), &[tx_no_vis], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_no_vis]), &[tx_no_vis], rng);
 }

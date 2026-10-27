@@ -412,6 +412,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Verify that the root of the cached block tree matches the one in the storage.
         let tree_root = <N::StateRoot>::from(ledger.vm().block_store().get_block_tree_root());
+        // Height 0 stores `Field::one()` as its state root.
+        #[cfg(feature = "dev_genesis_state_root")]
+        let tree_root = if latest_height == 0 { Field::<N>::one().into() } else { tree_root };
         let state_root = ledger
             .vm()
             .block_store()

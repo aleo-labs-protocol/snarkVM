@@ -562,7 +562,7 @@ impl<N: Network> ProgramCore<N> {
         let mapping_name = *mapping.name();
 
         // Ensure the program has not exceeded the maximum number of mappings.
-        ensure!(self.mappings.len() < N::MAX_MAPPINGS, "Program exceeds the maximum number of mappings");
+        ensure!(self.mappings.len() < N::LATEST_MAX_MAPPINGS(), "Program exceeds the maximum number of mappings");
 
         // Ensure the mapping name is new.
         ensure!(self.is_unique_name(&mapping_name), "'{mapping_name}' is already in use.");
@@ -977,10 +977,10 @@ impl<N: Network> ProgramCore<N> {
         let mut record_names_iter = record_names.iter();
         let mut previous_record_name = record_names_iter.next();
         for record_name in record_names_iter {
-            if let Some(previous) = previous_record_name {
-                if record_name.starts_with(previous) {
-                    bail!("Record name '{previous}' can't be a prefix of record name '{record_name}'.");
-                }
+            if let Some(previous) = previous_record_name
+                && record_name.starts_with(previous)
+            {
+                bail!("Record name '{previous}' can't be a prefix of record name '{record_name}'.");
             }
             previous_record_name = Some(record_name);
         }
@@ -1337,12 +1337,11 @@ impl<N: Network> ProgramCore<N> {
             {
                 return Ok(true);
             }
-            if let Some(finalize) = function.finalize_logic() {
-                if finalize.inputs().iter().any(|input| matches!(input.finalize_type(), FinalizeType::DynamicFuture))
-                    || finalize.commands().iter().any(is_v14_command)
-                {
-                    return Ok(true);
-                }
+            if let Some(finalize) = function.finalize_logic()
+                && (finalize.inputs().iter().any(|input| matches!(input.finalize_type(), FinalizeType::DynamicFuture))
+                    || finalize.commands().iter().any(is_v14_command))
+            {
+                return Ok(true);
             }
             if function.contains_identifier_type()? {
                 return Ok(true);
@@ -1435,6 +1434,29 @@ impl<N: Network> ProgramCore<N> {
             .any(|command| matches!(command, Command::Instruction(Instruction::Call(_))));
 
         function_contains || closure_contains || command_contains || finalize_has_call || !self.views.is_empty()
+    }
+
+    /// Returns `true` if a program contains any V16 syntax.
+    /// This includes the `Operand::ComponentChecksum` operand.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V16`.
+    #[inline]
+    pub fn contains_v16_syntax(&self) -> bool {
+        // Check each command operand in every finalize, constructor, and view scope for `Operand::ComponentChecksum`.
+        let command_contains = cfg_iter!(self.functions())
+            .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
+            .flatten()
+            .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
+            .chain(cfg_iter!(self.views).flat_map(|(_, view)| view.commands()))
+            .flat_map(|command| command.operands())
+            .any(|operand| matches!(operand, Operand::ComponentChecksum(..)));
+
+        // Views additionally have output operands, which are not commands and so are checked separately.
+        let view_output_contains = self
+            .views
+            .values()
+            .any(|view| view.outputs().iter().any(|output| matches!(output.operand(), Operand::ComponentChecksum(..))));
+
+        command_contains || view_output_contains
     }
 
     /// Returns `true` if a program contains any string type.

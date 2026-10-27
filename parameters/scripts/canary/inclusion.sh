@@ -2,7 +2,7 @@
 
 # Inputs: network
 
-cargo run --release --example inclusion canary -- --nocapture || exit
+cargo run --release --features filesystem --example inclusion canary -- --nocapture || exit
 
 mv inclusion.metadata ../../src/canary/resources/credits || exit
 mv inclusion.prover.* ~/.aleo/resources || exit

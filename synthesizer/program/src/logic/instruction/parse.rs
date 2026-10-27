@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Instruction<N> {
     /// Parses a string into an instruction.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Create an alt parser that matches the instruction.
         ///
         /// `nom` documentation notes that alt supports a maximum of 21 parsers.

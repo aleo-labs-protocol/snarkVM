@@ -184,7 +184,7 @@ mod tests {
 
         let result = std::panic::catch_unwind(|| {
             // try_vm_runtime uses catch_unwind internally
-            let vm_result = try_vm_runtime!(|| {
+            let vm_result = try_vm_runtime(|| {
                 panic!("VM operation failed!");
             });
 

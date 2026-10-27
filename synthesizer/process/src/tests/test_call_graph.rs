@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::Process;
+use crate::{Process, tests::test_utils::shared_process};
 use console::{
     network::{MainnetV0, prelude::*},
     program::{Group, Identifier, ProgramID},
@@ -479,8 +479,7 @@ fn test_error_missing_child_transition() {
 /// An empty transition list produces an empty call graph without error.
 #[test]
 fn test_empty_transitions() {
-    let process = Process::<CurrentNetwork>::load().unwrap(); // unwrap: always succeeds in tests
     let transitions: Vec<&Transition<CurrentNetwork>> = vec![];
-    let graph = construct_call_graph(&process, &transitions).unwrap();
+    let graph = construct_call_graph(shared_process(), &transitions).unwrap();
     assert!(graph.is_empty());
 }

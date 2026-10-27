@@ -43,7 +43,9 @@ impl<N: Network> FromBytes for ClosureCore<N> {
         if num_instructions > u32::try_from(N::MAX_INSTRUCTIONS).map_err(error)? {
             return Err(error(format!("Failed to deserialize a closure: too many instructions ({num_instructions})")));
         }
-        let mut instructions = Vec::with_capacity(num_instructions as usize);
+        // Cap the reservation: the count is attacker-supplied, and the elements behind
+        // it may not exist.
+        let mut instructions = Vec::with_capacity((num_instructions as usize).min(1024));
         for _ in 0..num_instructions {
             instructions.push(Instruction::read_le(&mut reader)?);
         }

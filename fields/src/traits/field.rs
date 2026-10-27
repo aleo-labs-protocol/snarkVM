@@ -138,26 +138,22 @@ pub trait Field:
     /// least significant limb first.
     #[must_use]
     fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::one();
+        let mut bits = BitIteratorBE::new_without_leading_zeros(exp);
 
-        let mut found_one = false;
+        if bits.next().is_none() {
+            Self::one()
+        } else {
+            let mut res = *self;
 
-        for i in BitIteratorBE::new(exp) {
-            if !found_one {
-                if i {
-                    found_one = true;
-                } else {
-                    continue;
+            for bit in bits {
+                res.square_in_place();
+
+                if bit {
+                    res *= self;
                 }
             }
-
-            res.square_in_place();
-
-            if i {
-                res *= self;
-            }
+            res
         }
-        res
     }
 
     /// Returns a field element if the set of bytes forms a valid field element,

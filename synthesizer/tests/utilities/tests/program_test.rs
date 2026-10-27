@@ -202,8 +202,78 @@ impl ExpectedTest for ProgramTest {
 
     fn save(&self, output: &Self::Output) -> Result<()> {
         if self.rewrite {
+            // Strip the `additional` field before writing. It holds concrete output values (record
+            // ciphertexts, nonces, transition IDs) that `check` never compares and that change on every
+            // run due to randomness and block height. Persisting them would bloat the expectation files
+            // and produce spurious diffs on every regeneration.
+            let mut output = output.clone();
+            output.remove(Value::String("additional".to_string()));
             std::fs::write(&self.path, serde_yaml::to_string(&output).expect("failed to serialize output to string"))?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_yaml::{Mapping, Value};
+    use std::path::PathBuf;
+
+    // Constructs a minimal `ProgramTest` for exercising `save`; only `path` and `rewrite` are used.
+    fn program_test_for_save(path: PathBuf, rewrite: bool) -> ProgramTest {
+        ProgramTest {
+            programs: Vec::new(),
+            cases: Vec::new(),
+            expected: Mapping::new(),
+            path,
+            rewrite,
+            randomness: None,
+            keys: Vec::new(),
+            start_height: 0,
+        }
+    }
+
+    // Constructs a sample output with the checked `errors` and `outputs` fields, along with the
+    // unchecked `additional` field that holds concrete, fragile output values.
+    fn sample_output() -> Mapping {
+        let mut output = Mapping::new();
+        output.insert(Value::String("errors".to_string()), Value::Sequence(Vec::new()));
+        output
+            .insert(Value::String("outputs".to_string()), Value::Sequence(vec![Value::String("verified".to_string())]));
+        output.insert(
+            Value::String("additional".to_string()),
+            Value::Sequence(vec![Value::String("record1qvqs...".to_string())]),
+        );
+        output
+    }
+
+    #[test]
+    fn test_save_strips_concrete_output_values() {
+        let dir = tempfile::tempdir().expect("failed to create temporary directory");
+        let path = dir.path().join("expectation.out");
+        let test = program_test_for_save(path.clone(), true);
+
+        test.save(&sample_output()).expect("failed to save expectation");
+
+        let written = std::fs::read_to_string(&path).expect("failed to read expectation");
+        let parsed = serde_yaml::from_str::<Mapping>(&written).expect("failed to parse expectation");
+        // The unchecked `additional` field (concrete, fragile output values) must not be persisted.
+        assert!(!parsed.contains_key(Value::String("additional".to_string())));
+        // The checked fields must be persisted.
+        assert!(parsed.contains_key(Value::String("errors".to_string())));
+        assert!(parsed.contains_key(Value::String("outputs".to_string())));
+    }
+
+    #[test]
+    fn test_save_does_nothing_without_rewrite() {
+        let dir = tempfile::tempdir().expect("failed to create temporary directory");
+        let path = dir.path().join("expectation.out");
+        let test = program_test_for_save(path.clone(), false);
+
+        test.save(&sample_output()).expect("failed to save expectation");
+
+        // No file should be written when the rewrite flag is disabled.
+        assert!(!path.exists());
     }
 }

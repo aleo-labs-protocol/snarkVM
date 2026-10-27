@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-OWNER="ProvableHQ"
+OWNER="aleo-labs-protocol"
 REPO="snarkVM"
 WS="${WS:-.claude/workspace}"
 

@@ -2,7 +2,7 @@
 
 # Inputs: network
 
-cargo run --release --example translation testnet -- --nocapture || exit
+cargo run --release --features filesystem --example translation testnet -- --nocapture || exit
 
 mv translation_credits.metadata ../../src/testnet/resources/credits || exit
 mv translation_credits.prover.* ~/.aleo/resources || exit

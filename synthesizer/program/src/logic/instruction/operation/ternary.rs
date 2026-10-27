@@ -223,7 +223,7 @@ impl<N: Network> Ternary<N> {
 
 impl<N: Network> Parser for Ternary<N> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.

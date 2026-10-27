@@ -104,7 +104,7 @@ impl<N: Network> Contains<N> {
 
 impl<N: Network> Parser for Contains<N> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the opcode from the string.

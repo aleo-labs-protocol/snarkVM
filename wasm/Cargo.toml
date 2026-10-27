@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-wasm"
-version = "4.7.1"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "WASM for a decentralized virtual machine"
 homepage = "https://aleo.org"

@@ -137,6 +137,13 @@ impl<N: Network, C: ConsensusStorage<N>> ConsensusStore<N, C> {
         self.storage.block_store()
     }
 
+    /// Catches up with the primary instance; only applicable to storage opened in secondary mode.
+    /// See [`BlockStore::catch_up_with_primary`] for details.
+    #[cfg(feature = "rocks")]
+    pub fn catch_up_with_primary(&self) -> Result<()> {
+        self.block_store().catch_up_with_primary()
+    }
+
     /// Returns the transaction store.
     pub fn transaction_store(&self) -> &TransactionStore<N, C::TransactionStorage> {
         self.storage.transaction_store()

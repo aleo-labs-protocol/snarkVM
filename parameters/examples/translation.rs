@@ -138,10 +138,10 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         *id_dynamic,
     ];
 
-    Ok((translation_assignment.to_circuit_assignment::<A>(translation_index)?, verifier_inputs))
+    Ok((translation_assignment.to_circuit_assignment::<A>(translation_index, None, None, None)?, verifier_inputs))
 }
 
-/// Synthesizes the circuit keys for the credits.aleo credits record translation circuit. (cargo run --release --example translation [network])
+/// Synthesizes the circuit keys for the credits.aleo credits record translation circuit. (cargo run --release --features filesystem --example translation [network])
 pub fn translation<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     let rng = &mut rand::rng();
     let process = Process::<N>::setup::<A, _>(rng)?;
@@ -206,7 +206,7 @@ pub fn translation<N: Network, A: Aleo<Network = N>>() -> Result<()> {
 }
 
 /// Run the following command to generate the translation circuit keys.
-/// `cargo run --example translation [network]`
+/// `cargo run --features filesystem --example translation [network]`
 pub fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 

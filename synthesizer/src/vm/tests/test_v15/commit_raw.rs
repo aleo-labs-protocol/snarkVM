@@ -87,12 +87,12 @@ fn test_deploy_commit_raw_before_and_at_v15() {
 
     let program = Program::from_str(COMMIT_BHP256_RAW_PROGRAM).unwrap();
 
-    // Deployment before V15 should be aborted.
+    // Deployment before V15 should be rejected by verification.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0, "Deployment before V15 should not be accepted");
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1, "Deployment before V15 should be aborted");
+    assert!(vm.check_transaction(&deployment, None, rng).is_err(), "Deployment before V15 should be rejected");
+
+    // Advance to V15 by adding an empty block.
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
     vm.add_next_block(&block).unwrap();
 
     // We should now be at V15.

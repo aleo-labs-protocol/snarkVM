@@ -12,7 +12,7 @@ allowed-tools: Bash, Read, Write
 
 # snarkVM GitHub Context
 
-Fetch PR or issue context from ProvableHQ/snarkVM into `.claude/workspace/`.
+Fetch PR or issue context from aleo-labs-protocol/snarkVM into `.claude/workspace/`.
 
 ## Usage
 

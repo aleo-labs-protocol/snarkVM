@@ -432,7 +432,7 @@ impl<N: Network> ToBytes for Command<N> {
 impl<N: Network> Parser for Command<N> {
     /// Parses the string into the command.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the command.
         // Note that the order of the parsers is important.
         alt((

@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Entry<N, Plaintext<N>> {
     /// Parses a string into the entry.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// A helper enum encoding the visibility.
         #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
         enum Mode {
@@ -28,7 +28,7 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
         }
 
         /// Parses a sanitized pair: `identifier: entry`, while tracking the depth of the data.
-        fn parse_pair<N: Network>(string: &str, depth: usize) -> ParserResult<(Identifier<N>, Plaintext<N>, Mode)> {
+        fn parse_pair<N: Network>(string: &str, depth: usize) -> ParserResult<'_, (Identifier<N>, Plaintext<N>, Mode)> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the identifier from the string.
@@ -55,7 +55,7 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
         }
 
         /// Parses an entry as a literal: `literal.visibility`, while tracking the depth of the data.
-        fn parse_literal<N: Network>(string: &str, depth: usize) -> ParserResult<(Plaintext<N>, Mode)> {
+        fn parse_literal<N: Network>(string: &str, depth: usize) -> ParserResult<'_, (Plaintext<N>, Mode)> {
             // Ensure that the depth is within the maximum limit.
             if depth > N::MAX_DATA_DEPTH {
                 return map_res(take(0usize), |_| {
@@ -71,7 +71,7 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
 
         /// Parses an entry as a struct: `{ identifier_0: plaintext_0.visibility, ..., identifier_n: plaintext_n.visibility }`, while tracking the depth of the data.
         /// Observe the `visibility` is the same for all members of the plaintext value.
-        fn parse_struct<N: Network>(string: &str, depth: usize) -> ParserResult<(Plaintext<N>, Mode)> {
+        fn parse_struct<N: Network>(string: &str, depth: usize) -> ParserResult<'_, (Plaintext<N>, Mode)> {
             // Ensure that the depth is within the maximum limit.
             if depth > N::MAX_DATA_DEPTH {
                 return map_res(take(0usize), |_| {
@@ -114,7 +114,7 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
 
         /// Parses an entry as an array: `[plaintext_0.visibility, ..., plaintext_n.visibility]`, while tracking the depth of the data.
         /// Observe the `visibility` is the same for all members of the plaintext value.
-        fn parse_array<N: Network>(string: &str, depth: usize) -> ParserResult<(Plaintext<N>, Mode)> {
+        fn parse_array<N: Network>(string: &str, depth: usize) -> ParserResult<'_, (Plaintext<N>, Mode)> {
             // Ensure that the depth is within the maximum limit.
             if depth > N::MAX_DATA_DEPTH {
                 return map_res(take(0usize), |_| {

@@ -23,7 +23,6 @@ mod run;
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
-    algorithms::snark::varuna::VarunaVersion,
     console::{
         account::PrivateKey,
         network::{ConsensusVersion, Network},

@@ -94,4 +94,10 @@ impl<A: Aleo> Future<A> {
     pub fn inputs(&self) -> &[Argument<A>] {
         &self.arguments
     }
+
+    /// Returns the arguments.
+    #[inline]
+    pub fn arguments(&self) -> &[Argument<A>] {
+        &self.arguments
+    }
 }

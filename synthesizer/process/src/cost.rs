@@ -20,8 +20,8 @@ use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 use circuit::Aleo;
 use console::{
     prelude::*,
-    program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value},
-    types::Address,
+    program::{FinalizeType, Identifier, Literal, LiteralType, PlaintextType, ProgramID, Value},
+    types::{Address, Field},
 };
 use indexmap::IndexMap;
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -44,7 +44,13 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V22 {
+        deployment_cost_v5(process, deployment, consensus_version)
+    } else if consensus_version >= ConsensusVersion::V18 {
+        deployment_cost_v4(process, deployment)
+    } else if consensus_version >= ConsensusVersion::V16 {
+        deployment_cost_v3(process, deployment)
+    } else if consensus_version >= ConsensusVersion::V10 {
         deployment_cost_v2(process, deployment)
     } else {
         deployment_cost_v1(process, deployment)
@@ -70,7 +76,7 @@ fn execution_cost_given_size<N: Network>(
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, ExecuteCostDetails)> {
     if consensus_version >= ConsensusVersion::V10 {
-        execution_cost_v3(process, execution, execution_size)
+        execution_cost_v3(process, execution, execution_size, Some(consensus_version))
     } else if consensus_version >= ConsensusVersion::V2 {
         execution_cost_v2(process, execution, execution_size)
     } else {
@@ -136,9 +142,7 @@ pub fn execution_cost_for_authorization<N: Network>(
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
     let hiding_mode = true;
 
-    // If future versions of Varuna are introduced, the correct one should be
-    // deduced here from the consensus version. Currently only the latest Varuna
-    // version V2 is supported.
+    // Varuna V2 and V3 use the same serialized proof layout.
     let varuna_version = VarunaVersion::V2;
 
     let expected_proof_size = u64::try_from(proof_size::<N>(&batch_sizes, varuna_version, hiding_mode)?)?;
@@ -176,9 +180,9 @@ pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
 pub fn deploy_compute_cost_in_microcredits(
     cost_details: DeployCostDetails,
     consensus_version: ConsensusVersion,
-) -> Result<u64> {
+) -> u64 {
     let (storage_cost, synthesis_cost, constructor_cost, _) = cost_details;
-    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the constructor compute cost for
         // deployments.
         //
@@ -187,12 +191,8 @@ pub fn deploy_compute_cost_in_microcredits(
         constructor_cost
     } else {
         // Include the storage, synthesis, and constructor cost for deployments.
-        storage_cost
-            .checked_add(synthesis_cost)
-            .and_then(|synthesis_cost| synthesis_cost.checked_add(constructor_cost))
-            .ok_or(anyhow!("The storage, synthesis, and constructor cost computation overflowed for a deployment"))?
-    };
-    Ok(cost_to_check)
+        storage_cost.saturating_add(synthesis_cost).saturating_add(constructor_cost)
+    }
 }
 
 /// Returns the compute cost for an execution in microcredits.
@@ -201,18 +201,206 @@ pub fn deploy_compute_cost_in_microcredits(
 pub fn execute_compute_cost_in_microcredits(
     cost_details: ExecuteCostDetails,
     consensus_version: ConsensusVersion,
-) -> Result<u64> {
+) -> u64 {
     let (storage_cost, finalize_cost) = cost_details;
-    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the finalize compute cost for executions.
         finalize_cost
     } else {
         // Include the finalize cost and storage cost for executions.
-        storage_cost
-            .checked_add(finalize_cost)
-            .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
-    };
-    Ok(cost_to_check)
+        storage_cost.saturating_add(finalize_cost)
+    }
+}
+
+/// Returns the compute spend for a transaction in microcredits.
+/// This is used to limit the amount of single-threaded compute in block generation and finalization hot paths.
+/// This does NOT represent the full cost which a user has to pay.
+pub fn transaction_compute_spend_in_microcredits<N: Network>(
+    process: &Process<N>,
+    transaction: &Transaction<N>,
+    consensus_version: ConsensusVersion,
+) -> Result<u64> {
+    match transaction {
+        Transaction::Deploy(_, _, _, deployment, _) => {
+            let (_, cost_details) = deployment_cost(process, deployment, consensus_version)?;
+            Ok(deploy_compute_cost_in_microcredits(cost_details, consensus_version))
+        }
+        Transaction::Execute(_, _, execution, _) => {
+            let (_, cost_details) = execution_cost(process, execution, consensus_version)?;
+            Ok(execute_compute_cost_in_microcredits(cost_details, consensus_version))
+        }
+        Transaction::Fee(id, _) => bail!("Fee transaction '{id}' does not have deployment or execution spend"),
+    }
+}
+
+/// Returns the minimum cost in microcredits to publish the given deployment (V5).
+///
+/// Identical to V3 except in the cost of the rand.chacha command.
+//
+// The only difference between deployment_cost_v3 and deployment_cost_v4 is the use of num_variables
+// + num_constraints in the former and density in the latter. deployment_cost_v5 returns to the
+// behaviour of the deployment_cost_v3 in this regard, in line with the return to
+// variable/constraint-based deployment (and not density-based) deployment limits at consensus
+// version V19.
+pub fn deployment_cost_v5<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+    consensus_version: ConsensusVersion,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    inner_deployment_cost_v3_v5(process, deployment, Some(consensus_version))
+}
+
+/// Returns the minimum cost in microcredits to publish the given deployment (V4).
+///
+/// Identical to V3 except in that it replaces the factor (`num_combined_variables` + `num_combined_constraints`)
+/// of the synthesis cost by the deployment's combined density.
+pub fn deployment_cost_v4<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    // Determine the number of bytes in the deployment.
+    let size_in_bytes = deployment.size_in_bytes()?;
+    // Retrieve the program ID.
+    let program_id = deployment.program_id();
+    // Determine the number of characters in the program ID.
+    let num_characters = u32::try_from(program_id.name().to_string().len())?;
+    // Compute the combined density of the deployment.
+    let combined_density = deployment.combined_density();
+
+    // Compute the storage cost in microcredits, with a quadratic penalty above 512 kB.
+    let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
+
+    // Compute the synthesis cost in microcredits based on the combined density of the program.
+    let synthesis_cost = combined_density.saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER) / N::ARC_0005_COMPUTE_DISCOUNT;
+
+    // Compute a Stack for the deployment.
+    let stack = Stack::new(process, deployment.program())?;
+
+    // Compute the constructor cost in microcredits.
+    let constructor_cost = constructor_cost_in_microcredits_v2(&stack, None)?;
+
+    // Check that the functions are valid.
+    for function in deployment.program().functions().values() {
+        // Get the finalize cost.
+        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name(), None)?;
+        // Check that the finalize cost does not exceed the maximum.
+        ensure!(
+            finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+            function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Bound each view function's worst-case compute.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3, None)?;
+        ensure!(
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
+    let namespace_cost = 10u64
+        .checked_pow(10u32.saturating_sub(num_characters))
+        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
+        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
+
+    // Compute the minimum cost in microcredits.
+    let minimum_cost = storage_cost
+        .checked_add(synthesis_cost)
+        .and_then(|x| x.checked_add(constructor_cost))
+        .and_then(|x| x.checked_add(namespace_cost))
+        .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
+
+    Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
+// Common computation for deployment costs V3 and V5. Their only difference is that the V5 version
+// needs the consensus version in order to pass it downstream until the inner cost_per_command. In
+// V3 (and earlier), callees do not need it and `None` is passed throughout the entire call chain.
+fn inner_deployment_cost_v3_v5<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+    consensus_version: Option<ConsensusVersion>,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    // Determine the number of bytes in the deployment.
+    let size_in_bytes = deployment.size_in_bytes()?;
+    // Retrieve the program ID.
+    let program_id = deployment.program_id();
+    // Determine the number of characters in the program ID.
+    let num_characters = u32::try_from(program_id.name().to_string().len())?;
+    // Compute the number of combined variables in the program.
+    let num_combined_variables = deployment.num_combined_variables()?;
+    // Compute the number of combined constraints in the program.
+    let num_combined_constraints = deployment.num_combined_constraints()?;
+
+    // Compute the storage cost in microcredits, with a quadratic penalty above 512 kB.
+    let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
+
+    // Compute the synthesis cost in microcredits.
+    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER
+        / N::ARC_0005_COMPUTE_DISCOUNT;
+
+    // Compute a Stack for the deployment.
+    let stack = Stack::new(process, deployment.program())?;
+
+    // Compute the constructor cost in microcredits.
+    let constructor_cost = constructor_cost_in_microcredits_v2(&stack, consensus_version)?;
+
+    // Check that the functions are valid.
+    for function in deployment.program().functions().values() {
+        // Get the finalize cost.
+        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name(), consensus_version)?;
+        // Check that the finalize cost does not exceed the maximum.
+        ensure!(
+            finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+            function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Bound each view function's worst-case compute.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3, consensus_version)?;
+        ensure!(
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
+    let namespace_cost = 10u64
+        .checked_pow(10u32.saturating_sub(num_characters))
+        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
+        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
+
+    // Compute the minimum cost in microcredits.
+    let minimum_cost = storage_cost
+        .checked_add(synthesis_cost)
+        .and_then(|x| x.checked_add(constructor_cost))
+        .and_then(|x| x.checked_add(namespace_cost))
+        .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
+
+    Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
+/// Returns the minimum cost in microcredits to publish the given deployment (V3).
+///
+/// Identical to V2 except that the storage cost scales quadratically for programs larger
+/// than 512 kB (the V14 limit). Programs at or below that threshold are priced identically
+/// to V2, so this function is only routed to at consensus V16+.
+pub fn deployment_cost_v3<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    inner_deployment_cost_v3_v5(process, deployment, None)
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment using the ARC_0005_COMPUTE_DISCOUNT.
@@ -244,12 +432,12 @@ pub fn deployment_cost_v2<N: Network>(
     let stack = Stack::new(process, deployment.program())?;
 
     // Compute the constructor cost in microcredits.
-    let constructor_cost = constructor_cost_in_microcredits_v2(&stack)?;
+    let constructor_cost = constructor_cost_in_microcredits_v2(&stack, None)?;
 
     // Check that the functions are valid.
     for function in deployment.program().functions().values() {
         // Get the finalize cost.
-        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name())?;
+        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name(), None)?;
         // Check that the finalize cost does not exceed the maximum.
         ensure!(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
@@ -264,7 +452,7 @@ pub fn deployment_cost_v2<N: Network>(
     // contribute to `size_in_bytes`). The bound below is purely a deploy-time sanity check
     // to keep pathological views from being accepted.
     for view in deployment.program().views().values() {
-        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3)?;
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3, None)?;
         ensure!(
             view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
             "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
@@ -354,13 +542,14 @@ fn execution_cost_v3<N: Network>(
     process: &Process<N>,
     execution: &Execution<N>,
     execution_size: u64,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<(MinimumCost, ExecuteCostDetails)> {
     // Compute the storage cost in microcredits.
     let storage_cost = execution_storage_cost::<N>(execution_size);
 
     // Compute the finalize cost by iterating over all concrete transitions.
     // This handles dynamic futures correctly because we know the actual functions called.
-    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V3)?;
+    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V3, consensus_version)?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -382,7 +571,7 @@ fn execution_cost_v2<N: Network>(
 
     // Compute the finalize cost by iterating over all concrete transitions.
     // This handles dynamic futures correctly because we know the actual functions called.
-    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V2)?;
+    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V2, None)?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -404,7 +593,7 @@ fn execution_cost_v1<N: Network>(
 
     // Compute the finalize cost by iterating over all concrete transitions.
     // This handles dynamic futures correctly because we know the actual functions called.
-    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V1)?;
+    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V1, None)?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -420,6 +609,29 @@ fn execution_storage_cost<N: Network>(size_in_bytes: u64) -> u64 {
         size_in_bytes.saturating_mul(size_in_bytes).saturating_div(N::EXECUTION_STORAGE_FEE_SCALING_FACTOR)
     } else {
         size_in_bytes
+    }
+}
+
+/// The size threshold in bytes above which deployment storage costs scale quadratically.
+/// Corresponds to the V14 maximum program size (512 kB).
+const DEPLOYMENT_STORAGE_PENALTY_THRESHOLD: u64 = 512_000;
+
+/// Returns the storage cost in microcredits for a program deployment.
+///
+/// Below 512 kB the cost is linear: `size * DEPLOYMENT_FEE_MULTIPLIER`.
+/// Above 512 kB the cost scales quadratically, calibrated to be continuous at the threshold:
+/// `size^2 * DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD`.
+fn deployment_storage_cost<N: Network>(size_in_bytes: u64) -> Result<u64> {
+    if size_in_bytes <= DEPLOYMENT_STORAGE_PENALTY_THRESHOLD {
+        size_in_bytes
+            .checked_mul(N::DEPLOYMENT_FEE_MULTIPLIER)
+            .ok_or_else(|| anyhow!("The storage cost computation overflowed for a deployment"))
+    } else {
+        size_in_bytes
+            .checked_mul(size_in_bytes)
+            .and_then(|x| x.checked_mul(N::DEPLOYMENT_FEE_MULTIPLIER))
+            .and_then(|x| x.checked_div(DEPLOYMENT_STORAGE_PENALTY_THRESHOLD))
+            .ok_or_else(|| anyhow!("The storage cost computation overflowed for a deployment"))
     }
 }
 
@@ -472,10 +684,12 @@ fn plaintext_size_in_bytes<N: Network>(stack: &Stack<N>, plaintext_type: &Plaint
             let size_of_name = struct_.name().to_bytes_le()?.len() as u64;
             // Retrieve the size of all the members of the struct.
             let size_of_members = struct_.members().iter().try_fold(0u64, |acc, (_, member_type)| {
-                acc.checked_add(plaintext_size_in_bytes(stack, member_type)?).ok_or(anyhow!(
-                    "Overflowed while computing the size of the struct '{}/{struct_name}' - {member_type}",
-                    stack.program_id()
-                ))
+                acc.checked_add(plaintext_size_in_bytes(stack, member_type)?).ok_or_else(|| {
+                    anyhow!(
+                        "Overflowed while computing the size of the struct '{}/{struct_name}' - {member_type}",
+                        stack.program_id()
+                    )
+                })
             })?;
             // Return the size of the struct.
             Ok(size_of_name.saturating_add(size_of_members))
@@ -516,10 +730,9 @@ fn cost_in_size<'a, N: Network>(
             }
         };
         // Safely add the size to the accumulator.
-        acc.checked_add(operand_size).ok_or(anyhow!(
-            "Overflowed while computing the size of the operand '{operand}' in '{}'",
-            stack.program_id(),
-        ))
+        acc.checked_add(operand_size).ok_or_else(|| {
+            anyhow!("Overflowed while computing the size of the operand '{operand}' in '{}'", stack.program_id(),)
+        })
     })?;
     // Return the cost.
     Ok(base_cost.saturating_add(byte_multiplier.saturating_mul(size_of_operands)))
@@ -531,6 +744,7 @@ pub fn cost_per_command<N: Network>(
     finalize_types: &FinalizeTypes<N>,
     command: &Command<N>,
     consensus_fee_version: ConsensusFeeVersion,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<u64> {
     let mapping_base_cost = match consensus_fee_version {
         ConsensusFeeVersion::V1 => MAPPING_BASE_COST_V1,
@@ -561,9 +775,16 @@ pub fn cost_per_command<N: Network>(
             match call.operator() {
                 CallOperator::Locator(locator) => {
                     let external_stack = stack.get_external_stack(locator.program_id())?;
-                    view_cost_for_single_view(&*external_stack, locator.resource(), consensus_fee_version)
+                    view_cost_for_single_view(
+                        &*external_stack,
+                        locator.resource(),
+                        consensus_fee_version,
+                        consensus_version,
+                    )
                 }
-                CallOperator::Resource(name) => view_cost_for_single_view(stack, name, consensus_fee_version),
+                CallOperator::Resource(name) => {
+                    view_cost_for_single_view(stack, name, consensus_fee_version, consensus_version)
+                }
             }
         }
         Command::Instruction(Instruction::CallDynamic(_)) => {
@@ -922,8 +1143,8 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::Sub(_)) => Ok(500),
         Command::Instruction(Instruction::SubWrapped(_)) => Ok(500),
         Command::Instruction(Instruction::Ternary(ternary)) => {
-            // Before `ConsensusVersion::V16`, only literal branch operands are permitted, and the
-            // cost is a flat 500 microcredits. At `V16` and later, array or struct operands scale
+            // Before `ConsensusVersion::V23`, only literal branch operands are permitted, and the
+            // cost is a flat 500 microcredits. At `V23` and later, array or struct operands scale
             // the cost by their recursive plaintext size. The literal case is preserved exactly so
             // that previously deployed programs are not subject to a higher minimum fee.
             let branches_are_literal = ternary.operands()[1..3].iter().try_fold(true, |acc, op| {
@@ -960,7 +1181,32 @@ pub fn cost_per_command<N: Network>(
         Command::GetOrUseDynamic(command) => {
             cost_in_size(stack, finalize_types, [command.key_operand()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
-        Command::RandChaCha(_) => Ok(25_000),
+        Command::RandChaCha(command) => {
+            if consensus_version.is_some_and(|version| version >= ConsensusVersion::V22) {
+                let seed_component = {
+                    let mut bhp_operands = command.operands().to_vec();
+                    // The always-present pre-seed is about 750 bits, which is roughly equivalent to 3 field elements.
+                    for _ in 0..3 {
+                        bhp_operands.push(Operand::Literal(Literal::Field(Field::one())));
+                    }
+                    cost_in_size(stack, finalize_types, &bhp_operands, HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+                };
+
+                // The rand_chacha operations which produce a group element incur a non-negligible
+                // cost due to finite-field and elliptic-curve arithmetic.
+                let output_component =
+                    if matches!(command.destination_type(), LiteralType::Group | LiteralType::Address) {
+                        115_000
+                    } else {
+                        0
+                    };
+
+                seed_component.map(|cost| cost.saturating_add(output_component))
+            } else {
+                // Pre-V22 fixed cost.
+                Ok(25_000)
+            }
+        }
         Command::Remove(_) => Ok(SET_BASE_COST),
         Command::Set(command) => {
             cost_in_size(stack, finalize_types, [command.key(), command.value()], SET_PER_BYTE_COST, SET_BASE_COST)
@@ -972,7 +1218,10 @@ pub fn cost_per_command<N: Network>(
 
 /// Returns the minimum number of microcredits required to run the constructor in the given stack.
 /// If a constructor does not exist, no cost is incurred.
-pub fn constructor_cost_in_microcredits_v2<N: Network>(stack: &Stack<N>) -> Result<u64> {
+pub fn constructor_cost_in_microcredits_v2<N: Network>(
+    stack: &Stack<N>,
+    consensus_version: Option<ConsensusVersion>,
+) -> Result<u64> {
     match stack.program().constructor() {
         Some(constructor) => {
             // Get the constructor types.
@@ -981,7 +1230,9 @@ pub fn constructor_cost_in_microcredits_v2<N: Network>(stack: &Stack<N>) -> Resu
             let base_cost = constructor
                 .commands()
                 .iter()
-                .map(|command| cost_per_command(stack, &constructor_types, command, ConsensusFeeVersion::V2))
+                .map(|command| {
+                    cost_per_command(stack, &constructor_types, command, ConsensusFeeVersion::V2, consensus_version)
+                })
                 .try_fold(0u64, |acc, res| {
                     res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Constructor cost overflowed")))
                 })?;
@@ -1006,7 +1257,7 @@ pub fn constructor_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>) -> Resu
             let base_cost = constructor
                 .commands()
                 .iter()
-                .map(|command| cost_per_command(stack, &constructor_types, command, ConsensusFeeVersion::V2))
+                .map(|command| cost_per_command(stack, &constructor_types, command, ConsensusFeeVersion::V2, None))
                 .try_fold(0u64, |acc, res| {
                     res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Constructor cost overflowed")))
                 })?;
@@ -1020,8 +1271,12 @@ pub fn constructor_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>) -> Resu
 /// Returns the minimum number of microcredits required to run the finalize using the ARC-0005 cost reduction factor.
 /// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
 /// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
-pub fn minimum_cost_in_microcredits_v3<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V3)
+pub fn minimum_cost_in_microcredits_v3<N: Network>(
+    stack: &Stack<N>,
+    function_name: &Identifier<N>,
+    consensus_version: Option<ConsensusVersion>,
+) -> Result<u64> {
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V3, consensus_version)
 }
 
 /// Returns the finalize cost for a single function's finalize block, without recursively following futures.
@@ -1032,6 +1287,7 @@ fn finalize_cost_for_single_function_raw<N: Network>(
     stack: &Stack<N>,
     function_name: &Identifier<N>,
     consensus_fee_version: ConsensusFeeVersion,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<u64> {
     // Get the finalize logic. If the function does not have a finalize scope, no cost is incurred.
     let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {
@@ -1047,8 +1303,8 @@ fn finalize_cost_for_single_function_raw<N: Network>(
     let mut finalize_cost = 0u64;
     for command in finalize.commands() {
         finalize_cost = finalize_cost
-            .checked_add(cost_per_command(stack, &finalize_types, command, consensus_fee_version)?)
-            .ok_or(anyhow!("Finalize cost overflowed"))?;
+            .checked_add(cost_per_command(stack, &finalize_types, command, consensus_fee_version, consensus_version)?)
+            .ok_or_else(|| anyhow!("Finalize cost overflowed"))?;
     }
 
     Ok(finalize_cost)
@@ -1056,13 +1312,13 @@ fn finalize_cost_for_single_function_raw<N: Network>(
 
 /// Returns the maximum compute cost (in microcredits) of a single view function's body.
 ///
-/// Views do not run as part of consensus, so this cost is not paid by anyone — it is only
-/// used as a deploy-time sanity bound (mirrors the per-function `TRANSACTION_SPEND_LIMIT`
-/// check) to prevent deploying views whose worst-case compute is unreasonable.
+/// This raw cost contributes to finalize commands that call the view and to deployment
+/// spend-limit checks. The caller applies any compute discount after summing costs.
 fn view_cost_for_single_view<N: Network>(
     stack: &Stack<N>,
     view_name: &Identifier<N>,
     consensus_fee_version: ConsensusFeeVersion,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<u64> {
     let view = stack.program().get_view_ref(view_name)?;
     // Use the cached view types (computed once at `Stack::new`).
@@ -1071,8 +1327,8 @@ fn view_cost_for_single_view<N: Network>(
     let mut view_cost = 0u64;
     for command in view.commands() {
         view_cost = view_cost
-            .checked_add(cost_per_command(stack, &view_types, command, consensus_fee_version)?)
-            .ok_or(anyhow!("View cost overflowed"))?;
+            .checked_add(cost_per_command(stack, &view_types, command, consensus_fee_version, consensus_version)?)
+            .ok_or_else(|| anyhow!("View cost overflowed"))?;
     }
     Ok(view_cost)
 }
@@ -1084,6 +1340,7 @@ pub(crate) fn execution_finalize_cost<N: Network>(
     process: &Process<N>,
     execution: &Execution<N>,
     consensus_fee_version: ConsensusFeeVersion,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<u64> {
     // Get the quotient for the cost reduction factor.
     // We apply this at the end after summing all costs to match the behavior of
@@ -1101,9 +1358,14 @@ pub(crate) fn execution_finalize_cost<N: Network>(
         // Get the stack for this transition's program.
         let stack = process.get_stack(transition.program_id())?;
         // Compute the raw finalize cost for this single transition (without quotient).
-        let cost = finalize_cost_for_single_function_raw(&stack, transition.function_name(), consensus_fee_version)?;
+        let cost = finalize_cost_for_single_function_raw(
+            &stack,
+            transition.function_name(),
+            consensus_fee_version,
+            consensus_version,
+        )?;
         // Add to the total.
-        total_cost = total_cost.checked_add(cost).ok_or(anyhow!("Execution finalize cost overflowed"))?;
+        total_cost = total_cost.checked_add(cost).ok_or_else(|| anyhow!("Execution finalize cost overflowed"))?;
     }
 
     // Apply the quotient divisor at the end (matching behavior of minimum_cost_in_microcredits).
@@ -1114,14 +1376,14 @@ pub(crate) fn execution_finalize_cost<N: Network>(
 /// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
 /// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
 pub fn minimum_cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2)
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2, None)
 }
 
 /// Returns the minimum number of microcredits required to run the finalize (deprecated).
 /// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
 /// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
 pub fn minimum_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1)
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1, None)
 }
 
 // A helper function to compute the minimum cost in microcredits for a given function.
@@ -1130,6 +1392,7 @@ fn minimum_cost_in_microcredits<N: Network>(
     stack: &Stack<N>,
     function_name: &Identifier<N>,
     consensus_fee_version: ConsensusFeeVersion,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<u64> {
     // Initialize the base cost.
     let mut finalize_cost = 0u64;
@@ -1178,8 +1441,14 @@ fn minimum_cost_in_microcredits<N: Network>(
             for command in finalize.commands() {
                 // Sum the cost of all commands in the current future into the total running cost.
                 finalize_cost = finalize_cost
-                    .checked_add(cost_per_command(&stack_ref, &finalize_types, command, consensus_fee_version)?)
-                    .ok_or(anyhow!("Finalize cost overflowed"))?;
+                    .checked_add(cost_per_command(
+                        &stack_ref,
+                        &finalize_types,
+                        command,
+                        consensus_fee_version,
+                        consensus_version,
+                    )?)
+                    .ok_or_else(|| anyhow!("Finalize cost overflowed"))?;
             }
         }
     }
@@ -1224,6 +1493,7 @@ function over_five_thousand:
     // Storage cost for an execution transaction at the maximum transaction size.
     const V1_STORAGE_COST_MAX: u64 = 3_276_800;
     const V14_STORAGE_COST_MAX: u64 = 117_964_800;
+    const V16_STORAGE_COST_MAX: u64 = 1_061_683_200;
 
     fn test_storage_cost_bounds<N: Network>() {
         // Calculate the bounds directly above and below the size threshold.
@@ -1243,6 +1513,9 @@ function over_five_thousand:
         let v14_max_tx_size =
             consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V14).unwrap();
         assert_eq!(execution_storage_cost::<N>(v14_max_tx_size as u64), V14_STORAGE_COST_MAX);
+        let v16_max_tx_size =
+            consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V16).unwrap();
+        assert_eq!(execution_storage_cost::<N>(v16_max_tx_size as u64), V16_STORAGE_COST_MAX);
     }
 
     #[test]
@@ -1257,6 +1530,11 @@ function over_five_thousand:
         // Test the storage cost of an execution.
         let threshold = MainnetV0::EXECUTION_STORAGE_PENALTY_THRESHOLD;
 
+        // We ensure the check pases in the latest consensus version. Change either this or the 3 in
+        // execution_cost_v3 below if new execution_cost versions are introduced which break the
+        // test.
+        let latest_consensus_version = ConsensusVersion::latest();
+
         // Test the cost of an execution.
         let mut process = Process::load().unwrap();
 
@@ -1270,12 +1548,18 @@ function over_five_thousand:
         // Get execution and cost data.
         let execution_under_5000 = get_execution(&mut process, &program, &under_5000, ["2group"].into_iter());
         let execution_size_under_5000 = execution_under_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_under_5000, _)) =
-            execution_cost_v3(&process, &execution_under_5000, execution_size_under_5000).unwrap();
+        let (_, (storage_cost_under_5000, _)) = execution_cost_v3(
+            &process,
+            &execution_under_5000,
+            execution_size_under_5000,
+            Some(latest_consensus_version),
+        )
+        .unwrap();
         let execution_over_5000 = get_execution(&mut process, &program, &over_5000, ["2group"].into_iter());
         let execution_size_over_5000 = execution_over_5000.size_in_bytes().unwrap();
         let (_, (storage_cost_over_5000, _)) =
-            execution_cost_v3(&process, &execution_over_5000, execution_size_over_5000).unwrap();
+            execution_cost_v3(&process, &execution_over_5000, execution_size_over_5000, Some(latest_consensus_version))
+                .unwrap();
 
         // Ensure the sizes are below and above the threshold respectively.
         assert!(execution_size_under_5000 < threshold);
@@ -1284,6 +1568,31 @@ function over_five_thousand:
         // Ensure storage costs compute correctly.
         assert_eq!(storage_cost_under_5000, execution_storage_cost::<MainnetV0>(execution_size_under_5000));
         assert_eq!(storage_cost_over_5000, execution_storage_cost::<MainnetV0>(execution_size_over_5000));
+    }
+
+    #[test]
+    fn test_deployment_storage_cost_bounds() {
+        // Below threshold: linear at DEPLOYMENT_FEE_MULTIPLIER microcredits per byte.
+        assert_eq!(deployment_storage_cost::<MainnetV0>(0).unwrap(), 0);
+        assert_eq!(deployment_storage_cost::<MainnetV0>(1).unwrap(), MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        // One byte below threshold: still linear.
+        let below = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD - 1;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(below).unwrap(), below * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        // At threshold: the linear and quadratic formulas agree (continuity check).
+        // `deployment_storage_cost` uses the linear arm at the threshold (size <= threshold), so
+        // compute the quadratic-arm value independently and confirm they match at the boundary.
+        let t = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        let quadratic_at_threshold =
+            t * t * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(t).unwrap(), quadratic_at_threshold);
+        // One byte above threshold: quadratic formula kicks in.
+        let above = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD + 1;
+        let expected_above =
+            above * above * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(above).unwrap(), expected_above);
+        // At the V16 max program size (2048 kB = 4x the threshold): cost is exactly 4x the linear cost.
+        let max = 2_048_000u64;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(max).unwrap(), 4 * max * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
     }
 
     #[test]
@@ -1392,6 +1701,20 @@ function dummy:",
                     )
                 )
             );
+            // V3 uses quadratic storage above 512 kB; this program is well below that threshold,
+            // so the storage cost equals the v2 linear cost and all other components are identical.
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_0).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
 
             let mut deployment_1 = process.deploy::<A, _>(&program_1, rng).unwrap();
             deployment_1.set_program_checksum_raw(Some(deployment_1.program().to_checksum()));
@@ -1420,6 +1743,18 @@ function dummy:",
                 expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
             assert_eq!(
                 deployment_cost_v2(&process, &deployment_1).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_1).unwrap(),
                 (
                     expected_total_cost,
                     (
@@ -1468,6 +1803,18 @@ function dummy:",
                     )
                 )
             );
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_2).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
 
             let mut deployment_3 = process.deploy::<A, _>(&program_3, rng).unwrap();
             deployment_3.set_program_checksum_raw(Some(deployment_3.program().to_checksum()));
@@ -1506,12 +1853,195 @@ function dummy:",
                     )
                 )
             );
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_3).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
         }
 
         // Run the tests for all networks.
         run_test::<CanaryV0, AleoCanaryV0>();
         run_test::<MainnetV0, AleoV0>();
         run_test::<TestnetV0, AleoTestnetV0>();
+    }
+
+    #[test]
+    fn test_deployment_cost_v3_dispatch_and_quadratic_storage() {
+        // Verify that `deployment_cost` with ConsensusVersion::V16 dispatches to `deployment_cost_v3`,
+        // and that v3 applies the quadratic storage penalty above DEPLOYMENT_STORAGE_PENALTY_THRESHOLD.
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        let program = Program::from_str(
+            r"
+program dispatch_test.aleo;
+
+function noop:",
+        )
+        .unwrap();
+
+        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        deployment.set_program_owner_raw(Some(Address::rand(rng)));
+
+        // `deployment_cost` must dispatch to v3 for ConsensusVersion::V16.
+        assert_eq!(
+            deployment_cost(&process, &deployment, ConsensusVersion::V16).unwrap(),
+            deployment_cost_v3(&process, &deployment).unwrap(),
+        );
+
+        // For programs below DEPLOYMENT_STORAGE_PENALTY_THRESHOLD, v3 and v2 produce equal costs.
+        let (v2_total, (v2_storage, _, _, _)) = deployment_cost_v2(&process, &deployment).unwrap();
+        let (v3_total, (v3_storage, _, _, _)) = deployment_cost_v3(&process, &deployment).unwrap();
+        let size_in_bytes = deployment.size_in_bytes().unwrap();
+        assert!(
+            size_in_bytes < DEPLOYMENT_STORAGE_PENALTY_THRESHOLD,
+            "Program must be below the storage penalty threshold for this assertion to hold"
+        );
+        assert_eq!(v2_storage, v3_storage);
+        assert_eq!(v2_total, v3_total);
+
+        // For sizes above the threshold, the quadratic formula makes v3 storage exceed v2 storage.
+        // At 2x the threshold: quadratic gives 4x the linear base, which is 2x the v2 cost.
+        let above = 2 * DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        let v2_storage_above = above * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER;
+        let v3_storage_above = deployment_storage_cost::<MainnetV0>(above).unwrap();
+        assert!(v3_storage_above > v2_storage_above, "v3 storage must exceed v2 storage above the penalty threshold");
+        assert_eq!(v3_storage_above, 2 * v2_storage_above);
+    }
+
+    #[test]
+    fn test_deployment_cost_v4_v5_dispatch_and_rand_chacha_constructor_cost() {
+        // Verify that `deployment_cost` dispatches to `deployment_cost_v4` for ConsensusVersion::V18
+        // through V21 and to `deployment_cost_v5` from V22 onwards. Also verify that v5 prices
+        // synthesis like v3 (by variables and constraints, not by density as in v4), and that v5
+        // only differs from v3 in the constructor cost of `rand.chacha`.
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        // The constructor samples one non-group and one group value, so that both branches of the
+        // V22 `rand.chacha` cost are exercised.
+        let program = Program::from_str(
+            r"
+program dispatch_v5_test.aleo;
+
+constructor:
+    rand.chacha into r0 as u64;
+    rand.chacha into r1 as group;
+
+function noop:",
+        )
+        .unwrap();
+
+        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        deployment.set_program_owner_raw(Some(Address::rand(rng)));
+
+        let v3_cost = deployment_cost_v3(&process, &deployment).unwrap();
+        let v4_cost = deployment_cost_v4(&process, &deployment).unwrap();
+        let v5_cost = deployment_cost_v5(&process, &deployment, ConsensusVersion::V22).unwrap();
+
+        // `deployment_cost` must dispatch to v4 for ConsensusVersion::V18 to V21.
+        for consensus_version in
+            [ConsensusVersion::V18, ConsensusVersion::V19, ConsensusVersion::V20, ConsensusVersion::V21]
+        {
+            assert_eq!(deployment_cost(&process, &deployment, consensus_version).unwrap(), v4_cost);
+        }
+        // `deployment_cost` must dispatch to v5 for ConsensusVersion::V22 and the latest version.
+        // Change this if a future consensus version introduces a new deployment cost version.
+        for consensus_version in [ConsensusVersion::V22, ConsensusVersion::latest()] {
+            assert_eq!(deployment_cost(&process, &deployment, consensus_version).unwrap(), v5_cost);
+        }
+
+        let (v3_total, (v3_storage, v3_synthesis, v3_constructor, v3_namespace)) = v3_cost;
+        let (_, (v4_storage, v4_synthesis, v4_constructor, v4_namespace)) = v4_cost;
+        let (v5_total, (v5_storage, v5_synthesis, v5_constructor, v5_namespace)) = v5_cost;
+
+        // The storage and namespace costs are the same across v3, v4, and v5.
+        assert_eq!(v3_storage, v4_storage);
+        assert_eq!(v3_storage, v5_storage);
+        assert_eq!(v3_namespace, v4_namespace);
+        assert_eq!(v3_namespace, v5_namespace);
+
+        // v3 and v5 price synthesis by the combined number of variables and constraints, while v4
+        // prices it by the combined density.
+        let scale_synthesis = |factor: u64| {
+            factor * <MainnetV0 as Network>::SYNTHESIS_FEE_MULTIPLIER
+                / <MainnetV0 as Network>::ARC_0005_COMPUTE_DISCOUNT
+        };
+        let num_variables_and_constraints =
+            deployment.num_combined_variables().unwrap() + deployment.num_combined_constraints().unwrap();
+        assert_eq!(v3_synthesis, scale_synthesis(num_variables_and_constraints));
+        assert_eq!(v5_synthesis, scale_synthesis(num_variables_and_constraints));
+        assert_eq!(v4_synthesis, scale_synthesis(deployment.combined_density()));
+        assert_ne!(v4_synthesis, v5_synthesis, "the program must distinguish the two synthesis cost formulas");
+
+        // Only the constructor cost differs between v3 and v5.
+        assert_eq!(v3_total - v3_constructor, v5_total - v5_constructor);
+
+        // In v3 and v4, each `rand.chacha` has a flat cost of 25_000.
+        let legacy_base_cost = 2 * 25_000;
+        // In v5, each `rand.chacha` costs the BHP hash of its seed (no operands plus three field
+        // elements of 32 bytes each), and the `group` destination adds a surcharge of 115_000.
+        let v5_seed_cost = HASH_BHP_BASE_COST + HASH_BHP_PER_BYTE_COST * (3 * 32);
+        let v5_base_cost = 2 * v5_seed_cost + 115_000;
+        assert_eq!(v5_base_cost, 272_600, "v5 rand.chacha cost derivation changed");
+
+        let scale_constructor = |base_cost: u64| {
+            base_cost * <MainnetV0 as Network>::CONSTRUCTOR_FEE_MULTIPLIER
+                / <MainnetV0 as Network>::ARC_0005_COMPUTE_DISCOUNT
+        };
+        assert_eq!(v3_constructor, scale_constructor(legacy_base_cost));
+        assert_eq!(v4_constructor, scale_constructor(legacy_base_cost));
+        assert_eq!(v5_constructor, scale_constructor(v5_base_cost));
+    }
+
+    #[test]
+    fn test_deployment_cost_v5_matches_v3_without_rand_chacha() {
+        // Verify that, for a program which does not use `rand.chacha`, `deployment_cost_v5` returns
+        // exactly the same cost breakdown as `deployment_cost_v3`.
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        let program = Program::from_str(
+            r"
+program v5_matches_v3.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+mapping data:
+    key as field.public;
+    value as field.public;
+
+function store:
+    input r0 as field.public;
+    async store r0 into r1;
+    output r1 as v5_matches_v3.aleo/store.future;
+
+finalize store:
+    input r0 as field.public;
+    hash.bhp256 r0 into r1 as field;
+    set r1 into data[r0];",
+        )
+        .unwrap();
+
+        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        deployment.set_program_owner_raw(Some(Address::rand(rng)));
+
+        let v3_cost = deployment_cost_v3(&process, &deployment).unwrap();
+        for consensus_version in [ConsensusVersion::V22, ConsensusVersion::latest()] {
+            assert_eq!(deployment_cost_v5(&process, &deployment, consensus_version).unwrap(), v3_cost);
+        }
     }
 
     // Test program with finalize blocks for cost comparison test
@@ -1553,7 +2083,7 @@ finalize increment:
         // Calculate costs using both methods for all fee versions
         // V1
         let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
-        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, None).unwrap();
         assert_eq!(
             static_cost_v1, runtime_cost_v1,
             "V1: Static and runtime costs should match: static={static_cost_v1}, runtime={runtime_cost_v1}"
@@ -1561,15 +2091,23 @@ finalize increment:
 
         // V2
         let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
-        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, None).unwrap();
         assert_eq!(
             static_cost_v2, runtime_cost_v2,
             "V2: Static and runtime costs should match: static={static_cost_v2}, runtime={runtime_cost_v2}"
         );
 
         // V3
-        let static_cost_v3 = minimum_cost_in_microcredits_v3(&stack, &function_name).unwrap();
-        let runtime_cost_v3 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3).unwrap();
+
+        // As this is the latest ConsensusFeeVersion, we ensure the check pases in the latest
+        // consensus version. Change this if future ConsensusFeeVersion or ConsensusVersion changes
+        // break the test.
+        let latest_consensus_version = ConsensusVersion::latest();
+        let static_cost_v3 =
+            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(latest_consensus_version)).unwrap();
+        let runtime_cost_v3 =
+            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(latest_consensus_version))
+                .unwrap();
         assert_eq!(
             static_cost_v3, runtime_cost_v3,
             "V3: Static and runtime costs should match: static={static_cost_v3}, runtime={runtime_cost_v3}"
@@ -1653,9 +2191,15 @@ finalize call_child:
         // Get the stack for static cost calculation
         let stack = process.get_stack(caller_program.id()).unwrap();
 
-        // Calculate costs using both methods
-        let static_cost_v3 = minimum_cost_in_microcredits_v3(&stack, &function_name).unwrap();
-        let runtime_cost_v3 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3).unwrap();
+        // Calculate costs using both methods. Since V3 is the latest ConsensusFeeVersion, we ensure
+        // the check pases in the latest consensus version. Change this if future
+        // ConsensusFeeVersion or ConsensusVersion changes break the test.
+        let latest_consensus_version = ConsensusVersion::latest();
+        let static_cost_v3 =
+            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(latest_consensus_version)).unwrap();
+        let runtime_cost_v3 =
+            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(latest_consensus_version))
+                .unwrap();
 
         println!("Nested calls - Static cost V3: {static_cost_v3}");
         println!("Nested calls - Runtime cost V3: {runtime_cost_v3}");
@@ -1666,16 +2210,17 @@ finalize call_child:
             "V3: Static and runtime costs should match for nested calls: static={static_cost_v3}, runtime={runtime_cost_v3}"
         );
 
-        // Also verify V1 and V2
+        // Also verify V1 and V2 (where the specific ConsensusVersion is not relevant to the cost
+        // function in question)
         let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
-        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, None).unwrap();
         assert_eq!(
             static_cost_v1, runtime_cost_v1,
             "V1: Static and runtime costs should match for nested calls: static={static_cost_v1}, runtime={runtime_cost_v1}"
         );
 
         let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
-        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, None).unwrap();
         assert_eq!(
             static_cost_v2, runtime_cost_v2,
             "V2: Static and runtime costs should match for nested calls: static={static_cost_v2}, runtime={runtime_cost_v2}"
@@ -1830,9 +2375,15 @@ finalize main:
         // Get the stack for static cost calculation
         let stack = process.get_stack(root_program.id()).unwrap();
 
-        // Calculate costs using both methods
-        let static_cost_v3 = minimum_cost_in_microcredits_v3(&stack, &function_name).unwrap();
-        let runtime_cost_v3 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3).unwrap();
+        // Calculate costs using both methods Since V3 is the latest ConsensusFeeVersion, we ensure
+        // the check pases in the latest consensus version. Change this if future
+        // ConsensusFeeVersion or ConsensusVersion changes break the test.
+        let latest_consensus_version = ConsensusVersion::latest();
+        let static_cost_v3 =
+            minimum_cost_in_microcredits_v3(&stack, &function_name, Some(latest_consensus_version)).unwrap();
+        let runtime_cost_v3 =
+            execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3, Some(latest_consensus_version))
+                .unwrap();
 
         println!("Complex call graph - Static cost V3: {static_cost_v3}");
         println!("Complex call graph - Runtime cost V3: {runtime_cost_v3}");
@@ -1842,13 +2393,14 @@ finalize main:
             "V3: Static and runtime costs should match for complex call graph: static={static_cost_v3}, runtime={runtime_cost_v3}"
         );
 
-        // Also verify V1 and V2
+        // Also verify V1 and V2 (where the specific ConsensusVersion is not relevant to the cost
+        // function in question)
         let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
-        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1, None).unwrap();
         assert_eq!(static_cost_v1, runtime_cost_v1, "V1: Static and runtime costs should match for complex call graph");
 
         let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
-        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2, None).unwrap();
         assert_eq!(static_cost_v2, runtime_cost_v2, "V2: Static and runtime costs should match for complex call graph");
 
         // Verify costs are meaningful

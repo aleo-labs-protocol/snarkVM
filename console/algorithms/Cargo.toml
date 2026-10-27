@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-algorithms"
-version = "4.7.1"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -49,6 +49,9 @@ version = "1.0"
 [dependencies.hex]
 version = "0.4"
 
+[dependencies.rayon]
+workspace = true
+
 [dependencies.k256]
 workspace = true
 
@@ -85,3 +88,4 @@ features = [ "preserve_order" ]
 
 [features]
 dev-print = [ "snarkvm-utilities/dev-print" ]
+serial = [ ]

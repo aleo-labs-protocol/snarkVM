@@ -20,7 +20,7 @@ static SIGNATURE_PREFIX: &str = "sign";
 impl<N: Network> Parser for Signature<N> {
     /// Parses a string into an signature.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo signature.
         let parse_signature = recognize(pair(
             pair(tag(SIGNATURE_PREFIX), tag("1")),

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-puzzle"
-version = "4.7.1"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Puzzle for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -98,3 +98,4 @@ workspace = true
 
 [dev-dependencies.snarkvm-ledger-puzzle-epoch]
 path = "epoch"
+features = [ "merkle" ]

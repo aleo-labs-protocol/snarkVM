@@ -15,8 +15,6 @@
 
 use super::*;
 
-use crate::vm::test_helpers::*;
-
 use console::{account::ViewKey, program::Value};
 use snarkvm_synthesizer_program::{Program, StackTrait};
 
@@ -2131,7 +2129,7 @@ function dummy2:",
     // Add 2 transactions individually to blocks.
     // They are expected to pass because the program has not been upgraded.
     for execution in &executions[0..2] {
-        let block = sample_next_block(&vm, &caller_private_key, &[execution.clone()], rng).unwrap();
+        let block = sample_next_block(&vm, &caller_private_key, std::slice::from_ref(execution), rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
         assert_eq!(block.aborted_transaction_ids().len(), 0);

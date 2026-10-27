@@ -55,6 +55,14 @@ impl<N: Network> ClosureCore<N> {
         &self.name
     }
 
+    /// Returns the checksum of the closure.
+    ///
+    /// The checksum is a 32-byte hash of the closure's source code in string format.
+    /// This ensures a strict definition of closure equivalence, useful for program upgradability.
+    pub fn to_checksum(&self) -> [console::types::U8<N>; 32] {
+        crate::to_checksum::source_code_checksum(&self.to_string())
+    }
+
     /// Returns the closure inputs.
     pub const fn inputs(&self) -> &IndexSet<Input<N>> {
         &self.inputs

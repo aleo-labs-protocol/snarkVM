@@ -20,7 +20,7 @@ static STATE_PATH_PREFIX: &str = "path";
 impl<N: Network> Parser for StatePath<N> {
     /// Parses a string into the state path.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo state path.
         let parse_state_path = recognize(pair(
             pair(tag(STATE_PATH_PREFIX), tag("1")),

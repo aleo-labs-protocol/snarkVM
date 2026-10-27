@@ -43,6 +43,8 @@ use crate::{
             bench_sqrt,
             field_serialization_test,
             field_test,
+            fp256_inverse_test,
+            fp384_inverse_test,
             frobenius_test,
             primefield_test,
             random_sqrt_tonelli_tests,
@@ -94,6 +96,11 @@ fn test_bls12_377_fr() {
 }
 
 #[test]
+fn test_bls12_377_fr_inverse() {
+    fp256_inverse_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
 fn test_bls12_377_fq() {
     let mut rng = TestRng::default();
 
@@ -105,6 +112,11 @@ fn test_bls12_377_fq() {
         sqrt_field_test(a, &mut rng);
         field_serialization_test::<Fq>(&mut rng);
     }
+}
+
+#[test]
+fn test_bls12_377_fq_inverse() {
+    fp384_inverse_test::<FqParameters>(&mut TestRng::default());
 }
 
 #[test]
@@ -647,6 +659,11 @@ fn test_g1_projective_group() {
 }
 
 #[test]
+fn test_g1_serialization_round_trip() {
+    serialization_round_trip_test::<G1Affine>();
+}
+
+#[test]
 fn test_g1_generator() {
     let generator = G1Affine::prime_subgroup_generator();
     assert!(generator.is_on_curve());
@@ -668,6 +685,11 @@ fn test_g2_projective_group() {
     let a: G2Projective = rng.random();
     let b: G2Projective = rng.random();
     projective_test(a, b, &mut rng);
+}
+
+#[test]
+fn test_g2_serialization_round_trip() {
+    serialization_round_trip_test::<G2Affine>();
 }
 
 #[test]

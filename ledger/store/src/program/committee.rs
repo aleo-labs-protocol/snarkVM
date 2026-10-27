@@ -197,10 +197,10 @@ pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
         if is_latest_committee {
             while next_current_round > 0 {
                 // If the next current height is less than the current height, then we have found the next current round.
-                if let Some(next_current_height) = self.get_height_for_round(next_current_round)? {
-                    if next_current_height < current_height {
-                        break;
-                    }
+                if let Some(next_current_height) = self.get_height_for_round(next_current_round)?
+                    && next_current_height < current_height
+                {
+                    break;
                 }
                 // Otherwise, decrement the next current round.
                 next_current_round = next_current_round.saturating_sub(1);

@@ -174,6 +174,12 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
     /// Sets the constraint limit for the circuit.
     fn set_constraint_limit(limit: Option<u64>);
 
+    /// Returns the density limit for the circuit, if one exists.
+    fn get_non_zero_limit() -> Option<(u64, u64, u64)>;
+
+    /// Sets the density limit for the circuit.
+    fn set_non_zero_limit(limit: Option<(u64, u64, u64)>);
+
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
         <Self::Network as console::Environment>::halt(message)

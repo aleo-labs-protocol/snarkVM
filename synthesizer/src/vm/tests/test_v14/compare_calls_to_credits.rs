@@ -45,7 +45,6 @@ fn extract_record(
 fn fund_program(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,
-    caller_address: &Address<CurrentNetwork>,
     program_name: &str,
     amount: u64,
     rng: &mut TestRng,
@@ -53,14 +52,13 @@ fn fund_program(
     let inputs = vec![Value::from_str(program_name).unwrap(), Value::from_str(&format!("{amount}u64")).unwrap()];
     let tx =
         vm.execute(caller_private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng).unwrap();
-    add_and_test_with_costs(vm, caller_private_key, caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(vm, caller_private_key, Some(&[&inputs]), &[tx], rng);
 }
 
 /// Helper to mint a credits record via transfer_public_to_private.
 fn mint_record(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,
-    caller_address: &Address<CurrentNetwork>,
     receiver: &Address<CurrentNetwork>,
     amount: u64,
     rng: &mut TestRng,
@@ -71,7 +69,7 @@ fn mint_record(
     let tx = vm
         .execute(caller_private_key, ("credits.aleo", "transfer_public_to_private"), inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(vm, caller_private_key, caller_address, Some(&[&inputs]), &[tx.clone()], rng);
+    add_and_test_with_costs(vm, caller_private_key, Some(&[&inputs]), std::slice::from_ref(&tx), rng);
     let record = extract_record(&tx, &view_key);
     (tx, record)
 }
@@ -159,7 +157,6 @@ fn get_execution_costs(
 fn test_compare_transfer_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -222,7 +219,7 @@ fn test_compare_transfer_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -230,7 +227,7 @@ fn test_compare_transfer_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -254,8 +251,8 @@ fn test_compare_transfer_public() {
     assert_eq!(dynamic_vk_size, 673, "Dynamic VK size");
 
     // Fund both wrapper programs so self.caller has balance.
-    fund_program(&vm, &caller_private_key, &caller_address, "sw_transfer_public.aleo", 10_000_000, rng);
-    fund_program(&vm, &caller_private_key, &caller_address, "dw_transfer_public.aleo", 10_000_000, rng);
+    fund_program(&vm, &caller_private_key, "sw_transfer_public.aleo", 10_000_000, rng);
+    fund_program(&vm, &caller_private_key, "dw_transfer_public.aleo", 10_000_000, rng);
 
     // Execute both wrappers.
     let recipient = Address::try_from(&caller_private_key).unwrap();
@@ -274,7 +271,7 @@ fn test_compare_transfer_public() {
         )
         .unwrap();
 
-    let dynamic_inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
+    let dynamic_inputs = [Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
     let dynamic_tx = vm
         .execute(
             &caller_private_key,
@@ -293,15 +290,14 @@ fn test_compare_transfer_public() {
     assert_eq!(dynamic_exec_costs, (3_725, 2_400, 1_325), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify transactions.
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&static_inputs]), &[static_tx], rng);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&dynamic_inputs]), &[dynamic_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&static_inputs]), &[static_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&dynamic_inputs]), &[dynamic_tx], rng);
 }
 
 #[test]
 fn test_compare_transfer_public_as_signer() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -364,7 +360,7 @@ fn test_compare_transfer_public_as_signer() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -372,7 +368,7 @@ fn test_compare_transfer_public_as_signer() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -413,7 +409,7 @@ fn test_compare_transfer_public_as_signer() {
         )
         .unwrap();
 
-    let dynamic_inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
+    let dynamic_inputs = [Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
     let dynamic_tx = vm
         .execute(
             &caller_private_key,
@@ -432,15 +428,14 @@ fn test_compare_transfer_public_as_signer() {
     assert_eq!(dynamic_exec_costs, (3_785, 2_460, 1_325), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify transactions.
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&static_inputs]), &[static_tx], rng);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&dynamic_inputs]), &[dynamic_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&static_inputs]), &[static_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&dynamic_inputs]), &[dynamic_tx], rng);
 }
 
 #[test]
 fn test_compare_transfer_public_to_private() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -505,7 +500,7 @@ fn test_compare_transfer_public_to_private() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -513,7 +508,7 @@ fn test_compare_transfer_public_to_private() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -538,8 +533,8 @@ fn test_compare_transfer_public_to_private() {
     assert_eq!(dynamic_vk_size, 673, "Dynamic VK size");
 
     // Fund both wrapper programs so self.caller has balance.
-    fund_program(&vm, &caller_private_key, &caller_address, "sw_transfer_public_to_private.aleo", 10_000_000, rng);
-    fund_program(&vm, &caller_private_key, &caller_address, "dw_transfer_public_to_private.aleo", 10_000_000, rng);
+    fund_program(&vm, &caller_private_key, "sw_transfer_public_to_private.aleo", 10_000_000, rng);
+    fund_program(&vm, &caller_private_key, "dw_transfer_public_to_private.aleo", 10_000_000, rng);
 
     // Execute both wrappers.
     let recipient = Address::try_from(&caller_private_key).unwrap();
@@ -558,7 +553,7 @@ fn test_compare_transfer_public_to_private() {
         )
         .unwrap();
 
-    let dynamic_inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
+    let dynamic_inputs = [Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
     let dynamic_tx = vm
         .execute(
             &caller_private_key,
@@ -577,7 +572,7 @@ fn test_compare_transfer_public_to_private() {
     assert_eq!(dynamic_exec_costs, (3_932, 3_260, 672), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only (dynamic outputs dynamic.record).
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&static_inputs]), &[static_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&static_inputs]), &[static_tx], rng);
 }
 
 #[test]
@@ -641,7 +636,7 @@ fn test_compare_transfer_private() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -649,7 +644,7 @@ fn test_compare_transfer_private() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     // Calculate the difference
     let static_vars: u64 = static_deployment.verifying_keys().iter().map(|(_, (vk, _))| vk.num_variables()).sum();
@@ -693,8 +688,8 @@ fn test_compare_transfer_private() {
     assert_eq!(dynamic_vk_size, 673, "Dynamic VK size");
 
     // Mint records for execution.
-    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
-    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
+    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
+    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
 
     // Convert to dynamic records for dynamic wrapper.
     let dynamic_record_1 = DynamicRecord::<CurrentNetwork>::from_record(&record_1).unwrap();
@@ -742,7 +737,7 @@ fn test_compare_transfer_private() {
     assert_eq!(dynamic_exec_costs, (4_108, 4_108, 0), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only (dynamic outputs dynamic.record).
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&static_inputs]), &[static_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&static_inputs]), &[static_tx], rng);
 }
 
 #[test]
@@ -816,7 +811,7 @@ fn test_compare_transfer_private_to_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -824,7 +819,7 @@ fn test_compare_transfer_private_to_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -849,8 +844,8 @@ fn test_compare_transfer_private_to_public() {
     assert_eq!(dynamic_vk_size, 673, "Dynamic VK size");
 
     // Mint records for execution.
-    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
-    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
+    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
+    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
 
     // Convert to dynamic records for dynamic wrapper.
     let dynamic_record_2 = DynamicRecord::<CurrentNetwork>::from_record(&record_2).unwrap();
@@ -897,8 +892,8 @@ fn test_compare_transfer_private_to_public() {
     assert_eq!(dynamic_exec_costs, (4_632, 3_960, 672), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction.
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&static_inputs]), &[static_tx], rng);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&dynamic_inputs]), &[dynamic_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&static_inputs]), &[static_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&dynamic_inputs]), &[dynamic_tx], rng);
 }
 
 #[test]
@@ -958,7 +953,7 @@ fn test_compare_join() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -966,7 +961,7 @@ fn test_compare_join() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -990,10 +985,10 @@ fn test_compare_join() {
     assert_eq!(dynamic_vk_size, 673, "Dynamic VK size");
 
     // Mint records for execution.
-    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
-    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
-    let (_, record_3) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
-    let (_, record_4) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
+    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
+    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
+    let (_, record_3) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
+    let (_, record_4) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
 
     // Convert to dynamic records for dynamic wrapper.
     let dynamic_record_3 = DynamicRecord::<CurrentNetwork>::from_record(&record_3).unwrap();
@@ -1027,7 +1022,7 @@ fn test_compare_join() {
     assert_eq!(dynamic_exec_costs, (3_728, 3_728, 0), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only.
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&static_inputs]), &[static_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&static_inputs]), &[static_tx], rng);
 }
 
 #[test]
@@ -1089,7 +1084,7 @@ fn test_compare_split() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -1097,7 +1092,7 @@ fn test_compare_split() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -1121,8 +1116,8 @@ fn test_compare_split() {
     assert_eq!(dynamic_vk_size, 673, "Dynamic VK size");
 
     // Mint records for execution.
-    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
-    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, &caller_address, 10_000_000, rng);
+    let (_, record_1) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
+    let (_, record_2) = mint_record(&vm, &caller_private_key, &caller_address, 10_000_000, rng);
 
     // Convert to dynamic records for dynamic wrapper.
     let dynamic_record_2 = DynamicRecord::<CurrentNetwork>::from_record(&record_2).unwrap();
@@ -1153,7 +1148,7 @@ fn test_compare_split() {
     assert_eq!(dynamic_exec_costs, (3_875, 3_875, 0), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only.
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&static_inputs]), &[static_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&static_inputs]), &[static_tx], rng);
 }
 
 // Note: `credits.aleo/upgrade` is a restricted function that cannot be called
@@ -1167,7 +1162,6 @@ fn test_compare_split() {
 fn test_compare_bond_validator() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1232,7 +1226,7 @@ fn test_compare_bond_validator() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -1240,7 +1234,7 @@ fn test_compare_bond_validator() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -1272,7 +1266,6 @@ fn test_compare_bond_validator() {
 fn test_compare_bond_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1337,7 +1330,7 @@ fn test_compare_bond_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -1345,7 +1338,7 @@ fn test_compare_bond_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -1375,7 +1368,6 @@ fn test_compare_bond_public() {
 fn test_compare_unbond_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1438,7 +1430,7 @@ fn test_compare_unbond_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -1446,7 +1438,7 @@ fn test_compare_unbond_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -1476,7 +1468,6 @@ fn test_compare_unbond_public() {
 fn test_compare_claim_unbond_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1537,7 +1528,7 @@ fn test_compare_claim_unbond_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -1545,7 +1536,7 @@ fn test_compare_claim_unbond_public() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 
@@ -1576,7 +1567,6 @@ fn test_compare_claim_unbond_public() {
 fn test_compare_set_validator_state() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1637,7 +1627,7 @@ fn test_compare_set_validator_state() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[static_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[static_deploy_tx], rng);
 
     // Deploy dynamic wrapper.
     let dynamic_deploy_tx = vm.deploy(&caller_private_key, &dynamic_wrapper, None, 0, None, rng).unwrap();
@@ -1645,7 +1635,7 @@ fn test_compare_set_validator_state() {
         Transaction::Deploy(_, _, _, deployment, _) => deployment.clone(),
         _ => panic!("Expected deploy transaction"),
     };
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[dynamic_deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[dynamic_deploy_tx], rng);
 
     let consensus_version = ConsensusVersion::V14;
 

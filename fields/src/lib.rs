@@ -42,6 +42,8 @@ pub use fp12_2over3over2::*;
 mod legendre;
 pub use legendre::*;
 
+mod safegcd;
+
 mod to_field_vec;
 #[allow(unused_imports)]
 pub use to_field_vec::*;

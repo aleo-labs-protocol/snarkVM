@@ -219,14 +219,17 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
 
     #[inline]
     fn apply_s_box(&mut self, is_full_round: bool) {
+        let pow_alpha_in_place: fn(&mut F) = match self.parameters.alpha {
+            3 => pow_3_in_place,
+            5 => pow_5_in_place,
+            17 => pow_17_in_place,
+            alpha => panic!("No optimized S-box for alpha = {alpha}"),
+        };
+
         if is_full_round {
-            // Full rounds apply the S Box (x^alpha) to every element of state
-            for elem in self.state.iter_mut() {
-                *elem = elem.pow([self.parameters.alpha]);
-            }
+            self.state.iter_mut().for_each(pow_alpha_in_place);
         } else {
-            // Partial rounds apply the S Box (x^alpha) to just the first element of state
-            self.state[0] = self.state[0].pow([self.parameters.alpha]);
+            pow_alpha_in_place(&mut self.state[0]);
         }
     }
 
@@ -272,7 +275,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
                 (num_elements_remaining / RATE) +
                 // And also add 1 if the last chunk is non-empty
                 // (i.e. if `num_elements_remaining` is not a multiple of `RATE`)
-                usize::from((num_elements_remaining % RATE) != 0);
+                usize::from(!num_elements_remaining.is_multiple_of(RATE));
 
             // Absorb the input elements, `RATE` elements at a time, except for the first
             // chunk, which is of size `RATE - rate_start`.
@@ -310,7 +313,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
                 (num_output_remaining / RATE) +
                 // And also add 1 if the last chunk is non-empty
                 // (i.e. if `num_output_remaining` is not a multiple of `RATE`)
-                usize::from((num_output_remaining % RATE) != 0);
+                usize::from(!num_output_remaining.is_multiple_of(RATE));
 
             // Absorb the input output, `RATE` output at a time, except for the first chunk,
             // which is of size `RATE - rate_start`.
@@ -500,4 +503,32 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
 
         dest_elements
     }
+}
+
+// S-box functions to raise state elements to the values of alpha present in the
+// codebase: 3, 5 and 17. These are more performant than the general pow
+// function.
+#[inline]
+fn pow_3_in_place<F: PrimeField>(val: &mut F) {
+    let val_copy = *val;
+    val.square_in_place();
+    val.mul_assign(val_copy);
+}
+
+#[inline]
+fn pow_5_in_place<F: PrimeField>(val: &mut F) {
+    let val_copy = *val;
+    val.square_in_place();
+    val.square_in_place();
+    val.mul_assign(val_copy);
+}
+
+#[inline]
+fn pow_17_in_place<F: PrimeField>(val: &mut F) {
+    let val_copy = *val;
+    val.square_in_place();
+    val.square_in_place();
+    val.square_in_place();
+    val.square_in_place();
+    val.mul_assign(val_copy);
 }

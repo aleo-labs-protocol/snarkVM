@@ -68,7 +68,7 @@ impl<A: Aleo> Eject for Access<A> {
 impl<A: Aleo> Parser for Access<A> {
     /// Parses a UTF-8 string into an access.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the identifier from the string.
         let (string, access) = console::Access::parse(string)?;
 

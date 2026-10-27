@@ -27,6 +27,7 @@ use snarkvm_ledger_puzzle_epoch::MerklePuzzle;
 
 use criterion::Criterion;
 use rand::{self, CryptoRng, RngExt};
+use std::time::Duration;
 
 fn sample_address_and_counter(rng: &mut impl CryptoRng) -> (Address<MainnetV0>, u64) {
     let private_key = PrivateKey::new(rng).unwrap();
@@ -75,9 +76,18 @@ fn puzzle_verify(c: &mut Criterion) {
 }
 
 criterion_group! {
-    name = puzzle;
-    config = Criterion::default().sample_size(10);
-    targets = puzzle_prove, puzzle_verify,
+    name = puzzle_prove_group;
+    config = Criterion::default()
+        .sample_size(100)
+        .warm_up_time(Duration::from_secs(3))
+        .measurement_time(Duration::from_secs(10));
+    targets = puzzle_prove,
 }
 
-criterion_main!(puzzle);
+criterion_group! {
+    name = puzzle_verify_group;
+    config = Criterion::default().sample_size(10);
+    targets = puzzle_verify,
+}
+
+criterion_main!(puzzle_prove_group, puzzle_verify_group);

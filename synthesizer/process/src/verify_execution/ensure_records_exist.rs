@@ -296,6 +296,8 @@ impl<N: Network> Process<N> {
             .iter()
             .zip_eq(input_registers.iter())
             .filter_map(|(input, register)| {
+                // We do not need to match Input::ExternalRecordWithDynamicID here as that variant
+                // can never occur at the root call.
                 if matches!(input, Input::DynamicRecord(..) | Input::ExternalRecord(..)) {
                     Some((*root_transition_id, *register))
                 } else {

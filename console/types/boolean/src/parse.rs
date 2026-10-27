@@ -18,7 +18,7 @@ use super::*;
 impl<E: Environment> Parser for Boolean<E> {
     /// Parses a string into a boolean.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the boolean from the string.
         let (string, value) = alt((map(tag("true"), |_| true), map(tag("false"), |_| false)))(string)?;
 

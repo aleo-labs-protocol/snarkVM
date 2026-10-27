@@ -29,6 +29,7 @@ pub enum MapID {
     TransitionInput(TransitionInputMap),
     TransitionOutput(TransitionOutputMap),
     Program(ProgramMap),
+    Metadata(MetadataMap),
     #[cfg(test)]
     Test(TestMap),
 }
@@ -47,6 +48,7 @@ impl From<MapID> for u16 {
             MapID::TransitionInput(id) => id as u16,
             MapID::TransitionOutput(id) => id as u16,
             MapID::Program(id) => id as u16,
+            MapID::Metadata(id) => id as u16,
             #[cfg(test)]
             MapID::Test(id) => id as u16,
         }
@@ -218,6 +220,15 @@ pub enum ProgramMap {
     RejectedReason = DataID::RejectedReasonMap as u16,
 }
 
+/// The RocksDB map prefix for storage metadata.
+///
+/// One map holds the well-known metadata keys, so later metadata does not need another `DataID`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum MetadataMap {
+    Metadata = DataID::StorageMetadataMap as u16,
+}
+
 /// The RocksDB map prefix for test-related entries.
 // Note: the order of these variants can be changed at any point in time.
 #[cfg(test)]
@@ -344,6 +355,9 @@ enum DataID {
 
     // Track rejection reasons for rejected transactions
     RejectedReasonMap,
+
+    // Storage metadata: the schema version and the history sync cursor.
+    StorageMetadataMap,
 
     // Testing
     #[cfg(test)]

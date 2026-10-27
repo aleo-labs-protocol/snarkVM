@@ -19,11 +19,19 @@ use console::{
     prelude::*,
     program::{Identifier, Plaintext, Register, Value},
 };
-use snarkvm_synthesizer_process::{Authorization, CallStack, FinalizeRegisters, Registers, Stack};
+use snarkvm_synthesizer_process::{Authorization, CallStack, FinalizeRegisters, Process, Registers, Stack};
 use snarkvm_synthesizer_program::{FinalizeGlobalState, RegistersCircuit as _, RegistersTrait as _};
+use std::sync::OnceLock;
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
+
+/// Returns a process loaded once and shared by every later caller in the same test process.
+/// Only use it where the test never mutates the process, e.g. via `add_program` or `execute`.
+pub fn shared_process() -> &'static Process<CurrentNetwork> {
+    static PROCESS: OnceLock<Process<CurrentNetwork>> = OnceLock::new();
+    PROCESS.get_or_init(|| Process::load().unwrap())
+}
 
 /// Samples the registers. Note: Do not replicate this for real program use, it is insecure.
 pub fn sample_registers(
@@ -64,7 +72,7 @@ pub fn sample_finalize_registers(
 ) -> Result<FinalizeRegisters<CurrentNetwork>> {
     // Initialize the registers.
     let mut finalize_registers = FinalizeRegisters::<CurrentNetwork>::new(
-        FinalizeGlobalState::from(1, 1, None, [0; 32]),
+        FinalizeGlobalState::from(1, 1, None, [0; 32], None, None),
         Some(<CurrentNetwork as Network>::TransitionID::default()),
         *function_name,
         stack.get_finalize_types(function_name)?.clone(),

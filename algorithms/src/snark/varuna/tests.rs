@@ -44,6 +44,232 @@ mod varuna {
     type VarunaSonicInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
     type VarunaSonicPoSWInst = VarunaSNARK<Bls12_377, FS, VarunaNonHidingMode>;
 
+    #[test]
+    fn test_varuna_v3_version_encoding() {
+        use snarkvm_utilities::FromBytes;
+
+        let version = VarunaVersion::from_bytes_le(&[3]).expect("V3 must have a stable version encoding");
+        assert_eq!(version.to_bytes_le().expect("valid test fixture"), [3]);
+        assert!(VarunaVersion::from_bytes_le(&[0]).is_err());
+        assert!(VarunaVersion::from_bytes_le(&[4]).is_err());
+    }
+
+    #[test]
+    fn test_varuna_legacy_bytes() {
+        use blake2::{Blake2s256, Digest};
+
+        fn snapshot<SM: SNARKMode>() -> String {
+            type Inst<SM> = VarunaSNARK<Bls12_377, FS, SM>;
+            let rng = &mut TestRng::fixed(20261002);
+            let srs = Inst::<SM>::universal_setup(512).expect("valid test fixture");
+            let prover = srs.to_universal_prover().expect("valid test fixture");
+            let verifier = srs.to_universal_verifier().expect("valid test fixture");
+            let parameters = FS::sample_parameters();
+            let (circuit, inputs) = TestCircuit::gen_rand(2, 32, 25, rng);
+            let (pk, vk) = Inst::<SM>::circuit_setup(&srs, &circuit).expect("valid test fixture");
+            let certificate = Inst::<SM>::prove_vk(&prover, &parameters, &vk, &pk).expect("valid test fixture");
+            assert!(
+                Inst::<SM>::verify_vk(&verifier, &parameters, &circuit, &vk, &certificate).expect("valid test fixture")
+            );
+            let mut snapshot = format!(
+                "hiding={}\npk={}\nvk={}\ncertificate={}\n",
+                SM::ZK,
+                hex::encode(Blake2s256::digest(pk.to_bytes_le().expect("valid test fixture"))),
+                hex::encode(Blake2s256::digest(vk.to_bytes_le().expect("valid test fixture"))),
+                hex::encode(Blake2s256::digest(certificate.to_bytes_le().expect("valid test fixture"))),
+            );
+            for version in [VarunaVersion::V1, VarunaVersion::V2] {
+                let proof =
+                    Inst::<SM>::prove(&prover, &parameters, &pk, version, &circuit, rng).expect("valid test fixture");
+                assert!(
+                    Inst::<SM>::verify(&verifier, &parameters, &vk, version, inputs.clone(), &proof)
+                        .expect("valid test fixture")
+                );
+                snapshot.push_str(&format!(
+                    "{version:?}={}\n",
+                    hex::encode(Blake2s256::digest(proof.to_bytes_le().expect("valid test fixture")))
+                ));
+            }
+            snapshot
+        }
+
+        let snapshot = snapshot::<VarunaHidingMode>() + &snapshot::<VarunaNonHidingMode>();
+        expect_test::expect![[r#"
+            hiding=true
+            pk=7fcc38672b1e917dce88a89a395b7c57c38b2495e57d2663e92cbb61950432ca
+            vk=9c512f09efda8fd00f12a31bffd8c2113697520b169bcb7e90c2d58bfd16b8a6
+            certificate=e07d784b185e6e8f531c6aa309618c925547aa71eeabb85ff4221402fb5ccf5c
+            V1=0f5a5f11c5f2b73456397aed824abac7abf1394a568f233bf2b86f2143a92373
+            V2=2d54731312c5d437956cf67e4214e94d0e575288c7e71fc6a6ce9351ac32a8ea
+            hiding=false
+            pk=2579ba64e582504a7c0acd8295e5ac2993979a68d8557a986517ce02ec659fcf
+            vk=af8c804c9facd4228705e5e16753828539bf4607391dc81a275adabddfe3e228
+            certificate=482f7900b7bab21e15a4b8046a25c63e2d65b32773fa6598c7e4e84ca7eb2bb9
+            V1=0774142771cd425d4a2fc9e6ded83764c9bf3c945f43b4bd8793f0febbffada4
+            V2=e33baf54ecb31b243c94c4bcee0660f08de77926a5fd539d45c18d87901c7dc6
+        "#]]
+        .assert_eq(&snapshot);
+    }
+
+    #[test]
+    fn test_varuna_v3_key_reuse_and_batch() {
+        use blake2::{Blake2s256, Digest};
+        use snarkvm_utilities::FromBytes;
+
+        fn check<SM: SNARKMode>() -> String {
+            type Inst<SM> = VarunaSNARK<Bls12_377, FS, SM>;
+            let rng = &mut TestRng::fixed(3102);
+            let srs = Inst::<SM>::universal_setup(2048).expect("valid test fixture");
+            let prover = srs.to_universal_prover().expect("valid test fixture");
+            let verifier = srs.to_universal_verifier().expect("valid test fixture");
+            let parameters = FS::sample_parameters();
+            let (circuits, inputs): (Vec<_>, Vec<_>) = [(2, 32, 25), (3, 73, 41)]
+                .into_iter()
+                .map(|(depth, rows, variables)| {
+                    (0..2).map(|_| TestCircuit::gen_rand(depth, rows, variables, rng)).unzip::<_, _, Vec<_>, Vec<_>>()
+                })
+                .unzip();
+            let unique = circuits.iter().map(|instances| &instances[0]).collect::<Vec<_>>();
+            let keys = Inst::<SM>::batch_circuit_setup(&srs, &unique).expect("valid test fixture");
+            let mut prover_inputs = BTreeMap::new();
+            let mut verifier_inputs = BTreeMap::new();
+            for (((pk, vk), circuits), inputs) in keys.iter().zip(&circuits).zip(&inputs) {
+                let certificate = Inst::<SM>::prove_vk(&prover, &parameters, vk, pk).expect("valid test fixture");
+                assert!(
+                    Inst::<SM>::verify_vk(&verifier, &parameters, &circuits[0], vk, &certificate)
+                        .expect("valid test fixture")
+                );
+                prover_inputs.insert(pk, circuits.as_slice());
+                verifier_inputs.insert(vk, inputs.as_slice());
+            }
+
+            let mut proof_sizes = Vec::new();
+            let mut snapshot = String::new();
+            for version in [VarunaVersion::V2, VarunaVersion::V3] {
+                let proof = Inst::<SM>::prove_batch(&prover, &parameters, version, &prover_inputs, rng)
+                    .expect("valid test fixture");
+                let bytes = proof.to_bytes_le().expect("valid test fixture");
+                snapshot.push_str(&format!(
+                    "hiding={} {version:?}={}\n",
+                    SM::ZK,
+                    hex::encode(Blake2s256::digest(&bytes))
+                ));
+                let proof =
+                    crate::snark::varuna::Proof::<Bls12_377>::from_bytes_le(&bytes).expect("valid test fixture");
+                assert!(
+                    Inst::<SM>::verify_batch(&verifier, &parameters, version, &verifier_inputs, &proof)
+                        .expect("valid test fixture")
+                );
+                let mut changed_claim = proof.clone();
+                changed_claim.third_msg.sums[0][0].sum_a += Fr::from(1u64);
+                assert!(
+                    !Inst::<SM>::verify_batch(&verifier, &parameters, version, &verifier_inputs, &changed_claim)
+                        .unwrap_or(false)
+                );
+                assert_eq!(
+                    bytes.len(),
+                    proof_size::<Bls12_377>(proof.batch_sizes(), version, SM::ZK).expect("valid test fixture")
+                );
+                proof_sizes.push(bytes.len());
+                let other_version = if version == VarunaVersion::V2 { VarunaVersion::V3 } else { VarunaVersion::V2 };
+                assert!(
+                    !Inst::<SM>::verify_batch(&verifier, &parameters, other_version, &verifier_inputs, &proof)
+                        .unwrap_or(false)
+                );
+
+                let mut wrong_inputs = inputs.clone();
+                wrong_inputs[0][0][1] += Fr::from(1u64);
+                let wrong_verifier_inputs =
+                    keys.iter().zip(&wrong_inputs).map(|((_, vk), inputs)| (vk, inputs.as_slice())).collect();
+                assert!(
+                    !Inst::<SM>::verify_batch(&verifier, &parameters, version, &wrong_verifier_inputs, &proof)
+                        .unwrap_or(false)
+                );
+            }
+            assert_eq!(proof_sizes[0], proof_sizes[1]);
+            snapshot
+        }
+
+        let snapshot = check::<VarunaHidingMode>() + &check::<VarunaNonHidingMode>();
+        expect_test::expect![[r#"
+            hiding=true V2=03673be9a6b1aa62629164620492ffc9f30b677c80dd0f8b05a8f8c63a6cc965
+            hiding=true V3=f6a95d87ce3026bc71199b3e419d0cf93d065ffe06ad88600e08b90806fd6666
+            hiding=false V2=1247d0fc9643ed261fb7633b39e06fde7d287708eab5861ead4970e3f2521a86
+            hiding=false V3=514f2f98043b5945abd3115fd305056ed28162e4e5135c4818333d8113b994ca
+        "#]]
+        .assert_eq(&snapshot);
+    }
+
+    #[test]
+    fn test_varuna_v3_lineval_identity() {
+        use crate::snark::varuna::ahp::verifier::{BatchCombiners, FirstMessage, PrepareThirdMessage, SecondMessage};
+        use snarkvm_fields::{One, Zero};
+
+        let rng = &mut TestRng::fixed(3103);
+        let (circuit, _) = TestCircuit::<Fr>::gen_rand(2, 32, 25, rng);
+        let circuit_index = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).expect("valid test fixture");
+        let instances = BTreeMap::from([(&circuit_index, std::slice::from_ref(&circuit))]);
+        let combiners = BTreeMap::from([(circuit_index.id, BatchCombiners {
+            circuit_combiner: Fr::one(),
+            instance_combiners: vec![Fr::one()],
+        })]);
+        let first_message = FirstMessage { first_round_batch_combiners: combiners.clone() };
+        let second_message = SecondMessage { alpha: Fr::from(17u64), eta_b: None, eta_c: None };
+
+        for weights in [[0u64, 0, 0], [1, 0, 0], [2, 3, 5], [0, 3, 5]] {
+            let [eta_a, eta_b, eta_c] = weights.map(Fr::from);
+            let state = AHPForR1CS::<_, VarunaHidingMode>::init_prover(&instances, rng).expect("valid test fixture");
+            let state = AHPForR1CS::<_, VarunaHidingMode>::prover_first_round(state, rng).expect("valid test fixture");
+            let (_, state) = AHPForR1CS::<_, VarunaHidingMode>::prover_second_round(&first_message, state, rng)
+                .expect("valid test fixture");
+            let (claims, state) = AHPForR1CS::<_, VarunaHidingMode>::prover_prepare_third_round(
+                &first_message,
+                &second_message,
+                state,
+                rng,
+            )
+            .expect("valid test fixture");
+            let domain = state.max_variable_domain;
+            let mask = state
+                .first_round_oracles
+                .as_ref()
+                .expect("valid test fixture")
+                .mask_poly
+                .as_ref()
+                .expect("valid test fixture")
+                .clone();
+            let raw =
+                state.circuit_specific_states[&circuit_index].z_m_at_alpha_polys.as_ref().expect("valid test fixture")
+                    [0]
+                .clone();
+            let expected = |point| {
+                mask.evaluate(point)
+                    + eta_a * raw[0].evaluate(point)
+                    + eta_b * raw[1].evaluate(point)
+                    + eta_c * raw[2].evaluate(point)
+            };
+            let average = domain.elements().map(expected).sum::<Fr>() * domain.size_inv;
+            assert_eq!(average, claims.sum(&combiners, eta_a, eta_b, eta_c) * domain.size_inv);
+            let challenges =
+                PrepareThirdMessage { third_round_batch_combiners: combiners.clone(), eta_a, eta_b, eta_c };
+            let (_, oracles, _) = AHPForR1CS::<_, VarunaHidingMode>::prover_third_round(
+                &first_message,
+                &second_message,
+                &Some(challenges),
+                state,
+                rng,
+                VarunaVersion::V3,
+            )
+            .expect("valid test fixture");
+            for beta in [Fr::zero(), Fr::one(), Fr::from(19u64), Fr::rand(rng)] {
+                let actual = domain.evaluate_vanishing_polynomial(beta) * oracles.h_1.evaluate(beta)
+                    + beta * oracles.g_1.evaluate(beta)
+                    + average;
+                assert_eq!(actual, expected(beta), "weights={weights:?}, beta={beta}");
+            }
+        }
+    }
+
     macro_rules! impl_varuna_test {
         ($test_struct: ident, $snark_inst: tt, $snark_mode: tt) => {
             struct $test_struct {}
@@ -60,6 +286,7 @@ mod varuna {
                     let wrong_varuna_version = match varuna_version {
                         VarunaVersion::V1 => VarunaVersion::V2,
                         VarunaVersion::V2 => VarunaVersion::V1,
+                        VarunaVersion::V3 => VarunaVersion::V2,
                     };
 
                     for i in 0..5 {
@@ -361,6 +588,8 @@ mod varuna_hiding {
         traits::{AlgebraicSponge, SNARK},
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    #[cfg(not(feature = "filesystem"))]
+    use snarkvm_parameters::mainnet::MissingPowers;
     use snarkvm_utilities::{
         FromBytes,
         ToBytes,
@@ -388,6 +617,7 @@ mod varuna_hiding {
         let wrong_varuna_version = match varuna_version {
             VarunaVersion::V1 => VarunaVersion::V2,
             VarunaVersion::V2 => VarunaVersion::V1,
+            VarunaVersion::V3 => VarunaVersion::V2,
         };
 
         for _ in 0..num_times {
@@ -548,6 +778,7 @@ mod varuna_hiding {
         test_bincode(num_constraints, num_variables, &mut rng);
     }
 
+    #[cfg(feature = "filesystem")]
     #[test]
     fn prove_and_verify_with_large_matrix() {
         let num_constraints = 1 << 16;
@@ -558,6 +789,7 @@ mod varuna_hiding {
         test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V2, &mut rng);
     }
 
+    #[cfg(feature = "filesystem")]
     #[test]
     fn check_indexing() {
         let rng = &mut TestRng::default();
@@ -575,6 +807,7 @@ mod varuna_hiding {
             let wrong_varuna_version = match varuna_version {
                 VarunaVersion::V1 => VarunaVersion::V2,
                 VarunaVersion::V2 => VarunaVersion::V1,
+                VarunaVersion::V3 => VarunaVersion::V2,
             };
             let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
             println!("Called circuit setup");
@@ -623,6 +856,7 @@ mod varuna_hiding {
         }
     }
 
+    #[cfg(feature = "filesystem")]
     #[test]
     fn test_srs_downloads() {
         let rng = &mut TestRng::default();
@@ -681,6 +915,36 @@ mod varuna_hiding {
             VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, varuna_version, public_inputs1, &proof1)
                 .unwrap()
         );
+    }
+
+    /// Without `filesystem`, `circuit_setup` names every file it needs in one
+    /// error, and sets the circuit up once they are added.
+    #[cfg(not(feature = "filesystem"))]
+    #[test]
+    #[ignore = "reads the powers files that a run with `filesystem` caches"]
+    fn circuit_setup_names_every_missing_file_at_once() {
+        let rng = &mut TestRng::default();
+        let (circuit, _) = TestCircuit::gen_rand(2, (1 << 16) - 10, (1 << 16) - 10, rng);
+        let indexed = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).unwrap();
+        let max_degree = indexed.max_degree().unwrap();
+        assert!(max_degree >= 1 << 16);
+        let bounds = AHPForR1CS::<Fr, VarunaHidingMode>::get_degree_bounds(&indexed.index_info).unwrap();
+        // `bounds` is an array of four.
+        let highest_bound = bounds.into_iter().max().unwrap();
+
+        let universal_srs = crate::snark::varuna::UniversalSRS::<Bls12_377>::load().unwrap();
+        let top = universal_srs.max_degree();
+        let mut files = universal_srs.missing_files_for(0..max_degree + 1).unwrap();
+        files.extend(universal_srs.missing_files_for(top - highest_bound..top + 1).unwrap());
+        assert!(!files.is_empty());
+
+        let error = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap_err();
+        assert_eq!(error.downcast_ref::<MissingPowers>().map(|missing| &missing.files), Some(&files));
+
+        for file in &files {
+            universal_srs.add_powers_file(file, &*crate::polycommit::test_templates::cached_file_bytes(file)).unwrap();
+        }
+        VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
     }
 
     #[test]
@@ -767,6 +1031,28 @@ mod varuna_hiding {
 
             assert!(result.is_ok(), "Deserialization should succeed for {num_commitments} commitments",);
         }
+    }
+
+    #[test]
+    fn a_proving_key_reads_back_with_exact_rows() {
+        use crate::snark::varuna::{CircuitProvingKey, ahp::indexer::Circuit};
+
+        fn exact_rows(c: &Circuit<Fr, VarunaHidingMode>) -> bool {
+            [&c.a, &c.b, &c.c].into_iter().flatten().all(|r| r.capacity() == r.len())
+        }
+
+        let rng = &mut TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).expect("a degree");
+        let universal_srs = VarunaInst::universal_setup(max_degree).expect("an SRS");
+        // Every row has one entry.
+        let (circuit, _) = TestCircuit::gen_rand(2, 100, 25, rng);
+        let (pk, _) = VarunaInst::circuit_setup(&universal_srs, &circuit).expect("a key");
+        let bytes = pk.to_bytes_le().expect("the key writes");
+        let read = CircuitProvingKey::<Bls12_377, VarunaHidingMode>::read_le(&bytes[..]).expect("the key reads");
+
+        assert!(exact_rows(&pk.circuit), "synthesis no longer builds exact rows");
+        assert!(exact_rows(&read.circuit), "the key read back holds spare row capacity");
+        assert!(read.to_bytes_le().expect("the key writes") == bytes, "the key read back writes other bytes");
     }
 }
 
@@ -864,13 +1150,13 @@ mod varuna_test_vectors {
     // Test Varuna against test vectors for a specific circuit.
     fn test_circuit_with_test_vectors(create_test_vectors: bool, circuit: &str) {
         // Initialize the parts of the witness used in the multiplicative constraints.
-        let witness_path = format!("src/snark/varuna/resources/{circuit}/witness.input");
+        let witness_path = resources_path(false).join(circuit).join("witness.input");
         let instance_file = fs::read_to_string(witness_path).expect("Could not read the file");
         let witness: Vec<u128> = serde_json::from_str(instance_file.lines().next().unwrap()).unwrap();
         let (a, b) = (witness[0], witness[1]);
 
         // Initialize challenges from file.
-        let challenges_path = format!("src/snark/varuna/resources/{circuit}/challenges.input");
+        let challenges_path = resources_path(false).join(circuit).join("challenges.input");
         let challenges_file = fs::read_to_string(challenges_path).expect("Could not read the file");
         let mut challenges = Vec::new();
         for line in challenges_file.lines() {
@@ -1054,5 +1340,84 @@ mod varuna_test_vectors {
     #[test]
     fn test_varuna_with_prover_test_vectors() {
         test_varuna_with_all_circuits(false);
+    }
+}
+
+/// A proof, pinned by its hash, so the device and the host must agree on it.
+///
+/// This checks the whole pipeline's output rather than one kernel. The circuit
+/// is sized so that every device entry point runs: `msm`, `ntt` and `polymul`.
+/// The prover's randomness comes from the `rng` argument alone, so a fixed
+/// seed fixes the proof.
+mod proof_vector {
+    use crate::{
+        crypto_hash::PoseidonSponge,
+        snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK, VarunaVersion, test_circuit::TestCircuit},
+        traits::{AlgebraicSponge, SNARK},
+    };
+    use blake2::Digest;
+    use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    use snarkvm_utilities::{ToBytes, rand::TestRng};
+
+    type FS = PoseidonSponge<Fq, 2, 1>;
+    type Inst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
+
+    // The circuit's shape and both seeds. Changing any of them changes the
+    // proof.
+    const SETUP_SEED: u64 = 20260911;
+    const PROVE_SEED: u64 = 777;
+    const MUL_DEPTH: usize = 1;
+    /// Large enough that the commitment MSMs cross `VariableBase::msm`'s
+    /// `> 1024` threshold and run on the device. Below it, a wrong MSM kernel
+    /// would still produce the pinned hash.
+    const NUM_CONSTRAINTS: usize = 2000;
+    const NUM_VARIABLES: usize = 2000;
+    /// Per matrix: `max_degree` builds one non-zero domain from this, and
+    /// `TestCircuit` writes one entry per matrix per constraint.
+    const NUM_NON_ZERO: usize = NUM_CONSTRAINTS;
+
+    /// Blake2s over `proof.to_bytes_le()`, per Varuna version.
+    ///
+    /// Any change to the proof for a fixed input moves this: intended if the
+    /// prover was meant to change, a regression otherwise. Both feature sets
+    /// are checked against these values, so a device that disagrees with the
+    /// host fails in one of them. The `rand` generators and the SRS bytes
+    /// `universal_setup` produces also move it, so a dependency bump can land
+    /// here without a prover change.
+    const EXPECTED: [(VarunaVersion, &str); 2] = [
+        (VarunaVersion::V2, "620d8f2272d8496df5832bddeffa3cf70ed48c192ce6caffb624c27f73db34b3"),
+        (VarunaVersion::V3, "8e2b36c08794204430f20e5e1c26e52b7d8e4588acc8d7799669d9365bd8ef70"),
+    ];
+
+    #[test]
+    fn a_fixed_input_proves_to_a_fixed_proof() {
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_NON_ZERO)
+            .expect("the test circuit has a max degree");
+        prove_and_check(Inst::universal_setup(max_degree).expect("the SRS for the test circuit"));
+    }
+
+    fn prove_and_check(srs: crate::snark::varuna::UniversalSRS<Bls12_377>) {
+        let setup = &mut TestRng::fixed(SETUP_SEED);
+        let prover = &srs.to_universal_prover().expect("a prover from the SRS");
+        let verifier = &srs.to_universal_verifier().expect("a verifier from the SRS");
+        let fs = FS::sample_parameters();
+        let (circuit, inputs) = TestCircuit::gen_rand(MUL_DEPTH, NUM_CONSTRAINTS, NUM_VARIABLES, setup);
+        let (pk, vk) = Inst::circuit_setup(&srs, &circuit).expect("the keys for the test circuit");
+        for (version, expected) in EXPECTED {
+            let rng = &mut TestRng::fixed(PROVE_SEED);
+            let proof = Inst::prove(prover, &fs, &pk, version, &circuit, rng).expect("the test circuit proves");
+
+            // Verified before the hash is compared, so a wrong proof fails as
+            // wrong rather than as merely different.
+            let verified = Inst::verify(verifier, &fs, &vk, version, inputs.as_slice(), &proof)
+                .unwrap_or_else(|e| panic!("the pinned {version:?} proof must verify, and verification errored: {e}"));
+            assert!(verified, "the pinned {version:?} proof must verify");
+
+            let digest = hex::encode(blake2::Blake2s256::digest(proof.to_bytes_le().expect("a proof serializes")));
+            assert_eq!(
+                digest, expected,
+                "the {version:?} proof for a fixed input changed; see this constant's documentation"
+            );
+        }
     }
 }

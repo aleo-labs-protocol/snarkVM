@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Future<N> {
     /// Parses a string into a future value.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the future from the string.
         Self::parse_internal(string, 0)
     }
@@ -26,7 +26,7 @@ impl<N: Network> Parser for Future<N> {
 
 impl<N: Network> Future<N> {
     /// Parses an array of future arguments: `[arg_0, ..., arg_1]`, while tracking the depth of the data.
-    fn parse_arguments(string: &str, depth: usize) -> ParserResult<Vec<Argument<N>>> {
+    fn parse_arguments(string: &str, depth: usize) -> ParserResult<'_, Vec<Argument<N>>> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "[" from the string.
@@ -52,7 +52,7 @@ impl<N: Network> Future<N> {
 
     /// Parses a string into a future value, while tracking the depth of the data.
     #[inline]
-    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
+    fn parse_internal(string: &str, depth: usize) -> ParserResult<'_, Self> {
         // Ensure that the depth is within the maximum limit.
         // Note: `N::MAX_DATA_DEPTH` is an upper bound on the number of nested futures.
         //  The true maximum is defined by `Transaction::<N>::MAX_TRANSITIONS`, however, that object is not accessible in this crate.

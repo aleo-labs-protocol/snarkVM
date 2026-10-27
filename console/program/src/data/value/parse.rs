@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Value<N> {
     /// Parses a string into a value.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Note that the order of the parsers matters.
         alt((
             map(Future::parse, Value::Future),

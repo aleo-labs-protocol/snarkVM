@@ -58,6 +58,14 @@ impl<N: Network> Stack<N> {
             verifying_keys: Default::default(),
             program_address: program.id().to_address()?,
             program_checksum: program.to_checksum(),
+            // Component names are unique within a program, so functions, closures, and views never collide here.
+            component_checksums: program
+                .functions()
+                .iter()
+                .map(|(name, function)| (*name, function.to_checksum()))
+                .chain(program.closures().iter().map(|(name, closure)| (*name, closure.to_checksum())))
+                .chain(program.views().iter().map(|(name, view)| (*name, view.to_checksum())))
+                .collect(),
             program_edition: U16::new(edition),
             program_amendment_count: 0,
             program_owner: None,

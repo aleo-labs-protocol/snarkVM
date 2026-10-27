@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{FinalizeGlobalState, FinalizeStoreTrait, Function, Operand, Program};
 use console::{
@@ -32,7 +32,6 @@ use console::{
         Register,
         RegisterType,
         Request,
-        StructType,
         Value,
         ValueType,
     },
@@ -113,6 +112,9 @@ pub trait StackTrait<N: Network> {
 
     /// Returns the program checksum as a field element.
     fn program_checksum_as_field(&self) -> Result<Field<N>>;
+
+    /// Returns the checksum of the program component (function, closure, or view) with the given name.
+    fn component_checksum(&self, name: &Identifier<N>) -> Result<&[U8<N>; 32]>;
 
     /// Returns the program edition.
     fn program_edition(&self) -> U16<N>;
@@ -240,64 +242,135 @@ pub fn types_equivalent<N: Network>(
     stack1: &impl StackTrait<N>,
     type1: &PlaintextType<N>,
 ) -> Result<bool> {
+    // Track the `(program0, program1, struct)` triples that have already been confirmed equivalent, so that a
+    // struct shared by many members is compared at most once. Without this, a program in which every member of
+    // each struct refers to the same earlier struct forms an acyclic graph with exponentially many paths, and the
+    // walk below would make up to `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
+    // `in_progress` holds the pairs currently on the recursion path, and re-entering one means the cross-program
+    // struct graph is cyclic.
+    let mut confirmed = HashSet::new();
+    let mut in_progress = HashSet::new();
+    types_equivalent_inner(stack0, type0, stack1, type1, &mut confirmed, &mut in_progress)
+}
+
+/// The memoized inner traversal for [`types_equivalent`].
+fn types_equivalent_inner<N: Network>(
+    stack0: &impl StackTrait<N>,
+    type0: &PlaintextType<N>,
+    stack1: &impl StackTrait<N>,
+    type1: &PlaintextType<N>,
+    confirmed: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
+    in_progress: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
+) -> Result<bool> {
     use PlaintextType::*;
 
-    let struct_compare = |stack0, st0: &StructType<N>, stack1, st1: &StructType<N>| -> Result<bool> {
+    // Equivalence requires equal struct names, so each arm below compares one name across the two stacks.
+    match (type0, type1) {
+        (Array(array0), Array(array1)) => Ok(array0.length() == array1.length()
+            && types_equivalent_inner(
+                stack0,
+                array0.next_element_type(),
+                stack1,
+                array1.next_element_type(),
+                confirmed,
+                in_progress,
+            )?),
+        (Literal(lit0), Literal(lit1)) => Ok(lit0 == lit1),
+        (Struct(id0), Struct(id1)) => match id0 == id1 {
+            true => structs_equivalent_inner(stack0, stack1, id0, confirmed, in_progress),
+            false => Ok(false),
+        },
+        (ExternalStruct(loc0), ExternalStruct(loc1)) => match loc0.resource() == loc1.resource() {
+            true => structs_equivalent_inner(
+                &*stack0.get_external_stack(loc0.program_id())?,
+                &*stack1.get_external_stack(loc1.program_id())?,
+                loc0.resource(),
+                confirmed,
+                in_progress,
+            ),
+            false => Ok(false),
+        },
+        (ExternalStruct(loc), Struct(id)) => match loc.resource() == id {
+            true => structs_equivalent_inner(
+                &*stack0.get_external_stack(loc.program_id())?,
+                stack1,
+                id,
+                confirmed,
+                in_progress,
+            ),
+            false => Ok(false),
+        },
+        (Struct(id), ExternalStruct(loc)) => match id == loc.resource() {
+            true => structs_equivalent_inner(
+                stack0,
+                &*stack1.get_external_stack(loc.program_id())?,
+                id,
+                confirmed,
+                in_progress,
+            ),
+            false => Ok(false),
+        },
+        _ => Ok(false),
+    }
+}
+
+/// Compares the struct named `name` in `stack0` against the one of that name in `stack1`, threading the
+/// memoization set from [`types_equivalent_inner`].
+///
+/// `in_progress` holds the pairs currently on the recursion path, and re-entering one means the cross-program
+/// struct graph is cyclic.
+///
+/// The key is `(program0, program1, name)`, which uniquely identifies the pair being compared, since a name
+/// resolves to one struct per program.
+fn structs_equivalent_inner<N: Network>(
+    stack0: &impl StackTrait<N>,
+    stack1: &impl StackTrait<N>,
+    name: &Identifier<N>,
+    confirmed: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
+    in_progress: &mut HashSet<(ProgramID<N>, ProgramID<N>, Identifier<N>)>,
+) -> Result<bool> {
+    // If this pair of structs has already been confirmed equivalent, there is nothing left to compare.
+    let key = (*stack0.program_id(), *stack1.program_id(), *name);
+    if confirmed.contains(&key) {
+        return Ok(true);
+    }
+
+    // Reject cyclic struct references instead of recursing until the process exhausts its stack.
+    if !in_progress.insert(key) {
+        bail!(
+            "Cyclic struct reference detected while comparing '{name}' in '{}' and '{}'",
+            stack0.program_id(),
+            stack1.program_id()
+        )
+    }
+
+    let result: Result<bool> = (|| {
+        let st0 = stack0.program().get_struct(name)?;
+        let st1 = stack1.program().get_struct(name)?;
+
         if st0.members().len() != st1.members().len() {
             return Ok(false);
         }
 
         for ((name0, type0), (name1, type1)) in st0.members().iter().zip(st1.members()) {
-            if name0 != name1 || !types_equivalent(stack0, type0, stack1, type1)? {
+            if name0 != name1 || !types_equivalent_inner(stack0, type0, stack1, type1, confirmed, in_progress)? {
                 return Ok(false);
             }
         }
 
         Ok(true)
-    };
+    })();
 
-    match (type0, type1) {
-        (Array(array0), Array(array1)) => Ok(array0.length() == array1.length()
-            && types_equivalent(stack0, array0.next_element_type(), stack1, array1.next_element_type())?),
-        (Literal(lit0), Literal(lit1)) => Ok(lit0 == lit1),
-        (Struct(id0), Struct(id1)) => {
-            if id0 != id1 {
-                return Ok(false);
-            }
-            let struct_type0 = stack0.program().get_struct(id0)?;
-            let struct_type1 = stack1.program().get_struct(id1)?;
-            struct_compare(stack0, struct_type0, stack1, struct_type1)
-        }
-        (ExternalStruct(loc0), ExternalStruct(loc1)) => {
-            if loc0.resource() != loc1.resource() {
-                return Ok(false);
-            }
-            let external_stack0 = stack0.get_external_stack(loc0.program_id())?;
-            let struct_type0 = external_stack0.program().get_struct(loc0.resource())?;
-            let external_stack1 = stack1.get_external_stack(loc1.program_id())?;
-            let struct_type1 = external_stack1.program().get_struct(loc1.resource())?;
-            struct_compare(&*external_stack0, struct_type0, &*external_stack1, struct_type1)
-        }
-        (ExternalStruct(loc), Struct(id)) => {
-            if loc.resource() != id {
-                return Ok(false);
-            }
-            let external_stack = stack0.get_external_stack(loc.program_id())?;
-            let struct_type0 = external_stack.program().get_struct(loc.resource())?;
-            let struct_type1 = stack1.program().get_struct(id)?;
-            struct_compare(&*external_stack, struct_type0, stack1, struct_type1)
-        }
-        (Struct(id), ExternalStruct(loc)) => {
-            if id != loc.resource() {
-                return Ok(false);
-            }
-            let struct_type0 = stack0.program().get_struct(id)?;
-            let external_stack = stack1.get_external_stack(loc.program_id())?;
-            let struct_type1 = external_stack.program().get_struct(loc.resource())?;
-            struct_compare(stack0, struct_type0, &*external_stack, struct_type1)
-        }
-        _ => Ok(false),
+    in_progress.remove(&key);
+
+    if !result? {
+        return Ok(false);
     }
+
+    // Record only confirmed equivalences: a mismatch short-circuits the whole comparison to `false`, so a hit
+    // above always denotes a genuine equivalence, and the memoization changes only the running time.
+    confirmed.insert(key);
+    Ok(true)
 }
 
 pub trait FinalizeRegistersState<N: Network>: RegistersTrait<N> {
@@ -511,4 +584,11 @@ pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>> {
     ) -> Result<()> {
         self.store_circuit(stack, register, circuit::Value::Plaintext(circuit::Plaintext::from(literal)))
     }
+
+    /// Checks that the given circuit value matches the layout of the register type. This is a circuit analogue of [`StackTrait::matches_register_type`].
+    fn circuit_matches_register_type(
+        stack: &impl StackTrait<N>,
+        circuit_value: &circuit::Value<A>,
+        register_type: &RegisterType<N>,
+    ) -> Result<()>;
 }

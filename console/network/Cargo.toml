@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-network"
-version = "4.7.1"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Network console library for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -9,7 +9,8 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-filesystem = [ "snarkvm-parameters/filesystem" ]
+dev-print = [ "snarkvm-console-algorithms/dev-print", "snarkvm-console-network-environment/dev-print" ]
+filesystem = [ "snarkvm-algorithms/filesystem", "snarkvm-parameters/filesystem" ]
 wasm = [
   "snarkvm-parameters/wasm"
 ]

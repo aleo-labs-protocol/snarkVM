@@ -15,407 +15,10 @@
 
 //! End-to-end tests for the `view` function prototype.
 //!
-//! These tests build a real VM at V15 height, deploy programs containing view functions, run
-//! transactions that mutate mappings via `finalize`, then call `vm.evaluate_view(...)` to
-//! verify the typed return values reflect on-chain state.
+//! These tests build a real VM at V15 height, deploy programs containing view functions, and run
+//! transactions whose finalize calls those views.
 
 use super::*;
-
-#[cfg(feature = "history")]
-use console::program::{Literal, Plaintext};
-
-/// Convenience: extract a single `u64` from a single-output view result.
-#[cfg(feature = "history")]
-fn expect_u64(outputs: &[Value<CurrentNetwork>]) -> u64 {
-    assert_eq!(outputs.len(), 1, "expected exactly one output, got {}", outputs.len());
-    match &outputs[0] {
-        Value::Plaintext(Plaintext::Literal(Literal::U64(v), _)) => **v,
-        other => panic!("expected u64 plaintext, got: {other}"),
-    }
-}
-
-/// Full lifecycle: deploy a program with a view function, run a transition that updates a
-/// mapping via finalize, then evaluate the view and observe the new value.
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-
-    // The program defines:
-    //   - `balances` mapping
-    //   - `increment(addr, amount)` transition + finalize that writes balances[addr] += amount
-    //   - `total_balance(addr)` view that returns balances[addr] (default 0)
-    let program = Program::from_str(
-        r"
-        program vw_lifecycle.aleo;
-
-        mapping balances:
-            key as address.public;
-            value as u64.public;
-
-        function increment:
-            input r0 as address.public;
-            input r1 as u64.public;
-            async increment r0 r1 into r2;
-            output r2 as vw_lifecycle.aleo/increment.future;
-
-        finalize increment:
-            input r0 as address.public;
-            input r1 as u64.public;
-            get.or_use balances[r0] 0u64 into r2;
-            add r2 r1 into r3;
-            set r3 into balances[r0];
-
-        view total_balance:
-            input r0 as address.public;
-            get.or_use balances[r0] 0u64 into r1;
-            output r1 as u64.public;
-
-        constructor:
-            assert.eq true true;
-        ",
-    )?;
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
-
-    // Deploy.
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
-
-    // Read against an untouched mapping should return the default (0).
-    let height = vm.block_store().current_block_height();
-    let outputs = vm.evaluate_view_at_height(
-        "vw_lifecycle.aleo",
-        "total_balance",
-        vec![Value::from_str(&caller_address.to_string())?],
-        height,
-    )?;
-    assert_eq!(expect_u64(&outputs), 0);
-
-    // Execute increment(addr, 10).
-    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("10u64")?];
-    let tx = vm.execute(&caller_private_key, ("vw_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    // Read should now reflect the finalize-set value.
-    let height = vm.block_store().current_block_height();
-    let outputs = vm.evaluate_view_at_height(
-        "vw_lifecycle.aleo",
-        "total_balance",
-        vec![Value::from_str(&caller_address.to_string())?],
-        height,
-    )?;
-    assert_eq!(expect_u64(&outputs), 10);
-
-    // Increment again by 32. New total: 42.
-    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("32u64")?];
-    let tx = vm.execute(&caller_private_key, ("vw_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    let height = vm.block_store().current_block_height();
-    let outputs = vm.evaluate_view_at_height(
-        "vw_lifecycle.aleo",
-        "total_balance",
-        vec![Value::from_str(&caller_address.to_string())?],
-        height,
-    )?;
-    assert_eq!(expect_u64(&outputs), 42);
-
-    Ok(())
-}
-
-/// Read with multiple outputs returns each in declaration order.
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_multi_output() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-
-    let program = Program::from_str(
-        r"
-        program vw_multi_output.aleo;
-
-        mapping balances:
-            key as address.public;
-            value as u64.public;
-
-        function noop:
-            input r0 as u64.private;
-            output r0 as u64.private;
-
-        constructor:
-            assert.eq true true;
-
-        view summary:
-            input r0 as address.public;
-            get.or_use balances[r0] 0u64 into r1;
-            add r1 1u64 into r2;
-            mul r1 2u64 into r3;
-            output r1 as u64.public;
-            output r2 as u64.public;
-            output r3 as u64.public;
-        ",
-    )?;
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
-
-    let outputs = vm.evaluate_view_at_height(
-        "vw_multi_output.aleo",
-        "summary",
-        vec![Value::from_str(&caller_address.to_string())?],
-        vm.block_store().current_block_height(),
-    )?;
-
-    // Default 0u64 for the unknown key, then +1 and *2.
-    assert_eq!(outputs.len(), 3);
-    assert_eq!(expect_u64(&outputs[0..1]), 0);
-    assert_eq!(expect_u64(&outputs[1..2]), 1);
-    assert_eq!(expect_u64(&outputs[2..3]), 0);
-    Ok(())
-}
-
-/// Read with multiple inputs computes a typed return.
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_multi_input() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-
-    // Pure-arithmetic view, no mappings needed.
-    let program = Program::from_str(
-        r"
-        program vw_multi_in.aleo;
-
-        function noop:
-            input r0 as u64.private;
-            output r0 as u64.private;
-
-        constructor:
-            assert.eq true true;
-
-        view add3:
-            input r0 as u64.public;
-            input r1 as u64.public;
-            input r2 as u64.public;
-            add r0 r1 into r3;
-            add r3 r2 into r4;
-            output r4 as u64.public;
-        ",
-    )?;
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
-
-    let outputs = vm.evaluate_view_at_height(
-        "vw_multi_in.aleo",
-        "add3",
-        vec![Value::from_str("10u64")?, Value::from_str("20u64")?, Value::from_str("12u64")?],
-        vm.block_store().current_block_height(),
-    )?;
-    assert_eq!(expect_u64(&outputs), 42);
-    Ok(())
-}
-
-/// Read that uses `branch.eq` to take a forward branch over a noop. The output is
-/// invariant under the branch (computed before it), but the branch path itself is
-/// exercised: when `r0 == 0`, the doubling step is skipped at runtime; when `r0 != 0`,
-/// the doubling step runs and writes `r2`. Either way the view's declared output
-/// references `r1`, which is always written. This proves the view evaluator handles
-/// `branch.eq` without crashing under both taken and not-taken paths.
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_with_branch() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-
-    let program = Program::from_str(
-        r"
-        program vw_branch.aleo;
-
-        function noop:
-            input r0 as u64.private;
-            output r0 as u64.private;
-
-        constructor:
-            assert.eq true true;
-
-        view maybe_extra:
-            input r0 as u64.public;
-            add r0 10u64 into r1;
-            branch.eq r0 0u64 to skip;
-            add r1 r1 into r2;
-            position skip;
-            output r1 as u64.public;
-        ",
-    )?;
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
-
-    // r0 = 0: branch is taken, doubling is skipped.
-    let outputs = vm.evaluate_view_at_height(
-        "vw_branch.aleo",
-        "maybe_extra",
-        vec![Value::from_str("0u64")?],
-        vm.block_store().current_block_height(),
-    )?;
-    assert_eq!(expect_u64(&outputs), 10);
-
-    // r0 = 5: branch is NOT taken, the unused r2 destination is written but we still output r1.
-    let outputs = vm.evaluate_view_at_height(
-        "vw_branch.aleo",
-        "maybe_extra",
-        vec![Value::from_str("5u64")?],
-        vm.block_store().current_block_height(),
-    )?;
-    assert_eq!(expect_u64(&outputs), 15);
-    Ok(())
-}
-
-/// Read with no inputs (views a fixed-key mapping or just returns a constant).
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_zero_inputs() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-
-    let program = Program::from_str(
-        r"
-        program vw_zeroin.aleo;
-
-        function noop:
-            input r0 as u64.private;
-            output r0 as u64.private;
-
-        constructor:
-            assert.eq true true;
-
-        view fixed_value:
-            add 0u64 1234u64 into r0;
-            output r0 as u64.public;
-        ",
-    )?;
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
-
-    let outputs =
-        vm.evaluate_view_at_height("vw_zeroin.aleo", "fixed_value", vec![], vm.block_store().current_block_height())?;
-    assert_eq!(expect_u64(&outputs), 1234);
-    Ok(())
-}
-
-/// Calling evaluate_view with the wrong input arity returns an error.
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_arity_mismatch() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-
-    let program = Program::from_str(
-        r"
-        program vw_arity.aleo;
-
-        function noop:
-            input r0 as u64.private;
-            output r0 as u64.private;
-
-        constructor:
-            assert.eq true true;
-
-        view takes_two:
-            input r0 as u64.public;
-            input r1 as u64.public;
-            add r0 r1 into r2;
-            output r2 as u64.public;
-        ",
-    )?;
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
-
-    // Too few inputs.
-    let result = vm.evaluate_view_at_height(
-        "vw_arity.aleo",
-        "takes_two",
-        vec![Value::from_str("1u64")?],
-        vm.block_store().current_block_height(),
-    );
-    assert!(result.is_err(), "expected error for too few inputs");
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("expects 2"), "error should mention input count: {err}");
-
-    // Too many inputs.
-    let result = vm.evaluate_view_at_height(
-        "vw_arity.aleo",
-        "takes_two",
-        vec![Value::from_str("1u64")?, Value::from_str("2u64")?, Value::from_str("3u64")?],
-        vm.block_store().current_block_height(),
-    );
-    assert!(result.is_err(), "expected error for too many inputs");
-
-    Ok(())
-}
-
-/// Calling a view that does not exist on a deployed program returns a "not defined" error.
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_unknown_view() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-
-    let program = Program::from_str(
-        r"
-        program vw_unknown.aleo;
-
-        function noop:
-            input r0 as u64.private;
-            output r0 as u64.private;
-
-        constructor:
-            assert.eq true true;
-
-        view existing:
-            add 0u64 1u64 into r0;
-            output r0 as u64.public;
-        ",
-    )?;
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
-
-    let result =
-        vm.evaluate_view_at_height("vw_unknown.aleo", "missing", vec![], vm.block_store().current_block_height());
-    assert!(result.is_err(), "expected error for unknown view");
-    Ok(())
-}
-
-/// Calling evaluate_view against a program that was never deployed returns a "no such program" error.
-#[cfg(feature = "history")]
-#[test]
-fn test_evaluate_view_unknown_program() {
-    let rng = &mut TestRng::default();
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
-
-    let result =
-        vm.evaluate_view_at_height("never_deployed.aleo", "anything", vec![], vm.block_store().current_block_height());
-    assert!(result.is_err(), "expected error for unknown program");
-}
 
 /// Construction-time rejection: declared output type must match the operand's actual type.
 #[test]
@@ -438,17 +41,14 @@ fn test_view_output_type_mismatch_rejected() {
             output r1 as u32.public;
         ",
     );
-    // Parsing succeeds (the view is structurally valid); the mismatch is caught when the
-    // stack is computed from the program at deploy time. We assert here that *either* parse
-    // or the subsequent type-check rejects this — whichever fails first is acceptable.
+    // Parsing succeeds (the view is structurally valid); the mismatch is caught when the stack is
+    // computed from the program by Stack::new(). We assert here that *either* parse or the
+    // subsequent type-check rejects this — whichever fails first is acceptable.
     if let Ok(program) = result {
         let rng = &mut TestRng::default();
-        let caller_private_key = sample_genesis_private_key(rng);
-        let caller_address = Address::try_from(&caller_private_key).unwrap();
         let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject type-mismatched view output");
-        let _ = caller_address;
+        let add_result = vm.process().lock().add_program(&program);
+        assert!(add_result.is_err(), "adding the program should reject type-mismatched view output");
     }
 }
 
@@ -542,12 +142,15 @@ view fixed_value:
     )
     .unwrap();
 
-    // Deployment before V15 should be aborted.
+    // Deployment before V15 should be rejected by verification.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with view before V15 should not be accepted");
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1, "Deployment with view before V15 should be aborted");
+    assert!(
+        vm.check_transaction(&deployment, None, rng).is_err(),
+        "Deployment with view before V15 should be rejected"
+    );
+
+    // Advance to V15 by adding an empty block.
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
     vm.add_next_block(&block).unwrap();
 
     // We should now be at V15.
@@ -562,9 +165,9 @@ view fixed_value:
     vm.add_next_block(&block).unwrap();
 }
 
-/// Tests that a view containing a `string` type is rejected at deploy via the strengthened
-/// `Program::contains_string_type` (which now walks `self.views`). Without that fix, strings
-/// could sneak in through view inputs/outputs even though they're banned post-V12.
+/// Tests that a view containing a `string` type is rejected by Stack::new() via the strengthened
+/// `Program::contains_string_type` (which now walks `self.views`). Without that fix, strings could
+/// sneak in through view inputs/outputs even though they're banned post-V12.
 #[test]
 fn test_deploy_view_with_string_type_rejected() {
     let rng = &mut TestRng::default();
@@ -591,9 +194,10 @@ view echo:
     .unwrap();
 
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with string-typed view input should be rejected");
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(
+        vm.check_transaction(&deployment, None, rng).is_err(),
+        "Deployment with string-typed view input should be rejected"
+    );
 }
 
 /// Tests that a finalize body can call a view function in the SAME program and route its
@@ -655,32 +259,19 @@ fn test_finalize_calls_same_program_view() -> Result<()> {
 
     // Deploy.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Seed `balances[caller] = 21`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("21u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_same.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute_doubled(caller)`. Its finalize calls `lookup(caller)` (→ 21), doubles
     // (→ 42), and writes to `doubled[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_call_same.aleo", "compute_doubled"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    // Confirm the new mapping value via an external read.
-    #[cfg(feature = "history")]
-    {
-        let outputs = vm.evaluate_view_at_height(
-            "vw_call_same.aleo",
-            "lookup",
-            vec![Value::from_str(&caller_address.to_string())?],
-            vm.block_store().current_block_height(),
-        )?;
-        // The view reads `balances`, which still holds 21 (untouched by `compute_doubled`'s finalize).
-        assert_eq!(expect_u64(&outputs), 21, "external view of `lookup` should still see balances=21");
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -754,32 +345,30 @@ fn test_finalize_calls_cross_program_view() -> Result<()> {
 
     // Deploy the data program, then the caller program (which imports it).
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
     let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_caller], rng);
 
     // Seed `balances[caller] = 14` in the data program.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("14u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute_doubled(caller)`. Its finalize calls `vw_call_data.aleo/lookup(caller)`
     // (→ 14), multiplies by 3 (→ 42), and writes to `doubled[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_call_caller.aleo", "compute_doubled"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
 
 /// Tests that a finalize body calling a NON-view target (i.e. a regular function) is rejected
-/// at deploy time. The type-check resolves the target and bails because it is not a view.
+/// by Stack::new(). The type-check resolves the target and bails because it is not a view.
 #[test]
-fn test_finalize_calls_non_view_rejected_at_deploy() {
+fn test_finalize_calls_non_view_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let _caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program = Program::from_str(
         r"
@@ -807,8 +396,8 @@ fn test_finalize_calls_non_view_rejected_at_deploy() {
     // it first; either way it must NOT successfully deploy.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize that calls a non-view target");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize that calls a non-view target");
     }
 }
 
@@ -855,11 +444,15 @@ fn test_deploy_finalize_call_before_and_at_v15() {
     )
     .unwrap();
 
-    // Pre-V15: rejected.
+    // Pre-V15: rejected by verification.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with finalize-call before V15 should be rejected");
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(
+        vm.check_transaction(&deployment, None, rng).is_err(),
+        "Deployment with finalize-call before V15 should be rejected"
+    );
+
+    // Advance to V15 by adding an empty block.
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
     vm.add_next_block(&block).unwrap();
     assert_eq!(vm.block_store().current_block_height(), v15_height);
 
@@ -938,12 +531,12 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
 
     // Deploy.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Seed `balances[caller] = 11`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("11u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_seq.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute(caller)`. The finalize:
     //   - first call → v_old = 11
@@ -952,59 +545,18 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
     //   - store 11 * 1000 + 55 = 11055 in `before_after[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_call_seq.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    // Confirm both calls observed the expected (old, new) pair via the encoded result.
-    #[cfg(feature = "history")]
-    {
-        // We expose the encoded value via `lookup` on `before_after` — but `lookup` reads
-        // `balances`, not `before_after`. Use a direct historic mapping read instead.
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                *program.id(),
-                console::program::Identifier::from_str("before_after")?,
-                key,
-                height,
-            )?
-            .expect("before_after should have a value at the current height");
-        match &*value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(encoded), _)) => {
-                assert_eq!(
-                    **encoded, 11_055u64,
-                    "expected v_old*1000 + v_new = 11055, got {encoded}; the two view calls must \
-                     observe (11, 55) respectively, with the intervening `set` visible to the second call",
-                );
-            }
-            other => panic!("expected u64 plaintext, got {other:?}"),
-        }
-    }
-
-    // Also confirm the final committed balance is 55 (the intervening set landed).
-    #[cfg(feature = "history")]
-    {
-        let outputs = vm.evaluate_view_at_height(
-            "vw_call_seq.aleo",
-            "lookup",
-            vec![Value::from_str(&caller_address.to_string())?],
-            vm.block_store().current_block_height(),
-        )?;
-        assert_eq!(expect_u64(&outputs), 55, "final balance after `compute` must be 55");
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
 
 /// Cross-program negative: an importing program's finalize body calls a regular `function` in an
 /// imported program (not a view). Same shape as the same-program negative test, but goes through
-/// the `CallOperator::Locator` resolution path. Must be rejected at deploy time.
+/// the `CallOperator::Locator` resolution path. Must be rejected by Stack::new().
 #[test]
-fn test_finalize_calls_cross_program_non_view_rejected_at_deploy() {
+fn test_finalize_calls_cross_program_non_view_rejected() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Imported program: exposes a regular `function` (no view).
     let data_program = Program::from_str(
@@ -1045,21 +597,23 @@ fn test_finalize_calls_cross_program_non_view_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
 
     // Either parse or deploy must reject — same pattern as the same-program negative test.
     if let Ok(caller_program) = caller_program {
-        let deploy = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize that calls a non-view target in an imported program");
+        let result = vm.process().lock().add_program(&caller_program);
+        assert!(
+            result.is_err(),
+            "adding the program should reject a finalize that calls a non-view target in an imported program"
+        );
     }
 }
 
 /// Negative: deploy is rejected when the call's operand count does not match the view's input
 /// arity. Exercises the arity check in `Call::output_types`.
 #[test]
-fn test_finalize_call_arity_mismatch_rejected_at_deploy() {
+fn test_finalize_call_arity_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // `lookup` declares one input, but the caller passes two.
     let program = Program::from_str(
@@ -1092,8 +646,8 @@ fn test_finalize_call_arity_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call with wrong arity");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize-call with wrong arity");
     }
 }
 
@@ -1101,9 +655,8 @@ fn test_finalize_call_arity_mismatch_rejected_at_deploy() {
 /// a type that does not match the view's declared output type. Proves that `Call::output_types`
 /// propagates the view's output types into the surrounding finalize type-check.
 #[test]
-fn test_finalize_call_destination_type_mismatch_rejected_at_deploy() {
+fn test_finalize_call_destination_type_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // `lookup` outputs `u64`, but the caller treats `r1` as `u32` in the following `add`.
     let program = Program::from_str(
@@ -1137,8 +690,11 @@ fn test_finalize_call_destination_type_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject when call destination type conflicts with downstream use");
+        let result = vm.process().lock().add_program(&program);
+        assert!(
+            result.is_err(),
+            "adding the program should reject when call destination type conflicts with downstream use"
+        );
     }
 }
 
@@ -1176,14 +732,13 @@ fn test_view_rejects_call_command_at_parse() {
     assert!(result.is_err(), "expected parse error for a view body containing `call`");
 }
 
-/// Negative: a finalize body that uses a `Locator` form to call its own program (instead of
-/// the `Resource` form) is rejected at deploy. Same-program calls must use the bare resource
+/// Negative: a finalize body that uses a `Locator` form to call its own program (instead of the
+/// `Resource` form) is rejected by Stack::new(). Same-program calls must use the bare resource
 /// name; a self-locator is treated as an error since the locator form is reserved for external
 /// programs.
 #[test]
-fn test_finalize_call_self_locator_rejected_at_deploy() {
+fn test_finalize_call_self_locator_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     let program = Program::from_str(
         r"
@@ -1215,20 +770,19 @@ fn test_finalize_call_self_locator_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call using a self-locator");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize-call using a self-locator");
     }
 }
 
-/// Negative: a finalize body that calls into an external program which is not declared in
-/// `import` is rejected at deploy. The target program is deployed independently, but the caller
-/// never imports it — the explicit import check in the finalize type-check fires before the
-/// external stack lookup.
+/// Negative: a finalize body that calls into an external program which is not declared in `import`
+/// is rejected by Stack::new(). The target program is deployed independently, but the caller never
+/// imports it — the explicit import check in the finalize type-check fires before the external
+/// stack lookup.
 #[test]
-fn test_finalize_call_missing_import_rejected_at_deploy() {
+fn test_finalize_call_missing_import_rejected() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Target program with a view (deployed first). Includes a noop function so the program
     // has at least one deployable function alongside the view.
@@ -1278,11 +832,14 @@ fn test_finalize_call_missing_import_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
 
     if let Ok(caller_program) = caller_program {
-        let deploy = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call into a program that is not imported");
+        let result = vm.process().lock().add_program(&caller_program);
+        assert!(
+            result.is_err(),
+            "adding the program should reject a finalize-call into a program that is not imported"
+        );
     }
 }
 
@@ -1373,64 +930,13 @@ fn test_finalize_call_multi_output_multi_type() -> Result<()> {
 
     // Deploy.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Run `compute(caller)`. The view observes balances[caller]=0, returns (7u64, true, caller),
     // and the finalize routes each output into its respective mapping.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_multi_type.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    // Verify each destination received the expected typed value.
-    #[cfg(feature = "history")]
-    {
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let program_id = *program.id();
-
-        let balances_value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                program_id,
-                console::program::Identifier::from_str("balances")?,
-                key.clone(),
-                height,
-            )?
-            .expect("balances should be set");
-        match &*balances_value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
-                assert_eq!(**v, 7u64, "balances[caller] must equal the view's u64 output (0 + 7)");
-            }
-            other => panic!("expected u64 plaintext for balances, got {other:?}"),
-        }
-
-        let flags_value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                program_id,
-                console::program::Identifier::from_str("flags")?,
-                key.clone(),
-                height,
-            )?
-            .expect("flags should be set");
-        match &*flags_value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::Boolean(v), _)) => {
-                assert!(**v, "flags[caller] must equal the view's boolean output (7 > 5)");
-            }
-            other => panic!("expected boolean plaintext for flags, got {other:?}"),
-        }
-
-        let owners_value = vm
-            .finalize_store()
-            .get_historical_mapping_value(program_id, console::program::Identifier::from_str("owners")?, key, height)?
-            .expect("owners should be set");
-        match &*owners_value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::Address(v), _)) => {
-                assert_eq!(*v, caller_address, "owners[caller] must equal the view's address output");
-            }
-            other => panic!("expected address plaintext for owners, got {other:?}"),
-        }
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -1511,43 +1017,21 @@ fn test_finalize_call_struct_return_cross_program() -> Result<()> {
 
     // Deploy data then caller (caller imports data).
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
     let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_caller], rng);
 
     // Seed balances[caller] = 77 in the data program.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("77u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_struct_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute(caller)`. The finalize calls `summarize` which returns Summary{total: 77,
     // flag: true}, extracts the `total` field, and stores it in `totals`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_struct_caller.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    // Verify totals[caller] = 77 (the extracted .total field of the returned struct).
-    #[cfg(feature = "history")]
-    {
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let totals_value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                *caller_program.id(),
-                console::program::Identifier::from_str("totals")?,
-                key,
-                height,
-            )?
-            .expect("totals should be set");
-        match &*totals_value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
-                assert_eq!(**v, 77u64, "totals[caller] must equal the .total field of the cross-program struct return");
-            }
-            other => panic!("expected u64 plaintext, got {other:?}"),
-        }
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -1556,9 +1040,8 @@ fn test_finalize_call_struct_return_cross_program() -> Result<()> {
 /// outputs. Mirrors the operand-arity test but exercises the destination-count check in
 /// `Call::output_types_for_view`.
 #[test]
-fn test_finalize_call_destination_count_mismatch_rejected_at_deploy() {
+fn test_finalize_call_destination_count_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // `lookup` declares one output, but the caller binds two destinations.
     let program = Program::from_str(
@@ -1591,22 +1074,21 @@ fn test_finalize_call_destination_count_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+        let result = vm.process().lock().add_program(&program);
         assert!(
-            deploy.is_err(),
-            "deploy should reject a finalize-call binding more destinations than the view returns"
+            result.is_err(),
+            "adding the program should reject a finalize-call binding more destinations than the view returns"
         );
     }
 }
 
 /// Negative: deploy is rejected when an operand's register type does not match the view's
 /// declared input type. The caller passes a `u32` register where the view expects `u64`. The
-/// per-operand type check in `Call::output_types_for_view` rejects this at deploy rather than
+/// per-operand type check in `Call::output_types_for_view` rejects this by Stack::new() rather than
 /// deferring to runtime.
 #[test]
-fn test_finalize_call_input_type_mismatch_rejected_at_deploy() {
+fn test_finalize_call_input_type_mismatch_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // The finalize body propagates a `u32` register as the operand to `lookup`, which expects `u64`.
     let program = Program::from_str(
@@ -1641,8 +1123,8 @@ fn test_finalize_call_input_type_mismatch_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject a finalize-call with a wrong-typed operand");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject a finalize-call with a wrong-typed operand");
     }
 }
 
@@ -1693,7 +1175,7 @@ fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
 
     // Deploy succeeds.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Execute `caller(caller_address)` — `balances[caller_address]` is unset, so the view's
     // strict `get` fails. The block must finalize-reject the transaction.
@@ -1705,20 +1187,6 @@ fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
     assert_eq!(block.transactions().num_rejected(), 1, "the failing finalize must surface as a rejected tx");
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
-
-    // The `out` mapping must be unchanged — finalize rejection rolls the batch back.
-    #[cfg(feature = "history")]
-    {
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let out_value = vm.finalize_store().get_historical_mapping_value(
-            console::program::ProgramID::from_str("vw_call_runtime_fail.aleo")?,
-            console::program::Identifier::from_str("out")?,
-            key,
-            height,
-        )?;
-        assert!(out_value.is_none(), "out[caller_address] must remain unset after the rejected tx");
-    }
 
     Ok(())
 }
@@ -1763,11 +1231,11 @@ fn test_finalize_call_as_only_finalize_instruction() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_call_only.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -1811,33 +1279,11 @@ fn test_finalize_calls_zero_input_view() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_call_zero.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    // Confirm out[caller] = 42 via the historic store.
-    #[cfg(feature = "history")]
-    {
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                console::program::ProgramID::from_str("vw_call_zero.aleo")?,
-                console::program::Identifier::from_str("out")?,
-                key,
-                height,
-            )?
-            .expect("out should be set");
-        match &*value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
-                assert_eq!(**v, 42u64, "zero-input view should return the constant 42");
-            }
-            other => panic!("expected u64 plaintext, got {other:?}"),
-        }
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -1904,53 +1350,17 @@ fn test_finalize_call_inside_branch() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Seed `seeds[caller] = 7`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("7u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_branch.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Branch taken (r1 == 0u8): call is skipped, `out[r0]` stays unset.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("0u8")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_branch.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    #[cfg(feature = "history")]
-    {
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let value = vm.finalize_store().get_historical_mapping_value(
-            console::program::ProgramID::from_str("vw_call_branch.aleo")?,
-            console::program::Identifier::from_str("out")?,
-            key.clone(),
-            height,
-        )?;
-        assert!(value.is_none(), "out must remain unset when the call is skipped by branch.eq");
-
-        // Branch NOT taken (r1 == 1u8): call runs and stores 7.
-        let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("1u8")?];
-        let tx =
-            vm.execute(&caller_private_key, ("vw_call_branch.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-        let height = vm.block_store().current_block_height();
-        let value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                console::program::ProgramID::from_str("vw_call_branch.aleo")?,
-                console::program::Identifier::from_str("out")?,
-                key,
-                height,
-            )?
-            .expect("out should be set when the branch is not taken");
-        match &*value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
-                assert_eq!(**v, 7u64, "out[caller] must equal the view's result when the call runs");
-            }
-            other => panic!("expected u64 plaintext, got {other:?}"),
-        }
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -2029,9 +1439,9 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
     let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_caller], rng);
 
     // Sample a second address to use as the other key.
     let other_private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
@@ -2041,39 +1451,18 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("17u64")?];
     let tx =
         vm.execute(&caller_private_key, ("vw_cross_multi_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
     let inputs = [Value::from_str(&other_address.to_string())?, Value::from_str("25u64")?];
     let tx =
         vm.execute(&caller_private_key, ("vw_cross_multi_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `combine(caller, other)` — finalize calls `lookup` twice, sums (17 + 25 = 42), stores
     // into `totals[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str(&other_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_cross_multi_caller.aleo", "combine"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    #[cfg(feature = "history")]
-    {
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                console::program::ProgramID::from_str("vw_cross_multi_caller.aleo")?,
-                console::program::Identifier::from_str("totals")?,
-                key,
-                height,
-            )?
-            .expect("totals should be set");
-        match &*value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
-                assert_eq!(**v, 42u64, "totals[caller] should equal balances[caller] + balances[other]");
-            }
-            other => panic!("expected u64 plaintext, got {other:?}"),
-        }
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -2125,75 +1514,23 @@ fn test_finalize_call_zero_output_guard_view() -> Result<()> {
 
     // Deploy succeeds — a zero-output view is now a valid program element.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Happy path: pass `0u64`. The guard's `assert.eq` holds, the finalize body continues and
     // writes `out[caller] = 1`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("0u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_guard.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
-
-    #[cfg(feature = "history")]
-    {
-        let height = vm.block_store().current_block_height();
-        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
-        let value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                console::program::ProgramID::from_str("vw_guard.aleo")?,
-                console::program::Identifier::from_str("out")?,
-                key.clone(),
-                height,
-            )?
-            .expect("out should be set after the guard passes");
-        match &*value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
-                assert_eq!(**v, 1u64, "guard pass: caller's finalize should have written 1");
-            }
-            other => panic!("expected u64 plaintext, got {other:?}"),
-        }
-
-        // Failure path: pass `1u64`. The guard's `assert.eq` fails, the finalize is rejected,
-        // and `out[caller]` retains the value from the previous run (still `1u64`, not a new write).
-        let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("1u64")?];
-        let tx = vm.execute(&caller_private_key, ("vw_guard.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-        let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
-        assert_eq!(block.transactions().num_accepted(), 0, "guard fail: tx must not be accepted");
-        assert_eq!(block.transactions().num_rejected(), 1, "guard fail: tx must be finalize-rejected");
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
-        vm.add_next_block(&block)?;
-
-        // out[caller] is still 1 (the rejected tx didn't write 1 again — but, more importantly,
-        // didn't apply any state change). We re-read to confirm the value is unchanged from the
-        // happy-path write above.
-        let height = vm.block_store().current_block_height();
-        let value = vm
-            .finalize_store()
-            .get_historical_mapping_value(
-                console::program::ProgramID::from_str("vw_guard.aleo")?,
-                console::program::Identifier::from_str("out")?,
-                key,
-                height,
-            )?
-            .expect("out should still be set from the earlier successful run");
-        match &*value {
-            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
-                assert_eq!(**v, 1u64, "rejected tx must not have mutated state");
-            }
-            other => panic!("expected u64 plaintext, got {other:?}"),
-        }
-    }
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
 
-/// Negative: a finalize-call that binds destinations to a zero-output guard view must be
-/// rejected at deploy. The `view.outputs().len() != self.destinations.len()` check in
+/// Negative: a finalize-call that binds destinations to a zero-output guard view must be rejected
+/// by Stack::new(). The `view.outputs().len() != self.destinations.len()` check in
 /// `Call::output_types_for_view` should bail (0 outputs vs. 1 destination).
 #[test]
-fn test_finalize_call_zero_output_view_with_destinations_rejected_at_deploy() {
+fn test_finalize_call_zero_output_view_with_destinations_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // The caller mistakenly binds `r1` for the guard view's (nonexistent) return value.
     let program = Program::from_str(
@@ -2221,7 +1558,7 @@ fn test_finalize_call_zero_output_view_with_destinations_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-        assert!(deploy.is_err(), "deploy should reject binding destinations to a zero-output view");
+        let result = vm.process().lock().add_program(&program);
+        assert!(result.is_err(), "adding the program should reject binding destinations to a zero-output view");
     }
 }

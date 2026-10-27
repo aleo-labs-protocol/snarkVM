@@ -21,7 +21,7 @@ use crate::Output;
 
 use console::{
     network::prelude::*,
-    program::{ProgramID, Request, ValueType},
+    program::{Identifier, ProgramID, Request, ValueType},
     types::Field,
 };
 use snarkvm_ledger_block::{Input, Transaction, Transition};
@@ -44,6 +44,16 @@ pub struct Authorization<N: Network> {
     /// The authorized transitions.
     transitions: Arc<RwLock<IndexMap<N::TransitionID, Transition<N>>>>,
 }
+
+/// A tracker for the names of all static records passed as inputs to requests in a given transaction.
+/// Entry `(n, m) -> r_name` indicates that the `m`-th input of the `n`-th request in the transaction
+/// is a static `Record` with name `r_name`.
+pub type RecordNameTracker<N> = HashMap<(usize, usize), Identifier<N>>;
+
+/// A tracker for the program checksums of requests in a given transaction. Entry `n -> c` indicates
+/// that the `n`-th request in the transaction corresponds to a program with program checksum `c`.
+/// Requests corresponding to programs without checksum do not have an entry in this map.
+pub type ProgramChecksumTracker<N> = HashMap<usize, Field<N>>;
 
 impl<N: Network> Authorization<N> {
     /// Initialize a new `Authorization` instance, with the given request.
@@ -200,6 +210,54 @@ impl<N: Network> Authorization<N> {
             // - breaking production wallets which use version 0 records before ConsensusVersion::V8.
         }
         Ok(())
+    }
+
+    /// Returns the names of all static record inputs to any request in the authorization as a
+    /// [`RecordNameTracker`], i.e. keyed by the request index and input index.
+    pub fn collect_record_names(&self, root_stack: &crate::Stack<N>) -> Result<RecordNameTracker<N>> {
+        let mut record_names = HashMap::new();
+
+        for (request_index, request) in self.to_vec_deque().iter().enumerate() {
+            let request_program_id = request.program_id();
+
+            let program_stack = if request_program_id == root_stack.program_id() {
+                root_stack
+            } else {
+                &*root_stack.get_stack_global(request_program_id)?
+            };
+
+            let input_types = program_stack.get_function(request.function_name())?.input_types();
+
+            for (input_index, input_type) in input_types.iter().enumerate() {
+                if let ValueType::Record(record_name) = input_type {
+                    record_names.insert((request_index, input_index), *record_name);
+                }
+            }
+        }
+
+        Ok(record_names)
+    }
+
+    /// Returns the program checksums of each request in the authorization, if any.
+    pub fn collect_program_checksums(&self, root_stack: &crate::Stack<N>) -> Result<ProgramChecksumTracker<N>> {
+        let mut program_checksums = HashMap::new();
+
+        for (request_index, request) in self.to_vec_deque().iter().enumerate() {
+            let request_program_id = request.program_id();
+
+            // Resolve the stack via the process-level map rather than `get_external_stack` (see doc comment).
+            let program_stack = if request_program_id == root_stack.program_id() {
+                root_stack
+            } else {
+                &*root_stack.get_stack_global(request_program_id)?
+            };
+
+            if program_stack.program().contains_constructor() {
+                program_checksums.insert(request_index, program_stack.program_checksum_as_field()?);
+            }
+        }
+
+        Ok(program_checksums)
     }
 }
 
@@ -495,13 +553,7 @@ pub(crate) mod test_helpers {
 
         // Generate the Authorization
         let authorization = process
-            .authorize::<CurrentAleo, _>(
-                &private_key,
-                &program_id,
-                &function_name,
-                vec![destination, amount].iter(),
-                rng,
-            )
+            .authorize::<CurrentAleo, _>(&private_key, &program_id, &function_name, [destination, amount].iter(), rng)
             .unwrap();
 
         // Assert there is only 1 transition

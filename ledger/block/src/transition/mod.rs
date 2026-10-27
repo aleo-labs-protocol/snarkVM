@@ -104,6 +104,23 @@ impl<N: Network> Transition<N> {
         Ok(Self { id, program_id, function_name, inputs, outputs, tpk, tcm, scm })
     }
 
+    /// Initializes a transition with the given transition ID, without recomputing it.
+    ///
+    /// This function should only be called if the inputs are trusted.
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new_unchecked(
+        id: N::TransitionID,
+        program_id: ProgramID<N>,
+        function_name: Identifier<N>,
+        inputs: Vec<Input<N>>,
+        outputs: Vec<Output<N>>,
+        tpk: Group<N>,
+        tcm: Field<N>,
+        scm: Field<N>,
+    ) -> Self {
+        Self { id, program_id, function_name, inputs, outputs, tpk, tcm, scm }
+    }
+
     /// Initializes a new transition from a request, response, and optional dynamic outputs.
     pub fn from(
         request: &Request<N>,

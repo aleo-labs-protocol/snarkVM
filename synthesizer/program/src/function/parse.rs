@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for FunctionCore<N> {
     /// Parses a string into a function.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the 'function' keyword from the string.
@@ -59,11 +59,11 @@ impl<N: Network> Parser for FunctionCore<N> {
                 eprintln!("{error}");
                 return Err(error);
             }
-            if let Some(finalize) = &finalize {
-                if let Err(error) = function.add_finalize(finalize.clone()) {
-                    eprintln!("{error}");
-                    return Err(error);
-                }
+            if let Some(finalize) = &finalize
+                && let Err(error) = function.add_finalize(finalize.clone())
+            {
+                eprintln!("{error}");
+                return Err(error);
             }
             Ok::<_, Error>(function)
         })(string)

@@ -74,12 +74,7 @@ use console::{
     network::ConsensusVersion,
     program::{DynamicRecord, Entry, Identifier, Value},
 };
-use snarkvm_synthesizer_process::{
-    deployment_cost,
-    execution_cost,
-    execution_cost_for_authorization,
-    execution_cost_for_call,
-};
+use snarkvm_synthesizer_process::{deployment_cost, execution_cost};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
@@ -144,72 +139,3 @@ use snarkvm_utilities::TestRng;
 // Signature consistency
 // - Translate an output record from a call to a preexisting program to ensure signature-verification circuit has not changed
 //   In: get_record_dynamic.rs::translate_transfer_public_to_private
-
-// Adds the given transactions to a new block and asserts all of them were
-// accepted, additionally checking that the cost estimations based on the
-// Authorization and the call target an inputs are correct. This is done if
-// and only if the `inputs` parameter is provided, which should not be done
-// for deployments.
-pub(crate) fn add_and_test_with_costs(
-    vm: &VM<CurrentNetwork, LedgerType>,
-    next_block_private_key: &PrivateKey<CurrentNetwork>,
-    caller_address: &Address<CurrentNetwork>,
-    inputs: Option<&[&[Value<CurrentNetwork>]]>,
-    transactions: &[Transaction<CurrentNetwork>],
-    rng: &mut TestRng,
-) {
-    // Check the transactions.
-    let transactions: Vec<_> = transactions
-        .iter()
-        .map(|tx_0| {
-            // Serialize and deserialize the transaction to ensure consistency.
-            let tx_bytes_0 = tx_0.to_bytes_le().unwrap();
-            let tx_1 = Transaction::<CurrentNetwork>::from_bytes_le(&tx_bytes_0).unwrap();
-            assert_eq!(tx_0, &tx_1);
-            assert_eq!(tx_bytes_0, tx_1.to_bytes_le().unwrap());
-            // Stringify and parse the transaction to ensure consistency.
-            let tx_1_string = tx_1.to_string();
-            let tx = Transaction::<CurrentNetwork>::from_str(&tx_1_string).unwrap();
-            assert_eq!(tx_0, &tx);
-            assert_eq!(tx_1_string, tx.to_string());
-            // Check the transaction.
-            vm.check_transaction(&tx, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
-            tx
-        })
-        .collect();
-    // Sample the next block.
-    let block = sample_next_block(vm, next_block_private_key, &transactions, rng).unwrap();
-    // Assert all transactions were accepted.
-    assert_eq!(block.transactions().num_accepted(), transactions.len());
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
-
-    // Add the next block to the VM.
-    vm.add_next_block(&block).unwrap();
-
-    // Check the cost estimation is correct:
-    if let Some(inputs) = inputs {
-        for (transaction, inputs) in transactions.iter().zip_eq(inputs) {
-            if let Some(execution) = transaction.execution() {
-                let actual_cost = execution_cost(vm.process(), execution, ConsensusVersion::V14).unwrap();
-                let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
-                let estimated_cost_authorization =
-                    execution_cost_for_authorization(vm.process(), &authorization, ConsensusVersion::V14).unwrap();
-                assert_eq!(actual_cost, estimated_cost_authorization);
-
-                let root_transition = execution.transitions().last().unwrap();
-                let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
-                    vm.process(),
-                    *caller_address,
-                    *root_transition.program_id(),
-                    *root_transition.function_name(),
-                    inputs.iter(),
-                    ConsensusVersion::V14,
-                    rng,
-                )
-                .unwrap();
-                assert_eq!(actual_cost, estimated_cost_request);
-            }
-        }
-    }
-}

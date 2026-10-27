@@ -115,7 +115,7 @@ fn test_translation_simple() {
 
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
-    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     print_r1cs_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=36085, 8, 24131, 24156);
@@ -130,7 +130,7 @@ fn test_translation_simple() {
     <CurrentAleo as circuit::Environment>::reset();
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
-    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=6160, 8, 24131, 24156);
     counts.assert_matches(
@@ -139,6 +139,50 @@ fn test_translation_simple() {
         <CurrentAleo as circuit::Environment>::num_private(),
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
+}
+
+#[test]
+fn test_varuna_v3_translation_key_reuse() -> Result<()> {
+    use circuit::Environment;
+    use snarkvm_algorithms::snark::varuna::VarunaVersion;
+    use snarkvm_synthesizer_snark::UniversalSRS;
+
+    let rng = &mut TestRng::fixed(3106);
+    let record = r"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }";
+    let srs = UniversalSRS::<CurrentNetwork>::load()?;
+    let mut expected_key = None;
+    for is_to_static in [false, true] {
+        for is_external in [false, true] {
+            CurrentAleo::reset();
+            let (mut translation, index) =
+                translation_assignment_from_record_str(record, is_to_static, is_external, None, rng);
+            if is_external {
+                translation.id_static = compute_console_dynamic_or_external_record_id(
+                    translation.function_id,
+                    translation.record_static.to_fields()?,
+                    translation.tvk,
+                    U16::new(translation.record_register_index),
+                )?;
+            }
+            let assignment = translation.to_circuit_assignment::<CurrentAleo>(index, None, None, None)?;
+            let (pk, vk) = srs.to_circuit_key("translation", &assignment)?;
+            if let Some(expected_key) = &expected_key {
+                assert!(expected_key == &vk);
+            } else {
+                expected_key = Some(vk.clone());
+            }
+            let inputs = assignment.public_inputs().iter().map(|variable| variable.value()).collect::<Vec<_>>();
+            for version in [VarunaVersion::V2, VarunaVersion::V3] {
+                let proof = pk.prove("translation", version, &assignment, rng)?;
+                assert!(vk.verify("translation", version, &inputs, &proof));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[test]
@@ -187,7 +231,7 @@ fn test_translation_recursive() {
     // is_to_static = false
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
-    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     print_r1cs_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=38785, 8, 32721, 32750);
@@ -202,7 +246,7 @@ fn test_translation_recursive() {
     <CurrentAleo as circuit::Environment>::reset();
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
-    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
     let counts = count_is!(<=8860, 8, 32721, 32750);
@@ -276,7 +320,7 @@ fn test_translation_complex() {
     // is_to_static = false
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
-    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     print_r1cs_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=41330, 8, 68798, 68844);
@@ -291,7 +335,7 @@ fn test_translation_complex() {
     <CurrentAleo as circuit::Environment>::reset();
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
-    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=11405, 8, 68798, 68844);
     counts.assert_matches(
@@ -415,7 +459,10 @@ fn test_definition_invariance() {
     ];
 
     // Checking parameters of the first translation separately
-    translation_assignments[0].0.to_circuit_assignment_internal::<CurrentAleo>(translation_assignments[0].1).unwrap();
+    translation_assignments[0]
+        .0
+        .to_circuit_assignment_internal::<CurrentAleo>(translation_assignments[0].1, None, None, None)
+        .unwrap();
     let counts = count_is!(<=37800, 8, 31043, 31070);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
@@ -428,7 +475,7 @@ fn test_definition_invariance() {
     <CurrentAleo as circuit::Environment>::reset();
     let circuit_assignments = translation_assignments
         .iter()
-        .map(|(assignment, index)| assignment.to_circuit_assignment::<CurrentAleo>(*index).unwrap())
+        .map(|(assignment, index)| assignment.to_circuit_assignment::<CurrentAleo>(*index, None, None, None).unwrap())
         .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
@@ -526,7 +573,7 @@ fn test_definition_variance() {
 
     let circuit_assignments = translation_assignments
         .iter()
-        .map(|(assignment, index)| assignment.to_circuit_assignment::<CurrentAleo>(*index).unwrap())
+        .map(|(assignment, index)| assignment.to_circuit_assignment::<CurrentAleo>(*index, None, None, None).unwrap())
         .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
@@ -663,7 +710,7 @@ fn test_external_translation() {
         id_static,
     );
 
-    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
     let counts = count_is!(<=38800, 8, 32562, 32591);
@@ -693,7 +740,7 @@ fn test_translation_negative_corrupt_id_dynamic() {
     // Corrupt the dynamic ID — any field != the correct one should fail.
     assignment.id_dynamic = Field::<CurrentNetwork>::one();
 
-    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(
         !<CurrentAleo as circuit::Environment>::is_satisfied(),
         "Circuit should be unsatisfied with a corrupted id_dynamic"
@@ -719,7 +766,7 @@ fn test_translation_negative_corrupt_id_static() {
     // Corrupt the static ID — should fail because the circuit verifies the commitment.
     assignment.id_static = Field::<CurrentNetwork>::one();
 
-    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(
         !<CurrentAleo as circuit::Environment>::is_satisfied(),
         "Circuit should be unsatisfied with a corrupted id_static"
@@ -750,7 +797,7 @@ fn test_psd8_console_circuit_id_equivalence() {
         translation_assignment_from_record_str(record_str, false, false, None, &mut rng);
 
     // Run the circuit.
-    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
 
     // If satisfied, the circuit agreed with the console computation.
     assert!(

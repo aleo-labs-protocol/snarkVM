@@ -101,7 +101,7 @@ impl<E: Environment> Eject for StringType<E> {
 impl<E: Environment> Parser for StringType<E> {
     /// Parses a string into a string circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the content from the string.
         let (string, content) = console::StringType::parse(string)?;
         // Parse the mode from the string.

@@ -25,6 +25,10 @@ pub struct FinalizeGlobalState {
     block_timestamp: Option<i64>, // TODO (raychu86): Consider adding the entire Metadata here instead.
     /// The block-specific random seed.
     random_seed: [u8; 32],
+    /// The block spend limit.
+    block_spend_limit: Option<u64>,
+    /// The block synthesis limit.
+    block_synthesis_limit: Option<u64>,
 }
 
 impl FinalizeGlobalState {
@@ -45,6 +49,8 @@ impl FinalizeGlobalState {
             block_cumulative_weight,
             block_cumulative_proof_target,
             previous_block_hash,
+            None,
+            None,
         )
     }
 
@@ -57,6 +63,8 @@ impl FinalizeGlobalState {
         block_cumulative_weight: u128,
         block_cumulative_proof_target: u128,
         previous_block_hash: N::BlockHash,
+        block_spend_limit: Option<u64>,
+        block_synthesis_limit: Option<u64>,
     ) -> Result<Self> {
         // Initialize the preimage, optionally including the block timestamp.
         let preimage = to_bits_le![
@@ -79,7 +87,7 @@ impl FinalizeGlobalState {
         let mut random_seed = [0u8; 32];
         random_seed.copy_from_slice(&seed[..32]);
 
-        Ok(Self { block_round, block_height, block_timestamp, random_seed })
+        Ok(Self { block_round, block_height, block_timestamp, random_seed, block_spend_limit, block_synthesis_limit })
     }
 
     /// Initializes a new global state.
@@ -89,8 +97,10 @@ impl FinalizeGlobalState {
         block_height: u32,
         block_timestamp: Option<i64>,
         random_seed: [u8; 32],
+        block_spend_limit: Option<u64>,
+        block_synthesis_limit: Option<u64>,
     ) -> Self {
-        Self { block_round, block_height, block_timestamp, random_seed }
+        Self { block_round, block_height, block_timestamp, random_seed, block_spend_limit, block_synthesis_limit }
     }
 
     /// Returns the block round.
@@ -115,5 +125,17 @@ impl FinalizeGlobalState {
     #[inline]
     pub const fn block_timestamp(&self) -> Option<i64> {
         self.block_timestamp
+    }
+
+    /// Returns the block spend limit.
+    #[inline]
+    pub const fn block_spend_limit(&self) -> Option<u64> {
+        self.block_spend_limit
+    }
+
+    /// Returns the block synthesis limit.
+    #[inline]
+    pub const fn block_synthesis_limit(&self) -> Option<u64> {
+        self.block_synthesis_limit
     }
 }

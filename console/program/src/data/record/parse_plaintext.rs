@@ -18,10 +18,10 @@ use super::*;
 impl<N: Network> Parser for Record<N, Plaintext<N>> {
     /// Parses a string as a record: `{ owner: address, identifier_0: entry_0, ..., identifier_n: entry_n, _nonce: field, _version: u8 }`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses a sanitized pair: `identifier: entry`.
         #[allow(clippy::type_complexity)]
-        fn parse_pair<N: Network>(string: &str) -> ParserResult<(Identifier<N>, Entry<N, Plaintext<N>>)> {
+        fn parse_pair<N: Network>(string: &str) -> ParserResult<'_, (Identifier<N>, Entry<N, Plaintext<N>>)> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the identifier from the string.

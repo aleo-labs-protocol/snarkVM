@@ -730,7 +730,11 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
+            let verifying_key = if resource_name == &Identifier::from_str("credits")? {
+                N::translation_credits_verifying_key()
+            } else {
+                N::get_credits_verifying_key(resource_name.to_string())?
+            };
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
@@ -783,7 +787,11 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
+            let verifying_key = if resource_name == &Identifier::from_str("credits")? {
+                N::translation_credits_verifying_key()
+            } else {
+                N::get_credits_verifying_key(resource_name.to_string())?
+            };
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
@@ -829,7 +837,11 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // This case is handled separately, as it is a default program of the VM.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
+            let verifying_key = if resource_name == &Identifier::from_str("credits")? {
+                N::translation_credits_verifying_key()
+            } else {
+                N::get_credits_verifying_key(resource_name.to_string())?
+            };
             // Retrieve the number of public and private variables.
             let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Return the verifying key.
@@ -1231,12 +1243,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             };
 
             // Construct the deployment transaction.
-            let deployment_transaction = Transaction::from_deployment(owner, deployment, fee)?;
-            // Ensure the transaction ID matches.
-            return match *transaction_id == deployment_transaction.id() {
-                true => Ok(Some(deployment_transaction)),
-                false => bail!("The deployment transaction ID does not match '{transaction_id}'"),
-            };
+            let deployment_id = deployment.to_deployment_id()?;
+            return Ok(Some(Transaction::Deploy(*transaction_id, deployment_id, owner, Box::new(deployment), fee)));
         }
 
         // Retrieve the deployment.
@@ -1253,12 +1261,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         };
 
         // Construct the deployment transaction.
-        let deployment_transaction = Transaction::from_deployment(owner, deployment, fee)?;
-        // Ensure the transaction ID matches.
-        match *transaction_id == deployment_transaction.id() {
-            true => Ok(Some(deployment_transaction)),
-            false => bail!("The deployment transaction ID does not match '{transaction_id}'"),
-        }
+        let deployment_id = deployment.to_deployment_id()?;
+        Ok(Some(Transaction::Deploy(*transaction_id, deployment_id, owner, Box::new(deployment), fee)))
     }
 
     /// Returns the number of amendments for the given `program ID` and `edition`.
@@ -1416,10 +1420,14 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         // Initialize the deployment storage.
         let storage = D::open(fee_store)?;
 
-        // Insert `credits.aleo`, which is the default program.
-        let credits_id = ProgramID::from_str("credits.aleo")?;
-        storage.edition_map().insert(credits_id, 0)?;
-        storage.program_map().insert((credits_id, 0), Program::credits()?)?;
+        // Do not introduce any records if the storage is used in readonly mode,
+        // as a secondary RocksDB instance.
+        if !matches!(storage.storage_mode(), StorageMode::Custom(_, Some(_))) {
+            // Insert `credits.aleo`, which is the default program.
+            let credits_id = ProgramID::from_str("credits.aleo")?;
+            storage.edition_map().insert(credits_id, 0)?;
+            storage.program_map().insert((credits_id, 0), Program::credits()?)?;
+        }
 
         // Return the deployment store.
         Ok(Self { storage, _phantom: PhantomData })
@@ -1798,6 +1806,31 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
 mod tests {
     use super::*;
     use crate::{TransitionStore, helpers::memory::DeploymentMemory};
+    use console::network::MainnetV0;
+
+    #[test]
+    fn test_get_credits_translation_verifying_key() -> Result<()> {
+        let transition_store = TransitionStore::open(StorageMode::Test(None))?;
+        let fee_store = FeeStore::open(transition_store)?;
+        let deployment_store = DeploymentMemory::<MainnetV0>::open(fee_store)?;
+        let credits_id = ProgramID::from_str("credits.aleo")?;
+        let credits_record_name = Identifier::from_str("credits")?;
+
+        let raw_verifying_key = MainnetV0::translation_credits_verifying_key();
+        let num_variables = raw_verifying_key.circuit_info.num_public_and_private_variables as u64;
+        let expected = VerifyingKey::new(raw_verifying_key.clone(), num_variables);
+
+        assert_eq!(
+            Some(expected.clone()),
+            deployment_store.get_latest_verifying_key(&credits_id, &credits_record_name)?
+        );
+        assert_eq!(
+            Some(expected.clone()),
+            deployment_store.get_latest_verifying_key_with_edition(&credits_id, &credits_record_name, 0)?
+        );
+        assert_eq!(Some(expected), deployment_store.get_original_verifying_key(&credits_id, &credits_record_name, 0)?);
+        Ok(())
+    }
 
     #[test]
     #[ignore]

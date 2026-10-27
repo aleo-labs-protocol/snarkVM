@@ -37,8 +37,7 @@ mod evaluate;
 mod execute;
 mod finalize;
 mod view;
-#[cfg(feature = "history")]
-pub use view::evaluate_view_at_height;
+
 mod verify_deployment;
 mod verify_execution;
 mod verify_fee;
@@ -100,6 +99,15 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+
+/// The kind of a key that [`Process::execution_keys`] returns.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ExecutionKeyKind {
+    /// A function's key, which `execute` synthesizes unless its proving key is held.
+    Function,
+    /// A record's translation key, which `execute` synthesizes unless its proving and verifying keys are held.
+    Translation,
+}
 
 // Note: a `Process` and all of its fields are meant to be completely stateless. They have no
 // notion of block height or consensus version.
@@ -280,6 +288,16 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             )?;
         }
 
+        // Load the verifying key for translating the native credits record.
+        let record_name = Identifier::from_str("credits")?;
+        let verifying_key = N::translation_credits_verifying_key();
+        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+        self.process.insert_verifying_key(
+            credits.id(),
+            &record_name,
+            VerifyingKey::new(verifying_key.clone(), num_variables),
+        )?;
+
         Ok(())
     }
 }
@@ -402,6 +420,12 @@ impl<N: Network> Process<N> {
             stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
             lap!(timer, "Load verifying key for {function_name}");
         }
+
+        // Load the verifying key for translating the native credits record.
+        let record_name = Identifier::from_str("credits")?;
+        let verifying_key = N::translation_credits_verifying_key();
+        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+        stack.insert_verifying_key(&record_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
@@ -517,6 +541,45 @@ impl<N: Network> Process<N> {
         Ok(stack)
     }
 
+    /// Returns the stacks of the programs corresponding to all given transitions, keyed by
+    /// `ProgramID`. If `include_direct_imports` is true, the stacks of the programs *directly*
+    /// imported by those are also included.
+    #[inline]
+    pub fn get_stacks<'a>(
+        &self,
+        transitions: impl IntoIterator<Item = &'a Transition<N>>,
+        include_direct_imports: bool,
+    ) -> Result<IndexMap<ProgramID<N>, Arc<Stack<N>>>>
+    where
+        N: 'a,
+    {
+        let mut execution_stacks = indexmap::IndexMap::new();
+
+        for transition in transitions.into_iter() {
+            let program_id = transition.program_id();
+
+            // If the program's stack has not been fetched before, fetch it.
+            if !execution_stacks.contains_key(program_id) {
+                execution_stacks.insert(*program_id, self.get_stack(program_id)?);
+            }
+        }
+
+        // Fetch stacks of direct dependencies. Note some of these may have been fetched in the
+        // previous loop.
+        if include_direct_imports {
+            let imported_program_ids: Vec<ProgramID<N>> =
+                execution_stacks.values().flat_map(|stack| stack.program().imports().keys().copied()).collect();
+
+            for imported_program_id in imported_program_ids {
+                if !execution_stacks.contains_key(&imported_program_id) {
+                    execution_stacks.insert(imported_program_id, self.get_stack(imported_program_id)?);
+                }
+            }
+        }
+
+        Ok(execution_stacks)
+    }
+
     /// Returns the latest deployed edition for the given program ID, defaulting to 0 if unknown.
     #[inline]
     pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> u16 {
@@ -583,6 +646,64 @@ impl<N: Network> Process<N> {
     pub fn remove_verifying_key(&self, program_id: &ProgramID<N>, function_name: &Identifier<N>) -> Result<()> {
         self.get_stack(program_id)?.remove_verifying_key(function_name);
         Ok(())
+    }
+
+    /// Returns the keys that executing the given authorization uses, as pairs of a program ID and a function or
+    /// record name, each mapped to its [`ExecutionKeyKind`] and whether `execute` needs to synthesize it.
+    ///
+    /// These are the function key of each request, and the translation key of each record in the inputs and
+    /// outputs of a dynamic callee's function. The inclusion key is not among them: it is a network parameter, not a
+    /// key a stack holds, and `execute` neither uses nor synthesizes it.
+    ///
+    /// This takes each request's target and `is_dynamic` flag as given, without checking them against the call that
+    /// takes the request. The result is exact for requests that `Stack::authorize_requests` accepts.
+    ///
+    /// `execute` consumes the requests, and clones of an authorization share them. Call this before executing the
+    /// authorization or any clone of it.
+    ///
+    /// Fails if a request or a translated record type names a program that is not loaded, a request names no function,
+    /// a translated record type names no record, or a program replaced during the call changes a key's kind.
+    #[inline]
+    pub fn execution_keys(
+        &self,
+        authorization: &Authorization<N>,
+    ) -> Result<IndexMap<(ProgramID<N>, Identifier<N>), (ExecutionKeyKind, bool)>> {
+        let mut keys = IndexMap::new();
+        // The bail is unreachable unless a program is replaced during this call without the upgrade checks.
+        let mut insert = |key: (ProgramID<N>, Identifier<N>), kind, missing| match keys.insert(key, (kind, missing)) {
+            Some((previous, _)) if previous != kind => bail!("'{}/{}' changed kind during this call", key.0, key.1),
+            _ => Ok(()),
+        };
+        for (index, request) in authorization.to_vec_deque().into_iter().enumerate() {
+            let stack = self.get_stack(request.program_id())?;
+            let function = stack.get_function_ref(request.function_name())?;
+            insert(
+                (*request.program_id(), *request.function_name()),
+                ExecutionKeyKind::Function,
+                !stack.contains_proving_key(request.function_name()),
+            )?;
+            // The root request has no caller, so `execute` translates none of its records.
+            if index == 0 || !request.is_dynamic() {
+                continue;
+            }
+            let inputs = function.inputs().iter().map(|input| input.value_type());
+            for value_type in inputs.chain(function.outputs().iter().map(|output| output.value_type())) {
+                let (program_id, record_name) = match value_type {
+                    ValueType::Record(record_name) => (*request.program_id(), *record_name),
+                    ValueType::ExternalRecord(locator) => (*locator.program_id(), *locator.resource()),
+                    _ => continue,
+                };
+                let record_stack = self.get_stack(program_id)?;
+                ensure!(
+                    record_stack.program().contains_record(&record_name),
+                    "Record '{program_id}/{record_name}' is not defined."
+                );
+                let held = record_stack.contains_proving_key(&record_name)
+                    && record_stack.contains_verifying_key(&record_name);
+                insert((program_id, record_name), ExecutionKeyKind::Translation, !held)?;
+            }
+        }
+        Ok(keys)
     }
 
     /// Synthesizes the proving and verifying key for the given program ID and function name.

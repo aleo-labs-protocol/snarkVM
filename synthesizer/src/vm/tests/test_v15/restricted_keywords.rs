@@ -34,9 +34,7 @@ function view:
     .unwrap();
 
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(vm.check_transaction(&deployment, None, rng).is_err());
 }
 
 /// Tests that "view" cannot be used as a struct name at V15.
@@ -62,9 +60,7 @@ function test:
     .unwrap();
 
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(vm.check_transaction(&deployment, None, rng).is_err());
 }
 
 /// Tests that "view" cannot be used as a mapping name at V15.
@@ -90,9 +86,7 @@ function test:
     .unwrap();
 
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(vm.check_transaction(&deployment, None, rng).is_err());
 }
 
 /// Tests that "view" cannot be used as a record name at V15.
@@ -118,9 +112,7 @@ function test:
     .unwrap();
 
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(vm.check_transaction(&deployment, None, rng).is_err());
 }
 
 /// Tests that "view" cannot be used as a program name at V15.
@@ -142,7 +134,5 @@ function test:
     .unwrap();
 
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert!(vm.check_transaction(&deployment, None, rng).is_err());
 }

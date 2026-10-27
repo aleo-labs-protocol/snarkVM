@@ -303,8 +303,14 @@ pub fn compare_constraints<F: PrimeField>(assignment_1: &Assignment<F>, assignme
 
 #[cfg(test)]
 mod tests {
-    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer, snark::varuna::VarunaVersion};
-    use snarkvm_circuit::prelude::*;
+    use snarkvm_algorithms::{
+        AlgebraicSponge,
+        SNARK,
+        r1cs::ConstraintSynthesizer,
+        snark::varuna::{VarunaVersion, ahp::indexer::ConstraintSystem},
+    };
+    use snarkvm_circuit::{network::AleoV0, prelude::*};
+    use snarkvm_console_types::Field as ConsoleField;
     use snarkvm_curves::bls12_377::Fr;
 
     /// Compute 2^EXPONENT - 1, in a purposefully constraint-inefficient manner for testing.
@@ -395,5 +401,58 @@ mod tests {
             !VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, varuna_version, [one, one + one], &proof)
                 .unwrap()
         );
+    }
+
+    /// A circuit, and private variable values that an adversarial prover substitutes into its witness.
+    struct AdversarialWitness {
+        /// The false claim made by the substituted witness.
+        claim: &'static str,
+        /// Synthesizes the circuit, and returns the substituted values keyed by private variable index.
+        synthesize: fn() -> Result<Vec<(u64, Fr)>>,
+    }
+
+    /// Returns witnesses that replace a value with an out-of-range alias satisfying the same field equations.
+    fn adversarial_witnesses() -> [AdversarialWitness; 2] {
+        [
+            AdversarialWitness {
+                claim: "`to_upper_bits_be(2)` of 3 * 2^251 - p is [1, 1], so its lower 251 bits are zero",
+                synthesize: || {
+                    let first_bit = AleoV0::num_private() + 1;
+                    let x = Fr::from(3u8) * Fr::from(2u8).pow([251]);
+                    Field::<AleoV0>::new(Mode::Private, ConsoleField::new(x)).to_upper_bits_be(2);
+                    Ok(vec![(first_bit, Fr::one()), (first_bit + 1, Fr::one())])
+                },
+            },
+            AdversarialWitness {
+                claim: "`to_lower_bits_le(253)` of 0 is the binary expansion of p",
+                synthesize: || {
+                    let first_bit = AleoV0::num_private() + 1;
+                    Field::<AleoV0>::new(Mode::Private, ConsoleField::zero()).to_lower_bits_le(253);
+                    let bits_of_p = Fr::modulus().to_bits_le().into_iter().take(253);
+                    Ok((first_bit..).zip(bits_of_p).map(|(index, bit)| (index, Fr::from(bit as u8))).collect())
+                },
+            },
+        ]
+    }
+
+    #[test]
+    fn test_adversarial_witnesses_are_unsatisfied() -> Result<()> {
+        let mut satisfied = vec![];
+        for AdversarialWitness { claim, synthesize } in adversarial_witnesses() {
+            let private_values = synthesize()?;
+            let assignment = AleoV0::eject_assignment_and_reset();
+            let mut cs = ConstraintSystem::<Fr>::new();
+            assignment.generate_constraints(&mut cs)?;
+            let public: Vec<_> = assignment.public_inputs().iter().map(Variable::value).collect();
+            let mut private: Vec<_> = assignment.private_inputs().iter().map(Variable::value).collect();
+            for (index, value) in private_values {
+                private[index as usize] = value;
+            }
+            if cs.is_satisfied(&public, &private) {
+                satisfied.push(claim);
+            }
+        }
+        assert!(satisfied.is_empty(), "Adversarial witnesses satisfy their circuits: {satisfied:#?}");
+        Ok(())
     }
 }

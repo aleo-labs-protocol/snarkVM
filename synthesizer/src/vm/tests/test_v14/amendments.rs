@@ -120,7 +120,7 @@ constructor:
     let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
     // Attempt to add the V3 deployment before V14 - it should be aborted.
-    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction.clone()], rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&v3_transaction), rng)?;
     assert_eq!(block.transactions().num_accepted(), 0, "V3 should be rejected before V14");
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 1, "V3 should be aborted before V14");
@@ -614,7 +614,7 @@ fn test_dynamic_call_after_amendment() {
         );
     }
 
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, None, &[deploy_legacy_pre_v14], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, None, &[deploy_legacy_pre_v14], rng);
 
     // Mint a token on verifier VM.
     let mint_inputs = [Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -622,7 +622,7 @@ fn test_dynamic_call_after_amendment() {
         .execute(&caller_private_key, ("legacy_token_amend.aleo", "mint"), mint_inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, Some(&[&mint_inputs]), &[mint_tx], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, Some(&[&mint_inputs]), &[mint_tx], rng);
 
     // Advance verifier VM to V14.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -633,7 +633,7 @@ fn test_dynamic_call_after_amendment() {
 
     // Deploy caller program on verifier VM at V14.
     let deploy_caller_verifier = verifier_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, None, &[deploy_caller_verifier], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, None, &[deploy_caller_verifier], rng);
 
     // Verify the verifier VM does NOT have translation keys for `legacy_token_amend.aleo/token`.
     let legacy_program_id = console::program::ProgramID::<CurrentNetwork>::from_str("legacy_token_amend.aleo").unwrap();
@@ -659,11 +659,11 @@ fn test_dynamic_call_after_amendment() {
         assert!(deployment.translation_verifying_keys().is_some(), "V14 deployment should include translation keys");
     }
 
-    add_and_test_with_costs(&prover_vm, &caller_private_key, &caller_address, None, &[deploy_legacy_v14], rng);
+    add_and_test_with_costs(&prover_vm, &caller_private_key, None, &[deploy_legacy_v14], rng);
 
     // Deploy caller program on prover VM.
     let deploy_caller_prover = prover_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&prover_vm, &caller_private_key, &caller_address, None, &[deploy_caller_prover], rng);
+    add_and_test_with_costs(&prover_vm, &caller_private_key, None, &[deploy_caller_prover], rng);
 
     // Mint a token on prover VM.
     let prover_mint_inputs =
@@ -693,14 +693,7 @@ fn test_dynamic_call_after_amendment() {
             _ => None,
         })
         .unwrap();
-    add_and_test_with_costs(
-        &prover_vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&prover_mint_inputs]),
-        &[prover_mint_tx],
-        rng,
-    );
+    add_and_test_with_costs(&prover_vm, &caller_private_key, Some(&[&prover_mint_inputs]), &[prover_mint_tx], rng);
 
     // Prover creates a transaction requiring translation.
     let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&prover_minted_record).unwrap();
@@ -743,7 +736,7 @@ fn test_dynamic_call_after_amendment() {
 
     let v3_transaction =
         create_v3_deployment_transaction(&verifier_vm, &caller_private_key, &deployed_program, edition, rng).unwrap();
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, None, &[v3_transaction], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, None, &[v3_transaction], rng);
 
     // Verify the verifier VM now HAS translation keys after amendment, and edition is unchanged.
     {
@@ -789,7 +782,6 @@ fn test_dynamic_call_after_amendment() {
     add_and_test_with_costs(
         &verifier_vm,
         &caller_private_key,
-        &caller_address,
         Some(&[&verifier_mint_inputs_2]),
         &[verifier_mint_tx_2],
         rng,
@@ -818,12 +810,5 @@ fn test_dynamic_call_after_amendment() {
         .expect("Verifier VM should create transaction after getting translation keys via amendment");
 
     // Verifier VM (with translation keys from amendment) should accept the transaction.
-    add_and_test_with_costs(
-        &verifier_vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&dynamic_call_inputs]),
-        &[transaction_2],
-        rng,
-    );
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, Some(&[&dynamic_call_inputs]), &[transaction_2], rng);
 }

@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ProgramCore<N> {
     /// Parses a string into a program.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // A helper to parse a program.
         enum P<N: Network> {
             Constructor(ConstructorCore<N>),
@@ -45,7 +45,7 @@ impl<N: Network> Parser for ProgramCore<N> {
         // Parse the semicolon ';' keyword from the string.
         let (string, _) = tag(";")(string)?;
 
-        fn intermediate<N: Network>(string: &str) -> ParserResult<P<N>> {
+        fn intermediate<N: Network>(string: &str) -> ParserResult<'_, P<N>> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
 
@@ -483,10 +483,10 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("closure c{i}:\n    input r0 as u128;\n"));
-                for j in 0..10 {
-                    s.push_str(&format!("    add r0 r0 into r{j};\n"));
+                for j in 0..30 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
-                s.push_str(&format!("    output r{} as u128;\n", 4000));
+                s.push_str(&format!("    output r{} as [u128; 32u32];\n", 4000));
             }
             s
         };
@@ -496,8 +496,8 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("function f{i}:\n    add 1u128 1u128 into r0;\n"));
-                for j in 0..500 {
-                    s.push_str(&format!("    add r0 r0 into r{j};\n"));
+                for j in 0..250 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
             }
             s
@@ -508,7 +508,7 @@ function compute:
             let program = format!("{imports}\nprogram to_parse.aleo;\n\n{body}");
             let result = Program::<CurrentNetwork>::from_str(&program);
             if result.is_ok() != should_succeed {
-                println!("Program failed to parse: {program}");
+                println!("Program failed to parse");
             }
             assert_eq!(result.is_ok(), should_succeed);
         };
@@ -526,9 +526,9 @@ function compute:
         // A program with more than MAX_RECORDS should fail.
         test_parse("", &gen_record_string(CurrentNetwork::MAX_RECORDS + 1), false);
         // A program with MAX_MAPPINGS should succeed.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS), true);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()), true);
         // A program with more than MAX_MAPPINGS should fail.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS + 1), false);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS() + 1), false);
         // A program with MAX_CLOSURES should succeed.
         test_parse("", &gen_closure_string(CurrentNetwork::MAX_CLOSURES), true);
         // A program with more than MAX_CLOSURES should fail.
@@ -543,7 +543,7 @@ function compute:
             "{} {} {} {} {}",
             gen_struct_string(CurrentNetwork::MAX_STRUCTS),
             gen_record_string(CurrentNetwork::MAX_RECORDS),
-            gen_mapping_string(CurrentNetwork::MAX_MAPPINGS),
+            gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()),
             gen_closure_string(CurrentNetwork::MAX_CLOSURES),
             gen_function_string(CurrentNetwork::MAX_FUNCTIONS)
         );

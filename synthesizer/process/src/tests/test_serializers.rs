@@ -143,7 +143,7 @@ function test_serde_equivalence:
             assert_eq!(bits.len(), num_bits as usize, "The number of bits does not match the expected size");
 
             // Construct the inputs.
-            let inputs = vec![Value::Plaintext(plaintext.clone())];
+            let inputs = [Value::Plaintext(plaintext.clone())];
 
             // Generate an authorization.
             let authorization =

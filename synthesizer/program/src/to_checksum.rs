@@ -15,17 +15,22 @@
 
 use super::*;
 
+/// Returns the 32-byte SHA3-256 checksum of the given source code in string format.
+pub(crate) fn source_code_checksum<N: Network>(source: &str) -> [U8<N>; 32] {
+    let mut keccak = TinySha3::v256();
+    keccak.update(source.as_bytes());
+
+    let mut hash = [0u8; 32];
+    keccak.finalize(&mut hash);
+    hash.map(U8::new)
+}
+
 impl<N: Network> ProgramCore<N> {
     /// Returns the checksum of the program.
     ///
     /// The checksum is a 32-byte hash of the program's source code in string format.
     /// This ensures a strict definition of program equivalence, useful for program upgradability.
     pub fn to_checksum(&self) -> [U8<N>; 32] {
-        let mut keccak = TinySha3::v256();
-        keccak.update(self.to_string().as_bytes());
-
-        let mut hash = [0u8; 32];
-        keccak.finalize(&mut hash);
-        hash.map(U8::new)
+        source_code_checksum(&self.to_string())
     }
 }

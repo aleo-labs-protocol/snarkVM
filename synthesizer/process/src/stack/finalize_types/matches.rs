@@ -67,7 +67,7 @@ impl<N: Network> FinalizeTypes<N> {
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{plaintext_type}' in the operand '{operand}'.",
                     )
                 }
-                // Ensure the program ID, block height, block timestamp, network ID, generator, checksum, edition, and program owner types matches the member type.
+                // Ensure the program ID, block height, block timestamp, network ID, generator, checksum, edition, program owner, and component checksum types matches the member type.
                 Operand::ProgramID(..)
                 | Operand::BlockHeight
                 | Operand::BlockTimestamp
@@ -76,7 +76,8 @@ impl<N: Network> FinalizeTypes<N> {
                 | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
-                | Operand::ProgramOwner(_) => {
+                | Operand::ProgramOwner(_)
+                | Operand::ComponentChecksum(..) => {
                     // Retrieve the operand type.
                     let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(stack, operand)? else {
                         bail!(
@@ -160,7 +161,8 @@ impl<N: Network> FinalizeTypes<N> {
                 | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
-                | Operand::ProgramOwner(_) => {
+                | Operand::ProgramOwner(_)
+                | Operand::ComponentChecksum(..) => {
                     // Retrieve the operand type.
                     let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(stack, operand)? else {
                         bail!("Expected a plaintext type for the operand '{operand}' in array element '{array_type}'")

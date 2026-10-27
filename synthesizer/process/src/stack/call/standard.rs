@@ -116,7 +116,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             }
 
             // In AuthorizeMocked mode, we need to compute the mocked request and push it onto the call stack.
-            if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
+            if let CallStack::AuthorizeMocked(requests, address, authorization, _, _) = &mut call_stack {
                 // Compute the mocked request.
                 let request = Request::sample(
                     *address,
@@ -129,6 +129,43 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 )?;
                 // Add the request to the requests.
                 requests.push(request.clone());
+                // Add the request to the authorization.
+                authorization.push(request.clone())?;
+            }
+
+            // In AuthorizeRequests mode, we retrieve the expected request and match it against the call's target and inputs.
+            if let CallStack::AuthorizeRequests(requests, current_index, authorization) = &mut call_stack {
+                // Increment the index to advance the pre-order DFS traversal of the request tree.
+                *current_index.write() += 1;
+
+                let request = requests.get(*current_index.read()).ok_or_else(||
+                    anyhow!("Call::evaluate attempted to retrieve request at index {}, but the AuthorizeRequests call stack only contains {} request(s)",
+                    *current_index.read(),
+                    requests.len())
+                )?;
+
+                // Sanity checks
+                if *request.signer() != registers.signer()? {
+                    return Err(anyhow!(
+                        "Call::evaluate retrieved a request with a different signer than the signer in the registers"
+                    )
+                    .into());
+                }
+                if request.is_dynamic() {
+                    return Err(anyhow!("Call::evaluate retrieved a dynamic request").into());
+                }
+
+                // Consistency checks: target program, target function and inputs
+                if request.program_id() != substack.program_id() {
+                    return Err(anyhow!("Call::evaluate retrieved a request with a different program ID than the one in the call instruction").into());
+                }
+                if request.function_name() != function.name() {
+                    return Err(anyhow!("Call::evaluate retrieved a request with a different function name than the one in the call instruction").into());
+                }
+                if request.inputs() != inputs {
+                    return Err(anyhow!("Call::evaluate retrieved a request with different inputs than the ones passed to the call instruction").into());
+                }
+
                 // Add the request to the authorization.
                 authorization.push(request.clone())?;
             }
@@ -302,9 +339,13 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         // Return the request and response.
                         (request, response)
                     }
-                    // If the circuit is in authorize mocked mode, throw an error.
+                    // If the circuit is in AuthorizeMocked mode, throw an error.
                     CallStack::AuthorizeMocked(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'authorize mocked' mode.").into());
+                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
+                    }
+                    // If the circuit is in AuthorizeRequests mode, throw an error.
+                    CallStack::AuthorizeRequests(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'authorize requests' mode.").into());
                     }
                     // If the proving key is missing, build real sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) if pk_missing => {
@@ -328,11 +369,18 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         // Push the request onto the call stack.
                         call_stack.push(request.clone())?;
 
-                        // Execute the request.
+                        // Synthesize the circuit. Note the response will be empty.
                         let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
+                        if response.is_some() {
+                            return Err(anyhow!(
+                                "execute_function should return an empty Response in 'Synthesize' mode."
+                            )
+                            .into());
+                        }
+
                         // Return the request and response.
-                        (request, response)
+                        (request, None)
                     }
                     // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
@@ -350,63 +398,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             rng,
                         )?;
 
-                        // Compute the address.
-                        let address = Address::try_from(private_key)?;
-
-                        // For each output, if it's a record, compute the randomizer and nonce.
-                        let outputs = function
-                            .outputs()
-                            .iter()
-                            .map(|output| match output.value_type() {
-                                ValueType::Record(record_name) => {
-                                    let index = match output.operand() {
-                                        Operand::Register(Register::Locator(index)) => Field::from_u64(*index),
-                                        _ => {
-                                            return Err(anyhow!(
-                                                "Expected a `Register::Locator` operand for a record output."
-                                            ));
-                                        }
-                                    };
-                                    // Sample the record.
-                                    Ok(Value::Record(substack.sample_record_using_tvk(
-                                        &address,
-                                        record_name,
-                                        *request.tvk(),
-                                        index,
-                                        rng,
-                                    )?))
-                                }
-                                // For non-record outputs, call sample_value.
-                                _ => substack.sample_value(&address, &output.value_type().into(), rng),
-                            })
-                            .collect::<Result<Vec<_>>>()?;
-
-                        // Construct the dummy response from these outputs.
-                        let output_registers = function
-                            .outputs()
-                            .iter()
-                            .map(|output| match output.operand() {
-                                Operand::Register(register) => Some(register.clone()),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-
-                        // Execute the request.
-                        let response = crate::Response::new(
-                            request.signer(),
-                            request.network_id(),
-                            substack.program().id(),
-                            function.name(),
-                            request.inputs().len(),
-                            request.tvk(),
-                            request.tcm(),
-                            outputs,
-                            &function.output_types(),
-                            &output_registers,
-                        )?;
-
                         // Return the request and response.
-                        (request, response)
+                        (request, None)
                     }
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
@@ -437,12 +430,25 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     }
                     // If the circuit is in evaluate mode, then throw an error.
                     CallStack::Evaluate(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
+                        return Err(anyhow!("Cannot 'execute' a function in 'Evaluate' mode.").into());
                     }
                     // If the circuit is in execute mode, then evaluate and execute the instructions.
                     CallStack::Execute(authorization, ..) => {
                         // Retrieve the next request (without popping it).
                         let request = authorization.peek_next()?;
+                        // Ensure the request is for the target of the call instruction.
+                        if *request.signer() != registers.signer()? {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different signer than the signer in the registers").into());
+                        }
+                        if request.is_dynamic() {
+                            return Err(anyhow!("[execute Standard] Retrieved a dynamic request").into());
+                        }
+                        if request.program_id() != substack.program_id() {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different program ID than the one in the call instruction").into());
+                        }
+                        if request.function_name() != function.name() {
+                            return Err(anyhow!("[execute Standard] Retrieved a request with a different function name than the one in the call instruction").into());
+                        }
                         // Ensure the inputs match the original inputs.
                         if request.inputs().len() != inputs.len() {
                             return Err(anyhow!(
@@ -465,8 +471,12 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             rng,
                         )?;
                         // Execute the request.
-                        let response =
-                            substack.execute_function::<A, R>(registers.call_stack(), console_caller, root_tvk, rng)?;
+                        let Some(response) =
+                            substack.execute_function::<A, R>(registers.call_stack(), console_caller, root_tvk, rng)?
+                        else {
+                            return Err(anyhow!("Response should be present in 'Execute' mode.").into());
+                        };
+
                         // Ensure the values are equal.
                         if console_response.outputs() != response.outputs() {
                             dev_eprintln!("\n{:#?} != {:#?}\n", console_response.outputs(), response.outputs());
@@ -477,7 +487,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             .into());
                         }
                         // Return the request and response.
-                        (request, response)
+                        (request, Some(response))
                     }
                 }
             };
@@ -509,7 +519,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Inject the `tcm` (from the request) as `Mode::Public`.
             let tcm = circuit::Field::new(circuit::Mode::Public, *request.tcm());
             // Compute the transition commitment as `Hash(tvk)`.
-            let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
+            let candidate_tcm = A::hash_psd2(std::slice::from_ref(&tvk));
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm)?;
             // Inject the input IDs (from the request) as `Mode::Public`.
@@ -547,6 +557,58 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 })
                 .collect::<Vec<_>>();
 
+            let outputs = match registers.call_stack_ref() {
+                // In Synthesize and CheckDeployment modes, `response` is None at this point. Only its outputs
+                // are used in the remainder of this function, and only their types (and not specific values)
+                // are relevant, so we sample them instead.
+                CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
+                    if response.is_some() {
+                        return Err(
+                            anyhow!("Response should be empty in 'Synthesize' and 'CheckDeployment' modes.").into()
+                        );
+                    }
+
+                    let address = Address::try_from(private_key)?;
+
+                    function
+                        .outputs()
+                        .iter()
+                        .map(|output| match output.value_type() {
+                            ValueType::Record(record_name) => {
+                                let index = match output.operand() {
+                                    Operand::Register(Register::Locator(index)) => Field::from_u64(*index),
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Expected a `Register::Locator` operand for a record output."
+                                        ));
+                                    }
+                                };
+                                // Sample the record.
+                                Ok(Value::Record(substack.sample_record_using_tvk(
+                                    &address,
+                                    record_name,
+                                    *request.tvk(),
+                                    index,
+                                    rng,
+                                )?))
+                            }
+                            // For non-record outputs, call sample_value.
+                            _ => substack.sample_value(&address, &output.value_type().into(), rng),
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                }
+                _ => {
+                    if let Some(response) = response {
+                        response.outputs().to_vec()
+                    } else {
+                        return Err(anyhow!(
+                            "Response should be populated in all modes except 'Synthesize' and 'CheckDeployment'."
+                        )
+                        .into());
+                    }
+                }
+            };
+
             // Inject the outputs as `Mode::Private` (with the 'tcm' and output IDs as `Mode::Public`).
             let outputs = circuit::Response::process_outputs_from_callback(
                 &network_id,
@@ -555,7 +617,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 num_inputs,
                 &tvk,
                 &tcm,
-                response.outputs().to_vec(),
+                outputs,
                 &function.output_types(),
                 &output_registers,
                 None,

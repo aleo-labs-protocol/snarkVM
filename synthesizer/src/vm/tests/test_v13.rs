@@ -15,7 +15,6 @@
 
 use super::*;
 
-use crate::vm::test_helpers::*;
 use console::{account::ViewKey, network::ConsensusVersion};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;

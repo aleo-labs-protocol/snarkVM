@@ -62,7 +62,6 @@ fn test_dynamic_contains() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -125,7 +124,7 @@ constructor:
     for program in [&program_0, &program_1, &main_program] {
         println!("Deploying program: {}", program.id());
         let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
     }
 
     // Create a helper to execute the `test_dynamic_contains` function.
@@ -194,7 +193,7 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("main_program.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that the local mapping now contains the key 42.
     test_dynamic_contains("main_program", "aleo", "data_main", Value::from_str("42u32").unwrap(), Some(true), rng);
@@ -213,7 +212,7 @@ constructor:
     let remove_tx = vm
         .execute(&caller_private_key, ("main_program.aleo", "remove_mapping"), remove_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that the local mapping no longer contains the key 42.
     test_dynamic_contains("main_program", "aleo", "data_main", Value::from_str("42u32").unwrap(), Some(false), rng);
@@ -223,14 +222,14 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("basic_program0.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Set the key 15 in the second external program's mapping.
     let set_inputs = vec![Value::from_str("15u32").unwrap(), Value::from_str("300u32").unwrap()];
     let set_tx = vm
         .execute(&caller_private_key, ("basic_program1.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that the first external mapping contains the key 7.
     test_dynamic_contains("basic_program0", "aleo", "data0", Value::from_str("7u32").unwrap(), Some(true), rng);
@@ -250,7 +249,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Remove the key 15 from the second external program's mapping.
     let remove_inputs = vec![Value::from_str("15u32").unwrap()];
@@ -265,7 +264,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that the first external mapping no longer contains the key 7.
     test_dynamic_contains("basic_program0", "aleo", "data0", Value::from_str("7u32").unwrap(), Some(false), rng);
@@ -330,7 +329,6 @@ fn test_dynamic_get() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -462,7 +460,7 @@ constructor:
     for program in [&program_0, &program_1, &struct_program_0, &main_program] {
         println!("Deploying program: {}", program.id());
         let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
     }
 
     // Create a helper to execute the `test_dynamic_get_u32` function.
@@ -649,7 +647,7 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("main_program.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.dynamic returns the correct value for the local mapping.
     test_dynamic_get_u32(&vm, "main_program", "aleo", "data_main", 42, Some(100), rng);
@@ -669,7 +667,7 @@ constructor:
     let remove_tx = vm
         .execute(&caller_private_key, ("main_program.aleo", "remove_mapping"), remove_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that get.dynamic fails after removal.
     test_dynamic_get_u32(&vm, "main_program", "aleo", "data_main", 42, None, rng);
@@ -679,14 +677,14 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("basic_program0.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Set the key 15 in the second external program's mapping.
     let set_inputs = vec![Value::from_str("15u32").unwrap(), Value::from_str("300u32").unwrap()];
     let set_tx = vm
         .execute(&caller_private_key, ("basic_program1.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.dynamic returns correct values from external programs.
     test_dynamic_get_u32(&vm, "basic_program0", "aleo", "data0", 7, Some(200), rng);
@@ -709,7 +707,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     let remove_inputs = vec![Value::from_str("15u32").unwrap()];
     let remove_tx = vm
@@ -723,7 +721,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that get.dynamic fails after removal from external programs.
     test_dynamic_get_u32(&vm, "basic_program0", "aleo", "data0", 7, None, rng);
@@ -743,7 +741,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.dynamic returns the correct struct value from the local mapping.
     test_dynamic_get_struct(&vm, "main_program", "aleo", "struct_data_main", 10, Some((111, 222)), rng);
@@ -754,7 +752,7 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("struct_program0.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.dynamic returns the correct struct value from the external mapping.
     test_dynamic_get_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, Some((333, 444)), rng);
@@ -776,7 +774,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     let remove_inputs = vec![Value::from_str("20u32").unwrap()];
     let remove_tx = vm
@@ -790,7 +788,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that get.dynamic fails after struct removal.
     test_dynamic_get_struct(&vm, "main_program", "aleo", "struct_data_main", 10, None, rng);
@@ -813,7 +811,6 @@ fn test_dynamic_get_or_use() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -937,7 +934,7 @@ constructor:
     for program in [&program_0, &program_1, &struct_program_0, &main_program] {
         println!("Deploying program: {}", program.id());
         let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
     }
 
     // Create a helper to execute the `test_dynamic_get_or_use_u32` function.
@@ -1073,7 +1070,7 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("main_program.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.or_use.dynamic returns the stored value (not the default) when key exists.
     test_dynamic_get_or_use_u32(&vm, "main_program", "aleo", "data_main", 42, 999, Some(100), rng);
@@ -1093,7 +1090,7 @@ constructor:
     let remove_tx = vm
         .execute(&caller_private_key, ("main_program.aleo", "remove_mapping"), remove_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that get.or_use.dynamic returns default after removal.
     test_dynamic_get_or_use_u32(&vm, "main_program", "aleo", "data_main", 42, 888, Some(888), rng);
@@ -1107,14 +1104,14 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("basic_program0.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Set the key 15 in the second external program's mapping.
     let set_inputs = vec![Value::from_str("15u32").unwrap(), Value::from_str("300u32").unwrap()];
     let set_tx = vm
         .execute(&caller_private_key, ("basic_program1.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.or_use.dynamic returns stored values from external programs.
     test_dynamic_get_or_use_u32(&vm, "basic_program0", "aleo", "data0", 7, 500, Some(200), rng);
@@ -1137,7 +1134,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     let remove_inputs = vec![Value::from_str("15u32").unwrap()];
     let remove_tx = vm
@@ -1151,7 +1148,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that get.or_use.dynamic returns default after removal from external programs.
     test_dynamic_get_or_use_u32(&vm, "basic_program0", "aleo", "data0", 7, 111, Some(111), rng);
@@ -1174,7 +1171,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.or_use.dynamic returns the stored struct value (not default).
     test_dynamic_get_or_use_struct(
@@ -1197,7 +1194,7 @@ constructor:
     let set_tx = vm
         .execute(&caller_private_key, ("struct_program0.aleo", "set_mapping"), set_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Check that get.or_use.dynamic returns the stored struct value from external mapping.
     test_dynamic_get_or_use_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, (70, 80), Some((333, 444)), rng);
@@ -1219,7 +1216,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     let remove_inputs = vec![Value::from_str("20u32").unwrap()];
     let remove_tx = vm
@@ -1233,7 +1230,7 @@ constructor:
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Check that get.or_use.dynamic returns default after struct removal.
     test_dynamic_get_or_use_struct(&vm, "main_program", "aleo", "struct_data_main", 10, (5, 6), Some((5, 6)), rng);
@@ -1246,7 +1243,6 @@ fn test_get_dynamic_empty_mapping() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let vm = crate::vm::test_helpers::sample_vm_at_height(
         CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(),
@@ -1302,7 +1298,7 @@ fn test_get_dynamic_empty_mapping() {
     // Deploy the program
     println!("Deploying empty_mapping.aleo...");
     let deployment = vm.deploy(&caller_private_key, &empty_mapping_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
 
     // Create field values for the program, network, and mapping names
     let program_name_field =
@@ -1332,7 +1328,7 @@ fn test_get_dynamic_empty_mapping() {
         .unwrap();
 
     // contains.dynamic should succeed and return false
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&contains_inputs]), &[contains_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&contains_inputs]), &[contains_tx], rng);
 
     // Now test that get.dynamic fails on the empty mapping
     println!("Testing get.dynamic on empty mapping (should fail)...");
@@ -1366,7 +1362,6 @@ fn test_contains_dynamic_with_array_keys() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let vm = crate::vm::test_helpers::sample_vm_at_height(
         CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(),
@@ -1447,7 +1442,7 @@ fn test_contains_dynamic_with_array_keys() {
     // Deploy the program
     println!("Deploying array_key_mapping.aleo...");
     let deployment = vm.deploy(&caller_private_key, &array_key_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
 
     // Create field values for dynamic operations
     let program_name_field =
@@ -1476,7 +1471,7 @@ fn test_contains_dynamic_with_array_keys() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&contains_inputs]), &[contains_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&contains_inputs]), &[contains_tx], rng);
 
     // Set a value with an array key
     println!("Setting value with array key...");
@@ -1492,7 +1487,7 @@ fn test_contains_dynamic_with_array_keys() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&set_inputs]), &[set_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&set_inputs]), &[set_tx], rng);
 
     // Test that contains.dynamic returns true for existing array key
     println!("Testing contains.dynamic with array key (should be true)...");
@@ -1514,7 +1509,7 @@ fn test_contains_dynamic_with_array_keys() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&contains_inputs]), &[contains_tx2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&contains_inputs]), &[contains_tx2], rng);
 
     // Test that get.dynamic returns the correct value for the array key
     println!("Testing get.dynamic with array key...");
@@ -1536,7 +1531,7 @@ fn test_contains_dynamic_with_array_keys() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&get_inputs]), &[get_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&get_inputs]), &[get_tx], rng);
 
     // Test that a different array key still returns false
     println!("Testing contains.dynamic with different array key (should be false)...");
@@ -1558,7 +1553,7 @@ fn test_contains_dynamic_with_array_keys() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&contains_inputs]), &[contains_tx3], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&contains_inputs]), &[contains_tx3], rng);
 
     // Remove the array key and verify contains returns false again
     println!("Removing array key...");
@@ -1574,7 +1569,7 @@ fn test_contains_dynamic_with_array_keys() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&remove_inputs]), &[remove_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&remove_inputs]), &[remove_tx], rng);
 
     // Verify contains returns false after removal
     println!("Testing contains.dynamic after removal (should be false)...");
@@ -1596,7 +1591,7 @@ fn test_contains_dynamic_with_array_keys() {
             rng,
         )
         .unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&contains_inputs]), &[contains_tx4], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&contains_inputs]), &[contains_tx4], rng);
 }
 
 // This test verifies that `get.dynamic` properly rejects invalid program IDs at finalize time:
@@ -1610,7 +1605,6 @@ fn test_dynamic_get_rejects_invalid_program_ids() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -1651,7 +1645,7 @@ constructor:
     for program in [&program_0, &main_program] {
         println!("Deploying program: {}", program.id());
         let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, None, &[deployment], rng);
     }
 
     // Pre-compute field elements for valid network ("aleo") and mapping ("data0") identifiers.

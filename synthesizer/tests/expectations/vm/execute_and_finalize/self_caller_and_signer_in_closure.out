@@ -1,24 +1,8 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    self_caller_in_closure.aleo/dummy:
-      outputs:
-      - '{"type":"private","id":"747503371705245729073627768259062888558022538247268992313653651996258810402field","value":"ciphertext1qyqq6kvd397xh2y9cw9llxw4dturtnacx7cmfm9prt2la07edhqdwzq3hgwk2"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    self_caller_in_closure.aleo/run_check:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"3055381143348610783427368631193292493779251092433264987575006382260513050917field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1gj8900ftrtm5gpjljk9tuv8tmr46m88s5dvugdx8hnmftvpfv5rqempqfd,\n    1334u64\n  ]\n}"}'
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"7125087701862650478091264713412629351672029968343630145355670167713923010292field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1gj8900ftrtm5gpjljk9tuv8tmr46m88s5dvugdx8hnmftvpfv5rqempqfd,\n    1161u64\n  ]\n}"}'

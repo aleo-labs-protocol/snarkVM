@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-utilities-derives"
-version = "4.7.1"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Canonical serialization for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -31,5 +31,5 @@ proc-macro2 = "1.0"
 quote = "1.0"
 
   [dependencies.syn]
-  version = "2.0"
+  version = "3.0"
   features = [ "full" ]

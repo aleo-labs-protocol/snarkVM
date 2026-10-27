@@ -23,6 +23,77 @@ pub(crate) mod test_helpers;
 mod traits;
 pub use traits::*;
 
+pub(crate) mod atomic_owner {
+    use std::{
+        cell::Cell,
+        sync::atomic::{AtomicU64, Ordering},
+        time::Instant,
+    };
+
+    thread_local! {
+        static THREAD_KEY: Cell<u64> = const { Cell::new(0) };
+    }
+
+    static NEXT_THREAD_KEY: AtomicU64 = AtomicU64::new(1);
+
+    /// Returns a stable nonzero identifier for the current thread.
+    pub(crate) fn current_thread_key() -> u64 {
+        THREAD_KEY.with(|cell| {
+            let mut key = cell.get();
+            if key == 0 {
+                key = NEXT_THREAD_KEY.fetch_add(1, Ordering::Relaxed);
+                // `0` is reserved for "no owner".
+                if key == 0 {
+                    key = NEXT_THREAD_KEY.fetch_add(1, Ordering::Relaxed);
+                }
+                cell.set(key);
+            }
+            key
+        })
+    }
+
+    /// Records that this thread owns the in-progress atomic batch.
+    pub(crate) fn claim(owner: &AtomicU64) {
+        owner.store(current_thread_key(), Ordering::Release);
+    }
+
+    /// Clears atomic-batch ownership.
+    pub(crate) fn release(owner: &AtomicU64) {
+        owner.store(0, Ordering::Release);
+    }
+
+    /// Returns `true` when this thread started the in-progress atomic batch.
+    ///
+    /// Off-thread callers observe confirmed state instead of scanning the pending batch.
+    pub(crate) fn consults_atomic_batch(batch_in_progress: bool, owner: &AtomicU64) -> bool {
+        if !batch_in_progress {
+            return false;
+        }
+        let owner_key = owner.load(Ordering::Acquire);
+        let is_owner = owner_key != 0 && owner_key == current_thread_key();
+        if !is_owner {
+            #[cfg(feature = "metrics")]
+            snarkvm_metrics::increment_counter(snarkvm_metrics::store::ATOMIC_BATCH_OFF_THREAD_SPECULATIVE_READ_TOTAL);
+        }
+        is_owner
+    }
+
+    /// Records time spent waiting for the per-map atomic-batch mutex.
+    pub(crate) fn record_lock_wait(start: Instant) {
+        #[cfg(feature = "metrics")]
+        {
+            let elapsed = start.elapsed();
+            if elapsed.as_millis() >= 1 {
+                snarkvm_metrics::histogram(
+                    snarkvm_metrics::store::ATOMIC_BATCH_LOCK_WAIT_SECONDS,
+                    elapsed.as_secs_f64(),
+                );
+            }
+        }
+        let _ = start;
+    }
+}
+
 /// This macro executes the given block of operations as a new atomic write batch IFF there is no
 /// atomic write batch in progress yet. This ensures that complex atomic operations consisting of
 /// multiple lower-level operations - which might also need to be atomic if executed individually -

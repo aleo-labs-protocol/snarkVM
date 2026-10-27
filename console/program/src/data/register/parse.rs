@@ -19,7 +19,7 @@ impl<N: Network> Parser for Register<N> {
     /// Parses a string into a register.
     /// The register is of the form `r{locator}` or `r{locator}.{identifier}`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the register character from the string.
         let (string, _) = tag("r")(string)?;
         // Parse the locator from the string.

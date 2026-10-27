@@ -24,6 +24,16 @@ const VISIBILITY_PRIVATE: [bool; 2] = [true, false];
 
 impl<A: Aleo> Entry<A, Plaintext<A>> {
     /// Returns this entry as a list of **little-endian** bits, with the specified mode.
+    ///
+    /// # Hazards
+    /// In `Public` and `Private` mode, the two visibility bits are allocated as witness variables.
+    /// `Boolean::new` constrains each bit to be 0 or 1, but does not tie the bits to this entry's
+    /// actual visibility, so a malicious prover can assign any of the four 2-bit patterns,
+    /// including the unused `11` tag. These bits are sound only when the caller cryptographically
+    /// binds this serialization to committed state. The sole caller, `get.record.dynamic`, relies
+    /// on its in-circuit Merkle path check to force the bits to the committed leaf's true tag.
+    /// A new caller that does not hash-bind this output to a committed value must not treat the
+    /// visibility bits as trustworthy.
     pub(super) fn write_bits_le_with_visibility_as_mode(&self, vec: &mut Vec<Boolean<A>>, mode: Mode) {
         // A helper function to construct a `Boolean` with the specified mode.
         // This is needed to avoid introducing new variables for constant booleans.

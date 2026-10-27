@@ -50,6 +50,7 @@ impl Blake2Xs {
             debug_assert!(g.is_on_curve());
             debug_assert!(g.is_in_correct_subgroup_assuming_on_curve());
 
+            // Cofactor clearing can produce the identity. Try the next counter when it does.
             (!g.is_zero()).then_some(g)
         })
     }

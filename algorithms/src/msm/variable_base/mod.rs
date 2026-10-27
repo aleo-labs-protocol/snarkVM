@@ -37,9 +37,7 @@ impl VariableBase {
                 let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, <G::ScalarField as PrimeField>::BigInteger>(
                     bases, scalars,
                 );
-                if let Ok(result) = result {
-                    return result;
-                }
+                return crate::cuda_must_succeed!(result, "MSM");
             }
             batched::msm(bases, scalars)
         }
@@ -93,7 +91,7 @@ mod tests {
         use snarkvm_curves::ProjectiveCurve;
 
         let mut rng = TestRng::default();
-        for msm_size in [1, 5, 10, 50, 100, 500, 1000] {
+        for msm_size in [1, 5, 10, 14, 15, 25, 31, 32, 33, 50, 100, 500, 1000] {
             let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, msm_size);
 
             let naive_a = VariableBase::msm_naive(bases.as_slice(), scalars.as_slice()).to_affine();
@@ -108,6 +106,28 @@ mod tests {
         }
     }
 
+    /// Bases at infinity must survive the trip to the device.
+    ///
+    /// The device slot is wider than the host point, so a copy that misplaces
+    /// the infinity flag turns the identity into an ordinary point. Random
+    /// bases are never at infinity.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_msm_cuda_with_bases_at_infinity() {
+        use snarkvm_fields::Zero;
+
+        let mut rng = TestRng::default();
+        for i in 11..15 {
+            let (mut bases, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 1 << i);
+            for base in bases.iter_mut().step_by(7) {
+                *base = G1Affine::zero();
+            }
+            let rust = standard::msm(bases.as_slice(), scalars.as_slice());
+            let cuda = VariableBase::msm::<G1Affine>(bases.as_slice(), scalars.as_slice());
+            assert_eq!(rust.to_affine(), cuda.to_affine(), "size {}", 1 << i);
+        }
+    }
+
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     #[test]
     fn test_msm_cuda() {
@@ -118,5 +138,28 @@ mod tests {
             let cuda = VariableBase::msm::<G1Affine>(bases.as_slice(), scalars.as_slice());
             assert_eq!(rust.to_affine(), cuda.to_affine());
         }
+    }
+
+    /// An MSM of no points returns zero with every coordinate written.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_msm_cuda_of_no_points_is_zero() {
+        use snarkvm_curves::bls12_377::G1Projective;
+        use snarkvm_fields::Zero;
+        use snarkvm_utilities::BigInteger256;
+
+        let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&[], &[])
+            .unwrap_or_else(|e| panic!("{e}"));
+        let zero = G1Projective::zero();
+        assert_eq!((sum.x, sum.y, sum.z), (zero.x, zero.y, zero.z));
+    }
+
+    /// blst's routines run the ADX code only if its CPUID constructor is in the
+    /// link.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn blst_runs_adx_on_a_cpu_with_it() {
+        let adx = snarkvm_algorithms_cuda::blst_platform_cap() & 1 != 0;
+        assert_eq!(adx, std::is_x86_feature_detected!("adx"));
     }
 }

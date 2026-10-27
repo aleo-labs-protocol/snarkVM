@@ -71,6 +71,12 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
         &self.call_stack
     }
 
+    /// Returns a mutable reference to the current call stack.
+    #[inline]
+    pub fn call_stack_mut(&mut self) -> &mut CallStack<N> {
+        &mut self.call_stack
+    }
+
     /// Initializes a new set of registers, given the call stack.
     #[inline]
     pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>) -> Self {

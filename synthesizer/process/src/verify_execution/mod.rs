@@ -15,6 +15,9 @@
 
 use super::*;
 
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
+
 mod ensure_records_exist;
 
 impl<N: Network> Process<N> {
@@ -139,7 +142,8 @@ impl<N: Network> Process<N> {
             // Ensure each output is valid.
             let num_inputs = transition.inputs().len();
             let num_outputs = transition.outputs().len();
-            for (index, output) in transition.outputs().iter().enumerate() {
+            let tcm = transition.tcm();
+            cfg_iter!(transition.outputs()).enumerate().try_for_each(|(index, output)| {
                 // If the consensus version are before `ConsensusVersion::V8`, ensure the output record is on Version 0.
                 // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
                 if let Some((_, record)) = output.record() {
@@ -156,10 +160,11 @@ impl<N: Network> Process<N> {
                     }
                 }
                 // Ensure the output is valid.
-                if !output.verify(function_id, transition.tcm(), num_inputs + index) {
+                if !output.verify(function_id, tcm, num_inputs + index) {
                     bail!("Failed to verify a transition output")
                 }
-            }
+                Ok(())
+            })?;
             lap!(timer, "Verify the outputs");
 
             // Retrieve the stack.
@@ -178,26 +183,45 @@ impl<N: Network> Process<N> {
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
 
-            // Ensure the input and output types are equivalent to the ones defined in the function.
-            // We only need to check that the variant type matches because we already check the hashes in
-            // the `Input::verify` and `Output::verify` functions.
-            // Note: The length checks above already verify that the counts match,
-            // so `zip_eq` here is safe and acts as a defense-in-depth assertion.
-            for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
-                ensure!(
-                    transition_input.is_type(function_input),
-                    "Input variant mismatch: expected '{function_input}', found '{transition_input}'",
-                );
-            }
-            for (output_index, (function_output, transition_output)) in
-                function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
-            {
-                ensure!(
-                    transition_output.is_type(function_output),
-                    "Output variant mismatch at index {output_index} in '{}/{}': expected '{function_output}', found '{transition_output}'",
-                    transition.program_id(),
-                    transition.function_name(),
-                );
+            let is_root_transition =
+                transition.id() == execution.transitions().last().expect("Execution contains no transitions").id();
+
+            // Before ConsensusVersion::V20, we check the input and output types match the ones
+            // defined in the function under the weaker type equivalence. At ConsensusVersion::V20
+            // and higher, we perform strict type checking for the root transition only: for
+            // non-root transitions, strict type checking happens at the call site in
+            // `to_transition_verifier_inputs` instead.
+            // Note: We only need to check that the variant matches because we already check the
+            // hashes in the `Input::verify` and `Output::verify` functions. Note: The length checks
+            // above already verify that the counts match, so `zip_eq` here is safe and acts as a
+            // defense-in-depth assertion.
+            if consensus_version < ConsensusVersion::V20 || is_root_transition {
+                // Flag for `matches_as_argument` and `matches_as_output`: None for weak equivalence,
+                // Some(false) for strict static-call type equivalence.
+                let is_dynamic_for_types = if consensus_version < ConsensusVersion::V20 { None } else { Some(false) };
+
+                for (input_index, (function_input, transition_input)) in
+                    function.input_types().iter().zip_eq(transition.inputs().iter()).enumerate()
+                {
+                    ensure!(
+                        transition_input.valid_as_argument(function_input, is_dynamic_for_types),
+                        "Incorrect input variant or mismatch with the expected value type at index {input_index} in '{}/{}': {} call has input '{transition_input}' but the function expects type '{function_input}'",
+                        transition.program_id(),
+                        transition.function_name(),
+                        if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
+                    );
+                }
+                for (output_index, (function_output, transition_output)) in
+                    function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
+                {
+                    ensure!(
+                        transition_output.valid_as_output(function_output, is_dynamic_for_types),
+                        "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {} call has output '{transition_output}' but the function declares type '{function_output}'",
+                        transition.program_id(),
+                        transition.function_name(),
+                        if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
+                    );
+                }
             }
 
             // Retrieve the parent program ID.
@@ -217,6 +241,7 @@ impl<N: Network> Process<N> {
                 &mut function_id_cache,
                 &network_id,
                 execution_stacks,
+                consensus_version,
             )?;
             lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
 
@@ -247,11 +272,21 @@ impl<N: Network> Process<N> {
         // Construct the list of verifier inputs.
         let mut verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
 
+        // Prepare the native credits record identifiers for the V18 activation check.
+        let credits_program_id = ProgramID::from_str("credits.aleo")?;
+        let credits_record_name = Identifier::from_str("credits")?;
+
         // Construct the batch of translation verifier inputs.
         let batch_translation_inputs = Translation::prepare_verifier_inputs(
             execution.transitions(),
             &transition_map,
             &|(program_id, record_name)| {
+                ensure!(
+                    consensus_version >= ConsensusVersion::V18
+                        || program_id != &credits_program_id
+                        || record_name != &credits_record_name,
+                    "The credits record translation is not enabled before ConsensusVersion::V18"
+                );
                 execution_stacks
                     .get(program_id)
                     .ok_or_else(|| anyhow!("Missing stack for program '{program_id}'"))
@@ -334,6 +369,7 @@ impl<N: Network> Process<N> {
         function_id_cache: &mut HashMap<(ProgramID<N>, Identifier<N>), Field<N>>,
         network_id: &U16<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        consensus_version: ConsensusVersion,
     ) -> Result<Vec<N::Field>> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
@@ -421,7 +457,7 @@ impl<N: Network> Process<N> {
         for (child_transition_id, call_instruction) in child_transition_ids.iter().zip_eq(parent_function_calls) {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
-            let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
+            let (child_transition, child_function) = transition_map.get(child_transition_id).unwrap();
 
             // Retrieve (or compute and cache) the function ID for the child transition.
             let child_function_id = get_or_compute_function_id(
@@ -438,6 +474,36 @@ impl<N: Network> Process<N> {
                 // This should never occur, since `parent_function_calls` only contains `Call` and `CallDynamic`.
                 _ => bail!("Unexpected instruction type in parent function calls"),
             };
+
+            // Ensure the child transition's input and output variants correspond to the child
+            // function's declared types, enforcing strict matching depending on whether this is a
+            // static or dynamic call. This check only happens at ConsensusVersion >= V20.
+            // Note: The counts are already validated for every transition in the main verification
+            // loop, so `zip_eq` is safe.
+            if consensus_version >= ConsensusVersion::V20 {
+                let is_dynamic = Some(call_dynamic.is_some());
+                let call_kind = if call_dynamic.is_some() { "dynamic" } else { "static" };
+                for (function_input, transition_input) in
+                    child_function.input_types().iter().zip_eq(child_transition.inputs().iter())
+                {
+                    ensure!(
+                        transition_input.valid_as_argument(function_input, is_dynamic),
+                        "Incorrect input variant or mismatch with the expected value type in '{}/{}': {call_kind} call has input '{transition_input}' but the function expects type '{function_input}'",
+                        child_transition.program_id(),
+                        child_transition.function_name(),
+                    );
+                }
+                for (output_index, (function_output, transition_output)) in
+                    child_function.output_types().iter().zip_eq(child_transition.outputs().iter()).enumerate()
+                {
+                    ensure!(
+                        transition_output.valid_as_output(function_output, is_dynamic),
+                        "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {call_kind} call has output '{transition_output}' but the function declares type '{function_output}'",
+                        child_transition.program_id(),
+                        child_transition.function_name(),
+                    );
+                }
+            }
 
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
             if call_dynamic.is_some() {
@@ -470,8 +536,9 @@ impl<N: Network> Process<N> {
                         child_transition.function_name(),
                         input,
                     );
-                    // Ensure the input type matches the caller's expectation.
-                    // Use the caller's view of the input (e.g., RecordWithDynamicID -> DynamicRecord).
+                    // Ensure the input type matches the caller's expectation - which is different
+                    // the callee-view check from above. We use the caller's view of the input
+                    // (e.g., RecordWithDynamicID -> DynamicRecord).
                     ensure!(
                         input.to_caller_input().is_type(input_type),
                         "Input {i} in dynamic call to {} should be of type {}, found: {}",

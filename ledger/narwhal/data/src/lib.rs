@@ -29,6 +29,18 @@ const PREFIX: &str = "data";
 /// cause us to run out of memory.
 const MAX_DATA_SIZE: u32 = 1024 * 1024 * 1024; // 1 GB
 
+/// The number of bytes a serialized `Data` adds around the object it carries: the version byte
+/// that leads it, and the `u32` length prefix on the payload that follows.
+///
+/// This lets a caller size a buffer or a message around a serialized `Data` without serializing
+/// one first - snarkOS adds it to `LATEST_MAX_TRANSACTION_SIZE` to get the frame size an
+/// `UnconfirmedTransaction` carrying a maximum-size transaction takes on the wire. It lives here,
+/// beside the `ToBytes` and `FromBytes` implementations that define the encoding, so that a change
+/// to either is a change to this; `data_encoding_overhead_matches_the_encoding` pins it against
+/// what `write_le` really emits.
+pub const DATA_ENCODING_OVERHEAD: usize = size_of::<u8>() // the version byte
+    + size_of::<u32>(); // the length prefix on the payload
+
 /// This object enables deferred deserialization / ahead-of-time serialization for objects that
 /// take a while to deserialize / serialize, in order to allow these operations to be non-blocking.
 #[derive(Clone, PartialEq, Eq)]
@@ -278,6 +290,24 @@ mod tests {
 
             // Ensure the checksums are equal.
             assert_eq!(checksum_1, checksum_2);
+        }
+    }
+
+    /// Pins `DATA_ENCODING_OVERHEAD` against what `write_le` actually emits, rather than trusting
+    /// the arithmetic in its doc comment: a serialized `Data` has to be exactly that much larger
+    /// than the payload it carries, whichever representation it is in.
+    #[test]
+    fn data_encoding_overhead_matches_the_encoding() {
+        let rng = &mut TestRng::default();
+
+        let transaction = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
+        let payload = transaction.to_bytes_le().unwrap();
+
+        let object: Data<Transaction<MainnetV0>> = Data::Object(transaction);
+        let buffer: Data<Transaction<MainnetV0>> = Data::Buffer(payload.clone().into());
+
+        for data in [object, buffer] {
+            assert_eq!(data.to_bytes_le().unwrap().len(), payload.len() + DATA_ENCODING_OVERHEAD);
         }
     }
 }

@@ -1,13 +1,12 @@
 [package]
 name = "snarkvm-circuit-environment"
-version = "4.7.1"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Circuit environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
-# Upgrade to Rust 2024 when once we deal with std::env::set_var
-edition = "2021"
+edition = "2024"
 
 [[bench]]
 name = "linear_combination"
@@ -68,9 +67,6 @@ path = "../../circuit"
 workspace = true
 
 [dev-dependencies.criterion]
-workspace = true
-
-[dev-dependencies.serial_test]
 workspace = true
 
 [features]

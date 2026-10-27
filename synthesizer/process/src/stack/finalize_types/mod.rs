@@ -27,6 +27,7 @@ use console::{
         Identifier,
         LiteralType,
         PlaintextType,
+        ProgramID,
         Register,
         RegisterType,
         StructType,
@@ -94,6 +95,11 @@ impl<N: Network> FinalizeTypes<N> {
         Self::initialize_finalize_types_from_view(stack, view)
     }
 
+    /// Returns the number of declared input and destination registers.
+    pub(super) fn num_registers(&self) -> usize {
+        self.inputs.len() + self.destinations.len()
+    }
+
     /// Returns `true` if the given register exists.
     pub fn contains(&self, register: &Register<N>) -> bool {
         // Retrieve the register locator.
@@ -133,6 +139,10 @@ impl<N: Network> FinalizeTypes<N> {
             )?)),
             Operand::Edition(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)),
             Operand::ProgramOwner(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Address)),
+            Operand::ComponentChecksum(..) => FinalizeType::Plaintext(PlaintextType::Array(ArrayType::new(
+                PlaintextType::Literal(LiteralType::U8),
+                vec![U32::new(32)],
+            )?)),
         })
     }
 

@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::helpers::sample::shared_process;
+
 use console::{
     algorithms::{ECDSASignature, Keccak256, Keccak384, Keccak512, RecoveryID, Sha3_256, Sha3_384, Sha3_512},
     network::MainnetV0,
@@ -20,7 +22,7 @@ use console::{
     program::{ArrayType, Identifier, Literal, LiteralType, Plaintext, PlaintextType, Register, Value},
     types::{Boolean, U8, U32},
 };
-use snarkvm_synthesizer_process::{FinalizeRegisters, Process, Stack};
+use snarkvm_synthesizer_process::{FinalizeRegisters, Stack};
 use snarkvm_synthesizer_program::{
     ECDSAVerify,
     ECDSAVerifyDigest,
@@ -163,7 +165,7 @@ fn sample_stack(
     let operands = vec![Operand::Register(r0), Operand::Register(r1), Operand::Register(r2)];
 
     // Initialize the stack.
-    let stack = Stack::new(&Process::load()?, &program)?;
+    let stack = Stack::new(shared_process(), &program)?;
 
     Ok((stack, operands, r3))
 }
@@ -179,7 +181,7 @@ pub fn sample_ecdsa_finalize_registers(
 ) -> Result<FinalizeRegisters<CurrentNetwork>> {
     // Initialize the registers.
     let mut finalize_registers = FinalizeRegisters::<CurrentNetwork>::new(
-        FinalizeGlobalState::from(1, 1, None, [0; 32]),
+        FinalizeGlobalState::from(1, 1, None, [0; 32], None, None),
         Some(<CurrentNetwork as Network>::TransitionID::default()),
         *function_name,
         stack.get_finalize_types(function_name)?.clone(),

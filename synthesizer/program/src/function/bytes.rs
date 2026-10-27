@@ -37,7 +37,9 @@ impl<N: Network> FromBytes for FunctionCore<N> {
         if num_instructions > u32::try_from(N::MAX_INSTRUCTIONS).map_err(error)? {
             return Err(error(format!("Failed to deserialize a function: too many instructions ({num_instructions})")));
         }
-        let mut instructions = Vec::with_capacity(num_instructions as usize);
+        // Cap the reservation: the count is attacker-supplied, and the elements behind
+        // it may not exist.
+        let mut instructions = Vec::with_capacity((num_instructions as usize).min(1024));
         for _ in 0..num_instructions {
             instructions.push(Instruction::read_le(&mut reader)?);
         }
@@ -162,5 +164,32 @@ function main:
         assert_eq!(expected.to_string(), candidate.to_string());
         assert_eq!(expected_bytes, candidate.to_bytes_le()?);
         Ok(())
+    }
+
+    /// A function declaring the maximum instruction count, with none of them
+    /// present, must be rejected rather than reserved for.
+    ///
+    /// This is the shape a fuzzer found: eight bytes naming a function, no
+    /// inputs, and a declared instruction count of `u16::MAX`. The count is
+    /// within bounds, so the reader accepts it and then runs out of input on the
+    /// first instruction -- which is exactly why the reservation cannot be taken
+    /// on the count alone.
+    #[test]
+    fn test_declared_instruction_count_without_the_instructions_is_rejected() {
+        let mut bytes = Vec::new();
+        // The function name, as an identifier: one length byte, then the bytes.
+        1u8.write_le(&mut bytes).unwrap();
+        b'f'.write_le(&mut bytes).unwrap();
+        // No inputs.
+        0u16.write_le(&mut bytes).unwrap();
+        // The largest instruction count the reader will accept, and nothing after it.
+        u32::try_from(CurrentNetwork::MAX_INSTRUCTIONS).unwrap().write_le(&mut bytes).unwrap();
+
+        assert_eq!(bytes.len(), 8, "the whole input is eight bytes");
+        assert!(
+            Function::<CurrentNetwork>::read_le(&bytes[..]).is_err(),
+            "a function declaring {} instructions and carrying none must be rejected",
+            CurrentNetwork::MAX_INSTRUCTIONS
+        );
     }
 }

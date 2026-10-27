@@ -53,8 +53,18 @@ impl<N: Network> Future<N> {
             // Read the argument bytes.
             let mut bytes = Vec::new();
             (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
+            // Ensure the declared region is entirely present.
+            if bytes.len() != num_bytes as usize {
+                return Err(error("Failed to read future: argument is truncated"));
+            }
             // Recover the argument.
-            let entry = Argument::read_le_internal(&mut bytes.as_slice(), depth)?;
+            let mut slice = bytes.as_slice();
+            let entry = Argument::read_le_internal(&mut slice, depth)?;
+            // Ensure the argument fills its region. Bytes left unread would be dropped
+            // on re-serialization, giving one value a second encoding.
+            if !slice.is_empty() {
+                return Err(error("Failed to read future: argument has trailing bytes"));
+            }
             // Add the argument.
             arguments.push(entry);
         }
@@ -351,5 +361,42 @@ mod tests {
             run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
             run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
         }
+    }
+
+    /// Builds the encoding of a one-argument future, declaring `padding` more bytes
+    /// for the argument than the argument actually occupies.
+    fn future_with_padded_argument(padding: usize) -> Result<Vec<u8>> {
+        let argument = Argument::<CurrentNetwork>::Plaintext(Plaintext::from_str("7u8")?);
+        let argument_bytes = argument.to_bytes_le()?;
+
+        let mut bytes = Vec::new();
+        ProgramID::<CurrentNetwork>::from_str("credits.aleo")?.write_le(&mut bytes)?;
+        Identifier::<CurrentNetwork>::from_str("transfer")?.write_le(&mut bytes)?;
+        1u8.write_le(&mut bytes)?;
+        u16::try_from(argument_bytes.len() + padding)?.write_le(&mut bytes)?;
+        bytes.extend_from_slice(&argument_bytes);
+        bytes.extend(std::iter::repeat_n(0u8, padding));
+        Ok(bytes)
+    }
+
+    #[test]
+    fn test_future_argument_rejects_trailing_bytes() -> Result<()> {
+        // Unpadded, this is the encoding `to_bytes_le` produces, and it must keep working.
+        let exact = future_with_padded_argument(0)?;
+        let future = Future::<CurrentNetwork>::read_le(&exact[..])?;
+        assert_eq!(exact, future.to_bytes_le()?, "the unpadded encoding must round trip");
+
+        // An argument region larger than the argument fills leaves bytes unread.
+        // Accepting it gives one future -- and so one transaction -- a second
+        // encoding, since re-serializing emits the exact length.
+        for padding in [1, 8, 32] {
+            let padded = future_with_padded_argument(padding)?;
+            assert_ne!(padded, exact);
+            assert!(
+                Future::<CurrentNetwork>::read_le(&padded[..]).is_err(),
+                "a future argument declaring {padding} bytes more than it uses must be rejected"
+            );
+        }
+        Ok(())
     }
 }

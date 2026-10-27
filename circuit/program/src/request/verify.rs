@@ -74,7 +74,7 @@ impl<A: Aleo> Request<A> {
         // Verify the transition public key and commitments are well-formed.
         let tpk_checks = {
             // Compute the transition commitment as `Hash(tvk)`.
-            let tcm = A::hash_psd2(&[self.tvk.clone()]);
+            let tcm = A::hash_psd2(std::slice::from_ref(&self.tvk));
             // Compute the signer commitment as `Hash(signer || root_tvk)`.
             let scm = A::hash_psd2(&[self.signer.to_field(), root_tvk]);
 
@@ -463,7 +463,7 @@ mod tests {
 
         // Sample 'root_tvk'.
         let root_tvk = None;
-        // Sample 'is_root'.
+        // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
         let is_root = true;
         // Sample 'program_checksum'.
         let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));

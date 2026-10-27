@@ -65,10 +65,29 @@ public:
 #include <vector>
 #include <chrono>
 #include <atomic>
+#include <mutex>
+#include <cstring>
+#include <string>
+#include <exception>
 
 typedef std::chrono::high_resolution_clock Clock;
 
 using namespace std;
+
+static_assert(cudaErrorNotSupported == 801, "snarkvm-algorithms' CUDA_ERROR_NOT_SUPPORTED");
+
+// Returns `cudaErrorNotSupported` with a message naming the domain and the
+// limit it exceeds. Falls back to the bare code if the message cannot be
+// built, since nothing may cross `extern "C"`.
+static RustError pool_refusal(const char* op, size_t domain_size, size_t limit) noexcept {
+    try {
+        return RustError{cudaErrorNotSupported,
+                         std::string(op) + " domain of " + std::to_string(domain_size)
+                         + " exceeds the device pool's limit of " + std::to_string(limit)};
+    } catch (...) {
+        return RustError{cudaErrorNotSupported};
+    }
+}
 
 class snarkvm_t {
     thread_pool_t pool;
@@ -82,7 +101,31 @@ class snarkvm_t {
         }
     };
     channel_t<resource_t*> resources;
-    
+
+    // Returns a pool slot on every path out, including an exception. A lost
+    // slot is never replaced, and after `ngpus() * FLIP_FLOP` losses
+    // `resources.recv()` blocks forever.
+    class slot_t {
+        channel_t<resource_t*>& pool;
+        resource_t* r;
+    public:
+        slot_t(channel_t<resource_t*>& p) : pool(p), r(p.recv()) {}
+        // Mul and NTT::Base sync the device in their own cuda_error handlers.
+        // Only an exception they do not catch can leave zero-stream copies into
+        // the staging buffers in flight, so the whole device is synced only then.
+        ~slot_t() noexcept {
+            try {
+                auto& gpu = select_gpu(r->dev);
+                if (std::uncaught_exceptions()) gpu.sync(); else gpu[r->stream].sync();
+            } catch (...) {}
+            try { pool.send(r); } catch (...) {}
+        }
+        slot_t(const slot_t&) = delete;
+        slot_t& operator=(const slot_t&) = delete;
+        int dev() const { return r->dev; }
+        int stream() const { return r->stream; }
+    };
+
     // Host and device storage
     size_t                         allocated_elements;
     std::vector<dev_ptr_t<fr_t>*>  d_mem;
@@ -120,6 +163,10 @@ class snarkvm_t {
     }
     
 public:
+    // Elements the pool reserves per device per stream slot. `NTT` admits a
+    // domain up to this, `PolyMul` up to a quarter of it.
+    size_t pool_elements() const { return allocated_elements; }
+
     snarkvm_t(int max_lg_domain) : pool(ngpus()) {
         // Allocate storage for 4 polynomials, required by polynomial multiplication
         // Will be allocated per gpu per stream
@@ -138,9 +185,14 @@ public:
                 h_mem[i] = new host_ptr_t<fr_t>(allocated_elements * gpu_t::FLIP_FLOP);
             }
         } catch (const cuda_error& e) {
-            // Failed to allocate. Clean up any memory
+            // Clean up, then rethrow. Completing with `allocated_elements == 0`
+            // would fail every later capacity check as `cudaErrorNotSupported`,
+            // reporting a startup failure as a property of each circuit.
+            // `snarkvm_singleton_t::init()` reports it as
+            // `cudaErrorInitializationError`.
             free_memory();
-        }            
+            throw;
+        }
 
         // GPU resource allocation scheme
         for (size_t j = 0; j < gpu_t::FLIP_FLOP; j++) {
@@ -158,15 +210,17 @@ public:
                   NTT::Type ntt_type) {
         size_t domain_size = (size_t)1 << lg_domain_size;
 
-        // Ensure enough sufficient memory
+        // Larger than the pool this instance preallocated. This check and
+        // PolyMul's are the only source of a positive `cudaErrorNotSupported`,
+        // so the Rust side can tell it from an allocation failure.
         if (allocated_elements < domain_size) {
-            return RustError{cudaErrorMemoryAllocation};
+            return pool_refusal("NTT", domain_size, allocated_elements);
         }
 
-        resource_t* resource = resources.recv();
-        int dev = resource->dev;
+        slot_t slot(resources);
+        int dev = slot.dev();
         auto& gpu = select_gpu(dev);
-        int stream_idx = resource->stream;
+        int stream_idx = slot.stream();
         stream_t& stream = gpu[stream_idx];
 
         fr_t* h_mem = h_addr(dev, stream_idx);
@@ -176,12 +230,10 @@ public:
         RustError e = Polynomial::Base(gpu, h_mem, lg_domain_size,
                                        ntt_order, ntt_direction, ntt_type);
         if (e.code != cudaSuccess) {
-            resources.send(resource);
             return e;
         }
         // Successful. Copy the result back
         memcpy(out, h_mem, sizeof(fr_t) * domain_size);
-        resources.send(resource);
         return RustError{cudaSuccess};
     }
 
@@ -209,15 +261,17 @@ public:
             return RustError{cudaSuccess};
         }
         
-        // Ensure enough sufficient memory
+        // Too large for the preallocated pool, as in `NTT`. PolyMul works on
+        // four polynomials of the domain, so it refuses at a quarter of what
+        // `NTT` accepts.
         if (allocated_elements < 4 * domain_size) {
-            return RustError{cudaErrorMemoryAllocation};
+            return pool_refusal("PolyMul", domain_size, allocated_elements / 4);
         }
 
-        resource_t* resource = resources.recv();
-        int dev = resource->dev;
+        slot_t slot(resources);
+        int dev = slot.dev();
         auto& gpu = select_gpu(dev);
-        int stream_idx = resource->stream;
+        int stream_idx = slot.stream();
         stream_t& stream = gpu[stream_idx];
 
         // // Copy data to pinned staging buffer
@@ -235,57 +289,87 @@ public:
                                       ecount, evaluations, elens,
                                       lg_domain_size);
         if (e.code != cudaSuccess) {
-            resources.send(resource);
             return e;
         }
 
-        cudaDeviceSynchronize();
+        // `Polynomial::Mul` ends in `stream.DtoH` then `stream.sync()`, so
+        // `h_mem0` is complete here without a device-wide sync.
         memcpy(out, h_mem0, sizeof(fr_t) * domain_size);
 
-        resources.send(resource);
         return RustError{cudaSuccess};
     }
 
     RustError MSM(point_t* out, const affine_t points[], size_t npoints,
                   const scalar_t scalars[], size_t ffi_affine_size) {
-        // SNP TODO: cleanup
-        // auto start = Clock::now();
+        // With no points, `gpu_count` is 0, and `ch.recv()` below would wait
+        // forever. Rust reads all three coordinates, and `inf()` sets only Z,
+        // so this writes Rust's zero in full.
+        if (npoints == 0) {
+            fp_t zero;
+            zero.zero();
+            *out = point_t{zero, fp_t::one(), zero};
+            return RustError{cudaSuccess};
+        }
 
-        size_t gpu_count = min(ngpus(), npoints);
+        size_t bases_per_gpu = (npoints + ngpus() - 1) / ngpus();
+        // One worker per share, so no worker starts past the last point.
+        size_t gpu_count = (npoints + bases_per_gpu - 1) / bases_per_gpu;
+        // A failed worker leaves its sum unwritten, and the reduction below
+        // reads every one.
         point_t partial_sums[gpu_count];
-        size_t bases_per_gpu = (npoints + gpu_count - 1) / gpu_count;
+        for (size_t i = 0; i < gpu_count; i++) {
+            partial_sums[i].inf();
+        }
         channel_t<size_t> ch;
         RustError error = RustError{cudaSuccess};
+        std::mutex error_mtx;
 
-        // Divide the MSM among the GPUs
+        // Divide the MSM among the GPUs. If a spawn throws, the workers
+        // already running still write this frame, so wait for them first.
         for (size_t i = 0; i < gpu_count; i++) {
-            pool.spawn([&, i]() {
+            auto work = [&, i]() {
                 int dev = i;
-                select_gpu(dev);
                 size_t start = i * bases_per_gpu;
                 size_t sz = std::min(bases_per_gpu, npoints - start);
 
                 // This is ugly, but we only know the size of the affine points in bytes
                 const affine_t* pts = (affine_t*)(&((uint8_t*)points)[start * ffi_affine_size]);
-                
+
                 RustError ret;
                 try {
+                    select_gpu(dev);
                     msm_t<bucket_t, point_t, affine_t, scalar_t> msm(dev);
                     ret = msm.invoke(partial_sums[i], slice_t<affine_t>{pts, sz},
                                      &scalars[start], false, ffi_affine_size);
                 } catch (const cuda_error& e) {
-                    out->inf();
 #ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
                     ret = RustError{e.code(), e.what()};
 #else
                     ret = RustError{e.code()};
 #endif
+                } catch (...) {
+                    // An exception that leaves the worker would skip the
+                    // `send` below, and the caller would wait forever.
+                    ret = RustError{cudaErrorUnknown};
                 }
                 if (ret.code != cudaSuccess) {
-                    error = ret;
+                    std::lock_guard<std::mutex> lock(error_mtx);
+                    if (error.code == cudaSuccess) {
+                        error = ret;
+                    } else {
+                        free(ret.message);
+                    }
                 }
                 ch.send(i);
-            });
+            };
+            try {
+                pool.spawn(work);
+            } catch (...) {
+                for (size_t j = 0; j < i; j++)
+                    ch.recv();
+                free(error.message);
+                throw;
+            }
         }
         size_t dev = ch.recv();
         *out = partial_sums[dev];
@@ -293,21 +377,8 @@ public:
             dev = ch.recv();
             point_t::dadd(*out, *out, partial_sums[dev]);
         }
-        // auto end = Clock::now();
-        // uint64_t dt = std::chrono::duration_cast<
-        //     std::chrono::microseconds>(end - start).count();
-        // printf("MSM size %ld took %ld us\n", npoints, dt);
 
         return error;
-        
-        // auto start = Clock::now();
-        // auto res = mult_pippenger<bucket_t>(out, points, npoints, scalars,
-        //                                     false, ffi_affine_size);
-        // auto end = Clock::now();
-        // uint64_t dt = std::chrono::duration_cast<
-        //     std::chrono::microseconds>(end - start).count();
-        // printf("MSM size %ld took %ld us\n", npoints, dt);
-        // return res;
     }
 };
 

@@ -29,6 +29,7 @@ use console::{
         LiteralType,
         Locator,
         PlaintextType,
+        ProgramID,
         RecordType,
         Register,
         RegisterType,
@@ -53,6 +54,8 @@ use snarkvm_synthesizer_program::{
 use snarkvm_utilities::dev_eprintln;
 
 use indexmap::{IndexMap, IndexSet};
+
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegisterTypes<N: Network> {
@@ -115,6 +118,9 @@ impl<N: Network> RegisterTypes<N> {
             Operand::Checksum(_) => bail!("'checksum' is not a valid operand in a non-finalize context."),
             Operand::Edition(_) => bail!("'edition' is not a valid operand in a non-finalize context."),
             Operand::ProgramOwner(_) => bail!("'program_owner' is not a valid operand in a non-finalize context."),
+            Operand::ComponentChecksum(..) => {
+                bail!("a component checksum is not a valid operand in a non-finalize context.")
+            }
         })
     }
 

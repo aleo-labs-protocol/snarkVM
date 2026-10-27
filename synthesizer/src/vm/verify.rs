@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use console::network::varuna_version_from_consensus;
+
 use super::*;
 
 /// Ensures the given iterator has no duplicate elements, and that the ledger
@@ -47,6 +49,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn create_cache_key_with_stacks(
         transaction: &Transaction<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        consensus_version: ConsensusVersion,
     ) -> Result<TransactionCacheKey<N>> {
         // Get the program checksums.
         let program_checksums = transaction
@@ -57,7 +60,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", transition.program_id()))?;
                 let edition = *stack.program_edition();
                 let amendment_count = stack.program_amendment_count();
-                Ok((*stack.program_checksum(), edition, amendment_count))
+                Ok((*stack.program_checksum(), edition, amendment_count, consensus_version))
             })
             .collect::<Result<Vec<_>>>()?;
         // Return the cache key.
@@ -171,10 +174,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Fetch all required stacks for transition checks once, and reuse them for static import checks.
         // This is just a partial performance optimization, dynamic calls will fetch fresh Stacks.
-        let execution_stacks = transaction
-            .transitions()
-            .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
-            .collect::<Result<IndexMap<_, _>>>()?;
+        // Starting at ConsensusVersion::V18, we also include first-level imports for the record-existance
+        // check.
+        let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+        let execution_stacks = self.process.get_stacks(transaction.transitions(), include_direct_imports)?;
 
         // Perform a check relevant to the V8 migration on the execution.
         // TODO: this can be pruned in the future with an appropriate documentation strategy.
@@ -202,7 +205,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
         // Prepare the cache key.
-        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
 
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum)
@@ -356,6 +359,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     );
                 }
                 if consensus_version < ConsensusVersion::V16 {
+                    ensure!(
+                        !deployment.program().contains_v16_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
+                    );
+                }
+
+                if consensus_version < ConsensusVersion::V23 {
                     let stack = Stack::new(&self.process, deployment.program())?;
                     check_no_non_literal_ternary(deployment.program(), &stack)
                         .map_err(|e| anyhow!("Invalid deployment transaction '{id}' - {e}"))?;
@@ -424,6 +434,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             );
                         }
                     }
+                }
+                if consensus_version >= ConsensusVersion::V20 {
+                    // Bound the size in bits of every plaintext type declared in the program. This runs
+                    // before deployment verification samples values, since sampling walks the leaves of
+                    // the declared type.
+                    let max_plaintext_type_bits =
+                        consensus_config_value!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, current_block_height).ok_or_else(
+                            || anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"),
+                        )?;
+                    let stack = Stack::new(&self.process, deployment.program())?;
+                    check_program_plaintext_sizes(deployment.program(), &stack, max_plaintext_type_bits)?;
                 }
 
                 // Determine if any of the array types exceed the maximum array elements.
@@ -608,13 +629,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Invalid deployment transaction '{id}' - the existing program does not have a constructor, but the deployment program does"
                                     );
                                     // If the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
-                                    if consensus_version >= ConsensusVersion::V10 {
-                                        if let Err(e) = check_output_register_indices_unchanged(
+                                    if consensus_version >= ConsensusVersion::V10
+                                        && let Err(e) = check_output_register_indices_unchanged(
                                             existing_program,
                                             deployment.program(),
-                                        ) {
-                                            bail!("Invalid deployment transaction '{id}' - {e}")
-                                        }
+                                        )
+                                    {
+                                        bail!("Invalid deployment transaction '{id}' - {e}")
                                     }
                                 }
                             }
@@ -640,7 +661,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.
-                    match try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
+                    match try_vm_runtime(|| self.check_deployment_internal(deployment, rng)) {
                         Ok(result) => result?,
                         Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                     }
@@ -675,11 +696,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
 
                 // Verify the execution.
-                match try_vm_runtime!(|| self.check_execution_internal(
-                    execution,
-                    &execution_stacks,
-                    is_partially_verified
-                )) {
+                match try_vm_runtime(|| {
+                    self.check_execution_internal(execution, &execution_stacks, is_partially_verified)
+                }) {
                     Ok(result) => result?,
                     Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                 }
@@ -692,7 +711,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .transitions()
             .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
             .collect::<Result<IndexMap<_, _>>>()?;
-        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let current_block_height = self.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
         let cache_key_unchanged = cache_key == new_cache_key;
 
         // If the above checks have passed, against the same cache key, and this
@@ -717,8 +738,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let current_height = self.block_store().current_block_height();
         let consensus_version = N::CONSENSUS_VERSION(current_height)?;
         // Get the transaction spend limit.
-        let transaction_spend_limit =
-            consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
+        let transaction_spend_limit = consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version)
+            .ok_or_else(|| anyhow::anyhow!("Failed to fetch transaction spend limit"))?;
         match transaction {
             Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
@@ -728,7 +749,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure the compute cost does not exceed the transaction spend limit.
                 // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                 if consensus_version >= ConsensusVersion::V10 {
-                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version);
                     ensure!(
                         compute_spend <= transaction_spend_limit,
                         "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
@@ -759,7 +780,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Ensure the compute cost does not exceed the transaction spend limit.
                         // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                         if consensus_version >= ConsensusVersion::V10 {
-                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version);
                             ensure!(
                                 compute_spend <= transaction_spend_limit,
                                 "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
@@ -850,10 +871,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine which consensus version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         // Determine the inclusion version to use.
         let is_network_behind_upgrade_height = block_height < N::INCLUSION_UPGRADE_HEIGHT()?;
         let inclusion_version = match (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version)
@@ -925,10 +943,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Determine which Varuna version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         // Determine the inclusion version to use.
         let is_network_behind_upgrade_height = block_height < N::INCLUSION_UPGRADE_HEIGHT()?;
         let inclusion_version = match (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version)
@@ -941,19 +956,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.verify_fee(
-                consensus_version,
-                varuna_version,
-                inclusion_version,
-                fee,
-                deployment_or_execution_id,
-            ),
+            false => match try_vm_runtime(|| {
+                self.process.verify_fee(
+                    consensus_version,
+                    varuna_version,
+                    inclusion_version,
+                    fee,
+                    deployment_or_execution_id,
+                )
+            }) {
+                Ok(result) => result,
+                Err(_) => bail!("VM safely halted during fee verification"),
+            },
         };
         lap!(timer, "Verify the fee");
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
         //  to the speculation layer.
-        // If the fee is public, speculatively check the account balance.
+        // If the fee is public, check the confirmed account balance.
         if fee.is_fee_public() {
             // Retrieve the payer.
             let Some(payer) = fee.payer() else {
@@ -961,7 +981,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             };
             // Retrieve the account balance of the payer.
             let Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) =
-                self.finalize_store().get_value_speculative(
+                self.finalize_store().get_value_confirmed(
                     ProgramID::from_str("credits.aleo")?,
                     Identifier::from_str("account")?,
                     &Plaintext::from(Literal::Address(payer)),
@@ -994,12 +1014,9 @@ mod tests {
     use crate::vm::test_helpers::sample_finalize_state;
     use console::account::ViewKey;
 
-    use console::{account::Address, types::Field};
     #[cfg(feature = "test")]
-    use console::{
-        algorithms::{ECDSASignature, Keccak256},
-        types::U8,
-    };
+    use console::algorithms::{ECDSASignature, Keccak256};
+    use console::{account::Address, types::Field};
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
@@ -1009,6 +1026,273 @@ mod tests {
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
+    #[test]
+    #[cfg(feature = "test")]
+    fn test_varuna_v3_transaction_boundary() {
+        let rng = &mut TestRng::fixed(3104);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
+        let mut vm = test_helpers::sample_vm_at_height(height - 1, rng);
+        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let address = Address::try_from(&private_key).expect("valid test fixture");
+        let inputs = [
+            Value::from_str(&address.to_string()).expect("valid test fixture"),
+            Value::from_str("1u64").expect("valid test fixture"),
+        ];
+        let legacy = vm
+            .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
+            .expect("valid test fixture");
+        vm.check_transaction(&legacy, None, rng).expect("valid test fixture");
+        let legacy_cache_key = create_cache_key_for_test(&vm, &legacy);
+        assert!(vm.partially_verified_transactions.read().peek(&legacy_cache_key).is_some());
+
+        test_helpers::advance_vm_to_height(&mut vm, private_key, height, rng);
+        assert!(vm.partially_verified_transactions.read().peek(&legacy_cache_key).is_none());
+        assert_ne!(legacy_cache_key, create_cache_key_for_test(&vm, &legacy));
+        assert!(vm.check_transaction(&legacy, None, rng).is_err());
+        let Transaction::Execute(_, _, execution, Some(fee)) = &legacy else {
+            panic!("Expected execution and fee");
+        };
+        let stacks = vm.process().get_stacks(execution.transitions(), true).expect("valid test fixture");
+        assert!(vm.check_execution_internal(execution, &stacks, false).is_err());
+        assert!(vm.check_fee_internal(fee, execution.to_execution_id().expect("valid test fixture"), false).is_err());
+
+        let upgraded = vm
+            .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
+            .expect("valid test fixture");
+        vm.check_transaction(&upgraded, None, rng).expect("valid test fixture");
+        let block = test_helpers::sample_next_block(&vm, &private_key, &[upgraded], rng).expect("valid test fixture");
+        assert_eq!(block.transactions().num_accepted(), 1);
+        vm.add_next_block(&block).expect("valid test fixture");
+    }
+
+    #[test]
+    #[cfg(feature = "test")]
+    fn test_varuna_v3_inclusion_and_deployment_boundary() -> Result<()> {
+        let rng = &mut TestRng::fixed(3107);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21)?;
+        let mut vm = test_helpers::sample_vm_at_height(height - 2, rng);
+        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let address = Address::try_from(&private_key)?;
+        let view_key = ViewKey::try_from(&private_key)?;
+        let inputs = [Value::from_str(&address.to_string())?, Value::from_str("100000000u64")?];
+        let funding = (0..2)
+            .map(|_| {
+                vm.execute(
+                    &private_key,
+                    ("credits.aleo", "transfer_public_to_private"),
+                    inputs.iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let block = test_helpers::sample_next_block(&vm, &private_key, &funding, rng)?;
+        assert_eq!(block.transactions().num_accepted(), 2);
+        vm.add_next_block(&block)?;
+        let records = block.records().map(|(_, record)| record.decrypt(&view_key)).collect::<Result<Vec<_>>>()?;
+        assert_eq!(records.len(), 2);
+        let inputs =
+            [Value::Record(records[0].clone()), Value::from_str(&address.to_string())?, Value::from_str("1u64")?];
+        let legacy = vm.execute(
+            &private_key,
+            ("credits.aleo", "transfer_private"),
+            inputs.iter(),
+            Some(records[1].clone()),
+            0,
+            None,
+            rng,
+        )?;
+        vm.check_transaction(&legacy, None, rng)?;
+        let program = Program::from_str(
+            r"
+program version_migration.aleo;
+constructor:
+    assert.eq true true;
+function identity:
+    input r0 as field.private;
+    output r0 as field.private;
+",
+        )?;
+        let legacy_deploy = vm.deploy(&private_key, &program, None, 0, None, rng)?;
+        vm.check_transaction(&legacy_deploy, None, rng)?;
+
+        test_helpers::advance_vm_to_height(&mut vm, private_key, height, rng);
+        assert!(vm.check_transaction(&legacy, None, rng).is_err());
+        assert!(vm.check_transaction(&legacy_deploy, None, rng).is_err());
+        let Transaction::Execute(_, _, execution, Some(fee)) = &legacy else {
+            panic!("Expected execution and fee");
+        };
+        let stacks = vm.process().get_stacks(execution.transitions(), true)?;
+        assert!(vm.check_execution_internal(execution, &stacks, false).is_err());
+        assert!(vm.check_fee_internal(fee, execution.to_execution_id()?, false).is_err());
+
+        let upgraded = vm.execute(
+            &private_key,
+            ("credits.aleo", "transfer_private"),
+            inputs.iter(),
+            Some(records[1].clone()),
+            0,
+            None,
+            rng,
+        )?;
+        vm.check_transaction(&upgraded, None, rng)?;
+
+        // Reuse the original deployment and certificates, replacing only its fee proof.
+        let Transaction::Deploy(_, _, owner, deployment, _) = &legacy_deploy else {
+            panic!("Expected deployment");
+        };
+        vm.check_deployment_internal(deployment, rng)?;
+        let authorization = vm.authorize_fee_public(
+            &private_key,
+            *legacy_deploy.base_fee_amount()?,
+            0,
+            deployment.to_deployment_id()?,
+            rng,
+        )?;
+        let fee = vm.execute_fee_authorization(authorization, None, rng)?;
+        let upgraded_deploy = Transaction::from_deployment(*owner, deployment.as_ref().clone(), fee)?;
+        vm.check_transaction(&upgraded_deploy, None, rng)?;
+        let block = test_helpers::sample_next_block(&vm, &private_key, &[upgraded, upgraded_deploy], rng)?;
+        assert_eq!(block.transactions().num_accepted(), 2);
+        vm.add_next_block(&block)?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "test")]
+    fn test_varuna_v3_snark_instructions_boundary() {
+        use console::{program::Register, types::U8};
+        use snarkvm_algorithms::snark::varuna::VarunaVersion;
+        use snarkvm_synthesizer_process::FinalizeRegisters;
+        use snarkvm_synthesizer_program::{FinalizeGlobalState, Operand, RegistersTrait, SnarkVerification};
+        use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS};
+        use std::sync::OnceLock;
+
+        fn check<const VARIANT: u8>() {
+            let rng = &mut TestRng::fixed(3105);
+            let assignment = snarkvm_synthesizer_snark::test_helpers::sample_assignment();
+            let srs = UniversalSRS::<CurrentNetwork>::load().expect("valid test fixture");
+            let (pk, vk) = srs.to_circuit_key("test", &assignment).expect("valid test fixture");
+            let bytes = |bytes: Vec<u8>| {
+                Plaintext::Array(
+                    bytes
+                        .into_iter()
+                        .map(|byte| Plaintext::from(Literal::U8(U8::<CurrentNetwork>::new(byte))))
+                        .collect(),
+                    OnceLock::new(),
+                )
+            };
+            let vk_bytes = vk.to_bytes_le().expect("valid test fixture");
+            let vk_len = vk_bytes.len();
+            let one = Field::<CurrentNetwork>::one();
+            let input = Plaintext::Array(vec![Plaintext::from(Literal::Field(one)); 2], OnceLock::new());
+            for version in [VarunaVersion::V1, VarunaVersion::V2, VarunaVersion::V3] {
+                let proof = if VARIANT == 0 {
+                    pk.prove("test", version, &assignment, rng).expect("valid test fixture")
+                } else {
+                    ProvingKey::prove_batch("test", version, &[(pk.clone(), vec![assignment.clone(); 2])], rng)
+                        .expect("valid test fixture")
+                };
+                let proof_bytes = proof.to_bytes_le().expect("valid test fixture");
+                let proof_len = proof_bytes.len();
+                let (opcode, key_type, input_type, key_value, input_value) = if VARIANT == 0 {
+                    (
+                        "snark.verify",
+                        format!("[u8; {vk_len}u32]"),
+                        "[field; 2u32]",
+                        bytes(vk_bytes.clone()),
+                        input.clone(),
+                    )
+                } else {
+                    (
+                        "snark.verify.batch",
+                        format!("[[u8; {vk_len}u32]; 1u32]"),
+                        "[[[field; 2u32]; 2u32]; 1u32]",
+                        Plaintext::Array(vec![bytes(vk_bytes.clone())], OnceLock::new()),
+                        Plaintext::Array(
+                            vec![Plaintext::Array(vec![input.clone(); 2], OnceLock::new())],
+                            OnceLock::new(),
+                        ),
+                    )
+                };
+                let program = Program::<CurrentNetwork>::from_str(&format!(
+                    r"
+program version_check.aleo;
+function verify:
+    input r0 as {key_type}.private;
+    input r1 as u8.private;
+    input r2 as {input_type}.private;
+    input r3 as [u8; {proof_len}u32].private;
+    async verify r0 r1 r2 r3 into r4;
+    output r4 as version_check.aleo/verify.future;
+finalize verify:
+    input r0 as {key_type}.public;
+    input r1 as u8.public;
+    input r2 as {input_type}.public;
+    input r3 as [u8; {proof_len}u32].public;
+    {opcode} r0 r1 r2 r3 into r4;
+"
+                ))
+                .expect("valid test fixture");
+                let process = Process::<CurrentNetwork>::load().expect("valid test fixture");
+                let stack = Stack::new(&process, &program).expect("valid test fixture");
+                let name = Identifier::from_str("verify").expect("valid test fixture");
+                let instruction =
+                    SnarkVerification::<CurrentNetwork, VARIANT>::parse(&format!("{opcode} r0 r1 r2 r3 into r4"))
+                        .expect("valid test fixture")
+                        .1;
+                let activation = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
+                for height in [activation - 1, activation, activation + 1] {
+                    let state = FinalizeGlobalState::from(u64::from(height), height, None, [0; 32], None, None);
+                    let mut registers = FinalizeRegisters::new(
+                        state,
+                        None,
+                        name,
+                        stack.get_finalize_types(&name).expect("valid test fixture"),
+                        None,
+                    );
+                    let values = [
+                        key_value.clone(),
+                        Plaintext::from(Literal::U8(U8::new(version as u8))),
+                        input_value.clone(),
+                        bytes(proof_bytes.clone()),
+                    ];
+                    for (index, value) in values.into_iter().enumerate() {
+                        registers
+                            .store(&stack, &Register::Locator(index as u64), Value::Plaintext(value))
+                            .expect("valid test fixture");
+                    }
+                    let result = instruction.finalize(&stack, None, &mut registers);
+                    let allowed = (height >= activation) == (version == VarunaVersion::V3);
+                    if allowed {
+                        result.expect("valid test fixture");
+                        assert_eq!(
+                            registers
+                                .load(&stack, &Operand::Register(Register::Locator(4)))
+                                .expect("valid test fixture"),
+                            Value::from_str("true").expect("valid test fixture")
+                        );
+                    } else {
+                        let error = result.unwrap_err().to_string();
+                        assert!(
+                            error.contains(if height < activation {
+                                "Invalid Varuna version"
+                            } else {
+                                "Varuna V3 is required"
+                            }),
+                            "{error}"
+                        );
+                    }
+                }
+            }
+        }
+
+        check::<0>();
+        check::<1>();
+    }
+
     fn create_cache_key_for_test<N: Network, C: ConsensusStorage<N>>(
         vm: &VM<N, C>,
         transaction: &Transaction<N>,
@@ -1017,7 +1301,9 @@ mod tests {
         for transition in transaction.transitions() {
             execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
         }
-        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks).unwrap()
+        let current_block_height = vm.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version).unwrap()
     }
 
     #[test]
@@ -1096,11 +1382,7 @@ mod tests {
                 Transaction::Execute(_, _, execution, _) => {
                     // Ensure the proof exists.
                     assert!(execution.proof().is_some());
-                    let mut execution_stacks = IndexMap::new();
-                    for transition in execution.transitions() {
-                        execution_stacks
-                            .insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
-                    }
+                    let execution_stacks = vm.process().get_stacks(execution.transitions(), false).unwrap();
                     // Verify the execution.
                     vm.check_execution_internal(&execution, &execution_stacks, false).unwrap();
                     // Ensure the partially_verified_transactions cache has the same size.

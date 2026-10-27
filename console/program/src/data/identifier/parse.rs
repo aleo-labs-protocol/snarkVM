@@ -23,7 +23,7 @@ impl<N: Network> Parser for Identifier<N> {
     /// The identifier must not start with a number.
     /// The identifier must not be a keyword.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Check for alphanumeric characters and underscores.
         map_res(recognize(pair(alpha1, many0(alt((alphanumeric1, tag("_")))))), |identifier: &str| {
             Self::from_str(identifier)

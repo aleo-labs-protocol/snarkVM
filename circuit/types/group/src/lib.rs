@@ -166,7 +166,7 @@ impl<E: Environment> Eject for Group<E> {
 impl<E: Environment> Parser for Group<E> {
     /// Parses a string into a group circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the group from the string.
         let (string, group) = console::Group::parse(string)?;
         // Parse the mode from the string.

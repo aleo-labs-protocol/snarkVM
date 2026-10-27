@@ -293,6 +293,50 @@ impl<N: Network> Deployment<N> {
         Ok(num_combined_constraints)
     }
 
+    /// Returns the total density of the function and record-translation circuits in this deployment.
+    pub fn combined_density(&self) -> u64 {
+        self.combined_function_density().saturating_add(self.combined_translation_density())
+    }
+
+    /// Returns the total density of the function circuits in this deployment.
+    pub fn combined_function_density(&self) -> u64 {
+        // Initialize the accumulator.
+        let mut combined_density = 0u64;
+
+        // Iterate over the function verifying keys.
+        for (_, (vk, _)) in self.function_verifying_keys() {
+            let info = vk.circuit_info;
+
+            let function_density = (info.num_non_zero_a as u64)
+                .saturating_add(info.num_non_zero_b as u64)
+                .saturating_add(info.num_non_zero_c as u64);
+
+            combined_density = combined_density.saturating_add(function_density);
+        }
+
+        combined_density
+    }
+
+    /// Returns the total density of the record-translation circuits in this deployment.
+    pub fn combined_translation_density(&self) -> u64 {
+        // Initialize the accumulator.
+        let mut combined_density = 0u64;
+
+        // Iterate over the translation verifying keys, if any.
+        if let Some(record_vks) = self.translation_verifying_keys() {
+            for (_, (vk, _)) in record_vks {
+                let info = vk.circuit_info;
+                let circuit_density = (info.num_non_zero_a as u64)
+                    .saturating_add(info.num_non_zero_b as u64)
+                    .saturating_add(info.num_non_zero_c as u64);
+
+                combined_density = combined_density.saturating_add(circuit_density);
+            }
+        }
+
+        combined_density
+    }
+
     /// Returns the deployment ID.
     pub fn to_deployment_id(&self) -> Result<Field<N>> {
         Ok(*Transaction::deployment_tree(self)?.root())

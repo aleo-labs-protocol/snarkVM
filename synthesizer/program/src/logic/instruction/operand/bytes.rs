@@ -64,6 +64,21 @@ impl<N: Network> FromBytes for Operand<N> {
                     false => Ok(Self::AleoGeneratorPowers(None)),
                 }
             }
+            13 => {
+                // Read the program ID.
+                let program_id = match u8::read_le(&mut reader)? {
+                    0 => None,
+                    1 => Some(ProgramID::read_le(&mut reader)?),
+                    variant => {
+                        return Err(error(format!(
+                            "Invalid program ID variant '{variant}' for the component checksum"
+                        )));
+                    }
+                };
+                // Read the component name.
+                let name = Identifier::read_le(&mut reader)?;
+                Ok(Self::ComponentChecksum(program_id, name))
+            }
             variant => Err(error(format!("Failed to deserialize operand variant {variant}"))),
         }
     }
@@ -133,6 +148,19 @@ impl<N: Network> ToBytes for Operand<N> {
                     }
                     None => false.write_le(&mut writer),
                 }
+            }
+            Self::ComponentChecksum(program_id, name) => {
+                13u8.write_le(&mut writer)?;
+                // Write the program ID.
+                match program_id {
+                    None => 0u8.write_le(&mut writer)?,
+                    Some(program_id) => {
+                        1u8.write_le(&mut writer)?;
+                        program_id.write_le(&mut writer)?;
+                    }
+                }
+                // Write the component name.
+                name.write_le(&mut writer)
             }
         }
     }

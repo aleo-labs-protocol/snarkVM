@@ -27,7 +27,7 @@ impl<E: Environment, const TYPE: u8, const VARIANT: usize> Hash for Keccak<E, TY
         // and the bit rate is the width (1600 in our case) minus the capacity.
         let bitrate = PERMUTATION_WIDTH - 2 * VARIANT;
         debug_assert!(bitrate < PERMUTATION_WIDTH, "The bitrate must be less than the permutation width");
-        debug_assert!(bitrate % 8 == 0, "The bitrate must be a multiple of 8");
+        debug_assert!(bitrate.is_multiple_of(8), "The bitrate must be a multiple of 8");
 
         // Ensure the input is not empty.
         if input.is_empty() {

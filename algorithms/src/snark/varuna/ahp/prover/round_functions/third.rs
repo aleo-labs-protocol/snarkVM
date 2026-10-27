@@ -35,7 +35,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::ExecutionPool;
+use snarkvm_utilities::{ExecutionPool, defer};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -75,13 +75,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         varuna_version: VarunaVersion,
     ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
+        defer! { end_timer!(round_time); }
 
         let zk_bound = Self::zk_bound();
 
         let max_variable_domain = state.max_variable_domain;
 
         // Choose challenges based on the proof system version.
-        let (alpha, third_round_batch_combiners, eta_b, eta_c) = select_third_round_challenges(
+        let (alpha, third_round_batch_combiners, eta_a, eta_b, eta_c) = select_third_round_challenges(
             verifier_first_message,
             verifier_second_message,
             verifier_prepare_third_message.as_ref(),
@@ -98,6 +99,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             assignments,
             matrix_transposes,
             &alpha,
+            &eta_a,
             &eta_b,
             &eta_c,
             varuna_version,
@@ -109,14 +111,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             sumcheck_lhs += &x_g_1_sum;
             debug_assert!(
                 sumcheck_lhs.evaluate_over_domain_by_ref(max_variable_domain).evaluations.into_iter().sum::<F>()
-                    == msg.sum(&third_round_batch_combiners, eta_b, eta_c)
+                    == msg.sum(&third_round_batch_combiners, eta_a, eta_b, eta_c)
             );
         }
 
         // Send the assigned matrix sums to the verifier only in VarunaVersion::V1.
         let msg = match varuna_version {
             VarunaVersion::V1 => Some(msg),
-            VarunaVersion::V2 => None,
+            VarunaVersion::V2 | VarunaVersion::V3 => None,
         };
 
         let g_1 = DensePolynomial::from_coefficients_slice(&x_g_1_sum.coeffs[1..]);
@@ -132,8 +134,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         };
         assert!(oracles.matches_info(&Self::third_round_polynomial_info(state.max_variable_domain.size())));
 
-        end_timer!(round_time);
-
         Ok((msg, oracles, state))
     }
 
@@ -144,6 +144,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>,
         matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
         alpha: &F,
+        eta_a: &F,
         eta_b: &F,
         eta_c: &F,
         varuna_version: VarunaVersion,
@@ -152,7 +153,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let total_instances = num_instances.iter().sum::<usize>();
         let max_variable_domain = &state.max_variable_domain;
         let matrix_labels = ["a", "b", "c"];
-        let matrix_combiners = [F::one(), *eta_b, *eta_c];
+        let matrix_combiners = [*eta_a, *eta_b, *eta_c];
 
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
@@ -211,15 +212,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let combiner = circuit_combiner * instance_combiner * matrix_combiner;
                     job_pool.add_job(move || match varuna_version {
                         VarunaVersion::V1 => {
+                            let l_at_alpha = constraint_domain.evaluate_all_lagrange_coefficients(*alpha);
                             let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
                                 label,
-                                constraint_domain,
+                                &l_at_alpha,
                                 variable_domain,
                                 fft_precomputation,
                                 ifft_precomputation,
                                 assignment,
                                 matrix_transpose,
-                                *alpha,
                             )?;
                             Self::calculate_lineval_sumcheck_instance_witness_polys(
                                 label,
@@ -229,13 +230,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 Some(z_m_at_alpha),
                             )
                         }
-                        VarunaVersion::V2 => Self::calculate_lineval_sumcheck_instance_witness_polys(
-                            label,
-                            variable_domain,
-                            max_variable_domain,
-                            combiner,
-                            z_m_at_alpha,
-                        ),
+                        VarunaVersion::V2 | VarunaVersion::V3 => {
+                            Self::calculate_lineval_sumcheck_instance_witness_polys(
+                                label,
+                                variable_domain,
+                                max_variable_domain,
+                                combiner,
+                                z_m_at_alpha,
+                            )
+                        }
                     });
                 }
             }
@@ -316,6 +319,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>> {
         let transpose_time = start_timer!(|| "Transpose of matrices");
+        defer! { end_timer!(transpose_time); }
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len() * 3);
         state.circuit_specific_states.iter().for_each(|(circuit, circuit_specific_state)| {
             let variable_domain = &circuit_specific_state.variable_domain;
@@ -336,20 +340,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             matrix_transposes_i.insert("c".into(), matrix_c?);
             matrix_transposes.insert(id_a, matrix_transposes_i);
         }
-        end_timer!(transpose_time);
         Ok(matrix_transposes)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(in crate::snark::varuna) fn calculate_lineval_sumcheck_instance_witness(
         _matrix_label: &str,
-        constraint_domain: &EvaluationDomain<F>,
+        l_at_alpha: &[F],
         variable_domain: &EvaluationDomain<F>,
         fft_precomputation: &FFTPrecomputation<F>,
         ifft_precomputation: &IFFTPrecomputation<F>,
         assignment: &DensePolynomial<F>,
         matrix_transpose: &Matrix<F>,
-        alpha: F,
     ) -> Result<DensePolynomial<F>> {
         // Let C = variable_domain
         // Let R = constraint_domain
@@ -361,7 +363,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Instead of calculating L^C_col(κ)(c), we add val(k)*L^R_row(α) where we know
         // L^C_col(k)(X) will be 1
         let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals parallel for {_matrix_label}"));
-        let l_at_alpha = constraint_domain.evaluate_all_lagrange_coefficients(alpha);
         let m_at_alpha_evals: Vec<_> = matrix_transpose
             .iter()
             .map(|col| col.iter().map(|(val, row_index)| *val * l_at_alpha[*row_index]).sum::<F>())

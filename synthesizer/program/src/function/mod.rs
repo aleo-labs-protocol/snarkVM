@@ -26,6 +26,7 @@ use crate::{Instruction, finalize::FinalizeCore};
 use console::{
     network::prelude::*,
     program::{Identifier, Register, ValueType},
+    types::U8,
 };
 
 use indexmap::IndexSet;
@@ -120,10 +121,10 @@ impl<N: Network> FunctionCore<N> {
                 return Ok(true);
             }
         }
-        if let Some(finalize) = &self.finalize_logic {
-            if finalize.contains_identifier_type()? {
-                return Ok(true);
-            }
+        if let Some(finalize) = &self.finalize_logic
+            && finalize.contains_identifier_type()?
+        {
+            return Ok(true);
         }
         Ok(false)
     }
@@ -237,6 +238,14 @@ impl<N: Network> FunctionCore<N> {
         // Insert the finalize scope.
         self.finalize_logic = Some(finalize);
         Ok(())
+    }
+
+    /// Returns the checksum of the function.
+    ///
+    /// The checksum is a 32-byte hash of the function's source code in string format.
+    /// This ensures a strict definition of function equivalence, useful for program upgradability.
+    pub fn to_checksum(&self) -> [U8<N>; 32] {
+        crate::to_checksum::source_code_checksum(&self.to_string())
     }
 }
 

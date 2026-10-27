@@ -42,6 +42,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use smallvec::SmallVec;
 use snarkvm_fields::PrimeField;
+use snarkvm_utilities::defer;
 use std::collections::BTreeMap;
 
 impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
@@ -92,31 +93,42 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
 
         // Compute the domains and batch sizes.
         for (batch_size, (circuit_id, circuit_info)) in batch_sizes.values().zip(circuit_infos) {
-            let constraint_domain_time = start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
-            let constraint_domain =
-                EvaluationDomain::new(circuit_info.num_constraints).ok_or(AHPError::PolyTooLarge)?;
-            end_timer!(constraint_domain_time);
+            let constraint_domain = {
+                let constraint_domain_time =
+                    start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
+                defer! { end_timer!(constraint_domain_time); }
+                EvaluationDomain::new(circuit_info.num_constraints).ok_or(AHPError::PolyTooLarge)?
+            };
 
-            let variable_domain_time = start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
-            let variable_domain =
-                EvaluationDomain::new(circuit_info.num_public_and_private_variables).ok_or(AHPError::PolyTooLarge)?;
-            end_timer!(variable_domain_time);
+            let variable_domain = {
+                let variable_domain_time = start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
+                defer! { end_timer!(variable_domain_time); }
+                EvaluationDomain::new(circuit_info.num_public_and_private_variables).ok_or(AHPError::PolyTooLarge)?
+            };
 
-            let non_zero_a_time = start_timer!(|| format!("Constructing non-zero-a domain for {circuit_id}"));
-            let non_zero_a_domain = EvaluationDomain::new(circuit_info.num_non_zero_a).ok_or(AHPError::PolyTooLarge)?;
-            end_timer!(non_zero_a_time);
+            let non_zero_a_domain = {
+                let non_zero_a_time = start_timer!(|| format!("Constructing non-zero-a domain for {circuit_id}"));
+                defer! { end_timer!(non_zero_a_time); }
+                EvaluationDomain::new(circuit_info.num_non_zero_a).ok_or(AHPError::PolyTooLarge)?
+            };
 
-            let non_zero_b_time = start_timer!(|| format!("Constructing non-zero-b domain {circuit_id}"));
-            let non_zero_b_domain = EvaluationDomain::new(circuit_info.num_non_zero_b).ok_or(AHPError::PolyTooLarge)?;
-            end_timer!(non_zero_b_time);
+            let non_zero_b_domain = {
+                let non_zero_b_time = start_timer!(|| format!("Constructing non-zero-b domain {circuit_id}"));
+                defer! { end_timer!(non_zero_b_time); }
+                EvaluationDomain::new(circuit_info.num_non_zero_b).ok_or(AHPError::PolyTooLarge)?
+            };
 
-            let non_zero_c_time = start_timer!(|| format!("Constructing non-zero-c domain for {circuit_id}"));
-            let non_zero_c_domain = EvaluationDomain::new(circuit_info.num_non_zero_c).ok_or(AHPError::PolyTooLarge)?;
-            end_timer!(non_zero_c_time);
+            let non_zero_c_domain = {
+                let non_zero_c_time = start_timer!(|| format!("Constructing non-zero-c domain for {circuit_id}"));
+                defer! { end_timer!(non_zero_c_time); }
+                EvaluationDomain::new(circuit_info.num_non_zero_c).ok_or(AHPError::PolyTooLarge)?
+            };
 
-            let input_domain_time = start_timer!(|| format!("Constructing input domain {circuit_id}"));
-            let input_domain = EvaluationDomain::new(circuit_info.num_public_inputs).ok_or(AHPError::PolyTooLarge)?;
-            end_timer!(input_domain_time);
+            let input_domain = {
+                let input_domain_time = start_timer!(|| format!("Constructing input domain {circuit_id}"));
+                defer! { end_timer!(input_domain_time); }
+                EvaluationDomain::new(circuit_info.num_public_inputs).ok_or(AHPError::PolyTooLarge)?
+            };
 
             let circuit_specific_state = CircuitSpecificState {
                 input_domain,
@@ -164,16 +176,18 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
                 let [alpha, eta_b, eta_c]: [_; 3] = first.try_into().map_err(anyhow::Error::msg)?;
                 (alpha, Some(eta_b), Some(eta_c))
             }
-            VarunaVersion::V2 => {
+            VarunaVersion::V2 | VarunaVersion::V3 => {
                 let elems = fs_rng.squeeze_nonnative_field_elements(1);
                 let alpha = elems[0];
                 (alpha, None, None)
             }
         };
 
-        let check_vanish_poly_time = start_timer!(|| "Evaluating vanishing polynomial");
-        ensure!(!state.max_constraint_domain.evaluate_vanishing_polynomial(alpha).is_zero());
-        end_timer!(check_vanish_poly_time);
+        {
+            let check_vanish_poly_time = start_timer!(|| "Evaluating vanishing polynomial");
+            defer! { end_timer!(check_vanish_poly_time); }
+            ensure!(!state.max_constraint_domain.evaluate_vanishing_polynomial(alpha).is_zero());
+        }
 
         let message = SecondMessage { alpha, eta_b, eta_c };
         state.second_round_message = Some(message);
@@ -187,16 +201,28 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         batch_sizes: &BTreeMap<CircuitId, usize>,
         circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
         fs_rng: &mut R,
+        varuna_version: VarunaVersion,
     ) -> Result<(PrepareThirdMessage<TargetField>, State<TargetField, SM>)> {
         // Sample the batch combiners for the third round.
         let third_round_batch_combiners = Self::sample_batch_combiners(batch_sizes, circuit_infos, fs_rng)?;
 
-        // Sample eta_b and eta_c.
-        let elems = fs_rng.squeeze_nonnative_field_elements(2);
-        let (first, _) = elems.split_at(2);
-        let [eta_b, eta_c]: [_; 2] = first.try_into().map_err(anyhow::Error::msg)?;
+        // The matrix-sum claims and mask commitment precede these challenges in the
+        // transcript.
+        let (eta_a, eta_b, eta_c) = match varuna_version {
+            VarunaVersion::V1 => anyhow::bail!("V1 has no preparation round"),
+            VarunaVersion::V2 => {
+                let elems = fs_rng.squeeze_nonnative_field_elements(2);
+                let [eta_b, eta_c]: [_; 2] = elems.as_slice().try_into().map_err(anyhow::Error::msg)?;
+                (TargetField::one(), eta_b, eta_c)
+            }
+            VarunaVersion::V3 => {
+                let elems = fs_rng.squeeze_nonnative_field_elements(3);
+                let [eta_a, eta_b, eta_c]: [_; 3] = elems.as_slice().try_into().map_err(anyhow::Error::msg)?;
+                (eta_a, eta_b, eta_c)
+            }
+        };
 
-        let message = PrepareThirdMessage { third_round_batch_combiners, eta_b, eta_c };
+        let message = PrepareThirdMessage { third_round_batch_combiners, eta_a, eta_b, eta_c };
         state.prepare_third_round_message = Some(message.clone());
 
         Ok((message, state))

@@ -211,11 +211,11 @@ fn test_cast_simple() {
     // Deploy the programs.
     println!("Deploying program garden_center.aleo...");
     let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, &mut rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_a], &mut rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_a], &mut rng);
 
     println!("Deploying program hatchery.aleo...");
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, &mut rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_b], &mut rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_b], &mut rng);
 
     let fish_record_data = [("9183u32", "3u16"), ("221u32", "2u16")];
 
@@ -242,14 +242,7 @@ fn test_cast_simple() {
                 _ => panic!("Expected output record is not a record"),
             };
 
-            add_and_test_with_costs(
-                &vm,
-                &caller_private_key,
-                &caller_address,
-                Some(&[&inputs]),
-                &[transaction_import],
-                &mut rng,
-            );
+            add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction_import], &mut rng);
 
             record
         })
@@ -279,14 +272,7 @@ fn test_cast_simple() {
         _ => panic!("Expected output plaintext is not a plaintext"),
     }
 
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_get_age]),
-        &[transaction_get_age],
-        &mut rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_get_age]), &[transaction_get_age], &mut rng);
 
     /*********** Case 2: Incorrect cast usage (double consumption) ***********/
     println!("Calling hatchery.aleo/get_age_in_years_stat_caller...");
@@ -328,14 +314,7 @@ fn test_cast_simple() {
         _ => panic!("Expected output record is not a record"),
     };
 
-    add_and_test_with_costs(
-        &vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&inputs_sow]),
-        &[transaction_sow],
-        &mut rng,
-    );
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs_sow]), &[transaction_sow], &mut rng);
 
     println!("Calling hatchery.aleo/get_plant_age_by_casting...");
     let inputs_get_plant_age = [Value::<CurrentNetwork>::Record(plant_record)];
@@ -362,7 +341,6 @@ fn test_cast_simple() {
     add_and_test_with_costs(
         &vm,
         &caller_private_key,
-        &caller_address,
         Some(&[&inputs_get_plant_age]),
         &[transaction_get_plant_age],
         &mut rng,

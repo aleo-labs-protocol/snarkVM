@@ -198,6 +198,8 @@ impl<N: Network> Block<N> {
                 ensure!(signature.verify(&address, &[block_hash]), "Invalid signature for block {}", header.height());
             }
             Authority::Quorum(subdag) => {
+                // Ensure the certificates follow the canonical order for this consensus version.
+                subdag.check_certificate_order(header.height())?;
                 // Ensure the transmission IDs from the subdag correspond to the block.
                 Self::check_subdag_transmissions(
                     subdag,

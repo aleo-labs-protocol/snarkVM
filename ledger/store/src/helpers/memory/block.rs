@@ -221,6 +221,12 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
         Err("Unavailable in memory-only mode".to_owned())
     }
 
+    /// Catches up with the primary instance; only applicable to secondary instances.
+    #[cfg(feature = "rocks")]
+    fn catch_up_with_primary(&self) -> Result<()> {
+        bail!("Unavailable in memory-only mode")
+    }
+
     /// Creates the block tree based on the contents of the storage.
     fn create_block_tree(&self) -> Result<BlockTree<N>> {
         // Prepare an iterator over the block heights and prepare the leaves of the block tree.

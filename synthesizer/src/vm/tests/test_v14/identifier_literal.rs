@@ -766,8 +766,8 @@ constructor:
     vm.add_next_block(&block).unwrap();
 }
 
-/// Verifies that ternary operations on identifier literals are rejected before `ConsensusVersion::V16`
-/// in function scope. Identifier ternary is a V16 feature, so at V14 the well-formed deployment is
+/// Verifies that ternary operations on identifier literals are rejected before `ConsensusVersion::V23`
+/// in function scope. Identifier ternary is a V23 feature, so at V14 the well-formed deployment is
 /// aborted at block verification rather than rejected at `deploy` time.
 #[test]
 fn test_identifier_literal_ternary_rejected_in_function() {
@@ -798,19 +798,19 @@ constructor:
     .unwrap();
 
     // The program is well-formed, so `deploy` succeeds; the deployment is aborted at block
-    // verification because `ternary` does not support `identifier` operands before V16.
+    // verification because `ternary` does not support `identifier` operands before V23.
     let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
     let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
     assert_eq!(
         block.transactions().num_accepted(),
         0,
-        "identifier ternary deployment before V16 should not be accepted in function scope"
+        "identifier ternary deployment before V23 should not be accepted in function scope"
     );
-    assert_eq!(block.aborted_transaction_ids().len(), 1, "identifier ternary deployment before V16 should be aborted");
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "identifier ternary deployment before V23 should be aborted");
 }
 
-/// Verifies that ternary operations on identifier literals are rejected before `ConsensusVersion::V16`
-/// in finalize scope. Identifier ternary is a V16 feature, so at V14 the well-formed deployment is
+/// Verifies that ternary operations on identifier literals are rejected before `ConsensusVersion::V23`
+/// in finalize scope. Identifier ternary is a V23 feature, so at V14 the well-formed deployment is
 /// aborted at block verification rather than rejected at `deploy` time.
 #[test]
 fn test_identifier_literal_ternary_rejected_in_finalize() {
@@ -847,15 +847,15 @@ constructor:
     .unwrap();
 
     // The program is well-formed, so `deploy` succeeds; the deployment is aborted at block
-    // verification because `ternary` does not support `identifier` operands before V16.
+    // verification because `ternary` does not support `identifier` operands before V23.
     let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
     let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
     assert_eq!(
         block.transactions().num_accepted(),
         0,
-        "identifier ternary deployment before V16 should not be accepted in finalize scope"
+        "identifier ternary deployment before V23 should not be accepted in finalize scope"
     );
-    assert_eq!(block.aborted_transaction_ids().len(), 1, "identifier ternary deployment before V16 should be aborted");
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "identifier ternary deployment before V23 should be aborted");
 }
 
 /// Verifies that `get.dynamic` and `get.or_use.dynamic` accept identifier literals as program

@@ -20,7 +20,7 @@ static ADDRESS_PREFIX: &str = "aleo";
 impl<E: Environment> Parser for Address<E> {
     /// Parses a string into an address.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo address.
         let parse_address = recognize(pair(
             tag("aleo1"),

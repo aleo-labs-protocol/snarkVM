@@ -140,6 +140,12 @@ impl<N: Network> RegisterTypes<N> {
                         "Struct member '{struct_name}.{member_name}' cannot be from a program owner in a non-finalize scope"
                     )
                 }
+                // If the operand is a component checksum type, throw an error.
+                Operand::ComponentChecksum(..) => {
+                    bail!(
+                        "Struct member '{struct_name}.{member_name}' cannot be from a component checksum in a non-finalize scope"
+                    )
+                }
             }
         }
         Ok(())
@@ -245,6 +251,10 @@ impl<N: Network> RegisterTypes<N> {
                 Operand::ProgramOwner(_) => {
                     bail!("Array element cannot be from a program owner in a non-finalize scope")
                 }
+                // If the operand is a component checksum type, throw an error.
+                Operand::ComponentChecksum(..) => {
+                    bail!("Array element cannot be from a component checksum in a non-finalize scope")
+                }
             }
         }
         Ok(())
@@ -322,6 +332,9 @@ impl<N: Network> RegisterTypes<N> {
             }
             Operand::ProgramOwner(_) => {
                 bail!("Forbidden operation: Cannot cast a program owner as a record owner")
+            }
+            Operand::ComponentChecksum(..) => {
+                bail!("Forbidden operation: Cannot cast a component checksum as a record owner")
             }
         }
 
@@ -431,6 +444,12 @@ impl<N: Network> RegisterTypes<N> {
                         Operand::ProgramOwner(_) => {
                             bail!(
                                 "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a program owner in the operand '{operand}'."
+                            )
+                        }
+                        // Fail if the operand is a component checksum.
+                        Operand::ComponentChecksum(..) => {
+                            bail!(
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a component checksum in the operand '{operand}'."
                             )
                         }
                     }

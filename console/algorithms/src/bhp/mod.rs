@@ -24,7 +24,7 @@ mod hash_uncompressed;
 use snarkvm_console_types::prelude::*;
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 const BHP_CHUNK_SIZE: usize = 3;
 
@@ -51,13 +51,27 @@ pub type BHP1024<E> = BHP<E, 8, 54>; // Supports inputs up to 1044 bits (4 u8 + 
 /// ```text
 /// DIGEST_N+1 = BHP([ DIGEST_N[0..DATA_BITS] || INPUT[(N+1)*BLOCK_SIZE..(N+2)*BLOCK_SIZE] ]);
 /// ```
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(bound = "E: Serialize + DeserializeOwned")]
 pub struct BHP<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> {
     /// The domain separator for the BHP hash function.
     domain: Vec<bool>,
     /// The internal BHP hasher used to process one iteration.
     hasher: BHPHasher<E, NUM_WINDOWS, WINDOW_SIZE>,
+    /// The Merkle empty hash of this instance, once something has asked for it.
+    ///
+    /// Not serialized, so a deserialized hasher recomputes it from its own domain and bases.
+    #[serde(skip)]
+    empty_hash: OnceLock<Field<E>>,
+}
+
+impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> PartialEq for BHP<E, NUM_WINDOWS, WINDOW_SIZE> {
+    /// Ignores the cached empty hash, which is derived from the domain and bases.
+    fn eq(&self, other: &Self) -> bool {
+        // Destructured so that a new field must be considered here.
+        let Self { domain, hasher, empty_hash: _ } = self;
+        *domain == other.domain && *hasher == other.hasher
+    }
 }
 
 impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHP<E, NUM_WINDOWS, WINDOW_SIZE> {
@@ -79,12 +93,30 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHP<E, NUM_WI
         // (For advanced users): This optimizes the initial costs during hashing.
         domain.reverse();
 
-        Ok(Self { domain, hasher })
+        Ok(Self { domain, hasher, empty_hash: OnceLock::new() })
     }
 
     /// Returns the domain separator for the BHP hash function.
     pub fn domain(&self) -> &[bool] {
         &self.domain
+    }
+
+    /// Returns the Merkle empty hash of this instance, computing it on first use.
+    ///
+    /// This is `PathHash::hash_children(0, 0)` from `snarkvm-console-collections`, and
+    /// `test_cached_empty_hash_matches_the_computed_one` checks that the two agree. The
+    /// hash depends on the domain and bases, so it is cached per instance, not per type.
+    pub fn merkle_empty_hash(&self) -> Result<Field<E>> {
+        if let Some(empty_hash) = self.empty_hash.get() {
+            return Ok(*empty_hash);
+        }
+        let mut input = Vec::with_capacity(1 + Field::<E>::size_in_bits() * 2);
+        // Prepend the nodes with a `true` bit.
+        input.push(true);
+        Field::<E>::zero().write_bits_le(&mut input);
+        Field::<E>::zero().write_bits_le(&mut input);
+        let empty_hash = Hash::hash(self, &input)?;
+        Ok(*self.empty_hash.get_or_init(|| empty_hash))
     }
 
     /// Returns the bases.

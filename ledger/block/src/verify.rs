@@ -170,6 +170,8 @@ impl<N: Network> Block<N> {
             Authority::Beacon(..) => previous_round.saturating_add(1),
             // Quorum blocks use the subdag anchor round.
             Authority::Quorum(subdag) => {
+                // Ensure the certificates follow the canonical order for this consensus version.
+                subdag.check_certificate_order(expected_height)?;
                 // Ensure the subdag anchor round is after the previous block round.
                 ensure!(
                     subdag.anchor_round() > previous_round,

@@ -13,19 +13,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests on `ternary` instruction accepting array, struct, and identifier operands from V16 onward.
-mod ternary_plaintext;
+// Tests for quorum block compute spend limits.
+mod block_spend_limit;
+
+// Tests for increased program size limits.
+mod program_size;
+
+// Tests for the `<name>/checksum` component checksum operand.
+mod component_checksum;
+
+// Tests an example flow with sample_authorization_extended and authorize_requests.
+pub(crate) mod construct_authorization;
 
 use super::*;
 
-use crate::vm::test_helpers::{sample_vm_at_height, *};
+use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
 
-use console::{
-    network::ConsensusVersion,
-    program::{Identifier, Value},
-};
-
-use snarkvm_synthesizer_program::Program;
+use snarkvm_ledger_block::{Solutions, Transaction};
+use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
 use snarkvm_utilities::TestRng;
-
-use super::test_v14::add_and_test_with_costs;

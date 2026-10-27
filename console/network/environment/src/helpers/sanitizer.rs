@@ -29,22 +29,22 @@ pub struct Sanitizer;
 
 impl Sanitizer {
     /// Removes all leading whitespaces and comments from the given input, returning the sanitized input.
-    pub fn parse(string: &str) -> ParserResult<&str> {
+    pub fn parse(string: &str) -> ParserResult<'_, &str> {
         preceded(Self::parse_whitespaces, Self::parse_comments)(string)
     }
 
     /// Removes leading whitespaces from the given input.
-    pub fn parse_whitespaces(string: &str) -> ParserResult<&str> {
+    pub fn parse_whitespaces(string: &str) -> ParserResult<'_, &str> {
         recognize(Self::many0_(alt((multispace1, tag("\\\n")))))(string)
     }
 
     /// Removes multiple leading comments from the given input.
-    pub fn parse_comments(string: &str) -> ParserResult<&str> {
+    pub fn parse_comments(string: &str) -> ParserResult<'_, &str> {
         recognize(Self::many0_(terminated(Self::parse_comment, Self::parse_whitespaces)))(string)
     }
 
     /// Removes the first leading comment from the given input.
-    pub fn parse_comment(string: &str) -> ParserResult<&str> {
+    pub fn parse_comment(string: &str) -> ParserResult<'_, &str> {
         preceded(
             char('/'),
             alt((preceded(char('/'), cut(Self::str_till_eol)), preceded(char('*'), cut(Self::str_till_star_slash)))),
@@ -63,7 +63,7 @@ impl Sanitizer {
     /// However, simple experiments show that it matches a Unicode character,
     /// e.g. attempting to parse `"\u{4141}"` yields one CJK character and exhausts the input,
     /// as opposed to returning `A` and leaving another `A` in the input.
-    pub fn parse_safe_char(string: &str) -> ParserResult<char> {
+    pub fn parse_safe_char(string: &str) -> ParserResult<'_, char> {
         fn is_safe(ch: &char) -> bool {
             is_char_supported(*ch)
         }
@@ -75,7 +75,7 @@ impl Sanitizer {
     /// End-of-input parser.
     ///
     /// Yields `()` if the parser is at the end of the input; an error otherwise.
-    fn eoi(string: &str) -> ParserResult<()> {
+    fn eoi(string: &str) -> ParserResult<'_, ()> {
         match string.is_empty() {
             true => Ok((string, ())),
             false => {
@@ -87,7 +87,7 @@ impl Sanitizer {
     /// A parser that accepts:
     /// - A newline, either `CR LF` or just `LF`.
     /// - The end of input.
-    fn eol(string: &str) -> ParserResult<()> {
+    fn eol(string: &str) -> ParserResult<'_, ()> {
         alt((
             Self::eoi, // this one goes first because it’s very cheap
             value((), line_ending),
@@ -119,7 +119,7 @@ impl Sanitizer {
     /// Return the body of the comment, i.e. what is between `//` and the end of line.
     /// If the line ends with `CR LF`, the `CR` is included in the returned body.
     /// The `LF`, if present, is never included in the returned body.
-    fn str_till_eol(string: &str) -> ParserResult<&str> {
+    fn str_till_eol(string: &str) -> ParserResult<'_, &str> {
         // A heuristic approach is applied here in order to avoid costly parsing operations in the
         // most common scenarios: non-parsing methods are used to verify if the string has multiple
         // lines and if there are any unsafe characters.
@@ -165,7 +165,7 @@ impl Sanitizer {
     /// This is used to parse the body of a block comment, after the opening `/*`.
     ///
     /// Return the body of the comment, i.e. what is between `/*` and `*/`.
-    fn str_till_star_slash(string: &str) -> ParserResult<&str> {
+    fn str_till_star_slash(string: &str) -> ParserResult<'_, &str> {
         map(recognize(Self::till(value((), Sanitizer::parse_safe_char), tag("*/"))), |i| {
             &i[0..i.len() - 2] // subtract 2 to discard the closing `*/`
         })(string)

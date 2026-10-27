@@ -62,12 +62,14 @@ impl<N: Network> FinalizeRegisters<N> {
         finalize_types: FinalizeTypes<N>,
         nonce: Option<u64>,
     ) -> Self {
+        // Bound the initial allocation for scopes with large, conditionally executed bodies.
+        let capacity = finalize_types.num_registers().min(256);
         Self {
             state,
             transition_id,
             finalize_types,
             function_name,
-            registers: IndexMap::new(),
+            registers: IndexMap::with_capacity(capacity),
             nonce,
             last_register: None,
         }

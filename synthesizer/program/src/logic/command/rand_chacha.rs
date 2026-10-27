@@ -164,9 +164,9 @@ impl<N: Network> RandChaCha<N> {
 impl<N: Network> Parser for RandChaCha<N> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses an operand from the string.
-        fn parse_operand<N: Network>(string: &str) -> ParserResult<Operand<N>> {
+        fn parse_operand<N: Network>(string: &str) -> ParserResult<'_, Operand<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the operand from the string.

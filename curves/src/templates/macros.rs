@@ -126,10 +126,26 @@ macro_rules! impl_sw_curve_serializer {
                 let point = if let Compress::Yes = compress {
                     let (x, flags) = P::BaseField::deserialize_with_flags::<_, SWFlags>(&mut reader)?;
                     if flags.is_infinity() {
+                        // The x-coordinate must be zero when the infinity flag is
+                        // set, or the encoding is non-canonical.
+                        if !x.is_zero() {
+                            return Err(snarkvm_utilities::serialize::SerializationError::InvalidData);
+                        }
                         Self::zero()
                     } else {
-                        Affine::<P>::from_x_coordinate(x, flags.is_positive().unwrap())
-                            .ok_or(snarkvm_utilities::serialize::SerializationError::InvalidData)?
+                        // The infinity flag is clear in this branch, so the sign
+                        // is present and this cannot panic.
+                        let is_positive = flags.is_positive().unwrap();
+                        let point = Affine::<P>::from_x_coordinate(x, is_positive)
+                            .ok_or(snarkvm_utilities::serialize::SerializationError::InvalidData)?;
+                        // y = 0 is its own negation, so both sign flags select it
+                        // and from_x_coordinate cannot tell them apart. The
+                        // serializer writes the negative-y flag for such a point,
+                        // so the positive-y spelling is a second encoding of it.
+                        if point.y.is_zero() && is_positive {
+                            return Err(snarkvm_utilities::serialize::SerializationError::InvalidData);
+                        }
+                        point
                     }
                 } else {
                     let x = P::BaseField::deserialize_uncompressed(&mut reader)?;
@@ -243,11 +259,12 @@ macro_rules! impl_edwards_curve_serializer {
                 let point = if let Compress::Yes = compress {
                     let (x, flags): (P::BaseField, EdwardsFlags) = P::BaseField::deserialize_with_flags(&mut reader)?;
 
-                    if x == P::BaseField::zero() {
-                        Self::zero()
-                    } else {
-                        Affine::<P>::from_x_coordinate(x, flags.is_positive()).ok_or(SerializationError::InvalidData)?
-                    }
+                    // The flag names the sign of y, and it is consulted at every
+                    // x. At x = 0 it is the only thing separating the identity
+                    // (0, 1) from the order-two point (0, -1); reading the
+                    // identity out of x = 0 without looking at the flag would
+                    // give the identity a second encoding.
+                    Affine::<P>::from_x_coordinate(x, flags.is_positive()).ok_or(SerializationError::InvalidData)?
                 } else {
                     let x = P::BaseField::deserialize_uncompressed(&mut reader)?;
                     let y = P::BaseField::deserialize_uncompressed(&mut reader)?;

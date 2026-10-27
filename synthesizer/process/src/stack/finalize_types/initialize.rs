@@ -67,7 +67,13 @@ impl<N: Network> FinalizeTypes<N> {
         }
 
         // Type-check the outputs: each output operand must resolve and match the declared type.
+        // Output operands do not flow through `check_command`, so the component checksum check is repeated here.
+        // Only views have outputs; finalize and constructor scopes have none.
         for output in view.outputs() {
+            // If the operand is `Operand::ComponentChecksum`, ensure the referenced component exists.
+            if let Operand::ComponentChecksum(program_id, name) = output.operand() {
+                Self::check_component_checksum(stack, program_id, name)?;
+            }
             let actual = finalize_types.get_type_from_operand(stack, output.operand())?;
             if &actual != output.finalize_type() {
                 bail!(
@@ -228,15 +234,19 @@ impl<N: Network> FinalizeTypes<N> {
     ) -> Result<()> {
         // Check the operands.
         for operand in command.operands() {
-            // If the operand is `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner` and it contains a program ID,
-            // ensure that the program ID is imported by the current program.
+            // If the operand is `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner` and it contains a
+            // program ID, ensure that the program ID is imported by the current program.
             match operand {
                 Operand::Checksum(program_id) | Operand::Edition(program_id) | Operand::ProgramOwner(program_id) => {
-                    if let Some(program_id) = program_id {
-                        if stack.get_external_stack(program_id).is_err() {
-                            bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
-                        }
+                    if let Some(program_id) = program_id
+                        && stack.get_external_stack(program_id).is_err()
+                    {
+                        bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
                     }
+                }
+                // If the operand is `Operand::ComponentChecksum`, ensure the referenced component exists.
+                Operand::ComponentChecksum(program_id, name) => {
+                    Self::check_component_checksum(stack, program_id, name)?
                 }
                 _ => {}
             }
@@ -257,6 +267,32 @@ impl<N: Network> FinalizeTypes<N> {
             Command::BranchNeq(branch_neq) => self.check_branch(stack, positions, branch_neq)?,
             // Note that the `Position`s are checked for uniqueness when constructing `Finalize` or `Constructor`.
             Command::Position(_) => (),
+        }
+        Ok(())
+    }
+
+    /// Ensures the program referenced by a component checksum operand is imported (if external) and that the
+    /// named component exists as a function, closure, or view in the target program, so a dangling reference
+    /// is rejected at deployment instead of failing on every execution.
+    fn check_component_checksum(
+        stack: &Stack<N>,
+        program_id: &Option<ProgramID<N>>,
+        name: &Identifier<N>,
+    ) -> Result<()> {
+        // Returns `true` if `name` is a function, closure, or view in the given program.
+        let is_component = |program: &Program<N>| {
+            program.contains_function(name) || program.contains_closure(name) || program.contains_view(name)
+        };
+        let exists = match program_id {
+            Some(program_id) => match stack.get_external_stack(program_id) {
+                Ok(external_stack) => is_component(external_stack.program()),
+                Err(_) => bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id()),
+            },
+            None => is_component(stack.program()),
+        };
+        if !exists {
+            let program_id = (*program_id).unwrap_or(*stack.program_id());
+            bail!("'{name}' in a component checksum operand is not a function, closure, or view in '{program_id}'.");
         }
         Ok(())
     }
@@ -830,9 +866,7 @@ impl<N: Network> FinalizeTypes<N> {
         };
 
         // Insert the destination register.
-        for (destination, destination_type) in
-            instruction.destinations().into_iter().zip_eq(destination_types.into_iter())
-        {
+        for (destination, destination_type) in instruction.destinations().into_iter().zip_eq(destination_types) {
             // Ensure the destination register is a locator (and does not reference an access).
             ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
             // Ensure that the destination type is a plaintext type.

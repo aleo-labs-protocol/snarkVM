@@ -15,7 +15,7 @@
 
 include!("../helpers/macros.rs");
 
-use crate::helpers::sample::{sample_finalize_registers, sample_registers};
+use crate::helpers::sample::{sample_finalize_registers, sample_registers, shared_process};
 
 use circuit::AleoV0;
 use console::{
@@ -23,7 +23,7 @@ use console::{
     prelude::*,
     program::{Identifier, Literal, LiteralType, Plaintext, Register, Value},
 };
-use snarkvm_synthesizer_process::{Process, Stack};
+use snarkvm_synthesizer_process::Stack;
 use snarkvm_synthesizer_program::{
     IsEq,
     IsInstruction,
@@ -41,6 +41,7 @@ type CurrentAleo = AleoV0;
 const ITERATIONS: usize = 25;
 
 /// Samples the stack. Note: Do not replicate this for real program use, it is insecure.
+/// Panics if the program fails to parse or the process fails to load, so any error comes from `Stack::new`.
 #[allow(clippy::type_complexity)]
 fn sample_stack(
     opcode: Opcode,
@@ -75,7 +76,8 @@ fn sample_stack(
                 input {r1} as {type_b}.public;
                 {opcode} {r0} {r1} into {r2};
         "
-    ))?;
+    ))
+    .unwrap();
 
     // Initialize the operands.
     let operand_a = Operand::Register(r0);
@@ -83,7 +85,7 @@ fn sample_stack(
     let operands = vec![operand_a, operand_b];
 
     // Initialize the stack.
-    let stack = Stack::new(&Process::load()?, &program)?;
+    let stack = Stack::new(shared_process(), &program)?;
 
     Ok((stack, operands, r2))
 }
@@ -320,11 +322,14 @@ fn check_is_fails(
     let type_b = literal_b.to_type();
     assert_ne!(type_a, type_b, "The two literals must be *different* types for this test");
 
-    // If the types mismatch, ensure the stack fails to initialize.
-    let result = sample_stack(opcode, type_a, type_b, *mode_a, *mode_b);
+    // Ensure the stack rejects the mismatched types.
+    let Err(error) = sample_stack(opcode, type_a, type_b, *mode_a, *mode_b) else {
+        panic!("Stack should have failed to initialize for: {opcode} {type_a}.{mode_a} {type_b}.{mode_b}")
+    };
+    let error = format!("{error:#}");
     assert!(
-        result.is_err(),
-        "Stack should have failed to initialize for: {opcode} {type_a}.{mode_a} {type_b}.{mode_b}"
+        error.contains(&format!("Instruction '{opcode}' expects inputs of the same type")),
+        "Unexpected error for: {opcode} {type_a}.{mode_a} {type_b}.{mode_b}: {error}"
     );
 }
 
@@ -368,17 +373,15 @@ fn test_is_eq_fails() {
     let modes_a = [circuit::Mode::Public, circuit::Mode::Private];
     let modes_b = [circuit::Mode::Public, circuit::Mode::Private];
 
-    for _ in 0..ITERATIONS {
-        let literals_a = sample_literals!(CurrentNetwork, &mut rng);
-        let literals_b = sample_literals!(CurrentNetwork, &mut rng);
-        for literal_a in &literals_a {
-            for literal_b in &literals_b {
-                if literal_a.to_type() != literal_b.to_type() {
-                    for mode_a in &modes_a {
-                        for mode_b in &modes_b {
-                            // Check the operation fails.
-                            check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
-                        }
+    let literals_a = sample_literals!(CurrentNetwork, &mut rng);
+    let literals_b = sample_literals!(CurrentNetwork, &mut rng);
+    for literal_a in &literals_a {
+        for literal_b in &literals_b {
+            if literal_a.to_type() != literal_b.to_type() {
+                for mode_a in &modes_a {
+                    for mode_b in &modes_b {
+                        // Check the operation fails.
+                        check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
                     }
                 }
             }
@@ -426,17 +429,15 @@ fn test_is_neq_fails() {
     let modes_a = [circuit::Mode::Public, circuit::Mode::Private];
     let modes_b = [circuit::Mode::Public, circuit::Mode::Private];
 
-    for _ in 0..ITERATIONS {
-        let literals_a = sample_literals!(CurrentNetwork, &mut rng);
-        let literals_b = sample_literals!(CurrentNetwork, &mut rng);
-        for literal_a in &literals_a {
-            for literal_b in &literals_b {
-                if literal_a.to_type() != literal_b.to_type() {
-                    for mode_a in &modes_a {
-                        for mode_b in &modes_b {
-                            // Check the operation fails.
-                            check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
-                        }
+    let literals_a = sample_literals!(CurrentNetwork, &mut rng);
+    let literals_b = sample_literals!(CurrentNetwork, &mut rng);
+    for literal_a in &literals_a {
+        for literal_b in &literals_b {
+            if literal_a.to_type() != literal_b.to_type() {
+                for mode_a in &modes_a {
+                    for mode_b in &modes_b {
+                        // Check the operation fails.
+                        check_is_fails(opcode, literal_a, literal_b, mode_a, mode_b);
                     }
                 }
             }

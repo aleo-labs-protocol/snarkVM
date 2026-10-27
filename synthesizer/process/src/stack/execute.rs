@@ -174,6 +174,10 @@ impl<N: Network> Stack<N> {
                     Operand::ProgramOwner(_) => {
                         bail!("Illegal operation: cannot retrieve the program owner in a closure scope")
                     }
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Illegal operation: cannot retrieve the component checksum in a closure scope")
+                    }
                 }
             })
             .map(|res| res.map_err(StackExecError::Anyhow))
@@ -184,7 +188,8 @@ impl<N: Network> Stack<N> {
         outputs
     }
 
-    /// Executes a program function on the given inputs.
+    /// Executes a program function on the given inputs. The output includes a `Response` object if
+    /// not in `CheckDeployment` or `Synthesize` mode.
     ///
     /// Note: To execute a transition, do **not** call this method. Instead, call `Process::execute`.
     ///
@@ -196,7 +201,7 @@ impl<N: Network> Stack<N> {
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
-    ) -> Result<Response<N>, StackExecError> {
+    ) -> Result<Option<Response<N>>, StackExecError> {
         let timer = timer!("Stack::execute_function");
 
         // Ensure the global constants for the Aleo environment are initialized.
@@ -206,9 +211,10 @@ impl<N: Network> Stack<N> {
 
         // If in 'CheckDeployment' mode, set the constraint limit and variable limit.
         // We do not have to reset it after function calls because `CheckDeployment` mode does not execute those.
-        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit) = &call_stack {
+        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit, non_zero_limit) = &call_stack {
             A::set_constraint_limit(*constraint_limit);
             A::set_variable_limit(*variable_limit);
+            A::set_non_zero_limit(*non_zero_limit);
         }
 
         // Retrieve the next request.
@@ -492,6 +498,10 @@ impl<N: Network> Stack<N> {
                     Operand::ProgramOwner(_) => {
                         bail!("Illegal operation: cannot retrieve the program owner in a function scope")
                     }
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Illegal operation: cannot retrieve the component checksum in a function scope")
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -541,17 +551,26 @@ impl<N: Network> Stack<N> {
         Self::log_circuit::<A>("Complete", &call_stack_type);
 
         // Eject the response.
-        let response = response.eject_value();
+        let console_response =
+            if matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::CheckDeployment(..)) {
+                // When synthesizing proving/verifying keys or checking the latter, the values in
+                // the Response object are not relevant, and neither is its console counterpart.
+                None
+            } else {
+                let console_response = response.eject_value();
 
-        if response.outputs().len() != output_types.len() {
-            return Err(anyhow!("Number of outputs does not match number of output types").into());
-        }
+                if console_response.outputs().len() != output_types.len() {
+                    return Err(anyhow!("Number of outputs does not match number of output types").into());
+                }
 
-        // Ensure the outputs matches the expected value types.
-        response.outputs().iter().zip_eq(&output_types).try_for_each(|(output, output_type)| {
-            // Ensure the output matches its expected type.
-            self.matches_value_type(output, output_type)
-        })?;
+                // Ensure the outputs matches the expected value types.
+                console_response.outputs().iter().zip_eq(&output_types).try_for_each(|(output, output_type)| {
+                    // Ensure the output matches its expected type.
+                    self.matches_value_type(output, output_type)
+                })?;
+
+                Some(console_response)
+            };
 
         // If the circuit is in `Execute` or `PackageRun` mode, then ensure the circuit is satisfied.
         if matches!(registers.call_stack_ref(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
@@ -582,14 +601,23 @@ impl<N: Network> Stack<N> {
         // If the circuit is in `Authorize` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.
-            let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
+            let transition = Transition::from(
+                &console_request,
+                // Note console_response was set to Some above except in the Synthesize and
+                // CheckDeployment modes.
+                console_response
+                    .as_ref()
+                    .expect("console_response is None in execute_function in CallStack::Authorize mode"),
+                &output_types,
+                &output_registers,
+            )?;
 
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, assignments, _, _) = registers.call_stack_ref() {
+        else if let CallStack::CheckDeployment(_, _, assignments, _, _, _) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
@@ -608,7 +636,16 @@ impl<N: Network> Stack<N> {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
-            let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
+            let transition = Transition::from(
+                &console_request,
+                // Note console_response was set to Some above except in the Synthesize and
+                // CheckDeployment modes.
+                console_response
+                    .as_ref()
+                    .expect("console_response is None in execute_function in CallStack::Execute mode"),
+                &output_types,
+                &output_registers,
+            )?;
 
             // Retrieve the proving key.
             let proving_key = self.get_proving_key(function.name())?;
@@ -655,7 +692,7 @@ impl<N: Network> Stack<N> {
         finish!(timer);
 
         // Return the response.
-        Ok(response)
+        Ok(console_response)
     }
 }
 

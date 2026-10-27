@@ -46,7 +46,6 @@ fn test_cost_for_call_depending_on_signer() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let genesis_private_key = sample_genesis_private_key(rng);
-    let genesis_address = Address::try_from(&genesis_private_key).unwrap();
 
     let zero_field = Identifier::<CurrentNetwork>::from_str("zero").unwrap().to_field().unwrap();
     let one_field = Identifier::<CurrentNetwork>::from_str("one").unwrap().to_field().unwrap();
@@ -192,7 +191,7 @@ fn test_cost_for_call_depending_on_signer() {
 
     // Deploy the program.
     let deploy_tx = vm.deploy(&genesis_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &genesis_private_key, &genesis_address, None, &[deploy_tx], rng);
+    add_and_test_with_costs(&vm, &genesis_private_key, None, &[deploy_tx], rng);
 
     // Fund the program with 10 000 microcredits.
     let program_address = ProgramID::<CurrentNetwork>::from_str("test.aleo").unwrap().to_address().unwrap();
@@ -200,7 +199,7 @@ fn test_cost_for_call_depending_on_signer() {
     let fund_tx = vm
         .execute(&genesis_private_key, ("credits.aleo", "transfer_public"), fund_inputs.iter(), None, 0, None, rng)
         .unwrap();
-    add_and_test_with_costs(&vm, &genesis_private_key, &genesis_address, Some(&[&fund_inputs]), &[fund_tx], rng);
+    add_and_test_with_costs(&vm, &genesis_private_key, Some(&[&fund_inputs]), &[fund_tx], rng);
 
     let program_addr_str = program_address.to_string();
 
@@ -229,7 +228,7 @@ fn test_cost_for_call_depending_on_signer() {
             .execute(&genesis_private_key, ("credits.aleo", "transfer_public"), fund_inputs.iter(), None, 0, None, rng)
             .unwrap();
 
-        add_and_test_with_costs(&vm, &genesis_private_key, &genesis_address, Some(&[&fund_inputs]), &[fund_tx], rng);
+        add_and_test_with_costs(&vm, &genesis_private_key, Some(&[&fund_inputs]), &[fund_tx], rng);
 
         let program_balance_before = get_public_balance(&vm, &program_addr_str);
 
@@ -246,7 +245,7 @@ fn test_cost_for_call_depending_on_signer() {
             )
             .unwrap();
 
-        add_and_test_with_costs(&vm, &genesis_private_key, &caller_address, Some(&[&[]]), &[tx], rng);
+        add_and_test_with_costs(&vm, &caller_pk, Some(&[&[]]), &[tx], rng);
 
         let program_balance_after = get_public_balance(&vm, &program_addr_str);
         assert_eq!(

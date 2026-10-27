@@ -21,8 +21,7 @@ use crate::{
     FinalizeStorage,
     helpers::memory::{MemoryMap, NestedMemoryMap},
 };
-#[cfg(feature = "history-staking-rewards")]
-use console::types::Address;
+
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
@@ -33,8 +32,6 @@ use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
-#[cfg(feature = "history")]
-use std::sync::{Arc, atomic::AtomicU32};
 
 /// An in-memory finalize storage.
 #[derive(Clone)]
@@ -47,18 +44,7 @@ pub struct FinalizeMemory<N: Network> {
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
     /// The rejection reason map.
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
-    /// The historical mapping value update map.
-    #[cfg(feature = "history")]
-    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>,
-    /// The historical mapping update heights map.
-    #[cfg(feature = "history")]
-    mapping_update_heights_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
-    /// The current block height.
-    #[cfg(feature = "history")]
-    block_height: Arc<AtomicU32>,
-    /// The historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
-    staking_rewards_map: MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>,
+
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -69,32 +55,20 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
-    #[cfg(feature = "history-staking-rewards")]
-    type StakingRewardsMap = MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>;
 
     /// Initializes the finalize storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         let storage = storage.into();
         // Initialize the committee store.
         let committee_store = CommitteeStore::<N, CommitteeMemory<N>>::open(storage.clone())?;
+
         // Return the finalize store.
         Ok(Self {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
             rejected_reason_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            mapping_update_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            mapping_update_heights_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            block_height: Default::default(),
-            #[cfg(feature = "history-staking-rewards")]
-            staking_rewards_map: MemoryMap::default(),
+
             storage_mode: storage,
         })
     }
@@ -119,33 +93,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         &self.rejected_reason_map
     }
 
-    /// Returns the historical value map.
-    #[cfg(feature = "history")]
-    fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
-        &self.mapping_update_map
-    }
-
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
-        &self.mapping_update_heights_map
-    }
-
-    /// Returns the historical staking rewards map.
-    #[cfg(feature = "history-staking-rewards")]
-    fn staking_rewards_map(&self) -> &Self::StakingRewardsMap {
-        &self.staking_rewards_map
-    }
-
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
         &self.storage_mode
     }
 
-    /// Returns the current block height.
-    #[cfg(feature = "history")]
-    fn current_block_height(&self) -> &AtomicU32 {
-        &self.block_height
-    }
 }
 
 /// An in-memory committee storage.

@@ -37,7 +37,9 @@ impl<N: Network> FromBytes for ViewCore<N> {
         if num_commands > u16::try_from(N::MAX_COMMANDS).map_err(error)? {
             return Err(error(format!("Failed to deserialize view: too many commands ({num_commands})")));
         }
-        let mut commands = Vec::with_capacity(num_commands as usize);
+        // Cap the reservation: the count is attacker-supplied, and the elements behind
+        // it may not exist.
+        let mut commands = Vec::with_capacity((num_commands as usize).min(1024));
         for _ in 0..num_commands {
             commands.push(Command::read_le(&mut reader)?);
         }

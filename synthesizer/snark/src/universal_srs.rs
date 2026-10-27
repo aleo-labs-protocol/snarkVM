@@ -51,22 +51,6 @@ impl<N: Network> UniversalSRS<N> {
     }
 }
 
-impl<N: Network> FromBytes for UniversalSRS<N> {
-    /// Reads the universal SRS from a buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let lock = OnceLock::new();
-        lock.set(FromBytes::read_le(&mut reader)?).unwrap();
-        Ok(Self { srs: Arc::new(lock) })
-    }
-}
-
-impl<N: Network> ToBytes for UniversalSRS<N> {
-    /// Writes the universal SRS to a buffer.
-    fn write_le<W: Write>(&self, writer: W) -> IoResult<()> {
-        self.deref().write_le(writer)
-    }
-}
-
 impl<N: Network> Deref for UniversalSRS<N> {
     type Target = varuna::UniversalSRS<N::PairingCurve>;
 

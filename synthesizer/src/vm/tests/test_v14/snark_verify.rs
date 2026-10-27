@@ -17,6 +17,7 @@ use super::*;
 
 use circuit::{Circuit, Environment};
 use console::algorithms::U8;
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 
 use std::sync::OnceLock;

@@ -18,6 +18,7 @@ use crate::{
     ConfirmedTxType,
     TransactionStore,
     TransitionStore,
+    block::{BLOCK_TREE_CACHE_PREFIX, block_tree_cache_path},
     helpers::{
         rocksdb::{
             BlockMap,
@@ -35,7 +36,7 @@ use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
-use aleo_std_storage::{StorageMode, aleo_ledger_dir};
+use aleo_std_storage::StorageMode;
 use std::fs;
 use tracing::debug;
 
@@ -231,6 +232,12 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.id_map().backup_database(path)
     }
 
+    /// Catches up with the primary instance; only applicable to secondary instances.
+    fn catch_up_with_primary(&self) -> Result<()> {
+        // Any map can be used to retrieve the common RocksDB instance.
+        self.id_map().catch_up_with_primary()
+    }
+
     /// Creates the block tree based on the contents of the storage.
     fn create_block_tree(&self) -> Result<BlockTree<N>> {
         fn construct_from_scratch<N: Network>(storage: &BlockDB<N>) -> Result<BlockTree<N>> {
@@ -246,17 +253,31 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             N::merkle_tree_bhp(&hashes)
         }
 
-        let mut path = aleo_ledger_dir(N::ID, self.storage_mode());
-        path.push("block_tree");
+        let Some(path) = block_tree_cache_path::<N, _>(self) else {
+            debug!("Creating the block tree from scratch");
+            return construct_from_scratch(self);
+        };
 
-        if let Ok(serialized_tree) = fs::read(&path) {
-            debug!("Loading the cached block tree from {}", path.display());
+        if let Ok(cached) = fs::read(&path) {
+            let ret = match cached.strip_prefix(BLOCK_TREE_CACHE_PREFIX) {
+                Some(serialized_state) => {
+                    debug!("Loading the cached block tree from {}", path.display());
 
-            // Deserialize a ready block tree.
-            let ret = bincode::deserialize(&serialized_tree).or_else(|e| {
-                tracing::error!("Failed to deserialize the block tree ({e}), constructing from scratch");
-                construct_from_scratch(self)
-            });
+                    // Deserialize the contents of the block tree, and recreate it from them.
+                    bincode::deserialize(serialized_state)
+                        .map_err(anyhow::Error::from)
+                        .and_then(N::merkle_tree_bhp_from_state)
+                        .or_else(|e| {
+                            tracing::error!("Failed to load the cached block tree ({e}), constructing from scratch");
+                            construct_from_scratch(self)
+                        })
+                }
+                // The cache was written by a version using a different format; discard it.
+                None => {
+                    debug!("Discarding the outdated block tree cache at {}", path.display());
+                    construct_from_scratch(self)
+                }
+            };
 
             // Ensure that an old cached tree is not reused.
             let _ = fs::remove_file(path);
@@ -266,5 +287,14 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             debug!("Creating the block tree from scratch");
             construct_from_scratch(self)
         }
+    }
+}
+
+#[cfg(all(feature = "rocks", feature = "metrics"))]
+impl<N: Network> BlockDB<N> {
+    /// Reads RocksDB internal properties and publishes them to the metrics registry.
+    /// Any map can be used since they all share the same underlying RocksDB instance.
+    pub fn export_rocksdb_metrics(&self) {
+        self.id_map.export_rocksdb_metrics();
     }
 }

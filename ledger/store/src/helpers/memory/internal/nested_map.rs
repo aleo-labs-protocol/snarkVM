@@ -30,8 +30,9 @@ use std::{
     hash::Hash,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Instant,
 };
 
 #[derive(Clone)]
@@ -46,6 +47,8 @@ pub struct NestedMemoryMap<
     map: Arc<RwLock<BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>>>, // map -> keys
     map_inner: Arc<RwLock<BTreeMap<Vec<u8>, V>>>,           // map-key -> value
     batch_in_progress: Arc<AtomicBool>,
+    /// Owner of the in-progress atomic batch (`0` = none).
+    atomic_owner: Arc<AtomicU64>,
     atomic_batch: Arc<Mutex<Vec<(M, Option<K>, Option<V>)>>>,
     checkpoint: Arc<Mutex<Vec<usize>>>,
 }
@@ -61,6 +64,7 @@ impl<
             map: Default::default(),
             map_inner: Default::default(),
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoint: Default::default(),
         }
@@ -89,6 +93,7 @@ impl<
             map: Arc::new(RwLock::new(map)),
             map_inner: Arc::new(RwLock::new(map_inner)),
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoint: Default::default(),
         }
@@ -109,7 +114,11 @@ impl<
         // Determine if an atomic batch is in progress.
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the map-key-value pair to the batch.
-            true => self.atomic_batch.lock().push((map, Some(key), Some(value))),
+            true => {
+                let start = Instant::now();
+                self.atomic_batch.lock().push((map, Some(key), Some(value)));
+                crate::helpers::atomic_owner::record_lock_wait(start);
+            }
             // Otherwise, insert the key-value pair directly into the map.
             false => insert(&mut self.map.write(), &mut self.map_inner.write(), &map, &key, value),
         }
@@ -151,6 +160,7 @@ impl<
     fn start_atomic(&self) {
         // Set the atomic batch flag to `true`.
         self.batch_in_progress.store(true, Ordering::SeqCst);
+        crate::helpers::atomic_owner::claim(&self.atomic_owner);
         // Ensure that the atomic batch is empty.
         assert!(
             self.atomic_batch.lock().is_empty(),
@@ -209,6 +219,7 @@ impl<
         *self.checkpoint.lock() = Default::default();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
     }
 
     ///
@@ -238,6 +249,7 @@ impl<
         *self.checkpoint.lock() = Default::default();
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
+        crate::helpers::atomic_owner::release(&self.atomic_owner);
 
         Ok(())
     }
@@ -299,10 +311,13 @@ impl<
     /// This method first checks the atomic batch, and if it does not exist, then checks the map.
     ///
     fn contains_key_speculative(&self, map: &M, key: &K) -> Result<bool> {
-        // If a batch is in progress, check the atomic batch first.
-        if self.is_atomic_in_progress() {
+        // If this thread owns an in-progress batch, check the atomic batch first.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            for (m, k, v) in self.atomic_batch.lock().iter().rev() {
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            for (m, k, v) in batch.iter().rev() {
                 // If the map does not match the given map, then continue.
                 if m != map {
                     continue;
@@ -357,8 +372,8 @@ impl<
     /// Returns the speculative key-value pairs for the given map, if it exists.
     ///
     fn get_map_speculative(&'a self, map: &M) -> Result<Vec<(K, V)>> {
-        // If there is no atomic batch in progress, then return the confirmed key-value pairs.
-        if !self.is_atomic_in_progress() {
+        // If there is no atomic batch in progress on this thread, then return the confirmed key-value pairs.
+        if !crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             return self.get_map_confirmed(map);
         }
 
@@ -421,10 +436,13 @@ impl<
     /// If the key is inserted in the batch, returns `Some(Some(value))`.
     ///
     fn get_value_pending(&self, map: &M, key: &K) -> Option<Option<V>> {
-        // Return early if there is no atomic batch in progress.
-        if self.is_atomic_in_progress() {
+        // Return early if there is no atomic batch in progress on this thread.
+        if crate::helpers::atomic_owner::consults_atomic_batch(self.is_atomic_in_progress(), &self.atomic_owner) {
             // We iterate from the back of the `atomic_batch` to find the latest value.
-            for (m, k, v) in self.atomic_batch.lock().iter().rev() {
+            let start = Instant::now();
+            let batch = self.atomic_batch.lock();
+            crate::helpers::atomic_owner::record_lock_wait(start);
+            for (m, k, v) in batch.iter().rev() {
                 // If the map does not match the given map, then continue.
                 if m != map {
                     continue;
@@ -1203,5 +1221,72 @@ mod tests {
         assert_eq!(map.iter_confirmed().next().unwrap(), (Cow::Owned(0), Cow::Owned(0), Cow::Owned("1".to_string())));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_speculative_reads_from_other_threads_ignore_atomic_batch() {
+        let map: NestedMemoryMap<usize, usize, String> = Default::default();
+        map.start_atomic();
+        map.insert(0, 1, "pending".to_string()).unwrap();
+
+        assert_eq!(map.get_value_pending(&0, &1), Some(Some("pending".to_string())));
+        assert_eq!(map.get_value_speculative(&0, &1).unwrap().as_deref(), Some(&"pending".to_string()));
+
+        let map_for_reader = map.clone();
+        let pending = std::thread::spawn(move || map_for_reader.get_value_pending(&0, &1)).join().unwrap();
+        assert_eq!(pending, None);
+
+        let map_for_reader = map.clone();
+        let speculative = std::thread::spawn(move || {
+            map_for_reader.get_value_speculative(&0, &1).unwrap().map(|cow| cow.into_owned())
+        })
+        .join()
+        .unwrap();
+        assert_eq!(speculative, None);
+
+        map.abort_atomic();
+    }
+
+    #[test]
+    fn test_off_thread_speculative_reads_do_not_block_atomic_writer() {
+        const BATCH_SIZE: usize = 20_000;
+        const WRITER_INSERTS: usize = 5_000;
+        const READERS: usize = 8;
+
+        let map: NestedMemoryMap<usize, usize, usize> = Default::default();
+        map.start_atomic();
+        for i in 0..BATCH_SIZE {
+            map.insert(0, i, i).unwrap();
+        }
+
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let readers: Vec<_> = (0..READERS)
+            .map(|_| {
+                let map = map.clone();
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        let _ = map.get_value_speculative(&0, &0);
+                    }
+                })
+            })
+            .collect();
+
+        let start = std::time::Instant::now();
+        for i in BATCH_SIZE..BATCH_SIZE + WRITER_INSERTS {
+            map.insert(0, i, i).unwrap();
+        }
+        let elapsed = start.elapsed();
+
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        for reader in readers {
+            reader.join().unwrap();
+        }
+        map.abort_atomic();
+
+        assert!(
+            elapsed < std::time::Duration::from_millis(500),
+            "atomic writer stalled for {elapsed:?} under concurrent speculative reads"
+        );
     }
 }

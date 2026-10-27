@@ -44,6 +44,17 @@ pub enum VmAuthError {
     Anyhow(#[from] anyhow::Error),
 }
 
+/// Errors from `VM::check_block_content_inner`: speculation dry-run vs block verification.
+#[derive(Debug, Error)]
+pub enum VmCheckBlockContentError {
+    /// `VM::check_speculate` rejected the block's ratifications or transactions.
+    #[error("Failed to speculate over unconfirmed transactions - {0}")]
+    Speculation(#[source] anyhow::Error),
+    /// [`snarkvm_ledger_block::Block::verify`] failed (header, authority, duplicate IDs, etc.).
+    #[error("Failed to verify block - {0}")]
+    Verification(#[source] anyhow::Error),
+}
+
 /// Errors that may occur during VM deployment.
 #[derive(Debug, Error)]
 pub enum VmDeployError {

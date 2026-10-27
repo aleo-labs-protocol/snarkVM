@@ -17,17 +17,26 @@ use crate::{Constant, Constraints, Measurement, Private, Public};
 
 use core::fmt::Debug;
 use std::{
-    cmp::Ordering,
-    collections::{BTreeSet, HashMap},
     env,
     fmt::Display,
     fs,
     ops::Range,
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex, OnceLock},
+    sync::{Mutex, OnceLock},
 };
 
-static FILES: LazyLock<Mutex<HashMap<&'static str, FileUpdates>>> = LazyLock::new(Default::default);
+/// Serializes the read-modify-write cycle that rewrites a source file.
+/// Tests in one binary run in parallel, and several of them can reach the same file.
+///
+/// It is per-process, so it does not cover a runner that gives each test its own process, as `cargo nextest`
+/// does. `update_count` writes through a rename so that a reader in another process never observes a partly
+/// written file; what such a reader can still do is read before another process writes and then overwrite it,
+/// losing that edit and needing the run repeated. Only a cross-process lock would close that.
+static UPDATE_LOCK: Mutex<()> = Mutex::new(());
+
+/// The workspace root, which `file!` paths are relative to while a test's working directory is its own package.
+/// Recovering it stats a `Cargo.toml` at every level above this crate; an update run resolves hundreds of paths,
+/// so the answer is memoized. This is a memo of a pure function of `CARGO_MANIFEST_DIR`, not mutable state.
 static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// To update the arguments to `count_is!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
@@ -78,7 +87,8 @@ macro_rules! count_less_than {
 }
 
 /// A helper struct for tracking the number of constants, public inputs, private inputs, and constraints.
-/// Warning: Do not construct this struct directly. Instead, use the `count_is!` and `count_less_than!` macros.
+/// Warning: Do not construct this struct directly outside of this module. Instead, use the `count_is!` and
+/// `count_less_than!` macros.
 #[derive(Copy, Clone, Debug)]
 pub struct UpdatableCount {
     pub constant: Constant,
@@ -121,24 +131,42 @@ impl UpdatableCount {
     ///    - If the update condition is satisfied, then update the macro invocation that constructed this `UpdatableCount`.
     ///    - Otherwise, panic.
     pub fn assert_matches(&self, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
-        if !self.matches(num_constants, num_public, num_private, num_constraints) {
-            let mut files = FILES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            match env::var("UPDATE_COUNT") {
-                // If `UPDATE_COUNT` is set and the `query_string` matches the file containing the macro invocation
-                // that constructed this `UpdatableCount`, then update the macro invocation.
-                Ok(query_string) if self.file.contains(&query_string) => {
-                    files.entry(self.file).or_insert_with(|| FileUpdates::new(self)).update_count(
-                        self,
-                        num_constants,
-                        num_public,
-                        num_private,
-                        num_constraints,
-                    );
-                }
-                // Otherwise, error.
-                _ => {
-                    println!(
-                        "\n
+        if self.matches(num_constants, num_public, num_private, num_constraints) {
+            return;
+        }
+        let query_string = env::var("UPDATE_COUNT").ok();
+        self.assert_matches_with_query(
+            query_string.as_deref(),
+            num_constants,
+            num_public,
+            num_private,
+            num_constraints,
+        );
+    }
+
+    /// Implements `assert_matches` for a given `UPDATE_COUNT` query string, where `None` stands for an unset
+    /// `UPDATE_COUNT`, under which nothing is updated.
+    ///
+    /// The values are assumed not to match; `assert_matches` checks that before calling in, and `Measurement::matches`
+    /// reports each mismatching measurement on stderr, so checking again would report every one of them twice.
+    fn assert_matches_with_query(
+        &self,
+        query_string: Option<&str>,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) {
+        match query_string {
+            // If `UPDATE_COUNT` is set and the `query_string` matches the file containing the macro invocation
+            // that constructed this `UpdatableCount`, then update the macro invocation.
+            Some(query_string) if self.file.contains(query_string) => {
+                self.update_count(num_constants, num_public, num_private, num_constraints);
+            }
+            // Otherwise, error.
+            _ => {
+                println!(
+                    "\n
 \x1b[1m\x1b[91merror\x1b[97m: Count does not match\x1b[0m
    \x1b[1m\x1b[34m-->\x1b[0m {}:{}:{}
 \x1b[1mExpected\x1b[0m:
@@ -150,20 +178,146 @@ impl UpdatableCount {
 Constants: {}, Public: {}, Private: {}, Constraints: {}
 ----
 ",
-                        self.file,
-                        self.line,
-                        self.column,
-                        self,
-                        num_constants,
-                        num_public,
-                        num_private,
-                        num_constraints,
-                    );
-                    // Use resume_unwind instead of panic!() to prevent a backtrace, which is unnecessary noise.
-                    std::panic::resume_unwind(Box::new(()));
-                }
+                    self.file, self.line, self.column, self, num_constants, num_public, num_private, num_constraints,
+                );
+                // Use resume_unwind instead of panic!() to prevent a backtrace, which is unnecessary noise.
+                std::panic::resume_unwind(Box::new(()));
             }
         }
+    }
+
+    /// Rewrites the arguments of the macro invocation that constructed this `UpdatableCount` so that they admit
+    /// the given measured values.
+    ///
+    /// The arguments currently in the file, not the ones this binary was compiled with, are the starting point.
+    /// A run updates a given invocation many times -- `check_cast` asserts the same count once per sampled input --
+    /// and an upper bound has to accumulate the maximum over all of them. Re-reading also makes a second run over
+    /// an already-updated file a no-op rather than a revert.
+    fn update_count(&self, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
+        // Resolving the path depends on nothing the lock protects, so it stays outside.
+        let path = self.absolute_path();
+        let position = self.position();
+
+        // Hold the lock across the read and the write: two threads updating the same file would otherwise each
+        // write back a copy that lacks the other's edit.
+        let guard = UPDATE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        let mut text = fs::read_to_string(&path).unwrap();
+        let range = self.locate(&text);
+        assert!(
+            range.start < range.end,
+            "Could not locate the arguments of the macro invocation at {position}. \
+             It must be written on one line, with its closing parenthesis after its opening one."
+        );
+        let arguments = Arguments::parse(&text[range.clone()], &position);
+
+        let updated_count = self.updated(arguments.values, [num_constants, num_public, num_private, num_constraints]);
+        let updated_values = updated_count.values();
+
+        // If the arguments in the file already admit these values, there is nothing to write.
+        if updated_values == arguments.values {
+            return;
+        }
+
+        arguments.rewrite(&mut text, range.start, updated_values);
+        // Write a sibling file and rename over the original, so that a reader the lock does not cover -- a test
+        // in another process -- sees either the old file or the new one, never the truncation `fs::write` leaves
+        // in between. The sibling is in the same directory, so the rename is within one filesystem, and its name
+        // carries the process id, so two processes cannot collide on it.
+        let scratch = path.with_extension(format!("{}.tmp", std::process::id()));
+        fs::write(&scratch, &text).unwrap();
+        fs::rename(&scratch, &path).unwrap();
+
+        // Nothing below touches the file, so let the next updater in.
+        drop(guard);
+
+        // Print the difference between the original and updated counts.
+        let difference = updated_count.difference_between(self);
+        println!(
+            "\n
+\x1b[1m\x1b[33mwarning\x1b[97m: Updated count\x1b[0m
+   \x1b[1m\x1b[34m-->\x1b[0m {}:{}:{}
+\x1b[1mOriginal count\x1b[0m:
+----
+{}
+----
+\x1b[1mUpdated count\x1b[0m:
+----
+{}
+----
+\x1b[1mDifference between updated and original\x1b[0m:
+----
+Constants: {}, Public: {}, Private: {}, Constraints: {}
+----
+",
+            self.file,
+            self.line,
+            self.column,
+            self,
+            updated_count,
+            difference.0,
+            difference.1,
+            difference.2,
+            difference.3
+        );
+    }
+
+    /// Returns the four measurements as a plain array, in the order the macro takes them.
+    fn values(&self) -> [u64; 4] {
+        let value = |measurement| match measurement {
+            Measurement::Exact(value) | Measurement::UpperBound(value) => value,
+            Measurement::Range(..) => panic!("`UpdatableCount` does not support `Measurement::Range`."),
+        };
+        [value(self.constant), value(self.public), value(self.private), value(self.constraints)]
+    }
+
+    /// Returns the count that admits `measured`, starting from `on_disk`, the values currently in the source file.
+    /// An exact measurement becomes the measured value; an upper bound becomes the larger of the two, which is how
+    /// a bound accumulates the maximum over the many asserts one invocation sees.
+    ///
+    /// Which measurement each value becomes is decided by `self`, and so by the macro that was invoked:
+    /// `count_less_than!` writes no `<=` in the source, so the source text alone does not say.
+    fn updated(&self, on_disk: [u64; 4], measured: [u64; 4]) -> Self {
+        let updated = |measurement, on_disk, measured| match measurement {
+            Measurement::Exact(..) => Measurement::Exact(measured),
+            Measurement::UpperBound(..) => Measurement::UpperBound(std::cmp::max(measured, on_disk)),
+            Measurement::Range(..) => panic!("`UpdatableCount` does not support `Measurement::Range`."),
+        };
+        Self {
+            constant: updated(self.constant, on_disk[0], measured[0]),
+            public: updated(self.public, on_disk[1], measured[1]),
+            private: updated(self.private, on_disk[2], measured[2]),
+            constraints: updated(self.constraints, on_disk[3], measured[3]),
+            ..*self
+        }
+    }
+
+    /// Returns the path of the file containing the macro invocation that constructed this `UpdatableCount`.
+    ///
+    /// `file!` expands to a path relative to the workspace root, while a test's working directory is the directory
+    /// of the package it belongs to, so the workspace root has to be recovered to make the path usable.
+    fn absolute_path(&self) -> PathBuf {
+        let path = Path::new(self.file);
+        match path.is_absolute() {
+            true => path.to_owned(),
+            false => WORKSPACE_ROOT
+                .get_or_init(|| {
+                    // Heuristic, see https://github.com/rust-lang/cargo/issues/3946.
+                    // Taken from the `expect-test` crate, MIT OR Apache-2.0.
+                    Path::new(&env!("CARGO_MANIFEST_DIR"))
+                        .ancestors()
+                        .filter(|it| it.join("Cargo.toml").exists())
+                        .last()
+                        .unwrap()
+                        .to_owned()
+                })
+                .join(path),
+        }
+    }
+
+    /// Returns `file:line:column`, to say which macro invocation a diagnostic is about.
+    fn position(&self) -> String {
+        format!("{}:{}:{}", self.file, self.line, self.column)
     }
 
     /// Given a string containing the contents of a file, `locate` returns a range delimiting the arguments
@@ -181,7 +335,9 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
         let mut line_start = 0;
         let mut starting_index = None;
         let mut ending_index = None;
-        for (i, line) in LinesWithEnds::from(file).enumerate() {
+        // `split_inclusive` keeps the line terminators, which `str::lines` strips; `line_start` has to stay an
+        // accurate byte offset into `file`.
+        for (i, line) in file.split_inclusive('\n').enumerate() {
             if i == self.line as usize - 1 {
                 // Seek past the exclamation point, then skip any whitespace and the macro delimiter to get to the opening parentheses.
                 let mut argument_character_indices = line.char_indices().skip((self.column - 1).try_into().unwrap())
@@ -194,7 +350,9 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
                     line_start
                         + argument_character_indices
                             .next()
-                            .expect("Could not find the beginning of the macro invocation.")
+                            .unwrap_or_else(|| {
+                                panic!("Could not find the beginning of the macro invocation at {}", self.position())
+                            })
                             .0,
                 );
             }
@@ -214,8 +372,11 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
         }
 
         Range {
-            start: starting_index.expect("Could not find the beginning of the macro invocation."),
-            end: ending_index.expect("Could not find the ending of the macro invocation."),
+            start: starting_index.unwrap_or_else(|| {
+                panic!("Could not find the beginning of the macro invocation at {}", self.position())
+            }),
+            end: ending_index
+                .unwrap_or_else(|| panic!("Could not find the ending of the macro invocation at {}", self.position())),
         }
     }
 
@@ -238,385 +399,336 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
             difference(self.constraints, other.constraints),
         )
     }
-
-    /// Initializes an `UpdatableCount` without a specified location.
-    /// This is only used to store intermediate counts as the source file is updated.
-    fn dummy(constant: Constant, public: Public, private: Private, constraints: Constraints) -> Self {
-        Self {
-            constant,
-            public,
-            private,
-            constraints,
-            file: Default::default(),
-            line: Default::default(),
-            column: Default::default(),
-        }
-    }
-
-    /// Returns a string that is intended to replace the arguments to `count_is` or `count_less_than` in the source file.
-    fn as_argument_string(&self) -> String {
-        let generate_arg = |measurement| match measurement {
-            Measurement::Exact(value) => value,
-            Measurement::UpperBound(bound) => bound,
-            Measurement::Range(..) => panic!(
-                "Cannot create an argument string from an `UpdatableCount` that contains a `Measurement::Range`."
-            ),
-        };
-        format!(
-            "({}, {}, {}, {})",
-            generate_arg(self.constant),
-            generate_arg(self.public),
-            generate_arg(self.private),
-            generate_arg(self.constraints)
-        )
-    }
 }
 
-/// This struct is used to track updates to the `UpdatableCount`s in a file.
-/// It is used to ensure that the updates are written to the appropriate location in the file as the file is modified.
-/// This design avoids having to re-read the source file in the event that it has been modified.
-struct FileUpdates {
-    absolute_path: PathBuf,
-    original_text: String,
-    modified_text: String,
-    /// An ordered set of `Update`s.
-    /// `Update`s are ordered by their starting location.
-    /// We assume that all `Updates` are made to disjoint ranges in the original file.
-    /// This assumption is valid since invocations of `count_is` and `count_less_than` cannot be nested.
-    updates: BTreeSet<Update>,
+/// The four arguments of a `count_is!` or `count_less_than!` invocation, located in the source file.
+///
+/// An update rewrites the integer literals whose values changed and nothing else, so every other byte of the
+/// argument list survives it verbatim: the `<=` of the `count_is!(<=N, ..)` arm, the spacing, and the `_`
+/// separators of any argument that did not change. Regenerating the whole argument list instead would drop the
+/// `<=` and silently rewrite an upper bound into an exact count.
+#[derive(Debug, PartialEq, Eq)]
+struct Arguments {
+    /// The value of each argument.
+    values: [u64; 4],
+    /// The byte range of each argument's integer literal, relative to the start of the text `parse` was given.
+    literals: [(usize, usize); 4],
 }
 
-impl FileUpdates {
-    /// Initializes a new instance of `FileUpdates`.
-    /// This function will read the contents of the file at the specified path and store it in the `original_text` field.
-    /// This function will also initialize the `updates` field to an empty vector.
-    fn new(count: &UpdatableCount) -> Self {
-        let path = Path::new(count.file);
-        let absolute_path = match path.is_absolute() {
-            true => path.to_owned(),
-            false => {
-                // Append `path` to the workspace root.
-                WORKSPACE_ROOT
-                    .get_or_init(|| {
-                        // Heuristic, see https://github.com/rust-lang/cargo/issues/3946
-                        Path::new(&env!("CARGO_MANIFEST_DIR"))
-                            .ancestors()
-                            .filter(|it| it.join("Cargo.toml").exists())
-                            .last()
-                            .unwrap()
-                            .to_path_buf()
-                    })
-                    .join(path)
+impl Arguments {
+    /// Parses the text delimited by `UpdatableCount::locate`, i.e. `(1, 2, 3, 4)` or `(<=1, 2, 3, 4)`.
+    /// `position` is `file:line:column`, so that a diagnostic names the malformed invocation.
+    fn parse(text: &str, position: &str) -> Self {
+        let inner = text.strip_prefix('(').and_then(|text| text.strip_suffix(')')).unwrap_or_else(|| {
+            // `macro_rules!` also accepts `[]` and `{}`, which `locate` would run past to some later `)`.
+            // Refusing here is the point: the alternative is rewriting whatever span that lands on.
+            panic!(
+                "The macro invocation at {position} is not delimited by parentheses: `{text}`. \
+                 `count_is!` and `count_less_than!` have to be invoked with `(..)` to be updatable."
+            )
+        });
+        let mut values = [0; 4];
+        let mut literals = [(0, 0); 4];
+        // `inner` begins one byte into `text`, past the opening parenthesis.
+        let mut offset = 1;
+        let mut arguments = inner.split(',');
+        for (i, (value, literal)) in values.iter_mut().zip(literals.iter_mut()).enumerate() {
+            let argument = arguments.next().unwrap_or_else(|| panic!("Macro argument {i} is missing at {position}."));
+            // Step past the leading whitespace, and past the `<=` of the upper-bound arm of `count_is!`.
+            let mut start = argument.len() - argument.trim_start().len();
+            if let Some(rest) = argument[start..].strip_prefix("<=") {
+                start = argument.len() - rest.trim_start().len();
             }
-        };
-        let original_text = fs::read_to_string(&absolute_path).unwrap();
-        let modified_text = original_text.clone();
-        let updates = Default::default();
-        Self { absolute_path, original_text, modified_text, updates }
+            let text = argument[start..].trim_end();
+            *literal = (offset + start, offset + start + text.len());
+            // Rust integer literals admit `_` separators, which `u64::from_str` does not.
+            *value = text.replace('_', "").parse().unwrap_or_else(|_| {
+                panic!("Macro argument {i} at {position} is not a decimal integer literal: `{text}`")
+            });
+            // Step past this argument and the comma that `split` consumed.
+            offset += argument.len() + 1;
+        }
+        assert!(arguments.next().is_none(), "The macro invocation at {position} has more than four arguments.");
+        Self { values, literals }
     }
 
-    /// This function will update the `modified_text` field with the new text that is being inserted.
-    /// The resulting `modified_text` is written to the file at the specified path.
-    /// This implementation allows us to avoid re-reading the source file in the case where multiple updates
-    /// are being made to the same location in the source code.
-    fn update_count(
-        &mut self,
-        count: &UpdatableCount,
-        num_constants: u64,
-        num_public: u64,
-        num_private: u64,
-        num_constraints: u64,
-    ) {
-        // Get the location of arguments in the macro invocation.
-        let range = count.locate(&self.original_text);
-
-        let mut new_range = range.clone();
-        let mut update_with_same_start = None;
-
-        // Shift the range to account for changes made to the original file.
-        // Note that the `Update`s in self.updates are ordered by their starting location.
-        for previous_update in &self.updates {
-            let amount_deleted = previous_update.end - previous_update.start;
-            let amount_inserted = previous_update.argument_string.len();
-
-            match previous_update.start.cmp(&range.start) {
-                // If an update was made in a location preceding the range in the original file, we need to shift the range by the length of the text that was changed.
-                Ordering::Less => {
-                    new_range.start = new_range.start - amount_deleted + amount_inserted;
-                    new_range.end = new_range.end - amount_deleted + amount_inserted;
-                }
-                // If an update was made at the same location as the range in the original file, we need to shift the end of the range by the amount of text that was changed.
-                Ordering::Equal => {
-                    new_range.end = new_range.end - amount_deleted + amount_inserted;
-                    update_with_same_start = Some(previous_update);
-                }
-                // We do not need to shift the range if an update was made in a location following the range in the original file.
-                Ordering::Greater => {
-                    break;
-                }
+    /// Replaces the four integer literals with `values`, leaving every other byte as it was.
+    /// A literal whose value has not changed is not rewritten at all, so `1_000` keeps its separator.
+    /// `offset` is where the text this was parsed from starts in `source`.
+    fn rewrite(&self, source: &mut String, offset: usize, values: [u64; 4]) {
+        // Back to front, so that splicing one literal does not shift the range of the ones before it.
+        for (i, &(start, end)) in self.literals.iter().enumerate().rev() {
+            if values[i] != self.values[i] {
+                source.replace_range(offset + start..offset + end, &values[i].to_string());
             }
         }
-
-        // If the original `UpdatableCount` has been modified, then check if the counts satisfy the most recent `UpdatableCount`.
-        // If so, then there is no need to write to update the file and we can return early.
-        if let Some(update) = update_with_same_start {
-            if update.count.matches(num_constants, num_public, num_private, num_constraints) {
-                return;
-            }
-        }
-
-        // Construct the new update.
-        let new_update = match update_with_same_start {
-            None => Update::new(&range, count, num_constants, num_public, num_private, num_constraints),
-            Some(update) => Update::new(&range, &update.count, num_constants, num_public, num_private, num_constraints),
-        };
-
-        // Apply the update at the adjusted location.
-        self.modified_text.replace_range(new_range, &new_update.argument_string);
-
-        // Print the difference between the original and updated counts.
-        let difference = new_update.count.difference_between(count);
-        println!(
-            "\n
-\x1b[1m\x1b[33mwarning\x1b[97m: Updated count\x1b[0m
-   \x1b[1m\x1b[34m-->\x1b[0m {}:{}:{}
-\x1b[1mOriginal count\x1b[0m:
-----
-{}
-----
-\x1b[1mUpdated count\x1b[0m:
-----
-{}
-----
-\x1b[1mDifference between updated and original\x1b[0m:
-----
-Constants: {}, Public: {}, Private: {}, Constraints: {}
-----
-",
-            count.file,
-            count.line,
-            count.column,
-            count,
-            new_update.count,
-            difference.0,
-            difference.1,
-            difference.2,
-            difference.3
-        );
-
-        // Add the new update to the set of updates.
-        self.updates.replace(new_update);
-
-        // Update the original file with the modified text.
-        fs::write(&self.absolute_path, &self.modified_text).unwrap()
-    }
-}
-
-/// Helper struct to keep track of updates to the original file.
-#[derive(Debug)]
-struct Update {
-    /// Starting location in the original file.
-    start: usize,
-    /// Ending location in the original file.
-    end: usize,
-    /// A dummy count with the new `Measurement`s.
-    count: UpdatableCount,
-    /// A string representation of `count`.
-    argument_string: String,
-}
-
-impl Update {
-    fn new(
-        range: &Range<usize>,
-        old_count: &UpdatableCount,
-        num_constants: u64,
-        num_public: u64,
-        num_private: u64,
-        num_constraints: u64,
-    ) -> Self {
-        // Helper function to determine the new `Measurement` based on the expected value.
-        let generate_new_measurement = |measurement: Measurement<u64>, expected: u64| match measurement {
-            Measurement::Exact(..) => Measurement::Exact(expected),
-            Measurement::Range(..) => panic!("UpdatableCount does not support ranges."),
-            Measurement::UpperBound(bound) => Measurement::UpperBound(std::cmp::max(expected, bound)),
-        };
-        let count = UpdatableCount::dummy(
-            generate_new_measurement(old_count.constant, num_constants),
-            generate_new_measurement(old_count.public, num_public),
-            generate_new_measurement(old_count.private, num_private),
-            generate_new_measurement(old_count.constraints, num_constraints),
-        );
-        Self { start: range.start, end: range.end, count, argument_string: count.as_argument_string() }
-    }
-}
-
-impl PartialEq for Update {
-    fn eq(&self, other: &Self) -> bool {
-        self.start == other.start
-    }
-}
-impl Eq for Update {}
-impl PartialOrd for Update {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for Update {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.start.cmp(&other.start)
-    }
-}
-
-/// A struct that provides an iterator over the lines in a string, while preserving the original line endings.
-/// This is necessary as `str::lines` does not preserve the original line endings.
-struct LinesWithEnds<'a> {
-    text: &'a str,
-}
-
-impl<'a> Iterator for LinesWithEnds<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<&'a str> {
-        match self.text.is_empty() {
-            true => None,
-            false => {
-                let idx = self.text.find('\n').map_or(self.text.len(), |it| it + 1);
-                let (res, next) = self.text.split_at(idx);
-                self.text = next;
-                Some(res)
-            }
-        }
-    }
-}
-
-impl<'a> From<&'a str> for LinesWithEnds<'a> {
-    fn from(text: &'a str) -> Self {
-        LinesWithEnds { text }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use serial_test::serial;
-    use std::env;
+    use super::*;
+
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// A source file that only these tests write to, holding one macro invocation per line and deleted when the
+    /// test ends.
+    ///
+    /// The update path resolves an absolute `UpdatableCount::file` as-is, so a count pointed at this file rewrites
+    /// it instead of the test's own source. `line` is 1-based, as in `UpdatableCount`.
+    struct Fixture {
+        path: &'static str,
+        column: u32,
+    }
+
+    impl Fixture {
+        fn new(macro_name: &str, arguments: &[&str]) -> Self {
+            let path = fixture_path();
+            let prefix = "        let count = ";
+            let text: String =
+                arguments.iter().map(|arguments| format!("{prefix}{macro_name}!{arguments};\n")).collect();
+            fs::write(&path, text).unwrap();
+            Self {
+                // `UpdatableCount::file` is `&'static str`, which a path built at runtime is not.
+                path: path.into_os_string().into_string().unwrap().leak(),
+                column: (prefix.len() + 1) as u32,
+            }
+        }
+
+        /// Returns a count located at the invocation on the given line.
+        fn count(&self, line: u32, measurements: [Measurement<u64>; 4]) -> UpdatableCount {
+            UpdatableCount {
+                constant: measurements[0],
+                public: measurements[1],
+                private: measurements[2],
+                constraints: measurements[3],
+                file: self.path,
+                line,
+                column: self.column,
+            }
+        }
+
+        /// Returns the arguments currently written on the given line.
+        fn arguments(&self, line: u32) -> String {
+            let text = fs::read_to_string(self.path).unwrap();
+            let line = text.lines().nth(line as usize - 1).unwrap();
+            line[line.find('(').unwrap()..=line.rfind(')').unwrap()].to_string()
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(self.path);
+        }
+    }
+
+    /// Returns a path in the temporary directory that no other test uses.
+    fn fixture_path() -> PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        env::temp_dir().join(format!(
+            "snarkvm_updatable_count_{}_{}.rs",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    fn exact(values: [u64; 4]) -> [Measurement<u64>; 4] {
+        values.map(Measurement::Exact)
+    }
+
+    fn upper_bound(values: [u64; 4]) -> [Measurement<u64>; 4] {
+        values.map(Measurement::UpperBound)
+    }
+
+    /// Returns a count at the given position. The measurements are irrelevant to `locate`.
+    fn count_at(line: u32, column: u32) -> UpdatableCount {
+        UpdatableCount {
+            constant: Measurement::Exact(0),
+            public: Measurement::Exact(0),
+            private: Measurement::Exact(0),
+            constraints: Measurement::Exact(0),
+            file: "",
+            line,
+            column,
+        }
+    }
 
     #[test]
     fn check_position() {
+        // A literal line number here goes stale whenever anything above it in this file moves.
         let count = count_is!(0, 0, 0, 0);
+        assert_eq!(count.line, line!() - 1);
         assert_eq!(count.file, "circuit/environment/src/helpers/updatable_count.rs");
-        assert_eq!(count.line, 505);
         assert_eq!(count.column, 21);
     }
 
-    // Note: The below tests must be run serially since the behavior `assert_matches` depends on whether or not
-    // the environment variable `UPDATE_COUNT` is set.
-
     #[test]
-    #[serial]
-    fn check_count_passes() {
-        let count = count_is!(1, 2, 3, 4);
-        let num_constants = 1;
-        let num_public = 2;
-        let num_private = 3;
-        let num_inputs = 4;
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
+    fn check_locate_finds_the_arguments() {
+        let text = "// a\n        let count = count_is!(1, 2, 3, 4);\n";
+        assert_eq!(&text[count_at(2, 21).locate(text)], "(1, 2, 3, 4)");
     }
 
     #[test]
-    #[serial]
+    fn check_locate_finds_upper_bound_arguments() {
+        let text = "let counts = count_is!(<=36085, 8, 24131, 24156);\n";
+        assert_eq!(&text[count_at(1, 14).locate(text)], "(<=36085, 8, 24131, 24156)");
+    }
+
+    #[test]
+    fn check_arguments_parse() {
+        for (text, values) in [
+            ("(1, 2, 3, 4)", [1, 2, 3, 4]),
+            ("(<=36085, 8, 24131, 24156)", [36085, 8, 24131, 24156]),
+            ("(1_000, 2, 3, 4)", [1000, 2, 3, 4]),
+            ("(0,0,0,0)", [0, 0, 0, 0]),
+        ] {
+            assert_eq!(Arguments::parse(text, "test").values, values, "parsing {text}");
+        }
+    }
+
+    #[test]
+    fn check_arguments_rewrite_touches_only_the_literals() {
+        // Everything but the digits -- the `<=`, the spacing -- has to come back out unchanged, and an
+        // argument whose value did not change has to come back out exactly as it was written.
+        for (text, values, expected) in [
+            ("(1, 2, 3, 4)", [5, 6, 7, 8], "(5, 6, 7, 8)"),
+            ("(<=36085, 8, 24131, 24156)", [5, 6, 7, 8], "(<=5, 6, 7, 8)"),
+            ("(0,0,0,0)", [5, 6, 7, 8], "(5,6,7,8)"),
+            ("( 1 , 2 , 3 , 4 )", [5, 6, 7, 8], "( 5 , 6 , 7 , 8 )"),
+            ("(1_000, 2, 3, 4)", [1000, 5, 3, 4], "(1_000, 5, 3, 4)"),
+        ] {
+            let mut source = format!("prefix{text}suffix");
+            Arguments::parse(text, "test").rewrite(&mut source, "prefix".len(), values);
+            assert_eq!(source, format!("prefix{expected}suffix"), "rewriting {text}");
+        }
+    }
+
+    #[test]
+    fn check_count_passes() {
+        let count = count_is!(1, 2, 3, 4);
+        count.assert_matches(1, 2, 3, 4);
+    }
+
+    #[test]
     #[should_panic]
     fn check_count_fails() {
         let count = count_is!(1, 2, 3, 4);
-        let num_constants = 5;
-        let num_public = 6;
-        let num_private = 7;
-        let num_inputs = 8;
-
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
+        count.assert_matches_with_query(None, 5, 6, 7, 8);
     }
 
     #[test]
-    #[serial]
     #[should_panic]
-    fn check_count_does_not_update_if_env_var_is_not_set_correctly() {
+    fn check_count_does_not_update_if_query_does_not_match() {
         let count = count_is!(1, 2, 3, 4);
-        let num_constants = 5;
-        let num_public = 6;
-        let num_private = 7;
-        let num_inputs = 8;
-
-        // Set the environment variable to update the file.
-        env::set_var("UPDATE_COUNT", "1");
-
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
-
-        env::remove_var("UPDATE_COUNT");
+        count.assert_matches_with_query(Some("a_file_that_is_not_this_one"), 5, 6, 7, 8);
     }
 
     #[test]
-    #[serial]
     fn check_count_updates_correctly() {
-        // `count` is originally `count_is!(1, 2, 3, 4)`. Replace `original_count` to demonstrate replacement.
-        let count = count_is!(11, 12, 13, 14);
-        let num_constants = 11;
-        let num_public = 12;
-        let num_private = 13;
-        let num_inputs = 14;
-
-        // Set the environment variable to update the file.
-        env::set_var("UPDATE_COUNT", "updatable_count.rs");
-
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
-
-        env::remove_var("UPDATE_COUNT");
+        let fixture = Fixture::new("count_is", &["(1, 2, 3, 4)"]);
+        let count = fixture.count(1, exact([1, 2, 3, 4]));
+        count.assert_matches_with_query(Some(fixture.path), 11, 12, 13, 14);
+        assert_eq!(fixture.arguments(1), "(11, 12, 13, 14)");
     }
 
     #[test]
-    #[serial]
     fn check_count_updates_correctly_multiple_times() {
-        // `count` is originally `count_is!(1, 2, 3, 4)`. Replace `original_count` to demonstrate replacement.
-        let count = count_is!(17, 18, 19, 20);
-
-        env::set_var("UPDATE_COUNT", "updatable_count.rs");
-
-        let (num_constants, num_public, num_private, num_inputs) = (5, 6, 7, 8);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
-
-        let (num_constants, num_public, num_private, num_inputs) = (9, 10, 11, 12);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
-
-        let (num_constants, num_public, num_private, num_inputs) = (13, 14, 15, 16);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
-
-        let (num_constants, num_public, num_private, num_inputs) = (17, 18, 19, 20);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
-
-        env::remove_var("UPDATE_COUNT");
+        let fixture = Fixture::new("count_is", &["(1, 2, 3, 4)"]);
+        let count = fixture.count(1, exact([1, 2, 3, 4]));
+        for values in [[5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]] {
+            count.assert_matches_with_query(Some(fixture.path), values[0], values[1], values[2], values[3]);
+        }
+        assert_eq!(fixture.arguments(1), "(17, 18, 19, 20)");
     }
 
     #[test]
-    #[serial]
+    fn check_count_update_is_idempotent() {
+        let fixture = Fixture::new("count_is", &["(1, 2, 3, 4)"]);
+        let count = fixture.count(1, exact([1, 2, 3, 4]));
+        count.assert_matches_with_query(Some(fixture.path), 11, 12, 13, 14);
+        let after_first = fs::read_to_string(fixture.path).unwrap();
+        count.assert_matches_with_query(Some(fixture.path), 11, 12, 13, 14);
+        assert_eq!(fs::read_to_string(fixture.path).unwrap(), after_first);
+    }
+
+    #[test]
     fn check_count_less_than_selects_maximum() {
-        // `count` is initially `count_less_than!(1, 2, 3, 4)`.
-        // After counts are updated, `original_count` is `count_less_than!(17, 18, 19, 20)`.
-        // In other words, count is updated to be the maximum of the original and updated counts.
-        let count = count_less_than!(17, 18, 19, 20);
+        let fixture = Fixture::new("count_less_than", &["(1, 2, 3, 4)"]);
+        let count = fixture.count(1, upper_bound([1, 2, 3, 4]));
+        for values in [[5, 18, 7, 8], [17, 10, 11, 12], [13, 6, 19, 16], [9, 18, 15, 20]] {
+            count.assert_matches_with_query(Some(fixture.path), values[0], values[1], values[2], values[3]);
+        }
+        assert_eq!(fixture.arguments(1), "(17, 18, 19, 20)");
+    }
 
-        // Set the environment variable to update the file.
-        env::set_var("UPDATE_COUNT", "updatable_count.rs");
+    #[test]
+    fn check_count_is_upper_bound_keeps_its_prefix() {
+        // Dropping the `<=` here would rewrite the upper-bound arm of `count_is!` into the exact arm,
+        // silently turning a deliberate bound into a count that fails on the next real change.
+        let fixture = Fixture::new("count_is", &["(<=100, 2, 3, 4)"]);
+        let count = fixture.count(1, [
+            Measurement::UpperBound(100),
+            Measurement::Exact(2),
+            Measurement::Exact(3),
+            Measurement::Exact(4),
+        ]);
 
-        let (num_constants, num_public, num_private, num_inputs) = (5, 18, 7, 8);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
+        // A measurement under the bound leaves the bound alone and updates the exact arguments.
+        count.assert_matches_with_query(Some(fixture.path), 7, 8, 9, 10);
+        assert_eq!(fixture.arguments(1), "(<=100, 8, 9, 10)");
 
-        let (num_constants, num_public, num_private, num_inputs) = (17, 10, 11, 12);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
+        // A measurement over the bound raises it, still as a bound.
+        count.assert_matches_with_query(Some(fixture.path), 150, 8, 9, 10);
+        assert_eq!(fixture.arguments(1), "(<=150, 8, 9, 10)");
+    }
 
-        let (num_constants, num_public, num_private, num_inputs) = (13, 6, 19, 16);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
+    #[test]
+    #[should_panic(expected = "is not delimited by parentheses")]
+    fn check_bracket_delimited_invocation_is_refused() {
+        // `macro_rules!` accepts `count_is![..]`, which `locate` runs past to the next `)` anywhere later in the
+        // file. The update has to refuse rather than rewrite whatever span that lands on.
+        let fixture = Fixture::new("count_is", &["[1, 2, 3, 4]", "(5, 6, 7, 8)"]);
+        let count = fixture.count(1, exact([1, 2, 3, 4]));
+        count.assert_matches_with_query(Some(fixture.path), 9, 10, 11, 12);
+    }
 
-        let (num_constants, num_public, num_private, num_inputs) = (9, 18, 15, 20);
-        count.assert_matches(num_constants, num_public, num_private, num_inputs);
+    #[test]
+    fn check_update_leaves_no_scratch_file_behind() {
+        let fixture = Fixture::new("count_is", &["(1, 2, 3, 4)"]);
+        let count = fixture.count(1, exact([1, 2, 3, 4]));
+        count.assert_matches_with_query(Some(fixture.path), 11, 12, 13, 14);
+        assert_eq!(fixture.arguments(1), "(11, 12, 13, 14)");
+        let scratch = Path::new(fixture.path).with_extension(format!("{}.tmp", std::process::id()));
+        assert!(!scratch.exists(), "the file written before the rename is still there: {}", scratch.display());
+    }
 
-        env::remove_var("UPDATE_COUNT");
+    #[test]
+    fn check_updates_to_one_file_do_not_disturb_each_other() {
+        // The first update lengthens its line, which shifts the byte offset of the second invocation.
+        let fixture = Fixture::new("count_is", &["(1, 2, 3, 4)", "(5, 6, 7, 8)"]);
+        let first = fixture.count(1, exact([1, 2, 3, 4]));
+        let second = fixture.count(2, exact([5, 6, 7, 8]));
+        first.assert_matches_with_query(Some(fixture.path), 100000, 2, 3, 4);
+        second.assert_matches_with_query(Some(fixture.path), 9, 10, 11, 12);
+        assert_eq!(fixture.arguments(1), "(100000, 2, 3, 4)");
+        assert_eq!(fixture.arguments(2), "(9, 10, 11, 12)");
+    }
+
+    #[test]
+    fn check_concurrent_updates_to_one_file_all_survive() {
+        const INVOCATIONS: u32 = 16;
+        let fixture = Fixture::new("count_is", &vec!["(0, 0, 0, 0)"; INVOCATIONS as usize]);
+        let fixture = &fixture;
+        std::thread::scope(|scope| {
+            for line in 1..=INVOCATIONS {
+                scope.spawn(move || {
+                    let count = fixture.count(line, exact([0, 0, 0, 0]));
+                    count.assert_matches_with_query(Some(fixture.path), line as u64 * 100000, 1, 2, 3);
+                });
+            }
+        });
+        for line in 1..=INVOCATIONS {
+            assert_eq!(fixture.arguments(line), format!("({}, 1, 2, 3)", line * 100000));
+        }
     }
 }

@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Operand<N> {
     /// Parses a string into a operand.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse to determine the operand (order matters).
         alt((
             // Parse special operands before literals, registers, and program IDs.
@@ -34,6 +34,17 @@ impl<N: Network> Parser for Operand<N> {
                 |(_, index)| Self::AleoGeneratorPowers(index),
             ),
             map(tag("aleo::GENERATOR"), |_| Self::AleoGenerator),
+            // Parse `Operand::ComponentChecksum` (`<name>/checksum`) before `Operand::Checksum`, since a component
+            // may be named after a keyword. For example, a function named `checksum` is referenced as
+            // `checksum/checksum`: if `Operand::Checksum` were tried first, it would match the leading `checksum`
+            // and misparse it as the program checksum, leaving `/checksum` unconsumed.
+            map(
+                pair(
+                    pair(opt(terminated(ProgramID::parse, tag("/"))), terminated(Identifier::parse, tag("/"))),
+                    tag("checksum"),
+                ),
+                |((program_id, name), _)| Self::ComponentChecksum(program_id, name),
+            ),
             // Note that `Operand::Checksum` and `Operand::Edition` must be parsed before `Operand::ProgramID`s, since an edition or checksum may be prefixed with a program ID.
             map(pair(opt(terminated(ProgramID::parse, tag("/"))), tag("checksum")), |(program_id, _)| {
                 Self::Checksum(program_id)
@@ -121,6 +132,11 @@ impl<N: Network> Display for Operand<N> {
                 Some(program_id) => write!(f, "{program_id}/program_owner"),
                 None => write!(f, "program_owner"),
             },
+            // Prints the optional program ID with the component name and the checksum keyword, i.e. `transfer/checksum` or `token.aleo/transfer/checksum`
+            Self::ComponentChecksum(program_id, name) => match program_id {
+                Some(program_id) => write!(f, "{program_id}/{name}/checksum"),
+                None => write!(f, "{name}/checksum"),
+            },
         }
     }
 }
@@ -191,6 +207,28 @@ mod tests {
         let operand = Operand::<CurrentNetwork>::parse("token.aleo/program_owner").unwrap().1;
         assert_eq!(Operand::ProgramOwner(Some(ProgramID::from_str("token.aleo")?)), operand);
 
+        let operand = Operand::<CurrentNetwork>::parse("transfer/checksum").unwrap().1;
+        assert_eq!(Operand::ComponentChecksum(None, Identifier::from_str("transfer")?), operand);
+
+        let operand = Operand::<CurrentNetwork>::parse("token.aleo/transfer/checksum").unwrap().1;
+        assert_eq!(
+            Operand::ComponentChecksum(Some(ProgramID::from_str("token.aleo")?), Identifier::from_str("transfer")?),
+            operand
+        );
+
+        // Ensure a bare `checksum` (and `program/checksum`) still parses as the program checksum, not a component.
+        let operand = Operand::<CurrentNetwork>::parse("checksum").unwrap().1;
+        assert_eq!(Operand::Checksum(None), operand);
+        let operand = Operand::<CurrentNetwork>::parse("token.aleo/checksum").unwrap().1;
+        assert_eq!(Operand::Checksum(Some(ProgramID::from_str("token.aleo")?)), operand);
+
+        // Ensure component names that collide with operand keywords still parse as a component checksum and roundtrip.
+        for name in ["checksum", "edition", "program_owner", "edition_v2", "checksums", "program_owner_x"] {
+            let operand = Operand::<CurrentNetwork>::parse(&format!("{name}/checksum")).unwrap().1;
+            assert_eq!(Operand::ComponentChecksum(None, Identifier::from_str(name)?), operand);
+            assert_eq!(format!("{operand}"), format!("{name}/checksum"));
+        }
+
         // Sanity check a failure case.
         let (remainder, operand) = Operand::<CurrentNetwork>::parse("1field.private").unwrap();
         assert_eq!(Operand::Literal(Literal::from_str("1field")?), operand);
@@ -245,6 +283,12 @@ mod tests {
 
         let operand = Operand::<CurrentNetwork>::parse("foo.aleo/program_owner").unwrap().1;
         assert_eq!(format!("{operand}"), "foo.aleo/program_owner");
+
+        let operand = Operand::<CurrentNetwork>::parse("transfer/checksum").unwrap().1;
+        assert_eq!(format!("{operand}"), "transfer/checksum");
+
+        let operand = Operand::<CurrentNetwork>::parse("foo.aleo/transfer/checksum").unwrap().1;
+        assert_eq!(format!("{operand}"), "foo.aleo/transfer/checksum");
 
         let operand = Operand::<CurrentNetwork>::parse("group::GEN").unwrap().1;
         assert_eq!(

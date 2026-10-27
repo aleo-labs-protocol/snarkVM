@@ -594,7 +594,7 @@ mod tests {
             assert!(candidate.is_empty());
 
             // Insert the transition input.
-            input_store.insert(transition_id, &[input.clone()]).unwrap();
+            input_store.insert(transition_id, std::slice::from_ref(&input)).unwrap();
 
             // Retrieve the transition input.
             let candidate = input_store.get(&transition_id).unwrap();
@@ -625,7 +625,7 @@ mod tests {
             assert!(candidate.is_none());
 
             // Insert the transition input.
-            input_store.insert(transition_id, &[input.clone()]).unwrap();
+            input_store.insert(transition_id, std::slice::from_ref(&input)).unwrap();
 
             // Find the transition ID.
             let candidate = input_store.find_transition_id(input.id()).unwrap();

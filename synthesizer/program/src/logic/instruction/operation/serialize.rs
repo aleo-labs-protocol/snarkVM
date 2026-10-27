@@ -344,9 +344,9 @@ impl<N: Network, const VARIANT: u8> SerializeInstruction<N, VARIANT> {
 
 impl<N: Network, const VARIANT: u8> Parser for SerializeInstruction<N, VARIANT> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parse the operands from the string.
-        fn parse_operands<N: Network>(string: &str, num_operands: usize) -> ParserResult<Vec<Operand<N>>> {
+        fn parse_operands<N: Network>(string: &str, num_operands: usize) -> ParserResult<'_, Vec<Operand<N>>> {
             let mut operands = Vec::with_capacity(num_operands);
             let mut string = string;
 

@@ -156,7 +156,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // If the block is the start of a new epoch, or the epoch hash has not been set,
         // update the current epoch hash and clear the epoch prover cache.
-        if block.height() % N::NUM_BLOCKS_PER_EPOCH == 0 || self.current_epoch_hash.read().is_none() {
+        if block.height().is_multiple_of(N::NUM_BLOCKS_PER_EPOCH) || self.current_epoch_hash.read().is_none() {
             // Update and log the current epoch hash.
             match self.get_epoch_hash(block.height()).ok() {
                 Some(epoch_hash) => {
@@ -413,6 +413,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Determine if the block timestamp should be included.
         let next_block_timestamp =
             (next_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default()).then_some(next_timestamp);
+        let (block_spend_limit, block_synthesis_limit) = if let Some(subdag) = subdag {
+            (subdag.spend_limit(next_height), subdag.synthesis_limit(next_height))
+        } else {
+            (Subdag::<N>::min_spend_limit(next_height), Subdag::<N>::min_synthesis_limit(next_height))
+        };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             next_round,
@@ -421,6 +426,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_cumulative_weight,
             next_cumulative_proof_target,
             previous_block.hash(),
+            block_spend_limit,
+            block_synthesis_limit,
         )?;
         // Speculate over the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = self.vm.speculate(

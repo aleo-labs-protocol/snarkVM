@@ -33,7 +33,9 @@ use std::{
     ops::{Mul, Neg},
 };
 
+// The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(C)]
 pub struct Affine<P: Parameters> {
     pub x: P::BaseField,
     pub y: P::BaseField,

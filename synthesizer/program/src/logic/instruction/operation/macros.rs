@@ -413,6 +413,7 @@ mod tests {
                                 })+
 
                                 // Attempt to compute the invalid operand case.
+                                #[allow(clippy::cloned_ref_to_slice_refs)]
                                 let result_a = <$operation as $crate::Operation<_, _, _, 1>>::evaluate(&[literal_a.clone()]);
                                 // Ensure the computation failed.
                                 assert!(result_a.is_err(), "An invalid operand case (on iteration {i}) did not fail (console): {literal_a}");
@@ -453,6 +454,7 @@ mod tests {
                                 })+
 
                                 // Attempt to compute the invalid operand case.
+                                #[allow(clippy::cloned_ref_to_slice_refs)]
                                 let result_a = <$operation as $crate::Operation<_, _, _, 1>>::evaluate(&[literal_a.clone()]);
                                 // Ensure the computation failed.
                                 assert!(result_a.is_err(), "An invalid operand case (on iteration {i}) did not fail (console): {literal_a}");
@@ -654,6 +656,7 @@ mod tests {
                             // If the sampled values overflow on evaluation, ensure it halts.
                             else {
                                 // Halt the evaluation.
+                                #[allow(clippy::cloned_ref_to_slice_refs)]
                                 let result_a = std::panic::catch_unwind(|| <$operation as $crate::Operation<_, _, _, 1>>::evaluate(&[a.clone()]).unwrap());
                                 // Ensure the evaluation halted.
                                 assert!(result_a.is_err(), "Failure case (on iteration {i}) did not halt (console): {a}");

@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for DynamicRecord<N> {
     /// Parses a string as a dynamic record: `{ owner: address, _root: field, _nonce: group, _version: u8 }`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.

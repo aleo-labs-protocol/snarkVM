@@ -114,7 +114,7 @@ fn test_prefix_with_duplicate_block_error() {
     assert!(matches!(result, Err(CheckBlockError::InvalidHeight { expected: 2, actual: 3 })));
 
     // But succeed with the prefix.
-    let block3 = ledger.check_block_subdag(block3, &[block2.clone()]).unwrap();
+    let block3 = ledger.check_block_subdag(block3, std::slice::from_ref(&block2)).unwrap();
 
     // Create a forth block
     let block4 = builder.generate_block(rng);

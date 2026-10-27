@@ -25,6 +25,7 @@ type Field = <console::CanaryV0 as console::Environment>::Field;
 thread_local! {
     static VARIABLE_LIMIT: Cell<Option<u64>> = const { Cell::new(None) };
     static CONSTRAINT_LIMIT: Cell<Option<u64>> = const { Cell::new(None) };
+    static NON_ZERO_LIMIT: Cell<Option<(u64, u64, u64)>> = const { Cell::new(None) };
     pub(super) static CANARY_CIRCUIT: RefCell<R1CS<Field>> = RefCell::new(R1CS::new());
     static IN_WITNESS: Cell<bool> = const { Cell::new(false) };
     static ZERO: LinearCombination<Field> = LinearCombination::zero();
@@ -58,6 +59,8 @@ impl Environment for CanaryCircuit {
                 // Ensure that we do not surpass the variable limit for the circuit.
                 VARIABLE_LIMIT.with(|variable_limit| {
                     if let Some(limit) = variable_limit.get() {
+                        // Note: because we check > here, one could theoretically construct a
+                        // circuit with variable_limit + 1 variables.
                         if Self::num_variables() > limit {
                             Self::halt(format!("Surpassed the variable limit ({limit})"))
                         }
@@ -136,6 +139,8 @@ impl Environment for CanaryCircuit {
                     // Ensure that we do not surpass the constraint limit for the circuit.
                     CONSTRAINT_LIMIT.with(|constraint_limit| {
                         if let Some(limit) = constraint_limit.get() {
+                            // Note: because we check > here, one could theoretically construct a
+                            // circuit with constraint_limit + 1 constraints.
                             if circuit.borrow().num_constraints() > limit {
                                 Self::halt(format!("Surpassed the constraint limit ({limit})"))
                             }
@@ -160,6 +165,23 @@ impl Environment for CanaryCircuit {
                         false => {
                             // Construct the constraint object.
                             let constraint = Constraint(circuit.borrow().scope(), a, b, c);
+
+                            // Ensure that we do not surpass the density limit for the circuit.
+                            NON_ZERO_LIMIT.with(|non_zero_limit| {
+                                if let Some((limit_a, limit_b, limit_c)) = non_zero_limit.get() {
+                                    let (curr_d_a, curr_d_b, curr_d_c) = circuit.borrow().num_nonzeros();
+                                    let (d_a, d_b, d_c) = constraint.num_nonzeros();
+                                    if curr_d_a.saturating_add(d_a) > limit_a
+                                        || curr_d_b.saturating_add(d_b) > limit_b
+                                        || curr_d_c.saturating_add(d_c) > limit_c
+                                    {
+                                        Self::halt(format!(
+                                            "Surpassed the circuit density limit (A: {limit_a}, B: {limit_b}, C: {limit_c}). Was ({curr_d_a}, {curr_d_b}, {curr_d_c}) before, tried to add ({d_a}, {d_b}, {d_c})"
+                                        ))
+                                    }
+                                }
+                            });
+
                             // Append the constraint.
                             circuit.borrow_mut().enforce(constraint)
                         }
@@ -257,6 +279,16 @@ impl Environment for CanaryCircuit {
         CONSTRAINT_LIMIT.with(|current_limit| current_limit.replace(limit));
     }
 
+    /// Returns the density limit for the circuit, if one exists.
+    fn get_non_zero_limit() -> Option<(u64, u64, u64)> {
+        NON_ZERO_LIMIT.with(|current_limit| current_limit.get())
+    }
+
+    /// Sets the density limit for the circuit.
+    fn set_non_zero_limit(limit: Option<(u64, u64, u64)>) {
+        NON_ZERO_LIMIT.with(|current_limit| current_limit.replace(limit));
+    }
+
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
         let error = message.into();
@@ -293,6 +325,8 @@ impl Environment for CanaryCircuit {
             Self::set_variable_limit(None);
             // Reset the constraint limit.
             Self::set_constraint_limit(None);
+            // Reset the density limit.
+            Self::set_non_zero_limit(None);
             // Eject the R1CS instance.
             let r1cs = circuit.replace(R1CS::<<Self as Environment>::BaseField>::new());
             // Ensure the circuit is now empty.
@@ -315,6 +349,8 @@ impl Environment for CanaryCircuit {
             Self::set_variable_limit(None);
             // Reset the constraint limit.
             Self::set_constraint_limit(None);
+            // Reset the density limit.
+            Self::set_non_zero_limit(None);
             // Eject the R1CS instance.
             let r1cs = circuit.replace(R1CS::<<Self as Environment>::BaseField>::new());
             assert_eq!(0, circuit.borrow().num_constants());
@@ -336,6 +372,8 @@ impl Environment for CanaryCircuit {
             Self::set_variable_limit(None);
             // Reset the constraint limit.
             Self::set_constraint_limit(None);
+            // Reset the density limit.
+            Self::set_non_zero_limit(None);
             // Reset the circuit.
             *circuit.borrow_mut() = R1CS::<<Self as Environment>::BaseField>::new();
             assert_eq!(0, circuit.borrow().num_constants());

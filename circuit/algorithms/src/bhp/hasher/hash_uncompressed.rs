@@ -65,7 +65,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
         let coeff_a = Field::constant(console::Group::<E::Network>::MONTGOMERY_A);
         let coeff_b = Field::constant(console::Group::<E::Network>::MONTGOMERY_B);
 
-        // Implements the incomplete addition formulae of two Montgomery curve points.
+        // Incomplete addition of two Montgomery points. The denominator is `that_x - this_x`.
+        // Setup accepts only non-identity bases, and only a window whose absolute sum is below the group order.
+        // Those checks keep every pair of summands in a window at distinct x-coordinates.
         let montgomery_add = |(this_x, this_y): (&Field<E>, &Field<E>), (that_x, that_y): (&Field<E>, &Field<E>)| {
             // Construct `lambda` as a witness defined as:
             // `lambda := (that_y - this_y) / (that_x - this_x)`

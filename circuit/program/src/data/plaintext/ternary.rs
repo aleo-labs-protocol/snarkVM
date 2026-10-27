@@ -108,6 +108,34 @@ mod tests {
     }
 
     #[test]
+    fn test_plaintext_ternary_array_constraint_counts() {
+        let first = sample(Mode::Private, "[ 1field, 2field, 3field ]");
+        let second = sample(Mode::Private, "[ 4field, 5field, 6field ]");
+        let condition = Boolean::<Circuit>::new(Mode::Private, true);
+
+        let expected_constraints = Circuit::scope("literal selections", || {
+            let (Plaintext::Array(first, _), Plaintext::Array(second, _)) = (&first, &second) else {
+                panic!("The test inputs must be arrays.");
+            };
+            for (first, second) in first.iter().zip_eq(second) {
+                let (Plaintext::Literal(first, _), Plaintext::Literal(second, _)) = (first, second) else {
+                    panic!("The test array elements must be literals.");
+                };
+                let _ = Literal::ternary(&condition, first, second);
+            }
+            assert!(Circuit::is_satisfied());
+            Circuit::num_constraints_in_scope()
+        });
+        Circuit::scope("array selection", || {
+            let candidate = Plaintext::ternary(&condition, &first, &second);
+            assert_eq!(first.eject_value(), candidate.eject_value());
+            assert_eq!(expected_constraints, Circuit::num_constraints_in_scope());
+            assert!(Circuit::is_satisfied());
+        });
+        Circuit::reset();
+    }
+
+    #[test]
     #[should_panic(expected = "ternary operands must have equivalent shape")]
     fn test_plaintext_ternary_array_length_mismatch_panics() {
         let first = sample(Mode::Private, "[ 1field, 2field ]");

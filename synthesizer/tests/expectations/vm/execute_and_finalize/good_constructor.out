@@ -1,14 +1,5 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    good_constructor.aleo/check:
-      outputs:
-      - '{"type":"future","id":"7086913739686543661745625595436283538683627173984223197305480672714328309523field","value":"{\n  program_id: good_constructor.aleo,\n  function_name: check,\n  arguments: []\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"43822391921739685324140768800289095117015573338357624224055189710969456917field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1294u64\n  ]\n}"}'

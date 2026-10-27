@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console"
-version = "4.7.1"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -55,8 +55,13 @@ filesystem = [ "snarkvm-console-network/filesystem" ]
 locktick = [ "snarkvm-console-collections?/locktick" ]
 network = [ "collections", "snarkvm-console-network" ]
 program = [ "network", "snarkvm-console-program" ]
-serial = [ "snarkvm-console-collections/serial" ]
+serial = [ "snarkvm-console-algorithms/serial", "snarkvm-console-collections/serial" ]
 types = [ "snarkvm-console-types" ]
 test_targets = [ "snarkvm-console-network/test_targets" ]
 test_consensus_heights = [ "snarkvm-console-network/test_consensus_heights" ]
+dev-print = [
+  "snarkvm-console-algorithms?/dev-print",
+  "snarkvm-console-network?/dev-print",
+  "snarkvm-console-program?/dev-print"
+]
 dev_skip_checks = [ ]

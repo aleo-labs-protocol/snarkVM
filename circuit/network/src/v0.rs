@@ -518,6 +518,16 @@ impl Environment for AleoV0 {
         E::get_constraint_limit()
     }
 
+    /// Returns the density limit for the circuit, if one exists.
+    fn get_non_zero_limit() -> Option<(u64, u64, u64)> {
+        E::get_non_zero_limit()
+    }
+
+    /// Sets the density limit for the circuit.
+    fn set_non_zero_limit(limit: Option<(u64, u64, u64)>) {
+        E::set_non_zero_limit(limit)
+    }
+
     /// Sets the constraint limit for the circuit.
     fn set_constraint_limit(limit: Option<u64>) {
         E::set_constraint_limit(limit)

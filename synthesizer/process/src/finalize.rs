@@ -626,15 +626,9 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     nonce += 1;
 
                     // Set up the finalize state for the await.
-                    let callee_state = match try_vm_runtime!(|| setup_await(
-                        state,
-                        await_,
-                        &stack,
-                        &registers,
-                        transition_id,
-                        nonce,
-                        &dynamic_future_to_future,
-                    )) {
+                    let callee_state = match try_vm_runtime(|| {
+                        setup_await(state, await_, &stack, &registers, transition_id, nonce, &dynamic_future_to_future)
+                    }) {
                         Ok(Ok(callee_state)) => callee_state,
                         // If the evaluation fails, bail and return the error.
                         Ok(Err(error)) => indexed_finalize_bail!(
@@ -790,7 +784,7 @@ pub(crate) fn finalize_command_except_await<N: Network>(
     // Finalize the command.
     match &command {
         Command::BranchEq(branch_eq) => {
-            let result = try_vm_runtime!(|| branch_to(*counter, branch_eq, positions, stack, registers));
+            let result = try_vm_runtime(|| branch_to(*counter, branch_eq, positions, stack, registers));
             match result {
                 Ok(Ok(new_counter)) => {
                     *counter = new_counter;
@@ -814,7 +808,7 @@ pub(crate) fn finalize_command_except_await<N: Network>(
             }
         }
         Command::BranchNeq(branch_neq) => {
-            let result = try_vm_runtime!(|| branch_to(*counter, branch_neq, positions, stack, registers));
+            let result = try_vm_runtime(|| branch_to(*counter, branch_neq, positions, stack, registers));
             match result {
                 Ok(Ok(new_counter)) => {
                     *counter = new_counter;
@@ -847,7 +841,7 @@ pub(crate) fn finalize_command_except_await<N: Network>(
             )
         }
         _ => {
-            let result = try_vm_runtime!(|| command.finalize(stack, store, registers));
+            let result = try_vm_runtime(|| command.finalize(stack, store, registers));
             match result {
                 // If the evaluation succeeds with an operation, add it to the list.
                 Ok(Ok(Some(finalize_operation))) => finalize_operations.push(finalize_operation),

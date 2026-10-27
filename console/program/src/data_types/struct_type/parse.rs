@@ -23,9 +23,9 @@ impl<N: Network> Parser for StructType<N> {
     ///       amount as u64;
     /// ```
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses a string into a tuple.
-        fn parse_tuple<N: Network>(string: &str) -> ParserResult<(Identifier<N>, PlaintextType<N>)> {
+        fn parse_tuple<N: Network>(string: &str) -> ParserResult<'_, (Identifier<N>, PlaintextType<N>)> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the identifier from the string.

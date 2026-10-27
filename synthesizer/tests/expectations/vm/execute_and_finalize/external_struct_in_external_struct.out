@@ -1,17 +1,5 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    parent.aleo/omega_wrapper:
-      outputs:
-      - '{"type":"private","id":"3363843273273390426198165786444391623541548663278669491937661308505398161558field","value":"ciphertext1qyqp2zwzxcht8q24drchqazpc43thxdawjj39pg65qchxthh6xtkzps4uhjc0"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    child.aleo/create_another_wrapper:
-      outputs:
-      - '{"type":"private","id":"4824692260451617089111497415237982208204607335711874663334936818492273334999field","value":"ciphertext1qyqr9mndf50sjs27umuqlw95dsv2xz4adtejcve0tfqnrcvh6z5dwrstyzh7z"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"7494830042431285409548813311170788918552054493348379147724850552044969337406field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1938u64\n  ]\n}"}'

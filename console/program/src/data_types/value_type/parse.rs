@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ValueType<N> {
     /// Parses the string into a value type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the mode from the string.
         // Note that the order of the parsers matters.
         alt((

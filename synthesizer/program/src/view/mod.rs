@@ -67,6 +67,14 @@ impl<N: Network> ViewCore<N> {
         &self.name
     }
 
+    /// Returns the checksum of the view.
+    ///
+    /// The checksum is a 32-byte hash of the view's source code in string format.
+    /// This ensures a strict definition of view equivalence, useful for program upgradability.
+    pub fn to_checksum(&self) -> [console::types::U8<N>; 32] {
+        crate::to_checksum::source_code_checksum(&self.to_string())
+    }
+
     /// Returns the view inputs.
     pub const fn inputs(&self) -> &IndexSet<Input<N>> {
         &self.inputs

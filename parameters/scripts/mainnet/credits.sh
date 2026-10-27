@@ -2,7 +2,7 @@
 
 # Inputs: program name
 
-cargo run --release --example setup credits mainnet -- --nocapture || exit
+cargo run --release --features filesystem --example setup credits mainnet -- --nocapture || exit
 
 mv *.metadata ../../src/mainnet/resources/credits || exit
 mv *.prover.* ~/.aleo/resources || exit

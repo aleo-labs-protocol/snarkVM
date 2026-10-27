@@ -137,7 +137,7 @@ impl<E: Environment, I: IntegerType> Eject for Integer<E, I> {
 impl<E: Environment, I: IntegerType> Parser for Integer<E, I> {
     /// Parses a string into an integer circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the integer from the string.
         let (string, integer) = console::Integer::parse(string)?;
         // Parse the mode from the string.

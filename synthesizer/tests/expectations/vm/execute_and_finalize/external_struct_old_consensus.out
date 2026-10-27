@@ -1,13 +1,5 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    committee_test.aleo/main:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"7028676572901512266841148061498709341769090753580542406028590304440583867290field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo153m2erq5d0fqxmerjln3x2f6vrdz3hkacxnn2cktch5y8q89rv9qu3lhju,\n    1284u64\n  ]\n}"}'
