@@ -191,7 +191,7 @@ pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
 
 /// The number of heights pruned in one startup batch, one authority deletion each.
 #[cfg(feature = "prune-authority-data")]
-const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 256;
+const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 10_000;
 
 /// The number of certificate index deletions in one startup batch.
 #[cfg(feature = "prune-authority-data")]
@@ -209,14 +209,13 @@ fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
     }
 }
 
-/// Removes the authority of every block in `heights` and records that every height below
-/// `heights.end` is pruned. Call it inside an atomic batch scope. Genesis is never pruned.
+/// Removes the authority of every block in `heights`, without reading it, and records that every
+/// height below `heights.end` is pruned. Call it inside an atomic batch scope; genesis is never
+/// pruned. The blocks' certificate indexes stay until the next startup and read as absent meanwhile.
 ///
-/// It never reads an authority: decoding one checks every curve point and costs tens of
-/// milliseconds. The blocks' certificate indexes stay until the next startup removes them, and
-/// read as absent meanwhile (see `BlockStorage::get_certificate_index`). The watermark it advances
-/// is visible to the next scope only once this scope's batch has been handed to the database, so
-/// callers that pause atomic writes must keep one block per paused span, as `VM::add_next_block` does.
+/// Decoding an authority checks every curve point and costs tens of milliseconds, so pruning never
+/// does it. Callers that pause atomic writes must keep one block per paused span (see
+/// `VM::add_next_block`), since the watermark is visible to the next scope only once committed.
 #[cfg(feature = "prune-authority-data")]
 fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights: core::ops::Range<u32>) -> Result<()> {
     for height in heights.start.max(1)..heights.end {
@@ -229,50 +228,64 @@ fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights:
     storage.set_authority_pruned_below(heights.end)
 }
 
-/// Prunes, when opening storage, every height between the watermark and the retained window, one
-/// batch per chunk, then removes the certificate indexes of every pruned block. Each chunk advances
-/// the watermark, so an interrupted run resumes where it stopped.
+/// Prunes, when opening storage, the authorities between the watermark and the retained window,
+/// then the certificate indexes of every pruned block.
 #[cfg(feature = "prune-authority-data")]
 fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest_height: u32) -> Result<()> {
-    let floor = oldest_retained_authority_height(latest_height);
     let start = storage.authority_pruned_below()?.unwrap_or(1);
-    if start < floor {
-        let total = floor - start;
-        info!("Pruning the authority data of {total} blocks below block {floor}");
-
-        let timer = std::time::Instant::now();
-        let report_every = (total / 100).max(AUTHORITY_PRUNING_CHUNK_HEIGHTS);
-        let mut next_report = report_every;
-        for chunk_start in (start..floor).step_by(AUTHORITY_PRUNING_CHUNK_HEIGHTS as usize) {
-            let chunk_end = chunk_start.saturating_add(AUTHORITY_PRUNING_CHUNK_HEIGHTS).min(floor);
-            atomic_batch_scope!(storage, { prune_authority_heights(storage, chunk_start..chunk_end) })?;
-
-            let done = chunk_end - start;
-            if done >= next_report && done < total {
-                let rate = f64::from(done) / timer.elapsed().as_secs_f64().max(f64::EPSILON);
-                let percent = 100.0 * f64::from(done) / f64::from(total);
-                let remaining = f64::from(total - done) / rate;
-                info!(
-                    "Pruned {done} of {total} blocks ({percent:.0}%), {rate:.0} blocks/s, about {remaining:.0} s left"
-                );
-                next_report = done + report_every;
-            }
-        }
-        info!("Pruned the authority data below block {floor} in {:.1} s", timer.elapsed().as_secs_f64());
-    }
-
+    prune_authority_range(storage, start, oldest_retained_authority_height(latest_height))?;
     if let Some(below) = storage.authority_pruned_below()? {
         prune_certificate_indexes(storage, below)?;
     }
     Ok(())
 }
 
-/// Removes the certificate indexes of pruned blocks, in one pass over the certificate map.
-///
-/// Inserts leave these rows behind so that they never read an authority. The pass runs on every
-/// startup; it reads only the small index rows.
+/// Prunes the authorities of `start..floor` in chunks, one batch each, logging progress. Each chunk
+/// advances the watermark, so an interrupted run resumes where it stopped.
+#[cfg(feature = "prune-authority-data")]
+fn prune_authority_range<N: Network, B: BlockStorage<N>>(storage: &B, start: u32, floor: u32) -> Result<()> {
+    if start >= floor {
+        return Ok(());
+    }
+    let total = floor - start;
+    info!("Pruning the authority data of {total} blocks below block {floor}");
+
+    let timer = std::time::Instant::now();
+    let report_every = (total / 100).max(AUTHORITY_PRUNING_CHUNK_HEIGHTS);
+    let mut next_report = report_every;
+    for chunk_start in (start..floor).step_by(AUTHORITY_PRUNING_CHUNK_HEIGHTS as usize) {
+        let chunk_end = chunk_start.saturating_add(AUTHORITY_PRUNING_CHUNK_HEIGHTS).min(floor);
+        atomic_batch_scope!(storage, { prune_authority_heights(storage, chunk_start..chunk_end) })?;
+
+        let done = chunk_end - start;
+        if done >= next_report && done < total {
+            let rate = f64::from(done) / timer.elapsed().as_secs_f64().max(f64::EPSILON);
+            let percent = 100.0 * f64::from(done) / f64::from(total);
+            let remaining = f64::from(total - done) / rate;
+            info!("Pruned {done} of {total} blocks ({percent:.0}%), {rate:.0} blocks/s, about {remaining:.0} s left");
+            next_report = done + report_every;
+        }
+    }
+    info!("Pruned the authority data below block {floor} in {:.1} s", timer.elapsed().as_secs_f64());
+    Ok(())
+}
+
+/// Removes the certificate indexes of blocks below `below`, in one pass over the small index rows.
+/// It runs on every startup, since inserts leave these rows behind.
 #[cfg(feature = "prune-authority-data")]
 fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
+    let flush = |batch: &[Field<N>]| -> Result<()> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+        atomic_batch_scope!(storage, {
+            for certificate_id in batch {
+                storage.certificate_map().remove(certificate_id)?;
+            }
+            Ok(())
+        })
+    };
+
     let timer = std::time::Instant::now();
     let mut removed = 0;
     let mut batch = Vec::with_capacity(CERTIFICATE_PRUNING_BATCH_SIZE);
@@ -281,15 +294,14 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
     for (certificate_id, index) in storage.certificate_map().iter_confirmed() {
         if (1..below).contains(&index.0) {
             batch.push(certificate_id.into_owned());
-        }
-        if batch.len() == CERTIFICATE_PRUNING_BATCH_SIZE {
-            remove_certificate_indexes(storage, &batch)?;
-            removed += batch.len();
-            batch.clear();
+            removed += 1;
+            if batch.len() == CERTIFICATE_PRUNING_BATCH_SIZE {
+                flush(&batch)?;
+                batch.clear();
+            }
         }
     }
-    remove_certificate_indexes(storage, &batch)?;
-    removed += batch.len();
+    flush(&batch)?;
 
     if removed > 0 {
         info!("Removed {removed} certificate indexes of pruned blocks in {:.1} s", timer.elapsed().as_secs_f64());
@@ -297,20 +309,6 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
         debug!("No certificate indexes of pruned blocks to remove ({:.1} s)", timer.elapsed().as_secs_f64());
     }
     Ok(())
-}
-
-/// Removes one batch of certificate indexes.
-#[cfg(feature = "prune-authority-data")]
-fn remove_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, certificate_ids: &[Field<N>]) -> Result<()> {
-    if certificate_ids.is_empty() {
-        return Ok(());
-    }
-    atomic_batch_scope!(storage, {
-        for certificate_id in certificate_ids {
-            storage.certificate_map().remove(certificate_id)?;
-        }
-        Ok(())
-    })
 }
 
 /// A trait for block storage.
@@ -1931,7 +1929,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns `true` if the given certificate ID exists.
     pub fn contains_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
-        self.storage.contains_block_for_certificate(certificate_id)
+        self.contains_block_for_certificate(certificate_id)
     }
 
     /// Returns `true` if the given solution ID exists.
@@ -2275,7 +2273,7 @@ mod tests {
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert_eq!(storage.authority_pruned_below().unwrap(), Some(block_height + 1));
 
-        // Heights without a hash, or whose authority is already gone, are skipped.
+        // Heights without a hash are skipped.
         atomic_batch_scope!(storage, { prune_authority_heights(&storage, 1..4) }).unwrap();
         assert_eq!(storage.authority_pruned_below().unwrap(), Some(4));
     }
@@ -2525,8 +2523,13 @@ mod tests {
             block_store.insert(block).unwrap();
         }
 
+        // Insert-time pruning removed block 1's authority. Its certificate row lingers until the next
+        // startup, and reads as absent, not as an error.
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
+        assert!(block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
+        assert!(!block_store.contains_block_for_certificate(&certificate_id).unwrap());
+        assert!(block_store.get_batch_certificate(&certificate_id).unwrap().is_none());
 
         // Restore stale authority data and clear the watermark to emulate a database created before pruning.
         block_store.storage.authority_map().insert(blocks[1].hash(), blocks[1].authority().clone()).unwrap();
@@ -2545,32 +2548,6 @@ mod tests {
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
-    }
-
-    /// Ensures certificate rows left by insert-time pruning read as absent, and a restart removes them.
-    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
-    #[test]
-    fn test_lingering_certificate_rows_removed_on_restart() {
-        let rng = &mut TestRng::default();
-        let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
-
-        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        let storage_mode = StorageMode::new_test(Some(temp_dir));
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
-        for block in &blocks {
-            block_store.insert(block).unwrap();
-        }
-
-        // Block 1's authority is pruned; its certificate row lingers but reads as absent, not as an error.
-        assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
-        assert!(block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
-        assert!(!block_store.contains_certificate(&certificate_id).unwrap());
-        assert!(!block_store.contains_block_for_certificate(&certificate_id).unwrap());
-        assert!(block_store.get_batch_certificate(&certificate_id).unwrap().is_none());
-        drop(block_store);
-
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
-        assert!(!block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
     }
 
     /// Ensures opening a non-pruning RocksDB store preserves authority and certificate data.
