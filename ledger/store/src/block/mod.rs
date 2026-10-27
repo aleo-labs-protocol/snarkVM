@@ -289,6 +289,11 @@ fn read_block_parts<N: Network, B: BlockStorage<N>>(
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_LOG_INTERVAL: u32 = 10_000;
 
+/// The most heights one insert prunes. Beyond the one that expires with the block, the rest close a gap
+/// left by a startup pass that stopped early.
+#[cfg(feature = "prune-authority-data")]
+const AUTHORITY_PRUNING_INSERT_HEIGHTS: u32 = if cfg!(test) { 2 } else { 256 };
+
 /// Returns the IDs of the certificates committed by an authority.
 fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
     match authority {
@@ -791,16 +796,24 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             .collect::<Result<Vec<_>>>()?;
 
         atomic_batch_scope!(self, {
-            // Prune the authority that expires with this block. If pruning is behind (a startup
-            // catch-up stopped part-way), leave the gap to the next startup so inserts stay bounded.
+            // Prune the authority that expires with this block, plus a bounded number of older heights
+            // if a startup pass stopped early. A failure rewinds only the pruning and does not fail the
+            // block; the next insert retries.
             #[cfg(feature = "prune-authority-data")]
             if let Some(expired_height) = block.height().checked_sub(AUTHORITY_RETENTION_BLOCKS)
-                && self.authority_pruned_below()?.unwrap_or(1) == expired_height
+                && let Err(error) = atomic_batch_scope!(self, {
+                    let below = self.authority_pruned_below()?.unwrap_or(1);
+                    if below <= expired_height {
+                        let end = below.saturating_add(AUTHORITY_PRUNING_INSERT_HEIGHTS).min(expired_height + 1);
+                        prune_authority_heights(self, below..end)?;
+                        if (below - 1) / AUTHORITY_PRUNING_LOG_INTERVAL != (end - 1) / AUTHORITY_PRUNING_LOG_INTERVAL {
+                            debug!("Pruned authority data up to block {}", end - 1);
+                        }
+                    }
+                    Ok(())
+                })
             {
-                prune_authority_heights(self, expired_height..expired_height + 1)?;
-                if expired_height.is_multiple_of(AUTHORITY_PRUNING_LOG_INTERVAL) {
-                    debug!("Pruned authority data up to block {expired_height}");
-                }
+                warn!("Failed to prune expired authority data: {error}");
             }
 
             // Store the (block height, state root) pair.
@@ -1505,7 +1518,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             && let Some(latest_height) = cache_end_height.checked_sub(1)
             && let Err(error) = prune_expired_authorities(&storage, latest_height)
         {
-            // The remaining expired data is pruned on the next startup, so this must not block this one.
+            // Inserts close the remaining gap, so this must not block startup.
             warn!("Failed to prune expired authority data: {error}. Run 'snarkos clean' and resync if this persists.");
         }
 
@@ -2640,25 +2653,34 @@ mod tests {
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(1)).unwrap());
     }
 
-    /// Ensures an insert prunes only when the watermark is caught up, and leaves a gap to startup.
+    /// Ensures a pruning failure does not fail the block insert, and later inserts close the gap a
+    /// bounded number of heights at a time.
     #[cfg(feature = "prune-authority-data")]
     #[test]
-    fn test_insert_pruning_skips_when_behind() {
+    fn test_insert_pruning_survives_failure_and_catches_up() {
         let rng = &mut TestRng::default();
-        let blocks = sample_block_chain(104, rng);
+        let blocks = sample_block_chain(108, rng);
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-        for block in blocks.iter().take(103) {
+        for block in blocks.iter().take(101) {
             block_store.insert(block).unwrap();
         }
-        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(3));
 
-        // Emulate a startup catch-up that stopped part-way: the watermark lags the expiring height.
+        // A malformed watermark fails pruning, but not the inserts.
         let storage = &block_store.storage;
+        storage.block_metadata_map().insert(BlockMetadataKey::AuthorityPruned, vec![1, 2, 3]).unwrap();
+        for block in &blocks[101..104] {
+            block_store.insert(block).unwrap();
+        }
+        assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
+
+        // Once pruning works again, each insert prunes at most `AUTHORITY_PRUNING_INSERT_HEIGHTS` heights.
         clear_authority_pruned(storage);
-        atomic_batch_scope!(storage, { storage.set_authority_pruned_below(2) }).unwrap();
-        block_store.insert(&blocks[103]).unwrap();
-        assert!(block_store.get_block_authority(&blocks[3].hash()).unwrap().is_some());
-        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(2));
+        for (block, below) in blocks[104..].iter().zip([3, 5, 7, 8]) {
+            block_store.insert(block).unwrap();
+            assert_eq!(storage.authority_pruned_below().unwrap(), Some(below));
+        }
+        assert!(block_store.get_block_authority(&blocks[7].hash()).unwrap().is_none());
+        assert!(block_store.get_block_authority(&blocks[8].hash()).unwrap().is_some());
     }
 
     /// Ensures startup pruning walks heights through `id_map` and leaves authorities it does not index.
