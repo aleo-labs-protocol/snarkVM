@@ -33,7 +33,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryInto,
     marker::PhantomData,
-    ops::Mul,
 };
 
 mod data_structures;
@@ -502,7 +501,27 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     where
         Commitment<E>: 'a,
     {
-        let commitments: BTreeMap<_, _> = commitments.into_iter().map(|c| (c.label().to_owned(), c)).collect();
+        let commitments = commitments
+            .into_iter()
+            .map(|c| (c.label().to_owned(), (c.degree_bound(), vec![(c.commitment().0, E::Fr::one())])))
+            .collect();
+        Self::batch_check_terms(vk, commitments, query_set, values, proof, fs_rng)
+    }
+
+    /// `batch_check` of commitments given as sums of terms: `commitments` maps
+    /// a label to the degree bound and the terms `(base, coefficient)`
+    /// whose sum is the commitment. Each term joins its degree bound's MSM
+    /// with its coefficient times the commitment's challenge and the
+    /// pass randomizer, so the sum of that MSM is the sum of the commitments
+    /// times those.
+    fn batch_check_terms(
+        vk: &UniversalVerifier<E>,
+        commitments: BTreeMap<String, CommitmentTerms<E>>,
+        query_set: &QuerySet<E::Fr>,
+        values: &Evaluations<E::Fr>,
+        proof: &BatchProof<E>,
+        fs_rng: &mut S,
+    ) -> Result<bool> {
         let batch_check_time = start_timer!(|| format!(
             "Checking {} commitments at query set of size {}",
             commitments.len(),
@@ -525,11 +544,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
         let mut randomizer = E::Fr::one();
 
-        let mut combined_comms = BTreeMap::new();
+        let mut groups = BTreeMap::new();
         let mut witnesses = WitnessTerms::<E>::with_capacity(proof.0.len());
 
         for ((_query_name, (query, labels)), p) in query_to_labels_map.into_iter().zip_eq(&proof.0) {
-            let mut comms_to_combine: Vec<&'_ LabeledCommitment<_>> = Vec::new();
+            let mut comms_to_combine = Vec::new();
             let mut values_to_combine = Vec::new();
             for label in labels.into_iter() {
                 let commitment =
@@ -544,7 +563,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             }
 
             Self::accumulate_elems(
-                &mut combined_comms,
+                &mut groups,
                 &mut witnesses,
                 comms_to_combine.into_iter(),
                 *query,
@@ -559,7 +578,19 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             randomizer = private_sponge.squeeze_short_nonnative_field_element::<E::Fr>();
         }
 
-        let (combined_witness, combined_adjusted_witness) = witnesses.combine(vk);
+        let (unit_witnesses, [witness_terms, adjusted_terms]) = witnesses.into_terms(vk);
+        let mut msms: Vec<&[_]> = Vec::with_capacity(groups.len() + 2);
+        msms.extend(groups.values().map(Vec::as_slice));
+        msms.extend([witness_terms.as_slice(), adjusted_terms.as_slice()]);
+        let msm_time =
+            start_timer!(|| format!("{} MSMs of {} terms", msms.len(), msms.iter().map(|m| m.len()).sum::<usize>()));
+        let mut sums = VariableBase::msm_many(&msms);
+        end_timer!(msm_time);
+        // `msm_many` returns one sum per MSM, and `msms` ends with the two witness
+        // MSMs, so `sums` has both.
+        let combined_adjusted_witness = sums.pop().unwrap();
+        let combined_witness = unit_witnesses + sums.pop().unwrap();
+        let combined_comms = groups.into_keys().zip_eq(sums).collect();
         Self::check_elems(vk, combined_comms, combined_witness, combined_adjusted_witness)
     }
 
@@ -650,12 +681,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let BatchLCProof { proof } = proof;
         let label_comm_map = commitments.into_iter().map(|c| (c.label(), c)).collect::<BTreeMap<_, _>>();
 
-        let mut lc_commitments = Vec::new();
-        let mut lc_info = Vec::new();
+        let mut lc_commitments = BTreeMap::new();
         let mut evaluations = evaluations.clone();
 
         {
-            let lc_processing_time = start_timer!(|| "Combining commitments");
+            let lc_processing_time = start_timer!(|| "Collecting combination terms");
             defer! { end_timer!(lc_processing_time); }
             for lc in linear_combinations {
                 let lc_label = lc.label().to_string();
@@ -683,29 +713,14 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                             }
                             degree_bound = cur_comm.degree_bound();
                         }
-                        coeffs_and_comms.push((*coeff, cur_comm.commitment()));
+                        coeffs_and_comms.push((cur_comm.commitment().0, *coeff));
                     }
                 }
-                let lc_time = start_timer!(|| format!("Combining {num_polys} commitments for {lc_label}"));
-                lc_commitments.push(Self::combine_commitments(coeffs_and_comms));
-                end_timer!(lc_time);
-                lc_info.push((lc_label, degree_bound));
+                lc_commitments.insert(lc_label, (degree_bound, coeffs_and_comms));
             }
         }
 
-        let lc_commitments = {
-            let combined_comms_norm_time = start_timer!(|| "Normalizing commitments");
-            defer! { end_timer!(combined_comms_norm_time); }
-            let comms = Self::normalize_commitments(lc_commitments);
-            ensure!(lc_info.len() == comms.len());
-            lc_info
-                .into_iter()
-                .zip_eq(comms)
-                .map(|((label, d), c)| LabeledCommitment::new(label, c, d))
-                .collect::<Vec<_>>()
-        };
-
-        Self::batch_check(vk, &lc_commitments, query_set, &evaluations, proof, fs_rng)
+        Self::batch_check_terms(vk, lc_commitments, query_set, &evaluations, proof, fs_rng)
     }
 }
 
@@ -727,24 +742,15 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         }
         (combined_poly, combined_rand)
     }
-
-    /// MSM for `commitments` and `coeffs`
-    fn combine_commitments<'a>(
-        coeffs_and_comms: impl IntoIterator<Item = (E::Fr, &'a Commitment<E>)>,
-    ) -> E::G1Projective {
-        let (scalars, bases): (Vec<_>, Vec<_>) = coeffs_and_comms.into_iter().map(|(f, c)| (f.into(), c.0)).unzip();
-        VariableBase::msm(&bases, &scalars)
-    }
-
-    fn normalize_commitments(commitments: Vec<E::G1Projective>) -> impl ExactSizeIterator<Item = Commitment<E>> {
-        let comms = E::G1Projective::batch_normalization_into_affine(commitments);
-        comms.into_iter().map(|c| kzg10::KZGCommitment(c))
-    }
 }
+
+/// A commitment as the degree bound and the terms `(base, coefficient)` whose
+/// sum it is.
+type CommitmentTerms<E> = (Option<usize>, Vec<(<E as PairingEngine>::G1Affine, <E as PairingEngine>::Fr)>);
 
 /// The terms of a `batch_check` that no commitment challenge scales, each
 /// multiplied by the randomizer of its pass: the claimed evaluations, the
-/// proofs' `random_v`, and the witnesses. `combine` sums them in one
+/// proofs' `random_v`, and the witnesses. `into_terms` returns them as one
 /// multi-scalar multiplication per G2 element they pair with.
 struct WitnessTerms<E: PairingEngine> {
     /// The coefficient of `g`: the randomized sum of the claimed evaluations.
@@ -761,54 +767,47 @@ impl<E: PairingEngine> WitnessTerms<E> {
         Self { g: E::Fr::zero(), gamma_g: E::Fr::zero(), passes: Vec::with_capacity(num_passes) }
     }
 
-    /// Returns the combined witness, which pairs with `beta_h`, and the
-    /// combined adjusted witness, which pairs with `h`:
+    /// Returns the terms of the combined witness, which pairs with `beta_h`,
+    /// and of the combined adjusted witness, which pairs with `h`:
     ///
     /// `Σ r_p w_p` and `(Σ r_p v_p) g + (Σ r_p ρ_p) gamma_g - Σ r_p z_p w_p`.
-    fn combine(self, vk: &UniversalVerifier<E>) -> (E::G1Projective, E::G1Projective) {
-        let combine_time = start_timer!(|| "Combining witnesses");
-        defer! { end_timer!(combine_time); }
+    ///
+    /// A unit randomizer, which the first pass has, adds its witness as is: the
+    /// sum of those witnesses comes first, and the witness terms are the
+    /// others.
+    fn into_terms(self, vk: &UniversalVerifier<E>) -> (E::G1Projective, [Vec<(E::G1Affine, E::Fr)>; 2]) {
         let Self { g, gamma_g, passes } = self;
 
-        // A unit randomizer, which the first pass has, adds its witness as is.
-        let mut combined_witness = E::G1Projective::zero();
-        let mut bases = Vec::with_capacity(passes.len());
-        let mut scalars = Vec::with_capacity(passes.len());
+        let mut unit_witnesses = E::G1Projective::zero();
+        let mut witness = Vec::with_capacity(passes.len());
         for (w, randomizer, _) in &passes {
             if randomizer.is_one() {
-                combined_witness.add_assign_mixed(w);
+                unit_witnesses.add_assign_mixed(w);
             } else {
-                bases.push(*w);
-                scalars.push((*randomizer).into());
+                witness.push((*w, *randomizer));
             }
         }
-        if !bases.is_empty() {
-            combined_witness += VariableBase::msm(&bases, &scalars);
-        }
 
-        let mut bases = Vec::with_capacity(passes.len() + 2);
-        let mut scalars = Vec::with_capacity(passes.len() + 2);
-        bases.push(vk.vk.g);
-        scalars.push(g.into());
+        let mut adjusted = Vec::with_capacity(passes.len() + 2);
+        adjusted.push((vk.vk.g, g));
         if !gamma_g.is_zero() {
-            bases.push(vk.vk.gamma_g);
-            scalars.push(gamma_g.into());
+            adjusted.push((vk.vk.gamma_g, gamma_g));
         }
-        for (w, randomizer, point) in &passes {
-            bases.push(*w);
-            scalars.push((-(*randomizer * point)).into());
-        }
-        let combined_adjusted_witness = VariableBase::msm(&bases, &scalars);
-        (combined_witness, combined_adjusted_witness)
+        adjusted.extend(passes.iter().map(|(w, randomizer, point)| (*w, -(*randomizer * point))));
+        (unit_witnesses, [witness, adjusted])
     }
 }
 
 impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
+    /// Squeezes a challenge for each commitment, pushes each of its terms, with
+    /// its coefficient times the challenge and `randomizer`, to the MSM of
+    /// its degree bound in `groups`, and adds the pass's terms to
+    /// `witnesses`.
     #[allow(clippy::too_many_arguments)]
     fn accumulate_elems<'a>(
-        combined_comms: &mut BTreeMap<Option<usize>, E::G1Projective>,
+        groups: &mut BTreeMap<Option<usize>, Vec<(E::G1Affine, E::Fr)>>,
         witnesses: &mut WitnessTerms<E>,
-        commitments: impl ExactSizeIterator<Item = &'a LabeledCommitment<Commitment<E>>>,
+        commitments: impl ExactSizeIterator<Item = &'a CommitmentTerms<E>>,
         point: E::Fr,
         values: impl ExactSizeIterator<Item = E::Fr>,
         proof: &kzg10::KZGProof<E>,
@@ -820,25 +819,15 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         // Keeps track of running combination of values
         let mut combined_values = E::Fr::zero();
 
-        // Iterates through all of the commitments and accumulates common degree_bound
-        // elements in a BTreeMap
         ensure!(commitments.len() == values.len());
-        for (labeled_comm, value) in commitments.into_iter().zip_eq(values) {
-            let acc_timer = start_timer!(|| format!("Accumulating {}", labeled_comm.label()));
+        for ((degree_bound, terms), value) in commitments.into_iter().zip_eq(values) {
             let curr_challenge = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
 
             combined_values += &(value * curr_challenge);
 
-            let comm = labeled_comm.commitment();
-            let degree_bound = labeled_comm.degree_bound();
-
-            // Applying opening challenge and randomness (used in batch_checking)
             let coeff = randomizer * curr_challenge;
-            let comm_with_challenge: E::G1Projective = comm.0.mul(coeff);
-
-            // Accumulate values in the BTreeMap
-            *combined_comms.entry(degree_bound).or_insert_with(E::G1Projective::zero) += &comm_with_challenge;
-            end_timer!(acc_timer);
+            let group = groups.entry(*degree_bound).or_default();
+            group.extend(terms.iter().map(|(base, c)| (*base, coeff * c)));
         }
 
         witnesses.g += randomizer * combined_values;
@@ -906,6 +895,22 @@ mod tests {
 
     type Sponge = PoseidonSponge<Fq, 2, 1>;
     type PC_Bls12_377 = SonicKZG10<Bls12_377, Sponge>;
+
+    /// Returns the number of terms of the largest degree-bound MSM that
+    /// `batch_check` builds from `commitments` at `query_set`: one term per
+    /// query of a commitment of that degree bound.
+    fn largest_group(
+        commitments: &[super::LabeledCommitment<super::Commitment<Bls12_377>>],
+        query_set: &super::QuerySet<snarkvm_curves::bls12_377::Fr>,
+    ) -> usize {
+        let bounds: std::collections::BTreeMap<_, _> =
+            commitments.iter().map(|c| (c.label(), c.degree_bound())).collect();
+        let mut sizes = std::collections::BTreeMap::new();
+        for (label, _) in query_set {
+            *sizes.entry(bounds[label.as_str()]).or_insert(0) += 1;
+        }
+        sizes.into_values().max().unwrap_or(0)
+    }
 
     #[test]
     fn test_committer_key_serialization() {
@@ -1324,5 +1329,107 @@ mod tests {
             most_passes = most_passes.max(proof.0.len());
         }
         assert!(most_passes >= 2, "no component had two query points, so no randomizer was exercised");
+    }
+
+    /// `batch_check` sums every commitment, times its scalar, inside one MSM
+    /// per degree bound, so each commitment has to stay bound to its scalar:
+    /// a wrong commitment is rejected wherever it is in the batch.
+    #[test]
+    fn test_batch_check_rejects_a_tampered_commitment() {
+        use super::{BatchProof, Evaluations, LabeledCommitment};
+        use crate::AlgebraicSponge;
+        use snarkvm_curves::{AffineCurve, ProjectiveCurve, bls12_377::Fr};
+
+        let components = full_end_to_end_test::<Bls12_377, Sponge>().expect("test failed for bls12-377");
+        let mut most_terms = 0;
+        for (i, TestComponents { verification_key, commitments, query_set, evaluations, batch_proof, .. }) in
+            components.into_iter().enumerate()
+        {
+            // `test_template` fills `batch_proof` for every component it returns.
+            let proof = batch_proof.unwrap();
+            let check = |commitments: &[LabeledCommitment<_>], evaluations: &Evaluations<Fr>, proof: &BatchProof<_>| {
+                // The template's own check passed with these labels, so the only errors
+                // `batch_check` returns, missing labels, cannot occur.
+                PC_Bls12_377::batch_check(
+                    &verification_key,
+                    commitments,
+                    &query_set,
+                    evaluations,
+                    proof,
+                    &mut Sponge::new(),
+                )
+                .unwrap()
+            };
+            assert!(check(&commitments, &evaluations, &proof));
+
+            let mut wrong = commitments.clone();
+            let index = i % wrong.len();
+            let c = &wrong[index];
+            let doubled = c.commitment().0.to_projective().double().to_affine();
+            wrong[index] = LabeledCommitment::new(
+                c.label().to_string(),
+                crate::polycommit::kzg10::KZGCommitment(doubled),
+                c.degree_bound(),
+            );
+            assert!(!check(&wrong, &evaluations, &proof), "a wrong commitment {index} passed");
+            most_terms = most_terms.max(largest_group(&commitments, &query_set));
+        }
+        // Some degree-bound MSM sums two or more commitments, so the wrong
+        // commitment is checked inside a shared MSM.
+        assert!(most_terms > 1, "no degree-bound MSM had more than one term");
+    }
+
+    /// `batch_check_terms` takes each commitment as a sum of terms, so a
+    /// commitment split into two terms passes where the commitment does, and
+    /// a split whose sum is another point fails.
+    #[test]
+    fn test_batch_check_terms_matches_batch_check() {
+        use super::{BatchProof, Evaluations};
+        use crate::AlgebraicSponge;
+        use snarkvm_curves::bls12_377::Fr;
+        use snarkvm_fields::{One, Zero};
+        use snarkvm_utilities::Uniform;
+        use std::collections::BTreeMap;
+
+        let rng = &mut TestRng::default();
+        let components = full_end_to_end_test::<Bls12_377, Sponge>().expect("test failed for bls12-377");
+        let mut most_terms = 0;
+        for TestComponents { verification_key, commitments, query_set, evaluations, batch_proof, .. } in components {
+            // `test_template` fills `batch_proof` for every component it returns.
+            let proof = batch_proof.unwrap();
+            let check = |terms: BTreeMap<String, super::CommitmentTerms<Bls12_377>>,
+                         evaluations: &Evaluations<Fr>,
+                         proof: &BatchProof<_>| {
+                // The template's own check passed with these labels, so the only errors
+                // `batch_check_terms` returns, missing labels, cannot occur.
+                PC_Bls12_377::batch_check_terms(
+                    &verification_key,
+                    terms,
+                    &query_set,
+                    evaluations,
+                    proof,
+                    &mut Sponge::new(),
+                )
+                .unwrap()
+            };
+            // Each commitment `c` as `a c + (1 - a) c` for a random `a`, and with the
+            // second coefficient off by one.
+            let mut split = |off: Fr| -> BTreeMap<String, super::CommitmentTerms<Bls12_377>> {
+                commitments
+                    .iter()
+                    .map(|c| {
+                        let a = Fr::rand(rng);
+                        let terms = vec![(c.commitment().0, a), (c.commitment().0, Fr::one() - a + off)];
+                        (c.label().to_string(), (c.degree_bound(), terms))
+                    })
+                    .collect()
+            };
+            assert!(check(split(Fr::zero()), &evaluations, &proof));
+            assert!(!check(split(Fr::one()), &evaluations, &proof), "a wrong split passed");
+            most_terms = most_terms.max(largest_group(&commitments, &query_set));
+        }
+        // Some degree-bound MSM holds the split terms of two or more
+        // commitments, so the split is checked inside a shared MSM.
+        assert!(most_terms > 1, "no degree-bound MSM had more than one commitment");
     }
 }
