@@ -57,13 +57,11 @@ use anyhow::{Context, Result};
 use locktick::{LockGuard, parking_lot::RwLock};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-#[cfg(feature = "prune-authority-data")]
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
 #[cfg(feature = "prune-authority-data")]
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -542,24 +540,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             .transpose()
     }
 
-    /// The watermark that certificate lookups filter by, or `0` for none. It is reloaded from
-    /// committed storage after each commit and catch-up, so it may lag storage but never leads it.
-    #[cfg(feature = "prune-authority-data")]
-    fn cached_authority_pruned_below(&self) -> &AtomicU32;
-
-    /// Reloads [`Self::cached_authority_pruned_below`] from committed storage.
-    #[cfg(feature = "prune-authority-data")]
-    fn refresh_cached_authority_pruned_below(&self) {
-        let below = self
-            .block_metadata_map()
-            .get_confirmed(&BlockMetadataKey::AuthorityPruned)
-            .and_then(|bytes| bytes.map(|b| decode_watermark(&b)).transpose());
-        match below {
-            Ok(below) => self.cached_authority_pruned_below().store(below.unwrap_or(0), Ordering::Release),
-            Err(error) => warn!("Failed to reload the authority-pruning watermark: {error}"),
-        }
-    }
-
     /// Returns `true` if the authority of the block at `height` has been pruned, by the committed watermark.
     fn is_authority_pruned_at(&self, height: u32) -> Result<bool> {
         if !cfg!(feature = "prune-authority-data") {
@@ -762,11 +742,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().finish_atomic()?;
         self.confirmed_transactions_map().finish_atomic()?;
         self.rejected_deployment_or_execution_map().finish_atomic()?;
-        self.transaction_store().finish_atomic()?;
-        // The block store finishes last, so a top-level batch is committed by now unless writes are paused.
-        #[cfg(feature = "prune-authority-data")]
-        self.refresh_cached_authority_pruned_below();
-        Ok(())
+        self.transaction_store().finish_atomic()
     }
 
     /// Pauses atomic writes.
@@ -780,10 +756,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn unpause_atomic_writes<const DISCARD_BATCH: bool>(&self) -> Result<()> {
         // Since this applies to the entire storage, any map can be used; this
         // one is just the first one in the list.
-        self.state_root_map().unpause_atomic_writes::<DISCARD_BATCH>()?;
-        #[cfg(feature = "prune-authority-data")]
-        self.refresh_cached_authority_pruned_below();
-        Ok(())
+        self.state_root_map().unpause_atomic_writes::<DISCARD_BATCH>()
     }
 
     /// Stores the given `(state root, block)` pair into storage.
@@ -1215,8 +1188,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let Some(index) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
             return Ok(None);
         };
-        #[cfg(feature = "prune-authority-data")]
-        if is_pruned_height(self.cached_authority_pruned_below().load(Ordering::Acquire), index.0) {
+        if self.is_authority_pruned_at(index.0)? {
             return Ok(None);
         }
         Ok(Some(index))
@@ -2426,7 +2398,7 @@ mod tests {
     }
 
     /// Ensures a discarded paused batch, as the VM discards a failed block, also discards the pruning
-    /// marker, and the cached watermark follows only the committed batch.
+    /// marker, and certificate lookups follow only the committed watermark.
     #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
     #[test]
     fn test_discarded_paused_batch_discards_pruning_marker() {
@@ -2446,16 +2418,14 @@ mod tests {
         block_store.unpause_atomic_writes::<true>().unwrap();
         assert!(block_store.storage.authority_pruned_below().unwrap().is_none());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
-        assert_eq!(block_store.storage.cached_authority_pruned_below().load(Ordering::Acquire), 0);
         assert!(block_store.contains_certificate(&certificate_id).unwrap());
 
-        // While paused, nothing is committed, so the cache stays behind until the unpause. The block
-        // goes to storage directly, as the discarded insert left it in the tree and the block cache.
+        // While paused, certificate lookups see only the committed watermark. The block goes to storage
+        // directly, as the discarded insert left it in the tree and the block cache.
         block_store.pause_atomic_writes().unwrap();
         block_store.storage.insert(rng.random(), &blocks[101]).unwrap();
-        assert_eq!(block_store.storage.cached_authority_pruned_below().load(Ordering::Acquire), 0);
+        assert!(block_store.contains_certificate(&certificate_id).unwrap());
         block_store.unpause_atomic_writes::<false>().unwrap();
-        assert_eq!(block_store.storage.cached_authority_pruned_below().load(Ordering::Acquire), 2);
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
     }
 
@@ -2489,7 +2459,6 @@ mod tests {
     #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
     fn clear_authority_pruned<B: BlockStorage<CurrentNetwork>>(storage: &B) {
         storage.block_metadata_map().remove(&BlockMetadataKey::AuthorityPruned).unwrap();
-        storage.refresh_cached_authority_pruned_below();
     }
 
     /// Fills the maps of `num_heights` blocks with beacon authorities, indexed by height.

@@ -39,8 +39,6 @@ use snarkvm_synthesizer_program::FinalizeOperation;
 
 use aleo_std_storage::StorageMode;
 use std::fs;
-#[cfg(feature = "prune-authority-data")]
-use std::sync::{Arc, atomic::AtomicU32};
 use tracing::debug;
 
 /// A RocksDB block storage.
@@ -84,9 +82,6 @@ pub struct BlockDB<N: Network> {
     rejected_deployment_or_execution_map: DataMap<Field<N>, Rejected<N>>,
     /// The block metadata map.
     block_metadata_map: DataMap<BlockMetadataKey, Vec<u8>>,
-    /// The cached authority-pruning watermark.
-    #[cfg(feature = "prune-authority-data")]
-    cached_authority_pruned_below: Arc<AtomicU32>,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
@@ -121,7 +116,8 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         let transition_store = TransitionStore::<N, TransitionDB<N>>::open(storage.clone())?;
         // Initialize the transaction store.
         let transaction_store = TransactionStore::<N, TransactionDB<N>>::open(transition_store)?;
-        let block_storage = Self {
+        // Return the block storage.
+        Ok(Self {
             state_root_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::StateRoot))?,
             reverse_state_root_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ReverseStateRoot))?,
             id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ID))?,
@@ -140,13 +136,8 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             confirmed_transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ConfirmedTransactions))?,
             rejected_deployment_or_execution_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedDeploymentOrExecution))?,
             block_metadata_map: internal::RocksDB::open_map(N::ID, storage, MapID::Block(BlockMap::Metadata))?,
-            #[cfg(feature = "prune-authority-data")]
-            cached_authority_pruned_below: Default::default(),
             transaction_store,
-        };
-        #[cfg(feature = "prune-authority-data")]
-        block_storage.refresh_cached_authority_pruned_below();
-        Ok(block_storage)
+        })
     }
 
     /// Returns the state root map.
@@ -244,11 +235,6 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         &self.block_metadata_map
     }
 
-    #[cfg(feature = "prune-authority-data")]
-    fn cached_authority_pruned_below(&self) -> &AtomicU32 {
-        &self.cached_authority_pruned_below
-    }
-
     /// Returns the transaction store.
     fn transaction_store(&self) -> &TransactionStore<N, Self::TransactionStorage> {
         &self.transaction_store
@@ -264,10 +250,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     /// Catches up with the primary instance; only applicable to secondary instances.
     fn catch_up_with_primary(&self) -> Result<()> {
         // Any map can be used to retrieve the common RocksDB instance.
-        self.id_map().catch_up_with_primary()?;
-        #[cfg(feature = "prune-authority-data")]
-        self.refresh_cached_authority_pruned_below();
-        Ok(())
+        self.id_map().catch_up_with_primary()
     }
 
     /// Creates the block tree based on the contents of the storage.
