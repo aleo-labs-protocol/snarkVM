@@ -3978,3 +3978,28 @@ fn test_find_records_filters_by_ownership() {
     // This validates that ownership filtering is enforced before decrypting or filtering records.
     assert!(unrelated_records.is_empty(), "Expected no records for unrelated view key");
 }
+
+/// A pruned block's authority reads as pruned, and the startup spot check passes over pruned blocks.
+#[cfg(all(feature = "prune-authority-data", feature = "test"))]
+#[test]
+fn test_pruned_authority_reads() {
+    let rng = &mut TestRng::default();
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    // Blocks older than the block cache are read from storage.
+    for _ in 0..ledger.block_cache_size().unwrap_or(0) + 3 {
+        let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    }
+    // Prune the blocks below the cached ones, as startup pruning would.
+    let latest_height = ledger.latest_height();
+    let below = latest_height + 1 - ledger.block_cache_size().unwrap_or(0);
+    ledger.vm().block_store().prune_authorities_below(below).unwrap();
+
+    // Each run samples 10 of the heights, so several runs check pruned ones.
+    for _ in 0..5 {
+        ledger.check_random_blocks().unwrap();
+    }
+    let error = ledger.get_authority(1).unwrap_err().to_string();
+    assert!(error.contains("has been pruned"), "{error}");
+    assert!(ledger.get_authority(below).is_ok());
+}

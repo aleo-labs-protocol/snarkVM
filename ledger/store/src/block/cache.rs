@@ -102,7 +102,7 @@ impl<N: Network> BlockCache<N> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_helpers::{CurrentNetwork, sample_block_chain};
+    use crate::{block::test_chain::sample_block_chain, test_helpers::CurrentNetwork};
 
     use snarkvm_console::prelude::TestRng;
 

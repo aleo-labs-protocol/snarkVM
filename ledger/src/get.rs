@@ -353,12 +353,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             None => bail!("Block {height} does not exist in storage"),
         };
         // Retrieve the block authority.
-        match self.vm.block_store().get_block_authority(&block_hash)? {
-            Some(authority) => Ok(authority),
-            None if self.vm.block_store().is_authority_pruned_at(height)? => {
-                bail!("The authority of block {height} has been pruned")
-            }
-            None => bail!("Missing authority for block {height}"),
+        match self.vm.block_store().read_block_authority(&block_hash, height)? {
+            BlockAuthority::Present(authority) => Ok(authority),
+            BlockAuthority::Pruned => bail!("The authority of block {height} has been pruned"),
+            BlockAuthority::Missing => bail!("Missing authority for block {height}"),
         }
     }
 
