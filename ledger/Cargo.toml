@@ -101,6 +101,7 @@ bench-prove = [ "test_consensus_heights" ]
 profiler = [ "snarkvm-synthesizer/profiler" ]
 prune-authority-data = [ "snarkvm-ledger-store/prune-authority-data" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
+test_authority_retention = [ "snarkvm-ledger-store/test_authority_retention" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
 serial = [

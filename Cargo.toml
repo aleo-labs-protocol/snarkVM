@@ -185,6 +185,7 @@ save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
 test_exports = [ "snarkvm-algorithms/test_exports" ]
 test_targets = [ "snarkvm-console/test_targets" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
+test_authority_retention = [ "snarkvm-ledger?/test_authority_retention" ]
 
 [workspace.dependencies.snarkvm-algorithms]
 path = "algorithms"
