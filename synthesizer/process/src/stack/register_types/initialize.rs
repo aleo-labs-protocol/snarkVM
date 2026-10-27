@@ -1171,6 +1171,98 @@ mod tests {
     }
 
     #[test]
+    fn test_ternary_shared_struct_dag_terminates() -> Result<()> {
+        let program = sample_shared_struct_program("testing_dag_ternary", 12, |top| {
+            format!("    input r0 as s{top}.private;\n    ternary true r0 r0 into r1;")
+        });
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let result =
+                Process::<CurrentNetwork>::load().and_then(|process| Stack::new(&process, &program).map(|_| ()));
+            let _ = sender.send(result);
+        });
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("Shared struct ternary validation must finish within 10 seconds.")?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_ternary_external_shared_struct_dag_terminates() -> Result<()> {
+        let external = sample_shared_struct_program("testing_ternary_external", 12, |_| {
+            "    input r0 as field.private;".to_string()
+        });
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+import testing_ternary_external.aleo;
+program testing_ternary_import.aleo;
+
+struct wrapper:
+    first as [testing_ternary_external.aleo/s11; 2u32];
+    second as [testing_ternary_external.aleo/s11; 2u32];
+
+function compute:
+    input r0 as wrapper.private;
+    ternary true r0 r0 into r1;
+
+constructor:
+    assert.eq true true;
+",
+        )?;
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let result = (|| -> Result<()> {
+                let process = Process::<CurrentNetwork>::load()?;
+                process.lock().add_program(&external)?;
+                Stack::new(&process, &program)?;
+                Ok(())
+            })();
+            let _ = sender.send(result);
+        });
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("External struct ternary validation must finish within 10 seconds.")?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_ternary_string_check_distinguishes_programs() -> Result<()> {
+        let external = Program::<CurrentNetwork>::from_str(
+            r"
+program testing_ternary_string.aleo;
+
+struct shared:
+    data as string;
+
+function compute:
+    input r0 as field.private;
+",
+        )?;
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+import testing_ternary_string.aleo;
+program testing_ternary_names.aleo;
+
+struct shared:
+    data as field;
+
+struct wrapper:
+    first as shared;
+    second as [testing_ternary_string.aleo/shared; 2u32];
+
+function compute:
+    input r0 as wrapper.private;
+    ternary true r0 r0 into r1;
+",
+        )?;
+        let process = Process::<CurrentNetwork>::load()?;
+        process.lock().add_program(&external)?;
+        let error = Stack::new(&process, &program).err().expect("Ternary must reject external string leaves.");
+        assert!(error.to_string().contains("Instruction 'ternary' does not support the 'string' type"));
+        Ok(())
+    }
+
+    #[test]
     fn test_types_equivalent_shared_struct_dag_terminates() {
         // `is.eq` on two shared-struct-DAG operands runs `register_types_equivalent` -> `types_equivalent`
         // during `Stack::new` type-checking. Without memoization this compares hundreds of trillions of member

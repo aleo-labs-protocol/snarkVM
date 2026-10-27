@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use crate::{
     FinalizeRegistersState,
     FinalizeStoreTrait,
@@ -25,33 +27,39 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{Literal, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Value},
+    program::{Identifier, Literal, LiteralType, Plaintext, PlaintextType, ProgramID, Register, RegisterType, Value},
 };
 
 /// Returns an error if the given plaintext type contains a `String` literal leaf,
 /// since string ternary selection is not supported (strings have a variable byte-length
 /// and cannot be selected by a fixed byte-wise multiplexer).
-fn ensure_no_string_leaves<N: Network>(stack: &impl StackTrait<N>, plaintext_type: &PlaintextType<N>) -> Result<()> {
+fn ensure_no_string_leaves<N: Network>(
+    stack: &impl StackTrait<N>,
+    plaintext_type: &PlaintextType<N>,
+    validated: &mut HashSet<(ProgramID<N>, Identifier<N>)>,
+) -> Result<()> {
     match plaintext_type {
         PlaintextType::Literal(LiteralType::String) => {
             bail!("Instruction 'ternary' does not support the 'string' type")
         }
         PlaintextType::Literal(_) => Ok(()),
-        PlaintextType::Array(array_type) => ensure_no_string_leaves(stack, array_type.next_element_type()),
+        PlaintextType::Array(array_type) => ensure_no_string_leaves(stack, array_type.next_element_type(), validated),
         PlaintextType::Struct(identifier) => {
+            // Validate each resolved struct once, even if multiple members refer to it.
+            let key = (*stack.program_id(), *identifier);
+            if validated.contains(&key) {
+                return Ok(());
+            }
             let struct_type = stack.program().get_struct(identifier)?;
             for (_, member_type) in struct_type.members() {
-                ensure_no_string_leaves(stack, member_type)?;
+                ensure_no_string_leaves(stack, member_type, validated)?;
             }
+            validated.insert(key);
             Ok(())
         }
         PlaintextType::ExternalStruct(locator) => {
             let external_stack = stack.get_external_stack(locator.program_id())?;
-            let struct_type = external_stack.program().get_struct(locator.resource())?;
-            for (_, member_type) in struct_type.members() {
-                ensure_no_string_leaves(&*external_stack, member_type)?;
-            }
-            Ok(())
+            ensure_no_string_leaves(&*external_stack, &PlaintextType::Struct(*locator.resource()), validated)
         }
     }
 }
@@ -214,7 +222,7 @@ impl<N: Network> Ternary<N> {
 
         // Reject plaintext types that contain a `string` leaf: string ternary is not supported
         // because strings have a variable byte-length and cannot be selected by a byte-wise MUX.
-        ensure_no_string_leaves(stack, &plaintext_type)?;
+        ensure_no_string_leaves(stack, &plaintext_type, &mut HashSet::new())?;
 
         // The two branches are structurally equivalent, so either one describes the output; pick the first.
         Ok(vec![RegisterType::Plaintext(plaintext_type)])
