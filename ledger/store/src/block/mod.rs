@@ -186,6 +186,11 @@ pub enum BlockMetadataKey {
 
 /// Returns the lowest block height whose authority data is retained when the chain is at
 /// `latest_height`. Without `prune-authority-data`, every height is retained.
+///
+/// This assumes no rollback. After `BlockStore::remove_last_n(n)`, the stored watermark can be up to `n`
+/// heights above the result, and those heights cannot be served. This is accepted: the only production
+/// rollback is one block on a finalize failure with the memory backend, and BFT never rolls back committed
+/// blocks. Rolling back below the watermark is not supported.
 pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
     if cfg!(feature = "prune-authority-data") {
         latest_height.saturating_sub(AUTHORITY_RETENTION_BLOCKS - 1)
@@ -1585,7 +1590,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         Ok(())
     }
 
-    /// Removes the last (most recent) `n` blocks from storage.
+    /// Removes the last (most recent) `n` blocks from storage. See [`oldest_retained_authority_height`] for
+    /// how this interacts with authority pruning.
     pub fn remove_last_n(&self, n: u32) -> Result<()> {
         // Ensure 'n' is non-zero.
         ensure!(n > 0, "Cannot remove zero blocks");
