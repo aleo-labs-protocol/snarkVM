@@ -633,7 +633,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
 }
 
 impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K, V> {
-    /// Compacts this map's keys now, so RocksDB drops its deleted entries instead of reading past them.
+    /// Compacts this map's keys. See `RocksDB::compact_prefix`.
     pub fn compact(&self) -> Result<()> {
         let prefix = <[u8; PREFIX_LEN]>::try_from(self.context.as_slice())?;
         self.database.compact_prefix(prefix)

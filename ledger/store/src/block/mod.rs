@@ -189,28 +189,77 @@ pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
     }
 }
 
-/// The number of heights pruned in one startup batch, one authority deletion each.
-#[cfg(all(feature = "prune-authority-data", not(test)))]
-const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 10_000;
-/// A small chunk for unit tests, so several chunks fit in a short chain.
-#[cfg(all(feature = "prune-authority-data", test))]
-const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 16;
+/// The number of heights pruned in one startup batch, one authority deletion each. Unit tests use a
+/// small chunk, so several chunks fit in a short chain.
+#[cfg(feature = "prune-authority-data")]
+const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = if cfg!(test) { 16 } else { 10_000 };
 
 /// The number of certificate index deletions in a startup pass at which the certificate map is
 /// compacted afterwards. RocksDB's own scheduling leaves most of a large deletion as tombstones that
 /// every later startup pass reads past.
-#[cfg(all(feature = "prune-authority-data", not(test)))]
-const AUTHORITY_PRUNING_COMPACTION_THRESHOLD: usize = 1_000_000;
-/// A small threshold for unit tests.
-#[cfg(all(feature = "prune-authority-data", test))]
-const AUTHORITY_PRUNING_COMPACTION_THRESHOLD: usize = 5;
+#[cfg(feature = "prune-authority-data")]
+const AUTHORITY_PRUNING_COMPACTION_THRESHOLD: usize = if cfg!(test) { 5 } else { 1_000_000 };
 
-/// The number of certificate index deletions in one startup batch.
-#[cfg(all(feature = "prune-authority-data", not(test)))]
-const CERTIFICATE_PRUNING_BATCH_SIZE: usize = 10_000;
-/// A small batch for unit tests, so the pass flushes while its iterator is open.
-#[cfg(all(feature = "prune-authority-data", test))]
-const CERTIFICATE_PRUNING_BATCH_SIZE: usize = 3;
+/// The number of certificate index deletions in one startup batch. Unit tests use a small batch, so
+/// the pass flushes while its iterator is open.
+#[cfg(feature = "prune-authority-data")]
+const CERTIFICATE_PRUNING_BATCH_SIZE: usize = if cfg!(test) { 3 } else { 10_000 };
+
+/// Returns `true` if `height` is below the watermark `below`. Genesis is never pruned.
+fn is_pruned_height(below: u32, height: u32) -> bool {
+    (1..below).contains(&height)
+}
+
+/// The components of a block other than its authority.
+struct BlockParts<N: Network> {
+    previous_hash: N::BlockHash,
+    header: Header<N>,
+    ratifications: Ratifications<N>,
+    solutions: Solutions<N>,
+    aborted_solution_ids: Vec<SolutionID<N>>,
+    transactions: Transactions<N>,
+    aborted_transaction_ids: Vec<N::TransactionID>,
+}
+
+/// Reads every component of the block at `height` except its authority, failing on the first one that
+/// is missing or inconsistent.
+fn read_block_parts<N: Network, B: BlockStorage<N>>(
+    storage: &B,
+    block_hash: &N::BlockHash,
+    height: u32,
+) -> Result<BlockParts<N>> {
+    let Some(header) = storage.get_block_header(block_hash)? else {
+        bail!("Missing block header for block {height} ('{block_hash}')");
+    };
+    ensure!(header.height() == height, "Mismatching block height for block {height} ('{block_hash}')");
+    let Some(previous_hash) = storage.get_previous_block_hash(height)? else {
+        bail!("Missing previous block hash for block {height} ('{block_hash}')");
+    };
+    let Some(ratifications) = storage.get_block_ratifications(block_hash)? else {
+        bail!("Missing ratifications for block {height} ('{block_hash}')");
+    };
+    let Ok(solutions) = storage.get_block_solutions(block_hash) else {
+        bail!("Missing solutions for block {height} ('{block_hash}')");
+    };
+    let Some(aborted_solution_ids) = storage.get_block_aborted_solution_ids(block_hash)? else {
+        bail!("Missing aborted solution IDs for block {height} ('{block_hash}')");
+    };
+    let Some(transactions) = storage.get_block_transactions(block_hash)? else {
+        bail!("Missing transactions for block {height} ('{block_hash}')");
+    };
+    let Some(aborted_transaction_ids) = storage.get_block_aborted_transaction_ids(block_hash)? else {
+        bail!("Missing aborted transaction IDs for block {height} ('{block_hash}')");
+    };
+    Ok(BlockParts {
+        previous_hash,
+        header,
+        ratifications,
+        solutions,
+        aborted_solution_ids,
+        transactions,
+        aborted_transaction_ids,
+    })
+}
 
 /// Insert-time pruning logs progress at debug level once per this many blocks.
 #[cfg(feature = "prune-authority-data")]
@@ -224,13 +273,9 @@ fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
     }
 }
 
-/// Removes the authority of every block in `heights`, without reading it, and records that every
-/// height below `heights.end` is pruned. Call it inside an atomic batch scope; genesis is never
-/// pruned. The blocks' certificate indexes stay until the next startup and read as absent meanwhile.
-///
-/// Decoding an authority checks every curve point and costs tens of milliseconds, so pruning never
-/// does it. Callers that pause atomic writes must keep one block per paused span (see
-/// `VM::add_next_block`), since the watermark is visible to the next scope only once committed.
+/// Removes the authorities of the blocks in `heights` without reading them, and advances the
+/// watermark to `heights.end`. Call it inside an atomic batch scope, with at most one block per paused
+/// span of atomic writes. Genesis is skipped; certificate indexes are left to the startup pass.
 #[cfg(feature = "prune-authority-data")]
 fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights: core::ops::Range<u32>) -> Result<()> {
     for height in heights.start.max(1)..heights.end {
@@ -308,7 +353,7 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
     // Keep one forward iterator to avoid rescanning RocksDB tombstones. Each batch removes only keys
     // already yielded.
     for (certificate_id, index) in storage.certificate_map().iter_confirmed() {
-        if (1..below).contains(&index.0) {
+        if is_pruned_height(below, index.0) {
             batch.push(certificate_id.into_owned());
             removed += 1;
             if batch.len() == CERTIFICATE_PRUNING_BATCH_SIZE {
@@ -427,28 +472,23 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(())
     }
 
-    /// Returns `true` if authority data has been pruned from this storage, which a build without
-    /// `prune-authority-data` refuses to open.
-    fn is_authority_pruned(&self) -> Result<bool> {
-        Ok(self.authority_pruned_below()?.is_some())
+    /// Returns the authority-pruning watermark `W`: the authority data of every height in `1..W` has
+    /// been pruned. `None` if nothing has been pruned, which a build without `prune-authority-data`
+    /// requires. The speculative read also sees a watermark queued earlier in the current batch.
+    fn authority_pruned_below(&self) -> Result<Option<u32>> {
+        // The value is `W` as a little-endian `u32`.
+        let Some(bytes) = self.block_metadata_map().get_speculative(&BlockMetadataKey::AuthorityPruned)? else {
+            return Ok(None);
+        };
+        let Ok(bytes) = <[u8; 4]>::try_from(bytes.as_slice()) else {
+            bail!("Malformed authority-pruning watermark");
+        };
+        Ok(Some(u32::from_le_bytes(bytes)))
     }
 
-    /// Returns the authority-pruning watermark `W`: the authority data of every height in `1..W` has
-    /// been pruned. `None` if nothing has been pruned. The speculative read also sees a watermark
-    /// queued earlier in the current batch.
-    fn authority_pruned_below(&self) -> Result<Option<u32>> {
-        // The value is `W` as a little-endian `u32`. An empty value predates the watermark and
-        // records only that pruning has started.
-        match self.block_metadata_map().get_speculative(&BlockMetadataKey::AuthorityPruned)? {
-            None => Ok(None),
-            Some(bytes) if bytes.is_empty() => Ok(Some(1)),
-            Some(bytes) => {
-                let Ok(bytes) = <[u8; 4]>::try_from(bytes.as_slice()) else {
-                    bail!("Malformed authority-pruning watermark");
-                };
-                Ok(Some(u32::from_le_bytes(bytes)))
-            }
-        }
+    /// Returns `true` if the authority of the block at `height` has been pruned.
+    fn is_authority_pruned_at(&self, height: u32) -> Result<bool> {
+        Ok(self.authority_pruned_below()?.is_some_and(|below| is_pruned_height(below, height)))
     }
 
     /// Records that the authority data of every height in `1..below` has been pruned. Call it in
@@ -797,6 +837,9 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         // Determine the certificate IDs to remove.
         let certificate_ids_to_remove = match self.authority_map().get_confirmed(block_hash)? {
             Some(authority) => certificate_ids(&authority),
+            None if self.is_authority_pruned_at(block_height)? => {
+                bail!("Failed to remove block {block_height} ('{block_hash}'): its authority has been pruned")
+            }
             None => bail!("Failed to remove block: missing authority for block '{block_height}' ('{block_hash}')"),
         };
 
@@ -1073,7 +1116,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             return Ok(None);
         };
         #[cfg(feature = "prune-authority-data")]
-        if self.authority_pruned_below()?.is_some_and(|below| (1..below).contains(&index.0)) {
+        if self.is_authority_pruned_at(index.0)? {
             return Ok(None);
         }
         Ok(Some(index))
@@ -1098,7 +1141,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let Some(authority) = self.authority_map().get_confirmed(&block_hash)? else {
             // Pruning may have removed the authority after the index was read.
             #[cfg(feature = "prune-authority-data")]
-            if self.authority_pruned_below()?.is_some_and(|below| (1..below).contains(&block_height)) {
+            if self.is_authority_pruned_at(block_height)? {
                 return Ok(None);
             }
             bail!("The authority for '{block_hash}' is missing in block storage")
@@ -1289,56 +1332,24 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn get_block(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
         // Retrieve the block height.
         let Some(height) = self.get_block_height(block_hash)? else { return Ok(None) };
-
-        // Retrieve the block header.
-        let Some(header) = self.get_block_header(block_hash)? else {
-            bail!("Missing block header for block {height} ('{block_hash}')");
-        };
-        // Ensure the block height matches.
-        if header.height() != height {
-            bail!("Mismatching block height for block {height} ('{block_hash}')")
-        }
-
-        // Retrieve the previous block hash.
-        let Some(previous_hash) = self.get_previous_block_hash(height)? else {
-            bail!("Missing previous block hash for block {height} ('{block_hash}')");
-        };
         // Retrieve the block authority.
         let Some(authority) = self.get_block_authority(block_hash)? else {
             bail!("Missing authority for block {height} ('{block_hash}')");
         };
-        // Retrieve the block ratifications.
-        let Some(ratifications) = self.get_block_ratifications(block_hash)? else {
-            bail!("Missing ratifications for block {height} ('{block_hash}')");
-        };
-        // Retrieve the block solutions.
-        let Ok(solutions) = self.get_block_solutions(block_hash) else {
-            bail!("Missing solutions for block {height} ('{block_hash}')");
-        };
-        // Retrieve the block aborted solution IDs.
-        let Some(aborted_solution_ids) = self.get_block_aborted_solution_ids(block_hash)? else {
-            bail!("Missing aborted solutions IDs for block {height} ('{block_hash}')");
-        };
-        // Retrieve the block transactions.
-        let Some(transactions) = self.get_block_transactions(block_hash)? else {
-            bail!("Missing transactions for block {height} ('{block_hash}')");
-        };
-        // Retrieve the block aborted transaction IDs.
-        let Some(aborted_transaction_ids) = self.get_block_aborted_transaction_ids(block_hash)? else {
-            bail!("Missing aborted transaction IDs for block {height} ('{block_hash}')");
-        };
+        // Retrieve the remaining components.
+        let parts = read_block_parts(self, block_hash, height)?;
 
         // Return the block.
         Ok(Some(Block::from_unchecked(
             *block_hash,
-            previous_hash,
-            header,
+            parts.previous_hash,
+            parts.header,
             authority,
-            ratifications,
-            solutions,
-            aborted_solution_ids,
-            transactions,
-            aborted_transaction_ids,
+            parts.ratifications,
+            parts.solutions,
+            parts.aborted_solution_ids,
+            parts.transactions,
+            parts.aborted_transaction_ids,
         )?))
     }
 
@@ -1370,7 +1381,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         // Pruned authority data cannot be restored, so a non-pruning build must not take over the store.
         #[cfg(not(feature = "prune-authority-data"))]
-        if storage.is_authority_pruned()? {
+        if storage.authority_pruned_below()?.is_some() {
             bail!(
                 "This ledger has had authority data pruned, which only a build with the `prune-authority-data` feature \
                  can open"
@@ -1854,58 +1865,29 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         {
             return Ok(Some(block.clone()));
         }
-        match self.storage.get_block(block_hash) {
-            // Below the watermark a missing authority is expected; report it as pruned only if it is
-            // the sole gap, and surface any other missing component as the error it is.
-            #[cfg(feature = "prune-authority-data")]
-            Err(error) => match self.storage.get_block_height(block_hash)? {
-                Some(height)
-                    if self.storage.authority_pruned_below()?.is_some_and(|below| (1..below).contains(&height))
-                        && self.storage.get_block_authority(block_hash)?.is_none() =>
-                {
-                    self.check_block_data_without_authority(block_hash)?;
-                    bail!("Block {height} ('{block_hash}') cannot be reconstructed: its authority has been pruned")
-                }
-                _ => Err(error),
-            },
-            result => result,
+        // A block below the watermark cannot be reconstructed. Its other components are checked by
+        // `check_block_data_without_authority`, not here.
+        #[cfg(feature = "prune-authority-data")]
+        if let Some(height) = self.storage.get_block_height(block_hash)?
+            && self.storage.is_authority_pruned_at(height)?
+        {
+            bail!("Block {height} ('{block_hash}') cannot be reconstructed: its authority has been pruned");
         }
+        self.storage.get_block(block_hash)
     }
 
-    /// Checks that every component of a block except its authority is present and consistent, and
-    /// returns the block height. Use it for blocks whose authority may have been pruned.
-    pub fn check_block_data_without_authority(&self, block_hash: &N::BlockHash) -> Result<u32> {
+    /// Returns `true` if the authority of the block at `height` has been pruned.
+    pub fn is_authority_pruned_at(&self, height: u32) -> Result<bool> {
+        self.storage.is_authority_pruned_at(height)
+    }
+
+    /// Checks that every component of a block except its authority is present and consistent. Use it
+    /// for blocks whose authority may have been pruned.
+    pub fn check_block_data_without_authority(&self, block_hash: &N::BlockHash) -> Result<()> {
         let Some(height) = self.storage.get_block_height(block_hash)? else {
             bail!("Missing block height for block '{block_hash}'");
         };
-        let Some(header) = self.storage.get_block_header(block_hash)? else {
-            bail!("Missing block header for block {height} ('{block_hash}')");
-        };
-        ensure!(header.height() == height, "Mismatching block height for block {height} ('{block_hash}')");
-        ensure!(
-            self.storage.get_previous_block_hash(height)?.is_some(),
-            "Missing previous block hash for block {height} ('{block_hash}')"
-        );
-        ensure!(
-            self.storage.get_block_ratifications(block_hash)?.is_some(),
-            "Missing ratifications for block {height} ('{block_hash}')"
-        );
-        self.storage
-            .get_block_solutions(block_hash)
-            .with_context(|| format!("Missing solutions for block {height} ('{block_hash}')"))?;
-        ensure!(
-            self.storage.get_block_aborted_solution_ids(block_hash)?.is_some(),
-            "Missing aborted solution IDs for block {height} ('{block_hash}')"
-        );
-        ensure!(
-            self.storage.get_block_transactions(block_hash)?.is_some(),
-            "Missing transactions for block {height} ('{block_hash}')"
-        );
-        ensure!(
-            self.storage.get_block_aborted_transaction_ids(block_hash)?.is_some(),
-            "Missing aborted transaction IDs for block {height} ('{block_hash}')"
-        );
-        Ok(height)
+        read_block_parts(&self.storage, block_hash, height).map(|_| ())
     }
 
     /// Returns the latest edition for the given `program ID`.
@@ -2137,9 +2119,14 @@ mod tests {
         let error = block_store.get_block(&boundary_hash).unwrap_err().to_string();
         assert!(!error.contains("pruned") && error.contains("Missing authority"), "{error}");
 
-        // A missing component other than the authority is reported as itself, not as pruning.
+        // Removing a block below the watermark fails with a pruning error.
+        let error = block_store.storage.remove(&expired_hash).unwrap_err().to_string();
+        assert!(error.contains("has been pruned"), "{error}");
+
+        // The check for pruned blocks reports any other missing component.
+        block_store.check_block_data_without_authority(&expired_hash).unwrap();
         block_store.storage.ratifications_map().remove(&expired_hash).unwrap();
-        let error = block_store.get_block(&expired_hash).unwrap_err().to_string();
+        let error = block_store.check_block_data_without_authority(&expired_hash).unwrap_err().to_string();
         assert!(error.contains("Missing ratifications"), "{error}");
 
         // Permanent block data remains available.
@@ -2206,10 +2193,27 @@ mod tests {
     #[cfg(feature = "prune-authority-data")]
     #[test]
     fn test_insertion_failure_rolls_back_authority_pruning() {
+        check_insertion_failure_rolls_back_authority_pruning(
+            BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap(),
+        );
+    }
+
+    /// Ensures a failed block insertion atomically rolls back authority pruning and the watermark with RocksDB storage.
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
+    #[test]
+    fn test_insertion_failure_rolls_back_authority_pruning_rocksdb() {
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        check_insertion_failure_rolls_back_authority_pruning(
+            BlockDB::<CurrentNetwork>::open(StorageMode::new_test(Some(temp_dir))).unwrap(),
+        );
+    }
+
+    /// Checks that a failed block insertion atomically rolls back authority pruning and the watermark.
+    #[cfg(feature = "prune-authority-data")]
+    fn check_insertion_failure_rolls_back_authority_pruning<B: BlockStorage<CurrentNetwork>>(storage: B) {
         let rng = &mut TestRng::default();
         let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
 
-        let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
         for block in blocks.iter().take(101) {
             let state_root = <CurrentNetwork as Network>::StateRoot::from(Field::from_u32(block.height()));
             storage.insert(state_root, block).unwrap();
@@ -2225,7 +2229,7 @@ mod tests {
         });
 
         assert!(result.is_err());
-        assert!(!storage.is_authority_pruned().unwrap());
+        assert!(storage.authority_pruned_below().unwrap().is_none());
         assert!(storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
@@ -2233,39 +2237,12 @@ mod tests {
         assert!(!storage.authority_map().contains_key_confirmed(&candidate_hash).unwrap());
         assert!(!storage.reverse_state_root_map().contains_key_confirmed(&candidate_state_root).unwrap());
         storage.insert(candidate_state_root, candidate).unwrap();
-        assert!(storage.is_authority_pruned().unwrap());
+        assert!(storage.authority_pruned_below().unwrap().is_some());
         assert!(!storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         // The certificate row stays until the next startup, and reads as absent.
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!storage.contains_block_for_certificate(&certificate_id).unwrap());
         assert!(storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
-    }
-
-    /// Ensures a rolled-back insertion also rolls back the pruning marker in RocksDB.
-    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
-    #[test]
-    fn test_insertion_failure_rolls_back_pruning_marker() {
-        let rng = &mut TestRng::default();
-        let (blocks, _) = sample_block_chain_with_quorum(103, rng);
-        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        let storage = BlockDB::<CurrentNetwork>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
-        let state_root = |block: &Block<CurrentNetwork>| {
-            <CurrentNetwork as Network>::StateRoot::from(Field::from_u32(block.height()))
-        };
-        for block in blocks.iter().take(101) {
-            storage.insert(state_root(block), block).unwrap();
-        }
-
-        let candidate = &blocks[101];
-        let result: Result<()> = atomic_batch_scope!(storage, {
-            storage.insert(state_root(candidate), candidate)?;
-            bail!("Injected failure after block insertion")
-        });
-        assert!(result.is_err());
-        assert!(!storage.is_authority_pruned().unwrap());
-
-        storage.insert(state_root(candidate), candidate).unwrap();
-        assert!(storage.is_authority_pruned().unwrap());
     }
 
     /// Ensures a discarded paused batch, as the VM discards a failed block, also discards the pruning marker.
@@ -2286,7 +2263,7 @@ mod tests {
         block_store.insert(&blocks[101]).unwrap();
         block_store.abort_atomic();
         block_store.unpause_atomic_writes::<true>().unwrap();
-        assert!(!block_store.storage.is_authority_pruned().unwrap());
+        assert!(block_store.storage.authority_pruned_below().unwrap().is_none());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
     }
 
@@ -2364,7 +2341,7 @@ mod tests {
         let genesis_index = Field::from_u32(u32::MAX - 1);
         storage.certificate_map().insert(genesis_index, (0, 1)).unwrap();
 
-        assert!(!storage.is_authority_pruned().unwrap());
+        assert!(storage.authority_pruned_below().unwrap().is_none());
         prune_expired_authorities(&storage, latest_height).unwrap();
         for certificate_id in quorum_certificates.iter().chain(&expired_indexes) {
             assert!(!storage.certificate_map().contains_key_confirmed(certificate_id).unwrap());
@@ -2426,7 +2403,7 @@ mod tests {
 
     /// Checks that the certificate pass decides to compact after deleting at least the threshold, and
     /// not below.
-    #[cfg(feature = "prune-authority-data")]
+    #[cfg(all(feature = "prune-authority-data", feature = "rocks"))]
     fn check_certificate_pass_compacts_at_least_threshold<B: BlockStorage<CurrentNetwork>>(storage: B) {
         let insert_rows = |offset: u32, count: usize| {
             for i in 0..u32::try_from(count).unwrap() {
@@ -2441,16 +2418,6 @@ mod tests {
         insert_rows(1_000, AUTHORITY_PRUNING_COMPACTION_THRESHOLD);
         assert!(prune_certificate_indexes(&storage, 2).unwrap());
         assert_eq!(storage.certificate_map().len_confirmed(), 0);
-    }
-
-    /// Ensures the certificate pass decides to compact only at the threshold with in-memory storage,
-    /// where compaction itself is a no-op.
-    #[cfg(feature = "prune-authority-data")]
-    #[test]
-    fn test_certificate_pass_compacts_at_least_threshold() {
-        check_certificate_pass_compacts_at_least_threshold(
-            BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap(),
-        );
     }
 
     /// Ensures the certificate pass compacts only at the threshold with RocksDB storage.
@@ -2519,15 +2486,6 @@ mod tests {
         assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(2));
     }
 
-    /// Ensures an empty marker, written before the watermark existed, reads as a watermark of 1.
-    #[test]
-    fn test_legacy_empty_marker_decodes_as_one() {
-        let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
-        storage.block_metadata_map().insert(BlockMetadataKey::AuthorityPruned, Vec::new()).unwrap();
-        assert_eq!(storage.authority_pruned_below().unwrap(), Some(1));
-        assert!(storage.is_authority_pruned().unwrap());
-    }
-
     /// Ensures startup pruning walks heights through `id_map` and leaves authorities it does not index.
     #[cfg(feature = "prune-authority-data")]
     #[test]
@@ -2546,25 +2504,6 @@ mod tests {
         assert!(storage.authority_map().contains_key_confirmed(&orphan_hash).unwrap());
     }
 
-    /// Ensures the pruning marker is written the first time an insertion prunes an authority, and not before.
-    #[cfg(feature = "prune-authority-data")]
-    #[test]
-    fn test_pruning_marker_written_on_first_prune() {
-        let rng = &mut TestRng::default();
-        let blocks = sample_block_chain(102, rng);
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-
-        // Heights 0 to 100 retain every authority.
-        for block in blocks.iter().take(101) {
-            block_store.insert(block).unwrap();
-        }
-        assert!(!block_store.storage.is_authority_pruned().unwrap());
-
-        // Height 101 prunes height 1.
-        block_store.insert(&blocks[101]).unwrap();
-        assert!(block_store.storage.is_authority_pruned().unwrap());
-    }
-
     /// Ensures startup pruning with nothing to prune leaves the marker unset.
     #[cfg(feature = "prune-authority-data")]
     #[test]
@@ -2576,7 +2515,7 @@ mod tests {
             block_store.insert(block).unwrap();
         }
         prune_expired_authorities(&block_store.storage, 49).unwrap();
-        assert!(!block_store.storage.is_authority_pruned().unwrap());
+        assert!(block_store.storage.authority_pruned_below().unwrap().is_none());
     }
 
     /// Ensures a build without `prune-authority-data` refuses a store that carries the pruning marker.
@@ -2643,7 +2582,7 @@ mod tests {
         drop(block_store);
 
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
-        assert!(block_store.storage.is_authority_pruned().unwrap());
+        assert!(block_store.storage.authority_pruned_below().unwrap().is_some());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
         assert!(!block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
@@ -2673,12 +2612,6 @@ mod tests {
         assert!(block_store.contains_certificate(&certificate_id).unwrap());
         drop(block_store);
 
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
-        assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
-        assert!(block_store.contains_certificate(&certificate_id).unwrap());
-        drop(block_store);
-
-        // Reopening without pruning remains idempotent.
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
         assert!(block_store.contains_certificate(&certificate_id).unwrap());

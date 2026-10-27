@@ -65,7 +65,7 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore, oldest_retained_authority_height};
+use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
@@ -251,20 +251,22 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         Ok(ledger)
     }
 
-    /// Spot checks the integrity of random blocks. Below the retained authority window, only the
-    /// permanent block data is checked.
+    /// Spot checks the integrity of random blocks. For a block whose authority has been pruned, only
+    /// the remaining block data is checked.
     fn check_random_blocks(&self) -> Result<()> {
         const NUM_BLOCKS: usize = 10;
         let latest_height = self.current_block.read().height();
+        // The callers have checked that the ledger contains the genesis block, so `max_height` is `Some`.
         debug_assert_eq!(latest_height, self.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        let oldest_retained_height = oldest_retained_authority_height(latest_height);
         let num_blocks = usize::try_from(latest_height)?.min(NUM_BLOCKS);
         let block_heights: Vec<u32> = (0..=latest_height).sample(&mut rand::rng(), num_blocks);
         cfg_into_iter!(block_heights).try_for_each(|height| {
-            if height >= oldest_retained_height {
-                self.get_block(height)?;
-            } else {
+            // The stored watermark, not the window computed from the latest height, marks the pruned
+            // blocks: removing blocks lowers the latest height but not the watermark.
+            if self.vm.block_store().is_authority_pruned_at(height)? {
                 self.vm.block_store().check_block_data_without_authority(&self.get_hash(height)?)?;
+            } else {
+                self.get_block(height)?;
             }
             Ok::<_, Error>(())
         })
