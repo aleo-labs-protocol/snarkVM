@@ -113,11 +113,12 @@ pub(crate) fn set_storage_version(database: &rocksdb::DB, network_id: u16, versi
 pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
     let version = read_storage_version(database, network_id)?;
     if version > STORAGE_VERSION as u32 {
-        bail!(
+        return Err(crate::IncompatibleStore(format!(
             "This ledger was written by a newer version of snarkVM (storage schema v{version}; this build understands \
              v{}). Upgrade snarkVM, or resync from genesis.",
             STORAGE_VERSION as u32,
-        );
+        ))
+        .into());
     }
     let version = get_storage_version(database, network_id)?;
     // `V0` to `V1` adds only the block metadata map, which an unpruned store leaves empty, so there
@@ -164,8 +165,9 @@ mod tests {
         let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
         let newer = STORAGE_VERSION as u32 + 1;
         db.put(metadata_key(NETWORK_ID, MetadataKey::StorageVersion), newer.to_le_bytes()).unwrap();
-        let error = migrate_storage(&db, NETWORK_ID).unwrap_err().to_string();
-        assert!(error.contains("newer version"), "{error}");
+        let error = migrate_storage(&db, NETWORK_ID).unwrap_err();
+        assert!(error.is::<crate::IncompatibleStore>(), "{error}");
+        assert!(error.to_string().contains("newer version"), "{error}");
         // `from_bytes` rejects the unknown version, so the raw record is what remains.
         let raw = db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().unwrap();
         assert_eq!(raw, newer.to_le_bytes());

@@ -65,7 +65,7 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{BlockAuthority, ConsensusStorage, ConsensusStore};
+use snarkvm_ledger_store::{BlockAuthority, ConsensusStorage, ConsensusStore, IncompatibleStore};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
@@ -228,6 +228,16 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     dev_committee: Option<Committee<N>>,
 }
 
+/// Wraps a failure to open the consensus store. The `snarkos clean` advice is left out for an
+/// [`IncompatibleStore`]: cleaning would destroy a store that another build can open.
+fn store_open_error(error: anyhow::Error) -> anyhow::Error {
+    if error.chain().any(|cause| cause.is::<IncompatibleStore>()) {
+        anyhow::anyhow!("Failed to load ledger\n\n{error}\n")
+    } else {
+        anyhow::anyhow!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{error}\n")
+    }
+}
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Loads the ledger from storage.
     pub fn load(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
@@ -334,7 +344,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Initialize the consensus store.
         let store = match ConsensusStore::<N, C>::open(storage_mode) {
             Ok(store) => store,
-            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
+            Err(e) => return Err(store_open_error(e)),
         };
         lap!(timer, "Load consensus store");
 

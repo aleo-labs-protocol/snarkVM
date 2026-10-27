@@ -1428,10 +1428,12 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // Pruned authority data cannot be restored, so a non-pruning build must not take over the store.
         #[cfg(not(feature = "prune-authority-data"))]
         if storage.block_metadata_map().contains_key_confirmed(&BlockMetadataKey::AuthorityPruned)? {
-            bail!(
+            return Err(crate::IncompatibleStore(
                 "This ledger has had authority data pruned, which only a build with the `prune-authority-data` feature \
                  can open"
-            );
+                    .into(),
+            )
+            .into());
         }
 
         let tree = storage.create_block_tree()?;
@@ -2656,9 +2658,10 @@ mod tests {
 
         let error = match BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode) {
             Ok(_) => panic!("A build without `prune-authority-data` opened a pruned store"),
-            Err(error) => error.to_string(),
+            Err(error) => error,
         };
-        assert!(error.contains("prune-authority-data"), "{error}");
+        assert!(error.is::<crate::IncompatibleStore>(), "{error}");
+        assert!(error.to_string().contains("prune-authority-data"), "{error}");
     }
 
     /// Ensures startup pruning closes a multi-chunk gap and is idempotent with in-memory storage.

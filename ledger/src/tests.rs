@@ -4003,3 +4003,17 @@ fn test_pruned_authority_reads() {
     assert!(error.contains("has been pruned"), "{error}");
     assert!(ledger.get_authority(below).is_ok());
 }
+
+/// Ensures only a store that another build can open loses the `snarkos clean` advice.
+#[test]
+fn test_store_open_error_advice() {
+    use snarkvm_ledger_store::IncompatibleStore;
+
+    let refusal = anyhow::Error::from(IncompatibleStore("refused".into())).context("Failed to open the block store");
+    let error = crate::store_open_error(refusal).to_string();
+    assert!(!error.contains("snarkos clean"), "{error}");
+    assert!(error.contains("Failed to open the block store"), "{error}");
+
+    let error = crate::store_open_error(anyhow::anyhow!("Corruption: bad block")).to_string();
+    assert!(error.contains("snarkos clean"), "{error}");
+}
