@@ -533,8 +533,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// speculative read also sees a watermark queued in the pending batch, so only the pruning code
     /// uses it; readers use [`Self::is_authority_pruned_at`].
     fn authority_pruned_below(&self) -> Result<Option<u32>> {
-        // Without `prune-authority-data` nothing is pruned: `BlockStore::open` refuses a store that has
-        // a watermark.
         if !cfg!(feature = "prune-authority-data") {
             return Ok(None);
         }
