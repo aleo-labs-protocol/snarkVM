@@ -189,10 +189,13 @@ pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
     }
 }
 
-/// The number of heights pruned in one startup batch. At a few dozen certificates per block this
-/// is on the order of 10,000 map deletions per batch.
+/// The number of heights pruned in one startup batch, one authority deletion each.
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 256;
+
+/// The number of certificate index deletions in one startup batch.
+#[cfg(feature = "prune-authority-data")]
+const CERTIFICATE_PRUNING_BATCH_SIZE: usize = 10_000;
 
 /// Insert-time pruning logs progress at debug level once per this many blocks.
 #[cfg(feature = "prune-authority-data")]
@@ -206,15 +209,14 @@ fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
     }
 }
 
-/// Prunes the authority data of every block in `heights` and records that every height below
-/// `heights.end` is pruned. Call it inside an atomic batch scope. Genesis is never pruned, and a
-/// certificate index that points to another block is logged and kept.
+/// Removes the authority of every block in `heights` and records that every height below
+/// `heights.end` is pruned. Call it inside an atomic batch scope. Genesis is never pruned.
 ///
-/// Certificate indexes are read from confirmed state: a speculative read scans the pending batch,
-/// which grows with every removal and would make a chunk quadratic, and an expired block's indexes
-/// are never pending. The watermark it advances is visible to the next scope only once this scope's
-/// batch has been handed to the database, so callers that pause atomic writes must keep one block
-/// per paused span, as `VM::add_next_block` does.
+/// It never reads an authority: decoding one checks every curve point and costs tens of
+/// milliseconds. The blocks' certificate indexes stay until the next startup removes them, and
+/// read as absent meanwhile (see `BlockStorage::get_certificate_index`). The watermark it advances
+/// is visible to the next scope only once this scope's batch has been handed to the database, so
+/// callers that pause atomic writes must keep one block per paused span, as `VM::add_next_block` does.
 #[cfg(feature = "prune-authority-data")]
 fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights: core::ops::Range<u32>) -> Result<()> {
     for height in heights.start.max(1)..heights.end {
@@ -222,55 +224,93 @@ fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights:
             warn!("Not pruning the authority of block {height}: it has no hash recorded");
             continue;
         };
-        let block_hash = *block_hash;
-        let Some(authority) = storage.authority_map().get_speculative(&block_hash)? else {
-            continue;
-        };
-        for certificate_id in certificate_ids(&authority) {
-            match storage.certificate_map().get_confirmed(&certificate_id)? {
-                Some(index) if index.0 != height => warn!(
-                    "Keeping certificate '{certificate_id}' of block {height}: its index points to block {}",
-                    index.0
-                ),
-                _ => storage.certificate_map().remove(&certificate_id)?,
-            }
-        }
         storage.authority_map().remove(&block_hash)?;
     }
     storage.set_authority_pruned_below(heights.end)
 }
 
 /// Prunes, when opening storage, every height between the watermark and the retained window, one
-/// batch per chunk. Each batch advances the watermark, so an interrupted run resumes where it
-/// stopped and a node that is caught up does no work.
+/// batch per chunk, then removes the certificate indexes of every pruned block. Each chunk advances
+/// the watermark, so an interrupted run resumes where it stopped.
 #[cfg(feature = "prune-authority-data")]
 fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest_height: u32) -> Result<()> {
     let floor = oldest_retained_authority_height(latest_height);
     let start = storage.authority_pruned_below()?.unwrap_or(1);
-    if start >= floor {
-        return Ok(());
+    if start < floor {
+        let total = floor - start;
+        info!("Pruning the authority data of {total} blocks below block {floor}");
+
+        let timer = std::time::Instant::now();
+        let report_every = (total / 100).max(AUTHORITY_PRUNING_CHUNK_HEIGHTS);
+        let mut next_report = report_every;
+        for chunk_start in (start..floor).step_by(AUTHORITY_PRUNING_CHUNK_HEIGHTS as usize) {
+            let chunk_end = chunk_start.saturating_add(AUTHORITY_PRUNING_CHUNK_HEIGHTS).min(floor);
+            atomic_batch_scope!(storage, { prune_authority_heights(storage, chunk_start..chunk_end) })?;
+
+            let done = chunk_end - start;
+            if done >= next_report && done < total {
+                let rate = f64::from(done) / timer.elapsed().as_secs_f64().max(f64::EPSILON);
+                let percent = 100.0 * f64::from(done) / f64::from(total);
+                let remaining = f64::from(total - done) / rate;
+                info!(
+                    "Pruned {done} of {total} blocks ({percent:.0}%), {rate:.0} blocks/s, about {remaining:.0} s left"
+                );
+                next_report = done + report_every;
+            }
+        }
+        info!("Pruned the authority data below block {floor} in {:.1} s", timer.elapsed().as_secs_f64());
     }
-    let total = floor - start;
-    info!("Pruning the authority data of {total} blocks below block {floor}");
 
+    if let Some(below) = storage.authority_pruned_below()? {
+        prune_certificate_indexes(storage, below)?;
+    }
+    Ok(())
+}
+
+/// Removes the certificate indexes of pruned blocks, in one pass over the certificate map.
+///
+/// Inserts leave these rows behind so that they never read an authority. The pass runs on every
+/// startup; it reads only the small index rows.
+#[cfg(feature = "prune-authority-data")]
+fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
     let timer = std::time::Instant::now();
-    let report_every = (total / 100).max(AUTHORITY_PRUNING_CHUNK_HEIGHTS);
-    let mut next_report = report_every;
-    for chunk_start in (start..floor).step_by(AUTHORITY_PRUNING_CHUNK_HEIGHTS as usize) {
-        let chunk_end = chunk_start.saturating_add(AUTHORITY_PRUNING_CHUNK_HEIGHTS).min(floor);
-        atomic_batch_scope!(storage, { prune_authority_heights(storage, chunk_start..chunk_end) })?;
-
-        let done = chunk_end - start;
-        if done >= next_report && done < total {
-            let rate = f64::from(done) / timer.elapsed().as_secs_f64().max(f64::EPSILON);
-            let percent = 100.0 * f64::from(done) / f64::from(total);
-            let remaining = f64::from(total - done) / rate;
-            info!("Pruned {done} of {total} blocks ({percent:.0}%), {rate:.0} blocks/s, about {remaining:.0} s left");
-            next_report = done + report_every;
+    let mut removed = 0;
+    let mut batch = Vec::with_capacity(CERTIFICATE_PRUNING_BATCH_SIZE);
+    // Keep one forward iterator to avoid rescanning RocksDB tombstones. Each batch removes only keys
+    // already yielded.
+    for (certificate_id, index) in storage.certificate_map().iter_confirmed() {
+        if (1..below).contains(&index.0) {
+            batch.push(certificate_id.into_owned());
+        }
+        if batch.len() == CERTIFICATE_PRUNING_BATCH_SIZE {
+            remove_certificate_indexes(storage, &batch)?;
+            removed += batch.len();
+            batch.clear();
         }
     }
-    info!("Pruned the authority data below block {floor} in {:.1} s", timer.elapsed().as_secs_f64());
+    remove_certificate_indexes(storage, &batch)?;
+    removed += batch.len();
+
+    if removed > 0 {
+        info!("Removed {removed} certificate indexes of pruned blocks in {:.1} s", timer.elapsed().as_secs_f64());
+    } else {
+        debug!("No certificate indexes of pruned blocks to remove ({:.1} s)", timer.elapsed().as_secs_f64());
+    }
     Ok(())
+}
+
+/// Removes one batch of certificate indexes.
+#[cfg(feature = "prune-authority-data")]
+fn remove_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, certificate_ids: &[Field<N>]) -> Result<()> {
+    if certificate_ids.is_empty() {
+        return Ok(());
+    }
+    atomic_batch_scope!(storage, {
+        for certificate_id in certificate_ids {
+            storage.certificate_map().remove(certificate_id)?;
+        }
+        Ok(())
+    })
 }
 
 /// A trait for block storage.
@@ -994,15 +1034,29 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(self.authority_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
     }
 
+    /// Returns the (block height, round) of a certificate, or `None` if it is unknown. The index of a
+    /// block whose authority has been pruned can remain until the next startup removes it; it reads
+    /// as absent.
+    fn get_certificate_index(&self, certificate_id: &Field<N>) -> Result<Option<(u32, u64)>> {
+        let Some(index) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
+            return Ok(None);
+        };
+        #[cfg(feature = "prune-authority-data")]
+        if self.authority_pruned_below()?.is_some_and(|below| (1..below).contains(&index.0)) {
+            return Ok(None);
+        }
+        Ok(Some(index))
+    }
+
     /// Returns true if there is a block that contains the specified certificate.
     fn contains_block_for_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
-        self.certificate_map().contains_key_confirmed(certificate_id)
+        Ok(self.get_certificate_index(certificate_id)?.is_some())
     }
 
     /// Returns the batch certificate for the given `certificate ID`.
     fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
         // Retrieve the height and round for the given certificate ID.
-        let Some((block_height, round)) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
+        let Some((block_height, round)) = self.get_certificate_index(certificate_id)? else {
             return Ok(None);
         };
         // Retrieve the block hash.
@@ -1877,7 +1931,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns `true` if the given certificate ID exists.
     pub fn contains_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
-        self.storage.certificate_map().contains_key_confirmed(certificate_id)
+        self.storage.contains_block_for_certificate(certificate_id)
     }
 
     /// Returns `true` if the given solution ID exists.
@@ -2084,7 +2138,8 @@ mod tests {
         assert_eq!(block_store.get_block(&expired_hash).unwrap(), Some(blocks[1].clone()));
     }
 
-    /// Ensures pruning an expired quorum authority also removes its certificate indexes.
+    /// Ensures insert-time pruning leaves the expired block's certificate rows, that they read as
+    /// absent, and that startup pruning removes them.
     #[cfg(feature = "prune-authority-data")]
     #[test]
     fn test_certificate_pruning() {
@@ -2101,9 +2156,14 @@ mod tests {
 
         block_store.insert(&blocks[101]).unwrap();
 
-        assert!(!block_store.contains_certificate(&certificate_id).unwrap());
-        assert!(block_store.get_batch_certificate(&certificate_id).unwrap().is_none());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
+        assert!(block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
+        assert!(!block_store.contains_certificate(&certificate_id).unwrap());
+        assert!(!block_store.contains_block_for_certificate(&certificate_id).unwrap());
+        assert!(block_store.get_batch_certificate(&certificate_id).unwrap().is_none());
+
+        prune_expired_authorities(&block_store.storage, 101).unwrap();
+        assert!(!block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
     }
 
     /// Ensures a failed block insertion atomically rolls back authority and certificate pruning.
@@ -2139,7 +2199,9 @@ mod tests {
         storage.insert(candidate_state_root, candidate).unwrap();
         assert!(storage.is_authority_pruned().unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
-        assert!(!storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
+        // The certificate row stays until the next startup, and reads as absent.
+        assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
+        assert!(!storage.contains_block_for_certificate(&certificate_id).unwrap());
         assert!(storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
     }
 
@@ -2192,11 +2254,11 @@ mod tests {
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
     }
 
-    /// Ensures height pruning keeps a certificate index that points to another block, tolerates
-    /// missing indexes, and skips heights without a hash or authority.
+    /// Ensures height pruning removes an authority without touching its certificate indexes, and
+    /// skips heights without a hash.
     #[cfg(feature = "prune-authority-data")]
     #[test]
-    fn test_certificate_pruning_handles_missing_and_mismatched_indexes() {
+    fn test_prune_authority_heights_leaves_certificate_indexes() {
         let rng = &mut TestRng::default();
         let authority = snarkvm_ledger_authority::test_helpers::sample_quorum_authority(rng);
         let certificate_id = certificate_ids(&authority)[0];
@@ -2204,14 +2266,13 @@ mod tests {
         let block_hash: <CurrentNetwork as Network>::BlockHash = Field::<CurrentNetwork>::rand(rng).into();
         let block_height = 1;
 
-        // Only the first certificate is indexed, and its index points to another block.
         storage.id_map().insert(block_height, block_hash).unwrap();
         storage.authority_map().insert(block_hash, authority).unwrap();
-        storage.certificate_map().insert(certificate_id, (block_height + 1, 2)).unwrap();
+        storage.certificate_map().insert(certificate_id, (block_height, 2)).unwrap();
 
         atomic_batch_scope!(storage, { prune_authority_heights(&storage, block_height..block_height + 1) }).unwrap();
-        assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&block_hash).unwrap());
+        assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert_eq!(storage.authority_pruned_below().unwrap(), Some(block_height + 1));
 
         // Heights without a hash, or whose authority is already gone, are skipped.
@@ -2253,11 +2314,19 @@ mod tests {
             storage.certificate_map().insert(*certificate_id, (quorum_height, 1)).unwrap();
         }
 
+        // Indexes of a retained block and of genesis are kept.
+        let retained_index = Field::from_u32(u32::MAX);
+        storage.certificate_map().insert(retained_index, (latest_height, 1)).unwrap();
+        let genesis_index = Field::from_u32(u32::MAX - 1);
+        storage.certificate_map().insert(genesis_index, (0, 1)).unwrap();
+
         assert!(!storage.is_authority_pruned().unwrap());
         prune_expired_authorities(&storage, latest_height).unwrap();
         for certificate_id in &quorum_certificates {
             assert!(!storage.certificate_map().contains_key_confirmed(certificate_id).unwrap());
         }
+        assert!(storage.certificate_map().contains_key_confirmed(&retained_index).unwrap());
+        assert!(storage.certificate_map().contains_key_confirmed(&genesis_index).unwrap());
 
         let floor = oldest_retained_authority_height(latest_height);
         assert_eq!(storage.authority_pruned_below().unwrap(), Some(floor));
@@ -2469,12 +2538,39 @@ mod tests {
         assert!(block_store.storage.is_authority_pruned().unwrap());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
+        assert!(!block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         drop(block_store);
 
         // Reopening after cleanup is idempotent.
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
+    }
+
+    /// Ensures certificate rows left by insert-time pruning read as absent, and a restart removes them.
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
+    #[test]
+    fn test_lingering_certificate_rows_removed_on_restart() {
+        let rng = &mut TestRng::default();
+        let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
+
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        let storage_mode = StorageMode::new_test(Some(temp_dir));
+        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
+        for block in &blocks {
+            block_store.insert(block).unwrap();
+        }
+
+        // Block 1's authority is pruned; its certificate row lingers but reads as absent, not as an error.
+        assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
+        assert!(block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
+        assert!(!block_store.contains_certificate(&certificate_id).unwrap());
+        assert!(!block_store.contains_block_for_certificate(&certificate_id).unwrap());
+        assert!(block_store.get_batch_certificate(&certificate_id).unwrap().is_none());
+        drop(block_store);
+
+        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
+        assert!(!block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
     }
 
     /// Ensures opening a non-pruning RocksDB store preserves authority and certificate data.
