@@ -1332,8 +1332,14 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn get_block(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
         // Retrieve the block height.
         let Some(height) = self.get_block_height(block_hash)? else { return Ok(None) };
-        // Retrieve the block authority.
+        // Retrieve the block authority. It is read before the other components, so a pruned block
+        // fails here without reading them.
         let Some(authority) = self.get_block_authority(block_hash)? else {
+            // Read after the authority, so a block pruned meanwhile reads as pruned (RocksDB commits
+            // the removal and the watermark together).
+            if self.is_authority_pruned_at(height)? {
+                bail!("Block {height} ('{block_hash}') cannot be reconstructed: its authority has been pruned");
+            }
             bail!("Missing authority for block {height} ('{block_hash}')");
         };
         // Retrieve the remaining components.
@@ -1864,14 +1870,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             && let Some(block) = cache.read().get_block_by_hash(block_hash)
         {
             return Ok(Some(block.clone()));
-        }
-        // A block below the watermark cannot be reconstructed. Its other components are checked by
-        // `check_block_data_without_authority`, not here.
-        #[cfg(feature = "prune-authority-data")]
-        if let Some(height) = self.storage.get_block_height(block_hash)?
-            && self.storage.is_authority_pruned_at(height)?
-        {
-            bail!("Block {height} ('{block_hash}') cannot be reconstructed: its authority has been pruned");
         }
         self.storage.get_block(block_hash)
     }
