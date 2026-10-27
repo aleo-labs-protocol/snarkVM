@@ -225,6 +225,11 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         &self.rejected_deployment_or_execution_map
     }
 
+    /// Compacts the certificate map.
+    fn compact_certificate_map(&self) -> Result<()> {
+        self.certificate_map.compact()
+    }
+
     /// Returns the block metadata map.
     fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
         &self.block_metadata_map

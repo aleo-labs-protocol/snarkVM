@@ -51,6 +51,14 @@ use std::{
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 
+/// Returns the first key after every key that starts with `prefix`.
+fn prefix_end(prefix: [u8; PREFIX_LEN]) -> Result<[u8; PREFIX_LEN]> {
+    Ok(u32::from_be_bytes(prefix)
+        .checked_add(1)
+        .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
+        .to_be_bytes())
+}
+
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
 // TODO: remove the static in favor of improved `open` methods.
@@ -141,17 +149,19 @@ impl RocksDB {
     pub fn delete_legacy_mapping_history(&self) -> Result<()> {
         for map in [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights, ProgramMap::StakingRewards] {
             let prefix = schema::map_prefix(self.network_id, MapID::Program(map));
-            // The first key after every key that starts with `prefix`.
-            let end = u32::from_be_bytes(prefix)
-                .checked_add(1)
-                .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
-                .to_be_bytes();
             let mut batch = rocksdb::WriteBatch::default();
-            batch.delete_range(&prefix, &end);
+            batch.delete_range(&prefix, &prefix_end(prefix)?);
             self.rocksdb.write(batch)?;
             // `delete_range` hides the keys. Compaction drops the files that held them.
-            self.rocksdb.compact_range(Some(&prefix), Some(&end));
+            self.compact_prefix(prefix)?;
         }
+        Ok(())
+    }
+
+    /// Compacts the keys of one map now, rather than on RocksDB's own schedule, so the files that
+    /// hold its deleted entries are rewritten without them.
+    pub(crate) fn compact_prefix(&self, prefix: [u8; PREFIX_LEN]) -> Result<()> {
+        self.rocksdb.compact_range(Some(&prefix), Some(&prefix_end(prefix)?));
         Ok(())
     }
 }

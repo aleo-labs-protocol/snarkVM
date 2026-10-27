@@ -196,6 +196,15 @@ const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 10_000;
 #[cfg(all(feature = "prune-authority-data", test))]
 const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = 16;
 
+/// The number of certificate index deletions in a startup pass at which the certificate map is
+/// compacted afterwards. RocksDB's own scheduling leaves most of a large deletion as tombstones that
+/// every later startup pass reads past.
+#[cfg(all(feature = "prune-authority-data", not(test)))]
+const AUTHORITY_PRUNING_COMPACTION_THRESHOLD: usize = 1_000_000;
+/// A small threshold for unit tests.
+#[cfg(all(feature = "prune-authority-data", test))]
+const AUTHORITY_PRUNING_COMPACTION_THRESHOLD: usize = 5;
+
 /// The number of certificate index deletions in one startup batch.
 #[cfg(all(feature = "prune-authority-data", not(test)))]
 const CERTIFICATE_PRUNING_BATCH_SIZE: usize = 10_000;
@@ -278,8 +287,9 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(storage: &B, start: u32
 
 /// Removes the certificate indexes of blocks below `below`, in one pass over the small index rows.
 /// It runs on every startup, since inserts leave these rows behind.
+/// Returns whether it attempted to compact the certificate map afterwards.
 #[cfg(feature = "prune-authority-data")]
-fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
+fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<bool> {
     let flush = |batch: &[Field<N>]| -> Result<()> {
         if batch.is_empty() {
             return Ok(());
@@ -314,7 +324,18 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
     } else {
         debug!("No certificate indexes of pruned blocks to remove ({:.1} s)", timer.elapsed().as_secs_f64());
     }
-    Ok(())
+
+    // Compact after a large deletion, so later startups do not read past its tombstones. A failure
+    // costs only time on the next startup.
+    if removed < AUTHORITY_PRUNING_COMPACTION_THRESHOLD {
+        return Ok(false);
+    }
+    let timer = std::time::Instant::now();
+    match storage.compact_certificate_map() {
+        Ok(()) => info!("Compacted the certificate map in {:.1} s", timer.elapsed().as_secs_f64()),
+        Err(error) => warn!("Failed to compact the certificate map: {error}"),
+    }
+    Ok(true)
 }
 
 /// A trait for block storage.
@@ -399,6 +420,12 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn rejected_deployment_or_execution_map(&self) -> &Self::RejectedDeploymentOrExecutionMap;
     /// Returns the block metadata map.
     fn block_metadata_map(&self) -> &Self::BlockMetadataMap;
+
+    /// Compacts the certificate map's storage, so its deleted rows stop costing reads. Storage
+    /// without deferred compaction does nothing.
+    fn compact_certificate_map(&self) -> Result<()> {
+        Ok(())
+    }
 
     /// Returns `true` if authority data has been pruned from this storage, which a build without
     /// `prune-authority-data` refuses to open.
@@ -2395,6 +2422,45 @@ mod tests {
         // Height 3 is retained, so its missing authority is corruption.
         let error = storage.get_batch_certificate(&Field::from_u32(3)).unwrap_err().to_string();
         assert!(error.contains("authority"), "{error}");
+    }
+
+    /// Checks that the certificate pass decides to compact after deleting at least the threshold, and
+    /// not below.
+    #[cfg(feature = "prune-authority-data")]
+    fn check_certificate_pass_compacts_at_least_threshold<B: BlockStorage<CurrentNetwork>>(storage: B) {
+        let insert_rows = |offset: u32, count: usize| {
+            for i in 0..u32::try_from(count).unwrap() {
+                storage.certificate_map().insert(Field::from_u32(offset + i), (1, 1)).unwrap();
+            }
+        };
+        atomic_batch_scope!(storage, { storage.set_authority_pruned_below(2) }).unwrap();
+
+        insert_rows(0, AUTHORITY_PRUNING_COMPACTION_THRESHOLD - 1);
+        assert!(!prune_certificate_indexes(&storage, 2).unwrap());
+
+        insert_rows(1_000, AUTHORITY_PRUNING_COMPACTION_THRESHOLD);
+        assert!(prune_certificate_indexes(&storage, 2).unwrap());
+        assert_eq!(storage.certificate_map().len_confirmed(), 0);
+    }
+
+    /// Ensures the certificate pass decides to compact only at the threshold with in-memory storage,
+    /// where compaction itself is a no-op.
+    #[cfg(feature = "prune-authority-data")]
+    #[test]
+    fn test_certificate_pass_compacts_at_least_threshold() {
+        check_certificate_pass_compacts_at_least_threshold(
+            BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap(),
+        );
+    }
+
+    /// Ensures the certificate pass compacts only at the threshold with RocksDB storage.
+    #[cfg(all(feature = "prune-authority-data", feature = "rocks"))]
+    #[test]
+    fn test_certificate_pass_compacts_at_least_threshold_rocksdb() {
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        check_certificate_pass_compacts_at_least_threshold(
+            BlockDB::<CurrentNetwork>::open(StorageMode::new_test(Some(temp_dir))).unwrap(),
+        );
     }
 
     /// Ensures an interrupted startup resumes from the watermark with in-memory storage.
