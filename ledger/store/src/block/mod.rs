@@ -166,9 +166,9 @@ fn missing_block_in_tree_error(height: u32, block_tree_cache_path: Option<&std::
 /// Defined in every build because snarkOS uses it to decide which peers can still serve a block range.
 #[cfg(not(any(test, feature = "test_authority_retention")))]
 pub const AUTHORITY_RETENTION_BLOCKS: u32 = 500_000;
-/// A reduced retention window for devnets, so pruning can be observed within hours.
+/// A reduced retention window for devnets, so pruning can be observed within minutes.
 #[cfg(all(not(test), feature = "test_authority_retention"))]
-pub const AUTHORITY_RETENTION_BLOCKS: u32 = 1_000;
+pub const AUTHORITY_RETENTION_BLOCKS: u32 = 300;
 /// A reduced retention window for unit tests, so pruning can be exercised without building 500,000 blocks.
 #[cfg(test)]
 pub const AUTHORITY_RETENTION_BLOCKS: u32 = 100;
