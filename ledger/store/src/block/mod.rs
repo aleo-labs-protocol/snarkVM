@@ -530,7 +530,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the authority-pruning watermark `W`: the authority data of every height in `1..W` has
     /// been pruned. `None` if nothing has been pruned, and always `None` in a build without
     /// `prune-authority-data`, whose `BlockStore::open` refuses a store that has a watermark. The
-    /// speculative read also sees a watermark queued earlier in the current batch.
+    /// speculative read also sees a watermark queued in the pending batch, so only the pruning code
+    /// uses it; readers use [`Self::is_authority_pruned_at`].
     fn authority_pruned_below(&self) -> Result<Option<u32>> {
         // Without `prune-authority-data` nothing is pruned: `BlockStore::open` refuses a store that has
         // a watermark.
@@ -561,9 +562,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         }
     }
 
-    /// Returns `true` if the authority of the block at `height` has been pruned.
+    /// Returns `true` if the authority of the block at `height` has been pruned, by the committed watermark.
     fn is_authority_pruned_at(&self, height: u32) -> Result<bool> {
-        Ok(self.authority_pruned_below()?.is_some_and(|below| is_pruned_height(below, height)))
+        if !cfg!(feature = "prune-authority-data") {
+            return Ok(false);
+        }
+        let below = self.block_metadata_map().get_confirmed(&BlockMetadataKey::AuthorityPruned)?;
+        Ok(below.map(|b| decode_watermark(&b)).transpose()?.is_some_and(|below| is_pruned_height(below, height)))
     }
 
     /// Returns the authority of the block `block_hash` at `height`, or why it is absent.
@@ -2658,6 +2663,18 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(storage.authority_pruned_below().unwrap(), None);
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(1)).unwrap());
+    }
+
+    /// Ensures readers see only the committed watermark, not one pending in a batch.
+    #[cfg(feature = "prune-authority-data")]
+    #[test]
+    fn test_pruned_reads_ignore_pending_watermark() {
+        let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
+        storage.start_atomic();
+        storage.set_authority_pruned_below(5).unwrap();
+        assert!(!storage.is_authority_pruned_at(3).unwrap());
+        storage.finish_atomic().unwrap();
+        assert!(storage.is_authority_pruned_at(3).unwrap());
     }
 
     /// Ensures an insert after a block removal prunes nothing until the watermark is reached again.
