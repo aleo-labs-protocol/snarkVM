@@ -725,6 +725,9 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.id_map().finish_atomic()?;
         self.reverse_id_map().finish_atomic()?;
         self.header_map().finish_atomic()?;
+        // The in-memory maps commit one by one. The watermark goes before the authorities, so a reader
+        // that finds a pruned authority gone also finds the watermark.
+        self.block_metadata_map().finish_atomic()?;
         self.authority_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
         self.ratifications_map().finish_atomic()?;
@@ -737,7 +740,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.rejected_or_aborted_transaction_id_map().finish_atomic()?;
         self.confirmed_transactions_map().finish_atomic()?;
         self.rejected_deployment_or_execution_map().finish_atomic()?;
-        self.block_metadata_map().finish_atomic()?;
         self.transaction_store().finish_atomic()?;
         // The block store finishes last, so a top-level batch is committed by now unless writes are paused.
         #[cfg(feature = "prune-authority-data")]
