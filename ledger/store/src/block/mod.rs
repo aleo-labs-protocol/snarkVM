@@ -205,6 +205,14 @@ const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = if cfg!(test) { 16 } else { 10_000 
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_COMPACTION_THRESHOLD: usize = if cfg!(test) { 5 } else { 1_000_000 };
 
+/// The certificate pass logs progress about this often.
+#[cfg(feature = "prune-authority-data")]
+const CERTIFICATE_PRUNING_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The certificate pass reads the clock once per this many rows.
+#[cfg(feature = "prune-authority-data")]
+const CERTIFICATE_PRUNING_CLOCK_ROWS: usize = 100_000;
+
 /// The number of certificate index deletions in one startup batch. Unit tests use a small batch, so
 /// the pass flushes while its iterator is open.
 #[cfg(feature = "prune-authority-data")]
@@ -374,12 +382,21 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
         })
     };
 
+    info!("Removing certificate indexes of pruned blocks below block {below}");
     let timer = std::time::Instant::now();
+    let mut next_report = CERTIFICATE_PRUNING_REPORT_INTERVAL;
     let mut removed = 0;
     let mut batch = Vec::with_capacity(CERTIFICATE_PRUNING_BATCH_SIZE);
     // Keep one forward iterator to avoid rescanning RocksDB tombstones. Each batch removes only keys
     // already yielded.
-    for (certificate_id, index) in storage.certificate_map().iter_confirmed() {
+    for (scanned, (certificate_id, index)) in storage.certificate_map().iter_confirmed().enumerate() {
+        if scanned.is_multiple_of(CERTIFICATE_PRUNING_CLOCK_ROWS) && timer.elapsed() >= next_report {
+            info!(
+                "Scanned {scanned} certificate indexes, removed {removed}, in {:.0} s",
+                timer.elapsed().as_secs_f64()
+            );
+            next_report += CERTIFICATE_PRUNING_REPORT_INTERVAL;
+        }
         if is_pruned_height(below, index.0) {
             batch.push(certificate_id.into_owned());
             removed += 1;
@@ -403,6 +420,7 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
     }
     #[cfg(test)]
     CERTIFICATE_COMPACTIONS.with(|count| count.set(count.get() + 1));
+    info!("Compacting the certificate map; this can take a while");
     let timer = std::time::Instant::now();
     storage.compact_certificate_map()?;
     info!("Compacted the certificate map in {:.1} s", timer.elapsed().as_secs_f64());
