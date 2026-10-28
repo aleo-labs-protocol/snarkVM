@@ -163,3 +163,94 @@ impl<N: Network> ToBits for Plaintext<N> {
         }
     }
 }
+
+impl<N: Network> Plaintext<N> {
+    /// Returns the number of bits [`ToBits::write_bits_le`] writes for this plaintext.
+    ///
+    /// A literal stores its bit length in a `u16`. A struct member and an array element do too.
+    /// A value whose bit length does not fit in that prefix is rejected.
+    pub(crate) fn encoded_size_in_bits(&self) -> Result<usize> {
+        /// Adds `more` bits to `size`.
+        fn checked_bits(size: usize, more: usize) -> Result<usize> {
+            size.checked_add(more).ok_or_else(|| anyhow!("Plaintext bit length overflowed"))
+        }
+
+        match self {
+            Self::Literal(literal, _) => Ok(Self::literal_encoded_size_in_bits(literal)),
+            Self::Struct(members, _) => {
+                // Variant bits, then the member count.
+                let mut size = checked_bits(PlaintextType::<N>::STRUCT_PREFIX_BITS.len(), 8)?;
+                u8::try_from(members.len())
+                    .map_err(|error| anyhow!("Plaintext struct length exceeds u8::MAX: {error}"))?;
+                for (identifier, value) in members {
+                    let value_bits = value.encoded_size_in_bits()?;
+                    // The member's bit length is written as a `u16`.
+                    u16::try_from(value_bits)
+                        .map_err(|error| anyhow!("Plaintext member exceeds u16::MAX bits: {error}"))?;
+                    // Identifier length, identifier, member length, member.
+                    size = checked_bits(size, 8)?;
+                    size = checked_bits(size, identifier.size_in_bits() as usize)?;
+                    size = checked_bits(size, 16)?;
+                    size = checked_bits(size, value_bits)?;
+                }
+                Ok(size)
+            }
+            Self::Array(elements, _) => {
+                // Variant bits, then the element count.
+                let mut size = checked_bits(PlaintextType::<N>::ARRAY_PREFIX_BITS.len(), 32)?;
+                u32::try_from(elements.len())
+                    .map_err(|error| anyhow!("Plaintext array length exceeds u32::MAX: {error}"))?;
+                for element in elements {
+                    let element_bits = element.encoded_size_in_bits()?;
+                    // The element's bit length is written as a `u16`.
+                    u16::try_from(element_bits)
+                        .map_err(|error| anyhow!("Plaintext element exceeds u16::MAX bits: {error}"))?;
+                    // Element length, then the element.
+                    size = checked_bits(size, 16)?;
+                    size = checked_bits(size, element_bits)?;
+                }
+                Ok(size)
+            }
+        }
+    }
+
+    /// Returns the number of bits [`ToBits::write_bits_le`] writes for a literal plaintext.
+    fn literal_encoded_size_in_bits(literal: &Literal<N>) -> usize {
+        // Variant bits, literal variant, literal length, literal value.
+        PlaintextType::<N>::LITERAL_PREFIX_BITS.len() + 8 + 16 + literal.size_in_bits() as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = MainnetV0;
+
+    fn assert_encoded_size(plaintext: &Plaintext<CurrentNetwork>) {
+        assert_eq!(plaintext.encoded_size_in_bits().unwrap(), plaintext.to_bits_le().len());
+    }
+
+    #[test]
+    fn test_encoded_size_in_bits_matches_write_bits_le() {
+        let literal = Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(1)));
+        assert_encoded_size(&literal);
+
+        let mut members = IndexMap::new();
+        members.insert(Identifier::from_str("amount").unwrap(), literal);
+        let struct_ = Plaintext::<CurrentNetwork>::Struct(members, Default::default());
+        assert_encoded_size(&struct_);
+
+        let array = Plaintext::<CurrentNetwork>::Array(
+            vec![Plaintext::from(Literal::U64(U64::new(1))), Plaintext::from(Literal::U64(U64::new(2)))],
+            Default::default(),
+        );
+        assert_encoded_size(&array);
+
+        let nested = Plaintext::<CurrentNetwork>::Array(vec![array], Default::default());
+        assert_encoded_size(&nested);
+    }
+}

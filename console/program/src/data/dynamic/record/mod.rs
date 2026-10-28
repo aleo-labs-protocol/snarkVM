@@ -179,6 +179,20 @@ impl<N: Network> DynamicRecord<N> {
         Record::<N, Plaintext<N>>::from_plaintext(owner, data.clone(), self.nonce, self.version)
     }
 
+    /// Returns an error when an entry's bit encoding does not fit in a length prefix.
+    ///
+    /// `Plaintext::write_bits_le` stores each nested struct member and array element
+    /// length in a `u16`, and halts when the length does not fit.
+    fn ensure_data_encoding_fits(data: &RecordData<N>) -> Result<()> {
+        for entry in data.values() {
+            let plaintext = match entry {
+                Entry::Constant(plaintext) | Entry::Public(plaintext) | Entry::Private(plaintext) => plaintext,
+            };
+            plaintext.encoded_size_in_bits()?;
+        }
+        Ok(())
+    }
+
     /// Computes the Merkle tree containing the given (ordered) entries as
     /// leaves. More details on the structure of the tree can be found in
     /// [`DynamicRecord`].

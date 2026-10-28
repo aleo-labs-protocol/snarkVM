@@ -134,6 +134,8 @@ impl<N: Network> Parser for DynamicRecord<N> {
                     }
                     // Construct the record data.
                     let data = IndexMap::from_iter(entries);
+                    // Every nested length prefix in the bit encoding must fit.
+                    Self::ensure_data_encoding_fits(&data).map_err(|e| error(e.to_string()))?;
                     // Check that the Merkle root matches the parsed data.
                     let tree = Self::merkleize_data(&data).map_err(|e| error(e.to_string()))?;
                     if tree.root() != &root {
@@ -426,6 +428,20 @@ mod tests {
         let candidate = DynamicRecord::<CurrentNetwork>::from_str(&without_version).unwrap();
         assert_eq!(*candidate.version(), U8::new(0));
         assert_eq!(expected.data(), candidate.data());
+    }
+
+    #[test]
+    fn test_parse_rejects_oversized_nested_bits() {
+        let rng = &mut TestRng::default();
+        let owner = Address::<CurrentNetwork>::rand(rng);
+        let nonce = Group::<CurrentNetwork>::rand(rng);
+        let elements = (0..1024).map(|_| "1u64.private".to_string()).collect::<Vec<_>>().join(", ");
+        let string = format!(
+            "{{ owner: {owner}, _root: 0field, _nonce: {nonce}, _version: 0u8, _data: {{ amount: [[{elements}]] }} }}"
+        );
+        let parsed = std::panic::catch_unwind(|| DynamicRecord::<CurrentNetwork>::from_str(&string));
+        let parsed = parsed.expect("oversized entry data panicked during parsing");
+        assert!(parsed.is_err(), "oversized entry data must be rejected");
     }
 
     #[test]

@@ -94,6 +94,9 @@ impl<N: Network> DynamicRecord<N> {
             return Err(error("Duplicate entry type found in dynamic record"));
         }
 
+        // Every nested length prefix in the bit encoding must fit.
+        Self::ensure_data_encoding_fits(&data).map_err(|e| error(e.to_string()))?;
+
         // Check that the Merkle root matches the recovered data.
         let tree = Self::merkleize_data(&data).map_err(|e| error(e.to_string()))?;
         if tree.root() != root {
@@ -367,5 +370,65 @@ mod tests {
 
         let error = DynamicRecord::<CurrentNetwork>::read_le(&bytes[..]).unwrap_err();
         assert!(error.to_string().contains("Duplicate"), "{error}");
+    }
+
+    /// An outer array whose only element is an array of 1,024 `u64`s.
+    ///
+    /// The byte encoding fits in a `u16`. The inner array's bit encoding does not.
+    fn oversized_nested_array() -> Plaintext<CurrentNetwork> {
+        let inner = Plaintext::Array(
+            (0..1024).map(|_| Plaintext::from(Literal::U64(U64::new(1)))).collect(),
+            Default::default(),
+        );
+        Plaintext::Array(vec![inner], Default::default())
+    }
+
+    /// Encodes one version-2 entry under an arbitrary root.
+    fn write_v2_entry(entry_name: &str, entry: Entry<CurrentNetwork, Plaintext<CurrentNetwork>>) -> Vec<u8> {
+        let rng = &mut TestRng::default();
+        let mut writer = Vec::new();
+        2u8.write_le(&mut writer).unwrap();
+        Address::<CurrentNetwork>::rand(rng).write_le(&mut writer).unwrap();
+        Field::<CurrentNetwork>::zero().write_le(&mut writer).unwrap();
+        Group::<CurrentNetwork>::rand(rng).write_le(&mut writer).unwrap();
+        U8::<CurrentNetwork>::new(0).write_le(&mut writer).unwrap();
+        1u8.write_le(&mut writer).unwrap();
+        Identifier::<CurrentNetwork>::from_str(entry_name).unwrap().write_le(&mut writer).unwrap();
+        let entry_bytes = entry.to_bytes_le().unwrap();
+        assert!(entry_bytes.len() <= u16::MAX as usize, "the entry must pass the byte-length limit");
+        u16::try_from(entry_bytes.len()).unwrap().write_le(&mut writer).unwrap();
+        entry_bytes.write_le(&mut writer).unwrap();
+        writer
+    }
+
+    #[test]
+    fn test_read_le_version_2_rejects_oversized_nested_bits() {
+        let bytes = write_v2_entry("amount", Entry::Private(oversized_nested_array()));
+        let read = std::panic::catch_unwind(|| DynamicRecord::<CurrentNetwork>::read_le(bytes.as_slice()));
+        let read = read.expect("oversized entry data panicked during decoding");
+        assert!(read.is_err(), "oversized entry data must be rejected");
+    }
+
+    #[test]
+    fn test_read_le_version_2_accepts_nested_array() {
+        let rng = &mut TestRng::default();
+        let inner = Plaintext::Array(
+            vec![Plaintext::from(Literal::U64(U64::new(1))), Plaintext::from(Literal::U64(U64::new(2)))],
+            Default::default(),
+        );
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::Array(vec![inner], Default::default())),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&write_v2(&expected)[..]).unwrap();
+        assert_eq!(expected.data(), candidate.data());
     }
 }
