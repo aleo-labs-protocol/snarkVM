@@ -191,16 +191,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 if request.function_name() != function.name() {
                     return Err(anyhow!("CallDynamic::evaluate retrieved a request with a different function name than the one in the call instruction").into());
                 }
-                // Note the request contains the inputs as seen by the callee, yet `inputs` contains the caller's view.
-                // In order to consistency-check the two, we convert the latter representation to the former.
-                let callee_input_view = {
-                    let input_types = substack.program().get_function_ref(function_name)?.input_types();
-                    if input_types.len() != inputs.len() {
-                        return Err(anyhow!("Expected {} inputs, found {}", input_types.len(), inputs.len()).into());
-                    }
-                    convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?
-                };
-                if request.inputs() != callee_input_view {
+                // The request holds the callee's view of the inputs, so compare them in the caller's view, which
+                // needs no dynamic record's entry data.
+                if request.to_dynamic_inputs()? != inputs {
                     return Err(anyhow!("CallDynamic::evaluate retrieved a request with different inputs than the ones passed to the call instruction").into());
                 }
 
@@ -567,10 +560,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Retrieve the callee's input types.
                         let callee_input_types = callee_function.input_types();
-                        // The request holds the callee's view of the inputs, so convert the caller's view to compare them.
-                        let callee_input_view =
-                            convert_caller_inputs_to_callee_inputs(&inputs, &callee_input_types, target.substack())?;
-                        if callee_request.inputs() != callee_input_view {
+                        // The request holds the callee's view of the inputs, so compare them in the caller's view,
+                        // which needs no dynamic record's entry data.
+                        if callee_request.to_dynamic_inputs()? != inputs {
                             return Err(anyhow!("[execute CallDynamic] Retrieved a request with different inputs than the ones passed to the call instruction").into());
                         }
 
