@@ -122,8 +122,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the block for the given block height.
     ///
-    /// This behaves the same as [`Self::get_block`], except that a missing block will cause the function to
-    /// return `Ok(None)` instead of an error.
+    /// This behaves the same as [`Self::get_block`], except that a block the store never had returns `Ok(None)`
+    /// instead of an error. A block whose authority has been pruned is still an error.
     pub fn try_get_block(&self, height: u32) -> Result<Option<Block<N>>> {
         if height == 0 {
             return Ok(Some(self.genesis_block.clone()));
@@ -151,8 +151,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the block for the given block hash.
     ///
-    /// This behaves the same as [`Self::get_block_by_hash`], except that a missing block will cause the function to
-    /// return `Ok(None)` instead of an error.
+    /// This behaves the same as [`Self::get_block_by_hash`], except that a block the store never had returns
+    /// `Ok(None)` instead of an error. A block whose authority has been pruned is still an error.
     pub fn try_get_block_by_hash(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
         self.vm.block_store().get_block(block_hash)
     }
