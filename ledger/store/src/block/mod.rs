@@ -309,8 +309,10 @@ fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
 }
 
 /// Removes the authorities of the blocks in `heights` without reading them, and advances the
-/// watermark to `heights.end`. Call it inside an atomic batch scope, with at most one block per paused
-/// span of atomic writes. Genesis is skipped; certificate indexes are left to the startup pass.
+/// watermark to `heights.end`. Call it inside an atomic batch scope. While atomic writes are paused,
+/// the watermark it writes is not visible to later scopes in the same pause, so prune at most one
+/// block per pause, as `VM::add_next_block` does. Genesis is skipped; certificate indexes are left to
+/// the startup pass.
 #[cfg(feature = "prune-authority-data")]
 fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights: core::ops::Range<u32>) -> Result<()> {
     for height in heights.start.max(1)..heights.end {
