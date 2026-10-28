@@ -202,6 +202,10 @@ pub fn oldest_retained_authority_height(latest_height: u32) -> u32 {
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = if cfg!(test) { 16 } else { 10_000 };
 
+/// Insert-time pruning logs progress at debug level once per this many blocks.
+#[cfg(feature = "prune-authority-data")]
+const AUTHORITY_PRUNING_LOG_INTERVAL: u32 = 10_000;
+
 /// The number of certificate index deletions in a startup pass at which the certificate map is
 /// compacted afterwards. RocksDB's own scheduling leaves most of a large deletion as tombstones that
 /// every later startup pass reads past.
@@ -295,10 +299,6 @@ fn read_block_parts<N: Network, B: BlockStorage<N>>(
         aborted_transaction_ids,
     })
 }
-
-/// Insert-time pruning logs progress at debug level once per this many blocks.
-#[cfg(feature = "prune-authority-data")]
-const AUTHORITY_PRUNING_LOG_INTERVAL: u32 = 10_000;
 
 /// Returns the IDs of the certificates committed by an authority.
 fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
