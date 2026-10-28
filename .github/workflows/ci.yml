@@ -143,11 +143,13 @@ jobs:
             runs: |
               nextest run -p snarkvm-ledger
               nextest run -p snarkvm-ledger --features test -E test(/^tests::valid_solutions::/)
+              nextest run -p snarkvm-ledger --features prune-authority-data,test -E test(test_pruned_authority_reads)
           # ledger-query's async tests bound wall-clock time, which a loaded
           # hosted runner can exceed.
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
+              nextest run -p snarkvm-ledger-store --features rocks,prune-authority-data
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)
               nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
               nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch

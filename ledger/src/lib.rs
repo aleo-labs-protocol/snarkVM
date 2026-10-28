@@ -65,7 +65,7 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
+use snarkvm_ledger_store::{BlockAuthority, ConsensusStorage, ConsensusStore, IncompatibleStore};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
@@ -228,6 +228,16 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     dev_committee: Option<Committee<N>>,
 }
 
+/// Wraps a failure to open the consensus store. The `snarkos clean` advice is left out for an
+/// [`IncompatibleStore`]: cleaning would destroy a store that another build can open.
+fn store_open_error(error: anyhow::Error) -> anyhow::Error {
+    if error.chain().any(|cause| cause.is::<IncompatibleStore>()) {
+        anyhow::anyhow!("Failed to load ledger\n\n{error}\n")
+    } else {
+        anyhow::anyhow!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{error}\n")
+    }
+}
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Loads the ledger from storage.
     pub fn load(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
@@ -243,22 +253,33 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
         }
 
-        // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
-        const NUM_BLOCKS: usize = 10;
-        // Retrieve the latest height.
-        let latest_height = ledger.current_block.read().height();
-        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        // Sample random block heights.
-        let block_heights: Vec<u32> =
-            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
-        cfg_into_iter!(block_heights).try_for_each(|height| {
-            ledger.get_block(height)?;
-            Ok::<_, Error>(())
-        })?;
-        lap!(timer, "Check existence of {NUM_BLOCKS} random blocks");
+        // Spot check the integrity of random blocks upon bootup.
+        ledger.check_random_blocks()?;
+        lap!(timer, "Check existence of random blocks");
 
         finish!(timer);
         Ok(ledger)
+    }
+
+    /// Spot checks the integrity of random blocks. For a block whose authority has been pruned, only
+    /// the remaining block data is checked.
+    fn check_random_blocks(&self) -> Result<()> {
+        const NUM_BLOCKS: usize = 10;
+        let latest_height = self.current_block.read().height();
+        // The callers have checked that the ledger contains the genesis block, so `max_height` is `Some`.
+        debug_assert_eq!(latest_height, self.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
+        let num_blocks = usize::try_from(latest_height)?.min(NUM_BLOCKS);
+        let block_heights: Vec<u32> = (0..=latest_height).sample(&mut rand::rng(), num_blocks);
+        cfg_into_iter!(block_heights).try_for_each(|height| {
+            // The stored watermark, not the window computed from the latest height, marks the pruned
+            // blocks: removing blocks lowers the latest height but not the watermark.
+            if self.vm.block_store().is_authority_pruned_at(height)? {
+                self.vm.block_store().check_block_data_without_authority(&self.get_hash(height)?)?;
+            } else {
+                self.get_block(height)?;
+            }
+            Ok::<_, Error>(())
+        })
     }
 
     /// Loads the ledger from storage, without performing integrity checks.
@@ -294,17 +315,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
         }
 
-        // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
-        const NUM_BLOCKS: usize = 10;
-        let latest_height = ledger.current_block.read().height();
-        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        let block_heights: Vec<u32> =
-            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
-        cfg_into_iter!(block_heights).try_for_each(|height| {
-            ledger.get_block(height)?;
-            Ok::<_, Error>(())
-        })?;
-        lap!(timer, "Check existence of {NUM_BLOCKS} random blocks");
+        // Spot check the integrity of random blocks upon bootup.
+        ledger.check_random_blocks()?;
+        lap!(timer, "Check existence of random blocks");
 
         finish!(timer);
         Ok(ledger)
@@ -331,7 +344,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Initialize the consensus store.
         let store = match ConsensusStore::<N, C>::open(storage_mode) {
             Ok(store) => store,
-            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
+            Err(e) => return Err(store_open_error(e)),
         };
         lap!(timer, "Load consensus store");
 
