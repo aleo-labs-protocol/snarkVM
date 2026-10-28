@@ -1,7 +1,7 @@
-name: Merge testnet and mainnet into staging
+name: Merge release branches into staging
 
-# Keeps one pull request open for each of testnet and mainnet while it has
-# commits that staging lacks. Promotion in the other direction stays manual.
+# Keeps one pull request open for each release branch while it has commits
+# that staging lacks. These pull requests must be merged with a merge commit.
 on:
   schedule:
     - cron: '17 * * * *'
@@ -17,7 +17,7 @@ jobs:
     permissions: { contents: read, pull-requests: read }
     with:
       target: staging
-      sources: testnet mainnet
+      sources: release/*
     # Lives in the merge-bot environment, which admits only staging. The called
     # workflow's merge job sets that environment and receives the value.
     secrets:

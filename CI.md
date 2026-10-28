@@ -22,8 +22,8 @@ Jobs run in one of two places:
 | Event | Runs |
 |---|---|
 | Pull request | `fmt`, `deny`, `wasm`, `lint`, `test`, `ci-ok` |
-| Push to `staging`, `canary`, `testnet`, `mainnet`, or manual dispatch | the above, plus `test-merge`, `machete` |
-| Push to `canary`, `testnet`, `mainnet`, or manual dispatch | the above, plus `windows` |
+| Push to `staging`, or manual dispatch | the above, plus `test-merge`, `machete` |
+| Push to or pull request into `release/**`, or manual dispatch | the above, plus `windows` |
 
 ## Jobs
 
