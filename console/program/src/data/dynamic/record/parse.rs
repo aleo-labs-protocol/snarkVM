@@ -88,18 +88,8 @@ impl<N: Network> Parser for DynamicRecord<N> {
         // Parse the nonce from the string.
         let (string, nonce) = Group::parse(string)?;
 
-        // There may be an optional "_version" tag. Consume the "," separator if it exists.
-        let string = match opt(tag(","))(string)? {
-            // The "," was consumed; continue with the advanced string.
-            (string, Some(_)) => string,
-            // No "," found; keep the string as is.
-            (string, None) => string,
-        };
-
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
-        // Parse the optional "_version" tag from the string.
-        let (string, version) = match opt(tag("_version"))(string)? {
+        // `_version` is optional. The comma is consumed only when the field follows it.
+        let (string, version) = match opt(pair(tag(","), pair(Sanitizer::parse, tag("_version"))))(string)? {
             // If there is no version, then set the version to zero.
             (string, None) => (string, U8::zero()),
             // If there is a version, then parse the version from the string.
@@ -111,22 +101,13 @@ impl<N: Network> Parser for DynamicRecord<N> {
                 // Parse the whitespace and comments from the string.
                 let (string, _) = Sanitizer::parse(string)?;
                 // Parse the version from the string.
-                U8::parse(string)?
+                let (string, version) = U8::parse(string)?;
+                (string, version)
             }
         };
 
-        // There may be an optional "_data" tag. Consume the "," separator if it exists.
-        let string = match opt(tag(","))(string)? {
-            // The "," was consumed; continue with the advanced string.
-            (string, Some(_)) => string,
-            // No "," found; keep the string as is.
-            (string, None) => string,
-        };
-
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
-        // Parse the optional "_data" tag from the string.
-        let (string, data) = match opt(tag("_data"))(string)? {
+        // `_data` is optional. The comma is consumed only when the field follows it.
+        let (string, data) = match opt(pair(tag(","), pair(Sanitizer::parse, tag("_data"))))(string)? {
             // If there is no data, then leave the record data unset.
             (string, None) => (string, None),
             // If there is data, then parse the entries from the string.
@@ -387,6 +368,64 @@ mod tests {
             Group::<CurrentNetwork>::rand(rng),
         );
         assert!(DynamicRecord::<CurrentNetwork>::from_str(&string).is_err());
+    }
+
+    #[test]
+    fn test_parse_rejects_loose_commas() {
+        let owner = "aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah";
+
+        // A comma with no field after it.
+        let trailing = format!("{{ owner: {owner}, _root: 0field, _nonce: 0group, _version: 0u8, }}");
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&trailing).is_err(), "trailing comma");
+
+        // A second comma where `_version` and `_data` are both absent.
+        let doubled = format!("{{ owner: {owner}, _root: 0field, _nonce: 0group,, }}");
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&doubled).is_err(), "double comma");
+        let spaced = format!("{{ owner: {owner}, _root: 0field, _nonce: 0group, , }}");
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&spaced).is_err(), "spaced double comma");
+
+        let rng = &mut TestRng::default();
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::new(1)))),
+        };
+        let record_owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            record_owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+        let valid = format!(
+            "{{ owner: {}, _root: {}, _nonce: {}, _version: {}, _data: {{ amount: 1u64.private }} }}",
+            expected.owner(),
+            expected.root(),
+            expected.nonce(),
+            expected.version(),
+        );
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&valid).is_ok());
+
+        // `_data` is present, so the comma in front of it is required.
+        let missing_comma = valid.replacen(", _data:", " _data:", 1);
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&missing_comma).is_err(), "missing comma before _data");
+
+        // The same root matches one entry. A trailing or doubled comma must not parse as that entry.
+        let trailing_entry = valid.replacen("1u64.private }", "1u64.private, }", 1);
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&trailing_entry).is_err(), "trailing comma in _data");
+        let doubled_entry = valid.replacen("amount: 1u64.private", "amount: 1u64.private,, amount: 2u64.private", 1);
+        assert!(DynamicRecord::<CurrentNetwork>::from_str(&doubled_entry).is_err(), "double comma in _data");
+
+        // `_version` may be omitted when the comma that introduces `_data` is present.
+        let without_version = format!(
+            "{{ owner: {}, _root: {}, _nonce: {}, _data: {{ amount: 1u64.private }} }}",
+            expected.owner(),
+            expected.root(),
+            expected.nonce(),
+        );
+        let candidate = DynamicRecord::<CurrentNetwork>::from_str(&without_version).unwrap();
+        assert_eq!(*candidate.version(), U8::new(0));
+        assert_eq!(expected.data(), candidate.data());
     }
 
     #[test]
