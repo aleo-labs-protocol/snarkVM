@@ -315,7 +315,10 @@ fn certificate_ids<N: Network>(authority: &Authority<N>) -> Vec<Field<N>> {
 fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights: core::ops::Range<u32>) -> Result<()> {
     for height in heights.start.max(1)..heights.end {
         let Some(block_hash) = storage.id_map().get_speculative(&height)? else {
-            bail!("Cannot prune the authority of block {height}: it has no hash recorded");
+            bail!(
+                "Cannot prune the authority of block {height}: the block store has no block hash recorded at that \
+                 height, so it is inconsistent. Resync the store."
+            );
         };
         storage.authority_map().remove(&block_hash)?;
     }
