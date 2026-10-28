@@ -81,8 +81,10 @@ impl<N: Network> DynamicRecord<N> {
             if !slice.is_empty() {
                 return Err(error("Failed to read dynamic record: entry has trailing bytes"));
             }
-            // Add the entry.
-            data.insert(identifier, entry);
+            // Add the entry. A repeated name would overwrite the earlier value.
+            if data.insert(identifier, entry).is_some() {
+                return Err(error("Duplicate entry type found in dynamic record"));
+            }
         }
 
         // Prepare the reserved entry names.
@@ -333,5 +335,37 @@ mod tests {
             DynamicRecord::<CurrentNetwork>::read_le(&padded[..]).is_err(),
             "an entry declaring fewer bytes than it occupies must be rejected"
         );
+    }
+
+    #[test]
+    fn test_read_le_version_2_rejects_duplicate_names() {
+        let rng = &mut TestRng::default();
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::new(1)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+        let mut bytes = write_v2(&expected);
+
+        // The entry count sits after the encoding version, owner, root, nonce, and version field.
+        let count_at = 1
+            + expected.owner().to_bytes_le().unwrap().len()
+            + expected.root().to_bytes_le().unwrap().len()
+            + expected.nonce().to_bytes_le().unwrap().len()
+            + expected.version().to_bytes_le().unwrap().len();
+        assert_eq!(bytes[count_at], 1);
+        let entry = bytes[count_at + 1..].to_vec();
+        bytes[count_at] = 2;
+        bytes.extend_from_slice(&entry);
+
+        let error = DynamicRecord::<CurrentNetwork>::read_le(&bytes[..]).unwrap_err();
+        assert!(error.to_string().contains("Duplicate"), "{error}");
     }
 }
