@@ -232,9 +232,9 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
 /// [`IncompatibleStore`]: cleaning would destroy a store that another build can open.
 fn store_open_error(error: anyhow::Error) -> anyhow::Error {
     if error.chain().any(|cause| cause.is::<IncompatibleStore>()) {
-        anyhow::anyhow!("Failed to load ledger\n\n{error}\n")
+        anyhow::anyhow!("Failed to load ledger\n\n{error:#}\n")
     } else {
-        anyhow::anyhow!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{error}\n")
+        anyhow::anyhow!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{error:#}\n")
     }
 }
 
