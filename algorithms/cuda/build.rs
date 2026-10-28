@@ -69,6 +69,7 @@ fn main() {
         // under -maxrregcount=255.
         nvcc.debug(false);
         nvcc.flag("-g");
+<<<<<<< HEAD
         // Ampere (sm_86) by default. Its SASS also runs on Ada (sm_89), and
         // Hopper (sm_90) JIT-compiles its embedded PTX. CUDA_ARCH overrides it;
         // an empty value takes the default. A binary built for a newer arch than
@@ -78,6 +79,9 @@ fn main() {
             _ => "sm_86".to_string(),
         };
         nvcc.flag(format!("-arch={arch}"));
+=======
+        nvcc.flag("-arch=sm_86");
+>>>>>>> e0a79a584ef6bfb3d8a8e569662d44d24623f227
         nvcc.flag("-maxrregcount=255");
         nvcc.flag("-Xcompiler").flag("-Wno-unused-function");
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
