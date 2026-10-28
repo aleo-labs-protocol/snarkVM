@@ -121,13 +121,13 @@ pub(crate) fn set_storage_version(database: &rocksdb::DB, network_id: u16, versi
 /// state of every database created before the record existed and of a database this build has
 /// just created; it is brought forward like any older version.
 pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
-    let version = get_storage_version(database, network_id)?;
-    // `V0` to `V1` adds only the block metadata map, which an unpruned store leaves empty, so there
-    // is nothing to rewrite before the stamp.
-    if version < STORAGE_VERSION {
-        set_storage_version(database, network_id, STORAGE_VERSION)?;
+    // One arm per version, so a new variant does not compile until its migration is decided.
+    match get_storage_version(database, network_id)? {
+        // `V0` to `V1` adds only the block metadata map, which an unpruned store leaves empty, so
+        // there is nothing to rewrite before the stamp.
+        StorageVersion::V0 => set_storage_version(database, network_id, StorageVersion::V1),
+        StorageVersion::V1 => Ok(()),
     }
-    Ok(())
 }
 
 #[cfg(test)]
