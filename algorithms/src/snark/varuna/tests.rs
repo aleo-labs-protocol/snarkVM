@@ -1081,6 +1081,46 @@ mod varuna_hiding {
         assert!(exact_rows(&read.circuit), "the key read back holds spare row capacity");
         assert!(read.to_bytes_le().expect("the key writes") == bytes, "the key read back writes other bytes");
     }
+
+    #[test]
+    fn rayon_workers_loading_a_shared_proving_key_do_not_deadlock() {
+        use crate::{fft::EvaluationDomain, snark::varuna::CircuitProvingKey};
+        use std::{
+            sync::{Arc, OnceLock, mpsc},
+            time::Duration,
+        };
+
+        let rng = &mut TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(300, 25, 900).expect("a degree");
+        let universal_srs = VarunaInst::universal_setup(max_degree).expect("an SRS");
+        let (circuit, _) = TestCircuit::gen_rand(2, 300, 25, rng);
+        let (pk, _) = VarunaInst::circuit_setup(&universal_srs, &circuit).expect("a key");
+        let bytes = Arc::new(pk.to_bytes_le().expect("the key writes"));
+        // A domain of 2^9 or more takes the parallel path in `roots_of_unity`.
+        let domain = EvaluationDomain::new(1 << 9).expect("a domain");
+        assert!(pk.circuit.fft_precomputation.precomputation_for_subdomain(&domain).is_some());
+        // A panic in a pool job aborts the process, so the read must not fail there.
+        CircuitProvingKey::<Bls12_377, VarunaHidingMode>::read_le(&bytes[..]).expect("the key reads");
+
+        // The loader can steal a job that arrives while it loads and waits on the key.
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(32).build().expect("a pool");
+        let jobs = 256;
+        for _ in 0..16 {
+            let key = Arc::new(OnceLock::<CircuitProvingKey<Bls12_377, VarunaHidingMode>>::new());
+            let (tx, rx) = mpsc::channel();
+            for _ in 0..jobs {
+                let (key, bytes, tx) = (key.clone(), bytes.clone(), tx.clone());
+                pool.spawn(move || {
+                    key.get_or_init(|| CircuitProvingKey::read_le(&bytes[..]).expect("the key reads"));
+                    let _ = tx.send(());
+                });
+                std::thread::sleep(Duration::from_micros(200));
+            }
+            for _ in 0..jobs {
+                rx.recv_timeout(Duration::from_secs(30)).expect("a worker deadlocked loading the key");
+            }
+        }
+    }
 }
 
 mod varuna_test_vectors {
