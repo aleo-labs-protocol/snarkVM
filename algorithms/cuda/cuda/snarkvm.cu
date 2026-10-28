@@ -274,7 +274,7 @@ public:
         int stream_idx = slot.stream();
         stream_t& stream = gpu[stream_idx];
 
-        // // Copy data to pinned staging buffer
+        // Slice this stream's share of the pinned and device pools.
         fr_t* h_mem0 = h_addr(dev, stream_idx);
         fr_t* h_mem1 = &h_mem0[domain_size];
         fr_t* h_mem2 = &h_mem0[domain_size * 2];

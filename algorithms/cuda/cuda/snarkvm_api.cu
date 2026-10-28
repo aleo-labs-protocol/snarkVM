@@ -36,6 +36,20 @@
 #define MAX_LG_DOMAIN 23
 #endif
 
+// Why sppark lists no GPU: the runtime could not enumerate the devices, there
+// are none, or none is Volta or newer with cooperative launch.
+static std::string no_device_detail()
+{
+    int n = 0;
+    cudaError_t rc = cudaGetDeviceCount(&n);
+    if (rc != cudaSuccess)
+        return std::string("cudaGetDeviceCount failed: ") + cudaGetErrorString(rc);
+    if (n == 0)
+        return "cudaGetDeviceCount reported 0 devices";
+    return std::to_string(n) + " device(s), none with compute capability 7.0 or "
+           "higher and cooperative launch";
+}
+
 // Lazy instantiation of snarkvm_t
 class snarkvm_singleton_t {
     std::once_flag once;
@@ -53,6 +67,7 @@ class snarkvm_singleton_t {
             // the first call waits forever for a slot.
             if (ngpus() == 0) {
                 fail_code = cudaErrorNoDevice;
+                fail_detail = no_device_detail();
                 return;
             }
             snarkvm = new snarkvm_t(MAX_LG_DOMAIN);
@@ -97,13 +112,16 @@ __attribute__((used)) static size_t (*const keep_blst_cpuid)(void) = blst_p1_siz
 extern "C" int __blst_platform_cap;
 
 // sppark reports device failures by throwing, and an exception that crosses
-// `extern "C"` into Rust is undefined behaviour.
+// `extern "C"` into Rust is undefined behaviour. Any other exception, such as
+// a `std::bad_alloc` from a host vector, keeps its message.
 template<class F> static RustError catch_all(F f) noexcept
 {
     try {
         return f();
     } catch (const cuda_error& e) {
         return RustError{e.code(), e.what()};
+    } catch (const std::exception& e) {
+        return RustError{cudaErrorUnknown, e.what()};
     } catch (...) {
         return RustError{cudaErrorUnknown};
     }
