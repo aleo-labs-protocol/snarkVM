@@ -106,6 +106,56 @@ mod tests {
         }
     }
 
+    /// Every size below the bucket method's cutoff, with the scalars a signed
+    /// recoding mishandles first (zero, one, minus one, powers of two, the top
+    /// of the field) mixed among random ones, a base at infinity, and a base
+    /// that repeats.
+    #[test]
+    fn test_msm_small_edge_cases() {
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::{Field, One, Zero};
+
+        let two = Fr::from(2u64);
+        let special = [
+            Fr::zero(),
+            Fr::one(),
+            -Fr::one(),
+            two,
+            -two,
+            Fr::from(15u64),
+            Fr::from(17u64),
+            Fr::from(u64::MAX),
+            two.pow([63]),
+            two.pow([64]),
+            two.pow([128]),
+            two.pow([252]),
+            two.pow([252]) - Fr::one(),
+            -two.pow([252]),
+        ];
+
+        let mut rng = TestRng::default();
+        assert!(batched::msm::<G1Affine>(&[], &[]).is_zero());
+        for msm_size in 1..32 {
+            let (mut bases, mut scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, msm_size);
+            for (i, scalar) in scalars.iter_mut().enumerate().step_by(2) {
+                *scalar = special[(i / 2 + msm_size) % special.len()].to_bigint();
+            }
+            if msm_size > 2 {
+                bases[1] = G1Affine::zero();
+                bases[2] = bases[0];
+            }
+
+            let naive = VariableBase::msm_naive(bases.as_slice(), scalars.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), scalars.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}");
+
+            let all_special = special.iter().cycle().take(msm_size).map(|s| s.to_bigint()).collect::<Vec<_>>();
+            let naive = VariableBase::msm_naive(bases.as_slice(), all_special.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), all_special.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}, special scalars");
+        }
+    }
+
     /// Bases at infinity must survive the trip to the device.
     ///
     /// The device slot is wider than the host point, so a copy that misplaces
