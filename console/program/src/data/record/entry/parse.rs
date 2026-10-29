@@ -214,7 +214,7 @@ impl<N: Network> Display for Entry<N, Plaintext<N>> {
 
 impl<N: Network> Entry<N, Plaintext<N>> {
     /// Prints the entry with the given indentation depth.
-    pub(in crate::data::record) fn fmt_internal(&self, f: &mut Formatter, depth: usize) -> fmt::Result {
+    pub(in crate::data) fn fmt_internal(&self, f: &mut Formatter, depth: usize) -> fmt::Result {
         /// The number of spaces to indent.
         const INDENT: usize = 2;
 
