@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [staging, canary, testnet, mainnet]
+    branches: [staging, 'release/**']
   workflow_dispatch:
 
 permissions: { contents: read }
@@ -110,7 +110,8 @@ jobs:
       - run: cargo check --release --workspace --all-targets
         if: >-
           github.event_name == 'workflow_dispatch' ||
-          contains(fromJSON('["refs/heads/canary", "refs/heads/testnet", "refs/heads/mainnet"]'), github.ref)
+          startsWith(github.ref, 'refs/heads/release/') ||
+          startsWith(github.base_ref, 'release/')
 
   # Each entry is one build. `cargo test -p a -p b` unifies the features of
   # a and b, and several crates enable `test`, `rocks` or
@@ -256,13 +257,16 @@ jobs:
     name: test (${{ matrix.name }})
     steps: *test-steps
 
-  # Slower suites that rarely fail where the PR set passed. On every push to a
-  # release branch, and on demand.
+  # Slower suites that rarely fail where the PR set passed. On every push, on
+  # pull requests to a release branch, and on demand.
   test-merge:
     needs: start-cpu-runners
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name != 'pull_request' ||
+      (startsWith(github.base_ref, 'release/') &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     strategy:
       fail-fast: false
       matrix:
@@ -296,7 +300,7 @@ jobs:
 
   machete:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
     steps:
       - uses: actions/checkout@v7
         with: { persist-credentials: false }
@@ -309,7 +313,8 @@ jobs:
     permissions: { contents: read, actions: write }
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      contains(fromJSON('["refs/heads/canary", "refs/heads/testnet", "refs/heads/mainnet"]'), github.ref)
+      startsWith(github.ref, 'refs/heads/release/') ||
+      startsWith(github.base_ref, 'release/')
     strategy:
       fail-fast: false
       matrix:
@@ -320,22 +325,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.dir }}
-          save-if: ${{ github.ref == 'refs/heads/canary' }}
+          save-if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
       - uses: ./.github/actions/rust-cache-prune
-        if: github.ref == 'refs/heads/canary'
+        if: startsWith(github.ref, 'refs/heads/release/')
         with: { key: '${{ matrix.dir }}' }
       - run: cargo check --examples --benches --tests
         working-directory: ${{ matrix.dir }}
 
   # The one check to require. A skipped job counts as passing a required check,
   # and a fleet job is skipped when the boxes fail to start or the pull request
-  # comes from a fork; here anything but success fails.
+  # comes from a fork; here anything but success fails. The exception is a
+  # merge or release job skipped outside a release branch, where it is not
+  # meant to run.
   ci-ok:
     if: always()
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted]
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
           NEEDS: ${{ toJSON(needs) }}
+          RELEASE: >-
+            ${{ github.event_name == 'workflow_dispatch' ||
+            startsWith(github.ref, 'refs/heads/release/') ||
+            startsWith(github.base_ref, 'release/') }}
         run: |
-          jq -e 'to_entries | map(select(.value.result != "success")) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
