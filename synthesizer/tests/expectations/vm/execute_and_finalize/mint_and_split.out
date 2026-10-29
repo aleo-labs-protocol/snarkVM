@@ -1,8 +1,0 @@
-errors: []
-outputs:
-- verified: true
-  speculate: the execution was accepted
-  add_next_block: succeeded.
-- execute: Commitment '1266307482263846358970326041806201638141701138269282465033372005968041137990field' does not exist
-- execute: 'Authorization failed: Process authorization failed: Stack authorization failed: Input record ''mint_and_split.aleo/credits'' must belong to the signer'
-- execute: Commitment '5664701406562067552828344114098303767897965604026128467062564698122653063423field' does not exist
