@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program child.aleo: Process deployment failed: The last output of function ''foo'' must be a future associated with itself'
-outputs: []
