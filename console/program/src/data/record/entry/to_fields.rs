@@ -21,7 +21,7 @@ impl<N: Network> ToFields for Entry<N, Plaintext<N>> {
     /// Returns this plaintext as a list of field elements.
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
         // Encode the data as little-endian bits.
-        let mut bits_le = self.to_bits_le();
+        let mut bits_le = self.try_to_bits_le()?;
         // Adds one final bit to the data, to serve as a terminus indicator.
         // This prevents ambiguity from zero-padding: without it, a shorter bit sequence and
         // a longer one (same bits plus trailing zeros) would pack to the same field elements.
