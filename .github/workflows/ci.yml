@@ -334,13 +334,19 @@ jobs:
 
   # The one check to require. A skipped job counts as passing a required check,
   # and a fleet job is skipped when the boxes fail to start or the pull request
-  # comes from a fork; here anything but success fails.
+  # comes from a fork; here anything but success fails. The exception is a
+  # merge or release job skipped outside a release branch, where it is not
+  # meant to run.
   ci-ok:
     if: always()
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted]
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
           NEEDS: ${{ toJSON(needs) }}
+          RELEASE: >-
+            ${{ github.event_name == 'workflow_dispatch' ||
+            startsWith(github.ref, 'refs/heads/release/') ||
+            startsWith(github.base_ref, 'release/') }}
         run: |
-          jq -e 'to_entries | map(select(.value.result != "success")) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
