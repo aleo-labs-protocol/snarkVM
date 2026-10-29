@@ -181,9 +181,9 @@ Network-specific values, such as consensus version heights, are set on the relea
 
 ## Merging a release branch
 
-Merge a release branch into `staging` with a merge commit. Do not squash or rebase. After a merge commit, git does not consider those commits in later merges, so they cannot cause conflicts again.
+A bot opens the pull request that merges a release branch into `staging`. Do not open one yourself. [merge-into-staging.yml](.github/workflows/merge-into-staging.yml) runs every hour. For each `release/*` branch with commits that `staging` lacks, it keeps one pull request open from `ci/merge-release/vX.Y-into-staging`. It requests review from the authors and reviewers of the changes it carries.
 
-[merge-into-staging.yml](.github/workflows/merge-into-staging.yml) runs every hour. For each `release/*` branch with commits that `staging` lacks, it keeps one pull request open from `ci/merge-release/vX.Y-into-staging`. It requests review from the authors and reviewers of the changes it carries.
+Merge the bot's pull request with a merge commit. Do not squash or rebase. After a merge commit, git does not consider those commits in later merges, so they cannot cause conflicts again.
 
 If the merge has conflicts, the bot commits them with their markers, labels the pull request `merge-conflict`, and leaves it as a draft. Do not push the resolution to the release branch. Push it to the pull request's branch instead:
 
@@ -198,4 +198,4 @@ Then remove the label and mark the pull request ready for review.
 
 Check each merge for semantic conflicts. These are changes that git merges without a conflict but that are wrong together. In snarkVM they happen most often in consensus version tables.
 
-If two releases are open at the same time, the bot merges each release branch into `staging`.
+If two releases are open at the same time, the bot opens a pull request for each release branch.
