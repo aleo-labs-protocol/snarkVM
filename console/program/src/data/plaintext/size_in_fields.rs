@@ -21,7 +21,7 @@ impl<N: Network> Visibility for Plaintext<N> {
     /// Returns the number of field elements to encode `self`.
     fn size_in_fields(&self) -> Result<u16> {
         // Compute the number of bits.
-        let num_bits = self.to_bits_le().len() + 1; // 1 extra bit for the terminus indicator.
+        let num_bits = self.try_to_bits_le()?.len() + 1; // 1 extra bit for the terminus indicator.
         // Compute the ceiling division of the number of bits by the number of bits in a field element.
         let num_fields = num_bits.div_ceil(Field::<N>::size_in_data_bits());
         // Ensure the number of field elements does not exceed the maximum allowed size.

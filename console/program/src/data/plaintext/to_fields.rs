@@ -21,7 +21,7 @@ impl<N: Network> ToFields for Plaintext<N> {
     /// Returns this plaintext as a list of field elements.
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
         // Encode the data as little-endian bits.
-        let mut bits_le = self.to_bits_le();
+        let mut bits_le = self.try_to_bits_le()?;
         // Adds one final bit to the data, to serve as a terminus indicator.
         // During decryption, this final bit ensures we've reached the end.
         bits_le.push(true);
