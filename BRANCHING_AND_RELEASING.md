@@ -198,4 +198,4 @@ Then remove the label and mark the pull request ready for review.
 
 Check each merge for semantic conflicts. These are changes that git merges without a conflict but that are wrong together. In snarkVM they happen most often in consensus version tables.
 
-If two releases are open at the same time, the bot opens a pull request for each release branch.
+Usually only one release is open at a time. There is only one testnet and one mainnet, and only the latest release is supported. If two releases are open at the same time, the bot opens a pull request for each release branch.
