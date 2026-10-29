@@ -261,6 +261,83 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
         }
     }
 
+    /// Measurement only: the permutation `permute` runs.
+    #[doc(hidden)]
+    pub fn bench_permute(&mut self) {
+        self.permute();
+    }
+
+    /// Measurement only: the permutation with each round's MDS step done by
+    /// `mds`.
+    #[inline(always)]
+    fn bench_rounds(&mut self, mds: impl Fn(&mut Self)) {
+        let full_rounds_over_2 = self.parameters.full_rounds / 2;
+        let partial_round_range = full_rounds_over_2..(full_rounds_over_2 + self.parameters.partial_rounds);
+        for i in 0..(self.parameters.partial_rounds + self.parameters.full_rounds) {
+            let is_full_round = !partial_round_range.contains(&i);
+            self.apply_ark(i);
+            self.apply_s_box(is_full_round);
+            mds(self);
+        }
+    }
+
+    /// Measurement only: the MDS input collected into a `Vec`, as on staging
+    /// `4b2726422`.
+    #[doc(hidden)]
+    pub fn bench_permute_vec(&mut self) {
+        self.bench_rounds(|s| {
+            let mut new_state = State::default();
+            let curr_state: Vec<F> = s.state.iter().copied().collect::<Vec<_>>();
+            new_state.iter_mut().zip(&s.parameters.mds).for_each(|(new_elem, mds_row)| {
+                *new_elem = F::sum_of_products(&curr_state, mds_row);
+            });
+            s.state = new_state;
+        });
+    }
+
+    /// Measurement only: the MDS input collected into a `SmallVec`, as
+    /// snarkVM#3606 makes it.
+    #[doc(hidden)]
+    pub fn bench_permute_smallvec(&mut self) {
+        self.bench_rounds(|s| {
+            let mut new_state = State::default();
+            let curr_state: SmallVec<[F; 10]> = s.state.iter().copied().collect();
+            new_state.iter_mut().zip(&s.parameters.mds).for_each(|(new_elem, mds_row)| {
+                *new_elem = F::sum_of_products(&curr_state, mds_row);
+            });
+            s.state = new_state;
+        });
+    }
+
+    /// Measurement only: the MDS input copied into a `[F; 9]`, which holds
+    /// every default rate.
+    #[doc(hidden)]
+    pub fn bench_permute_array9(&mut self) {
+        self.bench_rounds(|s| {
+            let mut new_state = State::default();
+            let mut buffer = [F::zero(); 9];
+            buffer.iter_mut().zip(s.state.iter()).for_each(|(b, e)| *b = *e);
+            let curr_state = &buffer[..RATE + 1];
+            new_state.iter_mut().zip(&s.parameters.mds).for_each(|(new_elem, mds_row)| {
+                *new_elem = F::sum_of_products(curr_state, mds_row);
+            });
+            s.state = new_state;
+        });
+    }
+
+    /// Measurement only: `apply_mds`, each row split across the capacity and
+    /// rate arrays.
+    #[doc(hidden)]
+    pub fn bench_permute_split(&mut self) {
+        self.bench_rounds(Self::apply_mds);
+    }
+
+    /// Measurement only: the state, capacity element first.
+    #[doc(hidden)]
+    pub fn bench_state(&self) -> Vec<F> {
+        self.state.iter().copied().collect()
+    }
+
     /// Absorbs everything in elements, this does not end in an absorption.
     #[inline]
     fn absorb_internal(&mut self, mut rate_start: usize, input: &[F]) {
