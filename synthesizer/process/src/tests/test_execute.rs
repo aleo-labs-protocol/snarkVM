@@ -3472,3 +3472,150 @@ fn test_execution_keys_checks_each_key_is_of_its_kind() {
     let message = process.execution_keys(&authorization).unwrap_err().to_string();
     assert_eq!(message, "Record 'token.aleo/pass' is not defined.");
 }
+
+/// Builds `caller.aleo/main`, which passes one dynamic record to `token.aleo/spend` (a `note`) and another to
+/// `wrapper.aleo/peek` (an external `ticket`), and authorizes it on two records holding `1u64`, with distinct nonces.
+fn authorize_dynamic_record_inputs(
+    rng: &mut TestRng,
+) -> (
+    Process<CurrentNetwork>,
+    PrivateKey<CurrentNetwork>,
+    [Record<CurrentNetwork, Plaintext<CurrentNetwork>>; 2],
+    Authorization<CurrentNetwork>,
+) {
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let (token, wrapper, aleo, spend, peek) =
+        (field("token"), field("wrapper"), field("aleo"), field("spend"), field("peek"));
+    let programs = [
+        r"
+        program token.aleo;
+        record note: owner as address.private; amount as u64.private;
+        record ticket: owner as address.private; amount as u64.private;
+        function spend: input r0 as note.record; add r0.amount 0u64 into r1; output r1 as u64.private;",
+        r"
+        import token.aleo;
+        program wrapper.aleo;
+        function peek: input r0 as token.aleo/ticket.record; add r0.amount 0u64 into r1; output r1 as u64.private;",
+        format!(
+            r"
+        program caller.aleo;
+        function main:
+            input r0 as dynamic.record;
+            input r1 as dynamic.record;
+            call.dynamic {token} {aleo} {spend} with r0 (as dynamic.record) into r2 (as u64.private);
+            call.dynamic {wrapper} {aleo} {peek} with r1 (as dynamic.record) into r3 (as u64.private);
+            output r2 as u64.private;"
+        )
+        .as_str(),
+    ]
+    .map(|source| Program::<CurrentNetwork>::from_str(source).unwrap());
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    for program in &programs {
+        process.lock().add_program(program).unwrap();
+    }
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let address = Address::try_from(&private_key).unwrap();
+    let records = [console::types::Group::<CurrentNetwork>::zero(), console::types::Group::generator()].map(|nonce| {
+        Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&format!(
+            "{{ owner: {address}.private, amount: 1u64.private, _nonce: {nonce}.public, _version: 1u8.public }}"
+        ))
+        .unwrap()
+    });
+    let inputs = records.each_ref().map(|record| Value::DynamicRecord(DynamicRecord::from_record(record).unwrap()));
+    let authorization = process
+        .authorize::<CurrentAleo, _>(
+            &private_key,
+            ProgramID::from_str("caller.aleo").unwrap(),
+            Identifier::from_str("main").unwrap(),
+            inputs.iter(),
+            rng,
+        )
+        .unwrap();
+    (process, private_key, records, authorization)
+}
+
+/// An authorization read back from bytes holds its dynamic records without their entry data. `authorize_requests`
+/// and `execute` still check a dynamic callee's inputs against the call's, and accept it.
+#[test]
+fn test_dynamic_record_inputs_are_checked_without_entry_data() {
+    let rng = &mut TestRng::default();
+    let (process, _, _, authorization) = authorize_dynamic_record_inputs(rng);
+
+    let decoded = Authorization::<CurrentNetwork>::read_le(&authorization.to_bytes_le().unwrap()[..]).unwrap();
+    let root = decoded.peek_next().unwrap();
+    for input in root.inputs() {
+        let Value::DynamicRecord(record) = input else { panic!("expected a dynamic record, found {input}") };
+        assert!(record.data().is_none());
+    }
+
+    process
+        .get_stack(ProgramID::from_str("caller.aleo").unwrap())
+        .unwrap()
+        .authorize_requests::<CurrentAleo, _>(decoded.to_vec_deque().into(), rng)
+        .unwrap();
+    process.execute::<CurrentAleo, _>(decoded, rng).unwrap();
+}
+
+/// A dynamic callee request that takes a record other than the call's input, or the same record with the owner's
+/// visibility changed, is rejected by `authorize_requests` and by `execute`, before `execute` creates the callee's key.
+/// A different record fails the inputs check, and a changed visibility fails the callee's input types. Both callees
+/// are covered: `token.aleo/spend` takes a local `note`, and `wrapper.aleo/peek` an external `ticket`.
+#[test]
+fn test_dynamic_record_inputs_reject_another_record() {
+    let rng = &mut TestRng::default();
+    let (process, private_key, records, authorization) = authorize_dynamic_record_inputs(rng);
+    let address = Address::try_from(&private_key).unwrap();
+
+    // The callee's index in the authorization, its program, function and input type, and its record.
+    let callees = [
+        (1, "token.aleo", "spend", "note.record", &records[0]),
+        (2, "wrapper.aleo", "peek", "token.aleo/ticket.record", &records[1]),
+    ];
+    for (index, program, function, input_type, record) in callees {
+        for (owner, amount, expected) in [
+            ("private", "2u64", "different inputs"),
+            ("public", "1u64", "Visibility of record entry 'owner' does not match"),
+        ] {
+            let mut requests = authorization.to_vec_deque();
+            let root = requests.pop_front().unwrap();
+            let other = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&format!(
+                "{{ owner: {address}.{owner}, amount: {amount}.private, _nonce: {}.public, _version: 1u8.public }}",
+                record.nonce()
+            ))
+            .unwrap();
+            let resigned = Request::sign(
+                &private_key,
+                ProgramID::from_str(program).unwrap(),
+                Identifier::from_str(function).unwrap(),
+                [Value::Record(other)].iter(),
+                &[ValueType::from_str(input_type).unwrap()],
+                Some(*root.tvk()),
+                false,
+                None,
+                true,
+                rng,
+            )
+            .unwrap();
+            requests[index - 1] = resigned;
+            let tampered = Authorization::new(root);
+            for request in requests {
+                tampered.push(request).unwrap();
+            }
+            let case = format!("{program}/{function}: owner {owner}, amount {amount}");
+
+            let error = process
+                .get_stack(ProgramID::from_str("caller.aleo").unwrap())
+                .unwrap()
+                .authorize_requests::<CurrentAleo, _>(tampered.to_vec_deque().into(), rng)
+                .expect_err(&case);
+            assert!(format!("{error:#}").contains(expected), "{case}: {error:#}");
+
+            let error = process.execute::<CurrentAleo, _>(tampered, rng).map(|_| ()).expect_err(&case);
+            assert!(format!("{error:#}").contains(expected), "{case}: {error:#}");
+            let stack = process.get_stack(ProgramID::from_str(program).unwrap()).unwrap();
+            assert!(!stack.contains_proving_key(&Identifier::from_str(function).unwrap()), "{case}");
+        }
+    }
+}
