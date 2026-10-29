@@ -1239,20 +1239,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         if self.block_cache.is_none() { None } else { Some(BlockCache::<N>::BLOCK_CACHE_SIZE) }
     }
 
-    /// Reverts the Merkle tree to its shape before the insertion of the last 'n' blocks.
-    pub fn remove_last_n_from_tree_only(&self, n: u32) -> Result<()> {
-        // Ensure 'n' is non-zero.
-        ensure!(n > 0, "Cannot remove zero blocks");
-        // Acquire the write lock on the block tree.
-        let mut tree = self.tree.write();
-        // Prepare an updated Merkle tree removing the last 'n' block hashes.
-        let updated_tree = tree.prepare_remove_last_n(usize::try_from(n)?)?;
-        // Update the block tree.
-        *tree = updated_tree;
-        // Return success.
-        Ok(())
-    }
-
     /// Removes the last (most recent) `n` blocks from storage.
     pub fn remove_last_n(&self, n: u32) -> Result<()> {
         // Ensure 'n' is non-zero.
