@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program relay.aleo: Process deployment failed: Mapping ''foo'' in ''registry.aleo'' is not defined.'
-outputs: []

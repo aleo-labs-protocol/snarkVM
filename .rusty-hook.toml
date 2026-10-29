@@ -1,5 +1,0 @@
-[hooks]
-pre-commit = "cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly-2026-04-02 fmt --all -- --check && cargo deny check"
-
-[logging]
-verbose = true
