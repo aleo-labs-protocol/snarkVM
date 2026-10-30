@@ -523,12 +523,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(feature = "rocks")]
         self.block_store().pause_atomic_writes()?;
 
-        // First, insert the block.
-        if let Err(insert_error) = self.block_store().insert(&block) {
+        // First, insert the block. On RocksDB the live block tree stays unchanged until the paused
+        // batch, including the new state root, is written.
+        #[cfg(feature = "rocks")]
+        let insert_result = self.block_store().insert_deferring_block_tree(&block);
+        #[cfg(not(feature = "rocks"))]
+        let insert_result = self.block_store().insert(&block);
+        if let Err(insert_error) = insert_result {
             if cfg!(feature = "rocks") {
                 // Clear all pending atomic operations so that unpausing the atomic writes
                 // doesn't execute any of the queued storage operations.
                 self.block_store().abort_atomic();
+                self.block_store().discard_prepared_block_tree();
                 // Disable the atomic batch override.
                 // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
                 self.block_store().unpause_atomic_writes::<true>()?;
@@ -544,9 +550,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
                     self.process.lock().update_credits_verifying_keys()?;
                 }
-                // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
+                // Write the paused batch and install the retained block tree.
                 #[cfg(feature = "rocks")]
-                self.block_store().unpause_atomic_writes::<false>()?;
+                self.block_store().commit_paused_writes_and_publish_block_tree(&block)?;
                 // If the block advances to a new consensus version, clear the partial verification cache.
                 if N::CONSENSUS_VERSION_HEIGHTS().iter().rev().any(|(_, height)| {
                     if block.height() < *height {
@@ -565,14 +571,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // doesn't execute any of the queued storage operations.
                     self.block_store().abort_atomic();
                     self.finalize_store().abort_atomic();
+                    // The live block tree was not updated.
+                    self.block_store().discard_prepared_block_tree();
                     // Disable the atomic batch override.
                     // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
                     self.block_store().unpause_atomic_writes::<true>()?;
-                    // Rollback the Merkle tree.
-                    self.block_store().remove_last_n_from_tree_only(1).inspect_err(|_| {
-                        // Log the finalize error.
-                        error!("Failed to finalize block {} - {finalize_error}", block.height());
-                    })?;
                 } else {
                     // Rollback the block.
                     self.block_store().remove_last_n(1).inspect_err(|_| {
