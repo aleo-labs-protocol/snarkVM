@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use crate::{
+    BlockMetadataKey,
     BlockStorage,
     ConfirmedTxType,
     TransactionStore,
@@ -70,6 +71,8 @@ pub struct BlockMemory<N: Network> {
         MemoryMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>,
     /// The rejected deployment or execution map.
     rejected_deployment_or_execution_map: MemoryMap<Field<N>, Rejected<N>>,
+    /// The block metadata map.
+    block_metadata_map: MemoryMap<BlockMetadataKey, Vec<u8>>,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionMemory<N>>,
 }
@@ -93,6 +96,7 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     type RejectedOrAbortedTransactionIDMap = MemoryMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = MemoryMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     type RejectedDeploymentOrExecutionMap = MemoryMap<Field<N>, Rejected<N>>;
+    type BlockMetadataMap = MemoryMap<BlockMetadataKey, Vec<u8>>;
     type TransactionStorage = TransactionMemory<N>;
     type TransitionStorage = TransitionMemory<N>;
 
@@ -121,6 +125,7 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
             rejected_or_aborted_transaction_id_map: MemoryMap::default(),
             confirmed_transactions_map: MemoryMap::default(),
             rejected_deployment_or_execution_map: MemoryMap::default(),
+            block_metadata_map: MemoryMap::default(),
             transaction_store,
         })
     }
@@ -208,6 +213,11 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     /// Returns the rejected deployment or execution map.
     fn rejected_deployment_or_execution_map(&self) -> &Self::RejectedDeploymentOrExecutionMap {
         &self.rejected_deployment_or_execution_map
+    }
+
+    /// Returns the block metadata map.
+    fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
+        &self.block_metadata_map
     }
 
     /// Returns the transaction store.
