@@ -18,6 +18,7 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
+locktick = [ "snarkvm-ledger-narwhal-batch-header/locktick" ]
 serial = [
   "snarkvm-console/serial",
   "snarkvm-ledger-authority/serial",

@@ -82,10 +82,12 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         }
 
         // Read the signature.
+        let mut signature_bytes = Vec::with_capacity(Signature::<N>::size_in_bytes());
+        reader.by_ref().take(Signature::<N>::size_in_bytes() as u64).read_to_end(&mut signature_bytes)?;
+        let signature = read_signature_cached(&signature_bytes, unchecked)?;
 
         // Construct the batch.
         let batch = if unchecked {
-            let signature = Signature::read_le_unchecked(&mut reader)?;
             Self::from_unchecked(
                 author,
                 batch_id,
@@ -97,7 +99,6 @@ impl<N: Network> FromBytes for BatchHeader<N> {
                 signature,
             )
         } else {
-            let signature = Signature::read_le(&mut reader)?;
             Self::from(author, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature)
                 .map_err(io_error)?
         };
@@ -198,6 +199,41 @@ mod tests {
         let entry = bytes[entry_at..entry_at + entry_len].to_vec();
         out.splice(entry_at + entry_len..entry_at + entry_len, entry);
         out
+    }
+
+    #[test]
+    fn test_signature_errors_match_signature_reader() {
+        let rng = &mut TestRng::default();
+        let header = crate::test_helpers::sample_batch_header(rng);
+        let exact = header.to_bytes_le().unwrap();
+        let signature_at = exact.len() - Signature::<CurrentNetwork>::size_in_bytes();
+
+        // A non-canonical challenge, and an x-coordinate past the field modulus in `pk_sig`.
+        let mut bad_challenge = exact.clone();
+        bad_challenge[signature_at..signature_at + 32].fill(0xFF);
+        let mut bad_compute_key = exact.clone();
+        bad_compute_key[signature_at + 64..signature_at + 96].fill(0xFF);
+
+        for bytes in [&exact, &bad_challenge, &bad_compute_key] {
+            for end in [signature_at, signature_at + 1, signature_at + 32, signature_at + 65, signature_at + 96] {
+                for end in [end, bytes.len() - (end - signature_at)] {
+                    if bytes == &exact && end == bytes.len() {
+                        continue;
+                    }
+                    for unchecked in [false, true] {
+                        // The header fails with the error the signature reader gives on the same bytes.
+                        let header_error =
+                            BatchHeader::<CurrentNetwork>::read_le_with_unchecked(&bytes[..end], unchecked)
+                                .unwrap_err();
+                        let signature_error =
+                            Signature::<CurrentNetwork>::read_le_with_unchecked(&bytes[signature_at..end], unchecked)
+                                .unwrap_err();
+                        assert_eq!(header_error.kind(), signature_error.kind());
+                        assert_eq!(header_error.to_string(), signature_error.to_string());
+                    }
+                }
+            }
+        }
     }
 
     #[test]
