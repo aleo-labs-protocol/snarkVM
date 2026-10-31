@@ -23,6 +23,7 @@ mod equal;
 mod find;
 mod num_randomizers;
 mod size_in_fields;
+mod ternary;
 mod to_bits;
 mod to_bits_raw;
 mod to_fields;

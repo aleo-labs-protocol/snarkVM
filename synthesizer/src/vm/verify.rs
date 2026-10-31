@@ -365,6 +365,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     );
                 }
 
+                if consensus_version < ConsensusVersion::V23 {
+                    let stack = Stack::new(&self.process, deployment.program())?;
+                    check_no_non_literal_ternary(deployment.program(), &stack)
+                        .map_err(|e| anyhow!("Invalid deployment transaction '{id}' - {e}"))?;
+                }
+
                 // Checks required for current and future consensus versions (>= V9).
                 //
                 // These validations enforce rules introduced in newer consensus versions.
