@@ -18,10 +18,10 @@ use snarkvm_fields::ConstraintFieldError;
 
 #[derive(Debug, Error)]
 pub enum SNARKError {
-    #[error("{}", _0)]
+    #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
 
-    #[error("{}", _0)]
+    #[error("constraint field error")]
     ConstraintFieldError(#[from] ConstraintFieldError),
 
     #[error("{}: {}", _0, _1)]
@@ -33,7 +33,7 @@ pub enum SNARKError {
     #[error("{}", _0)]
     Message(String),
 
-    #[error("{}", _0)]
+    #[error("synthesis error")]
     SynthesisError(#[from] SynthesisError),
 
     #[error("Batch size was zero; must be at least 1")]

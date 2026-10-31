@@ -23,7 +23,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum CreateTransferError {
     /// VM execution failed.
-    #[error("VM execution failed: {0}")]
+    #[error("VM execution failed")]
     VmExec(#[from] VmExecError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -34,7 +34,7 @@ pub enum CreateTransferError {
 #[derive(Debug, Error)]
 pub enum CreateDeployError {
     /// VM deployment failed.
-    #[error("VM deployment failed: {0}")]
+    #[error("VM deployment failed")]
     VmDeploy(#[from] VmDeployError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]

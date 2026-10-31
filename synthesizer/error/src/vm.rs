@@ -23,10 +23,10 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum VmExecError {
     /// Authorization failed.
-    #[error("Authorization failed: {0}")]
+    #[error("Authorization failed")]
     Auth(#[from] VmAuthError),
     /// Process execution failed (contains instruction index).
-    #[error("Process execution failed: {0}")]
+    #[error("Process execution failed")]
     Process(#[from] ProcessExecError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -37,7 +37,7 @@ pub enum VmExecError {
 #[derive(Debug, Error)]
 pub enum VmAuthError {
     /// Process authorization failed.
-    #[error("Process authorization failed: {0}")]
+    #[error("Process authorization failed")]
     Process(#[from] ProcessAuthError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -59,10 +59,10 @@ pub enum VmCheckBlockContentError {
 #[derive(Debug, Error)]
 pub enum VmDeployError {
     /// Process deployment failed.
-    #[error("Process deployment failed: {0}")]
+    #[error("Process deployment failed")]
     Process(#[from] ProcessDeployError),
     /// Fee execution failed.
-    #[error("Fee execution failed: {0}")]
+    #[error("Fee execution failed")]
     FeeExec(#[from] VmExecError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]

@@ -16,14 +16,14 @@
 /// Describes the failure modes of the AHP scheme.
 #[derive(Debug, Error)]
 pub enum AHPError {
-    #[error("{}", _0)]
+    #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
 
     #[error("Batch size was zero; must be at least 1.")]
     BatchSizeIsZero,
 
-    #[error("An error occurred during constraint generation.")]
-    ConstraintSystemError(crate::r1cs::errors::SynthesisError),
+    #[error("constraint generation error")]
+    ConstraintSystemError(#[from] crate::r1cs::errors::SynthesisError),
 
     #[error("The instance generated during proving does not match that in the index.")]
     InstanceDoesNotMatchIndex,
@@ -39,10 +39,4 @@ pub enum AHPError {
 
     #[error("During synthesis, our polynomials ended up being too high of degree.")]
     PolyTooLarge,
-}
-
-impl From<crate::r1cs::errors::SynthesisError> for AHPError {
-    fn from(other: crate::r1cs::errors::SynthesisError) -> Self {
-        AHPError::ConstraintSystemError(other)
-    }
 }

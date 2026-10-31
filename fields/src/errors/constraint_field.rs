@@ -15,7 +15,7 @@
 
 #[derive(Debug, Error)]
 pub enum ConstraintFieldError {
-    #[error("{}", _0)]
+    #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
 
     #[error("{}: {}", _0, _1)]

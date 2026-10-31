@@ -15,7 +15,7 @@
 
 #[derive(Error, Debug)]
 pub enum SerializationError {
-    #[error("{}", _0)]
+    #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
     /// During serialization with bincode, we encountered a serialization issue
     #[error(transparent)]
@@ -27,7 +27,7 @@ pub enum SerializationError {
     #[error("the input buffer contained invalid data")]
     InvalidData,
     /// During serialization, we countered an I/O error.
-    #[error("IoError: {0}")]
+    #[error("I/O error")]
     IoError(#[from] std::io::Error),
     /// During serialization, we didn't have enough space to write extra info.
     #[error("the last byte does not have enough space to encode the extra info bits")]
