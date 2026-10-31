@@ -30,8 +30,9 @@ impl<N: Network> BatchCertificate<N> {
         // Read the signature bytes.
         let mut signature_bytes = vec![0u8; num_signatures as usize * Signature::<N>::size_in_bytes()];
         reader.read_exact(&mut signature_bytes)?;
-        // Read the signatures.
-        let signatures = cfg_chunks!(signature_bytes, Signature::<N>::size_in_bytes())
+        // Read the signatures. This stays serial: with cached compute keys, a rayon fork-join costs more than the reads.
+        let signatures = signature_bytes
+            .chunks(Signature::<N>::size_in_bytes())
             .map(|data| read_signature_cached(data, unchecked))
             .collect::<Result<IndexSet<_>, _>>()?;
         // Ensure no signature was repeated. The set absorbs a repeat, so it would
@@ -133,6 +134,43 @@ mod tests {
             assert!(BatchCertificate::<console::network::MainnetV0>::read_le_unchecked(&bad_response[..]).is_ok());
             assert!(BatchCertificate::<console::network::MainnetV0>::read_le(&bad_compute_key[..]).is_err());
             assert!(BatchCertificate::<console::network::MainnetV0>::read_le_unchecked(&bad_compute_key[..]).is_err());
+        }
+    }
+
+    #[test]
+    fn test_first_invalid_signature_sets_the_error() {
+        let rng = &mut TestRng::default();
+        let certificate = crate::test_helpers::sample_batch_certificate(rng);
+        let exact = certificate.to_bytes_le().unwrap();
+        let width = Signature::<console::network::MainnetV0>::size_in_bytes();
+        let signatures_at = 1 + certificate.batch_header().to_bytes_le().unwrap().len() + 2;
+        let last_at = exact.len() - width;
+        assert!(last_at > signatures_at, "a sampled certificate carries several signatures");
+
+        // Two x-coordinates with no point in the subgroup, which fail with different messages.
+        let mut invalid = (1u64..)
+            .map(console::types::Field::<console::network::MainnetV0>::from_u64)
+            .filter(|x| console::types::Group::<console::network::MainnetV0>::from_x_coordinate(*x).is_err());
+        // The filter is over an unbounded range in which most x-coordinates are invalid, so the `unwrap`s cannot panic.
+        let (x, y) = (invalid.next().unwrap().to_bytes_le().unwrap(), invalid.next().unwrap().to_bytes_le().unwrap());
+
+        // An invalid `pk_sig` in the first signature and in the last.
+        let mut bytes = exact.clone();
+        bytes[signatures_at + 64..signatures_at + 96].copy_from_slice(&x);
+        bytes[last_at + 64..last_at + 96].copy_from_slice(&y);
+
+        for unchecked in [false, true] {
+            let read = |at: usize| {
+                Signature::<console::network::MainnetV0>::read_le_with_unchecked(&bytes[at..at + width], unchecked)
+                    .unwrap_err()
+                    .to_string()
+            };
+            let (first, last) = (read(signatures_at), read(last_at));
+            assert_ne!(first, last);
+            let error = BatchCertificate::<console::network::MainnetV0>::read_le_with_unchecked(&bytes[..], unchecked)
+                .unwrap_err()
+                .to_string();
+            assert_eq!(error, first);
         }
     }
 
