@@ -17,7 +17,10 @@ use super::*;
 
 use console::{account::ComputeKey, types::Scalar};
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use std::{
     any::{Any, TypeId},

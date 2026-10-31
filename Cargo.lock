@@ -3606,6 +3606,7 @@ version = "4.12.0"
 dependencies = [
  "bincode",
  "indexmap 2.14.0",
+ "locktick",
  "lru",
  "parking_lot",
  "serde_json",
