@@ -61,7 +61,7 @@ pub enum MappingName {
     Unbonding,
     /// The `withdraw` mapping.
     Withdraw,
-    /// The `staking_rewards` mapping.
+    /// The `stakingrewards` mapping.
     StakingRewards,
 }
 
@@ -75,7 +75,7 @@ impl FromStr for MappingName {
             "metadata" => Ok(Self::Metadata),
             "unbonding" => Ok(Self::Unbonding),
             "withdraw" => Ok(Self::Withdraw),
-            "staking_rewards" => Ok(Self::StakingRewards),
+            "stakingrewards" => Ok(Self::StakingRewards),
             _ => anyhow::bail!("Invalid mapping name '{s}'"),
         }
     }
@@ -89,7 +89,7 @@ impl Display for MappingName {
             Self::Metadata => write!(f, "metadata"),
             Self::Unbonding => write!(f, "unbonding"),
             Self::Withdraw => write!(f, "withdraw"),
-            Self::StakingRewards => write!(f, "staking_rewards"),
+            Self::StakingRewards => write!(f, "stakingrewards"),
         }
     }
 }
@@ -167,5 +167,15 @@ mod tests {
         assert_eq!(loaded, serde_json::to_string_pretty(&vec!["aleo1".to_string()]).unwrap());
         assert!(history.block_path(height).starts_with(history.path.join("group-1")));
         assert!(history.load_mapping(height, MappingName::Delegated).is_err());
+
+        history.store_mapping(height, MappingName::StakingRewards, &vec!["reward".to_string()]).unwrap();
+        let rewards_file = format!("block-{height}-stakingrewards.json");
+        let rewards_path = history.block_path(height).join(&rewards_file);
+        assert_eq!(
+            std::fs::read_to_string(&rewards_path).unwrap(),
+            history.load_mapping(height, MappingName::StakingRewards).unwrap()
+        );
+        assert_eq!(MappingName::StakingRewards.to_string(), "stakingrewards");
+        assert!(matches!("stakingrewards".parse::<MappingName>(), Ok(MappingName::StakingRewards)));
     }
 }
