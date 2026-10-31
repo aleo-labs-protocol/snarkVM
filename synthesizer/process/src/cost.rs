@@ -1143,21 +1143,15 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::Sub(_)) => Ok(500),
         Command::Instruction(Instruction::SubWrapped(_)) => Ok(500),
         Command::Instruction(Instruction::Ternary(ternary)) => {
-            // Before `ConsensusVersion::V23`, only literal branch operands are permitted, and the
-            // cost is a flat 500 microcredits. At `V23` and later, array or struct operands scale
-            // the cost by their recursive plaintext size. The literal case is preserved exactly so
-            // that previously deployed programs are not subject to a higher minimum fee.
-            let branches_are_literal = ternary.operands()[1..3].iter().try_fold(true, |acc, op| {
-                let is_literal = matches!(
-                    finalize_types.get_type_from_operand(stack, op)?,
-                    FinalizeType::Plaintext(PlaintextType::Literal(_))
-                );
-                Ok::<_, Error>(acc && is_literal)
-            })?;
+            // Type checking requires equivalent branch types.
+            let branches_are_literal = matches!(
+                finalize_types.get_type_from_operand(stack, &ternary.operands()[1])?,
+                FinalizeType::Plaintext(PlaintextType::Literal(_))
+            );
             if branches_are_literal {
                 Ok(500)
             } else {
-                // Size only the branch operands (`first` and `second`); the Boolean condition is excluded.
+                // Both branch values are read, so the cost includes both sizes and excludes the condition.
                 cost_in_size(stack, finalize_types, &ternary.operands()[1..3], TERNARY_PER_BYTE_COST, TERNARY_BASE_COST)
             }
         }

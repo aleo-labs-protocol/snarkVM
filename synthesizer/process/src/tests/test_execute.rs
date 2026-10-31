@@ -3472,3 +3472,160 @@ fn test_execution_keys_checks_each_key_is_of_its_kind() {
     let message = process.execution_keys(&authorization).unwrap_err().to_string();
     assert_eq!(message, "Record 'token.aleo/pass' is not defined.");
 }
+
+fn check_ternary_evaluate_execute(
+    plaintext_type: &str,
+    structs: &str,
+    first: Plaintext<CurrentNetwork>,
+    second: Plaintext<CurrentNetwork>,
+) -> Result<()> {
+    use crate::{Registers, Stack};
+    use circuit::{Eject, Environment, Inject, Mode, network::AleoV0};
+    use console::program::Register;
+    use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersTrait, Ternary};
+
+    let program = Program::from_str(&format!(
+        "program ternary_equivalence.aleo;
+        {structs}
+        function run:
+            input r0 as boolean.private;
+            input r1 as {plaintext_type}.private;
+            input r2 as {plaintext_type}.private;
+            ternary r0 r1 r2 into r3;
+            output r3 as {plaintext_type}.private;"
+    ))?;
+    let stack = Stack::new(&Process::load()?, &program)?;
+    let instruction = Ternary::from_str("ternary r0 r1 r2 into r3")?;
+    let function_name = Identifier::from_str("run")?;
+    let output = Operand::Register(Register::Locator(3));
+    for condition in [false, true] {
+        for condition_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+            for first_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                for second_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                    let mut registers = Registers::<CurrentNetwork, AleoV0>::new(
+                        CallStack::evaluate(Authorization::try_from((vec![], vec![]))?)?,
+                        stack.get_register_types(&function_name)?,
+                    );
+                    for (index, (mode, value)) in [
+                        (condition_mode, Plaintext::from(Literal::Boolean(console::types::Boolean::new(condition)))),
+                        (first_mode, first.clone()),
+                        (second_mode, second.clone()),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let register = Register::Locator(index as u64);
+                        registers.store(&stack, &register, Value::Plaintext(value.clone()))?;
+                        registers.store_circuit(
+                            &stack,
+                            &register,
+                            circuit::Value::Plaintext(circuit::Plaintext::new(mode, value)),
+                        )?;
+                    }
+                    instruction.evaluate(&stack, &mut registers)?;
+                    let expected = registers.load_plaintext(&stack, &output)?;
+                    assert_eq!(if condition { &first } else { &second }, &expected);
+                    let circuit::Literal::Boolean(condition) =
+                        registers.load_literal_circuit(&stack, &instruction.operands()[0])?
+                    else {
+                        bail!("The test condition must be a boolean")
+                    };
+                    let first = registers.load_plaintext_circuit(&stack, &instruction.operands()[1])?;
+                    let second = registers.load_plaintext_circuit(&stack, &instruction.operands()[2])?;
+                    let expected_counts = AleoV0::scope("plaintext ternary", || {
+                        let candidate = <circuit::Plaintext<AleoV0> as circuit::traits::Ternary>::ternary(
+                            &condition, &first, &second,
+                        );
+                        assert_eq!(expected, candidate.eject_value());
+                        (
+                            AleoV0::num_constants_in_scope(),
+                            AleoV0::num_public_in_scope(),
+                            AleoV0::num_private_in_scope(),
+                            AleoV0::num_constraints_in_scope(),
+                        )
+                    });
+                    AleoV0::scope("instruction ternary", || -> Result<()> {
+                        instruction.execute(&stack, &mut registers)?;
+                        assert_eq!(expected, registers.load_plaintext_circuit(&stack, &output)?.eject_value());
+                        assert_eq!(
+                            expected_counts,
+                            (
+                                AleoV0::num_constants_in_scope(),
+                                AleoV0::num_public_in_scope(),
+                                AleoV0::num_private_in_scope(),
+                                AleoV0::num_constraints_in_scope(),
+                            )
+                        );
+                        registers.ensure_console_and_circuit_registers_match()?;
+                        assert!(AleoV0::is_satisfied());
+                        Ok(())
+                    })?;
+                    AleoV0::reset();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_ternary_evaluate_execute_literals() -> Result<()> {
+    use console::program::LiteralType;
+
+    let rng = &mut TestRng::default();
+    for literal_type in [
+        LiteralType::Address,
+        LiteralType::Boolean,
+        LiteralType::Field,
+        LiteralType::Group,
+        LiteralType::I8,
+        LiteralType::I16,
+        LiteralType::I32,
+        LiteralType::I64,
+        LiteralType::I128,
+        LiteralType::U8,
+        LiteralType::U16,
+        LiteralType::U32,
+        LiteralType::U64,
+        LiteralType::U128,
+        LiteralType::Scalar,
+        LiteralType::Signature,
+        LiteralType::Identifier,
+    ] {
+        check_ternary_evaluate_execute(
+            &literal_type.to_string(),
+            "",
+            Plaintext::from(Literal::sample(literal_type, rng)),
+            Plaintext::from(Literal::sample(literal_type, rng)),
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn test_ternary_evaluate_execute_arrays_and_structs() -> Result<()> {
+    for (plaintext_type, structs, first, second) in [
+        ("[field; 3u32]", "", "[1field, 2field, 3field]", "[4field, 5field, 6field]"),
+        ("point", "struct point: x as field; y as field;", "{x: 1field, y: 2field}", "{x: 3field, y: 4field}"),
+        (
+            "[point; 2u32]",
+            "struct point: x as field; y as field;",
+            "[{x: 1field, y: 2field}, {x: 3field, y: 4field}]",
+            "[{x: 5field, y: 6field}, {x: 7field, y: 8field}]",
+        ),
+        (
+            "pair",
+            "struct pair: points as [field; 2u32]; flag as boolean;",
+            "{points: [1field, 2field], flag: true}",
+            "{points: [3field, 4field], flag: false}",
+        ),
+    ] {
+        check_ternary_evaluate_execute(
+            plaintext_type,
+            structs,
+            Plaintext::from_str(first)?,
+            Plaintext::from_str(second)?,
+        )?;
+    }
+    Ok(())
+}

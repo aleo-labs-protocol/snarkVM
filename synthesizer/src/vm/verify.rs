@@ -226,6 +226,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // This implicitly checks that the program checksum and program owner fields are set correctly.
                 let version = deployment.version()?;
 
+                let stack = Stack::new(&self.process, deployment.program())
+                    .map_err(|e| anyhow!("Invalid deployment transaction '{id}' - {e}"))?;
+
                 // Legacy checks for old consensus versions.
                 //
                 // These checks do not have any long term implications on verification time because they
@@ -343,7 +346,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
                     );
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
-                    let stack = Stack::new(&self.process, deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
                     // Before V14, record verifying keys are not allowed.
                     let num_functions = deployment.num_functions();
@@ -366,7 +368,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
 
                 if consensus_version < ConsensusVersion::V23 {
-                    let stack = Stack::new(&self.process, deployment.program())?;
                     check_no_non_literal_ternary(deployment.program(), &stack)
                         .map_err(|e| anyhow!("Invalid deployment transaction '{id}' - {e}"))?;
                 }
@@ -443,7 +444,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         consensus_config_value!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, current_block_height).ok_or_else(
                             || anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"),
                         )?;
-                    let stack = Stack::new(&self.process, deployment.program())?;
                     check_program_plaintext_sizes(deployment.program(), &stack, max_plaintext_type_bits)?;
                 }
 

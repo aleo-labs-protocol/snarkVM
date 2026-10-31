@@ -53,87 +53,58 @@ mod tests {
     use crate::Circuit;
     use snarkvm_utilities::{TestRng, Uniform};
 
-    fn check_dispatch(first: Literal<Circuit>, second: Literal<Circuit>) {
-        let true_ = Boolean::<Circuit>::new(Mode::Private, true);
-        let false_ = Boolean::<Circuit>::new(Mode::Private, false);
-        assert_eq!(first.eject_value(), Literal::ternary(&true_, &first, &second).eject_value());
-        assert_eq!(second.eject_value(), Literal::ternary(&false_, &first, &second).eject_value());
+    fn check_dispatch(
+        first: console::Literal<<Circuit as Environment>::Network>,
+        second: console::Literal<<Circuit as Environment>::Network>,
+    ) {
+        for condition in [false, true] {
+            let expected = console::Literal::ternary(&console::Boolean::new(condition), &first, &second);
+            assert_eq!(if condition { &first } else { &second }, &expected);
+            for condition_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                for first_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                    for second_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                        let condition = Boolean::<Circuit>::new(condition_mode, condition);
+                        let first = Literal::<Circuit>::new(first_mode, first.clone());
+                        let second = Literal::<Circuit>::new(second_mode, second.clone());
+                        Circuit::scope("literal ternary", || {
+                            let candidate = Literal::ternary(&condition, &first, &second);
+                            assert_eq!(expected, candidate.eject_value());
+                            assert!(Circuit::is_satisfied());
+                        });
+                        Circuit::reset();
+                    }
+                }
+            }
+        }
     }
 
     #[test]
     fn test_literal_ternary_dispatches_all_supported_variants() {
         let mut rng = TestRng::default();
-
-        check_dispatch(
-            Literal::Address(Address::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::Address(Address::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::Boolean(Boolean::new(Mode::Private, true)),
-            Literal::Boolean(Boolean::new(Mode::Private, false)),
-        );
-        check_dispatch(
-            Literal::Field(Field::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::Field(Field::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::Group(Group::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::Group(Group::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::I8(I8::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::I8(I8::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::I16(I16::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::I16(I16::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::I32(I32::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::I32(I32::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::I64(I64::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::I64(I64::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::I128(I128::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::I128(I128::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::U8(U8::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::U8(U8::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::U16(U16::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::U16(U16::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::U32(U32::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::U32(U32::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::U64(U64::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::U64(U64::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::U128(U128::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::U128(U128::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::Scalar(Scalar::new(Mode::Private, Uniform::rand(&mut rng))),
-            Literal::Scalar(Scalar::new(Mode::Private, Uniform::rand(&mut rng))),
-        );
-        check_dispatch(
-            Literal::Identifier(Box::new(IdentifierLiteral::new(
-                Mode::Private,
-                console::IdentifierLiteral::rand(&mut rng),
-            ))),
-            Literal::Identifier(Box::new(IdentifierLiteral::new(
-                Mode::Private,
-                console::IdentifierLiteral::rand(&mut rng),
-            ))),
-        );
+        for literal_type in [
+            console::LiteralType::Address,
+            console::LiteralType::Boolean,
+            console::LiteralType::Field,
+            console::LiteralType::Group,
+            console::LiteralType::I8,
+            console::LiteralType::I16,
+            console::LiteralType::I32,
+            console::LiteralType::I64,
+            console::LiteralType::I128,
+            console::LiteralType::U8,
+            console::LiteralType::U16,
+            console::LiteralType::U32,
+            console::LiteralType::U64,
+            console::LiteralType::U128,
+            console::LiteralType::Scalar,
+            console::LiteralType::Signature,
+            console::LiteralType::Identifier,
+        ] {
+            check_dispatch(
+                console::Literal::sample(literal_type, &mut rng),
+                console::Literal::sample(literal_type, &mut rng),
+            );
+        }
     }
 
     #[test]

@@ -319,15 +319,13 @@ pub fn check_no_non_literal_ternary<N: Network>(program: &Program<N>, stack: &St
         let register_types = stack.get_register_types(name)?;
         for instruction in instructions {
             if let Instruction::Ternary(ternary) = instruction {
-                // The ternary operands are `[condition, first, second]`.
-                for operand in &ternary.operands()[1..3] {
-                    let reg_type = register_types.get_type_from_operand(stack, operand)?;
-                    match reg_type {
-                        RegisterType::Plaintext(plaintext_type) => {
-                            ensure!(is_pre_v23_supported(&plaintext_type), "{ERROR_MSG}");
-                        }
-                        _ => bail!("{ERROR_MSG}"),
+                // Type checking requires equivalent branch types.
+                let reg_type = register_types.get_type_from_operand(stack, &ternary.operands()[1])?;
+                match reg_type {
+                    RegisterType::Plaintext(plaintext_type) => {
+                        ensure!(is_pre_v23_supported(&plaintext_type), "{ERROR_MSG}");
                     }
+                    _ => bail!("{ERROR_MSG}"),
                 }
             }
         }
@@ -338,15 +336,13 @@ pub fn check_no_non_literal_ternary<N: Network>(program: &Program<N>, stack: &St
     let check_commands = |finalize_types: &FinalizeTypes<N>, commands: &[Command<N>]| -> Result<()> {
         for command in commands {
             if let Command::Instruction(Instruction::Ternary(ternary)) = command {
-                // The ternary operands are `[condition, first, second]`.
-                for operand in &ternary.operands()[1..3] {
-                    let finalize_type = finalize_types.get_type_from_operand(stack, operand)?;
-                    match finalize_type {
-                        FinalizeType::Plaintext(plaintext_type) => {
-                            ensure!(is_pre_v23_supported(&plaintext_type), "{ERROR_MSG}");
-                        }
-                        _ => bail!("{ERROR_MSG}"),
+                // Type checking requires equivalent branch types.
+                let finalize_type = finalize_types.get_type_from_operand(stack, &ternary.operands()[1])?;
+                match finalize_type {
+                    FinalizeType::Plaintext(plaintext_type) => {
+                        ensure!(is_pre_v23_supported(&plaintext_type), "{ERROR_MSG}");
                     }
+                    _ => bail!("{ERROR_MSG}"),
                 }
             }
         }
