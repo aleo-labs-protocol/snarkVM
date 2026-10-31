@@ -3608,7 +3608,6 @@ dependencies = [
  "indexmap 2.14.0",
  "lru",
  "parking_lot",
- "rayon",
  "serde_json",
  "snarkvm-console",
  "snarkvm-ledger-narwhal-batch-header",
