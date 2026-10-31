@@ -85,6 +85,8 @@ pub enum ConsensusVersion {
     ///      Lowers the maximum committee size on testnet to 40.
     ///      Modifies the cost of the rand.chacha opcode to a more accurate value.
     V22 = 22,
+    /// V23: Supports arrays, structs, and identifiers in ternary instructions.
+    V23 = 23,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -119,6 +121,7 @@ impl FromBytes for ConsensusVersion {
             20 => Ok(Self::V20),
             21 => Ok(Self::V21),
             22 => Ok(Self::V22),
+            23 => Ok(Self::V23),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -164,6 +167,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V20, u32::MAX),
     (ConsensusVersion::V21, u32::MAX),
     (ConsensusVersion::V22, u32::MAX),
+    (ConsensusVersion::V23, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -192,6 +196,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V21, 22_437_000),
     // Target: October 20, 2026 at ~18:00 UTC
     (ConsensusVersion::V22, 22_962_000),
+    (ConsensusVersion::V23, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -219,6 +224,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V21, 20_234_000),
     // Target: October 13, 2026 at ~08:00 UTC (evening of October 12 PT)
     (ConsensusVersion::V22, 20_415_000),
+    (ConsensusVersion::V23, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -248,6 +254,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V20, 23),
     (ConsensusVersion::V21, 24),
     (ConsensusVersion::V22, 25),
+    (ConsensusVersion::V23, 26),
 ];
 
 /// Asserts that the given consensus version heights are well-formed.
@@ -798,11 +805,13 @@ mod tests {
             (19, u32::MAX),
             (20, u32::MAX),
             (21, u32::MAX),
+            (22, u32::MAX),
         ])));
         assert_eq!(heights[17].1, 21);
         assert_eq!(heights[18].1, u32::MAX);
         assert_eq!(heights[19].1, u32::MAX);
         assert_eq!(heights[20].1, u32::MAX);
         assert_eq!(heights[21].1, u32::MAX);
+        assert_eq!(heights[22].1, u32::MAX);
     }
 }

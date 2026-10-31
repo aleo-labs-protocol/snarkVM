@@ -105,6 +105,19 @@ impl<E: Environment> Equal for IdentifierLiteral<E> {
     }
 }
 
+impl<E: Environment> Ternary for IdentifierLiteral<E> {
+    type Boolean = Boolean<E>;
+    type Output = Self;
+
+    /// Returns `first` if `condition` is `true`, otherwise returns `second`.
+    fn ternary(condition: &Self::Boolean, first: &Self, second: &Self) -> Self::Output {
+        match **condition {
+            true => *first,
+            false => *second,
+        }
+    }
+}
+
 impl<E: Environment> SizeInBits for IdentifierLiteral<E> {
     /// Returns the size in bits of the identifier literal.
     fn size_in_bits() -> usize {
