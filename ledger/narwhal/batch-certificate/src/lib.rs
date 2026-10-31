@@ -27,7 +27,7 @@ use console::{
     prelude::*,
     types::Field,
 };
-use snarkvm_ledger_narwhal_batch_header::BatchHeader;
+use snarkvm_ledger_narwhal_batch_header::{BatchHeader, read_signature_cached};
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use core::hash::{Hash, Hasher};

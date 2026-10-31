@@ -32,7 +32,7 @@ impl<N: Network> BatchCertificate<N> {
         reader.read_exact(&mut signature_bytes)?;
         // Read the signatures.
         let signatures = cfg_chunks!(signature_bytes, Signature::<N>::size_in_bytes())
-            .map(|data| Signature::read_le_with_unchecked(data, unchecked))
+            .map(|data| read_signature_cached(data, unchecked))
             .collect::<Result<IndexSet<_>, _>>()?;
         // Ensure no signature was repeated. The set absorbs a repeat, so it would
         // otherwise give one certificate a second encoding.
@@ -109,6 +109,30 @@ mod tests {
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, BatchCertificate::read_le(&expected_bytes[..]).unwrap());
             assert_eq!(expected, BatchCertificate::read_le_unchecked(&expected_bytes[..]).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_repeated_reads_check_signatures() {
+        let rng = &mut TestRng::default();
+        let certificate = crate::test_helpers::sample_batch_certificate(rng);
+        let exact = certificate.to_bytes_le().unwrap();
+        let signatures_at = 1 + certificate.batch_header().to_bytes_le().unwrap().len() + 2;
+
+        // A canonical but wrong response, and a compute key past the field modulus.
+        let mut bad_response = exact.clone();
+        bad_response[signatures_at + 32] ^= 1;
+        let mut bad_compute_key = exact.clone();
+        bad_compute_key[signatures_at + 64..signatures_at + 96].fill(0xFF);
+
+        // Later reads hit the compute keys the first read cached.
+        for _ in 0..2 {
+            assert_eq!(certificate, BatchCertificate::read_le(&exact[..]).unwrap());
+            assert_eq!(certificate, BatchCertificate::read_le_unchecked(&exact[..]).unwrap());
+            assert!(BatchCertificate::<console::network::MainnetV0>::read_le(&bad_response[..]).is_err());
+            assert!(BatchCertificate::<console::network::MainnetV0>::read_le_unchecked(&bad_response[..]).is_ok());
+            assert!(BatchCertificate::<console::network::MainnetV0>::read_le(&bad_compute_key[..]).is_err());
+            assert!(BatchCertificate::<console::network::MainnetV0>::read_le_unchecked(&bad_compute_key[..]).is_err());
         }
     }
 

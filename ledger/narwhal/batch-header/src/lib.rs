@@ -21,8 +21,11 @@ extern crate snarkvm_console as console;
 
 mod bytes;
 mod serialize;
+mod signature_cache;
 mod string;
 mod to_id;
+
+pub use signature_cache::read_signature_cached;
 
 use console::{
     account::{Address, PrivateKey, Signature},
