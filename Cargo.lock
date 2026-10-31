@@ -3609,7 +3609,6 @@ dependencies = [
  "locktick",
  "lru",
  "parking_lot",
- "rayon",
  "serde_json",
  "snarkvm-console",
  "snarkvm-ledger-narwhal-batch-header",

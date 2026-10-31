@@ -72,8 +72,9 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         let mut previous_certificate_id_bytes =
             vec![0u8; num_previous_certificate_ids as usize * Field::<N>::size_in_bytes()];
         reader.read_exact(&mut previous_certificate_id_bytes)?;
-        // Read the previous certificate IDs.
-        let previous_certificate_ids = cfg_chunks!(previous_certificate_id_bytes, Field::<N>::size_in_bytes())
+        // Read the previous certificate IDs. This stays serial: a rayon fork-join costs more than these reads.
+        let previous_certificate_ids = previous_certificate_id_bytes
+            .chunks(Field::<N>::size_in_bytes())
             .map(Field::read_le)
             .collect::<Result<IndexSet<_>, _>>()?;
         // Ensure no previous certificate ID was repeated, for the same reason.
