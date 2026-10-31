@@ -1,0 +1,274 @@
+[workspace]
+# release-plz defaults to one tag/release per package in a multi-crate workspace.
+# snarkVM is lockstep-versioned, so disable tags/releases workspace-wide and
+# re-enable them only on the umbrella `snarkvm` crate to get exactly one tag
+# and one GitHub release per workspace version.
+git_tag_enable = false
+git_release_enable = false
+
+# `version_group` is a package-level release-plz key in action v0.5.
+# Assign every lockstep crate to the same group so they always bump together.
+[[package]]
+name = "snarkvm"
+version_group = "snarkvm"
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+git_release_enable = true
+git_release_name = "v{{ version }}"
+
+[[package]]
+name = "snarkvm-algorithms"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-algorithms-cuda"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-account"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-algorithms"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-collections"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-environment"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-environment-witness"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-network"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-program"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types-address"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types-boolean"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types-field"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types-group"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types-integers"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types-scalar"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-circuit-types-string"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-account"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-algorithms"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-collections"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-network"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-network-environment"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-program"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types-address"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types-boolean"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types-field"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types-group"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types-integers"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types-scalar"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-console-types-string"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-curves"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-fields"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-authority"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-block"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-committee"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-narwhal"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-narwhal-batch-certificate"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-narwhal-batch-header"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-narwhal-data"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-narwhal-subdag"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-narwhal-transmission"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-narwhal-transmission-id"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-puzzle"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-puzzle-epoch"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-query"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-store"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-ledger-test-helpers"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-metrics"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-parameters"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-synthesizer"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-synthesizer-error"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-synthesizer-process"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-synthesizer-program"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-synthesizer-snark"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-utilities"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-utilities-derives"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-wasm"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-slipstream-plugin-interface"
+version_group = "snarkvm"
+
+[[package]]
+name = "snarkvm-slipstream-plugin-manager"
+version_group = "snarkvm"
+
+# This 0.1.0 binary helper is not part of the lockstep release set.
+[[package]]
+name = "snarkvm-testchain-generator"
+release = false

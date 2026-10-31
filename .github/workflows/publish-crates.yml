@@ -1,0 +1,93 @@
+name: Publish Crates
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - Cargo.toml
+      - '**/Cargo.toml'
+      - release-plz.toml
+      - .github/workflows/publish-crates.yml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check what release-plz would publish without publishing or tagging.
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-crates-staging
+  cancel-in-progress: false
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+
+jobs:
+  dry-run:
+    name: Dry Run
+    if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Dry Run release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          dry_run: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require Staging For Manual Publish
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [ "${{ github.ref_name }}" != "staging" ]; then
+            echo "::error::Manual crate publishing must run from staging."
+            exit 1
+          fi
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install lld
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lld
+
+      - name: Publish With release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
