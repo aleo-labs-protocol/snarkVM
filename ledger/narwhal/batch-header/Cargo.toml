@@ -25,6 +25,7 @@ edition = "2024"
 
 [features]
 default = [ "rayon" ]
+locktick = [ "dep:locktick" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers" ]
@@ -38,6 +39,11 @@ workspace = true
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]
+
+[dependencies.locktick]
+workspace = true
+features = [ "parking_lot" ]
+optional = true
 
 [dependencies.lru]
 workspace = true
