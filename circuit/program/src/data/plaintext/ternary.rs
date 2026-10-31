@@ -54,15 +54,34 @@ mod tests {
     use crate::Circuit;
 
     fn sample(mode: Mode, literal: &str) -> Plaintext<Circuit> {
-        let primitive = console::Plaintext::<<Circuit as Environment>::Network>::from_str(literal).unwrap();
+        let primitive = console::Plaintext::<<Circuit as Environment>::Network>::from_str(literal)
+            .expect("The test fixture must be a valid plaintext.");
         Plaintext::new(mode, primitive)
     }
 
     fn check_both_branches(first: &Plaintext<Circuit>, second: &Plaintext<Circuit>) {
-        let true_ = Boolean::<Circuit>::new(Mode::Private, true);
-        let false_ = Boolean::<Circuit>::new(Mode::Private, false);
-        assert_eq!(first.eject_value(), Plaintext::ternary(&true_, first, second).eject_value());
-        assert_eq!(second.eject_value(), Plaintext::ternary(&false_, first, second).eject_value());
+        let first = first.eject_value();
+        let second = second.eject_value();
+        Circuit::reset();
+        for condition in [false, true] {
+            let expected = console::Plaintext::ternary(&console::Boolean::new(condition), &first, &second);
+            assert_eq!(if condition { &first } else { &second }, &expected);
+            for condition_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                for first_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                    for second_mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                        let condition = Boolean::<Circuit>::new(condition_mode, condition);
+                        let first = Plaintext::<Circuit>::new(first_mode, first.clone());
+                        let second = Plaintext::<Circuit>::new(second_mode, second.clone());
+                        Circuit::scope("plaintext ternary", || {
+                            let candidate = Plaintext::ternary(&condition, &first, &second);
+                            assert_eq!(expected, candidate.eject_value());
+                            assert!(Circuit::is_satisfied());
+                        });
+                        Circuit::reset();
+                    }
+                }
+            }
+        }
     }
 
     #[test]

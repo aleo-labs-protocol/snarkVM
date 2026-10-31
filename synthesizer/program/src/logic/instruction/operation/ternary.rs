@@ -106,6 +106,59 @@ impl<N: Network> Ternary<N> {
 }
 
 impl<N: Network> Ternary<N> {
+    /// Returns an error if the branch values have different shapes or contain strings.
+    fn ensure_matching_shapes(first: &Plaintext<N>, second: &Plaintext<N>) -> Result<()> {
+        match (first, second) {
+            (Plaintext::Literal(a, _), Plaintext::Literal(b, _)) => {
+                ensure!(a.to_type() == b.to_type(), "Instruction 'ternary' expects matching literal types");
+                ensure!(a.to_type() != LiteralType::String, "Instruction 'ternary' does not support the 'string' type");
+            }
+            (Plaintext::Array(a, _), Plaintext::Array(b, _)) => {
+                ensure!(a.len() == b.len(), "Instruction 'ternary' expects matching array lengths");
+                for (a, b) in a.iter().zip_eq(b.iter()) {
+                    Self::ensure_matching_shapes(a, b)?;
+                }
+            }
+            (Plaintext::Struct(a, _), Plaintext::Struct(b, _)) => {
+                ensure!(a.len() == b.len(), "Instruction 'ternary' expects matching struct members");
+                for ((name_a, a), (name_b, b)) in a.iter().zip_eq(b.iter()) {
+                    ensure!(name_a == name_b, "Instruction 'ternary' expects matching struct member names");
+                    Self::ensure_matching_shapes(a, b)?;
+                }
+            }
+            _ => bail!("Instruction 'ternary' expects matching branch shapes"),
+        }
+        Ok(())
+    }
+
+    /// Returns an error if the branch values have different shapes or contain strings.
+    fn ensure_matching_shapes_circuit<A: circuit::Aleo<Network = N>>(
+        first: &circuit::Plaintext<A>,
+        second: &circuit::Plaintext<A>,
+    ) -> Result<()> {
+        match (first, second) {
+            (circuit::Plaintext::Literal(a, _), circuit::Plaintext::Literal(b, _)) => {
+                ensure!(a.to_type() == b.to_type(), "Instruction 'ternary' expects matching literal types");
+                ensure!(a.to_type() != LiteralType::String, "Instruction 'ternary' does not support the 'string' type");
+            }
+            (circuit::Plaintext::Array(a, _), circuit::Plaintext::Array(b, _)) => {
+                ensure!(a.len() == b.len(), "Instruction 'ternary' expects matching array lengths");
+                for (a, b) in a.iter().zip_eq(b.iter()) {
+                    Self::ensure_matching_shapes_circuit(a, b)?;
+                }
+            }
+            (circuit::Plaintext::Struct(a, _), circuit::Plaintext::Struct(b, _)) => {
+                ensure!(a.len() == b.len(), "Instruction 'ternary' expects matching struct members");
+                for ((name_a, a), (name_b, b)) in a.iter().zip_eq(b.iter()) {
+                    ensure!(name_a == name_b, "Instruction 'ternary' expects matching struct member names");
+                    Self::ensure_matching_shapes_circuit(a, b)?;
+                }
+            }
+            _ => bail!("Instruction 'ternary' expects matching branch shapes"),
+        }
+        Ok(())
+    }
+
     /// Evaluates the instruction.
     pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
         // Ensure the number of operands is correct.
@@ -125,6 +178,8 @@ impl<N: Network> Ternary<N> {
         // Load the two branch operands as plaintexts.
         let first = registers.load_plaintext(stack, &self.operands[1])?;
         let second = registers.load_plaintext(stack, &self.operands[2])?;
+
+        Self::ensure_matching_shapes(&first, &second)?;
 
         // Select between the two branches.
         let output = <Plaintext<N> as console::prelude::Ternary>::ternary(&condition, &first, &second);
@@ -156,6 +211,8 @@ impl<N: Network> Ternary<N> {
         // Load the two branch operands as plaintexts.
         let first = registers.load_plaintext_circuit(stack, &self.operands[1])?;
         let second = registers.load_plaintext_circuit(stack, &self.operands[2])?;
+
+        Self::ensure_matching_shapes_circuit(&first, &second)?;
 
         // Select between the two branches.
         let output = <circuit::Plaintext<A> as circuit::traits::Ternary>::ternary(&condition, &first, &second);
@@ -316,6 +373,81 @@ mod tests {
     use console::network::MainnetV0;
 
     type CurrentNetwork = MainnetV0;
+
+    impl<N: Network> crate::Operation<N, Literal<N>, LiteralType, 3> for Ternary<N> {
+        const OPCODE: Opcode = Self::opcode();
+
+        fn evaluate(inputs: &[Literal<N>; 3]) -> Result<Literal<N>> {
+            let Literal::Boolean(condition) = &inputs[0] else { bail!("Expected a boolean condition") };
+            ensure!(inputs[1].to_type() == inputs[2].to_type(), "Expected matching literal types");
+            ensure!(inputs[1].to_type() != LiteralType::String, "String ternary is unsupported");
+            Ok(console::prelude::Ternary::ternary(condition, &inputs[1], &inputs[2]))
+        }
+
+        fn execute<A: circuit::Aleo<Network = N>>(inputs: &[circuit::Literal<A>; 3]) -> Result<circuit::Literal<A>> {
+            let circuit::Literal::Boolean(condition) = &inputs[0] else { bail!("Expected a boolean condition") };
+            ensure!(inputs[1].to_type() == inputs[2].to_type(), "Expected matching literal types");
+            ensure!(inputs[1].to_type() != LiteralType::String, "String ternary is unsupported");
+            Ok(circuit::traits::Ternary::ternary(condition, &inputs[1], &inputs[2]))
+        }
+
+        fn output_type(inputs: &[LiteralType; 3]) -> Result<LiteralType> {
+            ensure!(inputs[0] == LiteralType::Boolean, "Expected a boolean condition");
+            ensure!(inputs[1] == inputs[2], "Expected matching literal types");
+            ensure!(inputs[1] != LiteralType::String, "String ternary is unsupported");
+            Ok(inputs[1])
+        }
+    }
+
+    #[test]
+    fn test_literals_wire_compatibility() -> Result<()> {
+        for input in [
+            "ternary r0 r1 r2 into r3",
+            "ternary true 1field 2field into r0",
+            "ternary false -1i128 0i128 into r4294967296",
+            "ternary r0 r1[0u32] r2[1u32] into r3",
+            "ternary r0 r1.member r2.member into r3",
+            "ternary r0 self.caller self.signer into r3",
+        ] {
+            let ternary = Ternary::<CurrentNetwork>::from_str(input)?;
+            let literals = crate::Literals::<CurrentNetwork, Ternary<CurrentNetwork>, 3>::from_str(input)?;
+            assert_eq!(ternary.to_string(), literals.to_string());
+            assert_eq!(ternary.to_bytes_le()?, literals.to_bytes_le()?);
+            assert_eq!(ternary, Ternary::from_str(&literals.to_string())?);
+            assert_eq!(literals, crate::Literals::from_str(&ternary.to_string())?);
+            assert_eq!(ternary, Ternary::from_bytes_le(&literals.to_bytes_le()?)?);
+            assert_eq!(literals, crate::Literals::from_bytes_le(&ternary.to_bytes_le()?)?);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_matching_shapes() -> Result<()> {
+        use circuit::{Environment, Inject, Mode, network::AleoV0};
+        for (first, second, valid) in [
+            ("1field", "2field", true),
+            ("1field", "1u8", false),
+            ("1field", "[1field]", false),
+            ("[1field]", "[2field, 3field]", false),
+            ("{ x: 1field, y: 2field }", "{ y: 3field, x: 4field }", false),
+            ("{ x: [1field] }", "{ x: [1u8] }", false),
+            ("{ x: [1field] }", "{ x: [2field] }", true),
+            ("\"a\"", "\"b\"", false),
+        ] {
+            let first = Plaintext::<CurrentNetwork>::from_str(first)?;
+            let second = Plaintext::<CurrentNetwork>::from_str(second)?;
+            assert_eq!(valid, Ternary::ensure_matching_shapes(&first, &second).is_ok());
+            for mode in [Mode::Constant, Mode::Public, Mode::Private] {
+                let first = circuit::Plaintext::<AleoV0>::new(mode, first.clone());
+                let second = circuit::Plaintext::<AleoV0>::new(mode, second.clone());
+                let constraints = AleoV0::num_constraints();
+                assert_eq!(valid, Ternary::ensure_matching_shapes_circuit(&first, &second).is_ok());
+                assert_eq!(constraints, AleoV0::num_constraints());
+                AleoV0::reset();
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_parse() {

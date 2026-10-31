@@ -766,9 +766,7 @@ constructor:
     vm.add_next_block(&block).unwrap();
 }
 
-/// Verifies that ternary operations on identifier literals are rejected before `ConsensusVersion::V23`
-/// in function scope. Identifier ternary is a V23 feature, so at V14 the well-formed deployment is
-/// aborted at block verification rather than rejected at `deploy` time.
+/// Verifies that block verification at V14 aborts a deployment with identifier ternary in a function.
 #[test]
 fn test_identifier_literal_ternary_rejected_in_function() {
     let rng = &mut TestRng::default();
@@ -809,9 +807,7 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 1, "identifier ternary deployment before V23 should be aborted");
 }
 
-/// Verifies that ternary operations on identifier literals are rejected before `ConsensusVersion::V23`
-/// in finalize scope. Identifier ternary is a V23 feature, so at V14 the well-formed deployment is
-/// aborted at block verification rather than rejected at `deploy` time.
+/// Verifies that block verification at V14 aborts a deployment with identifier ternary in a finalize scope.
 #[test]
 fn test_identifier_literal_ternary_rejected_in_finalize() {
     let rng = &mut TestRng::default();
