@@ -770,30 +770,20 @@ impl<E: PairingEngine> WitnessTerms<E> {
         defer! { end_timer!(combine_time); }
         let Self { g, gamma_g, passes } = self;
 
-        // A unit randomizer, which the first pass has, adds its witness as is.
-        let mut combined_witness = E::G1Projective::zero();
         let mut bases = Vec::with_capacity(passes.len());
         let mut scalars = Vec::with_capacity(passes.len());
         for (w, randomizer, _) in &passes {
-            if randomizer.is_one() {
-                combined_witness.add_assign_mixed(w);
-            } else {
-                bases.push(*w);
-                scalars.push((*randomizer).into());
-            }
+            bases.push(*w);
+            scalars.push((*randomizer).into());
         }
-        if !bases.is_empty() {
-            combined_witness += VariableBase::msm(&bases, &scalars);
-        }
+        let combined_witness = VariableBase::msm(&bases, &scalars);
 
         let mut bases = Vec::with_capacity(passes.len() + 2);
         let mut scalars = Vec::with_capacity(passes.len() + 2);
         bases.push(vk.vk.g);
         scalars.push(g.into());
-        if !gamma_g.is_zero() {
-            bases.push(vk.vk.gamma_g);
-            scalars.push(gamma_g.into());
-        }
+        bases.push(vk.vk.gamma_g);
+        scalars.push(gamma_g.into());
         for (w, randomizer, point) in &passes {
             bases.push(*w);
             scalars.push((-(*randomizer * point)).into());
