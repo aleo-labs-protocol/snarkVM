@@ -35,7 +35,6 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c26e03c99bac238b3454ec6c654bc066a0e4e7eae00608ec76c2279bc8f2cf"
 dependencies = [
- "aleo-std-cpu",
  "aleo-std-profiler",
  "aleo-std-storage",
  "aleo-std-time",
@@ -43,12 +42,6 @@ dependencies = [
  "aleo-std-timer",
  "walkdir",
 ]
-
-[[package]]
-name = "aleo-std-cpu"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "835cb3594485055c842d6a8992141aada6c290649d6d9a12c3156ec91806c209"
 
 [[package]]
 name = "aleo-std-profiler"
@@ -3958,13 +3951,11 @@ dependencies = [
 name = "snarkvm-utilities"
 version = "4.12.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "bincode",
  "colored 3.1.1",
  "criterion",
  "num-bigint",
- "num_cpus",
  "rand",
  "rand_chacha",
  "rand_xorshift",
