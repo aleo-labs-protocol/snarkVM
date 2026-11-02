@@ -187,6 +187,30 @@ mod tests {
         }
     }
 
+    /// Zero and unit scalars mixed with others, on more bases than scalars,
+    /// give the naive sum over the first bases.
+    #[test]
+    fn test_msm_small_zero_and_unit_scalars() {
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::{One, Zero};
+        use snarkvm_utilities::Uniform;
+
+        let mut rng = TestRng::default();
+        let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 6);
+        let [zero, one, a, b] = [Fr::zero(), Fr::one(), Fr::rand(&mut rng), Fr::rand(&mut rng)].map(|s| s.to_bigint());
+        for scalars in [
+            vec![zero, zero],
+            vec![one, one, one],
+            vec![zero, a],
+            vec![one, zero, a, b],
+            vec![a, one, zero, b, one],
+            vec![a, b],
+        ] {
+            let naive = VariableBase::msm_naive(&bases[..scalars.len()], &scalars).to_affine();
+            assert_eq!(batched::msm(&bases, &scalars).to_affine(), naive, "scalars: {scalars:?}");
+        }
+    }
+
     /// Bases at infinity must survive the trip to the device.
     ///
     /// The device slot is wider than the host point, so a copy that misplaces

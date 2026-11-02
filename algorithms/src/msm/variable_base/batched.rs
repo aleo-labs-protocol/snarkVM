@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::borrow::Cow;
+
 use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{Field, One, PrimeField, Zero};
 use snarkvm_utilities::{BigInteger, cfg_into_iter};
@@ -490,23 +492,36 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
     // amortize its batched inversions, and Straus's method is several times
     // faster.
     if bases.len() < 32 {
-        // One base shares no doublings, so a unit scalar is the base itself
-        // and any other goes through the curve's own scalar multiplication,
-        // GLV on BLS12-377, which halves the doublings.
-        if let ([base], [scalar]) = (bases, scalars) {
-            if scalar.is_zero() {
-                return G::Projective::zero();
+        debug_assert!(scalars.len() <= bases.len());
+        // A zero scalar adds nothing and a unit scalar adds its base, so
+        // neither needs a table or a scalar multiplication.
+        let one = <G::ScalarField as PrimeField>::BigInteger::from(1u64);
+        let mut sum = G::Projective::zero();
+        let (bases, scalars) = if scalars.iter().any(|scalar| scalar.is_zero() || *scalar == one) {
+            let mut rest = (Vec::with_capacity(scalars.len()), Vec::with_capacity(scalars.len()));
+            // Bases past the last scalar have no scalar, so `zip` stops there.
+            for (base, scalar) in bases.iter().zip(scalars) {
+                if *scalar == one {
+                    sum.add_assign_mixed(base);
+                } else if !scalar.is_zero() {
+                    rest.0.push(*base);
+                    rest.1.push(*scalar);
+                }
             }
-            if *scalar == <G::ScalarField as PrimeField>::BigInteger::from(1u64) {
-                return base.to_projective();
-            }
-            if let Some(scalar) = G::ScalarField::from_bigint(*scalar) {
-                // GLV is correct only on the prime-order subgroup.
-                debug_assert!(base.is_in_correct_subgroup_assuming_on_curve());
-                return base.to_projective() * scalar;
-            }
+            (Cow::Owned(rest.0), Cow::Owned(rest.1))
+        } else {
+            (Cow::Borrowed(bases), Cow::Borrowed(scalars))
+        };
+        // One base shares no doublings, so it goes through the curve's own
+        // scalar multiplication, GLV on BLS12-377, which halves the doublings.
+        if let ([base], [scalar]) = (&*bases, &*scalars)
+            && let Some(scalar) = G::ScalarField::from_bigint(*scalar)
+        {
+            // GLV is correct only on the prime-order subgroup.
+            debug_assert!(base.is_in_correct_subgroup_assuming_on_curve());
+            return sum + base.to_projective() * scalar;
         }
-        straus::<G, STRAUS_WINDOW>(bases, scalars)
+        sum + straus::<G, STRAUS_WINDOW>(&bases, &scalars)
     } else {
         // Determine the bucket size `c` (chosen empirically).
         let c = crate::msm::ln_without_floats(scalars.len()) + 2;
