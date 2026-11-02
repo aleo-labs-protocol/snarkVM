@@ -137,11 +137,6 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
             );
         }
 
-        // The asserts above ensure that the variable at index `i` in the first system
-        // is the variable at index `i` in the second system, for both public and private variables.
-        let num_public = self.num_public();
-        let num_private = self.num_private();
-
         // Enforce all of the constraints.
         for (i, constraint) in self.constraints.iter().enumerate() {
             let (a, b, c) = constraint.to_terms();
@@ -149,7 +144,8 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
             let convert_linear_combination =
                 |lc: &LinearCombination<F>| -> snarkvm_algorithms::r1cs::LinearCombination<F> {
                     // Initialize a linear combination for the second system.
-                    let mut linear_combination = snarkvm_algorithms::r1cs::LinearCombination::<F>::zero();
+                    let mut linear_combination =
+                        snarkvm_algorithms::r1cs::LinearCombination::<F>(Vec::with_capacity(lc.to_terms().len() + 1));
 
                     // Process every term in the linear combination.
                     for (variable, coefficient) in lc.to_terms() {
@@ -162,7 +158,7 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
                             Variable::Public(index_value) => {
                                 let (index, _) = index_value.as_ref();
                                 assert!(
-                                    *index < num_public,
+                                    *index < self.num_public(),
                                     "Failed during constraint translation. The public variable is not in the first system"
                                 );
                                 snarkvm_algorithms::r1cs::Index::Public(*index as usize)
@@ -170,23 +166,20 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
                             Variable::Private(index_value) => {
                                 let (index, _) = index_value.as_ref();
                                 assert!(
-                                    *index < num_private,
+                                    *index < self.num_private(),
                                     "Failed during constraint translation. The private variable is not in the first system"
                                 );
                                 snarkvm_algorithms::r1cs::Index::Private(*index as usize)
                             }
                         };
+                        // The allocation loops give each variable the same index in both systems.
                         linear_combination += (*coefficient, snarkvm_algorithms::r1cs::Variable::new_unchecked(index));
                     }
 
                     // Finally, add the accumulated constant value to the linear combination.
-                    if !lc.to_constant().is_zero() {
-                        linear_combination += (
-                            lc.to_constant(),
-                            snarkvm_algorithms::r1cs::Variable::new_unchecked(snarkvm_algorithms::r1cs::Index::Public(
-                                0,
-                            )),
-                        );
+                    let constant = lc.to_constant();
+                    if !constant.is_zero() {
+                        linear_combination += (constant, CS::one());
                     }
 
                     // Return the linear combination of the second system.
@@ -356,7 +349,6 @@ mod tests {
             snark::varuna::{VarunaHidingMode, VarunaSNARK, ahp::AHPForR1CS},
         };
         use snarkvm_curves::bls12_377::{Bls12_377, Fq};
-        use snarkvm_utilities::rand::TestRng;
 
         type FS = PoseidonSponge<Fq, 2, 1>;
         type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
@@ -395,8 +387,8 @@ mod tests {
         use crate::{LinearCombination, Variable};
         use indexmap::IndexMap;
 
-        let mut public: IndexMap<u64, snarkvm_algorithms::r1cs::Variable> = Default::default();
-        let mut private: IndexMap<u64, snarkvm_algorithms::r1cs::Variable> = Default::default();
+        let mut public = IndexMap::new();
+        let mut private = IndexMap::new();
 
         public.insert(0, CS::one());
         for (i, variable) in assignment.public_inputs().iter().skip(1).enumerate() {
@@ -418,8 +410,8 @@ mod tests {
                     for (variable, coefficient) in lc.to_terms() {
                         let gadget = match variable {
                             Variable::Constant(_) => unreachable!("Linear combinations have no constant terms"),
-                            Variable::Public(index_value) => public[&index_value.0],
-                            Variable::Private(index_value) => private[&index_value.0],
+                            Variable::Public(_) => public[&variable.index()],
+                            Variable::Private(_) => private[&variable.index()],
                         };
                         linear_combination += (*coefficient, gadget);
                     }
@@ -475,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_generate_constraints_matches_index_map() -> Result<()> {
-        use snarkvm_algorithms::r1cs::{Index, TestConstraintSystem};
+        use snarkvm_algorithms::r1cs::Index;
 
         let rng = &mut TestRng::default();
         let assignment = create_random_circuit(rng);
@@ -499,9 +491,9 @@ mod tests {
         assert_eq!(expected.num_private_variables, candidate.num_private_variables);
         assert_eq!(expected.num_constraints, candidate.num_constraints);
 
-        let mut cs = TestConstraintSystem::<Fr>::new();
-        assignment.generate_constraints(&mut cs)?;
-        assert!(cs.is_satisfied());
+        let public: Vec<_> = assignment.public_inputs().iter().map(|variable| variable.value()).collect();
+        let private: Vec<_> = assignment.private_inputs().iter().map(|variable| variable.value()).collect();
+        assert!(candidate.is_satisfied(&public, &private));
         Ok(())
     }
 
