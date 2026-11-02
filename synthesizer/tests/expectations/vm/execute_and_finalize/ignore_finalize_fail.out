@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program parent.aleo: Process deployment failed: Function ''parent.aleo/foo'' must contain a finalize block, since it calls ''child.aleo/foo''.'
-outputs: []

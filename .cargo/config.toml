@@ -1,3 +1,0 @@
-# Note: override by setting RUSTFLAGS
-[target.'cfg(not(target_arch = "wasm32"))']
-rustflags = ["-C", "target-cpu=native"]

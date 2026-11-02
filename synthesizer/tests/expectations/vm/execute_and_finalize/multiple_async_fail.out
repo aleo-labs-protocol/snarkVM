@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program parent.aleo: Process deployment failed: Function ''foo'' can contain at most one ''async'' instruction'
-outputs: []

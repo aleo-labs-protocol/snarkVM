@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program child.aleo: Process deployment failed: ''child.aleo/foo'' does not have a finalize block'
-outputs: []

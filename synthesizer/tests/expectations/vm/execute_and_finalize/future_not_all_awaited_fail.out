@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program parent.aleo: Process deployment failed: Futures in finalize ''foo'' are not all awaited.'
-outputs: []
