@@ -89,7 +89,7 @@ impl<F: PrimeField> R1CS<F> {
                     assert_eq!(
                         snarkvm_algorithms::r1cs::Index::Public(*index as usize),
                         gadget.get_unchecked(),
-                        "Public variables in the second system must match the first system (with an off-by-1 for the public case)"
+                        "Public variables in the second system must match the first system"
                     );
 
                     let result = converter.public.insert(*index, gadget);
@@ -147,9 +147,9 @@ impl<F: PrimeField> R1CS<F> {
                                 let (index, _value) = index_value.as_ref();
                                 let gadget = converter.public.get(index).unwrap();
                                 assert_eq!(
-                                    snarkvm_algorithms::r1cs::Index::Public((index + 1) as usize),
+                                    snarkvm_algorithms::r1cs::Index::Public(*index as usize),
                                     gadget.get_unchecked(),
-                                    "Failed during constraint translation. The public variable in the second system must match the first system (with an off-by-1 for the public case)"
+                                    "Failed during constraint translation. The public variable in the second system must match the first system"
                                 );
                                 linear_combination += (*coefficient, *gadget);
                             }
@@ -232,6 +232,26 @@ mod tests {
     #[test]
     fn test_constraint_converter() {
         let _candidate_output = create_example_circuit::<Circuit>();
+
+        let mut cs = snarkvm_algorithms::r1cs::TestConstraintSystem::new();
+        Circuit.generate_constraints(&mut cs).unwrap();
+        {
+            use snarkvm_algorithms::r1cs::ConstraintSystem;
+            assert_eq!(Circuit::num_public(), cs.num_public_variables() as u64);
+            assert_eq!(Circuit::num_private(), cs.num_private_variables() as u64);
+            assert_eq!(Circuit::num_constraints(), cs.num_constraints() as u64);
+            assert!(cs.is_satisfied());
+        }
+    }
+
+    #[test]
+    fn test_constraint_converter_with_public_terms() {
+        let one = snarkvm_console_types::Field::<<Circuit as Environment>::Network>::one();
+        let public = Field::<Circuit>::new(Mode::Public, one + one);
+        let private = Field::<Circuit>::new(Mode::Private, one + one + one);
+        // The product constraint has the public variable as a term.
+        let _product = &public * &private;
+        assert_eq!(1, Circuit::num_constraints());
 
         let mut cs = snarkvm_algorithms::r1cs::TestConstraintSystem::new();
         Circuit.generate_constraints(&mut cs).unwrap();
