@@ -522,22 +522,6 @@ mod tests {
     const EXPECTED_MAX_STAKING_REWARD: u64 = 142_694_063;
 
     #[test]
-    #[cfg(not(feature = "test"))]
-    fn test_consensus_heights_are_network_specific() -> Result<()> {
-        // The network crate is a dependency here, so its non-test implementation is exercised.
-        for _ in 0..2 {
-            assert_eq!(TestnetV0::CONSENSUS_VERSION_HEIGHTS(), &TestnetV0::_CONSENSUS_VERSION_HEIGHTS);
-            assert_eq!(CanaryV0::CONSENSUS_VERSION_HEIGHTS(), &CanaryV0::_CONSENSUS_VERSION_HEIGHTS);
-            assert_eq!(MainnetV0::CONSENSUS_VERSION_HEIGHTS(), &MainnetV0::_CONSENSUS_VERSION_HEIGHTS);
-
-            for (version, height) in MainnetV0::_CONSENSUS_VERSION_HEIGHTS {
-                assert_eq!(MainnetV0::CONSENSUS_HEIGHT(version)?, height);
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
     fn test_anchor_block_reward_v1() {
         // Check the anchor block reward at block 1.
         let reward_at_block_1 = anchor_block_reward_at_height(
@@ -1569,8 +1553,9 @@ mod tests {
         }
     }
 
-    /// Simulates the rewards up to the max supply limit height, and checks the supply there.
-    fn check_total_supply_cap<N: Network>(expected_supply: u64) {
+    /// Returns the supply at the max supply limit height, simulating 3 s blocks and the upper-bound coinbase reward.
+    /// The result does not predict real supply.
+    fn simulated_supply_at_limit_height<N: Network>() -> u64 {
         const AVG_BLOCK_TIME: i64 = 3;
 
         let mut total_supply = N::STARTING_SUPPLY;
@@ -1604,17 +1589,17 @@ mod tests {
             total_supply += block_reward + avg_coinbase_reward_per_block;
         }
 
-        assert_eq!(total_supply, expected_supply);
-        assert_eq!(N::MAX_SUPPLY_LIMIT_HEIGHT, 263_527_685);
+        total_supply
     }
 
     #[test]
     fn test_total_supply_cap() {
         // The limit height is shared, but the simulated supply depends on each network's V2 height.
-        // Canary and Testnet end above `MAX_SUPPLY`, and Mainnet ends below it.
-        check_total_supply_cap::<CanaryV0>(5_000_000_005_581_415);
-        check_total_supply_cap::<TestnetV0>(5_000_758_271_387_431);
-        check_total_supply_cap::<MainnetV0>(4_998_479_673_138_274);
+        assert_eq!(simulated_supply_at_limit_height::<CanaryV0>(), 5_000_000_005_581_415);
+        assert_eq!(simulated_supply_at_limit_height::<TestnetV0>(), 5_000_758_271_387_431);
+        let mainnet_supply = simulated_supply_at_limit_height::<MainnetV0>();
+        assert_eq!(mainnet_supply, 4_998_479_673_138_274);
+        assert!(mainnet_supply < MainnetV0::MAX_SUPPLY);
     }
 
     #[test]

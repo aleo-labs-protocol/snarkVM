@@ -360,7 +360,7 @@ pub trait Network:
         if let Some(heights) = CONSENSUS_VERSION_HEIGHTS.get() {
             return heights;
         }
-        // Default heights belong to this network and must not initialize a shared cache.
+        // A cache shared across networks would give them all the first reader's heights.
         &Self::_CONSENSUS_VERSION_HEIGHTS
     }
     /// Returns the list of test consensus versions.
