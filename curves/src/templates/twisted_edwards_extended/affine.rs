@@ -177,14 +177,39 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         })
     }
 
+    /// Uses a sliding window of up to `WINDOW` bits over the odd multiples `self, 3 * self, 5 * self, ...`.
+    /// Runs in variable time.
     #[inline]
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Projective<P> {
+        const WINDOW: usize = 4;
+        let bits: Vec<bool> = bits.skip_while(|bit| !bit).collect();
+        let base = self.to_projective();
+        let double = base.double();
+        let mut table = [base; 1 << (WINDOW - 1)];
+        for i in 1..table.len() {
+            table[i] = table[i - 1] + double;
+        }
+
         let mut res = Projective::zero();
-        for i in bits {
-            res.double_in_place();
-            if i {
-                res.add_assign_mixed(self)
+        let mut i = 0;
+        while i < bits.len() {
+            if !bits[i] {
+                res.double_in_place();
+                i += 1;
+                continue;
             }
+            let mut end = bits.len().min(i + WINDOW);
+            while !bits[end - 1] {
+                end -= 1;
+            }
+            let digit = bits[i..end].iter().fold(0, |digit, &bit| (digit << 1) | bit as usize);
+            if i == 0 {
+                res = table[digit >> 1];
+            } else {
+                (i..end).for_each(|_| res.double_in_place());
+                res += &table[digit >> 1];
+            }
+            i = end;
         }
         res
     }
