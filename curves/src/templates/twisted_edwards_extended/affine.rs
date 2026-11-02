@@ -182,7 +182,9 @@ impl<P: Parameters> AffineCurve for Affine<P> {
     #[inline]
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Projective<P> {
         const WINDOW: usize = 4;
-        let bits: Vec<bool> = bits.skip_while(|bit| !bit).collect();
+        let mut buffer = Vec::with_capacity(bits.size_hint().0);
+        buffer.extend(bits.skip_while(|bit| !bit));
+        let bits = buffer;
         let base = self.to_projective();
         let double = base.double();
         let mut table = [base; 1 << (WINDOW - 1)];

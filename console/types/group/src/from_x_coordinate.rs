@@ -22,6 +22,11 @@ impl<E: Environment> Group<E> {
         if let Some((p1, p2)) = E::Affine::pair_from_x_coordinate(*x_coordinate) {
             // `p2 = -(p1 + T)` for the order-two point `T = (0, -1)`, and the subgroup order `r` is odd,
             // so `[r]p2` is the identity iff `p2` is in the subgroup, and is `T` iff `p1` is.
+            debug_assert_eq!(
+                p2.to_projective(),
+                -p1.to_projective()
+                    .add_mixed(&E::Affine::from_coordinates_unchecked((E::Field::zero(), -E::Field::one())))
+            );
             let r_p2 = p2.mul_bits(E::Scalar::modulus().to_bits_be().into_iter());
             if r_p2.is_zero() {
                 return Ok(Self::new(p2));
@@ -73,7 +78,7 @@ mod tests {
         let outcome = match (Affine::pair_from_x_coordinate(*x), expected) {
             (None, _) => 0,
             (Some(_), None) => 1,
-            (Some((_, p2)), Some(group)) if (*group).to_affine() == p2 => 2,
+            (Some((_, p2)), Some(group)) if group.to_affine() == p2 => 2,
             (Some(_), Some(_)) => 3,
         };
         outcomes[outcome] += 1;
@@ -85,16 +90,19 @@ mod tests {
         let mut outcomes = [0; 4];
 
         // -1 is a square in the base field, so (sqrt(-1), 0) exists. It has order four, and its double is (0, -1).
-        let t4 = Affine::from_y_coordinate(BaseField::zero(), false).unwrap().to_projective();
-        assert_eq!(t4.double(), Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one())));
+        let t4 = Affine::from_y_coordinate(BaseField::zero(), false).unwrap();
+        assert_eq!(
+            t4.to_projective().double(),
+            Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one()))
+        );
 
-        for x in [BaseField::zero(), BaseField::one(), -BaseField::one(), t4.to_affine().x, -t4.to_affine().x] {
+        for x in [BaseField::zero(), BaseField::one(), -BaseField::one(), t4.x, -t4.x] {
             check(x, &mut outcomes);
         }
         for _ in 0..ITERATIONS {
             check(Uniform::rand(&mut rng), &mut outcomes);
             let point = *Group::<CurrentEnvironment>::rand(&mut rng);
-            for torsion in [Projective::zero(), t4] {
+            for torsion in [Projective::zero(), t4.to_projective()] {
                 check((point + torsion).to_affine().x, &mut outcomes);
             }
         }

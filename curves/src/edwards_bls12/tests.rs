@@ -15,7 +15,7 @@
 
 use crate::{
     edwards_bls12::*,
-    templates::twisted_edwards_extended::tests::{edwards_test, montgomery_conversion_test},
+    templates::twisted_edwards_extended::tests::{edwards_test, montgomery_conversion_test, order_two_point},
     traits::{
         AffineCurve,
         MontgomeryParameters,
@@ -122,7 +122,7 @@ fn test_mul_bits_matches_double_and_add() {
     // -1 is a square in Fq, so (sqrt(-1), 0) exists. It has order four.
     let t4 = EdwardsAffine::from_y_coordinate(Fq::zero(), false).unwrap();
     let p: EdwardsAffine = rng.random();
-    let t2 = t4.to_projective().double().to_affine();
+    let t2 = order_two_point::<EdwardsParameters>();
     let points = [EdwardsAffine::zero(), t2, t4, p, (p.to_projective() + t4.to_projective()).to_affine()];
 
     let mut scalars = vec![
@@ -132,9 +132,7 @@ fn test_mul_bits_matches_double_and_add() {
         BitIteratorBE::new(EdwardsParameters::COFACTOR).collect(),
         BitIteratorBE::new(Fr::characteristic()).collect(),
     ];
-    for len in 0..300 {
-        scalars.push((0..len).map(|_| rng.random()).collect());
-    }
+    scalars.extend((0..300).map(|len| (0..len).map(|_| rng.random()).collect()));
 
     for point in &points {
         for bits in &scalars {
