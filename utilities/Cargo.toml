@@ -72,7 +72,7 @@ workspace = true
 features = [ "preserve_order" ]
 
 [dependencies.smol_str]
-version = "0.2"
+version = "0.3"
 
 [dependencies.tracing]
 workspace = true
