@@ -402,15 +402,14 @@ fn recode_naf<B: BigInteger>(scalar: &B, window: usize, num_bits: usize, digits:
     let mut carry = 0u64;
     let mut i = 0;
     while i < num_bits {
-        let bit = u64::from(scalar.get_bit(i));
-        if (bit + carry) & 1 == 0 {
-            // An even sum means `bit == carry`, so the carry is unchanged.
+        let value = bits_at(i) + carry;
+        if value & 1 == 0 {
+            // An even sum means bit `i` equals the carry, so the carry is unchanged.
             digits[i] = 0;
             i += 1;
             continue;
         }
-        // Odd, so a window of bits: `value` is odd and below `full`.
-        let value = bits_at(i) + carry;
+        // `value` is odd, so below `full`.
         if value >= half {
             digits[i] = (value as i64 - full as i64) as i8;
             carry = 1;
@@ -436,6 +435,7 @@ pub fn straus<G: AffineCurve, const WINDOW: usize>(
 ) -> G::Projective {
     const { assert!(WINDOW >= 2 && WINDOW <= 8) };
     let table_len = 1usize << (WINDOW - 2);
+    debug_assert!(scalars.len() <= bases.len());
     let n = bases.len().min(scalars.len());
     let (bases, scalars) = (&bases[..n], &scalars[..n]);
 
@@ -497,10 +497,12 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
             if scalar.is_zero() {
                 return G::Projective::zero();
             }
-            if *scalar == G::ScalarField::one().to_bigint() {
+            if *scalar == <G::ScalarField as PrimeField>::BigInteger::from(1u64) {
                 return base.to_projective();
             }
             if let Some(scalar) = G::ScalarField::from_bigint(*scalar) {
+                // GLV is correct only on the prime-order subgroup.
+                debug_assert!(base.is_in_correct_subgroup_assuming_on_curve());
                 return base.to_projective() * scalar;
             }
         }

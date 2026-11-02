@@ -156,6 +156,37 @@ mod tests {
         }
     }
 
+    /// One base, at infinity or not, under the scalars of each one-base path:
+    /// zero, one, reduced scalars, and unreduced scalars below `2^253`.
+    #[test]
+    fn test_msm_one_base() {
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::{One, Zero};
+        use snarkvm_utilities::{BigInteger, BigInteger256, Uniform};
+
+        let mut rng = TestRng::default();
+        let reduced = [Fr::zero(), Fr::one(), -Fr::one(), Fr::rand(&mut rng)].map(|s| s.to_bigint());
+
+        let modulus = Fr::modulus();
+        let mut modulus_plus_one = modulus;
+        modulus_plus_one.add_nocarry(&BigInteger256::from(1u64));
+        let mut modulus_plus_random = modulus;
+        let mut offset = Fr::rand(&mut rng).to_bigint();
+        offset.0[3] &= (1 << 58) - 1;
+        modulus_plus_random.add_nocarry(&offset);
+        let top = BigInteger256::new([u64::MAX, u64::MAX, u64::MAX, (1 << 61) - 1]);
+        let unreduced = [modulus, modulus_plus_one, modulus_plus_random, top];
+        assert!(unreduced.iter().all(|s| Fr::from_bigint(*s).is_none()));
+
+        for base in [G1Affine::rand(&mut rng), G1Affine::zero()] {
+            for scalar in reduced.iter().chain(&unreduced) {
+                let naive = VariableBase::msm_naive(&[base], &[*scalar]).to_affine();
+                let candidate = batched::msm(&[base], &[*scalar]).to_affine();
+                assert_eq!(naive, candidate, "base: {base}, scalar: {scalar}");
+            }
+        }
+    }
+
     /// Bases at infinity must survive the trip to the device.
     ///
     /// The device slot is wider than the host point, so a copy that misplaces

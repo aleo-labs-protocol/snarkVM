@@ -19,6 +19,7 @@ use snarkvm_fields::{PrimeField, Zero};
 use snarkvm_utilities::{BigInteger, BitIteratorBE, TestRng, Uniform};
 
 use criterion::Criterion;
+use itertools::Itertools;
 
 #[macro_use]
 extern crate criterion;
@@ -71,7 +72,7 @@ fn double_and_add<G: AffineCurve>(
         if encountered_one {
             sum.double_in_place();
         }
-        for (bits, base) in bits.iter_mut().zip(bases) {
+        for (bits, base) in bits.iter_mut().zip_eq(bases) {
             if let Some(true) = bits.next() {
                 sum.add_assign_mixed(base);
                 encountered_one = true;
