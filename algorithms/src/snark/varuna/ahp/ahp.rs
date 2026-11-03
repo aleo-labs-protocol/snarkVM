@@ -161,11 +161,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         ]
         .into_iter()
         .max()?;
-        let largest_mul_domain = EvaluationDomain::new(largest_domain_size)?;
-
-        let fft_precomputation = largest_mul_domain.precompute_fft();
-        let ifft_precomputation = fft_precomputation.to_ifft_precomputation();
-        Some((fft_precomputation, ifft_precomputation))
+        // Serial: a rayon worker loading a static key could steal a job waiting on it.
+        Some(EvaluationDomain::new(largest_domain_size)?.precompute_serial())
     }
 
     /// Construct the linear combinations that are checked by the AHP.

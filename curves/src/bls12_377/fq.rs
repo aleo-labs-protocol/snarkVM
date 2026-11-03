@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::OnceLock;
+
 use snarkvm_fields::{
     FftParameters,
     FieldParameters,
@@ -20,6 +22,7 @@ use snarkvm_fields::{
     Fp384Parameters,
     PoseidonDefaultParameters,
     PoseidonDefaultParametersEntry,
+    SqrtTables,
 };
 use snarkvm_utilities::biginteger::BigInteger384 as BigInteger;
 
@@ -28,7 +31,12 @@ pub type Fq = Fp384<FqParameters>;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct FqParameters;
 
-impl Fp384Parameters for FqParameters {}
+impl Fp384Parameters for FqParameters {
+    fn sqrt_tables() -> Option<&'static SqrtTables<Fq>> {
+        static TABLES: OnceLock<SqrtTables<Fq>> = OnceLock::new();
+        Some(TABLES.get_or_init(SqrtTables::<Fq>::new))
+    }
+}
 
 impl FftParameters for FqParameters {
     type BigInteger = BigInteger;

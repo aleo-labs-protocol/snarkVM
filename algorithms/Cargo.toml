@@ -43,13 +43,13 @@ bench = false
 name = "varuna"
 path = "benches/snark/varuna.rs"
 harness = false
-required-features = [ "test" ]
+required-features = [ "test", "filesystem" ]
 
 [[bench]]
 name = "varuna_verifier"
 path = "benches/snark/varuna_verifier.rs"
 harness = false
-required-features = [ "test" ]
+required-features = [ "test", "filesystem" ]
 
 [dependencies.snarkvm-curves]
 workspace = true

@@ -3,8 +3,7 @@ name: Run snarkVM Benchmarks
 on:
   push:
     branches:
-      - 'testnet'
-      - 'mainnet'
+      - 'release/**'
   workflow_dispatch:
 
 jobs:
@@ -107,7 +106,12 @@ jobs:
       - name: Benchmark ledger (transaction)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
+
+      - name: Benchmark ledger (verify_transaction)
+        run: |
+          set -o pipefail
+          cargo bench --package=snarkvm-ledger --bench verify_transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
 
       # Skip store/advance: require a pre-generated `test-ledger/` fixture
       # (see `snarkvm-testchain-generator --no-ledger`).
@@ -139,8 +143,9 @@ jobs:
           name: snarkVM Benchmarks
           tool: 'cargo'
           output-file-path: output.txt
-          # testnet and mainnet keep separate gh-pages histories.
-          benchmark-data-dir-path: dev/bench/${{ github.ref_name }}
+          # One history for all release branches, so each release is compared
+          # with the one before it.
+          benchmark-data-dir-path: dev/bench/release
           github-token: ${{ secrets.GITHUB_TOKEN }}
           alert-threshold: '200%'
           comment-on-alert: true

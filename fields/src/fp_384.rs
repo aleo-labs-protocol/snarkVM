@@ -23,8 +23,10 @@ use crate::{
     PoseidonDefaultField,
     PoseidonDefaultParameters,
     PrimeField,
+    SqrtTables,
     SquareRootField,
     Zero,
+    safegcd,
 };
 use snarkvm_utilities::{
     FromBytes,
@@ -44,7 +46,12 @@ use std::{
 };
 use zeroize::Zeroize;
 
-pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {}
+pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {
+    /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
+    fn sqrt_tables() -> Option<&'static SqrtTables<Fp384<Self>>> {
+        None
+    }
+}
 
 // The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Default, PartialEq, Eq, Hash, Zeroize)]
@@ -52,6 +59,10 @@ pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {}
 pub struct Fp384<P: Fp384Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
 
 impl<P: Fp384Parameters> Fp384<P> {
+    const MODULUS_62: [i64; 7] = safegcd::to_signed62(&P::MODULUS.0);
+    const MODULUS_INV_62: u64 = P::INV.wrapping_neg() & safegcd::M62;
+    const R2_62: [i64; 7] = safegcd::to_signed62(&P::R2.0);
+
     #[inline]
     pub fn is_valid(&self) -> bool {
         self.0 < P::MODULUS
@@ -151,6 +162,17 @@ impl<P: Fp384Parameters> Fp384<P> {
         (self.0).0[4] = r10;
         (self.0).0[5] = r11;
         self.reduce();
+    }
+
+    /// Returns the inverse of a nonzero canonical element.
+    ///
+    /// Its branches and running time depend on `self`.
+    fn safegcd_inverse(&self) -> Self {
+        debug_assert!(self.is_valid());
+        Self(
+            BigInteger(safegcd::inverse(&self.0.0, &Self::MODULUS_62, Self::MODULUS_INV_62, &Self::R2_62)),
+            PhantomData,
+        )
     }
 }
 
@@ -341,55 +363,7 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
 
     #[inline]
     fn inverse(&self) -> Option<Self> {
-        if self.is_zero() {
-            None
-        } else {
-            // Guajardo Kumar Paar Pelzl
-            // Efficient Software-Implementation of Finite Fields with Applications to
-            // Cryptography
-            // Algorithm 16 (BEA for Inversion in Fp)
-
-            let one = BigInteger::from(1);
-
-            let mut u = self.0;
-            let mut v = P::MODULUS;
-            let mut b = Self(P::R2, PhantomData); // Avoids unnecessary reduction step.
-            let mut c = Self::zero();
-
-            while u != one && v != one {
-                while u.is_even() {
-                    u.div2();
-
-                    if b.0.is_even() {
-                        b.0.div2();
-                    } else {
-                        b.0.add_nocarry(&P::MODULUS);
-                        b.0.div2();
-                    }
-                }
-
-                while v.is_even() {
-                    v.div2();
-
-                    if c.0.is_even() {
-                        c.0.div2();
-                    } else {
-                        c.0.add_nocarry(&P::MODULUS);
-                        c.0.div2();
-                    }
-                }
-
-                if v < u {
-                    u.sub_noborrow(&v);
-                    b.sub_assign(&c);
-                } else {
-                    v.sub_noborrow(&u);
-                    c.sub_assign(&b);
-                }
-            }
-
-            if u == one { Some(b) } else { Some(c) }
-        }
+        if self.is_zero() { None } else { Some(self.safegcd_inverse()) }
     }
 
     fn inverse_in_place(&mut self) -> Option<&mut Self> {

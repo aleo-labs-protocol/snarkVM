@@ -48,7 +48,7 @@ impl<N: Network> TryFrom<(Group<N>, Group<N>)> for ComputeKey<N> {
         // Compute sk_prf := HashToScalar(pk_sig || pr_sig).
         let sk_prf = N::hash_to_scalar_psd4(&[pk_sig.to_x_coordinate(), pr_sig.to_x_coordinate()])?;
         // Output the compute key.
-        Ok(Self { pk_sig, pr_sig, sk_prf })
+        Ok(Self { pk_sig, pr_sig, sk_prf: Some(sk_prf) })
     }
 }
 

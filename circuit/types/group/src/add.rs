@@ -60,14 +60,13 @@ impl<E: Environment> Add<&Self> for Group<E> {
             // Compute v2 = d * v0 * v1
             let v2 = (&v0 * &v1) * d;
 
-            // Compute x3 and y3.
+            // Montgomery's trick: one inversion for x3 = (v0 + v1) / (v2 + 1) and y3 = (U + a * v0 - v1) / (1 - v2).
+            // Divide, not `inverse().unwrap_or(..)`: a zero denominator must halt, not yield a wrong witness.
             let (x3, y3) = witness!(|a, u, v0, v1, v2| {
-                // Assign x3 = (v0 + v1) / (v2 + 1).
-                let x3 = (v0 + v1) / (v2 + console::Field::one());
-                // Assign y3 = (U + a * v0 - v1) / (1 - v2).
-                let y3 = (u + (v0 * a) - v1) / (console::Field::one() - v2);
-                // Return (x3, y3).
-                (x3, y3)
+                let one = console::Field::one();
+                let (x_den, y_den) = (v2 + one, one - v2);
+                let inv = one / (x_den * y_den);
+                ((v0 + v1) * y_den * inv, (u + (v0 * a) - v1) * x_den * inv)
             });
 
             // Ensure x3 is well-formed.
@@ -231,6 +230,37 @@ mod tests {
     #[test]
     fn test_private_plus_private() {
         run_test(Mode::Private, Mode::Private);
+    }
+
+    #[test]
+    fn test_add_small_order() {
+        let mut points = small_order_points::<Circuit>().to_vec();
+        points.push(Uniform::rand(&mut TestRng::default()));
+        for first in &points {
+            for second in &points {
+                let candidate = inject_unchecked::<Circuit>(first.to_x_coordinate(), first.to_y_coordinate())
+                    + inject_unchecked(second.to_x_coordinate(), second.to_y_coordinate());
+                assert_eq!(*first + *second, candidate.eject_value());
+                assert!(Circuit::is_satisfied());
+                Circuit::reset();
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Field division by zero")]
+    fn test_add_zero_x_denominator() {
+        let one = console::Field::one();
+        let d = console::Field::<<Circuit as Environment>::Network>::new(<Circuit as Environment>::EDWARDS_D);
+        let _ = inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, -d.inverse().expect("d is nonzero"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Field division by zero")]
+    fn test_add_zero_y_denominator() {
+        let one = console::Field::one();
+        let d = console::Field::<<Circuit as Environment>::Network>::new(<Circuit as Environment>::EDWARDS_D);
+        let _ = inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, d.inverse().expect("d is nonzero"));
     }
 
     #[test]
