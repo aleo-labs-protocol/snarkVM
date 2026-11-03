@@ -18,18 +18,16 @@ use super::*;
 impl<E: Environment> Elligator2<E> {
     /// Returns the decoded field element, given the encoded affine group element and sign.
     pub fn decode(group: &Group<E>, sign_high: bool) -> Result<Field<E>> {
-        ensure!(
+        // A property of the curve's constants, so only debug builds check it.
+        debug_assert!(
             Group::<E>::EDWARDS_D.legendre().is_qnr(),
             "D on the twisted Edwards curve must be a quadratic nonresidue"
         );
         ensure!(!group.is_zero(), "Inputs to Elligator2 must be nonzero (inverses will fail)");
         ensure!((**group).to_affine().is_on_curve(), "Inputs to Elligator2 must be on the twisted Edwards curve");
 
-        // Compute the coefficients for the Weierstrass form: v^2 == u^3 + A * u^2 + B * u.
-        let (montgomery_b_inverse, a, b) = match Group::<E>::MONTGOMERY_B.inverse() {
-            Ok(b_inverse) => (b_inverse, Group::MONTGOMERY_A * b_inverse, b_inverse.square()),
-            Err(_) => bail!("Montgomery B must be invertible in order to use Elligator2"),
-        };
+        // Define the coefficients for the Weierstrass form: v^2 == u^3 + A * u^2 + B * u.
+        let (a, b) = (Group::<E>::MONTGOMERY_A_OVER_B, Group::<E>::MONTGOMERY_B_INVERSE_SQUARED);
 
         let (x, y) = group.to_xy_coordinates();
 
@@ -62,8 +60,8 @@ impl<E: Environment> Elligator2<E> {
                 "Elligator2 failed: B * v^2 != u^3 + A * u^2 + u"
             );
 
-            let u = u * montgomery_b_inverse;
-            let v = v * montgomery_b_inverse;
+            let u = u * Group::MONTGOMERY_B_INVERSE;
+            let v = v * Group::MONTGOMERY_B_INVERSE;
 
             // Ensure (u, v) is a valid Weierstrass element on: v^2 == u^3 + A * u^2 + B * u
             let u2 = u.square();

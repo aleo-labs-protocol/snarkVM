@@ -66,8 +66,14 @@ impl<E: Environment> Group<E> {
     pub const EDWARDS_D: Field<E> = Field::<E>::new(E::EDWARDS_D);
     /// The coefficient A for the Montgomery curve equation.
     pub const MONTGOMERY_A: Field<E> = Field::<E>::new(E::MONTGOMERY_A);
+    /// The coefficient A / B for the Montgomery curve equation scaled to y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x.
+    pub const MONTGOMERY_A_OVER_B: Field<E> = Field::<E>::new(E::MONTGOMERY_A_OVER_B);
     /// The coefficient B for the Montgomery curve equation.
     pub const MONTGOMERY_B: Field<E> = Field::<E>::new(E::MONTGOMERY_B);
+    /// The inverse of the coefficient B for the Montgomery curve equation.
+    pub const MONTGOMERY_B_INVERSE: Field<E> = Field::<E>::new(E::MONTGOMERY_B_INVERSE);
+    /// The coefficient 1 / B^2 for the Montgomery curve equation scaled to y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x.
+    pub const MONTGOMERY_B_INVERSE_SQUARED: Field<E> = Field::<E>::new(E::MONTGOMERY_B_INVERSE_SQUARED);
 
     /// Initializes a new group.
     pub fn new(group: E::Affine) -> Self {
@@ -115,5 +121,24 @@ impl<E: Environment> Deref for Group<E> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.group
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network_environment::Console;
+
+    type CurrentEnvironment = Console;
+
+    #[test]
+    fn test_montgomery_derived_constants() {
+        let b_inverse = Group::<CurrentEnvironment>::MONTGOMERY_B.inverse().expect("B is nonzero");
+        assert_eq!(Group::<CurrentEnvironment>::MONTGOMERY_B_INVERSE, b_inverse);
+        assert_eq!(
+            Group::<CurrentEnvironment>::MONTGOMERY_A_OVER_B,
+            Group::<CurrentEnvironment>::MONTGOMERY_A * b_inverse
+        );
+        assert_eq!(Group::<CurrentEnvironment>::MONTGOMERY_B_INVERSE_SQUARED, b_inverse.square());
     }
 }
