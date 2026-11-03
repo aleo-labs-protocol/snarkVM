@@ -56,7 +56,7 @@ const NUM_POWERS_26: usize = 1 << 26;
 const NUM_POWERS_27: usize = 1 << 27;
 const NUM_POWERS_28: usize = 1 << 28;
 
-/// The maximum degree supported by the SRS.
+/// The number of powers of beta G in the SRS.
 pub const MAX_NUM_POWERS: usize = NUM_POWERS_28;
 
 lazy_static::lazy_static! {
@@ -64,7 +64,7 @@ lazy_static::lazy_static! {
     static ref SHIFTED_POWERS_OF_BETA_G_15: Vec<u8> = ShiftedDegree15::load_bytes().expect("Failed to load powers of beta in universal SRS");
     static ref POWERS_OF_BETA_GAMMA_G: Vec<u8> = Gamma::load_bytes().expect("Failed to load powers of beta wrt gamma * G in universal SRS");
     static ref NEG_POWERS_OF_BETA_H: Vec<u8> = NegBeta::load_bytes().expect("Failed to load negative powers of beta in universal SRS");
-    static ref BETA_H: Vec<u8> = BetaH::load_bytes().expect("Failed to load negative powers of beta in universal SRS");
+    static ref BETA_H: Vec<u8> = BetaH::load_bytes().expect("Failed to load beta times H in universal SRS");
 }
 
 /// One SRS degree file. The prefix file of `num_powers` holds the powers
@@ -259,15 +259,16 @@ pub struct PowersOfG<E: PairingEngine> {
     /// mutated, when more powers are fetched, so a key may share one for as
     /// long as it lives.
     powers_of_beta_g: RwLock<PowersOfBetaG<E>>,
-    /// Group elements of form `{ \beta^i \gamma G }`, where `i` is from 0 to `degree`,
-    /// This is used for hiding.
+    /// Group elements of form `{ \beta^i \gamma G }`, used for hiding. The map is
+    /// sparse: it holds the lowest few `i`, and the few `i` from each shift
+    /// `max_degree - d`, for each supported degree bound `d`.
     powers_of_beta_times_gamma_g: BTreeMap<usize, E::G1Affine>,
-    /// Group elements of form `{ \beta^{max_degree - i} H }`, where `i`
-    /// is of the form `2^k - 1` for `k` in `1` to `log_2(max_degree)`.
+    /// Group elements of form `{ \beta^{-(max_degree - d)} H }`, keyed by the
+    /// supported degree bound `d`, which is of the form `2^k - 2`.
     negative_powers_of_beta_h: BTreeMap<usize, E::G2Affine>,
     /// Information required to enforce degree bounds. Each pair is of the form `(degree_bound, shifting_advice)`.
-    /// Each pair is in the form `(degree_bound, \beta^{max_degree - i} H),` where `H` is the generator of G2,
-    /// and `i` is of the form `2^k - 1` for `k` in `1` to `log_2(max_degree)`.
+    /// Each pair is in the form `(d, \beta^{-(max_degree - d)} H)`, where `H` is the generator of G2,
+    /// and the degree bound `d` is of the form `2^k - 2`.
     prepared_negative_powers_of_beta_h: Arc<BTreeMap<usize, <E::G2Affine as PairingCurve>::Prepared>>,
     /// beta * h
     beta_h: E::G2Affine,

@@ -81,7 +81,7 @@ impl_remote!(ShiftedDegree27, REMOTE_URLS, "resources/", "shifted-powers-of-beta
 impl_local!(Gamma, "resources/", "powers-of-beta-gamma", "usrs");
 // Negative Powers of Beta in G2
 impl_local!(NegBeta, "resources/", "neg-powers-of-beta", "usrs");
-// Negative Powers of Beta in G2
+// Beta times the generator of G2
 impl_local!(BetaH, "resources/", "beta-h", "usrs");
 
 // BondPublic
