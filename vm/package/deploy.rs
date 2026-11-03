@@ -124,7 +124,7 @@ impl<N: Network> Package<N> {
         dev_println!("⏳ Deploying '{}'...\n", program_id.to_string());
 
         // Initialize the RNG.
-        let rng = &mut rand::thread_rng();
+        let rng = &mut rand::rng();
         // Compute the deployment.
         let deployment = process.get_stack(program_id)?.deploy::<A, _>(rng).unwrap();
 

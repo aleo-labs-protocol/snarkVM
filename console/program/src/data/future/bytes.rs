@@ -30,7 +30,6 @@ impl<N: Network> Future<N> {
         // Note: `N::MAX_DATA_DEPTH` is an upper bound on the number of nested futures.
         //  The true maximum is defined by `Transaction::<N>::MAX_TRANSITIONS`, however, that object is not accessible in this crate.
         //  In practice, `MAX_DATA_DEPTH` is 32, while `MAX_TRANSITIONS` is 31.
-        //  TODO: @d0cd, should we use a more precise bound?
         if depth > N::MAX_DATA_DEPTH {
             return Err(error(format!(
                 "Failed to deserialize plaintext: Depth exceeds maximum limit: {}",
@@ -54,8 +53,18 @@ impl<N: Network> Future<N> {
             // Read the argument bytes.
             let mut bytes = Vec::new();
             (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
+            // Ensure the declared region is entirely present.
+            if bytes.len() != num_bytes as usize {
+                return Err(error("Failed to read future: argument is truncated"));
+            }
             // Recover the argument.
-            let entry = Argument::read_le_internal(&mut bytes.as_slice(), depth)?;
+            let mut slice = bytes.as_slice();
+            let entry = Argument::read_le_internal(&mut slice, depth)?;
+            // Ensure the argument fills its region. Bytes left unread would be dropped
+            // on re-serialization, giving one value a second encoding.
+            if !slice.is_empty() {
+                return Err(error("Failed to read future: argument has trailing bytes"));
+            }
             // Add the argument.
             arguments.push(entry);
         }
@@ -100,7 +109,8 @@ impl<N: Network> Argument<N> {
         let argument = match index {
             0 => Self::Plaintext(Plaintext::read_le(&mut reader)?),
             1 => Self::Future(Future::read_le_internal(&mut reader, depth + 1)?),
-            2.. => return Err(error(format!("Failed to decode future argument {index}"))),
+            2 => Self::DynamicFuture(DynamicFuture::read_le(&mut reader)?),
+            3.. => return Err(error(format!("Failed to decode future argument {index}"))),
         };
         Ok(argument)
     }
@@ -117,6 +127,10 @@ impl<N: Network> ToBytes for Argument<N> {
                 1u8.write_le(&mut writer)?;
                 future.write_le(&mut writer)
             }
+            Self::DynamicFuture(dynamic_future) => {
+                2u8.write_le(&mut writer)?;
+                dynamic_future.write_le(&mut writer)
+            }
         }
     }
 }
@@ -126,19 +140,133 @@ mod tests {
     use super::*;
     use snarkvm_console_network::MainnetV0;
 
+    use core::str::FromStr;
+
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_bytes() -> Result<()> {
+    fn test_bytes() {
         // Check the future manually.
         let expected =
-            Future::<CurrentNetwork>::from_str("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")?;
+            Future::<CurrentNetwork>::from_str("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")
+                .unwrap();
 
         // Check the byte representation.
-        let expected_bytes = expected.to_bytes_le()?;
-        assert_eq!(expected, Future::read_le(&expected_bytes[..])?);
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        assert_eq!(expected, Future::read_le(&expected_bytes[..]).unwrap());
+    }
 
-        Ok(())
+    #[test]
+    fn test_bytes_with_plaintext_arguments() {
+        // Create a future with plaintext arguments.
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![
+                Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+                Argument::Plaintext(Plaintext::from_str("true").unwrap()),
+            ],
+        );
+
+        // Check the byte representation.
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        let candidate = Future::read_le(&expected_bytes[..]).unwrap();
+        assert_eq!(expected, candidate);
+    }
+
+    #[test]
+    fn test_bytes_with_dynamic_future_argument() {
+        // Create an inner future.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+
+        // Convert to dynamic future.
+        let dynamic_inner = DynamicFuture::from_future(&inner).unwrap();
+
+        // Create a future with a dynamic future argument.
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("outer.aleo").unwrap(),
+            Identifier::from_str("baz").unwrap(),
+            vec![Argument::DynamicFuture(dynamic_inner)],
+        );
+
+        // Check the byte representation.
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        let candidate = Future::read_le(&expected_bytes[..]).unwrap();
+
+        // Verify the structure matches.
+        assert_eq!(expected.program_id(), candidate.program_id());
+        assert_eq!(expected.function_name(), candidate.function_name());
+        assert_eq!(expected.arguments().len(), candidate.arguments().len());
+
+        // Verify the dynamic future argument.
+        match (&expected.arguments()[0], &candidate.arguments()[0]) {
+            (Argument::DynamicFuture(e), Argument::DynamicFuture(c)) => {
+                assert_eq!(e.program_name(), c.program_name());
+                assert_eq!(e.program_network(), c.program_network());
+                assert_eq!(e.function_name(), c.function_name());
+                assert_eq!(e.checksum(), c.checksum());
+            }
+            _ => panic!("Expected DynamicFuture argument"),
+        }
+    }
+
+    #[test]
+    fn test_bytes_with_nested_future_argument() {
+        // Create an inner future.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+
+        // Create a future with a nested future argument.
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("outer.aleo").unwrap(),
+            Identifier::from_str("baz").unwrap(),
+            vec![Argument::Future(inner)],
+        );
+
+        // Check the byte representation.
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        let candidate = Future::read_le(&expected_bytes[..]).unwrap();
+        assert_eq!(expected, candidate);
+    }
+
+    #[test]
+    fn test_bytes_with_mixed_arguments() {
+        // Create an inner future.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![],
+        );
+
+        // Convert to dynamic future.
+        let dynamic_inner = DynamicFuture::from_future(&inner).unwrap();
+
+        // Create a future with mixed arguments.
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("mixed").unwrap(),
+            vec![
+                Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+                Argument::Future(inner),
+                Argument::DynamicFuture(dynamic_inner),
+            ],
+        );
+
+        // Check the byte representation.
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        let candidate = Future::read_le(&expected_bytes[..]).unwrap();
+
+        // Verify structure.
+        assert_eq!(expected.program_id(), candidate.program_id());
+        assert_eq!(expected.function_name(), candidate.function_name());
+        assert_eq!(expected.arguments().len(), candidate.arguments().len());
     }
 
     // A helper function to get the depth of a future.
@@ -150,6 +278,7 @@ mod tests {
             .map(|arg| match arg {
                 Argument::Plaintext(_) => 0,
                 Argument::Future(future) => 1 + get_depth(future),
+                Argument::DynamicFuture(_) => panic!("Dynamic futures are not used in this test"),
             })
             .sum()
     }
@@ -232,5 +361,42 @@ mod tests {
             run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
             run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
         }
+    }
+
+    /// Builds the encoding of a one-argument future, declaring `padding` more bytes
+    /// for the argument than the argument actually occupies.
+    fn future_with_padded_argument(padding: usize) -> Result<Vec<u8>> {
+        let argument = Argument::<CurrentNetwork>::Plaintext(Plaintext::from_str("7u8")?);
+        let argument_bytes = argument.to_bytes_le()?;
+
+        let mut bytes = Vec::new();
+        ProgramID::<CurrentNetwork>::from_str("credits.aleo")?.write_le(&mut bytes)?;
+        Identifier::<CurrentNetwork>::from_str("transfer")?.write_le(&mut bytes)?;
+        1u8.write_le(&mut bytes)?;
+        u16::try_from(argument_bytes.len() + padding)?.write_le(&mut bytes)?;
+        bytes.extend_from_slice(&argument_bytes);
+        bytes.extend(std::iter::repeat_n(0u8, padding));
+        Ok(bytes)
+    }
+
+    #[test]
+    fn test_future_argument_rejects_trailing_bytes() -> Result<()> {
+        // Unpadded, this is the encoding `to_bytes_le` produces, and it must keep working.
+        let exact = future_with_padded_argument(0)?;
+        let future = Future::<CurrentNetwork>::read_le(&exact[..])?;
+        assert_eq!(exact, future.to_bytes_le()?, "the unpadded encoding must round trip");
+
+        // An argument region larger than the argument fills leaves bytes unread.
+        // Accepting it gives one future -- and so one transaction -- a second
+        // encoding, since re-serializing emits the exact length.
+        for padding in [1, 8, 32] {
+            let padded = future_with_padded_argument(padding)?;
+            assert_ne!(padded, exact);
+            assert!(
+                Future::<CurrentNetwork>::read_le(&padded[..]).is_err(),
+                "a future argument declaring {padding} bytes more than it uses must be rejected"
+            );
+        }
+        Ok(())
     }
 }

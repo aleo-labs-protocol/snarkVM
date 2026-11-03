@@ -39,9 +39,5 @@ pub mod sonic_pc;
 pub mod error;
 pub use error::*;
 
-/// A random number generator that bypasses some limitations of the Rust borrow
-/// checker.
-pub mod optional_rng;
-
 #[cfg(test)]
 pub mod test_templates;

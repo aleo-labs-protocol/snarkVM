@@ -90,7 +90,7 @@ impl<E: Environment> Eject for Field<E> {
 impl<E: Environment> Parser for Field<E> {
     /// Parses a string into a field circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the field from the string.
         let (string, field) = console::Field::parse(string)?;
         // Parse the mode from the string.

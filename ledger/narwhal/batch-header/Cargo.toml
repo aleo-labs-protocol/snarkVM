@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-narwhal-batch-header"
-version = "4.4.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A batch header for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -27,7 +27,7 @@ edition = "2024"
 default = [ "rayon" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers", "time" ]
+test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -46,10 +46,6 @@ optional = true
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
-
-[dependencies.time]
-workspace = true
-optional = true
 
 [dev-dependencies.bincode]
 workspace = true

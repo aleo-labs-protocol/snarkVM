@@ -75,6 +75,7 @@ function test_serde_equivalence:
             PlaintextType::Literal(LiteralType::U64),
             PlaintextType::Literal(LiteralType::U128),
             PlaintextType::Literal(LiteralType::Scalar),
+            PlaintextType::Literal(LiteralType::Identifier),
             PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
         ];
 
@@ -97,7 +98,7 @@ function test_serde_equivalence:
         let rng = &mut TestRng::default();
 
         // Load the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Structs are not supported.
         let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
@@ -116,7 +117,7 @@ function test_serde_equivalence:
         let program = construct_program(variant, type_.clone(), bits_type.clone());
 
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
 
         // Get the stack.
         let stack = process.get_stack(program.id()).unwrap();
@@ -142,7 +143,7 @@ function test_serde_equivalence:
             assert_eq!(bits.len(), num_bits as usize, "The number of bits does not match the expected size");
 
             // Construct the inputs.
-            let inputs = vec![Value::Plaintext(plaintext.clone())];
+            let inputs = [Value::Plaintext(plaintext.clone())];
 
             // Generate an authorization.
             let authorization =
@@ -159,8 +160,9 @@ function test_serde_equivalence:
 
             // Execute the function.
             let trace = Trace::new();
+            let translations = Arc::new(RwLock::new(Vec::new()));
             let res_exec = stack.execute_function::<CurrentAleo, _>(
-                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace))).unwrap(),
+                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace)), translations).unwrap(),
                 None,
                 None,
                 rng,
@@ -190,7 +192,7 @@ fn test_value_size_in_bits() {
     const ITERATIONS: usize = 1000;
 
     // Load a process.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Define a program .
     let program0 = Program::<CurrentNetwork>::from_str(
@@ -231,7 +233,7 @@ finalize dummy:
     .unwrap();
 
     // Add the program to the process.
-    process.add_program(&program0).unwrap();
+    process.lock().add_program(&program0).unwrap();
 
     // Define a program with data types that we want to test.
     let program1 = Program::<CurrentNetwork>::from_str(
@@ -274,7 +276,7 @@ finalize dummy:
     .unwrap();
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
     // Get the stack.
     let stack = process.get_stack(program1.id()).unwrap();
@@ -331,6 +333,7 @@ finalize dummy:
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U64)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U128)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Scalar)),
+        RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Identifier)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Signature)),
         RegisterType::Plaintext(PlaintextType::Array(
             ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap(),

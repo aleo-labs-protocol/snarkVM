@@ -58,6 +58,7 @@ impl<E: Environment> Inject for Boolean<E> {
     type Primitive = bool;
 
     /// Initializes a new instance of a boolean from a primitive boolean value.
+    /// Note. If the mode is `Constant`, a new variable is created. This makes it distinct from `Self::constant`.
     fn new(mode: Mode, value: Self::Primitive) -> Self {
         let variable = E::new_variable(mode, match value {
             true => E::BaseField::one(),
@@ -103,7 +104,7 @@ impl<E: Environment> Eject for Boolean<E> {
 impl<E: Environment> Parser for Boolean<E> {
     /// Parses a string into a boolean circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the boolean from the string.
         let (string, boolean) = console::Boolean::<E::Network>::parse(string)?;
         // Parse the mode from the string.

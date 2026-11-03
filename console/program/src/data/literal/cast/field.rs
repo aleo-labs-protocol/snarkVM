@@ -84,3 +84,11 @@ impl<E: Environment> Cast<Scalar<E>> for Field<E> {
         Scalar::from_field(self)
     }
 }
+
+impl<E: Environment> Cast<IdentifierLiteral<E>> for Field<E> {
+    /// Casts a `Field` to an `IdentifierLiteral`.
+    #[inline]
+    fn cast(&self) -> Result<IdentifierLiteral<E>> {
+        IdentifierLiteral::from_field(self)
+    }
+}

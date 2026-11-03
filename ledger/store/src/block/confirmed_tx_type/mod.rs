@@ -41,29 +41,37 @@ pub mod test_helpers {
     /// Samples an accepted deploy.
     pub(crate) fn sample_accepted_deploy(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Return the accepted deploy.
-        ConfirmedTxType::AcceptedDeploy(rng.r#gen())
+        ConfirmedTxType::AcceptedDeploy(rng.random())
     }
 
     /// Samples an accepted execution.
     pub(crate) fn sample_accepted_execution(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Return the accepted execution.
-        ConfirmedTxType::AcceptedExecute(rng.r#gen())
+        ConfirmedTxType::AcceptedExecute(rng.random())
     }
 
     /// Samples a rejected deploy.
     pub(crate) fn sample_rejected_deploy(version: u8, rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected deployment.
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(version, rng.r#gen(), rng.r#gen(), rng);
+        // Only V2 deployments can have translation keys.
+        let has_translation_keys = version >= 2 && rng.random();
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(
+            version,
+            rng.random(),
+            has_translation_keys,
+            rng.random(),
+            rng,
+        );
         // Return the rejected deploy.
-        ConfirmedTxType::RejectedDeploy(rng.r#gen(), rejected)
+        ConfirmedTxType::RejectedDeploy(rng.random(), rejected)
     }
 
     /// Samples a rejected execution.
     pub(crate) fn sample_rejected_execute(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected execution.
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng.r#gen(), rng);
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng.random(), rng);
         // Return the rejected execution.
-        ConfirmedTxType::RejectedExecute(rng.r#gen(), rejected)
+        ConfirmedTxType::RejectedExecute(rng.random(), rejected)
     }
 
     /// Sample a list of randomly rejected transactions.

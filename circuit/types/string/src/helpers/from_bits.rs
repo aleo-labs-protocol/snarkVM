@@ -45,7 +45,7 @@ impl<E: Environment> StringType<E> {
     fn inject_size_in_bytes(mode: Mode, bits: &[Boolean<E>]) -> Field<E> {
         // Ensure the bits are byte-aligned.
         let num_bits = bits.len();
-        if num_bits % 8 != 0 {
+        if !num_bits.is_multiple_of(8) {
             E::halt(format!("Attempted to instantiate a {num_bits}-bit string, which is not byte-aligned"))
         }
 

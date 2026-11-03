@@ -25,7 +25,7 @@ use crate::{Elligator2, poseidon::helpers::*};
 use snarkvm_console_types::prelude::*;
 use snarkvm_fields::{PoseidonDefaultField, PoseidonParameters};
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 const CAPACITY: usize = 1;
 
@@ -36,12 +36,23 @@ pub type Poseidon4<E> = Poseidon<E, 4>;
 /// Poseidon8 is a cryptographic hash function of input rate 8.
 pub type Poseidon8<E> = Poseidon<E, 8>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Poseidon<E: Environment, const RATE: usize> {
     /// The domain separator for the Poseidon hash function.
     domain: Field<E>,
     /// The Poseidon parameters for hashing.
     parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
+    /// The Merkle empty hash of this instance, once something has asked for it.
+    empty_hash: OnceLock<Field<E>>,
+}
+
+impl<E: Environment, const RATE: usize> PartialEq for Poseidon<E, RATE> {
+    /// Ignores the cached empty hash, which is derived from the domain and parameters.
+    fn eq(&self, other: &Self) -> bool {
+        // Destructured so that a new field must be considered here.
+        let Self { domain, parameters, empty_hash: _ } = self;
+        *domain == other.domain && *parameters == other.parameters
+    }
 }
 
 impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
@@ -55,6 +66,7 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
         Ok(Self {
             domain: Field::<E>::new_domain_separator(domain),
             parameters: Arc::new(E::Field::default_poseidon_parameters::<RATE>()?),
+            empty_hash: OnceLock::new(),
         })
     }
 
@@ -66,6 +78,21 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
     /// Returns the Poseidon parameters for hashing.
     pub fn parameters(&self) -> &Arc<PoseidonParameters<E::Field, RATE, CAPACITY>> {
         &self.parameters
+    }
+
+    /// Returns the Merkle empty hash of this instance, computing it on first use.
+    ///
+    /// This is `PathHash::hash_children(0, 0)` from `snarkvm-console-collections`, and
+    /// `test_cached_empty_hash_matches_the_computed_one` checks that the two agree. The
+    /// hash depends on the domain, so it is cached per instance, not per type.
+    pub fn merkle_empty_hash(&self) -> Result<Field<E>> {
+        if let Some(empty_hash) = self.empty_hash.get() {
+            return Ok(*empty_hash);
+        }
+        // Prepend the nodes with a `1field` byte.
+        let input = [Field::<E>::one(), Field::<E>::zero(), Field::<E>::zero()];
+        let empty_hash = Hash::hash(self, &input)?;
+        Ok(*self.empty_hash.get_or_init(|| empty_hash))
     }
 }
 

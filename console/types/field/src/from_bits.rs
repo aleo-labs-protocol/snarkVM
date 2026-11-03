@@ -15,6 +15,20 @@
 
 use super::*;
 
+use smallvec::{SmallVec, smallvec};
+
+/// An upper bound on `Field::<E>::size_in_bits()` across every instantiated `Environment`.
+///
+/// This is only used to size the inline capacity of the `SmallVec` below, so that sanitizing a list
+/// of bits does not allocate. It cannot be `Field::<E>::size_in_bits()` itself, as that is not a
+/// constant in a generic context. A larger field than this stays correct and merely spills to the
+/// heap, but `test_size_in_bits_is_within_max` guards against that happening unnoticed.
+///
+/// The bound is the width of the widest field representation in this repository (`Fp384`), rather
+/// than the 253 bits the console environments currently use, so that it also holds if an
+/// environment moves to the pairing curve's base field.
+const MAX_FIELD_SIZE_IN_BITS: usize = 384;
+
 impl<E: Environment> FromBits for Field<E> {
     /// Initializes a new field from a list of **little-endian** bits.
     ///   - If `bits_le` is longer than `E::Field::size_in_bits()`, the excess bits are enforced to be `0`s.
@@ -47,7 +61,7 @@ impl<E: Environment> FromBits for Field<E> {
             Ok(Field { field: E::Field::from_bigint(field).ok_or_else(|| anyhow!("Invalid field from bits"))? })
         } else {
             // Construct the sanitized list of bits padded with `false`
-            let mut sanitized_bits = vec![false; size_in_bits];
+            let mut sanitized_bits: SmallVec<[bool; MAX_FIELD_SIZE_IN_BITS]> = smallvec![false; size_in_bits];
             // Note: This is safe, because we just checked that the length of bits isn't bigger
             // than `size_in_data_bits` which is equal to `size_in_bits - 1`.
             sanitized_bits[..num_bits].copy_from_slice(bits_le);
@@ -133,5 +147,21 @@ mod tests {
     #[test]
     fn test_from_bits_be() -> Result<()> {
         check_from_bits_be()
+    }
+
+    /// Ensures the inline capacity of the `SmallVec` in `from_bits_le` can hold a sanitized field,
+    /// so that sanitizing does not allocate. A field wider than this is still handled correctly, so
+    /// this guards a performance property rather than a correctness one.
+    ///
+    /// Note: every `Network` in `snarkvm-console-network` defines its `Field` as
+    /// `<Console as Environment>::Field`, so checking `Console` covers all of them. That crate
+    /// cannot be a dev-dependency here, as it depends on this one.
+    #[test]
+    fn test_size_in_bits_is_within_max() {
+        let size_in_bits = Field::<CurrentEnvironment>::size_in_bits();
+        assert!(
+            size_in_bits <= MAX_FIELD_SIZE_IN_BITS,
+            "MAX_FIELD_SIZE_IN_BITS ({MAX_FIELD_SIZE_IN_BITS}) must be at least the field size ({size_in_bits})"
+        );
     }
 }

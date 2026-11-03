@@ -56,6 +56,6 @@ mod test_helpers {
 
     pub(super) fn sample_leaf(rng: &mut TestRng) -> HeaderLeaf<CurrentNetwork> {
         // Construct a new leaf.
-        HeaderLeaf::new(rng.r#gen(), Uniform::rand(rng))
+        HeaderLeaf::new(rng.random(), Uniform::rand(rng))
     }
 }

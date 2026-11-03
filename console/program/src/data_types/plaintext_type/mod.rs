@@ -57,6 +57,25 @@ impl<N: Network> PlaintextType<N> {
             PlaintextType::Struct(name) => PlaintextType::ExternalStruct(Locator::new(id, name)),
             PlaintextType::Array(array_type) => {
                 let element_type = array_type.next_element_type().clone().qualify(id);
+                // Safe: the length is preserved from the original array type.
+                PlaintextType::Array(ArrayType::new(element_type, vec![*array_type.length()]).unwrap())
+            }
+        }
+    }
+
+    /// Removes all program qualification from struct types.
+    pub fn unqualify(self) -> Self {
+        match self {
+            // Already-unqualified or unaffected
+            PlaintextType::Literal(..) | PlaintextType::Struct(..) => self,
+
+            // Drop the program qualification unconditionally
+            PlaintextType::ExternalStruct(locator) => PlaintextType::Struct(*locator.resource()),
+
+            // Recurse into arrays
+            PlaintextType::Array(array_type) => {
+                let element_type = array_type.next_element_type().clone().unqualify();
+
                 PlaintextType::Array(ArrayType::new(element_type, vec![*array_type.length()]).unwrap())
             }
         }
@@ -108,6 +127,17 @@ impl<N: Network> PlaintextType<N> {
         }
     }
 
+    /// Returns `true` if the `PlaintextType` contains an identifier type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Literal(LiteralType::Identifier) => Ok(true),
+            Self::Literal(_) => Ok(false),
+            Self::Array(array_type) => array_type.contains_identifier_type(),
+            // Structs are checked in their definition.
+            Self::Struct(_) | Self::ExternalStruct(_) => Ok(false),
+        }
+    }
+
     /// Returns `true` if the `PlaintextType` is an array and the size exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         match self {
@@ -115,4 +145,61 @@ impl<N: Network> PlaintextType<N> {
             Self::Array(array_type) => array_type.exceeds_max_array_size(max_array_size),
         }
     }
+}
+
+#[test]
+fn unqualify_behavior() {
+    use crate::U32;
+    type N = TestnetV0;
+
+    let program = ProgramID::<N>::from_str("foo.aleo").unwrap();
+    let foo = Identifier::<N>::from_str("Foo").unwrap();
+    let bar = Identifier::<N>::from_str("Bar").unwrap();
+
+    //
+    // 1. Literal is unchanged
+    //
+    let lit = PlaintextType::<N>::Literal(LiteralType::U32);
+    assert_eq!(lit.clone().unqualify(), lit);
+
+    //
+    // 2. Struct is unchanged
+    //
+    let s = PlaintextType::<N>::Struct(foo);
+    assert_eq!(s.clone().unqualify(), s);
+
+    //
+    // 3. ExternalStruct becomes Struct
+    //
+    let ext = PlaintextType::<N>::ExternalStruct(Locator::new(program, bar));
+    assert_eq!(ext.unqualify(), PlaintextType::Struct(bar));
+
+    //
+    // 4. Array of ExternalStruct is unqualified recursively
+    //
+    let ext = PlaintextType::<N>::ExternalStruct(Locator::new(program, bar));
+    let arr = PlaintextType::Array(ArrayType::new(ext, vec![U32::new(3)]).unwrap());
+
+    let expected = PlaintextType::Array(ArrayType::new(PlaintextType::Struct(bar), vec![U32::new(3)]).unwrap());
+
+    assert_eq!(arr.unqualify(), expected);
+
+    //
+    // 5. Nested arrays recurse fully
+    //
+    let ext = PlaintextType::<N>::ExternalStruct(Locator::new(program, bar));
+    let inner = PlaintextType::Array(ArrayType::new(ext, vec![U32::new(2)]).unwrap());
+    let outer = PlaintextType::Array(ArrayType::new(inner, vec![U32::new(4)]).unwrap());
+
+    let expected_inner = PlaintextType::Array(ArrayType::new(PlaintextType::Struct(bar), vec![U32::new(2)]).unwrap());
+    let expected_outer = PlaintextType::Array(ArrayType::new(expected_inner, vec![U32::new(4)]).unwrap());
+
+    assert_eq!(outer.unqualify(), expected_outer);
+
+    //
+    // 6. Idempotency
+    //
+    let once = expected_outer.clone().unqualify();
+    let twice = once.clone().unqualify();
+    assert_eq!(once, twice);
 }

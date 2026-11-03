@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_into_iter, dev_println};
+use snarkvm_utilities::{cfg_into_iter, defer, dev_println};
 
 use anyhow::{Result, anyhow, ensure};
 use core::marker::PhantomData;
@@ -63,17 +63,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             id,
         } = Self::index_helper(c).map_err(|e| anyhow!("{e:?}"))?;
 
-        let fft_precomp_time = start_timer!(|| format!("Precomputing roots of unity {id}"));
-
-        let (fft_precomputation, ifft_precomputation) = Self::fft_precomputation(
-            constraint_domain.size(),
-            variable_domain.size(),
-            non_zero_a_domain.size(),
-            non_zero_b_domain.size(),
-            non_zero_c_domain.size(),
-        )
-        .ok_or(anyhow!("The polynomial degree is too large"))?;
-        end_timer!(fft_precomp_time);
+        let (fft_precomputation, ifft_precomputation) = {
+            let fft_precomp_time = start_timer!(|| format!("Precomputing roots of unity {id}"));
+            defer! { end_timer!(fft_precomp_time); }
+            Self::fft_precomputation(
+                constraint_domain.size(),
+                variable_domain.size(),
+                non_zero_a_domain.size(),
+                non_zero_b_domain.size(),
+                non_zero_c_domain.size(),
+            )
+            .ok_or(anyhow!("The polynomial degree is too large"))?
+        };
 
         Ok(Circuit {
             index_info,
@@ -124,29 +125,36 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// Used by both the Prover and Verifier
     pub(crate) fn index_helper<C: ConstraintSynthesizer<F>>(c: &C) -> Result<IndexerState<F>> {
         let index_time = start_timer!(|| "AHP::Index");
+        defer! { end_timer!(index_time); }
 
-        let constraint_time = start_timer!(|| "Generating constraints");
-        let mut ics = IndexerConstraintSystem::new();
-        c.generate_constraints(&mut ics)?;
-        end_timer!(constraint_time);
+        let mut ics = {
+            let constraint_time = start_timer!(|| "Generating constraints");
+            defer! { end_timer!(constraint_time); }
+            let mut ics = IndexerConstraintSystem::new();
+            c.generate_constraints(&mut ics)?;
+            ics
+        };
 
-        let padding_time = start_timer!(|| "Padding matrices");
-        // Given that we only use the matrix for indexing, the values we choose for
-        // assignments don't matter
-        let random_assignments = None;
-        SM::ZK.then(|| {
-            crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(&mut ics, random_assignments)
-        });
+        let (a, b, c, num_public_variables, num_private_variables, num_constraints) = {
+            let padding_time = start_timer!(|| "Padding matrices");
+            defer! { end_timer!(padding_time); }
+            // Given that we only use the matrix for indexing, the values we choose for
+            // assignments don't matter
+            let random_assignments = None;
+            SM::ZK.then(|| {
+                crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(&mut ics, random_assignments)
+            });
 
-        crate::snark::varuna::ahp::matrices::pad_input_for_indexer_and_prover(&mut ics)?;
+            crate::snark::varuna::ahp::matrices::pad_input_for_indexer_and_prover(&mut ics)?;
 
-        let IndexerConstraintSystem { a, b, c, num_public_variables, num_private_variables, num_constraints } = ics;
+            let IndexerConstraintSystem { a, b, c, num_public_variables, num_private_variables, num_constraints } = ics;
 
-        let a = into_matrix_helper(a, num_public_variables)?;
-        let b = into_matrix_helper(b, num_public_variables)?;
-        let c = into_matrix_helper(c, num_public_variables)?;
+            let a = into_matrix_helper(a, num_public_variables)?;
+            let b = into_matrix_helper(b, num_public_variables)?;
+            let c = into_matrix_helper(c, num_public_variables)?;
 
-        end_timer!(padding_time);
+            (a, b, c, num_public_variables, num_private_variables, num_constraints)
+        };
 
         let num_padded_public_variables = num_public_variables;
         let num_non_zero_a = num_non_zero(&a);
@@ -206,7 +214,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let id = Circuit::<F, SM>::hash(&index_info, &a, &b, &c)?;
 
-        let result = Ok(IndexerState {
+        Ok(IndexerState {
             constraint_domain,
             variable_domain,
 
@@ -224,9 +232,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
             index_info,
             id,
-        });
-        end_timer!(index_time);
-        result
+        })
     }
 
     /// Evaluate the index polynomials for this constraint system at the given
@@ -250,7 +256,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let lagrange_coefficients_at_point = domain.evaluate_all_lagrange_coefficients(point);
             let evals_at_point = evals.evaluate(&lagrange_coefficients_at_point)?;
             ensure!(labels.len() == evals_at_point.len());
-            all_evals.push(labels.into_iter().zip_eq(evals_at_point.into_iter()));
+            all_evals.push(labels.into_iter().zip_eq(evals_at_point));
         }
         let sorted_evals = all_evals.into_iter().flatten().sorted_unstable_by(|(l1, _), (l2, _)| l1.cmp(l2));
         for (label, eval) in sorted_evals {

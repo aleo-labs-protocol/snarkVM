@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<E: Environment, I: IntegerType> Distribution<Integer<E, I>> for Standard {
+impl<E: Environment, I: IntegerType> Distribution<Integer<E, I>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Integer<E, I> {
         Integer::new(Uniform::rand(rng))

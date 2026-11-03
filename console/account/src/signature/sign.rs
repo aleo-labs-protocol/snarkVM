@@ -24,6 +24,12 @@ impl<N: Network> Signature<N> {
         if message.len() > N::MAX_DATA_SIZE_IN_FIELDS as usize {
             bail!("Cannot sign the message: the message exceeds maximum allowed size")
         }
+        // Disallowing the case message[1] == N::hash_psd2(message[0]) to separate Signature::sign from Request::sign.
+        if message.len() >= 2 && message[1] == N::hash_psd2(&[message[0]])? {
+            bail!(
+                "Invalid message: message[1] == N::hash_psd2([message[0]]) is disallowed. Please construct a different message or use Request::sign."
+            );
+        }
 
         // Sample a random nonce from the scalar field.
         let nonce = Scalar::rand(rng);
@@ -75,5 +81,44 @@ impl<N: Network> Signature<N> {
             message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?;
         // Sign the message.
         Self::sign(private_key, &fields, rng)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    const ITERATIONS: u64 = 100;
+
+    #[test]
+    fn test_sign_rejects_request_like_messages() -> Result<()> {
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // Sample a new private key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
+
+            // Request signatures begin with (tvk, tcm) where tcm = hash_psd2(tvk).
+            let tvk = Field::<CurrentNetwork>::rand(&mut rng);
+            let tcm = CurrentNetwork::hash_psd2(&[tvk])?;
+
+            // Add a small number of extra field elements to the message.
+            let extra_fields =
+                (0..rng.random_range(0..10)).map(|_| Field::rand(&mut rng)).collect::<Vec<Field<CurrentNetwork>>>();
+
+            let mut message = Vec::with_capacity(2 + extra_fields.len());
+            message.extend([tvk, tcm]);
+            message.extend(extra_fields);
+
+            let error = Signature::sign(&private_key, &message, &mut rng).unwrap_err();
+            assert!(
+                error.to_string().contains("message[1] == N::hash_psd2([message[0]])"),
+                "unexpected error: {error}"
+            );
+        }
+        Ok(())
     }
 }

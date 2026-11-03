@@ -16,6 +16,20 @@
 use std::{env, path::PathBuf};
 
 fn main() {
+    // Set below once the kernels compile. `HAVE_NVCC` and the tests that call
+    // the kernels read it.
+    println!("cargo:rustc-check-cfg=cfg(have_nvcc)");
+    // One `rerun-if-changed` replaces cargo's default of watching every file
+    // in the package, so every source compiled below must be listed here.
+    println!("cargo:rerun-if-changed=src/lib.c");
+    println!("cargo:rerun-if-changed=cuda");
+    println!("cargo:rerun-if-env-changed=CXXFLAGS");
+    println!("cargo:rerun-if-env-changed=NVCC");
+    println!("cargo:rerun-if-env-changed=CUDA_ARCH");
+    // nvcc reads these two itself, so cc-rs does not declare them.
+    println!("cargo:rerun-if-env-changed=NVCC_APPEND_FLAGS");
+    println!("cargo:rerun-if-env-changed=NVCC_PREPEND_FLAGS");
+
     let curve = "FEATURE_BLS12_377";
 
     // Set CC environment variable to choose an alternative C compiler.
@@ -25,34 +39,11 @@ fn main() {
 
     let c_src_dir = PathBuf::from("src");
     let files = vec![c_src_dir.join("lib.c")];
-    let mut cc_opt = None;
-
-    match cfg!(feature = "portable") {
-        true => {
-            println!("Compiling in portable mode without ISA extensions");
-            cc_opt = Some("__BLST_PORTABLE__");
-        }
-        false => {
-            #[cfg(target_arch = "x86_64")]
-            {
-                // account for cross-compilation [by examining environment variable]
-                let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-                if target_arch.eq("x86_64") && std::is_x86_feature_detected!("adx") {
-                    println!("Enabling ADX because it was detected on the host");
-                    cc_opt = Some("__ADX__");
-                }
-            }
-        }
-    }
-
     cc.flag_if_supported("-mno-avx") // avoid costly transitions
         .flag_if_supported("-fno-builtin")
         .flag_if_supported("-Wno-unused-command-line-argument");
     if !cfg!(debug_assertions) {
         cc.opt_level(2);
-    }
-    if let Some(def) = cc_opt {
-        cc.define(def, None);
     }
     if let Some(include) = env::var_os("DEP_BLST_C_SRC") {
         cc.include(include);
@@ -71,16 +62,31 @@ fn main() {
     if nvcc.is_ok() {
         let mut nvcc = cc::Build::new();
         nvcc.cuda(true);
+        // Host debug info only. cc-rs adds device debug (-G) when the profile has
+        // debug on, and -G stops `xyzz_t::add` being inlined into `accumulate`.
+        // nvlink then rejects the cross-module call: `accumulate` is
+        // `__launch_bounds__`-capped at 168 registers while `add` is compiled
+        // under -maxrregcount=255.
+        nvcc.debug(false);
         nvcc.flag("-g");
-        nvcc.flag("-arch=sm_70");
+        // Ampere (sm_86) by default. Its SASS also runs on Ada (sm_89), and
+        // Hopper (sm_90) JIT-compiles its embedded PTX. CUDA_ARCH overrides it;
+        // an empty value takes the default. A binary built for a newer arch than
+        // the GPU fails every kernel launch.
+        let arch = match env::var("CUDA_ARCH") {
+            Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
+            _ => "sm_86".to_string(),
+        };
+        nvcc.flag(format!("-arch={arch}"));
         nvcc.flag("-maxrregcount=255");
         nvcc.flag("-Xcompiler").flag("-Wno-unused-function");
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
         nvcc.define("TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE", None);
         nvcc.define(curve, None);
-        if let Some(def) = cc_opt {
-            nvcc.define(def, None);
-        }
+        // `__ADX__` renames the symbols in blst's `vect.h`, so this crate and
+        // blst must agree on it. Both build in blst's portable mode, whose
+        // routines pick the ADX code at run time from CPUID.
+        nvcc.define("__BLST_PORTABLE__", None);
         if let Some(include) = env::var_os("DEP_BLST_C_SRC") {
             nvcc.include(include);
         }
@@ -89,11 +95,10 @@ fn main() {
         }
         nvcc.file("cuda/snarkvm_api.cu").compile("snarkvm_algorithms_cuda");
 
-        println!("cargo:rustc-cfg=feature=\"cuda\"");
-        println!("cargo:rerun-if-changed=cuda");
-        println!("cargo:rerun-if-env-changed=CXXFLAGS");
+        println!("cargo:rustc-cfg=have_nvcc");
     } else {
-        println!("nvcc must be in the path. Consider adding /usr/local/cuda/bin.");
-        // panic!();
+        println!(
+            "cargo:warning=nvcc not found: the CUDA kernels are not built. Put nvcc on PATH or set NVCC to its path."
+        );
     }
 }

@@ -53,6 +53,7 @@ use console::{
     network::{error, prelude::*},
     program::{Identifier, Register},
 };
+use snarkvm_synthesizer_error::FinalizeError;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Command<N: Network> {
@@ -62,11 +63,18 @@ pub enum Command<N: Network> {
     Await(Await<N>),
     /// Returns true if the `key` operand is present in `mapping`, and stores the result into `destination`.
     Contains(Contains<N>),
+    /// Resolves the `program` and `mapping` operands, returns true if the `key` operand is present in the `mapping`, and stores the result into `destination`.
+    ContainsDynamic(ContainsDynamic<N>),
     /// Gets the value stored at the `key` operand in `mapping` and stores the result into `destination`.
     Get(Get<N>),
+    /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
+    GetDynamic(GetDynamic<N>),
     /// Gets the value stored at the `key` operand in `mapping` and stores the result into `destination`.
-    /// If the key is not present, `default` is stored `destination`.
+    /// If the key is not present, `default` is stored into `destination`.
     GetOrUse(GetOrUse<N>),
+    /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
+    /// If the key is not present, `default` is stored into `destination`.
+    GetOrUseDynamic(GetOrUseDynamic<N>),
     /// Generates a random value using the `rand.chacha` command and stores the result into `destination`.
     RandChaCha(RandChaCha<N>),
     /// Removes the (`key`, `value`) entry from the `mapping`.
@@ -95,12 +103,41 @@ impl<N: Network> Command<N> {
 
     /// Returns `true` if the command is a call instruction.
     pub fn is_call(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Call(_)))
+        matches!(self, Command::Instruction(Instruction::Call(_) | Instruction::CallDynamic(_)))
     }
 
-    /// Returns `true` if the command is a cast to record instruction.
+    /// Returns `true` if the command is specifically a dynamic call instruction.
+    pub fn is_dynamic_call(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::CallDynamic(_)))
+    }
+
+    /// Returns `true` if the command is a cast-to-record instruction. Covers all three
+    /// record cast variants: static `record`, `external_record`, and `dynamic.record`.
     pub fn is_cast_to_record(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Cast(cast)) if matches!(cast.cast_type(), CastType::Record(_) | CastType::ExternalRecord(_)))
+        matches!(
+            self,
+            Command::Instruction(Instruction::Cast(cast))
+                if matches!(
+                    cast.cast_type(),
+                    CastType::Record(_) | CastType::ExternalRecord(_) | CastType::DynamicRecord
+                )
+        )
+    }
+
+    /// Returns `true` if the command is a `get.record.dynamic` instruction.
+    pub fn is_get_record_dynamic(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::GetRecordDynamic(_)))
+    }
+
+    /// Returns `true` if the command operates on a record value, either by creating one via
+    /// `cast` (static, external, or dynamic) or by reading one via `get.record.dynamic`.
+    pub fn is_instruction_for_record(&self) -> bool {
+        self.is_cast_to_record() || self.is_get_record_dynamic()
+    }
+
+    /// Returns `true` if the command is a `rand.chacha` command.
+    pub fn is_rand_chacha(&self) -> bool {
+        matches!(self, Command::RandChaCha(_))
     }
 
     /// Returns `true` if the command is a write operation.
@@ -132,8 +169,11 @@ impl<N: Network> Command<N> {
         match self {
             Command::Instruction(instruction) => instruction.destinations(),
             Command::Contains(contains) => vec![contains.destination().clone()],
+            Command::ContainsDynamic(contains) => vec![contains.destination().clone()],
             Command::Get(get) => vec![get.destination().clone()],
+            Command::GetDynamic(get) => vec![get.destination().clone()],
             Command::GetOrUse(get_or_use) => vec![get_or_use.destination().clone()],
+            Command::GetOrUseDynamic(get_or_use) => vec![get_or_use.destination().clone()],
             Command::RandChaCha(rand_chacha) => vec![rand_chacha.destination().clone()],
             Command::Await(_)
             | Command::BranchEq(_)
@@ -151,8 +191,11 @@ impl<N: Network> Command<N> {
             Command::Instruction(c) => c.operands(),
             Command::Await(c) => c.operands(),
             Command::Contains(c) => c.operands(),
+            Command::ContainsDynamic(c) => c.operands(),
             Command::Get(c) => c.operands(),
+            Command::GetDynamic(c) => c.operands(),
             Command::GetOrUse(c) => c.operands(),
+            Command::GetOrUseDynamic(c) => c.operands(),
             Command::RandChaCha(c) => c.operands(),
             Command::Remove(c) => c.operands(),
             Command::Set(c) => c.operands(),
@@ -166,34 +209,48 @@ impl<N: Network> Command<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
         registers: &mut impl FinalizeRegistersState<N>,
-    ) -> Result<Option<FinalizeOperation<N>>> {
+    ) -> Result<Option<FinalizeOperation<N>>, FinalizeError> {
         match self {
             // Finalize the instruction, and return no finalize operation.
-            Command::Instruction(instruction) => {
-                instruction.finalize(stack, registers).map_err(Into::into).map(|_| None)
-            }
+            Command::Instruction(instruction) => instruction.finalize(stack, Some(store), registers).map(|_| None),
             // `await` commands are processed by the caller of this method.
-            Command::Await(_) => bail!("`await` commands cannot be finalized directly."),
+            Command::Await(_) => Err(FinalizeError::Anyhow(anyhow!("`await` commands cannot be finalized directly."))),
             // Finalize the 'contains' command, and return no finalize operation.
-            Command::Contains(contains) => contains.finalize(stack, store, registers).map(|_| None),
+            Command::Contains(contains) => contains.finalize(stack, store, registers).map(|_| None).map_err(Into::into),
+            // Finalize the `contains.dynamic` command, and return no finalize operation.
+            Command::ContainsDynamic(contains_dynamic) => {
+                contains_dynamic.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the 'get' command, and return no finalize operation.
-            Command::Get(get) => get.finalize(stack, store, registers).map(|_| None),
+            Command::Get(get) => get.finalize(stack, store, registers).map(|_| None).map_err(Into::into),
+            // Finalize the `get.dynamic` and return no finalize operation.
+            Command::GetDynamic(get_dynamic) => {
+                get_dynamic.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the 'get.or_use' command, and return no finalize operation.
-            Command::GetOrUse(get_or_use) => get_or_use.finalize(stack, store, registers).map(|_| None),
+            Command::GetOrUse(get_or_use) => {
+                get_or_use.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
+            }
+            // Finalize the `get.or_use.dynamic` command, and return no finalize operation.
+            Command::GetOrUseDynamic(get_or_use_dynamic) => {
+                get_or_use_dynamic.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the `rand.chacha` command, and return no finalize operation.
-            Command::RandChaCha(rand_chacha) => rand_chacha.finalize(stack, registers).map(|_| None),
+            Command::RandChaCha(rand_chacha) => {
+                rand_chacha.finalize(stack, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the 'remove' command, and return the finalize operation.
-            Command::Remove(remove) => remove.finalize(stack, store, registers),
+            Command::Remove(remove) => remove.finalize(stack, store, registers).map_err(Into::into),
             // Finalize the 'set' command, and return the finalize operation.
-            Command::Set(set) => set.finalize(stack, store, registers).map(Some),
+            Command::Set(set) => set.finalize(stack, store, registers).map(Some).map_err(Into::into),
             // 'branch.eq' and 'branch.neq' commands are processed by the caller of this method.
             Command::BranchEq(_) | Command::BranchNeq(_) => {
-                bail!("`branch` commands cannot be finalized directly.")
+                Err(FinalizeError::Anyhow(anyhow!("`branch` commands cannot be finalized directly.")))
             }
             // Finalize the `position` command, and return no finalize operation.
-            Command::Position(position) => position.finalize().map(|_| None),
+            Command::Position(position) => position.finalize().map(|_| None).map_err(Into::into),
         }
     }
 
@@ -203,8 +260,12 @@ impl<N: Network> Command<N> {
             Command::Instruction(c) => c.contains_external_struct(),
             Command::Await(c) => c.contains_external_struct(),
             Command::Contains(c) => c.contains_external_struct(),
+            // `contains.dynamic` always produces a boolean result and has no type fields that could reference external structs.
+            Command::ContainsDynamic(_) => false,
             Command::Get(c) => c.contains_external_struct(),
+            Command::GetDynamic(c) => c.destination_type().contains_external_struct(),
             Command::GetOrUse(c) => c.contains_external_struct(),
+            Command::GetOrUseDynamic(c) => c.destination_type().contains_external_struct(),
             Command::RandChaCha(c) => c.contains_external_struct(),
             Command::Remove(c) => c.contains_external_struct(),
             Command::Set(c) => c.contains_external_struct(),
@@ -217,6 +278,14 @@ impl<N: Network> Command<N> {
     /// Returns `true` if the command contains a string type.
     pub fn contains_string_type(&self) -> bool {
         self.operands().iter().any(|operand| operand.contains_string_type())
+    }
+
+    /// Returns `true` if the command contains an identifier type in its cast type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Command::Instruction(instruction) => instruction.contains_identifier_type(),
+            _ => Ok(false),
+        }
     }
 
     /// Returns `true` if the command contains an array type with a size that exceeds the given maximum.
@@ -256,8 +325,14 @@ impl<N: Network> FromBytes for Command<N> {
             9 => Ok(Self::BranchNeq(BranchNeq::read_le(&mut reader)?)),
             // Read the `position` command.
             10 => Ok(Self::Position(Position::read_le(&mut reader)?)),
+            // Read the `contains.dynamic` command.
+            11 => Ok(Self::ContainsDynamic(ContainsDynamic::read_le(&mut reader)?)),
+            // Read the `get.dynamic` command.
+            12 => Ok(Self::GetDynamic(GetDynamic::read_le(&mut reader)?)),
+            // Read the `get.or_use.dynamic` command.
+            13 => Ok(Self::GetOrUseDynamic(GetOrUseDynamic::read_le(&mut reader)?)),
             // Invalid variant.
-            11.. => Err(error(format!("Invalid command variant: {variant}"))),
+            14.. => Err(error(format!("Invalid command variant: {variant}"))),
         }
     }
 }
@@ -332,6 +407,24 @@ impl<N: Network> ToBytes for Command<N> {
                 // Write the position command.
                 position.write_le(&mut writer)
             }
+            Self::ContainsDynamic(contains_dynamic) => {
+                // Write the variant.
+                11u8.write_le(&mut writer)?;
+                // Write the `contains.dynamic` command.
+                contains_dynamic.write_le(&mut writer)
+            }
+            Self::GetDynamic(get_dynamic) => {
+                // Write the variant.
+                12u8.write_le(&mut writer)?;
+                // Write the `get.dynamic` command.
+                get_dynamic.write_le(&mut writer)
+            }
+            Self::GetOrUseDynamic(get_or_use_dynamic) => {
+                // Write the variant.
+                13u8.write_le(&mut writer)?;
+                // Write the `get.or_use.dynamic` command.
+                get_or_use_dynamic.write_le(&mut writer)
+            }
         }
     }
 }
@@ -339,13 +432,16 @@ impl<N: Network> ToBytes for Command<N> {
 impl<N: Network> Parser for Command<N> {
     /// Parses the string into the command.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the command.
         // Note that the order of the parsers is important.
         alt((
             map(Await::parse, |await_| Self::Await(await_)),
+            map(ContainsDynamic::parse, |contains_dynamic| Self::ContainsDynamic(contains_dynamic)),
             map(Contains::parse, |contains| Self::Contains(contains)),
+            map(GetOrUseDynamic::parse, |get_or_use_dynamic| Self::GetOrUseDynamic(get_or_use_dynamic)),
             map(GetOrUse::parse, |get_or_use| Self::GetOrUse(get_or_use)),
+            map(GetDynamic::parse, |get_dynamic| Self::GetDynamic(get_dynamic)),
             map(Get::parse, |get| Self::Get(get)),
             map(RandChaCha::parse, |rand_chacha| Self::RandChaCha(rand_chacha)),
             map(Remove::parse, |remove| Self::Remove(remove)),
@@ -390,8 +486,11 @@ impl<N: Network> Display for Command<N> {
             Self::Instruction(instruction) => Display::fmt(instruction, f),
             Self::Await(await_) => Display::fmt(await_, f),
             Self::Contains(contains) => Display::fmt(contains, f),
+            Self::ContainsDynamic(contains_dynamic) => Display::fmt(contains_dynamic, f),
             Self::Get(get) => Display::fmt(get, f),
+            Self::GetDynamic(get_dynamic) => Display::fmt(get_dynamic, f),
             Self::GetOrUse(get_or_use) => Display::fmt(get_or_use, f),
+            Self::GetOrUseDynamic(get_or_use_dynamic) => Display::fmt(get_or_use_dynamic, f),
             Self::RandChaCha(rand_chacha) => Display::fmt(rand_chacha, f),
             Self::Remove(remove) => Display::fmt(remove, f),
             Self::Set(set) => Display::fmt(set, f),
@@ -437,14 +536,32 @@ mod tests {
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
 
+        // ContainsDynamic
+        let expected = "contains.dynamic r0 r1 r2[r3] into r4;";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        let bytes = command.to_bytes_le().unwrap();
+        assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
+
         // Get
         let expected = "get object[r0] into r1;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
 
+        // GetDynamic
+        let expected = "get.dynamic r0 r1 r2[r3] into r4 as field;";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        let bytes = command.to_bytes_le().unwrap();
+        assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
+
         // GetOr
         let expected = "get.or_use object[r0] r1 into r2;";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        let bytes = command.to_bytes_le().unwrap();
+        assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
+
+        // GetOrDynamic
+        let expected = "get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as credits;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
@@ -514,16 +631,34 @@ mod tests {
         assert_eq!(Command::Contains(Contains::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
 
+        // ContainsDynamic
+        let expected = "contains.dynamic r0 r1 r2[r3] into r4;";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        assert_eq!(Command::ContainsDynamic(ContainsDynamic::from_str(expected).unwrap()), command);
+        assert_eq!(expected, command.to_string());
+
         // Get
         let expected = "get object[r0] into r1;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(Command::Get(Get::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
 
+        // GetDynamic
+        let expected = "get.dynamic r0 r1 r2[r3] into r4 as u8;";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        assert_eq!(Command::GetDynamic(GetDynamic::from_str(expected).unwrap()), command);
+        assert_eq!(expected, command.to_string());
+
         // GetOr
         let expected = "get.or_use object[r0] r1 into r2;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(Command::GetOrUse(GetOrUse::from_str(expected).unwrap()), command);
+        assert_eq!(expected, command.to_string());
+
+        // GetOrDynamic
+        let expected = "get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as Foo;";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        assert_eq!(Command::GetOrUseDynamic(GetOrUseDynamic::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
 
         // RandChaCha

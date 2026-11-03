@@ -20,7 +20,7 @@ static PROVING_KEY: &str = "prover";
 impl<N: Network> Parser for ProvingKey<N> {
     /// Parses a string into the proving key.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo proving key.
         let parse_key = recognize(pair(
             pair(tag(PROVING_KEY), tag("1")),
@@ -38,16 +38,16 @@ impl<N: Network> FromStr for ProvingKey<N> {
     /// Reads in the proving key string.
     fn from_str(key: &str) -> Result<Self, Self::Err> {
         // Decode the proving key string from bech32m.
-        let (hrp, data, variant) = bech32::decode(key)?;
-        if hrp != PROVING_KEY {
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(key)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
+        if hrp.as_str() != PROVING_KEY {
             bail!("Failed to decode proving key: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode proving key: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found a proving key that is not bech32m encoded: {key}");
         }
-        // Decode the proving key data from u5 to u8, and into the proving key.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the proving key data into the proving key.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -64,7 +64,7 @@ impl<N: Network> Display for ProvingKey<N> {
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
         let string =
-            bech32::encode(PROVING_KEY, bytes.to_base32(), bech32::Variant::Bech32m).map_err(|_| fmt::Error)?;
+            bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(PROVING_KEY), &bytes).map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
     }

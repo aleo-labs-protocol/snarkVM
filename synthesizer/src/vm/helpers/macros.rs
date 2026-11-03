@@ -85,26 +85,26 @@ macro_rules! process {
             console::network::MainnetV0::ID => {
                 // Cast the process.
                 let process = (&$self.process as &dyn std::any::Any)
-                    .downcast_ref::<Arc<RwLock<Process<console::network::MainnetV0>>>>()
+                    .downcast_ref::<Arc<Process<console::network::MainnetV0>>>()
                     .ok_or_else(|| anyhow!("Failed to downcast {}", stringify!($self.process)))?;
                 // Process the logic.
-                $logic!(process.read(), console::network::MainnetV0, circuit::AleoV0)
+                $logic!(process, console::network::MainnetV0, circuit::AleoV0)
             }
             console::network::TestnetV0::ID => {
                 // Cast the process.
                 let process = (&$self.process as &dyn std::any::Any)
-                    .downcast_ref::<Arc<RwLock<Process<console::network::TestnetV0>>>>()
+                    .downcast_ref::<Arc<Process<console::network::TestnetV0>>>()
                     .ok_or_else(|| anyhow!("Failed to downcast {}", stringify!($self.process)))?;
                 // Process the logic.
-                $logic!(process.read(), console::network::TestnetV0, circuit::AleoTestnetV0)
+                $logic!(process, console::network::TestnetV0, circuit::AleoTestnetV0)
             }
             console::network::CanaryV0::ID => {
                 // Cast the process.
                 let process = (&$self.process as &dyn std::any::Any)
-                    .downcast_ref::<Arc<RwLock<Process<console::network::CanaryV0>>>>()
+                    .downcast_ref::<Arc<Process<console::network::CanaryV0>>>()
                     .ok_or_else(|| anyhow!("Failed to downcast {}", stringify!($self.process)))?;
                 // Process the logic.
-                $logic!(process.read(), console::network::CanaryV0, circuit::AleoCanaryV0)
+                $logic!(process, console::network::CanaryV0, circuit::AleoCanaryV0)
             }
             _ => return Err(anyhow!("Unsupported VM configuration for network: {}", N::ID).into()),
         }

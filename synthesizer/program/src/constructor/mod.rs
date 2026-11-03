@@ -61,6 +61,16 @@ impl<N: Network> ConstructorCore<N> {
         self.commands.iter().any(|command| command.contains_string_type())
     }
 
+    /// Returns `true` if the constructor contains an identifier type in its cast types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for command in &self.commands {
+            if command.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Returns `true` if the constructor contains an array type with a size that exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         self.commands.iter().any(|command| command.exceeds_max_array_size(max_array_size))
@@ -89,8 +99,8 @@ impl<N: Network> ConstructorCore<N> {
         ensure!(!command.is_async(), "Forbidden operation: Constructor cannot invoke an 'async' instruction");
         // Ensure the command is not a call instruction.
         ensure!(!command.is_call(), "Forbidden operation: Constructor cannot invoke a 'call'");
-        // Ensure the command is not a cast to record instruction.
-        ensure!(!command.is_cast_to_record(), "Forbidden operation: Constructor cannot cast to a record");
+        // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: Constructor cannot operate on records");
         // Ensure the command is not an await command.
         ensure!(!command.is_await(), "Forbidden operation: Constructor cannot 'await'");
 

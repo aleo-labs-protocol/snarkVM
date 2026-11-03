@@ -33,7 +33,13 @@ impl<N: Network> Equal<Self> for Value<N> {
             (Self::Plaintext(a), Self::Plaintext(b)) => a.is_equal(b),
             (Self::Record(a), Self::Record(b)) => a.is_equal(b),
             (Self::Future(a), Self::Future(b)) => a.is_equal(b),
-            (Self::Plaintext(..), _) | (Self::Record(..), _) | (Self::Future(..), _) => Boolean::new(false),
+            (Self::DynamicRecord(a), Self::DynamicRecord(b)) => a.is_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_equal(b),
+            (Self::Plaintext(..), _)
+            | (Self::Record(..), _)
+            | (Self::Future(..), _)
+            | (Self::DynamicRecord(..), _)
+            | (Self::DynamicFuture(..), _) => Boolean::new(false),
         }
     }
 
@@ -43,7 +49,13 @@ impl<N: Network> Equal<Self> for Value<N> {
             (Self::Plaintext(a), Self::Plaintext(b)) => a.is_not_equal(b),
             (Self::Record(a), Self::Record(b)) => a.is_not_equal(b),
             (Self::Future(a), Self::Future(b)) => a.is_not_equal(b),
-            (Self::Plaintext(..), _) | (Self::Record(..), _) | (Self::Future(..), _) => Boolean::new(true),
+            (Self::DynamicRecord(a), Self::DynamicRecord(b)) => a.is_not_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_not_equal(b),
+            (Self::Plaintext(..), _)
+            | (Self::Record(..), _)
+            | (Self::Future(..), _)
+            | (Self::DynamicRecord(..), _)
+            | (Self::DynamicFuture(..), _) => Boolean::new(true),
         }
     }
 }

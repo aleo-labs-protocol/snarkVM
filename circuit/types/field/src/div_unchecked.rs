@@ -19,7 +19,17 @@ impl<E: Environment> DivUnchecked<Field<E>> for Field<E> {
     type Output = Field<E>;
 
     /// Performs unchecked division of two field elements.
-    /// This method does **not** enforce the case of `0 / 0`.
+    ///
+    /// This method does **not** enforce the case of `0 / 0`: when the numerator and
+    /// the denominator are both zero, every quotient satisfies the constraint. When
+    /// only the denominator is zero, no quotient satisfies the constraint, so the
+    /// circuit fails closed.
+    ///
+    /// No production circuit reaches the `0 / 0` case. The `Div` implementation
+    /// multiplies by the inverse instead of calling this method, which fails closed
+    /// on a zero denominator. The only production callers are the two divisions in
+    /// `BHPHasher::hash_uncompressed`, whose denominators cannot be zero while their
+    /// numerators are (see the call sites).
     #[doc(hidden)]
     fn div_unchecked(&self, other: &Field<E>) -> Self::Output {
         match (self.is_constant(), other.is_constant()) {

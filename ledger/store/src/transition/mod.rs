@@ -184,7 +184,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().insert(*transition.tcm(), transition_id)?;
             // Store `scm`.
             self.scm_map().insert(transition_id, *transition.scm())?;
-
             Ok(())
         })
     }
@@ -242,23 +241,16 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         let scm = self.scm_map().get_confirmed(transition_id)?;
 
         match (tpk, tcm, scm) {
-            (Some(tpk), Some(tcm), Some(scm)) => {
-                // Construct the transition.
-                let transition = Transition::new(
-                    program_id,
-                    function_name,
-                    inputs,
-                    outputs,
-                    tpk.into_owned(),
-                    tcm.into_owned(),
-                    scm.into_owned(),
-                )?;
-                // Ensure the transition ID matches.
-                match transition.id() == transition_id {
-                    true => Ok(Some(transition)),
-                    false => bail!("Mismatch in the transition ID '{transition_id}'"),
-                }
-            }
+            (Some(tpk), Some(tcm), Some(scm)) => Ok(Some(Transition::new_unchecked(
+                *transition_id,
+                program_id,
+                function_name,
+                inputs,
+                outputs,
+                tpk.into_owned(),
+                tcm.into_owned(),
+                scm.into_owned(),
+            ))),
             _ => bail!("Transition '{transition_id}' is missing some data (possible corruption)"),
         }
     }

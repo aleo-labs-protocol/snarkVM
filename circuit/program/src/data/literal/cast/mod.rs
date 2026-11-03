@@ -15,33 +15,37 @@
 
 mod boolean;
 mod field;
+mod identifier;
 mod integer;
 mod scalar;
 
 use crate::data::{CastLossy, Literal};
 use console::LiteralType;
 use snarkvm_circuit_network::Aleo;
-use snarkvm_circuit_types::prelude::{
-    Address,
-    BitOr,
-    Boolean,
-    Environment,
-    Field,
-    FromBits,
-    FromField,
-    FromGroup,
-    Group,
-    IntegerType,
-    MSB,
-    One,
-    Result,
-    Scalar,
-    ToBits,
-    ToField,
-    ToGroup,
-    Zero,
-    bail,
-    integers::Integer,
+use snarkvm_circuit_types::{
+    IdentifierLiteral,
+    prelude::{
+        Address,
+        BitOr,
+        Boolean,
+        Environment,
+        Field,
+        FromBits,
+        FromField,
+        FromGroup,
+        Group,
+        IntegerType,
+        MSB,
+        One,
+        Result,
+        Scalar,
+        ToBits,
+        ToField,
+        ToGroup,
+        Zero,
+        bail,
+        integers::Integer,
+    },
 };
 
 #[cfg(test)]
@@ -63,6 +67,7 @@ impl<A: Aleo> Literal<A> {
     ///
     /// The hierarchy of casting is as follows:
     ///  - (`Address`, `Group`) <-> `Field` <-> `Scalar` <-> `Integer` <-> `Boolean`
+    ///  - `Identifier` <-> `Field`
     ///  - `Signature` (not supported)
     ///  - `String` (not supported)
     ///
@@ -86,6 +91,7 @@ impl<A: Aleo> Literal<A> {
             Self::Scalar(scalar) => cast_scalar_to_type(scalar, to_type),
             Self::Signature(..) => bail!("Cannot cast a signature literal to another type."),
             Self::String(..) => bail!("Cannot cast a string literal to another type."),
+            Self::Identifier(identifier) => cast_identifier_to_type(identifier, to_type),
         }
     }
 }
@@ -115,6 +121,7 @@ macro_rules! impl_cast_body {
             LiteralType::String => {
                 bail!(concat!("Cannot cast a ", stringify!($type_name), " literal to a string type."))
             }
+            LiteralType::Identifier => Ok(Literal::Identifier(Box::new($input.$cast()))),
         }
     };
 }
@@ -146,6 +153,11 @@ fn cast_integer_to_type<A: Aleo, I: IntegerType>(input: &Integer<A, I>, to_type:
 /// Casts a scalar literal to the given literal type.
 fn cast_scalar_to_type<A: Aleo>(input: &Scalar<A>, to_type: LiteralType) -> Result<Literal<A>> {
     impl_cast_body!(scalar, cast, input, to_type)
+}
+
+/// Casts an identifier literal to the given literal type.
+fn cast_identifier_to_type<A: Aleo>(input: &IdentifierLiteral<A>, to_type: LiteralType) -> Result<Literal<A>> {
+    impl_cast_body!(identifier, cast, input, to_type)
 }
 
 #[cfg(test)]

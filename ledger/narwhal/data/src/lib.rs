@@ -29,6 +29,18 @@ const PREFIX: &str = "data";
 /// cause us to run out of memory.
 const MAX_DATA_SIZE: u32 = 1024 * 1024 * 1024; // 1 GB
 
+/// The number of bytes a serialized `Data` adds around the object it carries: the version byte
+/// that leads it, and the `u32` length prefix on the payload that follows.
+///
+/// This lets a caller size a buffer or a message around a serialized `Data` without serializing
+/// one first - snarkOS adds it to `LATEST_MAX_TRANSACTION_SIZE` to get the frame size an
+/// `UnconfirmedTransaction` carrying a maximum-size transaction takes on the wire. It lives here,
+/// beside the `ToBytes` and `FromBytes` implementations that define the encoding, so that a change
+/// to either is a change to this; `data_encoding_overhead_matches_the_encoding` pins it against
+/// what `write_le` really emits.
+pub const DATA_ENCODING_OVERHEAD: usize = size_of::<u8>() // the version byte
+    + size_of::<u32>(); // the length prefix on the payload
+
 /// This object enables deferred deserialization / ahead-of-time serialization for objects that
 /// take a while to deserialize / serialize, in order to allow these operations to be non-blocking.
 #[derive(Clone, PartialEq, Eq)]
@@ -188,8 +200,9 @@ impl<T: FromBytes + ToBytes + Serialize + Send + 'static> Serialize for Data<T> 
                         data.serialize_field("type", "buffer")?;
 
                         // Encode to bech32m.
-                        let buffer = bech32::encode(PREFIX, buffer.to_vec().to_base32(), bech32::Variant::Bech32m)
-                            .map_err(|_| S::Error::custom("Failed to encode data into bech32m"))?;
+                        let buffer =
+                            bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(PREFIX), buffer.as_ref())
+                                .map_err(|_| S::Error::custom("Failed to encode data into bech32m"))?;
 
                         // Add the bech32m string.
                         data.serialize_field("data", &buffer)?;
@@ -221,17 +234,17 @@ impl<'de, T: FromBytes + ToBytes + DeserializeOwned + Send + 'static> Deserializ
                         let encoding: String = DeserializeExt::take_from_value::<D>(&mut data, "data")?;
 
                         // Decode from bech32m.
-                        let (hrp, data, variant) = bech32::decode(&encoding).map_err(de::Error::custom)?;
-                        if hrp != PREFIX {
+                        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(&encoding)
+                            .map_err(de::Error::custom)?;
+                        let hrp = checked.hrp();
+                        let data: Vec<u8> = checked.byte_iter().collect();
+                        if hrp.as_str() != PREFIX {
                             return Err(de::Error::custom(error(format!("Invalid data HRP - {hrp}"))));
                         };
                         if data.is_empty() {
                             return Err(de::Error::custom(error("Invalid bech32m data (empty)")));
                         }
-                        if variant != bech32::Variant::Bech32m {
-                            return Err(de::Error::custom(error("Invalid data - variant is not bech32m")));
-                        }
-                        Ok(Self::Buffer(Bytes::from(Vec::from_base32(&data).map_err(de::Error::custom)?)))
+                        Ok(Self::Buffer(Bytes::from(data)))
                     }
                     _ => Err(de::Error::custom(error(format!("Invalid data type - {type_}")))),
                 }
@@ -253,10 +266,12 @@ mod tests {
 
         // Sample transactions
         let transactions = [
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
             snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),
@@ -275,6 +290,24 @@ mod tests {
 
             // Ensure the checksums are equal.
             assert_eq!(checksum_1, checksum_2);
+        }
+    }
+
+    /// Pins `DATA_ENCODING_OVERHEAD` against what `write_le` actually emits, rather than trusting
+    /// the arithmetic in its doc comment: a serialized `Data` has to be exactly that much larger
+    /// than the payload it carries, whichever representation it is in.
+    #[test]
+    fn data_encoding_overhead_matches_the_encoding() {
+        let rng = &mut TestRng::default();
+
+        let transaction = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
+        let payload = transaction.to_bytes_le().unwrap();
+
+        let object: Data<Transaction<MainnetV0>> = Data::Object(transaction);
+        let buffer: Data<Transaction<MainnetV0>> = Data::Buffer(payload.clone().into());
+
+        for data in [object, buffer] {
+            assert_eq!(data.to_bytes_le().unwrap().len(), payload.len() + DATA_ENCODING_OVERHEAD);
         }
     }
 }

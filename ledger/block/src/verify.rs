@@ -170,6 +170,8 @@ impl<N: Network> Block<N> {
             Authority::Beacon(..) => previous_round.saturating_add(1),
             // Quorum blocks use the subdag anchor round.
             Authority::Quorum(subdag) => {
+                // Ensure the certificates follow the canonical order for this consensus version.
+                subdag.check_certificate_order(expected_height)?;
                 // Ensure the subdag anchor round is after the previous block round.
                 ensure!(
                     subdag.anchor_round() > previous_round,
@@ -387,6 +389,7 @@ impl<N: Network> Block<N> {
             expected_last_coinbase_target,
             expected_last_coinbase_timestamp,
         ) = to_next_targets::<N>(
+            N::CONSENSUS_VERSION(height)?,
             previous_block.cumulative_proof_target(),
             combined_proof_target,
             previous_block.coinbase_target(),
@@ -402,7 +405,7 @@ impl<N: Network> Block<N> {
             timestamp,
             N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
-            N::ANCHOR_TIME,
+            N::REWARD_ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,

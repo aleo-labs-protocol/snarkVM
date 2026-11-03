@@ -37,10 +37,20 @@ impl<N: Network> Transaction<N> {
                     ));
                 }
 
+                // Prepare the header for the function hash.
+                // Note: This must match the header used by `deployment_tree_v1` and `deployment_tree_v2`.
+                let header = match deployment.version() {
+                    Ok(DeploymentVersion::V1) => deployment.program().id().to_bits_le(),
+                    Ok(version @ (DeploymentVersion::V2 | DeploymentVersion::V3)) => {
+                        let deployment_hash = N::hash_sha3_256(&to_bits_le!(deployment.to_bytes_le()?))?;
+                        to_bits_le![version as u8, deployment_hash]
+                    }
+                    Err(e) => bail!("Malformed deployment - {e}"),
+                };
                 // Iterate through the functions in the deployment.
                 for (index, function) in deployment.program().functions().values().enumerate() {
                     // Check if the function hash matches the given ID.
-                    if *id == N::hash_bhp1024(&function.to_bytes_le()?.to_bits_le())? {
+                    if *id == N::hash_bhp1024(&to_bits_le![header, function.to_bytes_le()?])? {
                         // Return the transaction leaf.
                         return Ok(TransactionLeaf::new_deployment(u16::try_from(index)?, *id));
                     }
@@ -50,14 +60,14 @@ impl<N: Network> Transaction<N> {
             }
             Self::Execute(_, _, execution, fee) => {
                 // Check if the ID is the transition ID for the fee.
-                if let Some(fee) = fee {
-                    if *id == **fee.id() {
-                        // Return the transaction leaf.
-                        return Ok(TransactionLeaf::new_execution(
-                            u16::try_from(execution.len())?, // The last index.
-                            *id,
-                        ));
-                    }
+                if let Some(fee) = fee
+                    && *id == **fee.id()
+                {
+                    // Return the transaction leaf.
+                    return Ok(TransactionLeaf::new_execution(
+                        u16::try_from(execution.len())?, // The last index.
+                        *id,
+                    ));
                 }
 
                 // Iterate through the transitions in the execution.
@@ -146,6 +156,9 @@ impl<N: Network> Transaction<N> {
         match deployment.version() {
             Ok(DeploymentVersion::V1) => Self::deployment_tree_v1(deployment),
             Ok(DeploymentVersion::V2) => Self::deployment_tree_v2(deployment),
+            // Note: We use the same method for computing the deployment tree for V2 and V3.
+            // This is safe because the tree root contains a hash of all bytes in the deployment and V3 is guaranteed to have no owner.
+            Ok(DeploymentVersion::V3) => Self::deployment_tree_v2(deployment),
             Err(e) => bail!("Malformed deployment - {e}"),
         }
     }
@@ -186,16 +199,16 @@ impl<N: Network> Transaction<N> {
         let program = deployment.program();
         // Retrieve the functions.
         let functions = program.functions();
-        // Retrieve the verifying keys.
-        let verifying_keys = deployment.verifying_keys();
+        // Retrieve the function verifying keys.
+        let function_verifying_keys = deployment.function_verifying_keys();
         // Retrieve the number of functions.
         let num_functions = functions.len();
 
-        // Ensure the number of functions and verifying keys match.
+        // Ensure the number of functions and function verifying keys match.
         ensure!(
-            num_functions == verifying_keys.len(),
-            "Number of functions ('{num_functions}') and verifying keys ('{}') do not match",
-            verifying_keys.len()
+            num_functions == function_verifying_keys.len(),
+            "Number of functions ('{num_functions}') and function verifying keys ('{}') do not match",
+            function_verifying_keys.len()
         );
         // Ensure there are functions.
         ensure!(num_functions != 0, "Deployment must contain at least one function");
@@ -205,10 +218,22 @@ impl<N: Network> Transaction<N> {
             "Deployment must contain at most {} functions, found {num_functions}",
             N::MAX_FUNCTIONS,
         );
-        // Ensure the number of functions is within the allowed range.
+
+        // If translation verifying keys are present, ensure the count is within bounds.
+        if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+            let num_records = translation_verifying_keys.len();
+            ensure!(
+                num_records <= N::MAX_RECORDS,
+                "Deployment must contain at most {} records, found {num_records}",
+                N::MAX_RECORDS,
+            );
+        }
+
+        // Ensure the number of function verifying keys fits in the transaction tree.
+        // Note: Record verifying keys do not occupy transition leaves.
         ensure!(
             num_functions < Self::MAX_TRANSITIONS, // Note: Observe we hold back 1 for the fee.
-            "Deployment must contain less than {} functions, found {num_functions}",
+            "Deployment must contain less than {} function verifying keys, found {num_functions}",
             Self::MAX_TRANSITIONS,
         );
         Ok(())
@@ -288,5 +313,52 @@ mod tests {
             CurrentNetwork::MAX_FUNCTIONS.checked_add(1).unwrap(),
             Transaction::<CurrentNetwork>::MAX_TRANSITIONS
         );
+    }
+
+    #[test]
+    fn test_to_leaf_deployment_functions() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for (version, has_translation_keys, is_fee_private) in
+            [(1, false, true), (2, false, false), (2, true, true), (3, false, false)]
+        {
+            let transaction = crate::transaction::test_helpers::sample_deployment_transaction(
+                version,
+                Uniform::rand(rng),
+                has_translation_keys,
+                is_fee_private,
+                rng,
+            );
+            let Transaction::Deploy(_, _, _, deployment, fee) = &transaction else {
+                bail!("Expected a deployment transaction");
+            };
+            let root = transaction.to_root()?;
+
+            let header = match version {
+                1 => deployment.program().id().to_bits_le(),
+                _ => to_bits_le![version, CurrentNetwork::hash_sha3_256(&to_bits_le!(deployment.to_bytes_le()?))?],
+            };
+            for (index, function) in deployment.program().functions().values().enumerate() {
+                let id = CurrentNetwork::hash_bhp1024(&to_bits_le![header, function.to_bytes_le()?])?;
+                let leaf = transaction.to_leaf(&id)?;
+                assert_eq!(leaf, TransactionLeaf::new_deployment(u16::try_from(index)?, id));
+                let path = transaction.to_path(&leaf)?;
+                assert!(CurrentNetwork::verify_merkle_path_bhp(&path, &root, &leaf.to_bits_le()));
+
+                // A function hash without the header is not a leaf.
+                let headerless_id = CurrentNetwork::hash_bhp1024(&function.to_bytes_le()?.to_bits_le())?;
+                assert!(matches!(
+                    transaction.to_leaf(&headerless_id),
+                    Err(e) if e.to_string().contains("Function hash not found")
+                ));
+            }
+
+            let fee_leaf = transaction.to_leaf(&**fee.id())?;
+            assert_eq!(
+                fee_leaf,
+                TransactionLeaf::new_fee(u16::try_from(deployment.program().functions().len())?, **fee.id())
+            );
+        }
+        Ok(())
     }
 }

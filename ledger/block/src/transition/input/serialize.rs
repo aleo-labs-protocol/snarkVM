@@ -60,6 +60,27 @@ impl<N: Network> Serialize for Input<N> {
                     input.serialize_field("id", &id)?;
                     input.end()
                 }
+                Self::DynamicRecord(id) => {
+                    let mut input = serializer.serialize_struct("Input", 2)?;
+                    input.serialize_field("type", "record_dynamic")?;
+                    input.serialize_field("id", &id)?;
+                    input.end()
+                }
+                Self::RecordWithDynamicID(id, tag, dynamic_id) => {
+                    let mut input = serializer.serialize_struct("Input", 4)?;
+                    input.serialize_field("type", "record_with_dynamic_id")?;
+                    input.serialize_field("id", &id)?;
+                    input.serialize_field("tag", &tag)?;
+                    input.serialize_field("dynamic_id", &dynamic_id)?;
+                    input.end()
+                }
+                Self::ExternalRecordWithDynamicID(id, dynamic_id) => {
+                    let mut input = serializer.serialize_struct("Input", 3)?;
+                    input.serialize_field("type", "external_record_with_dynamic_id")?;
+                    input.serialize_field("id", &id)?;
+                    input.serialize_field("dynamic_id", &dynamic_id)?;
+                    input.end()
+                }
             },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
@@ -92,6 +113,16 @@ impl<'de, N: Network> Deserialize<'de> for Input<N> {
                     }),
                     Some("record") => Input::Record(id, DeserializeExt::take_from_value::<D>(&mut input, "tag")?),
                     Some("external_record") => Input::ExternalRecord(id),
+                    Some("record_dynamic") => Input::DynamicRecord(id),
+                    Some("record_with_dynamic_id") => Input::RecordWithDynamicID(
+                        id,
+                        DeserializeExt::take_from_value::<D>(&mut input, "tag")?,
+                        DeserializeExt::take_from_value::<D>(&mut input, "dynamic_id")?,
+                    ),
+                    Some("external_record_with_dynamic_id") => Input::ExternalRecordWithDynamicID(
+                        id,
+                        DeserializeExt::take_from_value::<D>(&mut input, "dynamic_id")?,
+                    ),
                     _ => return Err(de::Error::custom("Invalid transition input type")),
                 };
                 // Return the input.

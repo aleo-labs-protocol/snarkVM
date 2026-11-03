@@ -90,7 +90,7 @@ pub trait FftField: Field + From<u128> + From<u64> + From<u32> + From<u16> + Fro
     fn k_adicity(k: usize, mut n: usize) -> u32 {
         let mut r = 0;
         while n > 1 {
-            if n % k == 0 {
+            if n.is_multiple_of(k) {
                 r += 1;
                 n /= k;
             } else {

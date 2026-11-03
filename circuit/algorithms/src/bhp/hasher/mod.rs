@@ -69,7 +69,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> Inject for BH
             .map(|window| {
                 // Construct the window with the base.
                 let mut powers = Vec::with_capacity(WINDOW_SIZE as usize);
-                for base in window.iter().take(WINDOW_SIZE as usize).map(|base| Group::constant(*base)) {
+                for base in window.iter().take(WINDOW_SIZE as usize) {
+                    let base =
+                        if base.is_zero() { E::halt("BHP base point is the identity") } else { Group::constant(*base) };
                     let mut x_bases = Vec::with_capacity(Self::BHP_LOOKUP_SIZE);
                     let mut y_bases = Vec::with_capacity(Self::BHP_LOOKUP_SIZE);
                     let mut accumulator = base.clone();
@@ -92,7 +94,11 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> Inject for BH
         bases.iter().for_each(|window| assert_eq!(window.len(), WINDOW_SIZE as usize));
 
         // Initialize the random base.
-        let random_base = Vec::constant(bhp.random_base().iter().copied().collect());
+        let random_base = if bhp.random_base().iter().any(|base| base.is_zero()) {
+            E::halt("BHP random base point is the identity")
+        } else {
+            Vec::constant(bhp.random_base().iter().copied().collect())
+        };
         assert_eq!(random_base.len(), console::Scalar::<E::Network>::size_in_bits());
 
         Self { bases, random_base }

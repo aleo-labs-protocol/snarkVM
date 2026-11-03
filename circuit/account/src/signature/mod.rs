@@ -82,7 +82,7 @@ impl<A: Aleo> Eject for Signature<A> {
 impl<A: Aleo> Parser for Signature<A> {
     /// Parses a string into a signature circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the signature from the string.
         let (string, signature) = console::Signature::parse(string)?;
         // Parse the mode from the string.

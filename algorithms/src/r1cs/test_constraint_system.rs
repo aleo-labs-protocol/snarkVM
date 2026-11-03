@@ -16,8 +16,8 @@
 use crate::r1cs::{ConstraintSystem, Index, LinearCombination, OptionalVec, Variable, errors::SynthesisError};
 use snarkvm_fields::Field;
 
+use ahash::{AHashMap, RandomState};
 use cfg_if::cfg_if;
-use fxhash::{FxBuildHasher, FxHashMap};
 use indexmap::{IndexMap, IndexSet, map::Entry};
 use itertools::Itertools;
 
@@ -83,14 +83,14 @@ impl CurrentNamespace {
 /// Constraint system for testing purposes.
 pub struct TestConstraintSystem<F: Field> {
     // used to intern full paths in test scenarios, for get and set purposes
-    interned_full_paths: FxHashMap<Vec<InternedPathSegment>, InternedPath>,
+    interned_full_paths: AHashMap<Vec<InternedPathSegment>, InternedPath>,
     // used to intern namespace segments
-    interned_path_segments: IndexSet<String, FxBuildHasher>,
+    interned_path_segments: IndexSet<String, RandomState>,
     // used to intern fields belonging to F
-    interned_fields: IndexSet<F, FxBuildHasher>,
+    interned_fields: IndexSet<F, RandomState>,
     // contains named objects bound to their (interned) paths; the indices are
     // used for NamespaceIndex lookups
-    named_objects: IndexMap<InternedPath, NamedObject, FxBuildHasher>,
+    named_objects: IndexMap<InternedPath, NamedObject, RandomState>,
     // a stack of current path's segments and the index of the current path's
     // index in the named_objects map
     current_namespace: CurrentNamespace,
@@ -104,24 +104,24 @@ pub struct TestConstraintSystem<F: Field> {
 
 impl<F: Field> Default for TestConstraintSystem<F> {
     fn default() -> Self {
-        let mut interned_path_segments = IndexSet::with_hasher(FxBuildHasher::default());
+        let mut interned_path_segments = IndexSet::with_hasher(RandomState::default());
         let path_segment = "ONE".to_owned();
         let interned_path_segment = interned_path_segments.insert_full(path_segment).0;
         let interned_path = InternedPath { parent_namespace: 0, last_segment: interned_path_segment };
 
         cfg_if! {
             if #[cfg(debug_assertions)] {
-                let mut interned_full_paths = FxHashMap::default();
+                let mut interned_full_paths = AHashMap::default();
                 interned_full_paths.insert(vec![interned_path_segment], interned_path);
             } else {
-                let interned_full_paths = FxHashMap::default();
+                let interned_full_paths = AHashMap::default();
             }
         }
 
-        let mut named_objects = IndexMap::with_hasher(FxBuildHasher::default());
+        let mut named_objects = IndexMap::with_hasher(RandomState::default());
         named_objects.insert_full(interned_path, NamedObject::Var(TestConstraintSystem::<F>::one()));
 
-        let mut interned_fields = IndexSet::with_hasher(FxBuildHasher::default());
+        let mut interned_fields = IndexSet::with_hasher(RandomState::default());
         let interned_field = interned_fields.insert_full(F::one()).0;
 
         let mut inputs: OptionalVec<InternedField> = Default::default();

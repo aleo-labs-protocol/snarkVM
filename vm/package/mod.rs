@@ -23,7 +23,6 @@ mod run;
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
-    algorithms::snark::varuna::VarunaVersion,
     console::{
         account::PrivateKey,
         network::{ConsensusVersion, Network},
@@ -152,7 +151,7 @@ impl<N: Network> Package<N> {
     /// Returns a new process for the package.
     pub fn get_process(&self) -> Result<Process<N>> {
         // Load the default process.
-        let mut process = Process::load()?;
+        let process = Process::load()?;
         // Get the imported programs.
         let imports_directory = self.imports_directory();
         let mut programs = self
@@ -194,7 +193,7 @@ impl<N: Network> Package<N> {
             .collect::<Vec<_>>();
 
         // Load the programs.
-        process.add_programs_with_editions(&programs_and_editions)?;
+        process.lock().add_programs_with_editions(&programs_and_editions)?;
 
         Ok(process)
     }

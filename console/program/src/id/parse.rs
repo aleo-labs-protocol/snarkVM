@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ProgramID<N> {
     /// Parses a string into a program ID of the form `{name}.{network}`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the name, ".", and network-level domain (NLD) from the string.
         map_res(pair(Identifier::parse, pair(tag("."), Identifier::parse)), |(name, (_, network))| {
             // Return the program ID.

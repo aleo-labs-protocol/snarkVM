@@ -50,8 +50,18 @@ impl<N: Network> Plaintext<N> {
                     // Read the plaintext bytes.
                     let mut bytes = Vec::new();
                     (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
+                    // Ensure the declared region is entirely present.
+                    if bytes.len() != num_bytes as usize {
+                        return Err(error("Failed to deserialize plaintext: struct member is truncated"));
+                    }
                     // Recover the plaintext value.
-                    let plaintext = Self::read_le_internal(&mut bytes.as_slice(), depth + 1)?;
+                    let mut slice = bytes.as_slice();
+                    let plaintext = Self::read_le_internal(&mut slice, depth + 1)?;
+                    // Ensure the member fills its region. Bytes left unread would be
+                    // dropped on re-serialization, giving one value a second encoding.
+                    if !slice.is_empty() {
+                        return Err(error("Failed to deserialize plaintext: struct member has trailing bytes"));
+                    }
                     // Add the member.
                     members.insert(identifier, plaintext);
                 }
@@ -72,8 +82,18 @@ impl<N: Network> Plaintext<N> {
                     // Read the plaintext bytes.
                     let mut bytes = Vec::new();
                     (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
+                    // Ensure the declared region is entirely present.
+                    if bytes.len() != num_bytes as usize {
+                        return Err(error("Failed to deserialize plaintext: array element is truncated"));
+                    }
                     // Recover the plaintext value.
-                    let plaintext = Self::read_le_internal(&mut bytes.as_slice(), depth + 1)?;
+                    let mut slice = bytes.as_slice();
+                    let plaintext = Self::read_le_internal(&mut slice, depth + 1)?;
+                    // Ensure the element fills its region. Bytes left unread would be
+                    // dropped on re-serialization, giving one value a second encoding.
+                    if !slice.is_empty() {
+                        return Err(error("Failed to deserialize plaintext: array element has trailing bytes"));
+                    }
                     // Add the element.
                     elements.push(plaintext);
                 }
@@ -408,5 +428,74 @@ mod tests {
             run_test(i, create_alternated_nested(i, "0u128"), i > CurrentNetwork::MAX_DATA_DEPTH);
             run_test(i, create_alternated_nested(i, "10field"), i > CurrentNetwork::MAX_DATA_DEPTH);
         }
+    }
+
+    /// Builds the encoding of a one-member struct, declaring `padding` more bytes
+    /// for the member than the member actually occupies.
+    fn struct_with_padded_member(padding: usize) -> Result<Vec<u8>> {
+        let member = Plaintext::<CurrentNetwork>::Literal(Literal::U8(U8::new(7)), Default::default());
+        let member_bytes = member.to_bytes_le()?;
+
+        let mut bytes = Vec::new();
+        1u8.write_le(&mut bytes)?;
+        1u8.write_le(&mut bytes)?;
+        Identifier::<CurrentNetwork>::from_str("a")?.write_le(&mut bytes)?;
+        u16::try_from(member_bytes.len() + padding)?.write_le(&mut bytes)?;
+        bytes.extend_from_slice(&member_bytes);
+        bytes.extend(std::iter::repeat_n(0u8, padding));
+        Ok(bytes)
+    }
+
+    /// Builds the encoding of a one-element array, declaring `padding` more bytes
+    /// for the element than the element actually occupies.
+    fn array_with_padded_element(padding: usize) -> Result<Vec<u8>> {
+        let element = Plaintext::<CurrentNetwork>::Literal(Literal::U8(U8::new(7)), Default::default());
+        let element_bytes = element.to_bytes_le()?;
+
+        let mut bytes = Vec::new();
+        2u8.write_le(&mut bytes)?;
+        1u32.write_le(&mut bytes)?;
+        u16::try_from(element_bytes.len() + padding)?.write_le(&mut bytes)?;
+        bytes.extend_from_slice(&element_bytes);
+        bytes.extend(std::iter::repeat_n(0u8, padding));
+        Ok(bytes)
+    }
+
+    #[test]
+    fn test_struct_member_rejects_trailing_bytes() -> Result<()> {
+        // Unpadded, this is the encoding `to_bytes_le` produces, and it must keep working.
+        let exact = struct_with_padded_member(0)?;
+        let plaintext = Plaintext::<CurrentNetwork>::read_le(&exact[..])?;
+        assert_eq!(exact, plaintext.to_bytes_le()?, "the unpadded encoding must round trip");
+
+        // A member region larger than the member fills leaves bytes unread. Accepting
+        // it gives one value a second encoding, since re-serializing emits the exact
+        // length -- and two encodings of one transaction are two TransmissionIDs.
+        for padding in [1, 8, 32] {
+            let padded = struct_with_padded_member(padding)?;
+            assert_ne!(padded, exact);
+            assert!(
+                Plaintext::<CurrentNetwork>::read_le(&padded[..]).is_err(),
+                "a struct member declaring {padding} bytes more than it uses must be rejected"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_array_element_rejects_trailing_bytes() -> Result<()> {
+        let exact = array_with_padded_element(0)?;
+        let plaintext = Plaintext::<CurrentNetwork>::read_le(&exact[..])?;
+        assert_eq!(exact, plaintext.to_bytes_le()?, "the unpadded encoding must round trip");
+
+        for padding in [1, 8, 32] {
+            let padded = array_with_padded_element(padding)?;
+            assert_ne!(padded, exact);
+            assert!(
+                Plaintext::<CurrentNetwork>::read_le(&padded[..]).is_err(),
+                "an array element declaring {padding} bytes more than it uses must be rejected"
+            );
+        }
+        Ok(())
     }
 }

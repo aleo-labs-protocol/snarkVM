@@ -1,17 +1,5 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    program1.aleo/main:
-      outputs:
-      - '{"type":"public","id":"4975037848789453328270746576547315164601437313167240992114901641218937612934field","value":"{\n  inner: {\n    x: 10u32,\n    y: 20u32\n  }\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    program2.aleo/create_middle:
-      outputs:
-      - '{"type":"private","id":"5306969900440140993117193902790342514832274375547754544547868196531375623872field","value":"ciphertext1qgqq6n825edz5n2fyrt7ef3j27e9s9skuhxn3w3lwupsrw5pvnt7gqgxg09q05lkt0m0zha7llyjc5ykdhsuxncgeemtlt9qpn68jvpupykchytk"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"6843218306703896316916453927637436567330500889689616287609783671103889432205field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1l92c2rcgwnfg2hwv7pvd60yvyf5usv7xfw4vg6k6hmt4trqg4vyqkre9hy,\n    2093u64\n  ]\n}"}'

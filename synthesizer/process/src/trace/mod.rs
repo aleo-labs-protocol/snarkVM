@@ -19,6 +19,9 @@ pub use call_metrics::*;
 mod inclusion;
 pub use inclusion::*;
 
+mod translation;
+pub use translation::*;
+
 use circuit::Assignment;
 use console::{
     network::prelude::*,
@@ -41,11 +44,17 @@ pub struct Trace<N: Network> {
     transition_tasks: HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)>,
     /// A tracker for all inclusion tasks.
     inclusion_tasks: Inclusion<N>,
+    /// A tracker for all translation tasks.
+    translation_tasks: Translation<N>,
     /// A list of call metrics.
     call_metrics: Vec<CallMetrics<N>>,
+    /// A map of transition IDs to child transition IDs.
+    call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
 
     /// A tracker for the inclusion assignments.
     inclusion_assignments: OnceLock<Vec<InclusionAssignmentWrapper<N>>>,
+    /// A tracker for the translation assignments, each paired with its translation index.
+    translation_assignments: OnceLock<Vec<(ProvingKey<N>, Vec<(TranslationAssignment<N>, u16)>)>>,
     /// A tracker for the global state root.
     global_state_root: OnceLock<N::StateRoot>,
 }
@@ -57,9 +66,12 @@ impl<N: Network> Trace<N> {
             transitions: Vec::new(),
             transition_tasks: HashMap::new(),
             inclusion_tasks: Inclusion::new(),
-            inclusion_assignments: OnceLock::new(),
-            global_state_root: OnceLock::new(),
+            translation_tasks: Translation::new(),
             call_metrics: Vec::new(),
+            call_graph: HashMap::new(),
+            inclusion_assignments: OnceLock::new(),
+            translation_assignments: OnceLock::new(),
+            global_state_root: OnceLock::new(),
         }
     }
 
@@ -68,9 +80,19 @@ impl<N: Network> Trace<N> {
         &self.transitions
     }
 
+    /// Returns the transition proving tasks (proving key + assignments), keyed by locator.
+    pub fn transition_tasks(&self) -> &HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)> {
+        &self.transition_tasks
+    }
+
     /// Returns the call metrics.
     pub fn call_metrics(&self) -> &[CallMetrics<N>] {
         &self.call_metrics
+    }
+
+    /// Returns the call graph.
+    pub fn call_graph(&self) -> &HashMap<N::TransitionID, Vec<N::TransitionID>> {
+        &self.call_graph
     }
 }
 
@@ -81,14 +103,19 @@ impl<N: Network> Trace<N> {
         input_ids: &[InputID<N>],
         transition: &Transition<N>,
         (proving_key, assignment): (ProvingKey<N>, Assignment<N::Field>),
+        translations: Vec<(TranslationAssignment<N>, ProvingKey<N>)>,
         metrics: CallMetrics<N>,
     ) -> Result<()> {
         // Ensure the inclusion assignments and global state root have not been set.
         ensure!(self.inclusion_assignments.get().is_none());
+        ensure!(self.translation_assignments.get().is_none());
         ensure!(self.global_state_root.get().is_none());
 
-        // Insert the transition into the inclusion tasks.
+        // Insert the transition into the inclusion and, if applicable, translation tasks.
         self.inclusion_tasks.insert_transition(input_ids, transition)?;
+        if !translations.is_empty() {
+            self.translation_tasks.insert_transition(*transition.id(), translations)?;
+        }
 
         // Construct the locator.
         let locator = Locator::new(*transition.program_id(), *transition.function_name());
@@ -129,29 +156,61 @@ impl<N: Network> Trace<N> {
 }
 
 impl<N: Network> Trace<N> {
-    /// Returns the inclusion assignments and global state root for the current transition(s).
+    /// Constructs the call graph.
+    pub fn construct_call_graph(&mut self, process: &crate::Process<N>) -> Result<()> {
+        let mut execution_stacks = indexmap::IndexMap::new();
+        for transition in &self.transitions {
+            execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id())?);
+        }
+        self.call_graph = crate::Process::construct_call_graph(self.transitions.iter(), &execution_stacks)?;
+        Ok(())
+    }
+}
+
+impl<N: Network> Trace<N> {
+    /// Returns the inclusion assignments, translation assignments, and global state root for the current transition(s).
     pub fn prepare(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {
-        // Compute the inclusion assignments.
+        // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
-        // Store the inclusion assignments and global state root.
+        let translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
+
+        // Store the inclusion assignments.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
+
+        // Store the translation assignments.
+        self.translation_assignments
+            .set(translation_assignments)
+            .map_err(|_| anyhow!("Failed to set translation assignments"))?;
+
+        // Store the global state root.
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
+
         Ok(())
     }
 
-    /// Returns the inclusion assignments and global state root for the current transition(s).
+    /// Returns the inclusion assignments, translation assignments, and global state root for the current transition(s).
     #[cfg(feature = "async")]
     pub async fn prepare_async(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {
-        // Compute the inclusion assignments.
+        // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) =
             self.inclusion_tasks.prepare_async(&self.transitions, query).await?;
-        // Store the inclusion assignments and global state root.
+        let translation_assignments = self.translation_tasks.prepare_async(&self.transitions, &self.call_graph).await?;
+
+        // Store the inclusion assignments.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
+
+        // Store the translation assignments.
+        self.translation_assignments
+            .set(translation_assignments)
+            .map_err(|_| anyhow!("Failed to set translation assignments"))?;
+
+        // Store the global state root.
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
+
         Ok(())
     }
 
@@ -175,13 +234,19 @@ impl<N: Network> Trace<N> {
         // Retrieve the global state root.
         let global_state_root =
             self.global_state_root.get().ok_or_else(|| anyhow!("Global state root has not been set"))?;
-        // Construct the proving tasks.
-        let proving_tasks = self.transition_tasks.values().cloned().collect();
+        // Retrieve the translation assignments.
+        let translation_assignments =
+            self.translation_assignments.get().ok_or_else(|| anyhow!("Translation assignments have not been set"))?;
+        // Construct the proving tasks with enough capacity for the transition, translation, and inclusion tasks.
+        let mut proving_tasks = Vec::with_capacity(self.transition_tasks.len() + translation_assignments.len() + 1);
+        proving_tasks.extend(self.transition_tasks.values().cloned());
+
         // Compute the proof.
         let (global_state_root, proof) = Self::prove_batch::<A, R>(
             locator,
             varuna_version,
             proving_tasks,
+            translation_assignments,
             inclusion_assignments,
             *global_state_root,
             rng,
@@ -213,13 +278,17 @@ impl<N: Network> Trace<N> {
             self.global_state_root.get().ok_or_else(|| anyhow!("Global state root has not been set"))?;
         // Retrieve the fee transition.
         let fee_transition = &self.transitions[0];
-        // Construct the proving tasks.
-        let proving_tasks = self.transition_tasks.values().cloned().collect();
+        // Construct the proving tasks with enough capacity for the transition tasks and optional inclusion.
+        let mut proving_tasks = Vec::with_capacity(self.transition_tasks.len() + 1);
+        proving_tasks.extend(self.transition_tasks.values().cloned());
+        // Set the translation assignments to an empty vector, not applicable to fee transitions.
+        let translation_assignments = vec![];
         // Compute the proof.
         let (global_state_root, proof) = Self::prove_batch::<A, R>(
             "credits.aleo/fee (private or public)",
             varuna_version,
             proving_tasks,
+            &translation_assignments,
             inclusion_assignments,
             *global_state_root,
             rng,
@@ -300,10 +369,11 @@ impl<N: Network> Trace<N> {
 
 impl<N: Network> Trace<N> {
     /// Returns the global state root and proof for the given assignments.
-    fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    pub fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         locator: &str,
         varuna_version: VarunaVersion,
         mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,
+        translation_assignments: &[(ProvingKey<N>, Vec<(TranslationAssignment<N>, u16)>)],
         inclusion_assignments: &[InclusionAssignmentWrapper<N>],
         global_state_root: N::StateRoot,
         rng: &mut R,
@@ -368,6 +438,26 @@ impl<N: Network> Trace<N> {
             proving_tasks.push((proving_key, batch_inclusions));
         }
 
+        for (proving_key, assignments) in translation_assignments {
+            let circuit_assignments = assignments
+                .iter()
+                .map(|(assignment, translation_index)| {
+                    assignment.to_circuit_assignment::<A>(*translation_index, None, None, None)
+                })
+                .collect::<Result<Vec<Assignment<N::Field>>>>()?;
+            // Note that the `ProvingKey` contains an `Arc` to the underlying proving key, so cloning is cheap.
+            proving_tasks.push((proving_key.clone(), circuit_assignments));
+        }
+
+        // Ensure the number of instances does not exceed the limit.
+        let num_instances: usize = proving_tasks.iter().map(|(_, assignments)| assignments.len()).sum();
+        ensure!(
+            num_instances <= N::MAX_BATCH_PROOF_INSTANCES,
+            "Total proof instances ({}) exceed the maximum allowed ({})",
+            num_instances,
+            N::MAX_BATCH_PROOF_INSTANCES
+        );
+
         // Compute the proof.
         let proof = ProvingKey::prove_batch(locator, varuna_version, &proving_tasks, rng)?;
         // Return the global state root and proof.
@@ -389,12 +479,11 @@ impl<N: Network> Trace<N> {
         let batch_inclusion_inputs =
             Inclusion::prepare_verifier_inputs(global_state_root, inclusion_version, transitions.clone())?;
 
-        let expected_n_inclusions = Authorization::number_of_input_records(transitions);
+        let expected_incl = Authorization::number_of_input_records(transitions);
+        let actual_incl = batch_inclusion_inputs.len();
         ensure!(
-            batch_inclusion_inputs.len() == expected_n_inclusions,
-            "Unexpected number of inclusion inputs: {} instead of {}",
-            batch_inclusion_inputs.len(),
-            expected_n_inclusions
+            actual_incl == expected_incl,
+            "Unexpected number of inclusion inputs: {actual_incl} v.s. {expected_incl}"
         );
 
         // Insert the batch of inclusion verifier inputs to the verifier inputs.

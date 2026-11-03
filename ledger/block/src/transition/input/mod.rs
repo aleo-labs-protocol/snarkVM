@@ -19,7 +19,7 @@ mod string;
 
 use console::{
     network::prelude::*,
-    program::{Ciphertext, Plaintext, TransitionLeaf},
+    program::{Ciphertext, Plaintext, TransitionLeaf, ValueType},
     types::Field,
 };
 
@@ -38,6 +38,16 @@ pub enum Input<N: Network> {
     Record(Field<N>, Field<N>),
     /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<N>),
+    /// The hash of the dynamic record's (function_id, record, tvk, input index).
+    DynamicRecord(Field<N>),
+    /// The serial number, tag, and dynamic ID of a record input in a dynamic call transition.
+    /// The `dynamic_id` is computed from `hash(function_id, record, tvk, index)`.
+    /// From the caller's perspective, this appears as `DynamicRecord(dynamic_id)`.
+    RecordWithDynamicID(Field<N>, Field<N>, Field<N>),
+    /// The external record hash and dynamic ID of an external record input in a dynamic call transition.
+    /// The `dynamic_id` is computed from `hash(function_id, record, tvk, index)`.
+    /// From the caller's perspective, this appears as `DynamicRecord(dynamic_id)`.
+    ExternalRecordWithDynamicID(Field<N>, Field<N>),
 }
 
 impl<N: Network> Input<N> {
@@ -49,6 +59,9 @@ impl<N: Network> Input<N> {
             Input::Private(..) => 2,
             Input::Record(..) => 3, // <- Changing this will invalidate 'console::StatePath' and 'circuit::StatePath'.
             Input::ExternalRecord(..) => 4,
+            Input::DynamicRecord(..) => 5,
+            Input::RecordWithDynamicID(..) => 6,
+            Input::ExternalRecordWithDynamicID(..) => 7,
         }
     }
 
@@ -60,18 +73,32 @@ impl<N: Network> Input<N> {
             Input::Private(id, ..) => id,
             Input::Record(serial_number, ..) => serial_number,
             Input::ExternalRecord(id) => id,
+            Input::DynamicRecord(id) => id,
+            Input::RecordWithDynamicID(serial_number, ..) => serial_number,
+            Input::ExternalRecordWithDynamicID(id, ..) => id,
         }
     }
 
     /// Returns the input as a transition leaf.
+    /// Note: RecordWithDynamicID uses leaf variant 3 (same as Record) with version 2.
+    /// Note: ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord) with version 2.
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
-        TransitionLeaf::new_with_version(index, self.variant(), *self.id())
+        match self {
+            // RecordWithDynamicID produces leaf with version 2, variant 3.
+            Input::RecordWithDynamicID(..) => TransitionLeaf::new_record_with_dynamic_id(index, *self.id()),
+            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4.
+            Input::ExternalRecordWithDynamicID(..) => {
+                TransitionLeaf::new_external_record_with_dynamic_id(index, *self.id())
+            }
+            // All other variants use their serialization variant byte.
+            _ => TransitionLeaf::new(index, self.variant(), *self.id()),
+        }
     }
 
     /// Returns the tag, if the input is a record.
     pub const fn tag(&self) -> Option<&Field<N>> {
         match self {
-            Input::Record(_, tag) => Some(tag),
+            Input::Record(_, tag) | Input::RecordWithDynamicID(_, tag, _) => Some(tag),
             _ => None,
         }
     }
@@ -79,7 +106,7 @@ impl<N: Network> Input<N> {
     /// Returns the tag, if the input is a record, and consumes `self`.
     pub fn into_tag(self) -> Option<Field<N>> {
         match self {
-            Input::Record(_, tag) => Some(tag),
+            Input::Record(_, tag) | Input::RecordWithDynamicID(_, tag, _) => Some(tag),
             _ => None,
         }
     }
@@ -87,7 +114,7 @@ impl<N: Network> Input<N> {
     /// Returns the serial number, if the input is a record.
     pub const fn serial_number(&self) -> Option<&Field<N>> {
         match self {
-            Input::Record(serial_number, ..) => Some(serial_number),
+            Input::Record(serial_number, ..) | Input::RecordWithDynamicID(serial_number, ..) => Some(serial_number),
             _ => None,
         }
     }
@@ -95,7 +122,7 @@ impl<N: Network> Input<N> {
     /// Returns the serial number, if the input is a record, and consumes `self`.
     pub fn into_serial_number(self) -> Option<Field<N>> {
         match self {
-            Input::Record(serial_number, ..) => Some(serial_number),
+            Input::Record(serial_number, ..) | Input::RecordWithDynamicID(serial_number, ..) => Some(serial_number),
             _ => None,
         }
     }
@@ -103,6 +130,30 @@ impl<N: Network> Input<N> {
     /// Returns the public verifier inputs for the proof.
     pub fn verifier_inputs(&self) -> impl '_ + Iterator<Item = N::Field> {
         [Some(self.id()), self.tag()].into_iter().flatten().map(|id| **id)
+    }
+
+    /// Returns the dynamic ID, if the input carries one.
+    pub const fn dynamic_id(&self) -> Option<&Field<N>> {
+        match self {
+            Input::RecordWithDynamicID(_, _, dynamic_id) | Input::ExternalRecordWithDynamicID(_, dynamic_id) => {
+                Some(dynamic_id)
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns the input from the caller's perspective.
+    /// This converts internal variants (like RecordWithDynamicID) to what
+    /// the caller would see (like DynamicRecord).
+    pub fn to_caller_input(&self) -> Self {
+        match self {
+            // RecordWithDynamicID becomes DynamicRecord from caller's view.
+            Self::RecordWithDynamicID(_, _, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // ExternalRecordWithDynamicID becomes DynamicRecord from caller's view.
+            Self::ExternalRecordWithDynamicID(_, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // All other variants are unchanged.
+            other => other.clone(),
+        }
     }
 
     /// Returns `true` if the input is well-formed.
@@ -165,7 +216,11 @@ impl<N: Network> Input<N> {
                 // A similar rule is enforced for the transition output.
                 bail!("A transition input value is missing")
             }
-            Input::Record(_, _) | Input::ExternalRecord(_) => Ok(true),
+            Input::Record(_, _)
+            | Input::ExternalRecord(_)
+            | Input::DynamicRecord(_)
+            | Input::RecordWithDynamicID(_, _, _)
+            | Input::ExternalRecordWithDynamicID(_, _) => Ok(true),
         };
 
         match result() {
@@ -174,6 +229,75 @@ impl<N: Network> Input<N> {
                 eprintln!("{error}");
                 false
             }
+        }
+    }
+
+    /// Returns `true` if the input matches the expected value type.
+    pub fn is_type(&self, expected_value_type: &ValueType<N>) -> bool {
+        matches!(
+            (self, expected_value_type),
+            (Self::Constant(..), ValueType::Constant(..))
+                | (Self::Public(..), ValueType::Public(..))
+                | (Self::Private(..), ValueType::Private(..))
+                | (Self::Record(..), ValueType::Record(..))
+                | (Self::RecordWithDynamicID(..), ValueType::Record(..))
+                | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+        )
+    }
+
+    /// Returns `true` if the input matches the given value type as seen by the callee. `Record`,
+    /// `ExternalRecord`, `DynamicRecord`, `RecordWithDynamicID` and `ExternalRecordWithDynamicID`
+    /// inputs are handled according to the value of `is_dynamic`:
+    ///  - `Some(true)` enforces type correspondence assuming the inputs refer to a dynamic call.
+    ///  - `Some(false)` enforces it assuming a static call.
+    ///  - `None` is flexible and makes no assumption about the type of call: both dynamic-call and
+    ///    static-call matching patterns return `true`.
+    ///
+    /// For inputs of an invalid type according to `is_dynamic`, this function returns false
+    /// regardless of the value type.
+    pub fn valid_as_argument(&self, callee_value_type: &ValueType<N>, is_dynamic: Option<bool>) -> bool {
+        if matches!(
+            (self, callee_value_type),
+            (Self::Constant(..), ValueType::Constant(..))
+                | (Self::Public(..), ValueType::Public(..))
+                | (Self::Private(..), ValueType::Private(..))
+        ) {
+            return true;
+        }
+
+        if is_dynamic == Some(true) {
+            // Unmatched variants:
+            //  - Self::Record: cannot be the callee's view of a dynamic-call input, so we return
+            //    false regardless of the ValueType
+            //  - Self::ExternalRecord: same as above
+            matches!(
+                (self, callee_value_type),
+                // Caller sees DynamicRecord, callee receives static Record, translation occurs
+                (Self::RecordWithDynamicID(..), ValueType::Record(..))
+                // Caller sees DynamicRecord, callee receives ExternalRecord, translation occurs
+                | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
+                // Caller and callee see DynamicRecord, no translation occurs
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+            )
+        } else if is_dynamic == Some(false) {
+            // Unmatched variants:
+            //  - Self::RecordWithDynamicID: no translation can occur in static calls
+            //  - Self::ExternalRecordWithDynamicID: same as above
+            matches!(
+                (self, callee_value_type),
+                // This can only occur for the root transition since static local calls are
+                // disallowed
+                (Self::Record(..), ValueType::Record(..))
+                // Pass-through of External records (no translation )
+                | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                // Since this is a static call, dynamic records are only passed through
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+            )
+        } else {
+            // is_dynamic = None: flexible matching
+            self.is_type(callee_value_type)
         }
     }
 }
@@ -215,6 +339,63 @@ pub(crate) mod test_helpers {
             (Uniform::rand(rng), Input::Private(ciphertext_hash, Some(ciphertext))),
             (Uniform::rand(rng), Input::Record(Uniform::rand(rng), Uniform::rand(rng))),
             (Uniform::rand(rng), Input::ExternalRecord(Uniform::rand(rng))),
+            (
+                Uniform::rand(rng),
+                Input::RecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng), Uniform::rand(rng)),
+            ),
+            (Uniform::rand(rng), Input::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
+            (Uniform::rand(rng), Input::DynamicRecord(Uniform::rand(rng))),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_to_caller_input_record_with_dynamic_id() {
+        // RecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let serial_number = Field::<CurrentNetwork>::from_u64(1);
+        let tag = Field::<CurrentNetwork>::from_u64(2);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(3);
+
+        let input = Input::<CurrentNetwork>::RecordWithDynamicID(serial_number, tag, dynamic_id);
+        let caller_input = input.to_caller_input();
+
+        assert_eq!(caller_input, Input::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_input_external_record_with_dynamic_id() {
+        // ExternalRecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let ext_id = Field::<CurrentNetwork>::from_u64(10);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(20);
+
+        let input = Input::<CurrentNetwork>::ExternalRecordWithDynamicID(ext_id, dynamic_id);
+        let caller_input = input.to_caller_input();
+
+        assert_eq!(caller_input, Input::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_input_non_dynamic_variants_unchanged() {
+        // Non-dynamic variants must be returned unchanged.
+        let id = Field::<CurrentNetwork>::from_u64(42);
+
+        let constant = Input::<CurrentNetwork>::Constant(id, None);
+        assert_eq!(constant.to_caller_input(), constant);
+
+        let public = Input::<CurrentNetwork>::Public(id, None);
+        assert_eq!(public.to_caller_input(), public);
+
+        let dynamic_record = Input::<CurrentNetwork>::DynamicRecord(id);
+        assert_eq!(dynamic_record.to_caller_input(), dynamic_record);
+
+        let external = Input::<CurrentNetwork>::ExternalRecord(id);
+        assert_eq!(external.to_caller_input(), external);
     }
 }

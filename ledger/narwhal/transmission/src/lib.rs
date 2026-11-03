@@ -99,14 +99,14 @@ pub mod test_helpers {
         // Append sample solutions.
         for _ in 0..5 {
             // Sample random fake solution bytes.
-            let solution = Data::Buffer(Bytes::from((0..1024).map(|_| rng.r#gen::<u8>()).collect::<Vec<_>>()));
+            let solution = Data::Buffer(Bytes::from((0..1024).map(|_| rng.random::<u8>()).collect::<Vec<_>>()));
             // Append the solution.
             sample.push(Transmission::Solution(solution));
         }
         // Append sample transactions.
         for _ in 0..5 {
             // Sample random fake transaction bytes.
-            let transaction = Data::Buffer(Bytes::from((0..1024).map(|_| rng.r#gen::<u8>()).collect::<Vec<_>>()));
+            let transaction = Data::Buffer(Bytes::from((0..1024).map(|_| rng.random::<u8>()).collect::<Vec<_>>()));
             // Append the transaction.
             sample.push(Transmission::Transaction(transaction));
         }

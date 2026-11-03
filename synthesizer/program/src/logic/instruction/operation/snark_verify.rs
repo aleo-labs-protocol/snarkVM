@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{Literal, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Value},
@@ -34,7 +42,7 @@ pub const MAX_SNARK_VERIFY_CIRCUITS: u32 = 1 << 5; // 32
 /// Note: This limit is independent to the total number of circuit instances that may exist in an `Execution` proof.
 pub const MAX_SNARK_VERIFY_INSTANCES: u32 = 1 << 7; // 128
 
-/// Which hash function to use.
+/// Which verification variant to use (single-proof or batch).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SnarkVerifyVariant {
     Varuna,
@@ -47,6 +55,7 @@ impl SnarkVerifyVariant {
         match variant {
             0 => Self::Varuna,
             1 => Self::VarunaBatch,
+            // Only `SnarkVerify` (VARIANT=0) and `SnarkVerifyBatch` (VARIANT=1) are publicly exposed.
             _ => panic!("Invalid 'snark.verify' instruction opcode"),
         }
     }
@@ -110,7 +119,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
 /// Perform the snark verification based on the variant.
 #[rustfmt::skip]
 macro_rules! do_snark_verification {
-    ($variant: expr, $function_name: expr, $verifying_key: expr, $varuna_version: expr, $inputs: expr, $proof: expr) => {{
+    ($variant: expr, $function_name: expr, $verifying_key: expr, $varuna_version: expr, $inputs: expr, $proof: expr, $consensus_version: expr) => {{
         let verifying_key = || match $verifying_key {
             Value::Plaintext(plaintext) => VerifyingKey::<N>::from_bytes_le(&plaintext.as_byte_array()?),
             _ => bail!("Expected the first operand to be a byte array."),
@@ -128,7 +137,22 @@ macro_rules! do_snark_verification {
         };
 
         let varuna_version = || match $varuna_version {
-            Value::Plaintext(Plaintext::Literal(Literal::U8(version), _)) => VarunaVersion::from_bytes_le(&[*version]),
+            Value::Plaintext(Plaintext::Literal(Literal::U8(version), _)) => {
+                let version = VarunaVersion::from_bytes_le(&[*version])?;
+                match version {
+                    VarunaVersion::V1 | VarunaVersion::V2 => {
+                        if $consensus_version.is_some_and(|version| version >= ConsensusVersion::V21) {
+                            return Err(io_error("Varuna V3 is required for snark verification").into());
+                        }
+                    }
+                    VarunaVersion::V3 => {
+                        if $consensus_version.is_some_and(|version| version < ConsensusVersion::V21) {
+                            return Err(io_error("Invalid Varuna version").into());
+                        }
+                    }
+                }
+                Ok(version)
+            }
             _ => bail!("Expected the Varuna version to be a U8 literal."),
         };
 
@@ -198,10 +222,17 @@ macro_rules! do_snark_verification {
             SnarkVerifyVariant::VarunaBatch => {
                 let vks = verifying_keys()?;
                 let batch_inputs_vec = batch_inputs()?;
+                // Ensure the number of verifying keys matches the number of input batches.
+                ensure!(
+                    vks.len() == batch_inputs_vec.len(),
+                    "The number of verifying keys ({}) does not match the number of input batches ({})",
+                    vks.len(),
+                    batch_inputs_vec.len()
+                );
                 // Validate and trim each instance against its verifying key
                 let trimmed_batch: Vec<Vec<Vec<N::Field>>> = vks
                     .iter()
-                    .zip(batch_inputs_vec.iter())
+                    .zip_eq(batch_inputs_vec.iter())
                     .map(|(vk, instances)| {
                         instances
                             .iter()
@@ -212,7 +243,7 @@ macro_rules! do_snark_verification {
                 VerifyingKey::verify_batch(
                     $function_name,
                     varuna_version()?,
-                    vks.into_iter().zip(trimmed_batch).collect(),
+                    vks.into_iter().zip_eq(trimmed_batch).collect(),
                     &varuna_proof()?
                 ).is_ok()
             }
@@ -231,7 +262,7 @@ pub fn evaluate_varuna_proof<N: Network>(
     inputs: &Value<N>,
     proof: &Value<N>,
 ) -> Result<bool> {
-    evaluate_varuna_proof_internal(variant, _function_name, verifying_key, varuna_version, inputs, proof)
+    evaluate_varuna_proof_internal(variant, _function_name, verifying_key, varuna_version, inputs, proof, None)
 }
 
 fn evaluate_varuna_proof_internal<N: Network>(
@@ -241,8 +272,9 @@ fn evaluate_varuna_proof_internal<N: Network>(
     varuna_version: Value<N>,
     inputs: &Value<N>,
     proof: &Value<N>,
+    consensus_version: Option<ConsensusVersion>,
 ) -> Result<bool> {
-    Ok(do_snark_verification!(variant, _function_name, verifying_key, varuna_version, inputs, proof))
+    Ok(do_snark_verification!(variant, _function_name, verifying_key, varuna_version, inputs, proof, consensus_version))
 }
 
 // Helper function to check if a type is a N-dimensional array of a given base literal type.
@@ -294,7 +326,12 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         // Ensure the number of operands is correct.
         if self.operands.len() != 4 {
             bail!("Instruction '{}' expects 4 operands, found {} operands", Self::opcode(), self.operands.len())
@@ -315,6 +352,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
             varuna_version,
             &inputs,
             &proof,
+            Some(N::CONSENSUS_VERSION(registers.state().block_height())?),
         )?;
         let output = Literal::Boolean(Boolean::new(output));
 
@@ -341,7 +379,8 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
         let (result, expected_type, num_vks) = match variant {
             SnarkVerifyVariant::Varuna => (check_nd_array_type(&input_types[0], LiteralType::U8, 1), "a byte array", 1),
             SnarkVerifyVariant::VarunaBatch => {
-                // For batch verification, ensure it's a 2-dimensional array of bytes with non-zero length.
+                // For batch verification, extract the number of circuits from the outer array dimension.
+                // Zero is allowed here; non-zero is enforced later when comparing against num_circuits.
                 let num_vks = match &input_types[0] {
                     RegisterType::Plaintext(PlaintextType::Array(array_type)) => **array_type.length(),
                     _ => 0,
@@ -413,7 +452,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
             "Instruction '{}' expects the number of circuits ({num_circuits}) to match the number of verifying keys ({num_vks}).",
             Self::opcode()
         );
-        // Check that the number of circuit is properly bound.
+        // Check that the number of circuits is properly bound.
         ensure!(
             num_circuits <= MAX_SNARK_VERIFY_CIRCUITS,
             "Instruction '{}' supports a maximum of {MAX_SNARK_VERIFY_CIRCUITS} batched circuits, found {num_circuits} circuits.",
@@ -447,7 +486,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
 impl<N: Network, const VARIANT: u8> Parser for SnarkVerification<N, VARIANT> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.

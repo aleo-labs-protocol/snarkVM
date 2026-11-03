@@ -72,6 +72,8 @@ pub enum Literal<N: Network> {
     Signature(Box<Signature<N>>),
     /// The string type.
     String(StringType<N>),
+    /// The identifier literal type.
+    Identifier(Box<IdentifierLiteral<N>>),
 }
 
 macro_rules! impl_from {

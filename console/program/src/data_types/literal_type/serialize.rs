@@ -58,6 +58,7 @@ mod tests {
         "scalar",
         "signature",
         "string",
+        "identifier",
     ];
 
     fn check_serde_json<

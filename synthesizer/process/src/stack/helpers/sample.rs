@@ -40,6 +40,34 @@ impl<N: Network> Stack<N> {
         Ok(future)
     }
 
+    /// Samples a dynamic future value.
+    pub fn sample_dynamic_future<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicFuture<N>> {
+        // Sample a random program name.
+        let program_name = Field::rand(rng);
+        // Use the `.aleo` program network.
+        let program_network = Identifier::from_str("aleo").unwrap().to_field()?; // Safe: "aleo" is always a valid identifier.
+        // Sample a random function name.
+        let function_name = Field::rand(rng);
+        // Sample a random argument root.
+        let argument_root = Field::rand(rng);
+
+        Ok(DynamicFuture::new_unchecked(program_name, program_network, function_name, argument_root, None))
+    }
+
+    /// Samples a dynamic record value.
+    pub fn sample_dynamic_record<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicRecord<N>> {
+        // Sample a random address.
+        let owner = Address::rand(rng);
+        // Sample a random root.
+        let root = Field::rand(rng);
+        // Sample a random nonce.
+        let nonce = Group::<N>::rand(rng);
+        // Sample a random version.
+        let version = U8::<N>::rand(rng);
+
+        Ok(DynamicRecord::new_unchecked(owner, root, nonce, version, None))
+    }
+
     /// Returns a record for the given record name.
     pub(crate) fn sample_record_internal<R: Rng + CryptoRng>(
         &self,
@@ -188,21 +216,36 @@ impl<N: Network> Stack<N> {
             None => bail!("Function '{locator}' does not have a finalize block"),
         };
 
+        // Sample the arguments using the external stack if the future is from an external program.
         let arguments = inputs
             .into_iter()
             .map(|input| {
                 match input.finalize_type() {
                     FinalizeType::Plaintext(plaintext_type) => {
-                        // Sample the plaintext value.
-                        let plaintext = self.sample_plaintext_internal(plaintext_type, depth + 1, rng)?;
+                        // Sample the plaintext value using the appropriate stack.
+                        let plaintext = match &external_stack {
+                            Some(external_stack) => {
+                                external_stack.sample_plaintext_internal(plaintext_type, depth + 1, rng)?
+                            }
+                            None => self.sample_plaintext_internal(plaintext_type, depth + 1, rng)?,
+                        };
                         // Return the argument.
                         Ok(Argument::Plaintext(plaintext))
                     }
                     FinalizeType::Future(locator) => {
-                        // Sample the future value.
-                        let future = self.sample_future_internal(locator, depth + 1, rng)?;
+                        // Sample the future value using the appropriate stack.
+                        let future = match &external_stack {
+                            Some(external_stack) => external_stack.sample_future_internal(locator, depth + 1, rng)?,
+                            None => self.sample_future_internal(locator, depth + 1, rng)?,
+                        };
                         // Return the argument.
                         Ok(Argument::Future(future))
+                    }
+                    FinalizeType::DynamicFuture => {
+                        // Sample the dynamic future value.
+                        let dynamic_future = self.sample_dynamic_future(rng)?;
+                        // Return the argument.
+                        Ok(Argument::DynamicFuture(dynamic_future))
                     }
                 }
             })

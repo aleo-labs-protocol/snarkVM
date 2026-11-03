@@ -72,13 +72,17 @@ impl TestChainBuilder {
         // Initialize the store.
         let store = ConsensusStore::<_, LedgerType<_>>::open(StorageMode::new_test(None)).unwrap();
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-        let seed: u64 = rng.r#gen();
+        let seed: u64 = rng.random();
         let genesis_rng = &mut TestRng::from_seed(seed);
         let genesis_block = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
 
-        // Extract the private keys from the genesis committee by using the same RNG to sample private keys.
+        // Reconstruct the private keys of the genesis committee.  genesis_beacon uses `private_key`
+        // as the first member, then samples (committee_size - 1) more from the seeded RNG.
         let genesis_rng = &mut TestRng::from_seed(seed);
-        let private_keys = (0..committee_size).map(|_| PrivateKey::new(genesis_rng).unwrap()).collect();
+        let mut private_keys = vec![private_key];
+        for _ in 1..committee_size {
+            private_keys.push(PrivateKey::new(genesis_rng).unwrap());
+        }
 
         Self::from_genesis(private_keys, genesis_block)
     }
@@ -296,5 +300,17 @@ impl TestChainBuilder {
     /// Return the genesis block associated with the test chain
     pub fn genesis_block(&self) -> &Block<CurrentNetwork> {
         &self.genesis_block
+    }
+
+    /// Returns the index into `private_keys` of the elected leader for the given round,
+    /// or `None` if the round has no committee or the leader is not among the known keys.
+    pub fn get_leader_index(&self, round: u64) -> Option<usize> {
+        let committee = self.ledger.get_committee_lookback_for_round(round).ok()??;
+        let leader = committee.get_leader(round).ok()?;
+        self.private_keys
+            .iter()
+            .enumerate()
+            .find(|(_, key)| Address::try_from(*key).unwrap() == leader)
+            .map(|(idx, _)| idx)
     }
 }

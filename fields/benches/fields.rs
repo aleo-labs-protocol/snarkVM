@@ -20,7 +20,7 @@ use snarkvm_fields::{Field, Fp256, Fp384, PrimeField};
 use snarkvm_utilities::TestRng;
 
 use criterion::*;
-use rand::Rng;
+use rand::RngExt;
 use std::{
     hint::black_box,
     ops::{AddAssign, MulAssign, SubAssign},

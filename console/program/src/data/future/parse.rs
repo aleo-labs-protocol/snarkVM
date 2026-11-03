@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Future<N> {
     /// Parses a string into a future value.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the future from the string.
         Self::parse_internal(string, 0)
     }
@@ -26,7 +26,7 @@ impl<N: Network> Parser for Future<N> {
 
 impl<N: Network> Future<N> {
     /// Parses an array of future arguments: `[arg_0, ..., arg_1]`, while tracking the depth of the data.
-    fn parse_arguments(string: &str, depth: usize) -> ParserResult<Vec<Argument<N>>> {
+    fn parse_arguments(string: &str, depth: usize) -> ParserResult<'_, Vec<Argument<N>>> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "[" from the string.
@@ -38,6 +38,7 @@ impl<N: Network> Future<N> {
             pair(pair(Sanitizer::parse_whitespaces, tag(",")), Sanitizer::parse),
             alt((
                 map(|input| Self::parse_internal(input, depth + 1), Argument::Future),
+                map(DynamicFuture::parse, Argument::DynamicFuture),
                 map(Plaintext::parse, Argument::Plaintext),
             )),
         )(string)?;
@@ -51,7 +52,7 @@ impl<N: Network> Future<N> {
 
     /// Parses a string into a future value, while tracking the depth of the data.
     #[inline]
-    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
+    fn parse_internal(string: &str, depth: usize) -> ParserResult<'_, Self> {
         // Ensure that the depth is within the maximum limit.
         // Note: `N::MAX_DATA_DEPTH` is an upper bound on the number of nested futures.
         //  The true maximum is defined by `Transaction::<N>::MAX_TRANSITIONS`, however, that object is not accessible in this crate.
@@ -189,23 +190,11 @@ impl<N: Network> Future<N> {
                     Argument::Plaintext(plaintext) => match i == self.arguments.len() - 1 {
                         true => {
                             // Print the last argument without a comma.
-                            write!(
-                                f,
-                                "\n{:indent$}{plaintext}",
-                                "",
-                                indent = (depth + 2) * INDENT,
-                                plaintext = plaintext
-                            )
+                            write!(f, "\n{:indent$}{plaintext}", "", indent = (depth + 2) * INDENT)
                         }
                         // Print the argument with a comma.
                         false => {
-                            write!(
-                                f,
-                                "\n{:indent$}{plaintext},",
-                                "",
-                                indent = (depth + 2) * INDENT,
-                                plaintext = plaintext
-                            )
+                            write!(f, "\n{:indent$}{plaintext},", "", indent = (depth + 2) * INDENT)
                         }
                     },
                     Argument::Future(future) => {
@@ -219,6 +208,16 @@ impl<N: Network> Future<N> {
                             true => write!(f, "\n{:indent$}", "", indent = (depth + 1) * INDENT),
                             // Print the member with a comma.
                             false => write!(f, ","),
+                        }
+                    }
+                    Argument::DynamicFuture(dynamic_future) => {
+                        match i == self.arguments.len() - 1 {
+                            true => {
+                                // Print the last argument without a comma.
+                                write!(f, "\n{:indent$}{dynamic_future}", "", indent = (depth + 2) * INDENT)
+                            }
+                            // Print the argument with a comma.
+                            false => write!(f, "\n{:indent$}{dynamic_future},", "", indent = (depth + 2) * INDENT),
                         }
                     }
                 }
@@ -237,10 +236,12 @@ mod tests {
     use super::*;
     use snarkvm_console_network::MainnetV0;
 
+    use core::str::FromStr;
+
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_parse_future() -> Result<()> {
+    fn test_parse_future() {
         // No argument case.
         let expected = r"{
   program_id: credits.aleo,
@@ -248,7 +249,8 @@ mod tests {
   arguments: []
 }";
         let (remainder, candidate) =
-            Future::<CurrentNetwork>::parse("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")?;
+            Future::<CurrentNetwork>::parse("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")
+                .unwrap();
         assert!(remainder.is_empty());
         assert_eq!(expected, candidate.to_string());
         assert_eq!("", remainder);
@@ -264,12 +266,70 @@ mod tests {
 }";
         let (remainder, candidate) = Future::<CurrentNetwork>::parse(
             "{ program_id: credits.aleo, function_name: transfer_public_to_private, arguments: [ aleo1g8qul5a44vk22u9uuvaewdcjw4v6xg8wx0llru39nnjn7eu08yrscxe4e2, 100000000u64 ] }",
-        )?;
+        ).unwrap();
         assert!(remainder.is_empty());
         assert_eq!(expected, candidate.to_string());
         assert_eq!("", remainder);
+    }
 
-        Ok(())
+    #[test]
+    fn test_parse_display_roundtrip() {
+        // Create a future with various argument types.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap()), Argument::Future(inner)],
+        );
+
+        // Convert to string and parse back.
+        let string = expected.to_string();
+        let candidate = Future::<CurrentNetwork>::from_str(&string).unwrap();
+
+        assert_eq!(expected, candidate);
+    }
+
+    #[test]
+    fn test_parse_future_with_dynamic_future_argument() {
+        // Create an inner future and convert to dynamic.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+        let dynamic_inner = DynamicFuture::from_future(&inner).unwrap();
+
+        // Create a future with a dynamic future argument.
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![Argument::DynamicFuture(dynamic_inner)],
+        );
+
+        // Convert to string and parse back.
+        let string = expected.to_string();
+        let candidate = Future::<CurrentNetwork>::from_str(&string).unwrap();
+
+        // Verify structure.
+        assert_eq!(expected.program_id(), candidate.program_id());
+        assert_eq!(expected.function_name(), candidate.function_name());
+        assert_eq!(expected.arguments().len(), candidate.arguments().len());
+
+        // Verify the dynamic future argument matches.
+        match (&expected.arguments()[0], &candidate.arguments()[0]) {
+            (Argument::DynamicFuture(e), Argument::DynamicFuture(c)) => {
+                assert_eq!(e.program_name(), c.program_name());
+                assert_eq!(e.program_network(), c.program_network());
+                assert_eq!(e.function_name(), c.function_name());
+                assert_eq!(e.checksum(), c.checksum());
+            }
+            _ => panic!("Expected DynamicFuture argument"),
+        }
     }
 
     #[test]

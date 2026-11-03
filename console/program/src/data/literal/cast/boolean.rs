@@ -66,3 +66,17 @@ impl<E: Environment> Cast<Scalar<E>> for Boolean<E> {
         Ok(self.cast_lossy())
     }
 }
+
+impl<E: Environment> Cast<IdentifierLiteral<E>> for Boolean<E> {
+    /// Casts a `Boolean` to an `IdentifierLiteral`.
+    ///
+    /// Note: This cast always fails because valid identifier literals cannot map
+    /// to boolean values (0x00 or 0x01). The byte 0x00 is null and 0x01 (SOH) is
+    /// not a valid identifier character. This implementation exists for uniformity
+    /// with the `impl_cast_body!` macro used by all literal types.
+    #[inline]
+    fn cast(&self) -> Result<IdentifierLiteral<E>> {
+        let field: Field<E> = self.cast()?;
+        field.cast()
+    }
+}

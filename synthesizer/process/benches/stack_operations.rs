@@ -25,7 +25,7 @@ use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{Program, StackTrait};
 
 use criterion::{BatchSize, Criterion};
-use rand::{Rng as _, distributions::Alphanumeric};
+use rand::{RngExt as _, distr::Alphanumeric};
 use snarkvm_circuit::prelude::bail;
 use snarkvm_console::{network::Network, prelude::SizeInDataBits};
 use snarkvm_utilities::TestRng;
@@ -93,7 +93,7 @@ fn bench_stack_new(c: &mut Criterion) {
     }
 }
 
-fn bench_stack_get_number_of_calls(c: &mut Criterion) {
+fn bench_stack_get_minimum_number_of_calls(c: &mut Criterion) {
     // The depths to benchmark.
     const DEPTHS: [usize; 6] = [1, 2, 4, 8, 16, 30];
 
@@ -103,13 +103,13 @@ fn bench_stack_get_number_of_calls(c: &mut Criterion) {
     // Add the 0th program to the process.
     add_program_at_depth(&mut process, 0);
 
-    // Benchmark the `get_number_of_calls` method for the base case.
-    c.bench_function("Depth 0 | Stack::get_number_of_calls", |b| {
+    // Benchmark the `get_minumum_number_of_calls` method for the base case.
+    c.bench_function("Depth 0 | Stack::get_minimum_number_of_calls", |b| {
         b.iter(|| {
             // Get the `Stack` for the 0th program.
             let stack = process.get_stack(ProgramID::from_str("test_0.aleo").unwrap()).unwrap();
-            // Benchmark the `get_number_of_calls` method.
-            stack.get_number_of_calls(&Identifier::from_str("foo").unwrap())
+            // Benchmark the `get_minimum_number_of_calls` method.
+            stack.get_minimum_number_of_calls(&Identifier::from_str("foo").unwrap())
         })
     });
 
@@ -128,9 +128,9 @@ fn bench_stack_get_number_of_calls(c: &mut Criterion) {
         // Get the `Stack` for the current test program.
         let stack = process.get_stack(ProgramID::from_str(&format!("test_{i}.aleo")).unwrap()).unwrap();
 
-        // Benchmark the `get_number_of_calls` method.
-        c.bench_function(&format!("Depth {i} | Stack::get_number_of_calls"), |b| {
-            b.iter(|| stack.get_number_of_calls(&Identifier::from_str("foo").unwrap()))
+        // Benchmark the `get_minimum_number_of_calls` method.
+        c.bench_function(&format!("Depth {i} | Stack::get_minimum_number_of_calls"), |b| {
+            b.iter(|| stack.get_minimum_number_of_calls(&Identifier::from_str("foo").unwrap()))
         });
     }
 }
@@ -150,7 +150,7 @@ fn add_program_at_depth(process: &mut Process<CurrentNetwork>, depth: usize) {
     };
 
     // Add the program to the process.
-    process.add_program(&program).unwrap();
+    process.lock().add_program(&program).unwrap();
 }
 
 // Samples a random identifier as a string.
@@ -174,6 +174,6 @@ fn sample_identifier_as_string<N: Network>(rng: &mut TestRng) -> snarkvm_console
 criterion_group! {
     name = stack_operations;
     config = Criterion::default().sample_size(10);
-    targets = bench_stack_new, bench_stack_get_number_of_calls
+    targets = bench_stack_new, bench_stack_get_minimum_number_of_calls
 }
 criterion_main!(stack_operations);

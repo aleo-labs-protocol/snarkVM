@@ -15,7 +15,7 @@
 
 use crate::{
     polycommit::sonic_pc,
-    snark::varuna::{CircuitVerifyingKey, SNARKMode, ahp::indexer::*},
+    snark::varuna::{CircuitVerifyingKey, SNARKMode, UniversalSRS, ahp::indexer::*},
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_utilities::{FromBytes, ToBytes, serialize::*};
@@ -46,10 +46,23 @@ impl<E: PairingEngine, SM: SNARKMode> ToBytes for CircuitProvingKey<E, SM> {
 
 impl<E: PairingEngine, SM: SNARKMode> FromBytes for CircuitProvingKey<E, SM> {
     #[inline]
-    fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
+    fn read_le<R: Read>(reader: R) -> io::Result<Self> {
+        Self::read_le_sharing(reader, None)
+    }
+}
+
+impl<E: PairingEngine, SM: SNARKMode> CircuitProvingKey<E, SM> {
+    /// Reads a key as `read_le` does, but shares its committer key's powers
+    /// with `srs`. Fails if `srs` does not hold them; see
+    /// `CommitterKey::read_le_with_srs`.
+    pub fn read_le_with_srs<R: Read>(reader: R, srs: &UniversalSRS<E>) -> io::Result<Self> {
+        Self::read_le_sharing(reader, Some(srs))
+    }
+
+    fn read_le_sharing<R: Read>(mut reader: R, srs: Option<&UniversalSRS<E>>) -> io::Result<Self> {
         let circuit_verifying_key = CanonicalDeserialize::deserialize_compressed(&mut reader)?;
         let circuit = CanonicalDeserialize::deserialize_compressed(&mut reader)?;
-        let committer_key = Arc::new(FromBytes::read_le(&mut reader)?);
+        let committer_key = Arc::new(sonic_pc::CommitterKey::read_le_sharing(&mut reader, srs)?);
 
         Ok(Self { circuit_verifying_key, circuit, committer_key })
     }

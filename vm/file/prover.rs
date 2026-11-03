@@ -228,9 +228,9 @@ function compute:
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
         // Construct the process.
-        let mut process = Process::load().unwrap();
+        let process = Process::load().unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
 
         // Prepare the function name.
         let function_name = Identifier::from_str("compute").unwrap();

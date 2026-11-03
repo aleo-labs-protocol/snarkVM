@@ -67,6 +67,14 @@ impl<N: Network> RegisterTypes<N> {
                         RegisterType::Future(..) => {
                             bail!("Casting a future into a struct entry is illegal")
                         }
+                        // Ensure the register type is not a dynamic record.
+                        RegisterType::DynamicRecord => {
+                            bail!("Casting a dynamic record into a struct entry is illegal")
+                        }
+                        // Ensure the register type is not a dynamic future.
+                        RegisterType::DynamicFuture => {
+                            bail!("Casting a dynamic future into a struct entry is illegal")
+                        }
                         // Ensure the register type matches the member type.
                         RegisterType::Plaintext(type_) => {
                             ensure!(
@@ -132,6 +140,12 @@ impl<N: Network> RegisterTypes<N> {
                         "Struct member '{struct_name}.{member_name}' cannot be from a program owner in a non-finalize scope"
                     )
                 }
+                // If the operand is a component checksum type, throw an error.
+                Operand::ComponentChecksum(..) => {
+                    bail!(
+                        "Struct member '{struct_name}.{member_name}' cannot be from a component checksum in a non-finalize scope"
+                    )
+                }
             }
         }
         Ok(())
@@ -177,6 +191,14 @@ impl<N: Network> RegisterTypes<N> {
                         // Ensure the register type is not a future.
                         RegisterType::Future(..) => {
                             bail!("Casting a future into an array element is illegal")
+                        }
+                        // Ensure the register type is not a dynamic record.
+                        RegisterType::DynamicRecord => {
+                            bail!("Casting a dynamic record into an array element is illegal")
+                        }
+                        // Ensure the register type is not a dynamic future.
+                        RegisterType::DynamicFuture => {
+                            bail!("Casting a dynamic future into an array element is illegal")
                         }
                         // Ensure the register type matches the element type.
                         RegisterType::Plaintext(type_) => {
@@ -228,6 +250,10 @@ impl<N: Network> RegisterTypes<N> {
                 // If the operand is a program owner type, throw an error.
                 Operand::ProgramOwner(_) => {
                     bail!("Array element cannot be from a program owner in a non-finalize scope")
+                }
+                // If the operand is a component checksum type, throw an error.
+                Operand::ComponentChecksum(..) => {
+                    bail!("Array element cannot be from a component checksum in a non-finalize scope")
                 }
             }
         }
@@ -307,6 +333,9 @@ impl<N: Network> RegisterTypes<N> {
             Operand::ProgramOwner(_) => {
                 bail!("Forbidden operation: Cannot cast a program owner as a record owner")
             }
+            Operand::ComponentChecksum(..) => {
+                bail!("Forbidden operation: Cannot cast a component checksum as a record owner")
+            }
         }
 
         // Ensure the operand types match the record entry types.
@@ -336,6 +365,14 @@ impl<N: Network> RegisterTypes<N> {
                                 // Ensure the register type is not a future.
                                 RegisterType::Future(..) => {
                                     bail!("Casting a future into a record entry is illegal")
+                                }
+                                // Ensure the register type is not a dynamic record.
+                                RegisterType::DynamicRecord => {
+                                    bail!("Casting a dynamic record into a record entry is illegal")
+                                }
+                                // Ensure the register type is not a dynamic future.
+                                RegisterType::DynamicFuture => {
+                                    bail!("Casting a dynamic future into a record entry is illegal")
                                 }
                                 // Ensure the register type matches the entry type.
                                 RegisterType::Plaintext(type_) => {
@@ -407,6 +444,12 @@ impl<N: Network> RegisterTypes<N> {
                         Operand::ProgramOwner(_) => {
                             bail!(
                                 "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a program owner in the operand '{operand}'."
+                            )
+                        }
+                        // Fail if the operand is a component checksum.
+                        Operand::ComponentChecksum(..) => {
+                            bail!(
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a component checksum in the operand '{operand}'."
                             )
                         }
                     }

@@ -19,6 +19,8 @@ use crate::{narwhal::BatchHeader, puzzle::SolutionID};
 
 use anyhow::{Context, bail};
 
+use snarkvm_synthesizer_error::VmCheckBlockContentError;
+
 /// Wrapper for a block that has a valid subDAG, but where the block header,
 /// solutions, and transmissions have not been verified yet.
 ///
@@ -118,6 +120,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     fn check_block_subdag_inner(&self, block: &Block<N>, prefix: &[PendingBlock<N>]) -> Result<(), CheckBlockError<N>> {
         // Grab a lock to the latest_block in the ledger, to prevent concurrent writes to the ledger,
         // and to ensure that this check is atomic.
+        //
+        // Note: The latest block in the ledger is not necessarily the direct predecessor of `block`.
+        // If `prefix` is non-empty the direct predecessor is the last entry in the prefix.
         let latest_block = self.current_block.read();
 
         // First check that the heights and hashes of the pending block sequence and of the new block are correct.
@@ -155,8 +160,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Ensure the certificates in the block subdag have met quorum requirements.
         self.check_block_subdag_quorum(block)?;
 
-        // Determine if the block subdag is correctly constructed and is not a combination of multiple subdags.
-        self.check_block_subdag_atomicity(block, &latest_block)?;
+        // Check subDAG atomicity against the latest block in the prefix.
+        // Only if the prefix is empty, check against the latest block in the ledger.
+        let predecessor = prefix.last().map_or(&*latest_block, |b| &**b);
+        self.check_block_subdag_atomicity(block, predecessor)?;
 
         // Ensure that all leaves of the subdag point to valid batches in other subdags/blocks.
         self.check_block_subdag_leaves(block, prefix)?;
@@ -209,20 +216,17 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         block: &Block<N>,
         rng: &mut R,
     ) -> Result<(), CheckBlockError<N>> {
-        // Grab lock to the previous block here, to ensure it does not change mid-check.
-        let previous_block = self.current_block.read();
+        let latest_block = self.current_block.read();
+        let latest_block_timestamp = latest_block.timestamp();
 
         // Ensure, again, that the ledger has not advanced yet. This prevents cryptic errors form appearing during the block check.
-        if block.height() != previous_block.height() + 1 {
-            return Err(CheckBlockError::InvalidHeight {
-                expected: previous_block.height() + 1,
-                actual: block.height(),
-            });
+        if block.height() != latest_block.height() + 1 {
+            return Err(CheckBlockError::InvalidHeight { expected: latest_block.height() + 1, actual: block.height() });
         }
 
         // Also ensure the round is valid, otherwise speculation on transactions will fail with a cryptic error.
-        if block.round() <= previous_block.round() {
-            return Err(CheckBlockError::InvalidRound { new: block.round(), previous: previous_block.round() });
+        if block.round() <= latest_block.round() {
+            return Err(CheckBlockError::InvalidRound { new: block.round(), previous: latest_block.round() });
         }
 
         // Ensure the solutions do not already exist.
@@ -231,30 +235,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 return Err(CheckBlockError::SolutionAlreadyExists { solution_id: *solution_id });
             }
         }
-
-        // Determine if the block timestamp should be included.
-        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-            .then_some(block.timestamp());
-        // Construct the finalize state.
-        let state = FinalizeGlobalState::new::<N>(
-            block.round(),
-            block.height(),
-            block_timestamp,
-            block.cumulative_weight(),
-            block.cumulative_proof_target(),
-            block.previous_hash(),
-        )?;
-
-        // Ensure speculation over the unconfirmed transactions is correct and ensure each transaction is well-formed and unique.
-        let time_since_last_block = block.timestamp().saturating_sub(previous_block.timestamp());
-        let ratified_finalize_operations = self.vm.check_speculate(
-            state,
-            time_since_last_block,
-            block.ratifications(),
-            block.solutions(),
-            block.transactions(),
-            rng,
-        )?;
 
         // Retrieve the committee lookback.
         let committee_lookback = self
@@ -273,22 +253,30 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Get the latest epoch hash.
         let latest_epoch_hash = match self.current_epoch_hash.read().as_ref() {
             Some(epoch_hash) => *epoch_hash,
-            None => self.get_epoch_hash(previous_block.height())?,
+            None => self.get_epoch_hash(latest_block.height())?,
         };
 
-        // Ensure the block is correct.
-        let (expected_existing_solution_ids, expected_existing_transaction_ids) = block
-            .verify(
-                &previous_block,
+        let (expected_existing_solution_ids, expected_existing_transaction_ids) =
+            match self.vm.check_block_content_inner(
+                block,
+                &latest_block,
+                latest_block_timestamp,
                 self.latest_state_root(),
                 &previous_committee_lookback,
                 &committee_lookback,
                 self.puzzle(),
                 latest_epoch_hash,
                 OffsetDateTime::now_utc().unix_timestamp(),
-                ratified_finalize_operations,
-            )
-            .map_err(|err| CheckBlockError::VerificationFailed { inner: err })?;
+                rng,
+            ) {
+                Ok(ids) => ids,
+                Err(VmCheckBlockContentError::Speculation(inner)) => {
+                    return Err(CheckBlockError::SpeculationFailed { inner });
+                }
+                Err(VmCheckBlockContentError::Verification(inner)) => {
+                    return Err(CheckBlockError::VerificationFailed { inner });
+                }
+            };
 
         // Ensure that the provers are within their stake bounds.
         if let Some(solutions) = block.solutions().deref() {
@@ -297,7 +285,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 let prover_address = solution.address();
                 let num_accepted_solutions = *accepted_solutions.get(&prover_address).unwrap_or(&0);
                 // Check if the prover has reached their solution limit.
-                if self.is_solution_limit_reached_inner(&previous_block, &prover_address, num_accepted_solutions) {
+                if self.is_solution_limit_reached_at_timestamp(
+                    &prover_address,
+                    num_accepted_solutions,
+                    latest_block_timestamp,
+                ) {
                     return Err(CheckBlockError::SolutionLimitReached { prover_address });
                 }
                 // Track the already accepted solutions.
@@ -401,9 +393,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             // Note that we do not need to check the quorum requirement for the previous certificates
             // because that is done during construction in `BatchCertificate::new`.
             cfg_iter!(certificates).try_for_each(|certificate| {
-                // Collect the certificate signers.
-                let mut signers: HashSet<_> =
-                    certificate.signatures().map(|signature| signature.to_address()).collect();
+                // Collect the certificate signers. Note that `signers` is cached on the
+                // certificate, so this does not re-derive an address per signature.
+                let mut signers: HashSet<_> = certificate.signers().iter().copied().collect();
                 // Append the certificate author.
                 signers.insert(certificate.author());
 

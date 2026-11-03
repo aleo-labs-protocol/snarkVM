@@ -114,7 +114,7 @@ fn test_prefix_with_duplicate_block_error() {
     assert!(matches!(result, Err(CheckBlockError::InvalidHeight { expected: 2, actual: 3 })));
 
     // But succeed with the prefix.
-    let block3 = ledger.check_block_subdag(block3, &[block2.clone()]).unwrap();
+    let block3 = ledger.check_block_subdag(block3, std::slice::from_ref(&block2)).unwrap();
 
     // Create a forth block
     let block4 = builder.generate_block(rng);
@@ -130,6 +130,44 @@ fn test_prefix_with_duplicate_block_error() {
     assert!(matches!(result, Err(CheckBlockError::InvalidPrefix { index: 0, .. })));
     let CheckBlockError::InvalidPrefix { error, .. } = result.unwrap_err() else { unreachable!() };
     assert!(matches!(*error, CheckBlockError::InvalidHeight { expected: 2, actual: 3 }));
+}
+
+/// Regression test for the bug where `check_block_subdag_atomicity` used the raw ledger
+/// tip round as `latest_round` instead of the last prefix block's round when a non-empty
+/// prefix was provided.
+#[test]
+fn test_atomicity_check_uses_prefix_latest_block() {
+    let rng = &mut TestRng::default();
+    let mut builder = TestChainBuilder::new(4, rng);
+
+    // External ledger starts at genesis and is never explicitly advanced in this test.
+    let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
+        builder.genesis_block().clone(),
+        StorageMode::new_test(None),
+    )
+    .unwrap();
+
+    // Identify the elected leader at round 2 and exclude them from block 1.
+    // This guarantees their certificate at round 2 is absent from block 1's subdag,
+    // making it a late-arriving *leader* certificate that will appear in block 2's subdag.
+    let skip_idx = builder.get_leader_index(2).expect("Leader not found for round 2");
+    let block1 =
+        builder.generate_block_with_opts(&BlockOptions { skip_nodes: vec![skip_idx], ..Default::default() }, rng);
+
+    // Pre-process block 1 against the external ledger (still at genesis) so it can
+    // be used as a prefix when validating block 2.
+    let pending_block1 = ledger.check_block_subdag(block1, &[]).unwrap();
+
+    // Generate block 2 with all validators participating.  The previously skipped
+    // validator's certificates for rounds ≤ block1.anchor_round are now included in
+    // block 2's subdag as late-arriving entries.
+    let block2 = builder.generate_block(rng);
+
+    // Block 2 must be accepted with block 1 as the prefix while the external ledger
+    // is still at genesis.  This would fail before the fix because the atomicity check
+    // incorrectly used genesis's round (0) instead of block 1's anchor round, causing it
+    // to flag the late-arriving leader cert at round 2 as a protocol violation.
+    ledger.check_block_subdag(block2, &[pending_block1]).unwrap();
 }
 
 #[test]

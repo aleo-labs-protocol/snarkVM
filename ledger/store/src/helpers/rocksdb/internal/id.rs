@@ -29,6 +29,7 @@ pub enum MapID {
     TransitionInput(TransitionInputMap),
     TransitionOutput(TransitionOutputMap),
     Program(ProgramMap),
+    Metadata(MetadataMap),
     #[cfg(test)]
     Test(TestMap),
 }
@@ -47,6 +48,7 @@ impl From<MapID> for u16 {
             MapID::TransitionInput(id) => id as u16,
             MapID::TransitionOutput(id) => id as u16,
             MapID::Program(id) => id as u16,
+            MapID::Metadata(id) => id as u16,
             #[cfg(test)]
             MapID::Test(id) => id as u16,
         }
@@ -114,6 +116,12 @@ pub enum DeploymentMap {
     Checksum = DataID::DeploymentChecksumMap as u16,
     VerifyingKey = DataID::DeploymentVerifyingKeyMap as u16,
     Certificate = DataID::DeploymentCertificateMap as u16,
+    AmendmentNextIndex = DataID::DeploymentAmendmentCountMap as u16,
+    AmendmentID = DataID::DeploymentAmendmentIDMap as u16,
+    ReverseAmendmentID = DataID::DeploymentReverseAmendmentIDMap as u16,
+    AmendmentVerifyingKey = DataID::DeploymentAmendmentVerifyingKeyMap as u16,
+    AmendmentCertificate = DataID::DeploymentAmendmentCertificateMap as u16,
+    AmendmentOwner = DataID::DeploymentAmendmentOwnerMap as u16,
 }
 
 /// The RocksDB map prefix for execution-related entries.
@@ -151,6 +159,8 @@ pub enum TransitionInputMap {
     Record = DataID::InputRecordMap as u16,
     RecordTag = DataID::InputRecordTagMap as u16,
     ExternalRecord = DataID::InputExternalRecordMap as u16,
+    DynamicRecord = DataID::InputDynamicRecordMap as u16,
+    DynamicID = DataID::InputDynamicIDMap as u16,
 }
 
 /// The RocksDB map prefix for transition output entries.
@@ -169,6 +179,8 @@ pub enum TransitionOutputMap {
     RecordSender = DataID::OutputRecordSenderMap as u16,
     ExternalRecord = DataID::OutputExternalRecordMap as u16,
     Future = DataID::OutputFutureMap as u16,
+    DynamicRecord = DataID::OutputDynamicRecordMap as u16,
+    DynamicID = DataID::OutputDynamicIDMap as u16,
 }
 
 /// The RocksDB map prefix for transaction-related entries.
@@ -204,6 +216,17 @@ pub enum ProgramMap {
     KeyValueID = DataID::KeyValueMap as u16,
     MappingUpdate = DataID::MappingUpdateMap as u16,
     MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
+    StakingRewards = DataID::StakingRewardsMap as u16,
+    RejectedReason = DataID::RejectedReasonMap as u16,
+}
+
+/// The RocksDB map prefix for storage metadata.
+///
+/// One map holds the well-known metadata keys, so later metadata does not need another `DataID`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum MetadataMap {
+    Metadata = DataID::StorageMetadataMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -309,6 +332,32 @@ enum DataID {
     MappingUpdateMap,
     // Historical mapping update heights.
     MappingUpdateHeightsMap,
+    /// Historical staking rewards.
+    StakingRewardsMap,
+
+    // Track dynamic record inputs.
+    InputDynamicRecordMap,
+    // Track dynamic record outputs.
+    OutputDynamicRecordMap,
+
+    // Track dynamic IDs for inputs.
+    InputDynamicIDMap,
+    // Track dynamic IDs for outputs.
+    OutputDynamicIDMap,
+
+    // Amendment maps.
+    DeploymentAmendmentCountMap,
+    DeploymentAmendmentIDMap,
+    DeploymentReverseAmendmentIDMap,
+    DeploymentAmendmentVerifyingKeyMap,
+    DeploymentAmendmentCertificateMap,
+    DeploymentAmendmentOwnerMap,
+
+    // Track rejection reasons for rejected transactions
+    RejectedReasonMap,
+
+    // Storage metadata: the schema version and the history sync cursor.
+    StorageMetadataMap,
 
     // Testing
     #[cfg(test)]

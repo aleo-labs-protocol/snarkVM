@@ -80,7 +80,7 @@ pub(crate) mod test_helpers {
             let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
             // Initialize a deployment ID.
-            let deployment_id: Field<CurrentNetwork> = rng.r#gen();
+            let deployment_id: Field<CurrentNetwork> = rng.random();
 
             // Return the program owner.
             ProgramOwner::new(&private_key, deployment_id, rng).unwrap()
@@ -96,7 +96,7 @@ pub(crate) mod test_helpers {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
         // Initialize a deployment ID.
-        let deployment_id: Field<CurrentNetwork> = rng.r#gen();
+        let deployment_id: Field<CurrentNetwork> = rng.random();
 
         // Construct the program owner.
         let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
@@ -104,7 +104,7 @@ pub(crate) mod test_helpers {
         assert!(owner.verify(deployment_id));
 
         // Ensure that the program owner is not verified for a different deployment ID.
-        let incorrect_deployment_id: Field<CurrentNetwork> = rng.r#gen();
+        let incorrect_deployment_id: Field<CurrentNetwork> = rng.random();
         assert!(!owner.verify(incorrect_deployment_id));
     }
 }

@@ -1,0 +1,183 @@
+# Runs the CUDA kernels on a GPU. ci.yml's lint job compiles them but never
+# executes one.
+#
+# The runner is an L4 or an A10G and is normally stopped. start-runner boots it,
+# and it stops itself after 30 idle minutes. Nothing here stops it, because a
+# stop job cannot see that another workflow run is mid-test on the same runner.
+name: gpu-test
+
+# A separate workflow because path filters are per workflow, and GPU minutes are
+# serialized behind one runner.
+on:
+  # The two path lists are duplicated because the workflow parser does not
+  # support YAML anchors. Keep them in sync by hand.
+  #
+  # Directories, not files with a device call site: `srs` and `r1cs` decide the
+  # inputs a kernel is handed, and `prepare_third.rs` reaches
+  # `lineval_interpolate_mul` without naming a kernel. `cargo test` runs neither
+  # `examples` nor `benches`, so `algorithms/src/**` is enough.
+  # `algorithms/Cargo.toml` holds the `cuda` feature gate and the
+  # dev-dependencies.
+  #
+  # The crates this one builds on (`fields`, `curves`, `utilities`,
+  # `parameters`) supply the host half of every comparison, so a change there
+  # can turn this job red without triggering it. The nightly cron covers them.
+  pull_request:
+    paths:
+      - 'algorithms/cuda/**'
+      - 'algorithms/src/**'
+      - 'algorithms/Cargo.toml'
+      # The root manifest sets the build profile, and the lockfile sets the
+      # versions the kernels resolve to, including `blst` and `sppark`.
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/gpu-test.yml'
+      # check-shared-refs runs only when these filters match, and other
+      # workflows hold gh-actions refs too.
+      - '.github/workflows/**'
+      # Exclusions are evaluated last, so a change to both a doc and code still
+      # runs.
+      - '!**/*.md'
+  push:
+    branches: [staging]
+    # Same as pull_request.
+    paths:
+      - 'algorithms/cuda/**'
+      - 'algorithms/src/**'
+      - 'algorithms/Cargo.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/gpu-test.yml'
+      - '.github/workflows/**'
+      - '!**/*.md'
+  # Catches changes that reach the kernels from outside the paths above.
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Fails while any gh-actions ref is not a release tag. The runner role trusts
+  # start-runner.yml only at a `v*` tag, a deleted branch ref fails with
+  # `unable to resolve action`, and anyone who can push to a referenced branch
+  # runs code that holds this repository's OIDC token.
+  check-shared-refs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/check-shared-refs@v2
+  # Moving the @v2 tag changes what runs with this repository's OIDC token.
+  # `actions: read` lets it count the queued jobs. Secrets are named, not
+  # inherited, because the tag moves.
+  start-runners:
+    needs: check-shared-refs
+    uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
+    permissions: { id-token: write, contents: read, actions: read }
+    secrets:
+      runner_app_key: ${{ secrets.RUNNER_APP_KEY }}
+    with:
+      role-to-assume: ${{ vars.RUNNER_ROLE_ARN }}
+      label: gpu
+      runner-app-id: ${{ vars.RUNNER_APP_ID }}
+    # Duplicates the shared workflow's guard, so it is visible in the file where
+    # someone might add pull_request_target.
+    if: >-
+      github.event_name != 'pull_request_target' &&
+      (github.event.pull_request == null ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+
+  gpu-test:
+    needs: start-runners
+    # The runner stays registered while stopped, so the job queues rather than
+    # fails.
+    runs-on: [self-hosted, linux, x64, gpu]
+    if: >-
+      github.event_name != 'pull_request_target' &&
+      (github.event.pull_request == null ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+
+    timeout-minutes: 120
+    env:
+      # sm_86 SASS runs on an A10G and an L4 (sm_89), so either runner takes
+      # the job.
+      CUDA_ARCH: sm_86
+      # `x86-64-v3` does not include ADX, and both runners have it, so the build
+      # checks that blst and this crate agree on ADX whatever the target says.
+      RUSTFLAGS: -C target-cpu=x86-64-v3
+    steps:
+      # Checks disk headroom and the GPU, and starts the peak-memory sampler
+      # that gpu-runner-report reads.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/gpu-runner-preflight@v2
+
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+
+      # No `rustup update`: rust-toolchain.toml pins the toolchain.
+      - name: Versions
+        run: |
+          cargo --version
+          # The nvcc that cc-rs runs. cc-rs reads NVCC_<target>,
+          # NVCC_<target_with_underscores>, HOST_NVCC, then NVCC, and uses the
+          # first it finds verbatim.
+          for v in 'NVCC_x86_64-unknown-linux-gnu' NVCC_x86_64_unknown_linux_gnu HOST_NVCC; do
+            printenv "$v" >/dev/null 2>&1 && {
+              echo "::error::$v is set; this diagnostic reads NVCC and would name a compiler that did not build the binary under test" >&2; exit 1; }
+          done
+          if [ -n "${NVCC+set}" ]; then nv="$NVCC"; else nv=nvcc; fi
+          "$nv" --version | tail -2
+
+      # `tee` keeps a log after GitHub expires the run log. Without `pipefail`
+      # the step takes tee's exit status and a failing test reports green.
+      - name: Run the kernels on the device
+        run: |
+          set -o pipefail
+          cargo test --release -p snarkvm-algorithms -p snarkvm-algorithms-cuda \
+            --features snarkvm-algorithms/cuda 2>&1 \
+            | tee "${RUNNER_TEMP}/gpu-test.log"
+
+      # A kernel built for the wrong arch does not run, and the failure is
+      # silent unless every launch is error-checked.
+      - name: Confirm the tested binary really was sm_86
+        run: |
+          set -euo pipefail
+          # Not `| head -1`: find can take SIGPIPE, and pipefail turns that into
+          # a flaky exit 141.
+          lib=$(find target/release/build -name 'libsnarkvm_algorithms_cuda.a' -print -quit)
+          test -n "${lib}" || { echo "::error::no CUDA static lib produced" >&2; exit 1; }
+          # Without `|| true`, a grep with no match kills the step at this
+          # assignment, before the error branch below can report it.
+          archs=$(cuobjdump "${lib}" 2>/dev/null | grep -oE 'sm_[0-9]+' | sort -u | tr '\n' ' ') || true
+          echo "embedded arch(es): ${archs:-<none>}"
+          case "${archs}" in
+            *sm_86*) echo "ok" ;;
+            *) echo "::error::expected sm_86, found '${archs:-none}'" >&2; exit 1 ;;
+          esac
+
+      # `cancelled()` because `timeout-minutes` cancels rather than fails, and a
+      # kernel that hangs is the failure whose log matters most. Not `always()`,
+      # which would store an artifact for every green run.
+      #
+      # `cancel-in-progress` also triggers this, so `job.status` in the name
+      # labels a superseded run. The log has the seed of every `TestRng`, so
+      # two failures can be compared. This is after the arch check so a
+      # wrong-arch build keeps its log too.
+      - name: Keep the log when something went wrong
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: gpu-test-log-${{ job.status }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gpu-test.log
+          # No `retention-days`: the repository's retention setting applies.
+          if-no-files-found: warn
+
+      # Peak GPU memory sampled during the run, plus disk. `always()` because a
+      # failed build is when those numbers matter.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/gpu-runner-report@v2
+        if: always()

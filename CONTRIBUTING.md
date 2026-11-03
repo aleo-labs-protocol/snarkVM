@@ -8,6 +8,7 @@ Please follow the instructions below when filing a pull request:
 
 - Ensure that your branch is forked from the current [staging](https://github.com/ProvableHQ/snarkVM/tree/staging) branch.
 - Use the git commit hook, which ensures `cargo fmt` and `cargo clippy` are run with appropriate parameters. [`.rustfmt.toml`](https://github.com/ProvableHQ/snarkVM/blob/staging/.rustfmt.toml) specifies some of the formatting conventions.
+- The pre-commit hook reads `rusty-hook.toml`. To change it locally, copy it to `.rusty-hook.toml`, which git ignores and rusty-hook prefers.
 - Do not rebase your PR after substantial reviews have taken place. The only exception is when there has been a substantial architectural overhaul which requires new reviews.
 - When you fix someone's comment, reply with the relevant commit hash.
 

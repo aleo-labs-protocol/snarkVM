@@ -111,6 +111,18 @@ pub struct DeploymentMemory<N: Network> {
     certificate_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
     /// The fee store.
     fee_store: FeeStore<N, FeeMemory<N>>,
+    /// The amendment next index map.
+    amendment_next_index_map: MemoryMap<(ProgramID<N>, u16), u64>,
+    /// The amendment ID map.
+    amendment_id_map: MemoryMap<(ProgramID<N>, u16, u64), N::TransactionID>,
+    /// The reverse amendment ID map.
+    reverse_amendment_id_map: MemoryMap<N::TransactionID, (ProgramID<N>, u16, u64)>,
+    /// The amendment verifying key map.
+    amendment_verifying_key_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16, u64), VerifyingKey<N>>,
+    /// The amendment certificate map.
+    amendment_certificate_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16, u64), Certificate<N>>,
+    /// The amendment owner map.
+    amendment_owner_map: MemoryMap<(ProgramID<N>, u16, u64), ProgramOwner<N>>,
 }
 
 #[rustfmt::skip]
@@ -125,6 +137,12 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     type VerifyingKeyMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     type FeeStorage = FeeMemory<N>;
+    type AmendmentNextIndexMap = MemoryMap<(ProgramID<N>, u16), u64>;
+    type AmendmentIDMap = MemoryMap<(ProgramID<N>, u16, u64), N::TransactionID>;
+    type ReverseAmendmentIDMap = MemoryMap<N::TransactionID, (ProgramID<N>, u16, u64)>;
+    type AmendmentVerifyingKeyMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16, u64), VerifyingKey<N>>;
+    type AmendmentCertificateMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16, u64), Certificate<N>>;
+    type AmendmentOwnerMap = MemoryMap<(ProgramID<N>, u16, u64), ProgramOwner<N>>;
 
     /// Initializes the deployment storage.
     fn open(fee_store: FeeStore<N, Self::FeeStorage>) -> Result<Self> {
@@ -139,6 +157,12 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
             verifying_key_map: MemoryMap::default(),
             certificate_map: MemoryMap::default(),
             fee_store,
+            amendment_next_index_map: MemoryMap::default(),
+            amendment_id_map: MemoryMap::default(),
+            reverse_amendment_id_map: MemoryMap::default(),
+            amendment_verifying_key_map: MemoryMap::default(),
+            amendment_certificate_map: MemoryMap::default(),
+            amendment_owner_map: MemoryMap::default(),
         })
     }
 
@@ -190,6 +214,36 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     /// Returns the fee store.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage> {
         &self.fee_store
+    }
+
+    /// Returns the amendment next index map.
+    fn amendment_next_index_map(&self) -> &Self::AmendmentNextIndexMap {
+        &self.amendment_next_index_map
+    }
+
+    /// Returns the amendment ID map.
+    fn amendment_id_map(&self) -> &Self::AmendmentIDMap {
+        &self.amendment_id_map
+    }
+
+    /// Returns the reverse amendment ID map.
+    fn reverse_amendment_id_map(&self) -> &Self::ReverseAmendmentIDMap {
+        &self.reverse_amendment_id_map
+    }
+
+    /// Returns the amendment verifying key map.
+    fn amendment_verifying_key_map(&self) -> &Self::AmendmentVerifyingKeyMap {
+        &self.amendment_verifying_key_map
+    }
+
+    /// Returns the amendment certificate map.
+    fn amendment_certificate_map(&self) -> &Self::AmendmentCertificateMap {
+        &self.amendment_certificate_map
+    }
+
+    /// Returns the amendment owner map.
+    fn amendment_owner_map(&self) -> &Self::AmendmentOwnerMap {
+        &self.amendment_owner_map
     }
 }
 

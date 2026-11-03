@@ -166,7 +166,7 @@ impl<E: Environment> Eject for Group<E> {
 impl<E: Environment> Parser for Group<E> {
     /// Parses a string into a group circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the group from the string.
         let (string, group) = console::Group::parse(string)?;
         // Parse the mode from the string.
@@ -227,6 +227,24 @@ impl<E: Environment> From<&Group<E>> for LinearCombination<E::BaseField> {
     fn from(group: &Group<E>) -> Self {
         group.to_x_coordinate().into()
     }
+}
+
+/// Injects `(x, y)` without `enforce_in_group`, which rejects off-subgroup and off-curve points.
+#[cfg(test)]
+fn inject_unchecked<E: Environment>(x: console::Field<E::Network>, y: console::Field<E::Network>) -> Group<E> {
+    Group::from_xy_coordinates_unchecked(Field::new(Mode::Private, x), Field::new(Mode::Private, y))
+}
+
+/// The identity and the points of order 2 and 4.
+#[cfg(test)]
+fn small_order_points<E: Environment>() -> [console::Group<E::Network>; 4] {
+    let (zero, one) = (console::Field::zero(), console::Field::one());
+    let x = console::Field::<E::Network>::new(E::EDWARDS_A)
+        .inverse()
+        .expect("a is nonzero")
+        .square_root()
+        .expect("a is a square");
+    [(zero, one), (zero, -one), (x, zero), (-x, zero)].map(|(x, y)| console::Group::from_xy_coordinates_unchecked(x, y))
 }
 
 #[cfg(test)]

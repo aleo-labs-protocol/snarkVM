@@ -112,6 +112,8 @@ mod tests {
         check_serde_json(ValueType::<CurrentNetwork>::from_str("token.record").unwrap());
         check_serde_json(ValueType::<CurrentNetwork>::from_str("hello_world.record").unwrap());
         check_serde_json(ValueType::<CurrentNetwork>::from_str("hello_world.aleo/new.record").unwrap());
+        check_serde_json(ValueType::<CurrentNetwork>::from_str("dynamic.record").unwrap());
+        check_serde_json(ValueType::<CurrentNetwork>::from_str("dynamic.future").unwrap());
     }
 
     #[test]
@@ -124,5 +126,7 @@ mod tests {
         check_bincode(ValueType::<CurrentNetwork>::from_str("token.record").unwrap());
         check_bincode(ValueType::<CurrentNetwork>::from_str("hello_world.record").unwrap());
         check_bincode(ValueType::<CurrentNetwork>::from_str("hello_world.aleo/new.record").unwrap());
+        check_bincode(ValueType::<CurrentNetwork>::from_str("dynamic.record").unwrap());
+        check_bincode(ValueType::<CurrentNetwork>::from_str("dynamic.future").unwrap());
     }
 }

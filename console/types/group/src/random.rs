@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<E: Environment> Distribution<Group<E>> for Standard {
+impl<E: Environment> Distribution<Group<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Group<E> {
         Group::new(Uniform::rand(rng))

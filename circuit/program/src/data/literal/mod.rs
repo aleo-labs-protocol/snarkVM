@@ -70,6 +70,8 @@ pub enum Literal<A: Aleo> {
     Signature(Box<Signature<A>>),
     /// The string type.
     String(StringType<A>),
+    /// The identifier literal type.
+    Identifier(Box<IdentifierLiteral<A>>),
 }
 
 macro_rules! impl_from {
@@ -120,6 +122,9 @@ impl<A: Aleo> Inject for Literal<A> {
             Self::Primitive::Scalar(scalar) => Self::Scalar(Scalar::new(mode, scalar)),
             Self::Primitive::Signature(signature) => Self::Signature(Box::new(Signature::new(mode, *signature))),
             Self::Primitive::String(string) => Self::String(StringType::new(mode, string)),
+            Self::Primitive::Identifier(identifier) => {
+                Self::Identifier(Box::new(IdentifierLiteral::new(mode, *identifier)))
+            }
         }
     }
 }
@@ -147,6 +152,7 @@ impl<A: Aleo> Eject for Literal<A> {
             Self::Scalar(literal) => literal.eject_mode(),
             Self::Signature(literal) => literal.eject_mode(),
             Self::String(literal) => literal.eject_mode(),
+            Self::Identifier(literal) => literal.eject_mode(),
         }
     }
 
@@ -170,6 +176,7 @@ impl<A: Aleo> Eject for Literal<A> {
             Self::Scalar(literal) => Self::Primitive::Scalar(literal.eject_value()),
             Self::Signature(literal) => Self::Primitive::Signature(Box::new(literal.eject_value())),
             Self::String(literal) => Self::Primitive::String(literal.eject_value()),
+            Self::Identifier(literal) => Self::Primitive::Identifier(Box::new(literal.eject_value())),
         }
     }
 }
@@ -177,7 +184,7 @@ impl<A: Aleo> Eject for Literal<A> {
 impl<A: Aleo> Parser for Literal<A> {
     /// Parses a string into a literal.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((
             map(Address::parse, |literal| Self::Address(literal)),
             map(Boolean::parse, |literal| Self::Boolean(literal)),
@@ -196,6 +203,7 @@ impl<A: Aleo> Parser for Literal<A> {
             map(Scalar::parse, |literal| Self::Scalar(literal)),
             map(Signature::parse, |literal| Self::Signature(Box::new(literal))),
             map(StringType::parse, |literal| Self::String(literal)),
+            map(IdentifierLiteral::parse, |literal| Self::Identifier(Box::new(literal))),
         ))(string)
     }
 }
@@ -239,6 +247,7 @@ impl<A: Aleo> Literal<A> {
             Self::Scalar(..) => Scalar::<A>::type_name(),
             Self::Signature(..) => Signature::<A>::type_name(),
             Self::String(..) => StringType::<A>::type_name(),
+            Self::Identifier(..) => IdentifierLiteral::<A>::type_name(),
         }
     }
 }
@@ -269,6 +278,7 @@ impl<A: Aleo> Display for Literal<A> {
             Self::Scalar(literal) => Display::fmt(literal, f),
             Self::Signature(literal) => Display::fmt(literal, f),
             Self::String(literal) => Display::fmt(literal, f),
+            Self::Identifier(literal) => Display::fmt(literal, f),
         }
     }
 }

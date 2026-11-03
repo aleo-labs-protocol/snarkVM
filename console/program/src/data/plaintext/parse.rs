@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Plaintext<N> {
     /// Parses a string into a plaintext value.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the string into a plaintext value.
         Self::parse_internal(string, 0)
     }
@@ -26,7 +26,7 @@ impl<N: Network> Parser for Plaintext<N> {
 
 impl<N: Network> Plaintext<N> {
     /// Parses a sanitized pair: `identifier: plaintext`.
-    fn parse_pair(string: &str, depth: usize) -> ParserResult<(Identifier<N>, Self)> {
+    fn parse_pair(string: &str, depth: usize) -> ParserResult<'_, (Identifier<N>, Self)> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the identifier from the string.
@@ -44,7 +44,7 @@ impl<N: Network> Plaintext<N> {
     }
 
     /// Parses a plaintext as a struct: `{ identifier_0: plaintext_0, ..., identifier_n: plaintext_n }`.
-    fn parse_struct(string: &str, depth: usize) -> ParserResult<Self> {
+    fn parse_struct(string: &str, depth: usize) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.
@@ -71,7 +71,7 @@ impl<N: Network> Plaintext<N> {
     }
 
     /// Parses a plaintext as an array: `[plaintext_0, ..., plaintext_n]`.
-    fn parse_array(string: &str, depth: usize) -> ParserResult<Self> {
+    fn parse_array(string: &str, depth: usize) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "[" from the string.
@@ -87,7 +87,7 @@ impl<N: Network> Plaintext<N> {
     }
 
     /// Parses a string into a plaintext value, while tracking the depth of the data.
-    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
+    fn parse_internal(string: &str, depth: usize) -> ParserResult<'_, Self> {
         // Ensure that the depth is within the maximum limit.
         if depth > N::MAX_DATA_DEPTH {
             return map_res(take(0usize), |_| {

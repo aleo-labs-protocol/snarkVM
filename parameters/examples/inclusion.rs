@@ -37,7 +37,6 @@ use snarkvm_synthesizer::{
 };
 
 use anyhow::{Result, anyhow};
-use rand::thread_rng;
 use serde_json::{Value, json};
 use std::{
     fs::File,
@@ -86,7 +85,7 @@ pub fn sample_assignment_v0<N: Network, A: Aleo<Network = N>>() -> Result<(Assig
     let vm = VM::from(store)?;
 
     // Initialize an RNG.
-    let rng = &mut thread_rng();
+    let rng = &mut rand::rng();
     // Initialize a new caller.
     let caller_private_key = PrivateKey::<N>::new(rng).unwrap();
     // Return the block.
@@ -124,7 +123,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>() -> Result<(Assignme
     let vm = VM::from(store)?;
 
     // Initialize an RNG.
-    let rng = &mut thread_rng();
+    let rng = &mut rand::rng();
     // Initialize a new caller.
     let caller_private_key = PrivateKey::<N>::new(rng).unwrap();
     // Return the block.
@@ -166,7 +165,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>() -> Result<(Assignme
     Ok((assignment, state_path, serial_number, is_record_block_height_reached, upgrade_block_height))
 }
 
-/// Synthesizes the circuit keys for the inclusion circuit. (cargo run --release --example inclusion [network])
+/// Synthesizes the circuit keys for the inclusion circuit. (cargo run --release --features filesystem --example inclusion [network])
 pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     // Load the universal SRS.
     let universal_srs = UniversalSRS::<N>::load()?;
@@ -181,7 +180,7 @@ pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
 
     for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
         // Ensure the proving key and verifying keys are valid.
-        let proof = proving_key.prove(inclusion_function_name, varuna_version, &assignment, &mut thread_rng())?;
+        let proof = proving_key.prove(inclusion_function_name, varuna_version, &assignment, &mut rand::rng())?;
         assert!(verifying_key.verify(
             inclusion_function_name,
             varuna_version,
@@ -247,7 +246,7 @@ pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
 }
 
 /// Run the following command to generate the inclusion circuit keys.
-/// `cargo run --example inclusion [network]`
+/// `cargo run --features filesystem --example inclusion [network]`
 pub fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 

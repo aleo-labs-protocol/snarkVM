@@ -37,7 +37,8 @@ impl<N: Network> FromBytes for Literal<N> {
             14 => Self::Scalar(Scalar::read_le(&mut reader)?),
             15 => Self::Signature(Box::new(Signature::read_le(&mut reader)?)),
             16 => Self::String(StringType::read_le(&mut reader)?),
-            17.. => return Err(error(format!("Failed to decode literal variant {index}"))),
+            17 => Self::Identifier(Box::new(IdentifierLiteral::read_le(&mut reader)?)),
+            18.. => return Err(error(format!("Failed to decode literal variant {index}"))),
         };
         Ok(literal)
     }
@@ -116,6 +117,10 @@ impl<N: Network> ToBytes for Literal<N> {
                 (16 as Size).write_le(&mut writer)?;
                 primitive.write_le(&mut writer)
             }
+            Self::Identifier(primitive) => {
+                (17 as Size).write_le(&mut writer)?;
+                primitive.write_le(&mut writer)
+            }
         }
     }
 }
@@ -177,6 +182,8 @@ mod tests {
             check_bytes(Literal::sample(LiteralType::Signature, rng))?;
             // String
             check_bytes(Literal::<CurrentNetwork>::String(StringType::rand(rng)))?;
+            // Identifier
+            check_bytes(Literal::<CurrentNetwork>::Identifier(Box::new(Uniform::rand(rng))))?;
         }
         Ok(())
     }

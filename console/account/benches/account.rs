@@ -59,7 +59,7 @@ fn account_address(c: &mut Criterion) {
 
 criterion_group! {
     name = account;
-    config = Criterion::default().sample_size(20);
+    config = Criterion::default().sample_size(10);
     targets = account_private_key, account_view_key, account_address
 }
 

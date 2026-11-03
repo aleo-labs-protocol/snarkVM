@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<E: Environment> Distribution<Scalar<E>> for Standard {
+impl<E: Environment> Distribution<Scalar<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Scalar<E> {
         Scalar::new(Uniform::rand(rng))

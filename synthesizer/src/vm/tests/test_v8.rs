@@ -15,7 +15,7 @@
 
 use super::*;
 
-use crate::{prelude::deployment_cost_v1, vm::test_helpers::*};
+use crate::prelude::deployment_cost_v1;
 
 use console::{account::ViewKey, network::ConsensusVersion, program::ProgramOwner};
 use snarkvm_ledger_block::{Deployment, Transaction};
@@ -415,7 +415,7 @@ function dummy:
     vm.add_next_block(&block)?;
 
     // Check the edition of the deployed program.
-    let edition = *vm.process().read().get_stack("test_deploy_and_redeploy.aleo")?.program_edition();
+    let edition = *vm.process().get_stack("test_deploy_and_redeploy.aleo")?.program_edition();
     assert_eq!(edition, 0);
 
     // Attempt to execute the program immediately after deployment.
@@ -442,8 +442,9 @@ function dummy:
         Some(deployment_0.program().to_checksum()),
         Some(address),
     )?;
+
     // Note: This needs to be recalculated since the new deployment contains a checksum and owner.
-    let (base_fee_amount, _) = deployment_cost_v1(&vm.process.read(), &deployment)?;
+    let (base_fee_amount, _) = deployment_cost_v1(vm.process(), &deployment)?;
     let fee_authorization = vm.authorize_fee_public(
         &other_private_key,
         base_fee_amount,

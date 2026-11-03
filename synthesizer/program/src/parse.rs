@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for ProgramCore<N> {
     /// Parses a string into a program.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // A helper to parse a program.
         enum P<N: Network> {
             Constructor(ConstructorCore<N>),
@@ -27,6 +27,7 @@ impl<N: Network> Parser for ProgramCore<N> {
             R(RecordType<N>),
             C(ClosureCore<N>),
             F(FunctionCore<N>),
+            V(ViewCore<N>),
         }
 
         // Parse the imports from the string.
@@ -44,7 +45,7 @@ impl<N: Network> Parser for ProgramCore<N> {
         // Parse the semicolon ';' keyword from the string.
         let (string, _) = tag(";")(string)?;
 
-        fn intermediate<N: Network>(string: &str) -> ParserResult<P<N>> {
+        fn intermediate<N: Network>(string: &str) -> ParserResult<'_, P<N>> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
 
@@ -60,6 +61,8 @@ impl<N: Network> Parser for ProgramCore<N> {
                 map(ClosureCore::parse, |closure| P::<N>::C(closure))(string)
             } else if string.starts_with(FunctionCore::<N>::type_name()) {
                 map(FunctionCore::parse, |function| P::<N>::F(function))(string)
+            } else if string.starts_with(ViewCore::<N>::type_name()) {
+                map(ViewCore::parse, |view| P::<N>::V(view))(string)
             } else {
                 Err(Err::Error(make_error(string, ErrorKind::Alt)))
             }
@@ -99,6 +102,7 @@ impl<N: Network> Parser for ProgramCore<N> {
                 P::R(record) => program.add_record(record),
                 P::C(closure) => program.add_closure(closure),
                 P::F(function) => program.add_function(function),
+                P::V(view) => program.add_view(view),
             };
 
             match result {
@@ -189,6 +193,10 @@ impl<N: Network> Display for ProgramCore<N> {
                         Some(function) => writeln!(f, "{function}")?,
                         None => return Err(fmt::Error),
                     },
+                    ProgramDefinition::View => match self.views.get(identifier) {
+                        Some(view) => writeln!(f, "{view}")?,
+                        None => return Err(fmt::Error),
+                    },
                 },
             }
 
@@ -235,6 +243,149 @@ function compute:
         assert!(program.contains_function(&Identifier::from_str("compute")?));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_program_parse_with_view_zero_inputs() -> Result<()> {
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program qy_zeroin.aleo;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+view fixed_value:
+    add 0u64 1234u64 into r0;
+    output r0 as u64.public;",
+        )?;
+        assert_eq!(program.views().len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_parse_with_view() -> Result<()> {
+        let (string, program) = Program::<CurrentNetwork>::parse(
+            r"
+program token_with_view.aleo;
+
+mapping balances:
+    key as address.public;
+    value as u64.public;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+view total_balance:
+    input r0 as address.public;
+    get.or_use balances[r0] 0u64 into r1;
+    output r1 as u64.public;",
+        )
+        .unwrap();
+        assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+
+        // The program should expose the view by name.
+        let view_name = Identifier::from_str("total_balance")?;
+        assert!(program.contains_view(&view_name));
+        assert_eq!(1, program.views().len());
+        let view = program.get_view_ref(&view_name)?;
+        assert_eq!(1, view.inputs().len());
+        assert_eq!(1, view.commands().len());
+        assert_eq!(1, view.outputs().len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_view_rejects_writes() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program bad_view.aleo;
+
+mapping balances:
+    key as address.public;
+    value as u64.public;
+
+view mutate:
+    input r0 as address.public;
+    set 1u64 into balances[r0];
+    output r0 as address.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when view contains 'set'");
+    }
+
+    #[test]
+    fn test_program_view_rejects_call() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program bad_view.aleo;
+
+closure helper:
+    input r0 as field;
+    output r0 as field;
+
+view uses_call:
+    input r0 as field.public;
+    call helper r0 into r1;
+    output r1 as field.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when view contains 'call'");
+    }
+
+    #[test]
+    fn test_program_rejects_duplicate_view_names() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program dup_view.aleo;
+
+view foo:
+    add 0u64 1u64 into r0;
+    output r0 as u64.public;
+
+view foo:
+    add 0u64 2u64 into r0;
+    output r0 as u64.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail with two views named 'foo'");
+    }
+
+    #[test]
+    fn test_program_rejects_view_name_colliding_with_function() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program qf_collision.aleo;
+
+function foo:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+view foo:
+    add 0u64 1u64 into r0;
+    output r0 as u64.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when a view reuses a function name");
+    }
+
+    #[test]
+    fn test_program_rejects_view_name_colliding_with_closure() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program qc_collision.aleo;
+
+closure foo:
+    input r0 as field;
+    output r0 as field;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+view foo:
+    add 0u64 1u64 into r0;
+    output r0 as u64.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when a view reuses a closure name");
     }
 
     #[test]
@@ -332,10 +483,10 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("closure c{i}:\n    input r0 as u128;\n"));
-                for j in 0..10 {
-                    s.push_str(&format!("    add r0 r0 into r{j};\n"));
+                for j in 0..30 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
-                s.push_str(&format!("    output r{} as u128;\n", 4000));
+                s.push_str(&format!("    output r{} as [u128; 32u32];\n", 4000));
             }
             s
         };
@@ -345,8 +496,8 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("function f{i}:\n    add 1u128 1u128 into r0;\n"));
-                for j in 0..500 {
-                    s.push_str(&format!("    add r0 r0 into r{j};\n"));
+                for j in 0..250 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
             }
             s
@@ -357,7 +508,7 @@ function compute:
             let program = format!("{imports}\nprogram to_parse.aleo;\n\n{body}");
             let result = Program::<CurrentNetwork>::from_str(&program);
             if result.is_ok() != should_succeed {
-                println!("Program failed to parse: {program}");
+                println!("Program failed to parse");
             }
             assert_eq!(result.is_ok(), should_succeed);
         };
@@ -375,9 +526,9 @@ function compute:
         // A program with more than MAX_RECORDS should fail.
         test_parse("", &gen_record_string(CurrentNetwork::MAX_RECORDS + 1), false);
         // A program with MAX_MAPPINGS should succeed.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS), true);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()), true);
         // A program with more than MAX_MAPPINGS should fail.
-        test_parse("", &gen_mapping_string(CurrentNetwork::MAX_MAPPINGS + 1), false);
+        test_parse("", &gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS() + 1), false);
         // A program with MAX_CLOSURES should succeed.
         test_parse("", &gen_closure_string(CurrentNetwork::MAX_CLOSURES), true);
         // A program with more than MAX_CLOSURES should fail.
@@ -392,7 +543,7 @@ function compute:
             "{} {} {} {} {}",
             gen_struct_string(CurrentNetwork::MAX_STRUCTS),
             gen_record_string(CurrentNetwork::MAX_RECORDS),
-            gen_mapping_string(CurrentNetwork::MAX_MAPPINGS),
+            gen_mapping_string(CurrentNetwork::LATEST_MAX_MAPPINGS()),
             gen_closure_string(CurrentNetwork::MAX_CLOSURES),
             gen_function_string(CurrentNetwork::MAX_FUNCTIONS)
         );

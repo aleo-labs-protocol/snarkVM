@@ -23,9 +23,9 @@ impl<N: Network> Parser for RecordType<N> {
     ///       user_defined as u64.public;
     /// ```
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parses a string into a tuple.
-        fn parse_entry<N: Network>(string: &str) -> ParserResult<(Identifier<N>, EntryType<N>)> {
+        fn parse_entry<N: Network>(string: &str) -> ParserResult<'_, (Identifier<N>, EntryType<N>)> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the identifier from the string.

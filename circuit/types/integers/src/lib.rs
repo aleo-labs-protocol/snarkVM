@@ -90,12 +90,13 @@ impl<E: Environment, I: IntegerType> IntegerTrait<I, U8<E>, U16<E>, U32<E>> for 
 
 impl<E: Environment, I: IntegerType> IntegerCore<I> for Integer<E, I> {}
 
-// TODO (@pranav) Document
 impl<E: Environment, I: IntegerType> Integer<E, I> {
+    /// Returns the size of the integer in bits.
     pub fn size_in_bits() -> u16 {
         I::BITS as u16
     }
 
+    /// Casts the integer to its dual type, i.e., from signed to unsigned or vice versa.
     pub fn cast_as_dual(self) -> Integer<E, I::Dual> {
         Integer::<E, I::Dual> { bits_le: self.bits_le, phantom: Default::default() }
     }
@@ -136,7 +137,7 @@ impl<E: Environment, I: IntegerType> Eject for Integer<E, I> {
 impl<E: Environment, I: IntegerType> Parser for Integer<E, I> {
     /// Parses a string into an integer circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the integer from the string.
         let (string, integer) = console::Integer::parse(string)?;
         // Parse the mode from the string.

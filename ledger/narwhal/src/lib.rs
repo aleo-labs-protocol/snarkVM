@@ -29,7 +29,7 @@ pub use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 #[cfg(feature = "data")]
 pub use snarkvm_ledger_narwhal_data as data;
 #[cfg(feature = "data")]
-pub use snarkvm_ledger_narwhal_data::Data;
+pub use snarkvm_ledger_narwhal_data::{DATA_ENCODING_OVERHEAD, Data};
 
 #[cfg(feature = "subdag")]
 pub use snarkvm_ledger_narwhal_subdag as subdag;

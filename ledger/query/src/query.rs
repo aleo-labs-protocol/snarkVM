@@ -170,6 +170,11 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     /// Returns a list of state paths for the given list of `commitment`s.
     #[cfg(feature = "async")]
     async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        // Return an empty vector if there are no commitments.
+        if commitments.is_empty() {
+            return Ok(vec![]);
+        }
+
         match self {
             Self::VM(block_store) => block_store.get_state_paths_for_commitments(commitments),
             Self::REST(query) => query.get_state_paths_for_commitments_async(commitments).await,

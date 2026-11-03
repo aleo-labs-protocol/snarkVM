@@ -13,7 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_equivalent};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+    register_types_equivalent,
+};
 use console::{
     network::prelude::*,
     program::{Register, RegisterType},
@@ -151,7 +160,8 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        registers: &mut impl RegistersTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<(), FinalizeError> {
         self.evaluate(stack, registers)?;
         Ok(())
@@ -190,7 +200,7 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
 
 impl<N: Network, const VARIANT: u8> Parser for AssertInstruction<N, VARIANT> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.

@@ -52,8 +52,8 @@ impl<N: Network> Rejected<N> {
     /// Returns the program owner of the rejected deployment.
     pub fn program_owner(&self) -> Option<&ProgramOwner<N>> {
         match self {
-            Self::Deployment(program_owner, _) => Some(program_owner),
-            Self::Execution(_) => None,
+            Self::Deployment(program_owner, ..) => Some(program_owner),
+            Self::Execution(..) => None,
         }
     }
 
@@ -61,14 +61,14 @@ impl<N: Network> Rejected<N> {
     pub fn deployment(&self) -> Option<&Deployment<N>> {
         match self {
             Self::Deployment(_, deployment) => Some(deployment),
-            Self::Execution(_) => None,
+            Self::Execution(..) => None,
         }
     }
 
     /// Returns the rejected execution.
     pub fn execution(&self) -> Option<&Execution<N>> {
         match self {
-            Self::Deployment(_, _) => None,
+            Self::Deployment(..) => None,
             Self::Execution(execution) => Some(execution),
         }
     }
@@ -106,6 +106,7 @@ pub mod test_helpers {
     pub(crate) fn sample_rejected_deployment(
         version: u8,
         edition: u16,
+        has_translation_keys: bool,
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> Rejected<CurrentNetwork> {
@@ -113,6 +114,7 @@ pub mod test_helpers {
         let deployment = match crate::transaction::test_helpers::sample_deployment_transaction(
             version,
             edition,
+            has_translation_keys,
             is_fee_private,
             rng,
         ) {
@@ -146,17 +148,35 @@ pub mod test_helpers {
     pub(crate) fn sample_rejected_transactions() -> Vec<Rejected<CurrentNetwork>> {
         let rng = &mut TestRng::default();
 
-        vec![
-            sample_rejected_deployment(1, 0, true, rng),
-            sample_rejected_deployment(1, 0, false, rng),
-            sample_rejected_deployment(2, 0, true, rng),
-            sample_rejected_deployment(2, 0, false, rng),
-            sample_rejected_deployment(1, 1, true, rng),
-            sample_rejected_deployment(1, 1, false, rng),
-            sample_rejected_deployment(2, 1, true, rng),
-            sample_rejected_deployment(2, 1, false, rng),
-            sample_rejected_execution(true, rng),
-            sample_rejected_execution(false, rng),
-        ]
+        let mut txs = Vec::new();
+
+        // Sample the deployments.
+        for version in 1..=2 {
+            for edition in 0..=1 {
+                for has_translation_keys in [true, false] {
+                    // version 1 didn't support translation keys
+                    if version == 1 && has_translation_keys {
+                        continue;
+                    }
+                    // version 2 expects edition 1
+                    if version == 2 && edition == 0 {
+                        continue;
+                    }
+                    for is_fee_private in [true, false] {
+                        let tx =
+                            sample_rejected_deployment(version, edition, has_translation_keys, is_fee_private, rng);
+                        txs.push(tx);
+                    }
+                }
+            }
+        }
+
+        // Sample the executions.
+        for is_fee_private in [true, false] {
+            let tx = sample_rejected_execution(is_fee_private, rng);
+            txs.push(tx);
+        }
+
+        txs
     }
 }

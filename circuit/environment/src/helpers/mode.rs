@@ -42,7 +42,7 @@ impl Mode {
 
     /// Parses a string into a mode.
     #[inline]
-    pub fn parse(string: &str) -> ParserResult<Self> {
+    pub fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((
             map(tag("constant"), |_| Self::Constant),
             map(tag("public"), |_| Self::Public),

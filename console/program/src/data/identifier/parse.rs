@@ -23,7 +23,7 @@ impl<N: Network> Parser for Identifier<N> {
     /// The identifier must not start with a number.
     /// The identifier must not be a keyword.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Check for alphanumeric characters and underscores.
         map_res(recognize(pair(alpha1, many0(alt((alphanumeric1, tag("_")))))), |identifier: &str| {
             Self::from_str(identifier)
@@ -37,6 +37,7 @@ impl<N: Network> FromStr for Identifier<N> {
     /// Reads in an identifier from a string.
     fn from_str(identifier: &str) -> Result<Self, Self::Err> {
         // Ensure the identifier is not an empty string, and starts with an ASCII letter.
+        // Note. The first character must not be the NULL character for sound encoding of dynamic futures. See the implementation of `ToBits` for `Argument`.
         match identifier.chars().next() {
             Some(character) => ensure!(character.is_ascii_alphabetic(), "Identifier must start with a letter"),
             None => bail!("Identifier cannot be empty"),

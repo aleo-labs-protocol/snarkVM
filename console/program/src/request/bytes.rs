@@ -20,9 +20,9 @@ impl<N: Network> FromBytes for Request<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error("Invalid request version"));
+        // Validate the version.
+        if version != 1 && version != 2 {
+            return Err(error(format!("Invalid request version: {version}")));
         }
 
         // Read the signer.
@@ -39,8 +39,7 @@ impl<N: Network> FromBytes for Request<N> {
         // Ensure the number of inputs is within bounds.
         if inputs_len as usize > N::MAX_INPUTS {
             return Err(error(format!(
-                "Request (from 'read_le') has too many inputs ({} > {})",
-                inputs_len,
+                "Request (from 'read_le') has too many inputs ({inputs_len} > {})",
                 N::MAX_INPUTS
             )));
         }
@@ -60,6 +59,14 @@ impl<N: Network> FromBytes for Request<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
+        // Read the dynamic flag. V1 requests are implicitly static.
+        let is_dynamic = match version {
+            1 => false,
+            2 => bool::read_le(&mut reader)?,
+            // Note that the version is validated above to be 1 or 2.
+            _ => unreachable!(),
+        };
+
         Ok(Self::from((
             signer,
             network_id,
@@ -72,6 +79,7 @@ impl<N: Network> FromBytes for Request<N> {
             tvk,
             tcm,
             scm,
+            is_dynamic,
         )))
     }
 }
@@ -79,9 +87,9 @@ impl<N: Network> FromBytes for Request<N> {
 impl<N: Network> ToBytes for Request<N> {
     /// Writes the request to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Write the version.
-        1u8.write_le(&mut writer)?;
-
+        // Always write version 2.
+        // This is safe because `Request` is not persisted to the ledger so its serialized format can be changed.
+        2u8.write_le(&mut writer)?;
         // Write the signer.
         self.signer.write_le(&mut writer)?;
         // Write the network ID.
@@ -118,7 +126,12 @@ impl<N: Network> ToBytes for Request<N> {
         // Write the transition commitment.
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
-        self.scm.write_le(&mut writer)
+        self.scm.write_le(&mut writer)?;
+
+        // Write the dynamic flag.
+        self.is_dynamic.write_le(&mut writer)?;
+
+        Ok(())
     }
 }
 

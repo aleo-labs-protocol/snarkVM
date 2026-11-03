@@ -18,9 +18,10 @@ use super::*;
 impl<N: Network> Parser for FinalizeType<N> {
     /// Parses a string into a finalize type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the mode from the string (ordering matters).
         alt((
+            map(tag("dynamic.future"), |_| Self::DynamicFuture),
             map(pair(Locator::parse, tag(".future")), |(locator, _)| Self::Future(locator)),
             map(pair(PlaintextType::parse, tag(".public")), |(plaintext_type, _)| Self::Plaintext(plaintext_type)),
         ))(string)
@@ -59,6 +60,8 @@ impl<N: Network> Display for FinalizeType<N> {
             Self::Plaintext(plaintext_type) => write!(f, "{plaintext_type}.public"),
             // Prints the future type, i.e. future
             Self::Future(locator) => write!(f, "{locator}.future"),
+            // Prints out the dynamic future type, i.e. dynamic.future
+            Self::DynamicFuture => write!(f, "dynamic.future"),
         }
     }
 }
@@ -88,6 +91,12 @@ mod tests {
         assert_eq!(
             Ok(("", FinalizeType::<CurrentNetwork>::Future(Locator::from_str("credits.aleo/mint_public")?))),
             FinalizeType::<CurrentNetwork>::parse("credits.aleo/mint_public.future")
+        );
+
+        // Dynamic future type.
+        assert_eq!(
+            Ok(("", FinalizeType::<CurrentNetwork>::DynamicFuture)),
+            FinalizeType::<CurrentNetwork>::parse("dynamic.future")
         );
 
         Ok(())
@@ -135,6 +144,7 @@ mod tests {
             FinalizeType::<CurrentNetwork>::from_str("credits.aleo/mint_public.future")?.to_string(),
             "credits.aleo/mint_public.future"
         );
+        assert_eq!(FinalizeType::<CurrentNetwork>::from_str("dynamic.future")?.to_string(), "dynamic.future");
 
         Ok(())
     }

@@ -36,7 +36,7 @@ pub fn convert_result<'a, O>(result: ParserResult<'a, O>, input: &'a str) -> Str
 /// Operations to parse a string literal into an object.
 pub trait Parser: core::fmt::Display + core::str::FromStr {
     /// Parses a string literal into an object.
-    fn parse(string: &str) -> ParserResult<Self>
+    fn parse(string: &str) -> ParserResult<'_, Self>
     where
         Self: Sized;
 }

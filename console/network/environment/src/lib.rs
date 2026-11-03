@@ -74,6 +74,7 @@ pub mod prelude {
         ToBytes,
         ToBytesSerializer,
         Uniform,
+        UniformExt,
         cfg_chunks,
         cfg_chunks_mut,
         cfg_find,
@@ -133,7 +134,7 @@ pub mod prelude {
     };
 
     pub use anyhow::{Error, Result, anyhow, bail, ensure};
-    pub use bech32::{self, FromBase32, ToBase32};
+    pub use bech32;
     pub use itertools::Itertools;
     pub use nom::{
         Err,
@@ -142,14 +143,14 @@ pub mod prelude {
         character::complete::{alpha1, alphanumeric1, char, one_of},
         combinator::{complete, fail, map, map_res, opt, recognize},
         error::{ErrorKind, make_error},
-        multi::{count, many0, many0_count, many1, separated_list0, separated_list1},
+        multi::{count, many_m_n, many0, many0_count, many1, separated_list0, separated_list1},
         sequence::{delimited, pair, terminated},
     };
     pub use num_traits::{AsPrimitive, One, Pow, Zero};
     pub use rand::{
         CryptoRng,
-        Rng,
-        distributions::{Alphanumeric, Distribution, Standard},
+        RngExt as Rng,
+        distr::{Alphanumeric, Distribution, StandardUniform},
     };
     pub use serde::{
         Deserialize,

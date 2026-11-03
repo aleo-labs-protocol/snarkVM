@@ -20,7 +20,7 @@ static ADDRESS_PREFIX: &str = "aleo";
 impl<E: Environment> Parser for Address<E> {
     /// Parses a string into an address.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo address.
         let parse_address = recognize(pair(
             tag("aleo1"),
@@ -44,16 +44,16 @@ impl<E: Environment> FromStr for Address<E> {
             bail!("Invalid account address length: found {}, expected 63", address.len())
         }
         // Decode the address string from bech32m.
-        let (hrp, data, variant) = bech32::decode(address)?;
-        if hrp != ADDRESS_PREFIX {
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(address)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
+        if hrp.as_str() != ADDRESS_PREFIX {
             bail!("Failed to decode address: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode address: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found an address that is not bech32m encoded: {address}");
         }
-        // Decode the address data from u5 to u8, and into an account address.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the address data into an account address.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -69,8 +69,8 @@ impl<E: Environment> Display for Address<E> {
         // Convert the address to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string =
-            bech32::encode(ADDRESS_PREFIX, bytes.to_base32(), bech32::Variant::Bech32m).map_err(|_| fmt::Error)?;
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(ADDRESS_PREFIX), &bytes)
+            .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
     }

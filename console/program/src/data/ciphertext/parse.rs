@@ -20,7 +20,7 @@ static CIPHERTEXT_PREFIX: &str = "ciphertext";
 impl<N: Network> Parser for Ciphertext<N> {
     /// Parses a string into an ciphertext.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo ciphertext.
         let parse_ciphertext = recognize(pair(
             pair(tag(CIPHERTEXT_PREFIX), tag("1")),
@@ -40,16 +40,16 @@ impl<N: Network> FromStr for Ciphertext<N> {
     /// Reads in the ciphertext string.
     fn from_str(ciphertext: &str) -> Result<Self, Self::Err> {
         // Decode the ciphertext string from bech32m.
-        let (hrp, data, variant) = bech32::decode(ciphertext)?;
-        if hrp != CIPHERTEXT_PREFIX {
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(ciphertext)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
+        if hrp.as_str() != CIPHERTEXT_PREFIX {
             bail!("Failed to decode ciphertext: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode ciphertext: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found an ciphertext that is not bech32m encoded: {ciphertext}");
         }
-        // Decode the ciphertext data from u5 to u8, and into the ciphertext.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the ciphertext data into the ciphertext.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -65,8 +65,8 @@ impl<N: Network> Display for Ciphertext<N> {
         // Convert the ciphertext to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string =
-            bech32::encode(CIPHERTEXT_PREFIX, bytes.to_base32(), bech32::Variant::Bech32m).map_err(|_| fmt::Error)?;
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(CIPHERTEXT_PREFIX), &bytes)
+            .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
     }

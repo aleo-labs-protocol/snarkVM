@@ -112,6 +112,10 @@ impl<N: Network> Stack<N> {
                     Operand::Edition(_) => bail!("Cannot retrieve the edition from a closure scope."),
                     // If the operand is the program owner, throw an error.
                     Operand::ProgramOwner(_) => bail!("Cannot retrieve the program owner from a closure scope."),
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Cannot retrieve the component checksum from a closure scope.")
+                    }
                 }
             })
             .map(|res| res.map_err(StackEvalError::from))
@@ -139,10 +143,15 @@ impl<N: Network> Stack<N> {
         let (request, call_stack) =
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
+                CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
+                CallStack::AuthorizeRequests(requests, current_index, _) => {
+                    let request = requests.get(*current_index.read()).ok_or_else(|| anyhow!("Attempted to recover request at index {}, but the AuthorizeRequests call stack only contains {} request(s)", *current_index.read(), requests.len()))?;
+                    (request.clone(), call_stack)
+                }
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
-                CallStack::Execute(authorization, _) => {
+                CallStack::Execute(authorization, _, _) => {
                     // Note: We need to replicate the authorization, so that 'execute' can call 'authorization.next()?'.
                     // This way, the authorization remains unmodified in this 'evaluate' scope.
                     let authorization = authorization.replicate();
@@ -151,7 +160,7 @@ impl<N: Network> Stack<N> {
                     (request, call_stack)
                 }
                 _ => return Err(anyhow!(
-                    "Illegal operation: call stack must be `Authorize`, `Evaluate` or `Execute` in `evaluate_function`."
+                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` or `AuthorizeRequests` in `evaluate_function`."
                 )
                 .into()),
             };
@@ -192,6 +201,46 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Perform input checks");
 
+        // Ensure the request is well-formed (unless it has been mocked).
+        if !matches!(call_stack, CallStack::AuthorizeMocked(..))
+            && !request.verify(&function.input_types(), is_root, program_checksum)
+        {
+            return Err(anyhow!("[Evaluate] Request is invalid").into());
+        }
+        lap!(timer, "Verify the request");
+
+        // In AuthorizeMocked mode, capture the index of the request currently being evaluated,
+        // which is necessary to populate the record-tracking machinery. Note the same value is
+        // used below when processing the outputs.
+        let current_request_index = match &call_stack {
+            CallStack::AuthorizeMocked(_, _, authorization, _, _) => authorization.len() - 1,
+            _ => 0,
+        };
+
+        // In AuthorizeMocked mode, detect whether any input static, external or dynamic records
+        // have been minted by other requests in the transaction and track them.
+        if let CallStack::AuthorizeMocked(_, _, _, _, input_records) = &call_stack {
+            let mut input_records = input_records.write();
+
+            for (input_index, input) in inputs.iter().enumerate() {
+                match input {
+                    Value::Record(record) => {
+                        input_records
+                            .entry(record.nonce().to_x_coordinate())
+                            .or_default()
+                            .push((current_request_index, input_index));
+                    }
+                    Value::DynamicRecord(dynamic_record) => {
+                        input_records
+                            .entry(dynamic_record.nonce().to_x_coordinate())
+                            .or_default()
+                            .push((current_request_index, input_index));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
@@ -208,12 +257,6 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Initialize the registers");
 
-        // Ensure the request is well-formed.
-        if !request.verify(&function.input_types(), is_root, program_checksum) {
-            return Err(anyhow!("[Evaluate] Request is invalid").into());
-        }
-        lap!(timer, "Verify the request");
-
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
             // Assign the input value to the register.
@@ -228,6 +271,9 @@ impl<N: Network> Stack<N> {
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng)
+                    .map_err(|e| InstructionEvalError::Call(Box::new(e))),
+                // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                Instruction::CallDynamic(call_dynamic) => CallTrait::evaluate(call_dynamic, self, &mut registers, rng)
                     .map_err(|e| InstructionEvalError::Call(Box::new(e))),
                 // Otherwise, evaluate the instruction normally.
                 _ => instruction.evaluate(self, &mut registers).map_err(Into::into),
@@ -288,10 +334,37 @@ impl<N: Network> Stack<N> {
                     Operand::Edition(_) => bail!("Cannot retrieve the edition from a function scope."),
                     // If the operand is the program owner, throw an error.
                     Operand::ProgramOwner(_) => bail!("Cannot retrieve the program owner from a function scope."),
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Cannot retrieve the component checksum from a function scope.")
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;
         lap!(timer, "Load the outputs");
+
+        // In AuthorizeMocked mode, track the minting of static records.
+        if let CallStack::AuthorizeMocked(_, _, _, minted_static_records, _) = &mut registers.call_stack_ref() {
+            let mut minted_static_records = minted_static_records.write();
+
+            for ((output, output_type), operand) in outputs.iter().zip(&function.output_types()).zip(output_operands) {
+                // The output type is needed to distinguish static Records from ExternalRecords
+                // (which also appear as Value::Record at this point)
+                if let Value::Record(record) = output
+                    && let ValueType::Record(_) = output_type
+                    && let Operand::Register(register) = operand
+                {
+                    // Insert into the minted-record tracker, returning an error if the nonce is
+                    // already present (two static records which the same nonce cannot be minted.)
+                    if minted_static_records
+                        .insert(record.nonce().to_x_coordinate(), (current_request_index, register.locator()))
+                        .is_some()
+                    {
+                        return Err(anyhow!("Duplicate output-record nonce found in CallStack::AuthorizeMocked. Ensure the program is correct and rerun with a different RNG state.").into());
+                    }
+                }
+            }
+        }
 
         // Map the output operands to registers.
         let output_registers = output_operands
@@ -318,13 +391,23 @@ impl<N: Network> Stack<N> {
         )?;
         finish!(timer);
 
-        // If the circuit is in `Authorize` mode, then save the transition.
-        if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
+        // If the circuit is in `Authorize`, `AuthorizeMocked` or `AuthorizeRequests` mode, then save the transition.
+        if let CallStack::Authorize(_, _, authorization) | CallStack::AuthorizeRequests(_, _, authorization) =
+            registers.call_stack_ref()
+        {
             // Construct the transition.
             let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
+        }
+        if let CallStack::AuthorizeMocked(_, _, authorization, _, _) = registers.call_stack_ref() {
+            // Construct the transition without checking correctness of input IDs.
+            let transition =
+                Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
+            // Add the transition to the authorization.
+            authorization.insert_transition(transition)?;
+            lap!(timer, "Save the mocked transition");
         }
 
         Ok(response)

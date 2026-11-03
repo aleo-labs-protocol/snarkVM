@@ -17,20 +17,22 @@ use crate::r1cs::{ConstraintSystem as CS, Index as VarIndex, LinearCombination, 
 use snarkvm_fields::Field;
 
 use anyhow::Result;
+#[cfg(feature = "test")]
+use itertools::Itertools;
 
 /// Stores constraints during index generation.
-pub(crate) struct ConstraintSystem<F: Field> {
-    pub(crate) a: Vec<Vec<(F, VarIndex)>>,
-    pub(crate) b: Vec<Vec<(F, VarIndex)>>,
-    pub(crate) c: Vec<Vec<(F, VarIndex)>>,
-    pub(crate) num_public_variables: usize,
-    pub(crate) num_private_variables: usize,
-    pub(crate) num_constraints: usize,
+pub struct ConstraintSystem<F: Field> {
+    pub a: Vec<Vec<(F, VarIndex)>>,
+    pub b: Vec<Vec<(F, VarIndex)>>,
+    pub c: Vec<Vec<(F, VarIndex)>>,
+    pub num_public_variables: usize,
+    pub num_private_variables: usize,
+    pub num_constraints: usize,
 }
 
 impl<F: Field> ConstraintSystem<F> {
     #[inline]
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             a: Vec::new(),
             b: Vec::new(),
@@ -41,9 +43,28 @@ impl<F: Field> ConstraintSystem<F> {
         }
     }
 
+    /// Returns `true` if every constraint holds for the given variable values.
+    /// The public values start with the constant one at index 0.
+    #[cfg(feature = "test")]
+    pub fn is_satisfied(&self, public: &[F], private: &[F]) -> bool {
+        let evaluate = |row: &[(F, VarIndex)]| {
+            row.iter().fold(F::zero(), |sum, (coefficient, index)| match index {
+                VarIndex::Public(i) => sum + *coefficient * public[*i],
+                VarIndex::Private(i) => sum + *coefficient * private[*i],
+            })
+        };
+        self.a.iter().zip_eq(&self.b).zip_eq(&self.c).all(|((a, b), c)| evaluate(a) * evaluate(b) == evaluate(c))
+    }
+
     #[inline]
     fn make_row(l: &LinearCombination<F>) -> Vec<(F, VarIndex)> {
         l.as_ref().iter().map(|(var, coeff)| (*coeff, var.get_unchecked())).collect()
+    }
+}
+
+impl<F: Field> Default for ConstraintSystem<F> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

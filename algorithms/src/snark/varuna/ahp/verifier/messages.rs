@@ -28,7 +28,6 @@ pub(crate) struct BatchCombiners<F> {
 }
 
 /// First message of the verifier.
-/// We only need randomizers for B and C to get a linear combination for {A,B,C}
 #[derive(Clone, Debug)]
 pub struct FirstMessage<F: PrimeField> {
     /// Randomizers for combining checks from the batch
@@ -51,6 +50,8 @@ pub struct SecondMessage<F> {
 pub struct PrepareThirdMessage<F> {
     /// Randomizers for combining checks from the batch
     pub(crate) third_round_batch_combiners: BTreeMap<CircuitId, BatchCombiners<F>>,
+    /// Randomizer for the lineval for `A`, fixed to one in V2.
+    pub eta_a: F,
     /// Randomizer for the lineval for `B`.
     pub eta_b: F,
     /// Randomizer for the lineval for `C`.
@@ -163,7 +164,7 @@ pub fn select_third_round_challenges<F: PrimeField>(
     verifier_second_message: &SecondMessage<F>,
     verifier_prepare_third_message: Option<&PrepareThirdMessage<F>>,
     varuna_version: VarunaVersion,
-) -> anyhow::Result<(F, BTreeMap<CircuitId, BatchCombiners<F>>, F, F)> {
+) -> anyhow::Result<(F, BTreeMap<CircuitId, BatchCombiners<F>>, F, F, F)> {
     // Choose challenges based on the proof system version.
     match varuna_version {
         VarunaVersion::V1 => {
@@ -175,21 +176,21 @@ pub fn select_third_round_challenges<F: PrimeField>(
             if verifier_prepare_third_message.is_some() {
                 return Err(anyhow::anyhow!("Did not expect PrepareThirdMessage in VarunaVersion::V1 third round."));
             }
-            Ok((*alpha, first_round_batch_combiners.clone(), *eta_b, *eta_c))
+            Ok((*alpha, first_round_batch_combiners.clone(), F::one(), *eta_b, *eta_c))
         }
-        VarunaVersion::V2 => {
+        VarunaVersion::V2 | VarunaVersion::V3 => {
             let SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
             if eta_b.is_some() || eta_c.is_some() {
                 return Err(anyhow::anyhow!(
-                    "Did not expect SecondMessage to contain eta_b,c in VarunaVersion::V2 third round."
+                    "Did not expect SecondMessage to contain eta_b,c in {varuna_version:?} third round."
                 ));
             }
-            let Some(PrepareThirdMessage { third_round_batch_combiners, eta_b, eta_c }) =
+            let Some(PrepareThirdMessage { third_round_batch_combiners, eta_a, eta_b, eta_c }) =
                 verifier_prepare_third_message
             else {
-                return Err(anyhow::anyhow!("Expected PrepareThirdMessage in VarunaVersion::V2 third round."));
+                return Err(anyhow::anyhow!("Expected PrepareThirdMessage in {varuna_version:?} third round."));
             };
-            Ok((*alpha, third_round_batch_combiners.clone(), *eta_b, *eta_c))
+            Ok((*alpha, third_round_batch_combiners.clone(), *eta_a, *eta_b, *eta_c))
         }
     }
 }

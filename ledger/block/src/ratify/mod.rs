@@ -58,7 +58,7 @@ pub(crate) mod test_helpers {
         let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
         let mut public_balances = PublicBalances::new();
         for (address, _) in committee.members().iter() {
-            public_balances.insert(*address, rng.r#gen());
+            public_balances.insert(*address, rng.random());
         }
         let bonded_balances = committee
             .members()
@@ -68,8 +68,8 @@ pub(crate) mod test_helpers {
 
         vec![
             Ratify::Genesis(Box::new(committee), Box::new(public_balances), Box::new(bonded_balances)),
-            Ratify::BlockReward(rng.r#gen()),
-            Ratify::PuzzleReward(rng.r#gen()),
+            Ratify::BlockReward(rng.random()),
+            Ratify::PuzzleReward(rng.random()),
         ]
     }
 }

@@ -30,7 +30,7 @@ use k256::{
         VerifyingKey,
         signature::hazmat::{PrehashSigner, PrehashVerifier},
     },
-    elliptic_curve::{Curve, generic_array::typenum::Unsigned},
+    elliptic_curve::{Curve, array::typenum::Unsigned},
 };
 
 /// The recovery ID for an ECDSA/Secp256k1 signature.
@@ -235,7 +235,7 @@ impl ECDSASignature {
         verifying_key: &VerifyingKey,
     ) -> Result<[u8; Self::ETHEREUM_ADDRESS_SIZE_IN_BYTES]> {
         // Get the uncompressed public key bytes as [0x04, x_bytes..., y_bytes...]
-        let public_key_point = verifying_key.to_encoded_point(false);
+        let public_key_point = verifying_key.to_sec1_point(false);
         let public_key_bytes = public_key_point.as_bytes();
 
         // Skip the 0x04 prefix, keep only the x and y coordinates (64 bytes)
@@ -319,6 +319,8 @@ impl Display for ECDSASignature {
 mod test_helpers {
     use super::*;
 
+    use k256::elliptic_curve::Generate;
+
     pub(crate) type DefaultHasher = Keccak256;
 
     /// Samples a random ecdsa signature.
@@ -328,10 +330,10 @@ mod test_helpers {
         rng: &mut TestRng,
     ) -> (SigningKey, Vec<u8>, ECDSASignature) {
         // Sample a random signing key.
-        let signing_key = SigningKey::random(rng);
+        let signing_key = SigningKey::generate_from_rng(rng);
 
         // Sample a random message.
-        let message: Vec<u8> = (0..num_bytes).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let message: Vec<u8> = (0..num_bytes).map(|_| rng.random()).collect::<Vec<_>>();
 
         // Sign the message.
         let signature = ECDSASignature::sign::<H>(&signing_key, hasher, &message.to_bits_le()).unwrap();

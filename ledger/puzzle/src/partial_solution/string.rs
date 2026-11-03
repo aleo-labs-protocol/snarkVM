@@ -52,7 +52,7 @@ mod tests {
         let address = Address::try_from(private_key)?;
 
         // Sample a new partial solution.
-        let expected = PartialSolution::new(rng.r#gen(), address, u64::rand(&mut rng)).unwrap();
+        let expected = PartialSolution::new(rng.random(), address, u64::rand(&mut rng)).unwrap();
 
         // Check the string representation.
         let candidate = expected.to_string();

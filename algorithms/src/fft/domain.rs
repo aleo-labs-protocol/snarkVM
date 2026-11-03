@@ -37,14 +37,13 @@ use snarkvm_fields::{FftField, FftParameters, Field, batch_inversion};
 use snarkvm_utilities::max_available_threads;
 use snarkvm_utilities::{execute_with_max_available_threads, serialize::*};
 
-use rand::Rng;
+use rand::RngExt;
 use std::{borrow::Cow, fmt};
 
 use anyhow::{Result, ensure};
 
 #[cfg(feature = "serial")]
 use itertools::Itertools;
-
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -105,7 +104,7 @@ impl<F: FftField> fmt::Debug for EvaluationDomain<F> {
 
 impl<F: FftField> EvaluationDomain<F> {
     /// Sample an element that is *not* in the domain.
-    pub fn sample_element_outside_domain<R: Rng>(&self, rng: &mut R) -> F {
+    pub fn sample_element_outside_domain<R: RngExt>(&self, rng: &mut R) -> F {
         let mut t = F::rand(rng);
         while self.evaluate_vanishing_polynomial(t).is_zero() {
             t = F::rand(rng);
@@ -273,16 +272,37 @@ impl<F: FftField> EvaluationDomain<F> {
             }
             u
         } else {
-            let mut l = (t_size - one) * self.size_inv;
-            let mut r = one;
+            let l0 = (t_size - one) * self.size_inv;
             let mut u = vec![F::zero(); size];
             let mut ls = vec![F::zero(); size];
-            for i in 0..size {
-                u[i] = tau - r;
-                ls[i] = l;
-                l *= &self.group_gen;
-                r *= &self.group_gen;
-            }
+
+            // Fill `u[i] = tau - g^i` and `ls[i] = l0 * g^i`, where `g = group_gen`. Both
+            // sequences are powers of `g`, so a block can seed itself with `g^start`
+            // instead of walking there from zero, which is what lets the fill
+            // run in parallel.
+            //
+            // Same shape as `distribute_powers_and_mul_by_const` above.
+            #[cfg(not(feature = "serial"))]
+            let chunk = core::cmp::max(size / max_available_threads(), 1024);
+            #[cfg(feature = "serial")]
+            let chunk = core::cmp::max(size, 1);
+
+            // The chunks run unordered, so each seeds itself rather than carrying `r` from
+            // its predecessor. `chunk_gen^i` is the same seed as `g^(i*chunk)` from a
+            // ladder over `log2(chunks)` bits instead of 64.
+            let chunk_gen = self.group_gen.pow([chunk as u64]);
+            cfg_chunks_mut!(u, chunk).zip(cfg_chunks_mut!(ls, chunk)).enumerate().for_each(
+                |(i, (u_chunk, ls_chunk))| {
+                    let mut r = chunk_gen.pow([i as u64]);
+                    let mut l = l0 * r;
+                    u_chunk.iter_mut().zip(ls_chunk.iter_mut()).for_each(|(tau_minus_r, l_i)| {
+                        *tau_minus_r = tau - r;
+                        *l_i = l;
+                        r *= &self.group_gen;
+                        l *= &self.group_gen;
+                    });
+                },
+            );
 
             batch_inversion(u.as_mut_slice());
             cfg_iter_mut!(u, 1_000).zip_eq(ls).for_each(|(tau_minus_r, l)| {
@@ -375,20 +395,49 @@ impl<F: FftField> EvaluationDomain<F> {
         })
     }
 
+    /// Computes the FFT and IFFT precomputations on the calling thread.
+    pub(crate) fn precompute_serial(&self) -> (FFTPrecomputation<F>, IFFTPrecomputation<F>) {
+        let half = self.size() / 2;
+        let fft = FFTPrecomputation { roots: compute_powers_serial(half, self.group_gen), domain: *self };
+        let ifft = IFFTPrecomputation { inverse_roots: compute_powers_serial(half, self.group_gen_inv), domain: *self };
+        (fft, ifft)
+    }
+
+    /// Runs an in-order transform on the device, and returns whether it did.
+    /// A device error panics, and so does a buffer that is not the domain.
+    ///
+    /// The kernels are compiled for BLS12-377's `Fr` and read every buffer as
+    /// one, so any other coefficient or field takes the host path.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    fn ntt_on_device<T: DomainCoeff<F>>(
+        &self,
+        x_s: &mut [T],
+        direction: snarkvm_algorithms_cuda::NTTDirection,
+        ntt_type: snarkvm_algorithms_cuda::NTTType,
+    ) -> bool {
+        // SNP TODO: how to set threshold
+        if self.size < 32 || !super::is_cuda_field::<T>() || !super::is_cuda_field::<F>() {
+            return false;
+        }
+        let result = snarkvm_algorithms_cuda::NTT(
+            self.size as usize,
+            x_s,
+            snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
+            direction,
+            ntt_type,
+        );
+        crate::cuda_must_succeed!(result, "ntt");
+        true
+    }
+
     pub(crate) fn in_order_fft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold and check that the type is Fr
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Forward,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Forward,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
         let pc = self.precompute_fft();
@@ -406,18 +455,12 @@ impl<F: FftField> EvaluationDomain<F> {
 
     pub(crate) fn in_order_ifft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
         let pc = self.precompute_ifft();
@@ -427,18 +470,12 @@ impl<F: FftField> EvaluationDomain<F> {
 
     pub(crate) fn in_order_coset_ifft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Coset,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Coset,
+        ) {
+            return;
         }
 
         let pc = self.precompute_ifft();
@@ -454,18 +491,12 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &FFTPrecomputation<F>,
     ) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Forward,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Forward,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
         self.fft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp)
@@ -485,20 +516,28 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &IFFTPrecomputation<F>,
     ) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Standard,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Standard,
+        ) {
+            return;
         }
 
+        self.in_order_ifft_in_place_with_pc_on_host(x_s, pre_comp)
+    }
+
+    /// The in-order inverse on the host.
+    ///
+    /// Under `cuda` on x86_64, the `in_order_*_in_place` and
+    /// `in_order_*_in_place_with_pc` transforms run on the device for a domain
+    /// of 32 or more over `Fr`, so they are not host references for a test. The
+    /// host references are `in_order_fft_with_pc` (forward) and this (inverse).
+    pub(crate) fn in_order_ifft_in_place_with_pc_on_host<T: DomainCoeff<F>>(
+        &self,
+        x_s: &mut [T],
+        pre_comp: &IFFTPrecomputation<F>,
+    ) {
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp);
         cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
@@ -519,18 +558,12 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &IFFTPrecomputation<F>,
     ) {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        // SNP TODO: how to set threshold
-        if self.size >= 32 && std::mem::size_of::<T>() == 32 {
-            let result = snarkvm_algorithms_cuda::NTT(
-                self.size as usize,
-                x_s,
-                snarkvm_algorithms_cuda::NTTInputOutputOrder::NN,
-                snarkvm_algorithms_cuda::NTTDirection::Inverse,
-                snarkvm_algorithms_cuda::NTTType::Coset,
-            );
-            if result.is_ok() {
-                return;
-            }
+        if self.ntt_on_device(
+            x_s,
+            snarkvm_algorithms_cuda::NTTDirection::Inverse,
+            snarkvm_algorithms_cuda::NTTType::Coset,
+        ) {
+            return;
         }
 
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp);
@@ -942,7 +975,7 @@ mod tests {
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     use crate::fft::domain::FFTOrder;
     use crate::fft::{DensePolynomial, EvaluationDomain};
-    use rand::Rng;
+    use rand::RngExt;
     use snarkvm_curves::bls12_377::Fr;
     use snarkvm_fields::{FftField, Field, One, Zero};
     use snarkvm_utilities::{TestRng, Uniform};
@@ -954,7 +987,7 @@ mod tests {
             let domain = EvaluationDomain::<Fr>::new(coeffs).unwrap();
             let z = domain.vanishing_polynomial();
             for _ in 0..100 {
-                let point = rng.r#gen();
+                let point = rng.random();
                 assert_eq!(z.evaluate(point), domain.evaluate_vanishing_polynomial(point))
             }
         }
@@ -1144,6 +1177,63 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_serial_precomputation_matches_parallel() {
+        for log_size in [0, 1, 7, 8, 9, 12, 16] {
+            let domain = EvaluationDomain::<Fr>::new(1 << log_size).expect("a domain");
+            let (fft_pc, ifft_pc) = domain.precompute_serial();
+            assert_eq!(fft_pc, domain.precompute_fft());
+            assert_eq!(ifft_pc, domain.precompute_ifft());
+        }
+    }
+
+    /// A multiply of two polynomials over `max_domain()` fits the pool.
+    ///
+    /// `PolyMul` is the guard that binds: its product domain is
+    /// `2 * max_domain()`, which is exactly its `pool / 4` limit.
+    /// `snarkvm_t::NTT` admits eight times the bound, so an FFT here would
+    /// prove nothing.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_max_domain_is_a_bound_polymul_accepts_cuda() {
+        use crate::fft::polynomial::PolyMultiplier;
+
+        let max = snarkvm_algorithms_cuda::max_domain();
+        assert!(max > 0, "no usable pool: either no device, or its construction failed");
+
+        let mut rng = TestRng::default();
+        let a = DensePolynomial::<Fr>::rand(max - 1, &mut rng);
+        let b = DensePolynomial::<Fr>::rand(max - 1, &mut rng);
+        let expected_degree = a.degree() + b.degree();
+
+        let mut multiplier = PolyMultiplier::new();
+        multiplier.add_polynomial_ref(&a, "a");
+        multiplier.add_polynomial_ref(&b, "b");
+        let product = multiplier.multiply().expect("the product domain is within the pool");
+
+        assert_eq!(product.degree(), expected_degree, "the multiply ran but did not produce the product");
+    }
+
+    /// One step past `PolyMul`'s pool guard is refused with
+    /// `cudaErrorNotSupported`, and the error names the domain and the limit it
+    /// exceeds.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_polymul_pool_guard_names_the_domain_and_limit_cuda() {
+        let pool = snarkvm_algorithms_cuda::pool_elements();
+        assert!(pool > 0, "no usable pool: either no device, or its construction failed");
+
+        let (limit, one) = (pool / 4, [Fr::one()]);
+        let domain = 2 * limit;
+        let err = snarkvm_algorithms_cuda::polymul(domain, &[&one, &one], &[], &Fr::zero())
+            .expect_err("a multiply larger than the pool must be refused");
+        assert_eq!(err.code, 801);
+        assert_eq!(
+            String::from(&err),
+            format!("PolyMul domain of {domain} exceeds the device pool's limit of {limit}")
+        );
+    }
+
     /// Tests that the FFTs output the correct result.
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     #[test]
@@ -1222,6 +1312,127 @@ mod tests {
                 println!("cuda error!");
             }
             assert_eq!(random_polynomial.coeffs, polynomial_evaluations_cuda, "domain size = {domain_size}");
+        }
+    }
+
+    /// A `DomainCoeff` as wide as `Fr` and not `Fr`.
+    ///
+    /// Scaling multiplies twice, so a transform over it differs from one over
+    /// the same bytes as `Fr`.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+    struct Squared(Fr);
+
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    mod squared_impls {
+        use super::{Fr, Squared};
+        use snarkvm_fields::Zero;
+
+        impl Zero for Squared {
+            fn zero() -> Self {
+                Self(Fr::zero())
+            }
+
+            fn is_zero(&self) -> bool {
+                self.0.is_zero()
+            }
+        }
+
+        impl core::ops::Add for Squared {
+            type Output = Self;
+
+            fn add(self, other: Self) -> Self {
+                Self(self.0 + other.0)
+            }
+        }
+
+        impl core::ops::Sub for Squared {
+            type Output = Self;
+
+            fn sub(self, other: Self) -> Self {
+                Self(self.0 - other.0)
+            }
+        }
+
+        impl core::ops::AddAssign for Squared {
+            fn add_assign(&mut self, other: Self) {
+                self.0 += other.0;
+            }
+        }
+
+        impl core::ops::SubAssign for Squared {
+            fn sub_assign(&mut self, other: Self) {
+                self.0 -= other.0;
+            }
+        }
+
+        impl core::ops::MulAssign<Fr> for Squared {
+            fn mul_assign(&mut self, f: Fr) {
+                self.0 *= f;
+                self.0 *= f;
+            }
+        }
+    }
+
+    /// A coefficient the width of `Fr` and not `Fr` must take the host path.
+    ///
+    /// The kernel reads any buffer as `fr_t`, so on the device it would give a
+    /// wrong answer without an error.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn a_type_the_width_of_fr_still_takes_the_host_path() {
+        assert_eq!(
+            core::mem::size_of::<Squared>(),
+            core::mem::size_of::<Fr>(),
+            "the fixture must be as wide as `Fr` to show that a width check is not enough"
+        );
+
+        let mut rng = TestRng::default();
+        let domain = EvaluationDomain::<Fr>::new(64).unwrap();
+        let pc = domain.precompute_ifft();
+        let values: Vec<Squared> = (0..domain.size()).map(|_| Squared(Fr::rand(&mut rng))).collect();
+
+        let mut got = values.clone();
+        domain.in_order_ifft_in_place_with_pc(&mut got, &pc);
+        let mut want = values.clone();
+        domain.in_order_ifft_in_place_with_pc_on_host(&mut want, &pc);
+
+        assert_eq!(got, want, "a non-Fr coefficient must not reach the device");
+
+        // The assertion above means something only while the fixture's
+        // arithmetic differs from `Fr`'s.
+        let mut as_fr: Vec<Fr> = values.iter().map(|s| s.0).collect();
+        domain.in_order_ifft_in_place_with_pc_on_host(&mut as_fr, &pc);
+        assert_ne!(
+            got.iter().map(|s| s.0).collect::<Vec<_>>(),
+            as_fr,
+            "the fixture must not agree with `Fr` over the same bytes, or it distinguishes nothing"
+        );
+    }
+
+    /// A buffer that is not the domain panics instead of taking the host path.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    #[should_panic(expected = "exactly the domain")]
+    fn a_buffer_that_is_not_the_domain_panics() {
+        let domain = EvaluationDomain::<Fr>::new(64).unwrap();
+        let mut buffer = vec![Fr::zero(); 2 * domain.size()];
+        domain.in_order_fft_in_place(&mut buffer);
+    }
+
+    #[test]
+    fn test_reindex_by_subdomain_is_a_permutation() {
+        // `(4, 2)` makes `period - 1` equal 1, and `(8, 1)` is the smallest subdomain.
+        for (big, small) in [(8usize, 2usize), (16, 4), (32, 8), (64, 2), (128, 32), (4, 2), (8, 1)] {
+            let g = EvaluationDomain::<Fr>::new(big).unwrap();
+            let s = EvaluationDomain::<Fr>::new(small).unwrap();
+            let mut image = (0..g.size()).map(|i| g.reindex_by_subdomain(&s, i).unwrap()).collect::<Vec<_>>();
+            // The subdomain's elements are every `period`-th element of the domain.
+            for (i, j) in image.iter().enumerate().take(s.size()) {
+                assert_eq!(*j, i * (big / small), "big={big} small={small} i={i}");
+            }
+            image.sort_unstable();
+            assert_eq!(image, (0..g.size()).collect::<Vec<_>>(), "big={big} small={small} not a permutation");
         }
     }
 }

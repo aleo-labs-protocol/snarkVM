@@ -63,6 +63,7 @@ impl<N: Network> Literal<N> {
             Self::Scalar(scalar) => cast_lossy_scalar_to_type(scalar, to_type),
             Self::Signature(..) => bail!("Cannot cast a signature literal to another type."),
             Self::String(..) => bail!("Cannot cast a string literal to another type."),
+            Self::Identifier(..) => bail!("Cannot cast an identifier literal to another type."),
         }
     }
 }
@@ -91,6 +92,9 @@ macro_rules! impl_cast_lossy_body {
             }
             LiteralType::String => {
                 bail!(concat!("Cannot cast (lossy) a ", stringify!($type_name), " literal to a string type."))
+            }
+            LiteralType::Identifier => {
+                bail!(concat!("Cannot cast (lossy) a ", stringify!($type_name), " literal to an identifier type."))
             }
         }
     };

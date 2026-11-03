@@ -1,23 +1,8 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    committee_array_test.aleo/create_arrays:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    committee_array_test.aleo/create_mixed_arrays:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"7002745125897296605736086960687518395912396312446536775525244694311122295955field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo186yu9rn7k3da66rhmwj3mpkh4aqs2wsu52nfdy6xg2wh7l69xvrqlled0e,\n    1299u64\n  ]\n}"}'
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"701346666924314037036669891202761111705725738482194329230707741448036803805field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo186yu9rn7k3da66rhmwj3mpkh4aqs2wsu52nfdy6xg2wh7l69xvrqlled0e,\n    1305u64\n  ]\n}"}'

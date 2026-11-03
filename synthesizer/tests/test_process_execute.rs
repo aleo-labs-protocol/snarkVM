@@ -31,13 +31,13 @@ use std::panic::AssertUnwindSafe;
 fn test_process_execute() {
     // Load the tests.
     let tests = load_tests::<_, ProgramTest>("./tests/process/execute", "./expectations/process/execute");
-    // Initialize a process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Run each test and compare it against its corresponding expectation.
     tests.par_iter().for_each(|test| {
+        // Initialize a process.
+        let process = Process::<CurrentNetwork>::load().unwrap();
         // Run the test.
-        let output = run_test(process.clone(), test);
+        let output = run_test(&process, test);
         // Check against the expected output.
         let res = test.check(&output);
         if let Err(err) = &res {
@@ -50,7 +50,7 @@ fn test_process_execute() {
 }
 
 // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
-fn run_test(process: Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml::Mapping {
+fn run_test(process: &Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml::Mapping {
     // Initialize the output.
     let mut output = serde_yaml::Mapping::new();
     output.insert(
@@ -59,9 +59,8 @@ fn run_test(process: Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml:
     );
 
     // Add the programs into the process.
-    let mut process = process.clone();
     for program in test.programs() {
-        if let Err(err) = process.add_program(program) {
+        if let Err(err) = process.lock().add_program(program) {
             output
                 .get_mut(serde_yaml::Value::String("errors".to_string()))
                 .unwrap()
@@ -147,7 +146,6 @@ fn run_test(process: Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml:
                                     response
                                         .outputs()
                                         .iter()
-                                        .cloned()
                                         .map(|output| serde_yaml::Value::String(output.to_string()))
                                         .collect_vec(),
                                 ),

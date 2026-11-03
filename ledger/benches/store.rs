@@ -24,7 +24,7 @@ use snarkvm_ledger::{
 use snarkvm_utilities::PrettyUnwrap;
 
 use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime};
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use std::time::Instant;
 
 mod common;

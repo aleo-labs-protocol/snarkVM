@@ -47,7 +47,7 @@ mod tests {
         let mut rng = TestRng::default();
 
         // Sample a new solution ID.
-        let expected = SolutionID::<CurrentNetwork>::from(rng.r#gen::<u64>());
+        let expected = SolutionID::<CurrentNetwork>::from(rng.random::<u64>());
 
         // Serialize
         let expected_string = &expected.to_string();
@@ -66,7 +66,7 @@ mod tests {
         let mut rng = TestRng::default();
 
         // Sample a new solution ID.
-        let expected = SolutionID::<CurrentNetwork>::from(rng.r#gen::<u64>());
+        let expected = SolutionID::<CurrentNetwork>::from(rng.random::<u64>());
 
         // Serialize
         let expected_bytes = expected.to_bytes_le()?;

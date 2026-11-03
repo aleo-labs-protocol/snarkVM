@@ -22,7 +22,7 @@ mod sign;
 mod string;
 mod verify;
 
-use crate::{Identifier, Plaintext, ProgramID, Record, Value, ValueType, compute_function_id};
+use crate::{DynamicRecord, Identifier, Plaintext, ProgramID, Record, Value, ValueType, compute_function_id};
 use snarkvm_console_account::{Address, ComputeKey, GraphKey, PrivateKey, Signature, ViewKey};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
@@ -51,6 +51,8 @@ pub struct Request<N: Network> {
     tcm: Field<N>,
     /// The signer commitment.
     scm: Field<N>,
+    /// A flag indicating whether or not the request is dynamic.
+    is_dynamic: bool,
 }
 
 impl<N: Network>
@@ -66,11 +68,25 @@ impl<N: Network>
         Field<N>,
         Field<N>,
         Field<N>,
+        bool,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
     fn from(
-        (signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm): (
+        (
+            signer,
+            network_id,
+            program_id,
+            function_name,
+            input_ids,
+            inputs,
+            signature,
+            sk_tag,
+            tvk,
+            tcm,
+            scm,
+            is_dynamic,
+        ): (
             Address<N>,
             U16<N>,
             ProgramID<N>,
@@ -82,13 +98,36 @@ impl<N: Network>
             Field<N>,
             Field<N>,
             Field<N>,
+            bool,
         ),
     ) -> Self {
+        // Ensure that the number of inputs matches the number of input IDs.
+        if inputs.len() != input_ids.len() {
+            N::halt(format!(
+                "Invalid request: mismatching number of input IDs ({}) and inputs ({})",
+                input_ids.len(),
+                inputs.len()
+            ))
+        }
+
         // Ensure the network ID is correct.
         if *network_id != N::ID {
             N::halt(format!("Invalid network ID. Expected {}, found {}", N::ID, *network_id))
         } else {
-            Self { signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm }
+            Self {
+                signer,
+                network_id,
+                program_id,
+                function_name,
+                input_ids,
+                inputs,
+                signature,
+                sk_tag,
+                tvk,
+                tcm,
+                scm,
+                is_dynamic,
+            }
         }
     }
 }
@@ -160,6 +199,69 @@ impl<N: Network> Request<N> {
     pub const fn scm(&self) -> &Field<N> {
         &self.scm
     }
+
+    /// Returns whether or not the request is dynamic.
+    pub const fn is_dynamic(&self) -> bool {
+        self.is_dynamic
+    }
+
+    /// Returns the expected caller input IDs for a dynamic call by:
+    ///
+    /// - converting all record inputs to dynamic record inputs
+    /// - leaving all other inputs unchanged.
+    ///
+    /// and then computing their corresponding input IDs.
+    pub fn to_dynamic_input_ids(&self) -> Result<Vec<InputID<N>>> {
+        // Compute the function ID.
+        let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name)?;
+
+        ensure!(
+            self.input_ids().len() == self.inputs.len(),
+            "Mismatched number of input IDs and inputs: {} vs. {}",
+            self.input_ids().len(),
+            self.inputs.len(),
+        );
+
+        // Compute and return the caller input IDs.
+        self.input_ids()
+            .iter()
+            .zip(self.inputs.iter())
+            .enumerate()
+            .map(|(index, (input_id, input))| match (input_id, input) {
+                (InputID::Constant(..), Value::Plaintext(..))
+                | (InputID::Public(..), Value::Plaintext(..))
+                | (InputID::Private(..), Value::Plaintext(..))
+                | (InputID::DynamicRecord(..), Value::DynamicRecord(..)) => Ok(*input_id),
+                (InputID::Record(..), Value::Record(record)) | (InputID::ExternalRecord(..), Value::Record(record)) => {
+                    // Convert index to u16.
+                    let index = u16::try_from(index).map_err(|_| anyhow!("Input index exceeds u16"))?;
+                    // Convert the record to a dynamic record.
+                    let caller_input = Value::DynamicRecord(DynamicRecord::from_record(record)?);
+                    // Compute the input ID for the dynamic record.
+                    InputID::dynamic_record(function_id, &caller_input, self.tvk, index)
+                }
+                _ => bail!("Mismatching input ID and input value at index {index}"),
+            })
+            .collect()
+    }
+
+    /// Returns the expected caller inputs for a dynamic call by:
+    /// - converting all record inputs to dynamic record inputs
+    /// - leaving all other inputs unchanged.
+    pub fn to_dynamic_inputs(&self) -> Result<Vec<Value<N>>> {
+        self.inputs
+            .iter()
+            .map(|input| match input {
+                Value::Record(record) => {
+                    // This covers both the non-external and external record cases.
+                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                }
+                Value::Future(_) => bail!("A future cannot be an input to a request."),
+                Value::DynamicFuture(_) => bail!("A dynamic future cannot be an input to a request."),
+                _ => Ok(input.clone()),
+            })
+            .collect::<Result<Vec<_>>>()
+    }
 }
 
 #[cfg(test)]
@@ -208,14 +310,27 @@ mod test_helpers {
                 // Construct 'is_root'.
                 let is_root = Uniform::rand(rng);
                 // Sample the program checksum.
-                let program_checksum = match i % 2 == 0 {
+                let program_checksum = match bool::rand(rng) {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
 
+                // Randomly choose whether to sign as static or dynamic.
+                let is_dynamic = bool::rand(rng);
                 // Compute the signed request.
-                let request =
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap();
+                let request = Request::sign(
+                    &private_key,
+                    program_id,
+                    function_name,
+                    inputs.into_iter(),
+                    &input_types,
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    is_dynamic,
+                    rng,
+                )
+                .unwrap();
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })

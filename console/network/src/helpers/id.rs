@@ -16,7 +16,6 @@
 use crate::prelude::*;
 
 use anyhow::Result;
-use bech32::{self, FromBase32, ToBase32};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::borrow::Borrow;
 
@@ -127,30 +126,28 @@ impl<F: FieldTrait, const PREFIX: u16> FromStr for AleoID<F, PREFIX> {
             bail!("Invalid byte size for a bech32m hash: {} bytes", string.len())
         }
 
-        let (hrp, data, variant) = bech32::decode(string)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(string)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_bytes() != PREFIX.to_le_bytes() {
             bail!("Invalid prefix for a bech32m hash: {hrp}")
         };
         if data.is_empty() {
             bail!("Bech32m hash data is empty")
         }
-        if variant != bech32::Variant::Bech32m {
-            bail!("Hash is not a bech32m hash")
-        }
-        Ok(Self::read_le(&*Vec::from_base32(&data)?)?)
+        Ok(Self::read_le(&*data)?)
     }
 }
 
 impl<F: FieldTrait, const PREFIX: u16> Display for AleoID<F, PREFIX> {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        bech32::encode_to_fmt(
+        bech32::encode_to_fmt::<LongBech32m, _>(
             f,
-            &Self::prefix(),
-            self.0.to_bytes_le().expect("Failed to write data as bytes").to_base32(),
-            bech32::Variant::Bech32m,
+            bech32::Hrp::parse_unchecked(&Self::prefix()),
+            &self.0.to_bytes_le().expect("Failed to write data as bytes"),
         )
-        .expect("Failed to encode in bech32m")
+        .map_err(|_| fmt::Error)
     }
 }
 
@@ -205,7 +202,7 @@ impl<F: FieldTrait, const PREFIX: u16> Into<Vec<F>> for AleoID<F, PREFIX> {
     }
 }
 
-impl<F: FieldTrait, const PREFIX: u16> Distribution<AleoID<F, PREFIX>> for Standard {
+impl<F: FieldTrait, const PREFIX: u16> Distribution<AleoID<F, PREFIX>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> AleoID<F, PREFIX> {
         AleoID::<F, PREFIX>(Uniform::rand(rng))

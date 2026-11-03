@@ -38,13 +38,13 @@ impl<const VARIANT: usize> Default for BooleanHash<VARIANT> {
     }
 }
 
-impl<const VARIANT: usize> Distribution<BooleanHash<VARIANT>> for Standard {
+impl<const VARIANT: usize> Distribution<BooleanHash<VARIANT>> for StandardUniform {
     /// Returns a random boolean hash.
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BooleanHash<VARIANT> {
         let mut array = [false; VARIANT];
         for entry in array.iter_mut() {
-            *entry = rng.r#gen();
+            *entry = rng.random();
         }
         BooleanHash(array)
     }

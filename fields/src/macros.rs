@@ -39,11 +39,13 @@ macro_rules! impl_field_to_biginteger {
 
 macro_rules! impl_primefield_standard_sample {
     ($field: ident, $params: ident) => {
-        impl<P: $params> rand::distributions::Distribution<$field<P>> for rand::distributions::Standard {
+        impl<P: $params> rand::distr::Distribution<$field<P>> for rand::distr::StandardUniform {
             #[inline]
             fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> $field<P> {
+                use rand::RngExt;
+
                 loop {
-                    let mut tmp = $field(rng.sample(rand::distributions::Standard), PhantomData);
+                    let mut tmp = $field(rng.sample(rand::distr::StandardUniform), PhantomData);
                     // Mask away the unused bits at the beginning.
                     tmp.0.as_mut().last_mut().map(|val| *val &= u64::MAX >> P::REPR_SHAVE_BITS);
 
@@ -90,6 +92,10 @@ macro_rules! sqrt_impl {
             Zero => Some(*$self),
             QuadraticNonResidue => None,
             QuadraticResidue => {
+                if let Some(tables) = $P::sqrt_tables() {
+                    return tables.sqrt($self);
+                }
+
                 let n = $P::TWO_ADICITY as u64;
                 // `T` is equivalent to `m` in the paper.
                 let v = $self.pow($P::T_MINUS_ONE_DIV_TWO);

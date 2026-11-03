@@ -35,7 +35,7 @@ fn elligator2_256(c: &mut Criterion) {
 
 criterion_group! {
     name = elligator2;
-    config = Criterion::default().sample_size(1000);
+    config = Criterion::default().sample_size(10);
     targets = elligator2_256
 }
 

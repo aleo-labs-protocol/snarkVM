@@ -13,12 +13,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, InclusionVersion, Process, Trace, execution_cost, execution_cost_for_authorization};
+use crate::{
+    Authorization,
+    CallStack,
+    ExecutionKeyKind,
+    InclusionVersion,
+    Process,
+    Trace,
+    execution_cost,
+    execution_cost_for_authorization,
+};
 use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},
     network::{MainnetV0, prelude::*},
-    program::{Identifier, Literal, Plaintext, ProgramID, Record, Value},
+    program::{DynamicRecord, Identifier, Literal, Plaintext, ProgramID, Record, Request, Value, ValueType},
     types::{Field, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -35,6 +44,7 @@ use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Progr
 use snarkvm_synthesizer_snark::UniversalSRS;
 
 use aleo_std::StorageMode;
+use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
@@ -46,7 +56,7 @@ type CurrentAleo = AleoV0;
 
 /// Samples a new finalize state.
 pub fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
 }
 
 /// Samples a valid fee for the given process, block store, and finalize store.
@@ -406,8 +416,9 @@ output r4 as field.private;",
 
     // Re-run to ensure state continues to work.
     let trace = Arc::new(RwLock::new(Trace::new()));
-    let call_stack = CallStack::execute(authorization, trace).unwrap();
-    let response = stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng).unwrap();
+    let translations = Arc::new(RwLock::new(Vec::new()));
+    let call_stack = CallStack::execute(authorization, trace, translations).unwrap();
+    let response = stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng).unwrap().unwrap();
     let candidate = response.outputs();
     assert_eq!(3, candidate.len());
     assert_eq!(r2, candidate[0]);
@@ -568,7 +579,14 @@ fn test_process_execute_transfer_public_to_private() {
         // Prove the execution.
         let execution = trace.prove_execution::<CurrentAleo, _>("credits.aleo", VarunaVersion::V2, rng).unwrap();
         // Verify the execution.
-        process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+        Process::verify_execution(
+            ConsensusVersion::V10,
+            VarunaVersion::V2,
+            InclusionVersion::V1,
+            &execution,
+            &process.get_stacks(execution.transitions(), false).unwrap(),
+        )
+        .unwrap();
 
         // Check the execution cost
         assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -1146,7 +1164,7 @@ function transfer:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
     // Initialize another program.
     let (string, program1) = Program::<CurrentNetwork>::parse(
         r"
@@ -1169,7 +1187,7 @@ function transfer:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -1306,7 +1324,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1320,9 +1338,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -1361,13 +1380,20 @@ finalize compute:
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the account balance is now 8.
     let candidate = finalize_store
@@ -1424,7 +1450,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1438,9 +1464,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -1480,13 +1507,20 @@ finalize compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the account balance is now 0.
     let candidate = finalize_store
@@ -1557,7 +1591,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1571,9 +1605,10 @@ finalize mint_public:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // TODO (howardwu): Remove this. I call this to synthesize the proving key independent of the assignment from 'execute'.
     //  In general, we should update all tests to utilize a presynthesized proving key, before execution, to test
@@ -1617,13 +1652,20 @@ finalize mint_public:
     let execution = trace.prove_execution::<CurrentAleo, _>("token", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check the account balance.
     let candidate = finalize_store
@@ -1692,7 +1734,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program0.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1706,9 +1748,10 @@ finalize mint_public:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // TODO (howardwu): Remove this. I call this to synthesize the proving key independent of the assignment from 'execute'.
     //  In general, we should update all tests to utilize a presynthesized proving key, before execution, to test
@@ -1746,9 +1789,10 @@ finalize init:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(2), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(2), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // TODO (howardwu): Remove this. I call this to synthesize the proving key independent of the assignment from 'execute'.
     //  In general, we should update all tests to utilize a presynthesized proving key, before execution, to test
@@ -1791,13 +1835,20 @@ finalize init:
     let execution = trace.prove_execution::<CurrentAleo, _>("public_wallet", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check the account balance.
     let candidate = finalize_store
@@ -1856,7 +1907,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1870,9 +1921,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -1912,13 +1964,20 @@ finalize compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the account balance is now 8.
     let candidate = finalize_store
@@ -1930,60 +1989,95 @@ finalize compute:
 
 #[test]
 fn test_execution_order() {
-    // Initialize a new program.
+    // Initialize a new program (leaf node).
     let (string, program0) = Program::<CurrentNetwork>::parse(
         r"
 program zero.aleo;
+
+mapping zero_data:
+    key as u8.public;
+    value as u8.public;
 
 function c:
     input r0 as u8.private;
     input r1 as u8.private;
     add r0 r1 into r2;
-    output r2 as u8.private;",
+    async c r2 into r3;
+    output r2 as u8.private;
+    output r3 as zero.aleo/c.future;
+
+finalize c:
+    input r0 as u8.public;
+    set r0 into zero_data[r0];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
 
-    // Initialize another program.
+    // Initialize another program (middle node).
     let (string, program1) = Program::<CurrentNetwork>::parse(
         r"
 import zero.aleo;
 
 program one.aleo;
 
+mapping one_data:
+    key as u8.public;
+    value as u8.public;
+
 function b:
     input r0 as u8.private;
     input r1 as u8.private;
-    call zero.aleo/c r0 r1 into r2;
-    output r2 as u8.private;",
+    call zero.aleo/c r0 r1 into r2 r3;
+    async b r3 r2 into r4;
+    output r2 as u8.private;
+    output r4 as one.aleo/b.future;
+
+finalize b:
+    input r0 as zero.aleo/c.future;
+    input r1 as u8.public;
+    await r0;
+    set r1 into one_data[r1];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
-    // Initialize another program.
+    // Initialize another program (root node).
     let (string, program2) = Program::<CurrentNetwork>::parse(
         r"
+import zero.aleo;
 import one.aleo;
 
 program two.aleo;
 
+mapping two_data:
+    key as u8.public;
+    value as u8.public;
+
 function a:
     input r0 as u8.private;
     input r1 as u8.private;
-    call one.aleo/b r0 r1 into r2;
-    output r2 as u8.private;",
+    call one.aleo/b r0 r1 into r2 r3;
+    async a r3 r2 into r4;
+    output r2 as u8.private;
+    output r4 as two.aleo/a.future;
+
+finalize a:
+    input r0 as one.aleo/b.future;
+    input r1 as u8.public;
+    await r0;
+    set r1 into two_data[r1];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program2).unwrap();
+    process.lock().add_program(&program2).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -2010,7 +2104,7 @@ function a:
     // Compute the output value.
     let response = process.evaluate::<CurrentAleo>(authorization.replicate()).unwrap();
     let candidate = response.outputs();
-    assert_eq!(1, candidate.len());
+    assert_eq!(2, candidate.len()); // output value + future
     assert_eq!(output, candidate[0]);
 
     // Check again to make sure we didn't modify the authorization after calling `evaluate`.
@@ -2022,7 +2116,7 @@ function a:
     // Execute the request.
     let (response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
     let candidate = response.outputs();
-    assert_eq!(1, candidate.len());
+    assert_eq!(2, candidate.len()); // output value + future
     assert_eq!(output, candidate[0]);
 
     // Construct the expected transition order.
@@ -2048,10 +2142,38 @@ function a:
     let execution = trace.prove_execution::<CurrentAleo, _>("two", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
+
+    // Verify finalize costs match between static analysis and runtime calculation.
+    // Each finalize block has: inputs (100 each) + 1 await (500) + 1 set (10000), except leaf has no await.
+    // Leaf (zero.aleo/c): 1 input + set = 100 + 10000 = 10100
+    // Middle (one.aleo/b): 2 inputs + await + set = 200 + 500 + 10000 = 10700
+    // Root (two.aleo/a): 2 inputs + await + set = 200 + 500 + 10000 = 10700
+    // Total V2 cost: 10100 + 10700 + 10700 = 31500... but actual is 31600
+    // The extra 100 comes from the finalize command base costs
+    let stack = process.get_stack(program2.id()).unwrap();
+    let static_finalize_cost = crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+    let runtime_finalize_cost = crate::cost::execution_finalize_cost(
+        &process,
+        &execution,
+        crate::cost::ConsensusFeeVersion::V2,
+        Some(ConsensusVersion::V10),
+    )
+    .unwrap();
+
+    assert_eq!(static_finalize_cost, 31600, "Expected static finalize cost of 31600");
+    assert_eq!(runtime_finalize_cost, 31600, "Expected runtime finalize cost of 31600");
+    assert_eq!(static_finalize_cost, runtime_finalize_cost, "Static and runtime costs should match");
 }
 
 #[test]
@@ -2074,41 +2196,61 @@ fn test_complex_execution_order() {
     // The execution order is:
     //  - [c, d, b, c, d, b, d, c, e, a]
 
-    // Initialize a new program.
+    // Initialize a new program (leaf).
     let (string, program0) = Program::<CurrentNetwork>::parse(
         r"
     program zero.aleo;
+
+    mapping zero_data:
+        key as u8.public;
+        value as u8.public;
 
     function c:
         input r0 as u8.private;
         input r1 as u8.private;
         add r0 r1 into r2;
-        output r2 as u8.private;",
+        async c r2 into r3;
+        output r2 as u8.private;
+        output r3 as zero.aleo/c.future;
+
+    finalize c:
+        input r0 as u8.public;
+        set r0 into zero_data[r0];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
 
-    // Initialize another program.
+    // Initialize another program (leaf).
     let (string, program1) = Program::<CurrentNetwork>::parse(
         r"
     program one.aleo;
+
+    mapping one_data:
+        key as u8.public;
+        value as u8.public;
 
     function d:
         input r0 as u8.private;
         input r1 as u8.private;
         add r0 r1 into r2;
-        output r2 as u8.private;",
+        async d r2 into r3;
+        output r2 as u8.private;
+        output r3 as one.aleo/d.future;
+
+    finalize d:
+        input r0 as u8.public;
+        set r0 into one_data[r0];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
-    // Initialize another program.
+    // Initialize another program (calls zero and one).
     let (string, program2) = Program::<CurrentNetwork>::parse(
         r"
     import zero.aleo;
@@ -2116,20 +2258,34 @@ fn test_complex_execution_order() {
 
     program two.aleo;
 
+    mapping two_data:
+        key as u8.public;
+        value as u8.public;
+
     function b:
         input r0 as u8.private;
         input r1 as u8.private;
-        call zero.aleo/c r0 r1 into r2;
-        call one.aleo/d r1 r2 into r3;
-        output r3 as u8.private;",
+        call zero.aleo/c r0 r1 into r2 r3;
+        call one.aleo/d r1 r2 into r4 r5;
+        async b r3 r5 r4 into r6;
+        output r4 as u8.private;
+        output r6 as two.aleo/b.future;
+
+    finalize b:
+        input r0 as zero.aleo/c.future;
+        input r1 as one.aleo/d.future;
+        input r2 as u8.public;
+        await r0;
+        await r1;
+        set r2 into two_data[r2];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program2).unwrap();
+    process.lock().add_program(&program2).unwrap();
 
-    // Initialize another program.
+    // Initialize another program (calls two, one, zero).
     let (string, program3) = Program::<CurrentNetwork>::parse(
         r"
     import zero.aleo;
@@ -2138,40 +2294,72 @@ fn test_complex_execution_order() {
 
     program three.aleo;
 
+    mapping three_data:
+        key as u8.public;
+        value as u8.public;
+
     function e:
         input r0 as u8.private;
         input r1 as u8.private;
-        call two.aleo/b r0 r1 into r2;
-        call one.aleo/d r1 r2 into r3;
-        call zero.aleo/c r1 r2 into r4;
-        output r4 as u8.private;",
+        call two.aleo/b r0 r1 into r2 r3;
+        call one.aleo/d r1 r2 into r4 r5;
+        call zero.aleo/c r1 r2 into r6 r7;
+        async e r3 r5 r7 r6 into r8;
+        output r6 as u8.private;
+        output r8 as three.aleo/e.future;
+
+    finalize e:
+        input r0 as two.aleo/b.future;
+        input r1 as one.aleo/d.future;
+        input r2 as zero.aleo/c.future;
+        input r3 as u8.public;
+        await r0;
+        await r1;
+        await r2;
+        set r3 into three_data[r3];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program3).unwrap();
+    process.lock().add_program(&program3).unwrap();
 
-    // Initialize another program.
+    // Initialize another program (calls two and three).
     let (string, program4) = Program::<CurrentNetwork>::parse(
         r"
+    import zero.aleo;
+    import one.aleo;
     import two.aleo;
     import three.aleo;
 
     program four.aleo;
 
+    mapping four_data:
+        key as u8.public;
+        value as u8.public;
+
     function a:
         input r0 as u8.private;
         input r1 as u8.private;
-        call two.aleo/b r0 r1 into r2;
-        call three.aleo/e r1 r2 into r3;
-        output r3 as u8.private;",
+        call two.aleo/b r0 r1 into r2 r3;
+        call three.aleo/e r1 r2 into r4 r5;
+        async a r3 r5 r4 into r6;
+        output r4 as u8.private;
+        output r6 as four.aleo/a.future;
+
+    finalize a:
+        input r0 as two.aleo/b.future;
+        input r1 as three.aleo/e.future;
+        input r2 as u8.public;
+        await r0;
+        await r1;
+        set r2 into four_data[r2];",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program4).unwrap();
+    process.lock().add_program(&program4).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -2201,7 +2389,7 @@ fn test_complex_execution_order() {
     // Compute the output value.
     let response = process.evaluate::<CurrentAleo>(authorization.replicate()).unwrap();
     let candidate = response.outputs();
-    assert_eq!(1, candidate.len());
+    assert_eq!(2, candidate.len()); // output value + future
     assert_eq!(output, candidate[0]);
 
     // Check again to make sure we didn't modify the authorization after calling `evaluate`.
@@ -2210,7 +2398,7 @@ fn test_complex_execution_order() {
     // Execute the request.
     let (response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
     let candidate = response.outputs();
-    assert_eq!(1, candidate.len());
+    assert_eq!(2, candidate.len()); // output value + future
     assert_eq!(output, candidate[0]);
 
     // Construct the expected execution order.
@@ -2241,10 +2429,39 @@ fn test_complex_execution_order() {
     let execution = trace.prove_execution::<CurrentAleo, _>("four", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
+
+    // Verify finalize costs match between static analysis and runtime calculation.
+    // Cost breakdown for V2 (execution order: [c, d, b, c, d, b, d, c, e, a]):
+    //   zero.aleo/c (3x): 1 input (100) + set (10000) = 10100 each -> 30300
+    //   one.aleo/d (3x): 1 input (100) + set (10000) = 10100 each -> 30300
+    //   two.aleo/b (2x): 3 inputs (300) + 2 awaits (1000) + set (10000) = 11300 each -> 22600
+    //   three.aleo/e (1x): 4 inputs (400) + 3 awaits (1500) + set (10000) = 11900
+    //   four.aleo/a (1x): 3 inputs (300) + 2 awaits (1000) + set (10000) = 11300
+    // Total V2 cost: 30300 + 30300 + 22600 + 11900 + 11300 = 106400 + 100 (base) = 106500
+    let stack = process.get_stack(program4.id()).unwrap();
+    let static_finalize_cost = crate::cost::minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+    let runtime_finalize_cost = crate::cost::execution_finalize_cost(
+        &process,
+        &execution,
+        crate::cost::ConsensusFeeVersion::V2,
+        Some(ConsensusVersion::V10),
+    )
+    .unwrap();
+
+    assert_eq!(static_finalize_cost, 106500, "Expected static finalize cost of 106500");
+    assert_eq!(runtime_finalize_cost, 106500, "Expected runtime finalize cost of 106500");
+    assert_eq!(static_finalize_cost, runtime_finalize_cost, "Static and runtime costs should match");
 }
 
 #[test]
@@ -2303,7 +2520,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2317,9 +2534,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -2358,13 +2576,20 @@ finalize compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the struct is stored as expected.
     let candidate = finalize_store
@@ -2473,7 +2698,14 @@ function compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &process.get_stacks(execution.transitions(), false).unwrap(),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -2488,6 +2720,7 @@ fn test_process_deploy_credits_program() {
         universal_srs: UniversalSRS::<CurrentNetwork>::load().unwrap(),
         stacks: Default::default(),
         old_stacks: Default::default(),
+        lock: Default::default(),
     };
 
     // Construct the process.
@@ -2545,7 +2778,7 @@ function {function_name}:
     .unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2559,9 +2792,10 @@ function {function_name}:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -2621,7 +2855,7 @@ fn test_long_import_chain() {
     .unwrap();
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let process = crate::test_helpers::sample_process(&program);
 
     // Add `MAX_PROGRAM_DEPTH` programs to the process.
     for i in 1..=MAX_PROGRAM_DEPTH {
@@ -2637,7 +2871,7 @@ fn test_long_import_chain() {
         ))
         .unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
     }
 
     // Add the `MAX_PROGRAM_DEPTH + 1` program to the process, which should fail.
@@ -2650,7 +2884,7 @@ fn test_long_import_chain() {
         MAX_PROGRAM_DEPTH + 1
     ))
     .unwrap();
-    let result = process.add_program(&program);
+    let result = process.lock().add_program(&program);
     // Programs may create long import chains as long as number of calls does not exceed the maximum number of transitions.
     assert!(result.is_ok());
 }
@@ -2666,7 +2900,7 @@ fn test_long_import_chain_with_calls() {
     .unwrap();
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let process = crate::test_helpers::sample_process(&program);
 
     // Check that the number of calls, up to `Transaction::MAX_TRANSITIONS - 1`, is correct.
     for i in 1..(Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1) {
@@ -2684,10 +2918,11 @@ fn test_long_import_chain_with_calls() {
         ))
         .unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
         // Check that the number of calls is correct.
         let stack = process.get_stack(program.id()).unwrap();
-        let number_of_calls = stack.get_number_of_calls(program.functions().into_iter().next().unwrap().0).unwrap();
+        let number_of_calls =
+            stack.get_minimum_number_of_calls(program.functions().into_iter().next().unwrap().0).unwrap();
         assert_eq!(number_of_calls, i + 1);
     }
 
@@ -2703,14 +2938,14 @@ fn test_long_import_chain_with_calls() {
         Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2
     ))
     .unwrap();
-    let result = process.add_program(&program);
+    let result = process.lock().add_program(&program);
     assert!(result.is_err())
 }
 
 #[test]
 fn test_max_imports() {
     // Construct the process.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Add `MAX_IMPORTS` programs to the process.
     for i in 0..CurrentNetwork::MAX_IMPORTS {
@@ -2718,7 +2953,7 @@ fn test_max_imports() {
         // Initialize a new program.
         let program = Program::from_str(&format!("program test{i}.aleo; function c:")).unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
     }
 
     // Add a program importing all `MAX_IMPORTS` programs, which should pass.
@@ -2727,7 +2962,7 @@ fn test_max_imports() {
     let program =
         Program::from_str(&format!("{import_string}program test{}.aleo; function c:", CurrentNetwork::MAX_IMPORTS))
             .unwrap();
-    process.add_program(&program).unwrap();
+    process.lock().add_program(&program).unwrap();
 
     // Attempt to construct a program importing `MAX_IMPORTS + 1` programs, which should fail.
     let import_string =
@@ -2769,4 +3004,618 @@ fn test_program_exceeding_transaction_spend_limit() {
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Attempt to verify the deployment, which should fail.
     assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
+}
+
+/// `execute` refuses an authorization with a request that no call takes.
+#[test]
+fn test_execute_rejects_unused_request() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program unused.aleo;
+function twice:
+    input r0 as u64.private;
+    add r0 r0 into r1;
+    output r1 as u64.private;",
+    )
+    .unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let mut authorize = |input: &str| {
+        process
+            .authorize::<CurrentAleo, _>(
+                &private_key,
+                program.id(),
+                Identifier::from_str("twice").unwrap(),
+                [Value::from_str(input).unwrap()].iter(),
+                rng,
+            )
+            .unwrap()
+    };
+    let (first, second) = (authorize("1u64"), authorize("2u64"));
+
+    // The second root request follows the first, so no call takes it.
+    let authorization = Authorization::try_from((
+        first.to_vec_deque().into_iter().chain(second.to_vec_deque()).collect(),
+        first.transitions().into_values().chain(second.transitions().into_values()).collect(),
+    ))
+    .unwrap();
+    let error = process.execute::<CurrentAleo, _>(authorization, rng).map(|_| ()).unwrap_err();
+    assert!(format!("{error:#}").contains("used 1 of its 2 requests"), "{error:#}");
+}
+
+/// `authorize_requests` and `execute` refuse a root request flagged dynamic, and accept the same request unflagged.
+#[test]
+fn test_authorize_requests_and_execute_reject_dynamic_root() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(
+        "program dynroot.aleo;
+        record token: owner as address.private; amount as u64.private;
+        function mint: input r0 as u64.private; cast self.signer r0 into r1 as token.record; output r1 as token.record;",
+    )
+    .unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+    let stack = process.get_stack(program.id()).unwrap();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    for is_dynamic in [false, true] {
+        let root = Request::sign(
+            &private_key,
+            *program.id(),
+            Identifier::from_str("mint").unwrap(),
+            [Value::<CurrentNetwork>::from_str("5u64").unwrap()].iter(),
+            &[ValueType::from_str("u64.private").unwrap()],
+            None,
+            true,
+            None,
+            is_dynamic,
+            rng,
+        )
+        .unwrap();
+
+        let authorized =
+            stack.authorize_requests::<CurrentAleo, _>(vec![root.clone()], rng).map(|_| ()).map_err(Error::from);
+        let executed =
+            process.execute::<CurrentAleo, _>(Authorization::new(root), rng).map(|_| ()).map_err(Error::from);
+        for (name, result) in [("authorize_requests", authorized), ("execute", executed)] {
+            match is_dynamic {
+                false => result.expect(name),
+                true => {
+                    let message = format!("{:#}", result.expect_err(name));
+                    assert!(message.contains("dynroot.aleo/mint") && message.contains("dynamic"), "{name}: {message}");
+                }
+            }
+        }
+    }
+}
+
+/// Executes `caller.aleo/main(1u8)`, whose body is `call`, after re-signing its callee request for
+/// `program/function` on `input`, with the given `is_dynamic` flag, by the caller or by `other_signer`.
+/// Returns the result of `execute`, and whether `twin_a.aleo`, the call's target, then holds any proving key.
+fn execute_with_resigned_callee(
+    call: &str,
+    program: &str,
+    function: &str,
+    is_dynamic: bool,
+    other_signer: bool,
+    input: &str,
+) -> (Result<()>, bool) {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let twin = |name: &str| {
+        format!(
+            "program {name}.aleo;
+            function f: input r0 as u8.private; output r0 as u8.private;
+            function g: input r0 as u8.private; output r0 as u8.private;"
+        )
+    };
+    let caller = format!(
+        "import twin_a.aleo; program caller.aleo; function main: input r0 as u8.private; {call} output r1 as u8.private;"
+    );
+    for source in [twin("twin_a"), twin("twin_b"), caller] {
+        process.lock().add_program(&Program::from_str(&source).unwrap()).unwrap();
+    }
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let authorization = process
+        .authorize::<CurrentAleo, _>(
+            &private_key,
+            ProgramID::from_str("caller.aleo").unwrap(),
+            Identifier::from_str("main").unwrap(),
+            [Value::<CurrentNetwork>::from_str("1u8").unwrap()].iter(),
+            rng,
+        )
+        .unwrap();
+    let root = authorization.to_vec_deque().pop_front().unwrap();
+    let signer = match other_signer {
+        true => PrivateKey::new(rng).unwrap(),
+        false => private_key,
+    };
+    let resigned = Request::sign(
+        &signer,
+        ProgramID::from_str(program).unwrap(),
+        Identifier::from_str(function).unwrap(),
+        [Value::<CurrentNetwork>::from_str(input).unwrap()].iter(),
+        &[ValueType::from_str("u8.private").unwrap()],
+        Some(*root.tvk()),
+        false,
+        None,
+        is_dynamic,
+        rng,
+    )
+    .unwrap();
+    let authorization = Authorization::new(root);
+    authorization.push(resigned).unwrap();
+
+    let result = process.execute::<CurrentAleo, _>(authorization, rng).map(|_| ()).map_err(Error::from);
+    let twin_a = process.get_stack(ProgramID::from_str("twin_a.aleo").unwrap()).unwrap();
+    let holds_key =
+        ["f", "g"].into_iter().any(|name| twin_a.contains_proving_key(&Identifier::from_str(name).unwrap()));
+    (result, holds_key)
+}
+
+/// For a static `call` and a `call.dynamic`, `execute` rejects a callee request with one thing wrong before it creates
+/// any key. A correctly re-signed request is the control: it executes, and its key is created.
+#[test]
+fn test_execute_rejects_mismatched_callee_request() {
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let static_call = "call twin_a.aleo/f r0 into r1;".to_string();
+    let dynamic_call = format!(
+        "call.dynamic {} {} {} with r0 (as u8.private) into r1 (as u8.private);",
+        field("twin_a"),
+        field("aleo"),
+        field("f")
+    );
+
+    for (call, is_dynamic) in [(static_call, false), (dynamic_call, true)] {
+        let (result, holds_key) = execute_with_resigned_callee(&call, "twin_a.aleo", "f", is_dynamic, false, "1u8");
+        assert!(result.is_ok(), "{call}: {result:?}");
+        assert!(holds_key, "{call}");
+
+        let flipped = match is_dynamic {
+            true => "Retrieved a static request",
+            false => "Retrieved a dynamic request",
+        };
+        let inputs = match is_dynamic {
+            true => "different inputs",
+            false => "Inputs do not match",
+        };
+        for (program, function, is_dynamic, other_signer, input, error) in [
+            ("twin_b.aleo", "f", is_dynamic, false, "1u8", "different program ID"),
+            ("twin_a.aleo", "g", is_dynamic, false, "1u8", "different function name"),
+            ("twin_a.aleo", "f", !is_dynamic, false, "1u8", flipped),
+            ("twin_a.aleo", "f", is_dynamic, true, "1u8", "different signer"),
+            ("twin_a.aleo", "f", is_dynamic, false, "2u8", inputs),
+        ] {
+            let case = format!(
+                "{call}: {program}/{function}({input}), is_dynamic: {is_dynamic}, other_signer: {other_signer}"
+            );
+            let (result, holds_key) =
+                execute_with_resigned_callee(&call, program, function, is_dynamic, other_signer, input);
+            let message = format!("{:#}", result.expect_err(&case));
+            assert!(message.contains(error), "{case}: {message}");
+            assert!(!holds_key, "{case}");
+        }
+    }
+}
+
+/// For a static `call` and a `call.dynamic`, `authorize_requests` and `execute` both refuse a callee request taken from
+/// another authorization of the same root call on the same inputs.
+#[test]
+fn test_authorize_requests_rejects_callee_request_from_another_root() {
+    let rng = &mut TestRng::default();
+
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let static_call = "call callee.aleo/f r0 into r1;".to_string();
+    let dynamic_call = format!(
+        "call.dynamic {} {} {} with r0 (as u8.private) into r1 (as u8.private);",
+        field("callee"),
+        field("aleo"),
+        field("f")
+    );
+
+    for call in [static_call, dynamic_call] {
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        for source in [
+            "program callee.aleo; function f: input r0 as u8.private; output r0 as u8.private;".to_string(),
+            format!(
+                "import callee.aleo; program caller.aleo; function main: input r0 as u8.private; {call} output r1 as u8.private;"
+            ),
+        ] {
+            process.lock().add_program(&Program::from_str(&source).unwrap()).unwrap();
+        }
+
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let [honest, other] = [(); 2].map(|_| {
+            process
+                .authorize::<CurrentAleo, _>(
+                    &private_key,
+                    ProgramID::from_str("caller.aleo").unwrap(),
+                    Identifier::from_str("main").unwrap(),
+                    [Value::<CurrentNetwork>::from_str("1u8").unwrap()].iter(),
+                    rng,
+                )
+                .unwrap()
+                .to_vec_deque()
+        });
+        assert_ne!(honest[1].tvk(), other[1].tvk(), "{call}");
+
+        let spliced = Authorization::new(honest[0].clone());
+        spliced.push(other[1].clone()).unwrap();
+
+        let stack = process.get_stack(ProgramID::from_str("caller.aleo").unwrap()).unwrap();
+        stack.authorize_requests::<CurrentAleo, _>(honest.into(), rng).unwrap();
+
+        assert!(process.execute::<CurrentAleo, _>(spliced.replicate(), rng).is_err(), "{call}");
+
+        let result = stack.authorize_requests::<CurrentAleo, _>(spliced.to_vec_deque().into(), rng);
+        let message = format!("{:#}", result.map(|_| ()).map_err(Error::from).expect_err(&call));
+        assert!(message.contains("callee.aleo/f") && message.contains("signer commitment"), "{call}: {message}");
+    }
+}
+
+/// `caller.aleo/main` makes four dynamic calls, one for each way a record is translated: `token.aleo/mint` outputs a
+/// `coin`, `token.aleo/spend` takes a `note`, `wrapper.aleo/peek` takes an external `ticket`, and `wrapper.aleo/relay`
+/// outputs an external `pass`, which it gets from a static call to `token.aleo/issue`. Each record has its own
+/// translation key, so each way contributes a distinct key.
+#[test]
+fn test_execution_keys_are_the_keys_execute_uses() {
+    let rng = &mut TestRng::default();
+
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let (token, wrapper, aleo) = (field("token"), field("wrapper"), field("aleo"));
+    let (mint, spend, peek, relay) = (field("mint"), field("spend"), field("peek"), field("relay"));
+    let programs = [
+        r"
+        program token.aleo;
+        record coin: owner as address.private; amount as u64.private;
+        record note: owner as address.private; amount as u64.private;
+        record ticket: owner as address.private; amount as u64.private;
+        record pass: owner as address.private; amount as u64.private;
+        function mint: input r0 as u64.private; cast self.signer r0 into r1 as coin.record; output r1 as coin.record;
+        function issue: input r0 as u64.private; cast self.signer r0 into r1 as pass.record; output r1 as pass.record;
+        function spend: input r0 as note.record; add r0.amount 0u64 into r1; output r1 as u64.private;",
+        r"
+        import token.aleo;
+        program wrapper.aleo;
+        function peek: input r0 as token.aleo/ticket.record; add r0.amount 0u64 into r1; output r1 as u64.private;
+        function relay:
+            input r0 as u64.private;
+            call token.aleo/issue r0 into r1;
+            output r1 as token.aleo/pass.record;",
+        format!(
+            r"
+        program caller.aleo;
+        function main:
+            input r0 as dynamic.record;
+            input r1 as dynamic.record;
+            call.dynamic {token} {aleo} {mint} with 5u64 (as u64.private) into r2 (as dynamic.record);
+            call.dynamic {token} {aleo} {spend} with r0 (as dynamic.record) into r3 (as u64.private);
+            call.dynamic {wrapper} {aleo} {peek} with r1 (as dynamic.record) into r4 (as u64.private);
+            call.dynamic {wrapper} {aleo} {relay} with 7u64 (as u64.private) into r5 (as dynamic.record);
+            output r2 as dynamic.record;"
+        )
+        .as_str(),
+    ]
+    .map(|source| Program::<CurrentNetwork>::from_str(source).unwrap());
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    for program in &programs {
+        process.lock().add_program(program).unwrap();
+    }
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let address = Address::try_from(&private_key).unwrap();
+    let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&format!(
+        "{{ owner: {address}.private, amount: 1u64.private, _nonce: 0group.public, _version: 1u8.public }}"
+    ))
+    .unwrap();
+    let input = Value::DynamicRecord(DynamicRecord::from_record(&record).unwrap());
+    let authorization = process
+        .authorize::<CurrentAleo, _>(
+            &private_key,
+            ProgramID::from_str("caller.aleo").unwrap(),
+            Identifier::from_str("main").unwrap(),
+            [input.clone(), input].iter(),
+            rng,
+        )
+        .unwrap();
+
+    let held = || {
+        programs
+            .iter()
+            .flat_map(|program| {
+                let stack = process.get_stack(program.id()).unwrap();
+                program
+                    .functions()
+                    .keys()
+                    .chain(program.records().keys())
+                    .filter(move |name| stack.contains_proving_key(name))
+                    .map(|name| (*program.id(), *name))
+            })
+            .collect::<IndexSet<_>>()
+    };
+    let key = |program: &str, name: &str| (ProgramID::from_str(program).unwrap(), Identifier::from_str(name).unwrap());
+
+    // `authorize_requests` accepts the requests, so `execution_keys` is exact for them.
+    process
+        .get_stack(programs[2].id())
+        .unwrap()
+        .authorize_requests::<CurrentAleo, _>(authorization.to_vec_deque().into(), rng)
+        .unwrap();
+
+    // Every function the authorization runs, and every translated record, is used and missing.
+    let (function, translation) = (ExecutionKeyKind::Function, ExecutionKeyKind::Translation);
+    let expected: IndexMap<_, _> = [
+        (key("caller.aleo", "main"), function),
+        (key("token.aleo", "mint"), function),
+        (key("token.aleo", "coin"), translation),
+        (key("token.aleo", "spend"), function),
+        (key("token.aleo", "note"), translation),
+        (key("wrapper.aleo", "peek"), function),
+        (key("token.aleo", "ticket"), translation),
+        (key("wrapper.aleo", "relay"), function),
+        (key("token.aleo", "issue"), function),
+        (key("token.aleo", "pass"), translation),
+    ]
+    .into_iter()
+    .collect();
+    let flagged = |missing| expected.iter().map(|(key, kind)| (*key, (*kind, missing))).collect::<IndexMap<_, _>>();
+    assert_eq!(process.execution_keys(&authorization).unwrap(), flagged(true));
+
+    // A root request has no caller, so it cannot be flagged dynamic.
+    let dynamic_root = Request::sign(
+        &private_key,
+        ProgramID::from_str("token.aleo").unwrap(),
+        Identifier::from_str("spend").unwrap(),
+        [Value::Record(record)].iter(),
+        &[ValueType::from_str("note.record").unwrap()],
+        None,
+        true,
+        None,
+        true,
+        rng,
+    )
+    .unwrap();
+    let error = process
+        .get_stack(programs[0].id())
+        .unwrap()
+        .authorize_requests::<CurrentAleo, _>(vec![dynamic_root], rng)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("root request") && error.contains("flagged dynamic"), "{error}");
+
+    // The missing keys are exactly the keys `execute` inserts.
+    let before = held();
+    process.execute::<CurrentAleo, _>(authorization.replicate(), rng).unwrap();
+    let inserted: IndexSet<_> = held().difference(&before).copied().collect();
+    assert_eq!(inserted, expected.keys().copied().collect::<IndexSet<_>>());
+
+    // Once `execute` has inserted them, every key is still used and none is missing.
+    assert_eq!(process.execution_keys(&authorization).unwrap(), flagged(false));
+
+    // Without its verifying key, a function key is still held, and a translation key is missing.
+    let (main, coin) = (key("caller.aleo", "main"), key("token.aleo", "coin"));
+    process.remove_verifying_key(&main.0, &main.1).unwrap();
+    process.remove_verifying_key(&coin.0, &coin.1).unwrap();
+    let mut expected_keys = flagged(false);
+    expected_keys.insert(coin, (translation, true));
+    assert_eq!(process.execution_keys(&authorization).unwrap(), expected_keys);
+}
+
+/// Same-kind repeats are one entry, a request must name a function, and a record type that now names a function fails.
+#[test]
+fn test_execution_keys_checks_each_key_is_of_its_kind() {
+    let rng = &mut TestRng::default();
+
+    let [token, wrapper, edition_1] = [
+        r"
+        program token.aleo;
+        record pass: owner as address.private; amount as u64.private;
+        function issue: input r0 as u64.private; cast self.signer r0 into r1 as pass.record; output r1 as pass.record;",
+        r"
+        import token.aleo;
+        program wrapper.aleo;
+        function relay:
+            input r0 as u64.private;
+            call token.aleo/issue r0 into r1;
+            output r1 as token.aleo/pass.record;",
+        r"
+        program token.aleo;
+        function pass: input r0 as u64.private; add r0 0u64 into r1; output r1 as u64.private;",
+    ]
+    .map(|source| Program::<CurrentNetwork>::from_str(source).unwrap());
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&token).unwrap();
+    process.lock().add_program(&wrapper).unwrap();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let mut request = |program: &str, function: &str, is_dynamic| {
+        Request::sign(
+            &private_key,
+            ProgramID::from_str(program).unwrap(),
+            Identifier::from_str(function).unwrap(),
+            [Value::<CurrentNetwork>::from_str("1u64").unwrap()].iter(),
+            &[ValueType::from_str("u64.private").unwrap()],
+            None,
+            true,
+            None,
+            is_dynamic,
+            rng,
+        )
+        .unwrap()
+    };
+    let key = |program: &str, name: &str| (ProgramID::from_str(program).unwrap(), Identifier::from_str(name).unwrap());
+
+    // A key repeated with the same kind is one entry.
+    let authorization = Authorization::new(request("wrapper.aleo", "relay", false));
+    authorization.push(request("wrapper.aleo", "relay", true)).unwrap();
+    authorization.push(request("wrapper.aleo", "relay", true)).unwrap();
+    let expected = IndexMap::from([
+        (key("wrapper.aleo", "relay"), (ExecutionKeyKind::Function, true)),
+        (key("token.aleo", "pass"), (ExecutionKeyKind::Translation, true)),
+    ]);
+    assert_eq!(process.execution_keys(&authorization).unwrap(), expected);
+
+    let record_as_function = Authorization::new(request("token.aleo", "pass", false));
+    let message = process.execution_keys(&record_as_function).unwrap_err().to_string();
+    assert_eq!(message, "Function 'token.aleo/pass' is not defined.");
+
+    process.lock().add_program_with_edition(&edition_1, 1).unwrap();
+    let message = process.execution_keys(&authorization).unwrap_err().to_string();
+    assert_eq!(message, "Record 'token.aleo/pass' is not defined.");
+}
+
+/// Builds `caller.aleo/main`, which passes one dynamic record to `token.aleo/spend` (a `note`) and another to
+/// `wrapper.aleo/peek` (an external `ticket`), and authorizes it on two records holding `1u64`, with distinct nonces.
+fn authorize_dynamic_record_inputs(
+    rng: &mut TestRng,
+) -> (
+    Process<CurrentNetwork>,
+    PrivateKey<CurrentNetwork>,
+    [Record<CurrentNetwork, Plaintext<CurrentNetwork>>; 2],
+    Authorization<CurrentNetwork>,
+) {
+    let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap();
+    let (token, wrapper, aleo, spend, peek) =
+        (field("token"), field("wrapper"), field("aleo"), field("spend"), field("peek"));
+    let programs = [
+        r"
+        program token.aleo;
+        record note: owner as address.private; amount as u64.private;
+        record ticket: owner as address.private; amount as u64.private;
+        function spend: input r0 as note.record; add r0.amount 0u64 into r1; output r1 as u64.private;",
+        r"
+        import token.aleo;
+        program wrapper.aleo;
+        function peek: input r0 as token.aleo/ticket.record; add r0.amount 0u64 into r1; output r1 as u64.private;",
+        format!(
+            r"
+        program caller.aleo;
+        function main:
+            input r0 as dynamic.record;
+            input r1 as dynamic.record;
+            call.dynamic {token} {aleo} {spend} with r0 (as dynamic.record) into r2 (as u64.private);
+            call.dynamic {wrapper} {aleo} {peek} with r1 (as dynamic.record) into r3 (as u64.private);
+            output r2 as u64.private;"
+        )
+        .as_str(),
+    ]
+    .map(|source| Program::<CurrentNetwork>::from_str(source).unwrap());
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    for program in &programs {
+        process.lock().add_program(program).unwrap();
+    }
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let address = Address::try_from(&private_key).unwrap();
+    let records = [console::types::Group::<CurrentNetwork>::zero(), console::types::Group::generator()].map(|nonce| {
+        Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&format!(
+            "{{ owner: {address}.private, amount: 1u64.private, _nonce: {nonce}.public, _version: 1u8.public }}"
+        ))
+        .unwrap()
+    });
+    let inputs = records.each_ref().map(|record| Value::DynamicRecord(DynamicRecord::from_record(record).unwrap()));
+    let authorization = process
+        .authorize::<CurrentAleo, _>(
+            &private_key,
+            ProgramID::from_str("caller.aleo").unwrap(),
+            Identifier::from_str("main").unwrap(),
+            inputs.iter(),
+            rng,
+        )
+        .unwrap();
+    (process, private_key, records, authorization)
+}
+
+/// An authorization read back from bytes holds its dynamic records without their entry data. `authorize_requests`
+/// and `execute` still check a dynamic callee's inputs against the call's, and accept it.
+#[test]
+fn test_dynamic_record_inputs_are_checked_without_entry_data() {
+    let rng = &mut TestRng::default();
+    let (process, _, _, authorization) = authorize_dynamic_record_inputs(rng);
+
+    let decoded = Authorization::<CurrentNetwork>::read_le(&authorization.to_bytes_le().unwrap()[..]).unwrap();
+    let root = decoded.peek_next().unwrap();
+    for input in root.inputs() {
+        let Value::DynamicRecord(record) = input else { panic!("expected a dynamic record, found {input}") };
+        assert!(record.data().is_none());
+    }
+
+    process
+        .get_stack(ProgramID::from_str("caller.aleo").unwrap())
+        .unwrap()
+        .authorize_requests::<CurrentAleo, _>(decoded.to_vec_deque().into(), rng)
+        .unwrap();
+    process.execute::<CurrentAleo, _>(decoded, rng).unwrap();
+}
+
+/// A dynamic callee request that takes a record other than the call's input, or the same record with the owner's
+/// visibility changed, is rejected by `authorize_requests` and by `execute`, before `execute` creates the callee's key.
+/// A different record fails the inputs check, and a changed visibility fails the callee's input types. Both callees
+/// are covered: `token.aleo/spend` takes a local `note`, and `wrapper.aleo/peek` an external `ticket`.
+#[test]
+fn test_dynamic_record_inputs_reject_another_record() {
+    let rng = &mut TestRng::default();
+    let (process, private_key, records, authorization) = authorize_dynamic_record_inputs(rng);
+    let address = Address::try_from(&private_key).unwrap();
+
+    // The callee's index in the authorization, its program, function and input type, and its record.
+    let callees = [
+        (1, "token.aleo", "spend", "note.record", &records[0]),
+        (2, "wrapper.aleo", "peek", "token.aleo/ticket.record", &records[1]),
+    ];
+    for (index, program, function, input_type, record) in callees {
+        for (owner, amount, expected) in [
+            ("private", "2u64", "different inputs"),
+            ("public", "1u64", "Visibility of record entry 'owner' does not match"),
+        ] {
+            let mut requests = authorization.to_vec_deque();
+            let root = requests.pop_front().unwrap();
+            let other = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&format!(
+                "{{ owner: {address}.{owner}, amount: {amount}.private, _nonce: {}.public, _version: 1u8.public }}",
+                record.nonce()
+            ))
+            .unwrap();
+            let resigned = Request::sign(
+                &private_key,
+                ProgramID::from_str(program).unwrap(),
+                Identifier::from_str(function).unwrap(),
+                [Value::Record(other)].iter(),
+                &[ValueType::from_str(input_type).unwrap()],
+                Some(*root.tvk()),
+                false,
+                None,
+                true,
+                rng,
+            )
+            .unwrap();
+            requests[index - 1] = resigned;
+            let tampered = Authorization::new(root);
+            for request in requests {
+                tampered.push(request).unwrap();
+            }
+            let case = format!("{program}/{function}: owner {owner}, amount {amount}");
+
+            let error = process
+                .get_stack(ProgramID::from_str("caller.aleo").unwrap())
+                .unwrap()
+                .authorize_requests::<CurrentAleo, _>(tampered.to_vec_deque().into(), rng)
+                .expect_err(&case);
+            assert!(format!("{error:#}").contains(expected), "{case}: {error:#}");
+
+            let error = process.execute::<CurrentAleo, _>(tampered, rng).map(|_| ()).expect_err(&case);
+            assert!(format!("{error:#}").contains(expected), "{case}: {error:#}");
+            let stack = process.get_stack(ProgramID::from_str(program).unwrap()).unwrap();
+            assert!(!stack.contains_proving_key(&Identifier::from_str(function).unwrap()), "{case}");
+        }
+    }
 }

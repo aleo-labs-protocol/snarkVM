@@ -19,6 +19,21 @@ impl<N: Network> ToFields for Value<N> {
     type Field = Field<N>;
 
     /// Returns the stack value as a list of fields.
+    ///
+    /// Each variant encodes its data as follows:
+    /// 1. The variant's `to_bits_le()` produces a bit sequence reflecting its internal structure.
+    /// 2. A terminator bit (`true`) is appended to mark the end of the data.
+    /// 3. The bits are packed into field elements in chunks of `Field::size_in_data_bits()`.
+    ///
+    /// Cross-variant ambiguity is not a concern because the caller always knows the
+    /// expected variant via the `ValueType` or `RegisterType` from the program definition,
+    /// and only the matching variant's `to_fields()` is invoked. Within each variant,
+    /// the encoding is unambiguous:
+    /// - `Plaintext` uses a 2-bit type tag (Literal=00, Struct=01, Array=10) followed by typed data.
+    /// - `Record` starts with owner visibility, 256-bit owner, and a u32 data-length encoding.
+    /// - `Future` starts with a u16 length-prefixed program ID, then function name and arguments.
+    /// - `DynamicRecord` is fixed-size (owner + root + nonce + version, 776 bits total).
+    /// - `DynamicFuture` is fixed-size (4 field elements, 1024 bits total).
     #[inline]
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
         // // TODO (howardwu): Implement `Literal::to_fields()` to replace this closure.
@@ -56,6 +71,8 @@ impl<N: Network> ToFields for Value<N> {
             Self::Plaintext(plaintext) => plaintext.to_fields(),
             Self::Record(record) => record.to_fields(),
             Self::Future(future) => future.to_fields(),
+            Self::DynamicRecord(dynamic_record) => dynamic_record.to_fields(),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.to_fields(),
         }
     }
 }

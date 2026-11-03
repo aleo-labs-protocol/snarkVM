@@ -1,16 +1,5 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    external_record_child.aleo/main:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- child_outputs:
-    external_struct_parent.aleo/make_struct:
-      outputs:
-      - '{"type":"private","id":"1264825947487468970931145666587311229296062431826480113561093161752381319976field","value":"ciphertext1qyqrdt75vm4r0ec4wppfs2c39a42ncu9279hqcd2n54h935ke24fqqsxv2rfu"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"1935267246207555224843121509738874967234681389138323984059872412164664259617field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2538u64\n  ]\n}"}'

@@ -82,27 +82,19 @@ pub fn maximum_allowed_solutions_per_epoch<N: Network>(prover_stake: u64, curren
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
-    /// Returns the number of remaining solutions a prover can submit in the current epoch.
-    ///
-    /// # Locking
-    /// This function may deadlock if called while holding a write lock to the current block.
-    pub fn num_remaining_solutions(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> u64 {
-        self.num_remaining_solutions_inner(&self.current_block.read(), prover_address, additional_solutions_in_block)
-    }
-
-    /// Internal version of [`Self::num_remaining_solutions`] to be used when already holding a lock to the current block.
-    pub(super) fn num_remaining_solutions_inner(
+    /// Returns the number of remaining solutions a prover can submit in the current epoch,
+    /// using the provided ledger timestamp instead of re-reading the current block.
+    pub(crate) fn num_remaining_solutions_at_timestamp(
         &self,
-        latest_block: &Block<N>,
         prover_address: &Address<N>,
         additional_solutions_in_block: u64,
+        current_time: i64,
     ) -> u64 {
         // Fetch the prover's stake.
         let prover_stake = self.get_bonded_amount(prover_address).unwrap_or(0);
 
         // Determine the maximum number of solutions allowed based on this prover's stake.
-        let maximum_allowed_solutions =
-            maximum_allowed_solutions_per_epoch::<N>(prover_stake, latest_block.timestamp());
+        let maximum_allowed_solutions = maximum_allowed_solutions_per_epoch::<N>(prover_stake, current_time);
 
         // Fetch the number of solutions the prover has earned rewards for in the current epoch.
         let prover_num_solutions_in_epoch = *self.epoch_provers_cache.read().get(prover_address).unwrap_or(&0);
@@ -114,33 +106,41 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         maximum_allowed_solutions.saturating_sub(num_solutions)
     }
 
-    /// Returns `true` if the given prover address has reached their solution limit for the current epoch.
-    ///
-    /// # Locking
-    /// This function may deadlock if called while holding a write lock to the current block.
-    pub fn is_solution_limit_reached(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> bool {
-        self.is_solution_limit_reached_inner(&self.current_block.read(), prover_address, additional_solutions_in_block)
+    /// Returns the number of remaining solutions a prover can submit in the current epoch.
+    pub fn num_remaining_solutions(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> u64 {
+        self.num_remaining_solutions_at_timestamp(
+            prover_address,
+            additional_solutions_in_block,
+            self.latest_timestamp(),
+        )
     }
 
-    /// Internal version of [`Self::is_solution_limit_reached`] to be used when already holding a lock to the current block.
-    pub(super) fn is_solution_limit_reached_inner(
+    /// Returns `true` if the given prover address has reached their solution limit for the current epoch,
+    /// using the provided ledger timestamp instead of re-reading the current block.
+    pub(crate) fn is_solution_limit_reached_at_timestamp(
         &self,
-        latest_block: &Block<N>,
         prover_address: &Address<N>,
         additional_solutions_in_block: u64,
+        current_time: i64,
     ) -> bool {
-        // Calculate the number of remaining solutions for the prover.
-        let num_remaining_solutions =
-            self.num_remaining_solutions_inner(latest_block, prover_address, additional_solutions_in_block);
+        self.num_remaining_solutions_at_timestamp(prover_address, additional_solutions_in_block, current_time) == 0
+    }
 
-        // If the number of remaining solutions is zero, the limit is reached.
-        num_remaining_solutions == 0
+    /// Returns `true` if the given prover address has reached their solution limit for the current epoch.
+    pub fn is_solution_limit_reached(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> bool {
+        self.is_solution_limit_reached_at_timestamp(
+            prover_address,
+            additional_solutions_in_block,
+            self.latest_timestamp(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::{CurrentLedger, LedgerType};
+    use std::{thread, time::Duration};
 
     type CurrentNetwork = console::network::MainnetV0;
 
@@ -157,9 +157,9 @@ mod tests {
                 let (next_time, _) = window[1];
 
                 // Choose a time strictly between the steps.
-                let timestamp = rng.gen_range(prev_time..next_time);
+                let timestamp = rng.random_range(prev_time..next_time);
                 // Generate a random prover stake.
-                let prover_stake: u64 = rng.r#gen();
+                let prover_stake: u64 = rng.random();
                 let expected_num_solutions = prover_stake / stake_per_solution;
 
                 assert_eq!(
@@ -186,7 +186,10 @@ mod tests {
         // Check that before enforcement, the number of solutions is unrestricted for any prover stake.
         for _ in 0..ITERATIONS {
             assert_eq!(
-                maximum_allowed_solutions_per_epoch::<CurrentNetwork>(rng.r#gen(), rng.gen_range(0..time_before_first)),
+                maximum_allowed_solutions_per_epoch::<CurrentNetwork>(
+                    rng.random(),
+                    rng.random_range(0..time_before_first)
+                ),
                 u64::MAX
             );
         }
@@ -200,8 +203,8 @@ mod tests {
 
         // Check that all timestamps after the last one are treated as the last one.
         for _ in 0..ITERATIONS {
-            let prover_stake: u64 = rng.r#gen();
-            let time_after_last = rng.gen_range(last_timestamp..i64::MAX);
+            let prover_stake: u64 = rng.random();
+            let time_after_last = rng.random_range(last_timestamp..i64::MAX);
             let expected_num_solutions = prover_stake / stake_per_solution;
 
             assert_eq!(
@@ -217,7 +220,7 @@ mod tests {
         let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
         // Check that the maximum allowed solutions per epoch is correct for each timestamp in the table.
         for &(timestamp, stake_per_solution) in stake_requirements.iter() {
-            let expected_num_solutions = rng.gen_range(1..=100);
+            let expected_num_solutions = rng.random_range(1..=100);
             let prover_stake = expected_num_solutions * stake_per_solution;
 
             assert_eq!(
@@ -225,5 +228,38 @@ mod tests {
                 expected_num_solutions,
             );
         }
+    }
+
+    #[test]
+    fn test_solution_limit_helper_avoids_current_block_reentry_with_pending_writer() {
+        let rng = &mut TestRng::default();
+
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let validator_address = Address::try_from(&private_key).unwrap();
+        let store = ConsensusStore::<CurrentNetwork, LedgerType>::open(StorageMode::new_test(None)).unwrap();
+        let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+        let ledger = CurrentLedger::load(genesis, StorageMode::new_test(None)).unwrap();
+
+        let next_block =
+            ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        let expected = ledger.num_remaining_solutions(&validator_address, 0);
+
+        // Mimic check_next_block() holding a read guard while a writer queues behind it.
+        let latest_block = ledger.current_block.read();
+        let latest_timestamp = latest_block.timestamp();
+
+        let ledger_clone = ledger.clone();
+        let next_block_clone = next_block.clone();
+        let writer = thread::spawn(move || ledger_clone.advance_to_next_block(&next_block_clone));
+
+        thread::sleep(Duration::from_millis(50));
+        assert!(!writer.is_finished(), "advance_to_next_block should be waiting on current_block.write()");
+
+        let actual = ledger.num_remaining_solutions_at_timestamp(&validator_address, 0, latest_timestamp);
+        assert_eq!(actual, expected);
+        assert_eq!(ledger.is_solution_limit_reached_at_timestamp(&validator_address, 0, latest_timestamp), actual == 0);
+
+        drop(latest_block);
+        writer.join().unwrap().unwrap();
     }
 }

@@ -19,9 +19,9 @@ use crate::{Identifier, LiteralType, Locator};
 impl<N: Network> Parser for ArrayType<N> {
     /// Parses a string into a literal type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // A helper function to parse the innermost element type.
-        fn parse_inner_element_type<N: Network>(string: &str) -> ParserResult<PlaintextType<N>> {
+        fn parse_inner_element_type<N: Network>(string: &str) -> ParserResult<'_, PlaintextType<N>> {
             // Order matters - we shouldn't try to parse Identifier before Locator.
             alt((
                 map(Locator::parse, PlaintextType::from),
@@ -31,7 +31,7 @@ impl<N: Network> Parser for ArrayType<N> {
         }
 
         // A helper function to parse the length of each dimension.
-        fn parse_length<N: Network>(string: &str) -> ParserResult<U32<N>> {
+        fn parse_length<N: Network>(string: &str) -> ParserResult<'_, U32<N>> {
             // Parse the whitespaces from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the semicolon from the string.

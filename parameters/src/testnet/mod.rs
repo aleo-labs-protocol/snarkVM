@@ -195,6 +195,17 @@ lazy_static! {
         InclusionVerifier::load_bytes().expect("Failed to load inclusion verifying key");
 }
 
+// Translation
+impl_remote!(TranslationCreditsProver, REMOTE_URLS, "resources/", "translation_credits", "prover", "credits");
+impl_local!(TranslationCreditsVerifier, "resources/", "translation_credits", "verifier", "credits");
+
+lazy_static! {
+    pub static ref TRANSLATION_CREDITS_PROVING_KEY: Vec<u8> =
+        TranslationCreditsProver::load_bytes().expect("Failed to load translation proving key");
+    pub static ref TRANSLATION_CREDITS_VERIFYING_KEY: Vec<u8> =
+        TranslationCreditsVerifier::load_bytes().expect("Failed to load translation verifying key");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

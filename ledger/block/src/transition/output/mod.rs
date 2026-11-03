@@ -20,7 +20,7 @@ mod string;
 use console::{
     account::{Address, ViewKey},
     network::prelude::*,
-    program::{Ciphertext, Future, Plaintext, Record, TransitionLeaf},
+    program::{Ciphertext, Future, Plaintext, Record, TransitionLeaf, ValueType},
     types::{Field, Group},
 };
 
@@ -41,6 +41,12 @@ pub enum Output<N: Network> {
     ExternalRecord(Field<N>),
     /// The future hash and (optional) future.
     Future(Field<N>, Option<Future<N>>),
+    /// The hash of the dynamic record's (function_id, record, tvk, output index).
+    DynamicRecord(Field<N>),
+    /// The commitment, checksum, (optional) record ciphertext, (optional) sender ciphertext, and dynamic ID.
+    RecordWithDynamicID(Field<N>, Field<N>, Option<Record<N, Ciphertext<N>>>, Option<Field<N>>, Field<N>),
+    /// The external record hash and dynamic ID.
+    ExternalRecordWithDynamicID(Field<N>, Field<N>),
 }
 
 impl<N: Network> Output<N> {
@@ -53,6 +59,9 @@ impl<N: Network> Output<N> {
             Output::Record(_, _, _, _) => 3,
             Output::ExternalRecord(_) => 4,
             Output::Future(_, _) => 5,
+            Output::DynamicRecord(_) => 6,
+            Output::RecordWithDynamicID(..) => 7,
+            Output::ExternalRecordWithDynamicID(..) => 8,
         }
     }
 
@@ -65,19 +74,34 @@ impl<N: Network> Output<N> {
             Output::Record(commitment, ..) => commitment,
             Output::ExternalRecord(id) => id,
             Output::Future(id, ..) => id,
+            Output::DynamicRecord(id) => id,
+            Output::RecordWithDynamicID(commitment, ..) => commitment,
+            Output::ExternalRecordWithDynamicID(id, ..) => id,
         }
     }
 
     /// Returns the output as a transition leaf.
+    /// Note: RecordWithDynamicID uses leaf variant 3 (same as Record) with version 2.
+    /// Note: ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord) with version 2.
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
-        TransitionLeaf::new_with_version(index, self.variant(), *self.id())
+        match self {
+            // RecordWithDynamicID produces leaf with version 2, variant 3.
+            Output::RecordWithDynamicID(..) => TransitionLeaf::new_record_with_dynamic_id(index, *self.id()),
+            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4.
+            Output::ExternalRecordWithDynamicID(..) => {
+                TransitionLeaf::new_external_record_with_dynamic_id(index, *self.id())
+            }
+            // All other variants use their serialization variant byte.
+            _ => TransitionLeaf::new(index, self.variant(), *self.id()),
+        }
     }
 
     /// Returns the commitment and record, if the output is a record.
     #[allow(clippy::type_complexity)]
     pub const fn record(&self) -> Option<(&Field<N>, &Record<N, Ciphertext<N>>)> {
         match self {
-            Output::Record(commitment, _, Some(record), _) => Some((commitment, record)),
+            Output::Record(commitment, _, Some(record), _)
+            | Output::RecordWithDynamicID(commitment, _, Some(record), _, _) => Some((commitment, record)),
             _ => None,
         }
     }
@@ -86,7 +110,8 @@ impl<N: Network> Output<N> {
     #[allow(clippy::type_complexity)]
     pub fn into_record(self) -> Option<(Field<N>, Record<N, Ciphertext<N>>)> {
         match self {
-            Output::Record(commitment, _, Some(record), _) => Some((commitment, record)),
+            Output::Record(commitment, _, Some(record), _)
+            | Output::RecordWithDynamicID(commitment, _, Some(record), _, _) => Some((commitment, record)),
             _ => None,
         }
     }
@@ -94,7 +119,7 @@ impl<N: Network> Output<N> {
     /// Returns the commitment, if the output is a record.
     pub const fn commitment(&self) -> Option<&Field<N>> {
         match self {
-            Output::Record(commitment, ..) => Some(commitment),
+            Output::Record(commitment, ..) | Output::RecordWithDynamicID(commitment, ..) => Some(commitment),
             _ => None,
         }
     }
@@ -102,7 +127,7 @@ impl<N: Network> Output<N> {
     /// Returns the commitment, if the output is a record, and consumes `self`.
     pub fn into_commitment(self) -> Option<Field<N>> {
         match self {
-            Output::Record(commitment, ..) => Some(commitment),
+            Output::Record(commitment, ..) | Output::RecordWithDynamicID(commitment, ..) => Some(commitment),
             _ => None,
         }
     }
@@ -110,7 +135,9 @@ impl<N: Network> Output<N> {
     /// Returns the nonce, if the output is a record.
     pub const fn nonce(&self) -> Option<&Group<N>> {
         match self {
-            Output::Record(_, _, Some(record), _) => Some(record.nonce()),
+            Output::Record(_, _, Some(record), _) | Output::RecordWithDynamicID(_, _, Some(record), _, _) => {
+                Some(record.nonce())
+            }
             _ => None,
         }
     }
@@ -118,7 +145,9 @@ impl<N: Network> Output<N> {
     /// Returns the nonce, if the output is a record, and consumes `self`.
     pub fn into_nonce(self) -> Option<Group<N>> {
         match self {
-            Output::Record(_, _, Some(record), _) => Some(record.into_nonce()),
+            Output::Record(_, _, Some(record), _) | Output::RecordWithDynamicID(_, _, Some(record), _, _) => {
+                Some(record.into_nonce())
+            }
             _ => None,
         }
     }
@@ -126,7 +155,7 @@ impl<N: Network> Output<N> {
     /// Returns the checksum, if the output is a record.
     pub const fn checksum(&self) -> Option<&Field<N>> {
         match self {
-            Output::Record(_, checksum, ..) => Some(checksum),
+            Output::Record(_, checksum, ..) | Output::RecordWithDynamicID(_, checksum, ..) => Some(checksum),
             _ => None,
         }
     }
@@ -134,7 +163,7 @@ impl<N: Network> Output<N> {
     /// Returns the checksum, if the output is a record, and consumes `self`.
     pub fn into_checksum(self) -> Option<Field<N>> {
         match self {
-            Output::Record(_, checksum, ..) => Some(checksum),
+            Output::Record(_, checksum, ..) | Output::RecordWithDynamicID(_, checksum, ..) => Some(checksum),
             _ => None,
         }
     }
@@ -142,7 +171,8 @@ impl<N: Network> Output<N> {
     /// Returns the sender ciphertext, if the output is a record.
     pub const fn sender_ciphertext(&self) -> Option<&Field<N>> {
         match self {
-            Output::Record(_, _, _, Some(sender_ciphertext)) => Some(sender_ciphertext),
+            Output::Record(_, _, _, Some(sender_ciphertext))
+            | Output::RecordWithDynamicID(_, _, _, Some(sender_ciphertext), _) => Some(sender_ciphertext),
             _ => None,
         }
     }
@@ -150,7 +180,8 @@ impl<N: Network> Output<N> {
     /// Returns the sender ciphertext, if the output is a record, and consumes `self`.
     pub fn into_sender_ciphertext(self) -> Option<Field<N>> {
         match self {
-            Output::Record(_, _, _, Some(sender_ciphertext)) => Some(sender_ciphertext),
+            Output::Record(_, _, _, Some(sender_ciphertext))
+            | Output::RecordWithDynamicID(_, _, _, Some(sender_ciphertext), _) => Some(sender_ciphertext),
             _ => None,
         }
     }
@@ -173,7 +204,8 @@ impl<N: Network> Output<N> {
     pub fn decrypt_sender_ciphertext(&self, account_view_key: &ViewKey<N>) -> Result<Option<Address<N>>> {
         // Retrieve the record ciphertext and sender ciphertext, if they exist.
         let (record_ciphertext, sender_ciphertext) = match self {
-            Output::Record(_, _, Some(record_ciphertext), Some(sender_ciphertext)) => {
+            Output::Record(_, _, Some(record_ciphertext), Some(sender_ciphertext))
+            | Output::RecordWithDynamicID(_, _, Some(record_ciphertext), Some(sender_ciphertext), _) => {
                 (record_ciphertext, sender_ciphertext)
             }
             // If the output is not a record or does not contain a sender ciphertext, return `None`.
@@ -220,6 +252,27 @@ impl<N: Network> Output<N> {
         [**self.id()].into_iter()
             // Append the checksum and sender ciphertext, if they exist.
             .chain([self.checksum().map(|sum| **sum), self.sender_ciphertext().map(|sender| **sender)].into_iter().flatten())
+    }
+
+    /// Returns the dynamic ID, if the output carries one.
+    pub const fn dynamic_id(&self) -> Option<&Field<N>> {
+        match self {
+            Output::RecordWithDynamicID(_, _, _, _, dynamic_id)
+            | Output::ExternalRecordWithDynamicID(_, dynamic_id) => Some(dynamic_id),
+            _ => None,
+        }
+    }
+
+    /// Returns the output from the caller's perspective.
+    pub fn to_caller_output(&self) -> Self {
+        match self {
+            // `RecordWithDynamicID` becomes `DynamicRecord` from caller's view.
+            Self::RecordWithDynamicID(_, _, _, _, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // `ExternalRecordWithDynamicID` becomes `DynamicRecord` from caller's view.
+            Self::ExternalRecordWithDynamicID(_, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // All other variants are unchanged.
+            other => other.clone(),
+        }
     }
 
     /// Returns `true` if the output is well-formed.
@@ -277,7 +330,8 @@ impl<N: Network> Output<N> {
                     Err(error) => Err(error),
                 }
             }
-            Output::Record(_, checksum, Some(record_ciphertext), sender_ciphertext) => {
+            Output::Record(_, checksum, Some(record_ciphertext), sender_ciphertext)
+            | Output::RecordWithDynamicID(_, checksum, Some(record_ciphertext), sender_ciphertext, _) => {
                 // Construct the checksum preimage.
                 let mut preimage = record_ciphertext.to_bits_le();
                 // If the record version is set to Version 0, ensure the sender ciphertext is `None`.
@@ -289,6 +343,7 @@ impl<N: Network> Output<N> {
                 } else if **record_ciphertext.version() == 1 {
                     ensure!(sender_ciphertext.is_some(), "The sender ciphertext must be non-empty");
                     // Note: The sender ciphertext feature can become optional or deactivated by removing this check.
+                    // Safe: sender_ciphertext.is_some() was verified on the line above.
                     ensure!(sender_ciphertext.unwrap() != Field::zero(), "The sender ciphertext must be non-zero");
                 } else {
                     bail!(
@@ -327,12 +382,15 @@ impl<N: Network> Output<N> {
             | Output::Public(_, None)
             | Output::Private(_, None)
             | Output::Record(_, _, None, _)
+            | Output::RecordWithDynamicID(_, _, None, _, _)
             | Output::Future(_, None) => {
                 // This enforces that the transition *must* contain the value for this transition output.
                 // A similar rule is enforced for the transition input.
                 bail!("A transition output value is missing")
             }
             Output::ExternalRecord(_) => Ok(true),
+            Output::DynamicRecord(_) => Ok(true),
+            Output::ExternalRecordWithDynamicID(_, _) => Ok(true),
         };
 
         match result() {
@@ -341,6 +399,77 @@ impl<N: Network> Output<N> {
                 eprintln!("{error}");
                 false
             }
+        }
+    }
+
+    /// Returns `true` if the output matches the expected value type.
+    pub fn is_type(&self, expected_value_type: &ValueType<N>) -> bool {
+        matches!(
+            (self, expected_value_type),
+            (Self::Constant(..), ValueType::Constant(..))
+                | (Self::Public(..), ValueType::Public(..))
+                | (Self::Private(..), ValueType::Private(..))
+                | (Self::Record(..), ValueType::Record(..))
+                | (Self::RecordWithDynamicID(..), ValueType::Record(..))
+                | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
+                | (Self::Future(..), ValueType::Future(..))
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+        )
+    }
+
+    /// Returns `true` if the output matches the given value type as produced by the callee.
+    /// `Record`, `ExternalRecord`, `DynamicRecord`, `RecordWithDynamicID` and
+    /// `ExternalRecordWithDynamicID` outputs are handled according to the value of `is_dynamic`:
+    ///  - `Some(true)` enforces type correspondence assuming the outputs refer to a dynamic call.
+    ///  - `Some(false)` enforces it assuming a static call.
+    ///  - `None` is flexible and makes no assumption about the type of call: both dynamic-call and
+    ///    static-call matching patterns return `true`.
+    ///
+    /// For outputs of an invalid type according to `is_dynamic`, this function returns false
+    /// regardless of the value type.
+    pub fn valid_as_output(&self, callee_value_type: &ValueType<N>, is_dynamic: Option<bool>) -> bool {
+        // These variants are call-type independent, so they always match their value type.
+        if matches!(
+            (self, callee_value_type),
+            (Self::Constant(..), ValueType::Constant(..))
+                | (Self::Public(..), ValueType::Public(..))
+                | (Self::Private(..), ValueType::Private(..))
+                | (Self::Future(..), ValueType::Future(..))
+        ) {
+            return true;
+        }
+
+        if is_dynamic == Some(true) {
+            // Unmatched variants:
+            //  - Self::Record: cannot be the callee's view of a dynamic-call output, so we return
+            //    false regardless of the ValueType
+            //  - Self::ExternalRecord: same as above
+            matches!(
+                (self, callee_value_type),
+                // Callee produces a static Record, caller sees DynamicRecord, translation occurs
+                (Self::RecordWithDynamicID(..), ValueType::Record(..))
+                // Callee produces an ExternalRecord, caller sees DynamicRecord, translation occurs
+                | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
+                // Caller and callee see DynamicRecord, no translation occurs
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+            )
+        } else if is_dynamic == Some(false) {
+            // Unmatched variants:
+            //  - Self::RecordWithDynamicID: no translation can occur in static calls
+            //  - Self::ExternalRecordWithDynamicID: same as above
+            matches!(
+                (self, callee_value_type),
+                // Callee produces a static Record (e.g. the root transition or the fee)
+                (Self::Record(..), ValueType::Record(..))
+                // Pass-through of External records (no translation)
+                | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                // Since this is a static call, dynamic records are only passed through
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+            )
+        } else {
+            // is_dynamic = None: flexible matching
+            self.is_type(callee_value_type)
         }
     }
 }
@@ -360,7 +489,7 @@ pub(crate) mod test_helpers {
         let transaction = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
         let transition = transaction.transitions().next().unwrap();
 
-        // Retrieve the transition ID and input.
+        // Retrieve the transition ID and output.
         let transition_id = *transition.id();
         let input = transition.outputs().iter().next().unwrap().clone();
 
@@ -396,9 +525,79 @@ pub(crate) mod test_helpers {
             (Uniform::rand(rng), Output::Record(Uniform::rand(rng), Uniform::rand(rng), None, sender_ciphertext)),
             (
                 Uniform::rand(rng),
-                Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext), sender_ciphertext),
+                Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext.clone()), sender_ciphertext),
             ),
             (Uniform::rand(rng), Output::ExternalRecord(Uniform::rand(rng))),
+            (
+                Uniform::rand(rng),
+                Output::RecordWithDynamicID(
+                    Uniform::rand(rng),
+                    record_checksum,
+                    Some(record_ciphertext),
+                    sender_ciphertext,
+                    Uniform::rand(rng),
+                ),
+            ),
+            (
+                Uniform::rand(rng),
+                Output::RecordWithDynamicID(
+                    Uniform::rand(rng),
+                    Uniform::rand(rng),
+                    None,
+                    sender_ciphertext,
+                    Uniform::rand(rng),
+                ),
+            ),
+            (Uniform::rand(rng), Output::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
+            (Uniform::rand(rng), Output::DynamicRecord(Uniform::rand(rng))),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_to_caller_output_record_with_dynamic_id() {
+        // RecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let commitment = Field::<CurrentNetwork>::from_u64(1);
+        let checksum = Field::<CurrentNetwork>::from_u64(2);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(3);
+
+        let output = Output::<CurrentNetwork>::RecordWithDynamicID(commitment, checksum, None, None, dynamic_id);
+        let caller_output = output.to_caller_output();
+
+        assert_eq!(caller_output, Output::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_output_external_record_with_dynamic_id() {
+        // ExternalRecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let ext_id = Field::<CurrentNetwork>::from_u64(10);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(20);
+
+        let output = Output::<CurrentNetwork>::ExternalRecordWithDynamicID(ext_id, dynamic_id);
+        let caller_output = output.to_caller_output();
+
+        assert_eq!(caller_output, Output::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_output_non_dynamic_variants_unchanged() {
+        // Non-dynamic variants must be returned unchanged.
+        let id = Field::<CurrentNetwork>::from_u64(42);
+
+        let constant = Output::<CurrentNetwork>::Constant(id, None);
+        assert_eq!(constant.to_caller_output(), constant);
+
+        let dynamic_record = Output::<CurrentNetwork>::DynamicRecord(id);
+        assert_eq!(dynamic_record.to_caller_output(), dynamic_record);
+
+        let external = Output::<CurrentNetwork>::ExternalRecord(id);
+        assert_eq!(external.to_caller_output(), external);
     }
 }

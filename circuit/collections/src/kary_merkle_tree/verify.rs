@@ -17,6 +17,7 @@ use super::*;
 
 impl<E: Environment, PH: PathHash<E>, const DEPTH: u8, const ARITY: u8> KaryMerklePath<E, PH, DEPTH, ARITY> {
     /// Returns `true` if the Merkle path is valid for the given root and leaf.
+    #[must_use = "This method returns a Boolean circuit variable which should be handled"]
     pub fn verify<LH: LeafHash<Hash = PH::Hash>>(
         &self,
         leaf_hasher: &LH,

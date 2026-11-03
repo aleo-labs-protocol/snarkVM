@@ -149,7 +149,7 @@ mod tests {
                     )
                     .unwrap();
 
-                    let previous_state_root: <CurrentNetwork as Network>::StateRoot = rng.r#gen();
+                    let previous_state_root: <CurrentNetwork as Network>::StateRoot = rng.random();
                     Header::<CurrentNetwork>::from(
                         previous_state_root,
                         Field::from_u32(1),
@@ -161,7 +161,7 @@ mod tests {
                     )
                     .unwrap()
                 };
-                let block_hash = rng.r#gen();
+                let block_hash = rng.random();
                 let authority = Authority::<CurrentNetwork>::new_beacon(&private_key, block_hash, rng).unwrap();
 
                 let block = Block::from_unchecked(

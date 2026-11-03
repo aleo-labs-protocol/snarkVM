@@ -23,7 +23,7 @@ fn test_ecdsa<H: Hash<Output = Vec<bool>, Input = bool>>(hasher: &H, rng: &mut T
 
         // Construct the verifying key.
         let verifying_key = VerifyingKey::from(&signing_key);
-        let verifying_key_bytes = verifying_key.to_encoded_point(true).as_bytes().to_vec();
+        let verifying_key_bytes = verifying_key.to_sec1_point(true).as_bytes().to_vec();
         let recovered_verifying_key = ECDSASignature::verifying_key_from_bytes(&verifying_key_bytes).unwrap();
         assert_eq!(verifying_key, recovered_verifying_key);
 

@@ -61,7 +61,7 @@ mod tests {
             // Initialize the console identifier.
             let console_identifier = sample_console_identifier::<Circuit>()?;
             // Initialize the circuit identifier.
-            let circuit_identifier = Identifier::<Circuit>::new(Mode::Constant, console_identifier);
+            let circuit_identifier = Identifier::<Circuit>::constant(console_identifier);
 
             Circuit::scope("Identifier ToBits", || {
                 let candidate = circuit_identifier.to_bits_le();
@@ -79,7 +79,7 @@ mod tests {
             // Initialize the console identifier.
             let console_identifier = sample_console_identifier::<Circuit>()?;
             // Initialize the circuit identifier.
-            let circuit_identifier = Identifier::<Circuit>::new(Mode::Constant, console_identifier);
+            let circuit_identifier = Identifier::<Circuit>::constant(console_identifier);
 
             Circuit::scope("Identifier ToBits", || {
                 let candidate = circuit_identifier.to_bits_be();

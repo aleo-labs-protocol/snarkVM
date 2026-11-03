@@ -35,14 +35,27 @@ use crate::{
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, Zero};
+use snarkvm_parameters::mainnet::PowersFile;
 use snarkvm_utilities::rand::{TestRng, Uniform};
 
 use itertools::Itertools;
 use rand::{
-    Rng,
-    distributions::{self, Distribution},
+    RngExt,
+    distr::{self, Distribution},
 };
 use std::marker::PhantomData;
+
+/// The bytes of `file`. Without `filesystem`, they are read from
+/// `~/.aleo/resources`, where a test run with `filesystem` leaves them.
+pub fn cached_file_bytes(file: &PowersFile) -> Vec<u8> {
+    #[cfg(feature = "filesystem")]
+    return snarkvm_parameters::mainnet::default_load_powers_file_sync(file).unwrap();
+    #[cfg(not(feature = "filesystem"))]
+    {
+        let path = aleo_std::aleo_dir().join("resources").join(file.name());
+        std::fs::read(&path).unwrap_or_else(|error| panic!("Run the tests with `filesystem` first: {path:?}: {error}"))
+    }
+}
 
 #[derive(Default)]
 struct TestInfo {
@@ -73,7 +86,7 @@ pub fn bad_degree_bound_test<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -
     let universal_prover = &pp.to_universal_prover().unwrap();
 
     for _ in 0..10 {
-        let supported_degree = distributions::Uniform::from(1..=max_degree).sample(rng);
+        let supported_degree = distr::Uniform::new_inclusive(1, max_degree).unwrap().sample(rng);
         assert!(max_degree >= supported_degree, "max_degree < supported_degree");
 
         let mut labels = Vec::new();
@@ -154,11 +167,11 @@ pub fn lagrange_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>()
         println!("Sampled supported degree");
 
         // Generate polynomials
-        let num_points_in_query_set = distributions::Uniform::from(1..=max_num_queries).sample(rng);
+        let num_points_in_query_set = distr::Uniform::new_inclusive(1, max_num_queries).unwrap().sample(rng);
         for i in 0..num_polynomials {
             let label = format!("Test{i}");
             labels.push(label.clone());
-            let eval_size: usize = distributions::Uniform::from(1..eval_size).sample(rng).next_power_of_two();
+            let eval_size: usize = distr::Uniform::new(1, eval_size).unwrap().sample(rng).next_power_of_two();
             let mut evals = vec![E::Fr::zero(); eval_size];
             for e in &mut evals {
                 *e = E::Fr::rand(rng);
@@ -261,14 +274,14 @@ where
     let mut test_components = Vec::new();
 
     let rng = &mut TestRng::default();
-    let max_degree = max_degree.unwrap_or_else(|| distributions::Uniform::from(8..=64).sample(rng));
+    let max_degree = max_degree.unwrap_or_else(|| distr::Uniform::new_inclusive(8, 64).unwrap().sample(rng));
     let pp = SonicKZG10::<E, S>::load_srs(max_degree)?;
     let universal_prover = &pp.to_universal_prover().unwrap();
     let supported_degree_bounds = [1 << 10, 1 << 15, 1 << 20, 1 << 25, 1 << 30];
 
     for _ in 0..num_iters {
         let supported_degree =
-            supported_degree.unwrap_or_else(|| distributions::Uniform::from(4..=max_degree).sample(rng));
+            supported_degree.unwrap_or_else(|| distr::Uniform::new_inclusive(4, max_degree).unwrap().sample(rng));
         assert!(max_degree >= supported_degree, "max_degree < supported_degree");
         let mut polynomials = Vec::new();
         let mut degree_bounds = if enforce_degree_bounds { Some(Vec::new()) } else { None };
@@ -277,11 +290,11 @@ where
         println!("Sampled supported degree");
 
         // Generate polynomials
-        let num_points_in_query_set = distributions::Uniform::from(1..=max_num_queries).sample(rng);
+        let num_points_in_query_set = distr::Uniform::new_inclusive(1, max_num_queries).unwrap().sample(rng);
         for i in 0..num_polynomials {
             let label = format!("Test{i}");
             labels.push(label.clone());
-            let degree = distributions::Uniform::from(1..=supported_degree).sample(rng);
+            let degree = distr::Uniform::new_inclusive(1, supported_degree).unwrap().sample(rng);
             let poly = DensePolynomial::rand(degree, rng);
 
             let supported_degree_bounds_after_trimmed = supported_degree_bounds
@@ -291,8 +304,8 @@ where
                 .collect::<Vec<usize>>();
 
             let degree_bound = if let Some(degree_bounds) = &mut degree_bounds {
-                if !supported_degree_bounds_after_trimmed.is_empty() && rng.r#gen() {
-                    let range = distributions::Uniform::from(0..supported_degree_bounds_after_trimmed.len());
+                if !supported_degree_bounds_after_trimmed.is_empty() && rng.random() {
+                    let range = distr::Uniform::new(0, supported_degree_bounds_after_trimmed.len()).unwrap();
                     let idx = range.sample(rng);
 
                     let degree_bound = supported_degree_bounds_after_trimmed[idx];
@@ -389,14 +402,14 @@ fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
     let mut test_components = Vec::new();
 
     let rng = &mut TestRng::default();
-    let max_degree = max_degree.unwrap_or_else(|| distributions::Uniform::from(8..=64).sample(rng));
+    let max_degree = max_degree.unwrap_or_else(|| distr::Uniform::new_inclusive(8, 64).unwrap().sample(rng));
     let pp = SonicKZG10::<E, S>::load_srs(max_degree)?;
     let universal_prover = &pp.to_universal_prover().unwrap();
     let supported_degree_bounds = [1 << 10, 1 << 15, 1 << 20, 1 << 25, 1 << 30];
 
     for _ in 0..num_iters {
         let supported_degree =
-            supported_degree.unwrap_or_else(|| distributions::Uniform::from(4..=max_degree).sample(rng));
+            supported_degree.unwrap_or_else(|| distr::Uniform::new_inclusive(4, max_degree).unwrap().sample(rng));
         assert!(max_degree >= supported_degree, "max_degree < supported_degree");
         let mut polynomials = Vec::new();
         let mut degree_bounds = if enforce_degree_bounds { Some(Vec::new()) } else { None };
@@ -405,11 +418,11 @@ fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
         println!("Sampled supported degree");
 
         // Generate polynomials
-        let num_points_in_query_set = distributions::Uniform::from(1..=max_num_queries).sample(rng);
+        let num_points_in_query_set = distr::Uniform::new_inclusive(1, max_num_queries).unwrap().sample(rng);
         for i in 0..num_polynomials {
             let label = format!("Test{i}");
             labels.push(label.clone());
-            let degree = distributions::Uniform::from(1..=supported_degree).sample(rng);
+            let degree = distr::Uniform::new_inclusive(1, supported_degree).unwrap().sample(rng);
             let poly = DensePolynomial::rand(degree, rng);
 
             let supported_degree_bounds_after_trimmed = supported_degree_bounds
@@ -419,8 +432,8 @@ fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
                 .collect::<Vec<usize>>();
 
             let degree_bound = if let Some(degree_bounds) = &mut degree_bounds {
-                if !supported_degree_bounds_after_trimmed.is_empty() && rng.r#gen() {
-                    let range = distributions::Uniform::from(0..supported_degree_bounds_after_trimmed.len());
+                if !supported_degree_bounds_after_trimmed.is_empty() && rng.random() {
+                    let range = distr::Uniform::new(0, supported_degree_bounds_after_trimmed.len()).unwrap();
                     let idx = range.sample(rng);
 
                     let degree_bound = supported_degree_bounds_after_trimmed[idx];
@@ -468,7 +481,7 @@ fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
                 let mut lc = LinearCombination::empty(label.clone());
 
                 let mut value = E::Fr::zero();
-                let should_have_degree_bounds: bool = rng.r#gen();
+                let should_have_degree_bounds: bool = rng.random();
                 for (k, label) in labels.iter().enumerate() {
                     if should_have_degree_bounds {
                         value += &polynomials[k].evaluate(point);

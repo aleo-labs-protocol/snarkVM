@@ -105,7 +105,7 @@ impl<F: Field> LabeledPolynomial<F> {
     }
 
     /// Retrieve the polynomial from `self`.
-    pub fn polynomial(&self) -> &Polynomial<F> {
+    pub fn polynomial(&self) -> &Polynomial<'_, F> {
         &self.polynomial
     }
 

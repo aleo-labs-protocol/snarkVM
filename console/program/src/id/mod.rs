@@ -116,6 +116,11 @@ impl<N: Network> ProgramID<N> {
     pub fn is_aleo(&self) -> bool {
         self.network() == &Identifier::from_str("aleo").expect("Failed to parse Aleo domain")
     }
+
+    /// Returns the `credits.aleo` program ID.
+    pub fn credits() -> Self {
+        Self::from_str("credits.aleo").expect("Failed to parse credits.aleo as a program ID")
+    }
 }
 
 impl<N: Network> Ord for ProgramID<N> {

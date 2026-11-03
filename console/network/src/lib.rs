@@ -26,6 +26,33 @@ pub use snarkvm_console_network_environment::*;
 mod helpers;
 pub use helpers::*;
 
+/// Checks `file` against the shipped proving key file for `credits.aleo/{$function_name}` in the
+/// `snarkvm_parameters` module `$network`, as `Network::verify_credits_proving_key_file` does.
+macro_rules! verify_credits_proving_key_file {
+    ($network:ident, $function_name:expr, $file:expr) => {{
+        use snarkvm_parameters::$network::*;
+        match $function_name {
+            "bond_public" => BondPublicProver::verify_bytes($file)?,
+            "bond_validator" => BondValidatorProver::verify_bytes($file)?,
+            "unbond_public" => UnbondPublicProver::verify_bytes($file)?,
+            "claim_unbond_public" => ClaimUnbondPublicProver::verify_bytes($file)?,
+            "set_validator_state" => SetValidatorStateProver::verify_bytes($file)?,
+            "transfer_private" => TransferPrivateProver::verify_bytes($file)?,
+            "transfer_public" => TransferPublicProver::verify_bytes($file)?,
+            "transfer_public_as_signer" => TransferPublicAsSignerProver::verify_bytes($file)?,
+            "transfer_private_to_public" => TransferPrivateToPublicProver::verify_bytes($file)?,
+            "transfer_public_to_private" => TransferPublicToPrivateProver::verify_bytes($file)?,
+            "join" => JoinProver::verify_bytes($file)?,
+            "split" => SplitProver::verify_bytes($file)?,
+            "fee_private" => FeePrivateProver::verify_bytes($file)?,
+            "fee_public" => FeePublicProver::verify_bytes($file)?,
+            "upgrade" => UpgradeProver::verify_bytes($file)?,
+            function_name => bail!("'credits.aleo/{function_name}' has no proving key file"),
+        }
+        Ok(())
+    }};
+}
+
 mod canary_v0;
 pub use canary_v0::*;
 
@@ -66,13 +93,17 @@ use snarkvm_algorithms::{
     snark::varuna::{CircuitProvingKey, CircuitVerifyingKey, VarunaHidingMode},
     srs::{UniversalProver, UniversalVerifier},
 };
-use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4};
+use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4, Poseidon8};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
 use snarkvm_curves::PairingEngine;
 
+use snarkvm_algorithms::polycommit::kzg10::UniversalParams;
+
 use indexmap::IndexMap;
 use std::sync::{Arc, OnceLock};
+
+pub use snarkvm_console_collections::merkle_tree::MerkleTreeState;
 
 /// A helper type for the BHP Merkle tree.
 pub type BHPMerkleTree<N, const DEPTH: u8> = MerkleTree<N, BHP1024<N>, BHP512<N>, DEPTH>;
@@ -88,7 +119,10 @@ pub type FiatShamirParameters<N> = <FiatShamir<N> as AlgebraicSponge<Fq<N>, 2>>:
 pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::PairingCurve, VarunaHidingMode>;
 pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::PairingCurve>;
 
-/// A list of consensus versions and their corresponding block heights.
+/// Explicitly configured or test consensus version heights, shared across networks.
+///
+/// The `wasm` feature needs this static for its `get_or_init_consensus_version_heights` API.
+#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
 static CONSENSUS_VERSION_HEIGHTS: OnceLock<[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]> = OnceLock::new();
 
 pub trait Network:
@@ -149,10 +183,27 @@ pub trait Network:
     const EXECUTION_STORAGE_PENALTY_THRESHOLD: u64 = 5000;
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
-    /// The maximum number of variables in a deployment.
+    /// The maximum number of variables in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V17 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
+    /// replaced by `MAX_DEPLOYMENT_VARIABLES_V2` from V19. This corresponds to ~0.5 second single-threaded
+    /// runtime at mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
-    /// The maximum number of constraints in a deployment.
+    /// The maximum number of constraints in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V17 (inclusive), skipped at V18 in favor of a block-wide synthesis limit, and
+    /// replaced by `MAX_DEPLOYMENT_CONSTRAINTS_V2` from V19. This corresponds to ~0.5 second single-threaded
+    /// runtime at mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    /// The maximum number of variables in a deployment. Enforced at the transaction level from consensus
+    /// version V19.
+    const MAX_DEPLOYMENT_VARIABLES_V2: u64 = 1 << 22; // 4,194,304 variables
+    /// The maximum number of constraints in a deployment. Enforced at the transaction level from consensus
+    /// version V19.
+    const MAX_DEPLOYMENT_CONSTRAINTS_V2: u64 = 1 << 22; // 4,194,304 constraints
+    /// Approximate conversion factor from non-zero circuit entries to seconds of certificate-verification work
+    /// when checking a deployment. From it, a per-proposal synthesis limit is enforced at consensus
+    /// version V18 which overrides the two per-transaction limits above.
+    const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = 1_500_000;
+    const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// A list of consensus versions and their corresponding transaction spend limits in microcredits.
@@ -160,12 +211,27 @@ pub trait Network:
     const TRANSACTION_SPEND_LIMIT: [(ConsensusVersion, u64); 2] =
         [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
     /// The compute discount approved by ARC 0005.
-    const ARC_0005_COMPUTE_DISCOUNT: u64 = 25;
+    const ARC_0005_COMPUTE_DISCOUNT: u64 =
+        Self::CREDITS_PER_SECOND_OF_RUNTIME[0].1 / Self::CREDITS_PER_SECOND_OF_RUNTIME[1].1;
+    /// The number of microcredits representing a second of runtime.
+    const CREDITS_PER_SECOND_OF_RUNTIME: [(ConsensusVersion, u64); 2] =
+        [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
-    const ANCHOR_HEIGHT: u32 = Self::ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
-    /// The anchor time in seconds.
-    const ANCHOR_TIME: u16 = 25;
+    /// Note: The anchor height used exclusively by `coinbase_reward_v1`.
+    const ANCHOR_HEIGHT: u32 = Self::REWARD_ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
+    /// The anchor time used specifically for calculating the coinbase reward.
+    /// We ensure that the reward anchor time matches the original ConsensusVersion::V1 anchor time
+    /// to maintain the original coinbase reward schedule.
+    const REWARD_ANCHOR_TIME: u16 = 25;
+    /// A list of (consensus_version, anchor_time_in_seconds) pairs (sparse).
+    /// Each entry takes effect at the specified version and remains active until the next entry.
+    /// The anchor time, defined as the expected time in seconds to reach the coinbase target.
+    const ANCHOR_TIMES: [(ConsensusVersion, u16); 3] = [
+        (ConsensusVersion::V1, Self::REWARD_ANCHOR_TIME),
+        (ConsensusVersion::V15, 35),
+        (ConsensusVersion::V17, Self::REWARD_ANCHOR_TIME),
+    ];
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
     /// The number of blocks per epoch.
@@ -184,6 +250,10 @@ pub trait Network:
     /// The maximum number of fields in data (must not exceed u16::MAX).
     #[allow(clippy::cast_possible_truncation)]
     const MAX_DATA_SIZE_IN_FIELDS: u32 = ((128 * 1024 * 8) / Field::<Self>::SIZE_IN_DATA_BITS) as u32;
+    /// A list of (consensus_version, size) pairs indicating the maximum size in bits of any single
+    /// `PlaintextType` declared in a program. This mirrors the runtime budget `to_fields` enforces.
+    const MAX_PLAINTEXT_TYPE_SIZE_IN_BITS: [(ConsensusVersion, usize); 1] =
+        [(ConsensusVersion::V20, Self::MAX_DATA_SIZE_IN_FIELDS as usize * Field::<Self>::SIZE_IN_DATA_BITS)];
 
     /// The minimum number of entries in a struct.
     const MIN_STRUCT_ENTRIES: usize = 1; // This ensures the struct is not empty.
@@ -202,12 +272,13 @@ pub trait Network:
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
     /// The maximum program size by number of characters.
-    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 100_000),  // 100 kB
-        (ConsensusVersion::V14, 512_000), // 512 kB
+    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 100_000),    // 100 kB
+        (ConsensusVersion::V14, 512_000),   // 512 kB
+        (ConsensusVersion::V16, 2_048_000), // 2048 kB
     ];
-    /// The maximum number of mappings in a program.
-    const MAX_MAPPINGS: usize = 31;
+    /// A list of consensus versions and their corresponding maximum number of mappings in a program.
+    const MAX_MAPPINGS: [(ConsensusVersion, usize); 2] = [(ConsensusVersion::V1, 31), (ConsensusVersion::V22, 128)];
     /// The maximum number of functions in a program.
     const MAX_FUNCTIONS: usize = 31;
     /// The maximum number of structs in a program.
@@ -216,12 +287,18 @@ pub trait Network:
     const MAX_RECORDS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of closures in a program.
     const MAX_CLOSURES: usize = 2 * Self::MAX_FUNCTIONS;
+    /// The maximum number of view functions in a program.
+    const MAX_VIEWS: usize = 2 * Self::MAX_FUNCTIONS;
     /// The maximum number of operands in an instruction.
     const MAX_OPERANDS: usize = Self::MAX_INPUTS;
     /// The maximum number of instructions in a closure or function.
     const MAX_INSTRUCTIONS: usize = u16::MAX as usize;
     /// The maximum number of commands in finalize.
     const MAX_COMMANDS: usize = u16::MAX as usize;
+    /// The maximum number of `call` commands in a finalize body. Matched to
+    /// `Transaction::MAX_TRANSITIONS` so view-call arity in a finalize is bounded analogously
+    /// to the static-call bound on transition graphs.
+    const MAX_CALLS: usize = 32;
     /// The maximum number of write commands in finalize.
     const MAX_WRITES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V14, 32)];
     /// The maximum number of `position` commands in finalize.
@@ -245,9 +322,10 @@ pub trait Network:
     /// MAX_TRANSACTION_SIZE = C + MAX_PROGRAM_SIZE + (673 + 58) * (MAX_FUNCTIONS + MAX_RECORDS)
     /// C = fixed size components (Up to 2367 bytes)
     // Note: This value must **not** decrease without considering the impact on transaction validity.
-    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 128_000),  // 128 kB
-        (ConsensusVersion::V14, 768_000), // 768 kB
+    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 128_000),    // 128 kB
+        (ConsensusVersion::V14, 768_000),   // 768 kB
+        (ConsensusVersion::V16, 2_304_000), // 2304 kB
     ];
 
     /// The state root type.
@@ -273,14 +351,19 @@ pub trait Network:
     //  Decreasing this value will break backwards compatibility of serialization without explicit
     //  declaration of migration based on round number rather than block height.
     //  Increasing this value will require a migration to prevent forking during network upgrades.
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6];
 
     /// Returns the list of consensus versions.
     #[allow(non_snake_case)]
     #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
-        // Initialize the consensus version heights directly from the constant.
-        CONSENSUS_VERSION_HEIGHTS.get_or_init(|| Self::_CONSENSUS_VERSION_HEIGHTS)
+        // Explicit WebAssembly heights override the network defaults.
+        #[cfg(feature = "wasm")]
+        if let Some(heights) = CONSENSUS_VERSION_HEIGHTS.get() {
+            return heights;
+        }
+        // A cache shared across networks would give them all the first reader's heights.
+        &Self::_CONSENSUS_VERSION_HEIGHTS
     }
     /// Returns the list of test consensus versions.
     #[allow(non_snake_case)]
@@ -321,10 +404,24 @@ pub trait Network:
     fn LATEST_MAX_ARRAY_ELEMENTS() -> usize {
         Self::MAX_ARRAY_ELEMENTS.last().expect("MAX_ARRAY_ELEMENTS must have at least one entry").1
     }
+    /// Returns the last `MAX_PLAINTEXT_TYPE_SIZE_IN_BITS` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_PLAINTEXT_TYPE_SIZE_IN_BITS() -> usize {
+        Self::MAX_PLAINTEXT_TYPE_SIZE_IN_BITS
+            .last()
+            .expect("MAX_PLAINTEXT_TYPE_SIZE_IN_BITS must have at least one entry")
+            .1
+    }
     /// Returns the last `MAX_CERTIFICATES` value.
     #[allow(non_snake_case)]
     fn LATEST_MAX_CERTIFICATES() -> u16 {
         Self::MAX_CERTIFICATES.last().expect("MAX_CERTIFICATES must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_MAPPINGS` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_MAPPINGS() -> usize {
+        Self::MAX_MAPPINGS.last().expect("MAX_MAPPINGS must have at least one entry").1
     }
 
     /// Returns the last `MAX_PROGRAM_SIZE` value.
@@ -367,6 +464,12 @@ pub trait Network:
     /// Returns the verifying key for the given function name in `credits.aleo`.
     fn get_credits_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>>;
 
+    /// Checks that `file` is the shipped proving key file for `credits.aleo/{function_name}`, by its size and
+    /// checksum. The file is a version byte, then the key.
+    fn verify_credits_proving_key_file(function_name: &str, _file: &[u8]) -> Result<()> {
+        bail!("{} has no proving key file for 'credits.aleo/{function_name}'", Self::NAME)
+    }
+
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion_v0 circuit.
     fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
@@ -387,6 +490,25 @@ pub trait Network:
 
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
+
+    /// Sets the inclusion proving key to the key in `file`, read against `srs` so that it shares its powers. `file`
+    /// must be the shipped inclusion proving key file, which this checks by its size and checksum. Call it before
+    /// anything proves inclusion. Fails if the key is already set, if `file` is not the shipped file, or if `srs`
+    /// does not hold the powers the key needs. A failed load leaves the key unset.
+    fn load_inclusion_proving_key(_file: &[u8], _srs: &UniversalParams<Self::PairingCurve>) -> Result<()> {
+        bail!("{} cannot load its inclusion proving key against an SRS", Self::NAME)
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key(bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>>;
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
     /// Returns the powers of `G`.
     fn g_powers() -> &'static Vec<Group<Self>>;
@@ -544,6 +666,12 @@ pub trait Network:
     /// Returns a Merkle tree with a BHP leaf hasher of 1024-bits and a BHP path hasher of 512-bits.
     fn merkle_tree_bhp<const DEPTH: u8>(leaves: &[Vec<bool>]) -> Result<BHPMerkleTree<Self, DEPTH>>;
 
+    /// Recreates a Merkle tree with a BHP leaf hasher of 1024-bits and a BHP path hasher of
+    /// 512-bits from the given state, e.g. one that was previously cached on disk.
+    fn merkle_tree_bhp_from_state<const DEPTH: u8>(
+        state: MerkleTreeState<'_, Self>,
+    ) -> Result<BHPMerkleTree<Self, DEPTH>>;
+
     /// Returns a Merkle tree with a Poseidon leaf hasher with input rate of 4 and a Poseidon path hasher with input rate of 2.
     fn merkle_tree_psd<const DEPTH: u8>(leaves: &[Vec<Field<Self>>]) -> Result<PoseidonMerkleTree<Self, DEPTH>>;
 
@@ -562,6 +690,24 @@ pub trait Network:
         root: &Field<Self>,
         leaf: &Vec<Field<Self>>,
     ) -> bool;
+
+    /// Returns the Poseidon leaf hasher for dynamic records (rate 8).
+    fn dynamic_record_leaf_hasher() -> &'static Poseidon8<Self>;
+
+    /// Returns the Poseidon path hasher for dynamic records (rate 2).
+    fn dynamic_record_path_hasher() -> &'static Poseidon2<Self>;
+}
+
+/// Reads the proving key in the file `file`, sharing its committer key's powers with `srs`.
+fn read_proving_key_with_srs<N: Environment>(
+    file: &[u8],
+    srs: &UniversalParams<N::PairingCurve>,
+) -> Result<VarunaProvingKey<N>> {
+    // The first byte is the encoded version.
+    let Some((&1, mut bytes)) = file.split_first() else { bail!("The proving key file is not version 1") };
+    let key = VarunaProvingKey::<N>::read_le_with_srs(&mut bytes, srs)?;
+    ensure!(bytes.is_empty(), "{} bytes follow the proving key", bytes.len());
+    Ok(key)
 }
 
 /// Returns the consensus version heights, initializing them if necessary.

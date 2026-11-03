@@ -23,7 +23,7 @@ mod to_bits_raw;
 mod to_fields;
 mod to_fields_raw;
 
-use crate::{Access, Argument, Entry, Future, Literal, Plaintext, Record};
+use crate::{Access, Argument, DynamicFuture, DynamicRecord, Entry, Future, Literal, Plaintext, Record};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
@@ -35,6 +35,10 @@ pub enum Value<N: Network> {
     Record(Record<N, Plaintext<N>>),
     /// A future.
     Future(Future<N>),
+    /// A dynamic record.
+    DynamicRecord(DynamicRecord<N>),
+    /// A dynamic future.
+    DynamicFuture(DynamicFuture<N>),
 }
 
 impl<N: Network> From<Literal<N>> for Value<N> {
@@ -93,12 +97,41 @@ impl<N: Network> From<&Future<N>> for Value<N> {
     }
 }
 
+impl<N: Network> From<DynamicRecord<N>> for Value<N> {
+    /// Initializes the value from a dynamic record.
+    fn from(dynamic_record: DynamicRecord<N>) -> Self {
+        Self::DynamicRecord(dynamic_record)
+    }
+}
+
+impl<N: Network> From<&DynamicRecord<N>> for Value<N> {
+    /// Initializes the value from a dynamic record.
+    fn from(dynamic_record: &DynamicRecord<N>) -> Self {
+        Self::from(dynamic_record.clone())
+    }
+}
+
+impl<N: Network> From<DynamicFuture<N>> for Value<N> {
+    /// Initializes the value from a dynamic future.
+    fn from(dynamic_future: DynamicFuture<N>) -> Self {
+        Self::DynamicFuture(dynamic_future)
+    }
+}
+
+impl<N: Network> From<&DynamicFuture<N>> for Value<N> {
+    /// Initializes the value from a dynamic future.
+    fn from(dynamic_future: &DynamicFuture<N>) -> Self {
+        Self::from(dynamic_future.clone())
+    }
+}
+
 impl<N: Network> From<Argument<N>> for Value<N> {
     /// Initializes the value from an argument.
     fn from(argument: Argument<N>) -> Self {
         match argument {
             Argument::Plaintext(plaintext) => Self::Plaintext(plaintext),
             Argument::Future(future) => Self::Future(future),
+            Argument::DynamicFuture(future) => Self::DynamicFuture(future),
         }
     }
 }

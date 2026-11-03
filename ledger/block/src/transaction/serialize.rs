@@ -120,10 +120,12 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
@@ -145,10 +147,12 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]

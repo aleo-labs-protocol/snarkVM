@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for PlaintextType<N> {
     /// Parses a string into a plaintext type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse to determine the plaintext type (order matters).
         alt((
             // Order matters - we shouldn't try to parse Identifier before Locator.

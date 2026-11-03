@@ -49,7 +49,8 @@ impl<N: Network> Literal<N> {
                     false => bail!("String literal exceeds maximum length of {} bytes.", N::MAX_STRING_BYTES),
                 }
             }
-            17.. => bail!("Failed to initialize literal variant {variant} from bits (LE)"),
+            17 => Literal::Identifier(Box::new(IdentifierLiteral::from_bits_le(literal)?)),
+            18.. => bail!("Failed to initialize literal variant {variant} from bits (LE)"),
         };
         Ok(literal)
     }
@@ -87,7 +88,8 @@ impl<N: Network> Literal<N> {
                     false => bail!("String literal exceeds maximum length of {} bytes.", N::MAX_STRING_BYTES),
                 }
             }
-            17.. => bail!("Failed to initialize literal variant {variant} from bits (BE)"),
+            17 => Literal::Identifier(Box::new(IdentifierLiteral::from_bits_be(literal)?)),
+            18.. => bail!("Failed to initialize literal variant {variant} from bits (BE)"),
         };
         Ok(literal)
     }

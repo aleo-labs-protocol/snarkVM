@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     algorithms::{ECDSASignature, Keccak256, Keccak384, Keccak512, Sha3_256, Sha3_384, Sha3_512},
     network::prelude::*,
@@ -328,7 +336,12 @@ impl<N: Network, const VARIANT: u8> ECDSAVerify<N, VARIANT> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         // Ensure the number of operands is correct.
         if self.operands.len() != 3 {
             bail!("Instruction '{}' expects 3 operands, found {} operands", Self::opcode(), self.operands.len())
@@ -507,7 +520,7 @@ impl<N: Network, const VARIANT: u8> ECDSAVerify<N, VARIANT> {
 impl<N: Network, const VARIANT: u8> Parser for ECDSAVerify<N, VARIANT> {
     /// Parses a string into an operation.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.

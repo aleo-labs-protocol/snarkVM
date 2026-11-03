@@ -87,3 +87,12 @@ impl<E: Environment, I: IntegerType> Cast<Scalar<E>> for Integer<E, I> {
         Scalar::<E>::from_bits_le(&bits_le)
     }
 }
+
+impl<E: Environment, I: IntegerType> Cast<IdentifierLiteral<E>> for Integer<E, I> {
+    /// Casts an `Integer` to an `IdentifierLiteral`.
+    #[inline]
+    fn cast(&self) -> Result<IdentifierLiteral<E>> {
+        let field: Field<E> = self.cast()?;
+        field.cast()
+    }
+}

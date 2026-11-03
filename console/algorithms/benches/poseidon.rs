@@ -67,7 +67,7 @@ fn poseidon8(c: &mut Criterion) {
 
 criterion_group! {
     name = sponge;
-    config = Criterion::default().sample_size(50);
+    config = Criterion::default().sample_size(10);
     targets = poseidon2, poseidon4, poseidon8,
 }
 

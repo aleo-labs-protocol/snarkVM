@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<E: Environment> Distribution<Address<E>> for Standard {
+impl<E: Environment> Distribution<Address<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Address<E> {
         Address::new(Uniform::rand(rng))

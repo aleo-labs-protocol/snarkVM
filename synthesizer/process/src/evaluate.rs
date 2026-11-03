@@ -33,7 +33,7 @@ impl<N: Network> Process<N> {
         // Retrieve the stack.
         let stack = self.get_stack(request.program_id())?;
         // Initialize an RNG.
-        let rng = &mut rand::thread_rng();
+        let rng = &mut rand::rng();
         // Evaluate the function.
         let response = stack.evaluate_function::<A, _>(CallStack::evaluate(authorization)?, None, None, rng)?;
         lap!(timer, "Evaluate the function");

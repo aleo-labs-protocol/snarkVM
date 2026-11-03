@@ -57,7 +57,26 @@ impl<N: Network> FromBytes for Input<N> {
                 Self::Record(serial_number, tag)
             }
             4 => Self::ExternalRecord(FromBytes::read_le(&mut reader)?),
-            5.. => return Err(error(format!("Failed to decode transition input variant {variant}"))),
+            5 => Self::DynamicRecord(FromBytes::read_le(&mut reader)?),
+            6 => {
+                // Read the serial number.
+                let serial_number: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Read the tag.
+                let tag: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Read the dynamic ID.
+                let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Return the record with dynamic ID.
+                Self::RecordWithDynamicID(serial_number, tag, dynamic_id)
+            }
+            7 => {
+                // Read the external record hash.
+                let external_hash: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Read the dynamic ID.
+                let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Return the external record with dynamic ID.
+                Self::ExternalRecordWithDynamicID(external_hash, dynamic_id)
+            }
+            8.. => return Err(error(format!("Failed to decode transition input variant {variant}"))),
         };
         Ok(literal)
     }
@@ -108,6 +127,21 @@ impl<N: Network> ToBytes for Input<N> {
             Self::ExternalRecord(input_commitment) => {
                 (4 as Variant).write_le(&mut writer)?;
                 input_commitment.write_le(&mut writer)
+            }
+            Self::DynamicRecord(hash) => {
+                (5 as Variant).write_le(&mut writer)?;
+                hash.write_le(&mut writer)
+            }
+            Self::RecordWithDynamicID(serial_number, tag, dynamic_id) => {
+                (6 as Variant).write_le(&mut writer)?;
+                serial_number.write_le(&mut writer)?;
+                tag.write_le(&mut writer)?;
+                dynamic_id.write_le(&mut writer)
+            }
+            Self::ExternalRecordWithDynamicID(external_hash, dynamic_id) => {
+                (7 as Variant).write_le(&mut writer)?;
+                external_hash.write_le(&mut writer)?;
+                dynamic_id.write_le(&mut writer)
             }
         }
     }

@@ -33,9 +33,19 @@ impl<N: Network> Subdag<N> {
         }
         // Read the round certificates.
         let mut subdag = BTreeMap::new();
+        // The writer emits rounds in `BTreeMap` order, so an encoding whose rounds
+        // are not strictly ascending is a second encoding of the same subdag: the
+        // map would sort and deduplicate it back into the canonical one.
+        let mut previous_round: Option<u64> = None;
         for _ in 0..num_rounds {
             // Read the round.
             let round = u64::read_le(&mut reader)?;
+            if let Some(previous) = previous_round
+                && round <= previous
+            {
+                return Err(error(format!("Subdag round {round} does not follow {previous} in ascending order")));
+            }
+            previous_round = Some(round);
             // Read the number of certificates.
             let num_certificates = u16::read_le(&mut reader)?;
             // Ensure the number of certificates is within bounds.
@@ -47,6 +57,10 @@ impl<N: Network> Subdag<N> {
             for _ in 0..num_certificates {
                 let cert = BatchCertificate::read_le_with_unchecked(&mut reader, unchecked)?;
                 certificates.insert(cert);
+            }
+            // Ensure no certificate was repeated within the round.
+            if certificates.len() != num_certificates as usize {
+                return Err(error(format!("Duplicate certificate in subdag round {round}")));
             }
             // Insert the round and certificates.
             subdag.insert(round, certificates);
@@ -105,5 +119,66 @@ mod tests {
             assert_eq!(expected, Subdag::read_le(&expected_bytes[..]).unwrap());
             assert_eq!(expected, Subdag::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
+    }
+
+    /// Encodes a subdag from its parts, so a test can control the round order
+    /// and repeat a certificate -- neither of which `to_bytes_le` will produce.
+    fn encode(rounds: &[(u64, Vec<BatchCertificate<console::network::MainnetV0>>)]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        1u8.write_le(&mut bytes).unwrap();
+        u32::try_from(rounds.len()).unwrap().write_le(&mut bytes).unwrap();
+        for (round, certificates) in rounds {
+            round.write_le(&mut bytes).unwrap();
+            u16::try_from(certificates.len()).unwrap().write_le(&mut bytes).unwrap();
+            for certificate in certificates {
+                certificate.write_le(&mut bytes).unwrap();
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn test_descending_rounds_are_rejected() {
+        let rng = &mut TestRng::default();
+        let subdag = crate::test_helpers::sample_subdag(rng);
+        let rounds: Vec<(u64, Vec<_>)> =
+            subdag.iter().map(|(round, certs)| (*round, certs.iter().cloned().collect())).collect();
+        assert!(rounds.len() >= 2, "need at least two rounds to reverse");
+
+        // Ascending is what `to_bytes_le` emits, and it must keep working.
+        let ascending = encode(&rounds);
+        assert_eq!(ascending, subdag.to_bytes_le().unwrap());
+        assert_eq!(subdag, Subdag::read_le(&ascending[..]).unwrap());
+
+        // The map would sort this back into the encoding above, so accepting it
+        // would give one subdag two encodings.
+        let mut reversed = rounds.clone();
+        reversed.reverse();
+        let descending = encode(&reversed);
+        assert_ne!(descending, ascending);
+        assert!(
+            Subdag::<console::network::MainnetV0>::read_le(&descending[..]).is_err(),
+            "a subdag whose rounds are not ascending must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_certificate_in_a_round_is_rejected() {
+        let rng = &mut TestRng::default();
+        let subdag = crate::test_helpers::sample_subdag(rng);
+        let mut rounds: Vec<(u64, Vec<_>)> =
+            subdag.iter().map(|(round, certs)| (*round, certs.iter().cloned().collect())).collect();
+
+        // Repeat the first certificate of the first round. The set absorbs it, so
+        // the subdag is unchanged and only its bytes differ.
+        let first = rounds[0].1.first().expect("a sampled round carries certificates").clone();
+        rounds[0].1.push(first);
+
+        let padded = encode(&rounds);
+        assert_ne!(padded, subdag.to_bytes_le().unwrap());
+        assert!(
+            Subdag::<console::network::MainnetV0>::read_le(&padded[..]).is_err(),
+            "a subdag repeating a certificate within a round must be rejected"
+        );
     }
 }

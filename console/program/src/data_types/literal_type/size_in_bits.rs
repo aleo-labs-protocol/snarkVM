@@ -38,6 +38,7 @@ impl LiteralType {
             Self::Scalar => Scalar::<N>::size_in_bits(),
             Self::Signature => Signature::<N>::size_in_bits(),
             Self::String => N::MAX_STRING_BYTES.saturating_mul(8) as usize,
+            Self::Identifier => IdentifierLiteral::<N>::size_in_bits(),
         };
         u16::try_from(size).or_halt_with::<N>("Literal exceeds u16::MAX bits.")
     }

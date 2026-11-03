@@ -74,7 +74,7 @@ mod tests {
         let address = Address::try_from(private_key)?;
 
         // Sample a new partial solution.
-        let expected = PartialSolution::new(rng.r#gen(), address, u64::rand(&mut rng)).unwrap();
+        let expected = PartialSolution::new(rng.random(), address, u64::rand(&mut rng)).unwrap();
 
         // Serialize
         let expected_string = &expected.to_string();
@@ -95,7 +95,7 @@ mod tests {
         let address = Address::try_from(private_key)?;
 
         // Sample a new partial solution.
-        let expected = PartialSolution::new(rng.r#gen(), address, u64::rand(&mut rng)).unwrap();
+        let expected = PartialSolution::new(rng.random(), address, u64::rand(&mut rng)).unwrap();
 
         // Serialize
         let expected_bytes = expected.to_bytes_le()?;

@@ -19,10 +19,11 @@ use console::{
     types::Field,
 };
 use snarkvm_ledger_puzzle::PuzzleTrait;
+use snarkvm_utilities::rand::gen_range_inclusive_legacy;
 
 use anyhow::Result;
 use core::marker::PhantomData;
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 
 #[cfg(not(feature = "serial"))]
@@ -73,7 +74,9 @@ impl<N: Network> MerklePuzzle<N> {
         // Seed a random number generator from the epoch hash.
         let mut epoch_rng = ChaChaRng::seed_from_u64(seed);
         // Sample a random number of leaves.
-        Ok(epoch_rng.gen_range(MIN_NUMBER_OF_LEAVES..=MAX_NUMBER_OF_LEAVES))
+        let num_leaves = gen_range_inclusive_legacy(MIN_NUMBER_OF_LEAVES, MAX_NUMBER_OF_LEAVES, &mut epoch_rng);
+
+        Ok(num_leaves)
     }
 }
 
@@ -91,6 +94,7 @@ mod tests {
         let puzzle = MerklePuzzle::<CurrentNetwork>::new();
         // Sample the number of leaves.
         let num_leaves = puzzle.num_leaves(epoch_hash).unwrap();
+        assert_eq!(num_leaves, 102436);
         // Ensure the number of leaves is within the expected range.
         assert!((MIN_NUMBER_OF_LEAVES..=MAX_NUMBER_OF_LEAVES).contains(&num_leaves));
     }

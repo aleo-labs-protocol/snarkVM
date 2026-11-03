@@ -122,7 +122,10 @@ impl<N: Network> InclusionAssignment<N> {
         // Check that the height is valid if the record is from a global state path.
         A::assert(is_global.not().bitor(is_block_height_check_valid))?;
 
-        Stack::log_circuit::<A>(format_args!("State Path for {}", self.serial_number));
+        Stack::log_circuit::<A>(
+            format_args!("State Path for {}", self.serial_number),
+            "InclusionAssignment".to_string(),
+        );
 
         // Eject the assignment and reset the circuit environment.
         Ok(A::eject_assignment_and_reset())

@@ -16,6 +16,7 @@
 use super::*;
 
 use anyhow::Context;
+use snarkvm_console::network::varuna_version_from_consensus;
 
 impl<N: Network> Package<N> {
     /// Executes a program function with the given inputs.
@@ -62,6 +63,8 @@ impl<N: Network> Package<N> {
         let function = program.get_function(&function_name)?;
         // Save all the prover and verifier files for any function calls that are made.
         for instruction in function.instructions() {
+            // Note: `CallDynamic` is not handled here because its targets are resolved at runtime,
+            // so we cannot preload prover/verifier files for dynamic calls at execution time.
             if let Instruction::Call(call) = instruction {
                 // Retrieve the external stack and resource.
                 let (external_stack, resource) = match call.operator() {
@@ -115,12 +118,20 @@ impl<N: Network> Package<N> {
         let call_metrics = trace.call_metrics().to_vec();
 
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
+
         // Prepare the trace.
         trace.prepare(&query)?;
+
+        // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+        // function in the execution, all DynamicRecords and ExternalRecords
+        // received as inputs or from callees exist on the ledger at the end of
+        // the execution (whether spent or not).
+        if consensus_version >= ConsensusVersion::V15 {
+            let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+            let execution_stacks = process.get_stacks(trace.transitions().iter(), include_direct_imports)?;
+            Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
+        }
 
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;

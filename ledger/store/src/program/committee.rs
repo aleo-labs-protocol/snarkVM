@@ -197,10 +197,10 @@ pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
         if is_latest_committee {
             while next_current_round > 0 {
                 // If the next current height is less than the current height, then we have found the next current round.
-                if let Some(next_current_height) = self.get_height_for_round(next_current_round)? {
-                    if next_current_height < current_height {
-                        break;
-                    }
+                if let Some(next_current_height) = self.get_height_for_round(next_current_round)?
+                    && next_current_height < current_height
+                {
+                    break;
                 }
                 // Otherwise, decrement the next current round.
                 next_current_round = next_current_round.saturating_sub(1);
@@ -405,9 +405,9 @@ mod tests {
         assert!(store.current_round().is_err());
         assert!(store.current_height().is_err());
         assert!(store.current_committee().is_err());
-        assert_eq!(store.get_height_for_round(rng.r#gen()).unwrap(), None);
-        assert_eq!(store.get_committee(rng.r#gen()).unwrap(), None);
-        assert_eq!(store.get_committee_for_round(rng.r#gen()).unwrap(), None);
+        assert_eq!(store.get_height_for_round(rng.random()).unwrap(), None);
+        assert_eq!(store.get_committee(rng.random()).unwrap(), None);
+        assert_eq!(store.get_committee_for_round(rng.random()).unwrap(), None);
 
         // Insert the committee.
         store.insert(0, committee_0.clone()).unwrap();

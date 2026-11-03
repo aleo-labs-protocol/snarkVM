@@ -194,6 +194,8 @@ pub trait TransactionStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the latest transaction ID that contains the given `program ID`.
+    /// If amendments exist for the latest edition, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID for the latest edition.
     fn find_latest_transaction_id_from_program_id(
         &self,
         program_id: &ProgramID<N>,
@@ -201,13 +203,40 @@ pub trait TransactionStorage<N: Network>: Clone + Send + Sync {
         self.deployment_store().find_latest_transaction_id_from_program_id(program_id)
     }
 
-    /// Returns the transaction ID that contains the given `program ID` and `edition`.
-    fn find_transaction_id_from_program_id_and_edition(
+    /// Returns the original deployment transaction ID for the given `program ID` and `edition`.
+    /// This returns the initial deployment, not any subsequent amendments.
+    fn find_original_transaction_id_from_program_id_and_edition(
         &self,
         program_id: &ProgramID<N>,
         edition: u16,
     ) -> Result<Option<N::TransactionID>> {
-        self.deployment_store().find_transaction_id_from_program_id_and_edition(program_id, edition)
+        self.deployment_store().find_original_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the latest transaction ID for the given `program ID` and `edition`.
+    /// If amendments exist, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID.
+    fn find_latest_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        self.deployment_store().find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.deployment_store().find_transaction_id_from_program_id_edition_and_amendment(
+            program_id,
+            edition,
+            amendment_index,
+        )
     }
 
     /// Returns the transaction ID that contains the given `transition ID`.
@@ -399,47 +428,73 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         self.storage.deployment_store().get_program_for_edition(program_id, edition)
     }
 
-    /// Returns the latest verifying key for the given `(program ID, function name)`.
+    /// Returns the latest verifying key for the given `(program ID, resource name)`.
     pub fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.deployment_store().get_latest_verifying_key(program_id, function_name)
+        self.storage.deployment_store().get_latest_verifying_key(program_id, resource_name)
     }
 
-    /// Returns the verifying key for the given `(program ID, function name, edition)`.
-    pub fn get_verifying_key_with_edition(
+    /// Returns the latest verifying key for the given `(program ID, resource name, edition)`.
+    /// If amendments exist for the given edition, returns the verifying key from the latest amendment.
+    pub fn get_latest_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.deployment_store().get_verifying_key_with_edition(program_id, function_name, edition)
+        self.storage.deployment_store().get_latest_verifying_key_with_edition(program_id, resource_name, edition)
     }
 
-    /// Returns the latest certificate for the given `(program ID, function name)`.
+    /// Returns the original verifying key for the given `(program ID, resource name, edition)`.
+    /// This method ignores any amendments and always returns the VK from the original deployment.
+    pub fn get_original_verifying_key(
+        &self,
+        program_id: &ProgramID<N>,
+        resource_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<VerifyingKey<N>>> {
+        self.storage.deployment_store().get_original_verifying_key(program_id, resource_name, edition)
+    }
+
+    /// Returns the latest certificate for the given `(program ID, resource name)`.
     pub fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.deployment_store().get_latest_certificate(program_id, function_name)
+        self.storage.deployment_store().get_latest_certificate(program_id, resource_name)
     }
 
-    /// Returns the certificate for the given `(program ID, function name, edition)`.
-    pub fn get_certificate_with_edition(
+    /// Returns the latest certificate for the given `(program ID, resource name, edition)`.
+    /// If amendments exist for the given edition, returns the certificate from the latest amendment.
+    pub fn get_latest_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.deployment_store().get_certificate_with_edition(program_id, function_name, edition)
+        self.storage.deployment_store().get_latest_certificate_with_edition(program_id, resource_name, edition)
+    }
+
+    /// Returns the original certificate for the given `(program ID, resource name, edition)`.
+    /// This method ignores any amendments and always returns the certificate from the original deployment.
+    pub fn get_original_certificate(
+        &self,
+        program_id: &ProgramID<N>,
+        resource_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<Certificate<N>>> {
+        self.storage.deployment_store().get_original_certificate(program_id, resource_name, edition)
     }
 }
 
 impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     /// Returns the latest transaction ID that contains the given `program ID`.
+    /// If amendments exist for the latest edition, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID for the latest edition.
     pub fn find_latest_transaction_id_from_program_id(
         &self,
         program_id: &ProgramID<N>,
@@ -447,13 +502,40 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         self.storage.deployment_store().find_latest_transaction_id_from_program_id(program_id)
     }
 
-    /// Returns the transaction ID that contains the given `program ID` and `edition`.
-    pub fn find_transaction_id_from_program_id_and_edition(
+    /// Returns the original deployment transaction ID for the given `program ID` and `edition`.
+    /// This returns the initial deployment, not any subsequent amendments.
+    pub fn find_original_transaction_id_from_program_id_and_edition(
         &self,
         program_id: &ProgramID<N>,
         edition: u16,
     ) -> Result<Option<N::TransactionID>> {
-        self.storage.deployment_store().find_transaction_id_from_program_id_and_edition(program_id, edition)
+        self.storage.deployment_store().find_original_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the latest transaction ID for the given `program ID` and `edition`.
+    /// If amendments exist, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID.
+    pub fn find_latest_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        self.storage.deployment_store().find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    pub fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.storage.deployment_store().find_transaction_id_from_program_id_edition_and_amendment(
+            program_id,
+            edition,
+            amendment_index,
+        )
     }
 
     /// Returns the transaction ID that contains the given `transition ID`.
@@ -492,6 +574,7 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     }
 
     /// Returns an iterator over the deployment transaction IDs, for all deployments.
+    /// Note: This includes amendments.
     pub fn deployment_transaction_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, N::TransactionID>> {
         self.storage.deployment_store().deployment_transaction_ids()
     }
@@ -526,13 +609,98 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     }
 
     /// Returns an iterator over the `((program ID, function name, edition), verifying key)`, for all deployments.
+    /// Note: This does not include amendments. Use `amendment_verifying_keys()` for amendment verifying keys.
     pub fn verifying_keys(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramTriplet<N>>, Cow<'_, VerifyingKey<N>>)> {
         self.storage.deployment_store().verifying_keys()
     }
 
     /// Returns an iterator over the `((program ID, function name, edition), certificate)`, for all deployments.
+    /// Note: This does not include amendments. Use `amendment_certificates()` for amendment certificates.
     pub fn certificates(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramTriplet<N>>, Cow<'_, Certificate<N>>)> {
         self.storage.deployment_store().certificates()
+    }
+}
+
+type AmendmentKey<N> = (ProgramID<N>, u16, u64);
+type AmendmentVKKey<N> = (ProgramID<N>, Identifier<N>, u16, u64);
+
+impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
+    /// Returns the number of amendments for the given `program ID` and `edition`.
+    pub fn get_amendment_count(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<u64>> {
+        self.storage.deployment_store().get_amendment_count(program_id, edition)
+    }
+
+    /// Returns `true` if the given `transaction ID` is an amendment.
+    pub fn is_amendment(&self, transaction_id: &N::TransactionID) -> Result<bool> {
+        self.storage.deployment_store().is_amendment(transaction_id)
+    }
+
+    /// Returns the amendment info `(program ID, edition, amendment index)` for the given `transaction ID`.
+    pub fn get_amendment_info(&self, transaction_id: &N::TransactionID) -> Result<Option<(ProgramID<N>, u16, u64)>> {
+        self.storage.deployment_store().get_amendment_info(transaction_id)
+    }
+
+    /// Returns the verifying key for a specific amendment.
+    pub fn get_verifying_key_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<VerifyingKey<N>>> {
+        self.storage.deployment_store().get_verifying_key_for_amendment(
+            program_id,
+            function_name,
+            edition,
+            amendment_index,
+        )
+    }
+
+    /// Returns the certificate for a specific amendment.
+    pub fn get_certificate_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<Certificate<N>>> {
+        self.storage.deployment_store().get_certificate_for_amendment(
+            program_id,
+            function_name,
+            edition,
+            amendment_index,
+        )
+    }
+
+    /// Returns the deployment for a specific amendment.
+    pub fn get_deployment_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<Deployment<N>>> {
+        self.storage.deployment_store().get_deployment_for_amendment(program_id, edition, amendment_index)
+    }
+
+    /// Returns an iterator over the amendment transaction IDs.
+    pub fn amendment_transaction_ids(
+        &self,
+    ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentKey<N>>, Cow<'_, N::TransactionID>)> {
+        self.storage.deployment_store().amendment_transaction_ids()
+    }
+
+    /// Returns an iterator over the amendment verifying keys.
+    pub fn amendment_verifying_keys(
+        &self,
+    ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentVKKey<N>>, Cow<'_, VerifyingKey<N>>)> {
+        self.storage.deployment_store().amendment_verifying_keys()
+    }
+
+    /// Returns an iterator over the amendment certificates.
+    pub fn amendment_certificates(
+        &self,
+    ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentVKKey<N>>, Cow<'_, Certificate<N>>)> {
+        self.storage.deployment_store().amendment_certificates()
     }
 }
 
@@ -552,11 +720,16 @@ mod tests {
 
         // Sample the transactions.
         for transaction in [
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng),
+            // Note: V3 deployments (amendments) are not tested here as they require a proper base deployment setup.
+            // See test_v14.rs and deployment.rs tests for amendment coverage.
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
             snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),
@@ -598,11 +771,16 @@ mod tests {
 
         // Sample the transactions.
         for transaction in [
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng),
+            // Note: V3 deployments (amendments) are not tested here as they require a proper base deployment setup.
+            // See test_v14.rs and deployment.rs tests for amendment coverage.
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 1),
             Transaction::from_fee(snarkvm_ledger_test_helpers::sample_fee_private(
@@ -655,9 +833,10 @@ mod tests {
                 // Get and check the latest transaction ID for the program ID.
                 let candidate = transaction_store.find_latest_transaction_id_from_program_id(program_id).unwrap();
                 assert_eq!(Some(transaction_id), candidate);
-                // Get the check the transaction ID for the program ID and edition.
-                let candidate =
-                    transaction_store.find_transaction_id_from_program_id_and_edition(program_id, edition).unwrap();
+                // Get the check the original transaction ID for the program ID and edition.
+                let candidate = transaction_store
+                    .find_original_transaction_id_from_program_id_and_edition(program_id, edition)
+                    .unwrap();
                 assert_eq!(Some(transaction_id), candidate);
             }
         }

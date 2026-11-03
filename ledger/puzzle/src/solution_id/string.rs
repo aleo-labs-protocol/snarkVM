@@ -23,16 +23,16 @@ impl<N: Network> FromStr for SolutionID<N> {
     /// Reads in the solution ID string.
     fn from_str(solution_id: &str) -> Result<Self, Self::Err> {
         // Decode the solution ID string from bech32m.
-        let (hrp, data, variant) = bech32::decode(solution_id)?;
-        if hrp != SOLUTION_ID_PREFIX {
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(solution_id)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
+        if hrp.as_str() != SOLUTION_ID_PREFIX {
             bail!("Failed to decode solution ID: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode solution ID: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found a solution ID that is not bech32m encoded: {solution_id}");
         }
-        // Decode the solution ID data from u5 to u8, and into the solution ID.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the solution ID data into the solution ID.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -48,8 +48,8 @@ impl<N: Network> Display for SolutionID<N> {
         // Convert the solution ID to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string =
-            bech32::encode(SOLUTION_ID_PREFIX, bytes.to_base32(), bech32::Variant::Bech32m).map_err(|_| fmt::Error)?;
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(SOLUTION_ID_PREFIX), &bytes)
+            .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
     }
@@ -74,7 +74,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample a new solution ID.
-            let expected = SolutionID::<CurrentNetwork>::from(rng.r#gen::<u64>());
+            let expected = SolutionID::<CurrentNetwork>::from(rng.random::<u64>());
 
             // Check the string representation.
             let candidate = format!("{expected}");
@@ -90,7 +90,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample a new solution ID.
-            let expected = SolutionID::<CurrentNetwork>::from(rng.r#gen::<u64>());
+            let expected = SolutionID::<CurrentNetwork>::from(rng.random::<u64>());
 
             let candidate = expected.to_string();
             assert_eq!(format!("{expected}"), candidate);

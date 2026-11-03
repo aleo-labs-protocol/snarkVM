@@ -51,22 +51,24 @@ impl<E: Environment> Pow<&Field<E>> for &Field<E> {
 
         // If the exponent is a constant, eject its bits to determine whether to multiply in each iteration.
         if exponent.is_constant() {
-            for bit in exponent.to_bits_be() {
+            // Read the cached bits, not `eject_value()`: filling the cache allocates the exponent's 253 constant bits,
+            // which count in `num_variables`.
+            for bit in exponent.cached_bits_le().iter().rev().map(Boolean::eject_value).skip_while(|bit| !bit) {
                 // Square the output.
                 output = output.square();
                 // If `bit` is `true, set the output to `output * self`.
-                if bit.eject_value() {
+                if bit {
                     output *= self;
                 }
             }
         }
         // If the exponent is a variable, use a ternary to select whether to multiply in each iteration.
         else {
-            for bit in exponent.to_bits_be() {
+            for bit in exponent.cached_bits_le().iter().rev() {
                 // Square the output.
                 output = output.square();
                 // If `bit` is `true, set the output to `output * self`.
-                output = Field::ternary(&bit, &(&output * self), &output);
+                output = Field::ternary(bit, &(&output * self), &output);
             }
         }
 
@@ -134,10 +136,51 @@ impl<E: Environment> OutputMode<dyn Pow<Field<E>, Output = Field<E>>> for Field<
 
 #[cfg(test)]
 mod tests {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
     const ITERATIONS: u64 = 10;
+
+    /// `pow` over every bit of the exponent, including a constant exponent's leading zeros.
+    fn reference_pow(base: &Field<Circuit>, exponent: &Field<Circuit>) -> Field<Circuit> {
+        let mut output = Field::one();
+        for bit in exponent.to_bits_be() {
+            output = output.square();
+            match exponent.is_constant() {
+                true if bit.eject_value() => output *= base,
+                true => (),
+                false => output = Field::ternary(&bit, &(&output * base), &output),
+            }
+        }
+        output
+    }
+
+    #[test]
+    fn test_pow_matches_reference() {
+        let mut rng = TestRng::default();
+        let mut exponents = [0, 1, 2, 17].map(console::Field::<<Circuit as Environment>::Network>::from_u64).to_vec();
+        exponents.push(-console::Field::one());
+        exponents.extend((0..5).map(|_| console::Field::rand(&mut rng)));
+        let modes = [Mode::Constant, Mode::Public, Mode::Private];
+        let cases = modes.iter().flat_map(|a| modes.iter().map(move |b| (a, b)));
+        for ((mode_a, mode_b), exponent) in cases.flat_map(|modes| exponents.iter().map(move |e| (modes, e))) {
+            let base = Uniform::rand(&mut rng);
+            let run = |pow: fn(&Field<Circuit>, &Field<Circuit>) -> Field<Circuit>| {
+                let (base, exponent) = (Field::new(*mode_a, base), Field::new(*mode_b, *exponent));
+                // The second call reads the exponent's bits from a warm cache.
+                let outputs = [pow(&base, &exponent), pow(&base, &exponent)];
+                let mut hasher = DefaultHasher::new();
+                outputs.iter().for_each(|output| output.linear_combination.hash(&mut hasher));
+                let values = outputs.map(|output| (output.eject_value(), output.eject_mode()));
+                let count = Circuit::count();
+                Circuit::eject_r1cs_and_reset().hash(&mut hasher);
+                (values, count, hasher.finish())
+            };
+            assert_eq!(run(reference_pow), run(|base, exponent| base.pow(exponent)), "{mode_a} ^ {mode_b} {exponent}");
+        }
+    }
 
     fn check_pow(
         name: &str,

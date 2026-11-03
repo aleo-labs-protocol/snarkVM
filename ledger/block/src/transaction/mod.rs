@@ -457,29 +457,43 @@ pub mod test_helpers {
     pub fn sample_deployment_transaction(
         version: u8,
         edition: u16,
+        has_translation_keys: bool,
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> Transaction<CurrentNetwork> {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
         // Sample a deployment.
-        let deployment = match version {
-            1 => crate::transaction::deployment::test_helpers::sample_deployment_v1(edition, rng),
-            2 => {
-                let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v2(edition, rng);
-                // Set the program checksum.
-                deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        let deployment = match (version, has_translation_keys) {
+            (1, false) => crate::transaction::deployment::test_helpers::sample_deployment_v1(edition, rng),
+            (2, false) => {
+                let mut deployment =
+                    crate::transaction::deployment::test_helpers::sample_deployment_v2_without_translation_keys(
+                        edition, rng,
+                    );
                 // Set the program owner to the address of the private key.
                 deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-                // Return the deployment.
                 deployment
             }
-            _ => panic!("Invalid deployment version."),
+            (2, true) => {
+                let mut deployment =
+                    crate::transaction::deployment::test_helpers::sample_deployment_v2_with_translation_keys(
+                        edition, rng,
+                    );
+                // Set the program owner to the address of the private key.
+                deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+                deployment
+            }
+            (3, _) => {
+                // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+                crate::transaction::deployment::test_helpers::sample_deployment_v3(edition, rng)
+            }
+            _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
         };
 
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id().unwrap();
-        // Construct a program owner.
+        // Construct a program owner (the transaction signer).
         let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Sample the fee.
@@ -540,14 +554,18 @@ mod tests {
 
         // Transaction IDs are created using `transaction_tree`.
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]

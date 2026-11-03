@@ -137,11 +137,35 @@ impl<F: PrimeField> LinearCombination<F> {
     }
 
     /// Returns the number of nonzeros in the linear combination.
+    // This now combines the Public(0) variable with the linear combination's constant, as was
+    // always done by generate_constraints at the end of circuit synthesis (and therefore, as
+    // exposed in circuit verifying keys)
     pub(super) fn num_nonzeros(&self) -> u64 {
-        // Increment by one if the constant is nonzero.
-        match self.constant.is_zero() {
-            true => self.terms.len() as u64,
-            false => (self.terms.len() as u64).saturating_add(1),
+        let n_terms = self.terms.len() as u64;
+
+        // We operate depending on whether the Public(0) variable appears in the linear combination.
+        if let Some(constant_as_var_coeff) = self
+            .terms
+            .iter()
+            .find_map(|(var, coeff)| if var.index() == 0 && var.is_public() { Some(*coeff) } else { None })
+        {
+            if constant_as_var_coeff + self.constant == F::zero() {
+                // The the Public(0) variable (counted in n_terms) and self.constant will cancel out
+                // when added together. Note this subtraction is safe as n_terms contains Public(0).
+                n_terms - 1
+            } else {
+                // Public(0) + self.constant != 0 will merge into a single non-zero entry, already
+                // counted in n_terms.
+                n_terms
+            }
+        } else if self.constant.is_zero() {
+            // No term for the Public(0) variable and no constant in the final linear
+            // combination.
+            n_terms
+        } else {
+            // No term for the Public(0) variable, but the constant will appear in the final
+            // linear combination.
+            n_terms + 1
         }
     }
 
@@ -164,7 +188,7 @@ impl<F: PrimeField> From<Variable<F>> for LinearCombination<F> {
 
 impl<F: PrimeField> From<&Variable<F>> for LinearCombination<F> {
     fn from(variable: &Variable<F>) -> Self {
-        Self::from(&[variable.clone()])
+        Self::from(std::slice::from_ref(variable))
     }
 }
 

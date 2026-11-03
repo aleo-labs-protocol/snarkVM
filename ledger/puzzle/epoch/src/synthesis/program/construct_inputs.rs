@@ -26,7 +26,7 @@ impl<N: Network> EpochProgram<N> {
             // Initialize the literal.
             let literal = match literal_type {
                 // If the literal type is a `boolean`, then generate a random `boolean` element.
-                LiteralType::Boolean => Literal::<N>::Boolean(rng.r#gen()),
+                LiteralType::Boolean => Literal::<N>::Boolean(rng.random()),
                 // If the literal type is a `field`, then generate a random non-zero `field` element.
                 LiteralType::Field => {
                     let field = Field::<N>::rand(rng);
@@ -36,15 +36,15 @@ impl<N: Network> EpochProgram<N> {
                     }
                 }
                 // If the literal type is a `i8`, then generate a random `i8`.
-                LiteralType::I8 => Literal::<N>::I8(rng.r#gen()),
+                LiteralType::I8 => Literal::<N>::I8(rng.random()),
                 // If the literal type is a `i16`, then generate a random `i16`.
-                LiteralType::I16 => Literal::<N>::I16(rng.r#gen()),
+                LiteralType::I16 => Literal::<N>::I16(rng.random()),
                 // If the literal type is a `i32`, then generate a random `i32`.
-                LiteralType::I32 => Literal::<N>::I32(rng.r#gen()),
+                LiteralType::I32 => Literal::<N>::I32(rng.random()),
                 // If the literal type is a `i64`, then generate a random `i64`.
-                LiteralType::I64 => Literal::<N>::I64(rng.r#gen()),
+                LiteralType::I64 => Literal::<N>::I64(rng.random()),
                 // If the literal type is a `i128`, then generate a random `i128`.
-                LiteralType::I128 => Literal::<N>::I128(rng.r#gen()),
+                LiteralType::I128 => Literal::<N>::I128(rng.random()),
                 // Unreachable.
                 LiteralType::Address
                 | LiteralType::Group
@@ -55,7 +55,8 @@ impl<N: Network> EpochProgram<N> {
                 | LiteralType::U128
                 | LiteralType::Scalar
                 | LiteralType::Signature
-                | LiteralType::String => {
+                | LiteralType::String
+                | LiteralType::Identifier => {
                     unreachable!("Invalid input literal type, malformed program");
                 }
             };

@@ -72,7 +72,7 @@ impl<N: Network> Set<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
         registers: &mut impl RegistersTrait<N>,
     ) -> Result<FinalizeOperation<N>> {
         // Ensure the mapping exists.
@@ -92,7 +92,7 @@ impl<N: Network> Set<N> {
 
 impl<N: Network> Parser for Set<N> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the opcode from the string.

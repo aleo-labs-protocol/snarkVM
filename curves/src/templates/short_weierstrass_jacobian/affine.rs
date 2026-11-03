@@ -23,7 +23,8 @@ use snarkvm_utilities::{FromBytes, ToBytes, bititerator::BitIteratorBE, rand::Un
 
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -32,7 +33,9 @@ use std::{
     ops::{Mul, Neg},
 };
 
+// The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(C)]
 pub struct Affine<P: Parameters> {
     pub x: P::BaseField,
     pub y: P::BaseField,
@@ -307,12 +310,12 @@ impl<P: Parameters> FromBytes for Affine<P> {
     }
 }
 
-impl<P: Parameters> Distribution<Affine<P>> for Standard {
+impl<P: Parameters> Distribution<Affine<P>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Affine<P> {
         loop {
             let x = P::BaseField::rand(rng);
-            let greatest = rng.r#gen();
+            let greatest = rng.random();
 
             if let Some(p) = Affine::from_x_coordinate(x, greatest) {
                 return p.mul_by_cofactor();

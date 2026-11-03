@@ -44,6 +44,7 @@ impl SNARKMode for VarunaNonHidingMode {
 pub enum VarunaVersion {
     V1 = 1,
     V2 = 2,
+    V3 = 3,
 }
 
 impl ToBytes for VarunaVersion {
@@ -58,6 +59,7 @@ impl FromBytes for VarunaVersion {
             0 => Err(io_error("Zero is not a valid Varuna version")),
             1 => Ok(Self::V1),
             2 => Ok(Self::V2),
+            3 => Ok(Self::V3),
             _ => Err(io_error("Invalid Varuna version")),
         }
     }

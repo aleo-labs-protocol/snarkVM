@@ -24,6 +24,8 @@ impl<N: Network> ToFieldsRaw for Value<N> {
             // Note: We use the standard `to_fields` for records and futures because they are Aleo-specific types.
             Self::Record(record) => record.to_fields(),
             Self::Future(future) => future.to_fields(),
+            Self::DynamicRecord(dynamic_record) => dynamic_record.to_fields(),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.to_fields(),
         }
     }
 }

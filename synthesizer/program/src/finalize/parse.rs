@@ -19,7 +19,7 @@ use crate::Command;
 impl<N: Network> Parser for FinalizeCore<N> {
     /// Parses a string into finalize.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the 'finalize' keyword from the string.

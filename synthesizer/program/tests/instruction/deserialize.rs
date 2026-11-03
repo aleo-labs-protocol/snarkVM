@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::sample::{sample_finalize_registers, sample_registers};
+use crate::helpers::sample::{sample_finalize_registers, sample_registers, shared_process};
 
 use circuit::{AleoV0, Eject};
 use console::{
@@ -21,7 +21,7 @@ use console::{
     prelude::*,
     program::{ArrayType, Identifier, LiteralType, Locator, Plaintext, PlaintextType, Register, U32, Value},
 };
-use snarkvm_synthesizer_process::{Process, Stack};
+use snarkvm_synthesizer_process::Stack;
 use snarkvm_synthesizer_program::{
     DeserializeBits,
     DeserializeBitsRaw,
@@ -75,7 +75,7 @@ fn sample_stack(
     let operands = vec![Operand::Register(r0)];
 
     // Initialize the stack.
-    let stack = Stack::new(&Process::load()?, &program)?;
+    let stack = Stack::new(shared_process(), &program)?;
 
     Ok((stack, operands, r1))
 }
@@ -152,7 +152,7 @@ fn check_deserialize<const VARIANT: u8>(
 
         // Attempt to finalize the valid operand case.
         let mut finalize_registers = sample_finalize_registers(&stack, &function_name, &[bit_array]).unwrap();
-        let result_c = operation.finalize(&stack, &mut finalize_registers);
+        let result_c = operation.finalize(&stack, None, &mut finalize_registers);
 
         // Check that either all operations failed, or all operations succeeded.
         let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();
@@ -213,6 +213,7 @@ fn test_types(variant: DeserializeVariant) -> Vec<PlaintextType<CurrentNetwork>>
         PlaintextType::Literal(LiteralType::U64),
         PlaintextType::Literal(LiteralType::U128),
         PlaintextType::Literal(LiteralType::Scalar),
+        PlaintextType::Literal(LiteralType::Identifier),
         PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
     ];
 

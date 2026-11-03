@@ -31,6 +31,8 @@ impl<A: Aleo> Value<A> {
                 }
             }
             Self::Future(future) => Ok(future.find(path)?),
+            Self::DynamicRecord(dynamic_record) => Ok(dynamic_record.find(path)?),
+            Self::DynamicFuture(..) => bail!("Cannot invoke `find` on a dynamic future value"),
         }
     }
 }

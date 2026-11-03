@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(test)]
-use snarkvm_circuit_types::environment::assert_scope;
-
 mod to_tpk;
 mod verify;
 
@@ -35,6 +32,8 @@ pub enum InputID<A: Aleo> {
     Record(Field<A>, Box<Group<A>>, Field<A>, Field<A>, Field<A>),
     /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<A>),
+    /// The hash of a dynamic record's (function_id, record, tvk, input index).
+    DynamicRecord(Field<A>),
 }
 
 impl<A: Aleo> Inject for InputID<A> {
@@ -57,8 +56,10 @@ impl<A: Aleo> Inject for InputID<A> {
                 Field::new(Mode::Public, serial_number),
                 Field::new(Mode::Public, tag),
             ),
-            // Inject the commitment as `Mode::Public`.
+            // Inject the commitment of the external record as `Mode::Public`.
             console::InputID::ExternalRecord(field) => Self::ExternalRecord(Field::new(Mode::Public, field)),
+            // Inject the commitment of the dynamic record as `Mode::Public`.
+            console::InputID::DynamicRecord(field) => Self::DynamicRecord(Field::new(Mode::Public, field)),
         }
     }
 }
@@ -81,6 +82,7 @@ impl<A: Aleo> Eject for InputID<A> {
                 ])
             }
             Self::ExternalRecord(field) => field.eject_mode(),
+            Self::DynamicRecord(field) => field.eject_mode(),
         }
     }
 
@@ -98,6 +100,7 @@ impl<A: Aleo> Eject for InputID<A> {
                 tag.eject_value(),
             ),
             Self::ExternalRecord(field) => console::InputID::ExternalRecord(field.eject_value()),
+            Self::DynamicRecord(field) => console::InputID::DynamicRecord(field.eject_value()),
         }
     }
 }
@@ -121,6 +124,7 @@ impl<A: Aleo> ToFields for InputID<A> {
                 ]
             }
             InputID::ExternalRecord(field) => vec![field.clone()],
+            InputID::DynamicRecord(field) => vec![field.clone()],
         }
     }
 }
@@ -148,6 +152,8 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
+    /// A flag indicating whether or not the request is dynamic.
+    is_dynamic: bool,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -213,6 +219,15 @@ impl<A: Aleo> Inject for Request<A> {
                         // Return the input.
                         Ok(input)
                     }
+                    // A dynamic record input is injected as `Mode::Private`.
+                    console::InputID::DynamicRecord(..) => {
+                        // Inject the input as `Mode::Private`.
+                        let input = Value::new(Mode::Private, input.clone());
+                        // Ensure the input is a dynamic record.
+                        ensure!(matches!(input, Value::DynamicRecord(..)), "Expected a dynamic record input");
+                        // Return the input.
+                        Ok(input)
+                    }
                 }
             })
             .collect::<Result<Vec<_>, _>>()
@@ -224,8 +239,8 @@ impl<A: Aleo> Inject for Request<A> {
         Self {
             signer: Address::new(mode, *request.signer()),
             network_id: U16::new(Mode::Constant, *request.network_id()),
-            program_id: ProgramID::new(Mode::Constant, *request.program_id()),
-            function_name: Identifier::new(Mode::Constant, *request.function_name()),
+            program_id: ProgramID::constant(*request.program_id()),
+            function_name: Identifier::constant(*request.function_name()),
             input_ids: request.input_ids().iter().map(|input_id| InputID::new(Mode::Public, *input_id)).collect(),
             inputs,
             signature: Signature::new(mode, *request.signature()),
@@ -233,6 +248,7 @@ impl<A: Aleo> Inject for Request<A> {
             tvk: Field::new(mode, *request.tvk()),
             tcm,
             scm,
+            is_dynamic: request.is_dynamic(),
         }
     }
 }
@@ -292,6 +308,11 @@ impl<A: Aleo> Request<A> {
     pub const fn scm(&self) -> &Field<A> {
         &self.scm
     }
+
+    /// Returns whether or not the request is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.is_dynamic
+    }
 }
 
 impl<A: Aleo> Eject for Request<A> {
@@ -327,6 +348,7 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_value(),
             self.tcm.eject_value(),
             self.scm.eject_value(),
+            self.is_dynamic,
         ))
     }
 }

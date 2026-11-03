@@ -38,6 +38,10 @@ pub enum ValueType<N: Network> {
     ExternalRecord(Locator<N>),
     /// A publicly-visible future.
     Future(Locator<N>),
+    /// A dynamic record.
+    DynamicRecord,
+    /// A dynamic future.
+    DynamicFuture,
 }
 
 impl<N: Network> ValueType<N> {
@@ -50,6 +54,8 @@ impl<N: Network> ValueType<N> {
             ValueType::Record(..) => 3,
             ValueType::ExternalRecord(..) => 4,
             ValueType::Future(..) => 5,
+            ValueType::DynamicRecord => 6,
+            ValueType::DynamicFuture => 7,
         }
     }
 
@@ -82,6 +88,20 @@ impl<N: Network> ValueType<N> {
             self,
             Constant(plaintext) | Public(plaintext) | Private(plaintext) if plaintext.contains_string_type()
         )
+    }
+
+    /// Returns `true` if the value type contains an identifier type.
+    /// Record, external record, future, and dynamic types cannot contain identifier types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Constant(plaintext) | Self::Public(plaintext) | Self::Private(plaintext) => {
+                plaintext.contains_identifier_type()
+            }
+            // Record, external record, future, and dynamic types cannot contain identifier types.
+            Self::Record(_) | Self::ExternalRecord(_) | Self::Future(_) | Self::DynamicRecord | Self::DynamicFuture => {
+                Ok(false)
+            }
+        }
     }
 
     /// Returns `true` if the value type is an array and the size exceeds the given maximum.

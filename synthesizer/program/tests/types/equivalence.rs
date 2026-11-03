@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::helpers::sample::shared_process;
+
 use console::{
     network::MainnetV0,
     prelude::*,
@@ -20,13 +22,16 @@ use console::{
 };
 use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{Program, types_equivalent};
+use std::{env, process::Command};
 
 type CurrentNetwork = MainnetV0;
+
+const CYCLIC_STRUCT_CHILD: &str = "SNARKVM_CYCLIC_STRUCT_EQUIVALENCE_CHILD";
 
 // ---------- Helper ----------
 fn sample_stack(program_text: &str) -> Result<Stack<CurrentNetwork>> {
     let program = Program::from_str(program_text)?;
-    let stack = Stack::new(&Process::load()?, &program)?;
+    let stack = Stack::new(shared_process(), &program)?;
     Ok(stack)
 }
 
@@ -129,7 +134,7 @@ fn test_cross_program_structs_equivalence() -> Result<()> {
 #[test]
 fn test_external_vs_local_struct_equivalence() -> Result<()> {
     // Create a single process to hold both programs
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
 
     // External program
     let external_program = Program::from_str(
@@ -137,7 +142,7 @@ fn test_external_vs_local_struct_equivalence() -> Result<()> {
         struct Foo: x as u32; y as u32;
         function main:",
     )?;
-    process.add_program(&external_program)?;
+    process.lock().add_program(&external_program)?;
 
     // Local program that imports external
     let local_program = Program::from_str(
@@ -146,7 +151,7 @@ fn test_external_vs_local_struct_equivalence() -> Result<()> {
         struct Foo: x as u32; y as u32;
         function main:",
     )?;
-    process.add_program(&local_program)?;
+    process.lock().add_program(&local_program)?;
 
     // Retrieve the stack for the local program
     let s_local = process.get_stack(local_program.id())?;
@@ -173,7 +178,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
     use snarkvm_synthesizer_program::types_equivalent;
 
     // ---------- Create a single process ----------
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
 
     // ---------- External program ----------
     let external_program = Program::from_str(
@@ -182,7 +187,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
         struct Bar: a as u32; b as u32;
         function main:",
     )?;
-    process.add_program(&external_program)?;
+    process.lock().add_program(&external_program)?;
 
     // ---------- Local program importing external ----------
     let local_program = Program::from_str(
@@ -192,7 +197,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
         struct Baz: f as Foo; g as u32;
         function main:",
     )?;
-    process.add_program(&local_program)?;
+    process.lock().add_program(&local_program)?;
 
     // ---------- Retrieve the stack ----------
     let s_local = process.get_stack(local_program.id())?;
@@ -232,5 +237,72 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
     // Nested struct inside local
     assert!(types_equivalent(&*s_local, &local_baz, &*s_local, &local_baz)?);
 
+    Ok(())
+}
+
+#[test]
+fn test_cyclic_external_struct_equivalence_returns_error() -> Result<()> {
+    if env::var_os(CYCLIC_STRUCT_CHILD).is_some() {
+        let process = Process::<CurrentNetwork>::load()?;
+
+        let program_b = Program::from_str(
+            r"
+program cycle_b.aleo;
+function main:
+constructor:
+    assert.eq true true;
+",
+        )?;
+        process.lock().add_program(&program_b)?;
+
+        let program_a = Program::from_str(
+            r"
+import cycle_b.aleo;
+program cycle_a.aleo;
+struct Node:
+    next as cycle_b.aleo/Node;
+function main:
+constructor:
+    assert.eq true true;
+",
+        )?;
+        process.lock().add_program(&program_a)?;
+
+        let upgraded_program_b = Program::from_str(
+            r"
+import cycle_a.aleo;
+program cycle_b.aleo;
+struct Node:
+    next as cycle_a.aleo/Node;
+function main:
+constructor:
+    assert.eq true true;
+",
+        )?;
+        process.lock().add_program(&upgraded_program_b)?;
+
+        let stack_a = process.get_stack(program_a.id())?;
+        let node = PlaintextType::Struct("Node".try_into()?);
+        let equivalence = types_equivalent(&*stack_a, &node, &*stack_a, &node);
+        assert!(
+            equivalence.as_ref().is_err_and(|error| error.to_string().contains("Cyclic struct reference")),
+            "expected a cyclic struct reference error, got {equivalence:?}"
+        );
+        return Ok(());
+    }
+
+    // Run the recursive comparison in a child process because the regression aborts on stack overflow.
+    let output = Command::new(env::current_exe()?)
+        .arg("test_cyclic_external_struct_equivalence_returns_error")
+        .arg("--nocapture")
+        .env(CYCLIC_STRUCT_CHILD, "1")
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "Child test failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     Ok(())
 }

@@ -25,7 +25,7 @@ pub use operation::*;
 mod bytes;
 mod parse;
 
-use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, instruction};
+use crate::{FinalizeRegistersState, FinalizeStoreTrait, RegistersCircuit, RegistersSigner, StackTrait};
 use console::{
     network::Network,
     prelude::{
@@ -75,6 +75,8 @@ pub enum Instruction<N: Network> {
     Async(Async<N>),
     /// Calls a closure or function on the operands.
     Call(Call<N>),
+    /// Dynamically calls a function on the operands.
+    CallDynamic(CallDynamic<N>),
     /// Casts the operands into the declared type.
     Cast(Cast<N>),
     /// Casts the operands into the declared type, with lossy truncation if applicable.
@@ -91,6 +93,18 @@ pub enum Instruction<N: Network> {
     CommitPED64(CommitPED64<N>),
     /// Performs a Pedersen commitment on up to a 128-bit input.
     CommitPED128(CommitPED128<N>),
+    /// Performs a BHP commitment on the input's raw bits in 256-bit chunks.
+    CommitBHP256Raw(CommitBHP256Raw<N>),
+    /// Performs a BHP commitment on the input's raw bits in 512-bit chunks.
+    CommitBHP512Raw(CommitBHP512Raw<N>),
+    /// Performs a BHP commitment on the input's raw bits in 768-bit chunks.
+    CommitBHP768Raw(CommitBHP768Raw<N>),
+    /// Performs a BHP commitment on the input's raw bits in 1024-bit chunks.
+    CommitBHP1024Raw(CommitBHP1024Raw<N>),
+    /// Performs a Pedersen commitment on the input's raw bits up to a 64-bit input.
+    CommitPED64Raw(CommitPED64Raw<N>),
+    /// Performs a Pedersen commitment on the input's raw bits up to a 128-bit input.
+    CommitPED128Raw(CommitPED128Raw<N>),
     /// Deserializes the bits into a value.
     DeserializeBits(DeserializeBits<N>),
     /// Deserializes the raw bits into a value.
@@ -141,6 +155,8 @@ pub enum Instruction<N: Network> {
     ECDSAVerifySha3_512Raw(ECDSAVerifySha3_512Raw<N>),
     /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with SHA3-512 and raw inputs.
     ECDSAVerifySha3_512Eth(ECDSAVerifySha3_512Eth<N>),
+    /// Gets a dynamic record entry.
+    GetRecordDynamic(GetRecordDynamic<N>),
     /// Computes whether `first` is greater than `second` as a boolean, storing the outcome in `destination`.
     GreaterThan(GreaterThan<N>),
     /// Computes whether `first` is greater than or equal to `second` as a boolean, storing the outcome in `destination`.
@@ -453,8 +469,18 @@ macro_rules! instruction {
             SerializeBitsRaw,
 
             // New opcodes added in `ConsensusVersion::V14`
+            CallDynamic,
+            GetRecordDynamic,
             SnarkVerify,
             SnarkVerifyBatch,
+
+            // New opcodes added in `ConsensusVersion::V15`
+            CommitBHP256Raw,
+            CommitBHP512Raw,
+            CommitBHP768Raw,
+            CommitBHP1024Raw,
+            CommitPED64Raw,
+            CommitPED128Raw,
 
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
@@ -597,9 +623,10 @@ impl<N: Network> Instruction<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        registers: &mut impl RegistersTrait<N>,
+        store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<(), FinalizeError> {
-        instruction!(self, |instruction| instruction.finalize(stack, registers).map_err(Into::into))
+        instruction!(self, |instruction| instruction.finalize(stack, store, registers).map_err(Into::into))
     }
 
     /// Returns the output type from the given input types.
@@ -620,6 +647,20 @@ impl<N: Network> Instruction<N> {
     /// Returns `true` if the instruction contains a literal string type.
     pub fn contains_string_type(&self) -> bool {
         self.operands().iter().any(|operand| operand.contains_string_type())
+    }
+
+    /// Returns `true` if the instruction contains an identifier type in its type declarations.
+    /// Checks cast destination types and serialize/deserialize operand/destination types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Cast(instruction) => instruction.cast_type().contains_identifier_type(),
+            Self::CastLossy(instruction) => instruction.cast_type().contains_identifier_type(),
+            Self::SerializeBits(instruction) => instruction.operand_type().contains_identifier_type(),
+            Self::SerializeBitsRaw(instruction) => instruction.operand_type().contains_identifier_type(),
+            Self::DeserializeBits(instruction) => instruction.destination_type().contains_identifier_type(),
+            Self::DeserializeBitsRaw(instruction) => instruction.destination_type().contains_identifier_type(),
+            _ => Ok(false),
+        }
     }
 
     /// Returns `true` if the instruction contains an array type with a size that exceeds the given maximum.
@@ -665,7 +706,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            121,
+            129,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

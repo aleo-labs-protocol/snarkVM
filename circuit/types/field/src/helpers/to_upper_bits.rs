@@ -22,6 +22,11 @@ impl<E: Environment> ToUpperBits for Field<E> {
     /// Outputs the upper `k` bits of an `n`-bit field element in little-endian representation.
     /// Enforces that the lower `n - k` bits are zero.
     ///
+    /// Also enforces that the shifted value is less than the modulus, by asserting
+    /// that the bits are at most the upper `k` bits of `modulus - 1`. Without this
+    /// assertion, a prover could assign the bits of `value + modulus`, shifted by
+    /// `2^(n - k)`, which reconstructs `value` modulo the modulus.
+    ///
     fn to_upper_bits_le(&self, k: usize) -> Vec<Self::Boolean> {
         let mut bits_le = self.to_upper_bits_be(k);
         bits_le.reverse();
@@ -31,6 +36,9 @@ impl<E: Environment> ToUpperBits for Field<E> {
     ///
     /// Outputs the upper `k` bits of an `n`-bit field element in big-endian representation.
     /// Enforces that the lower `n - k` bits are zero.
+    ///
+    /// Also enforces that the shifted value is less than the modulus, as this returns
+    /// the little-endian decomposition in reverse order.
     ///
     fn to_upper_bits_be(&self, k: usize) -> Vec<Self::Boolean> {
         // Ensure the size is within the allowed capacity.
@@ -59,6 +67,15 @@ impl<E: Environment> ToUpperBits for Field<E> {
         // and ensures that b_{n-k-1}, ..., b_0 are all equal to zero.
         E::assert_eq(self, accumulator).expect("Field to_upper_bits constraint unsatisfied");
 
+        // Ensure the bits encode an integer less than the modulus. As the lower `n - k` bits are zero,
+        // this holds if and only if the upper `k` bits are at most the upper `k` bits of `modulus - 1`.
+        let bits_le = bits.iter().rev().cloned().collect::<Vec<_>>();
+        let modulus_minus_one = -E::BaseField::one();
+        Boolean::assert_less_than_or_equal_constant(
+            &bits_le,
+            &modulus_minus_one.to_bits_le()[E::BaseField::size_in_bits() - k..],
+        );
+
         bits
     }
 }
@@ -69,7 +86,17 @@ impl<E: Environment> Metrics<dyn ToUpperBits<Boolean = Boolean<E>>> for Field<E>
     fn count(case: &Self::Case) -> Count {
         match case {
             (Mode::Constant, k) => Count::is(*k, 0, 0, 0),
-            (_, k) => Count::is(0, 0, *k, k + 1),
+            (_, k) => {
+                // The range check is free up to and including the first zero bit of its constant. Each later bit
+                // costs one private variable and one constraint, and the final assertion costs one constraint.
+                let size_in_bits = E::BaseField::size_in_bits();
+                let constant_bits_le = &(-E::BaseField::one()).to_bits_le()[size_in_bits - *k as usize..];
+                let (num_private, num_constraints) = match constant_bits_le.iter().position(|bit| !bit) {
+                    Some(index) => (k - 1 - index as u64, k - index as u64),
+                    None => (0, 0),
+                };
+                Count::is(0, 0, k + num_private, k + 1 + num_constraints)
+            }
         }
     }
 }
@@ -141,6 +168,40 @@ mod tests {
                 assert_output_mode!(ToUpperBits<Boolean>() => Field, &mode, candidate);
             });
         }
+    }
+
+    fn check_to_upper_bits_be_of_largest_value(mode: Mode) {
+        let size_in_bits = console::Field::<<Circuit as Environment>::Network>::size_in_bits();
+        let modulus_minus_one_bits_be = (-console::Field::<<Circuit as Environment>::Network>::one()).to_bits_be();
+
+        for k in 1..=size_in_bits {
+            // Construct the largest field element whose lower `n - k` bits are zero.
+            let mut bits_be = modulus_minus_one_bits_be[..k].to_vec();
+            bits_be.resize(size_in_bits, false);
+            let candidate = Field::<Circuit>::new(mode, console::Field::from_bits_be(&bits_be).unwrap());
+
+            Circuit::scope(format!("{mode} {k}"), || {
+                let candidate = candidate.to_upper_bits_be(k);
+                assert_eq!(modulus_minus_one_bits_be[..k], candidate.eject_value());
+                assert_count!(ToUpperBits<Boolean>() => Field, &(mode, k as u64));
+                assert_output_mode!(ToUpperBits<Boolean>() => Field, &mode, candidate);
+            });
+        }
+    }
+
+    #[test]
+    fn test_to_upper_bits_of_largest_value_constant() {
+        check_to_upper_bits_be_of_largest_value(Mode::Constant);
+    }
+
+    #[test]
+    fn test_to_upper_bits_of_largest_value_public() {
+        check_to_upper_bits_be_of_largest_value(Mode::Public);
+    }
+
+    #[test]
+    fn test_to_upper_bits_of_largest_value_private() {
+        check_to_upper_bits_be_of_largest_value(Mode::Private);
     }
 
     // 8 bits

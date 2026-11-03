@@ -33,6 +33,7 @@ use snarkvm_ledger_store::{
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
+use snarkvm_synthesizer_snark::VerifyingKey;
 
 use aleo_std::StorageMode;
 use indexmap::IndexMap;
@@ -42,6 +43,25 @@ type CurrentAleo = AleoV0;
 
 const NUM_BLOCKS_TO_UNLOCK: u32 = 360;
 const TEST_COMMISSION: u8 = 5;
+
+#[test]
+fn test_credits_translation_verifying_key_is_loaded_and_updated() -> Result<()> {
+    let credits_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo")?;
+    let credits_record_name = Identifier::from_str("credits")?;
+    let raw_verifying_key = CurrentNetwork::translation_credits_verifying_key();
+    let num_variables = raw_verifying_key.circuit_info.num_public_and_private_variables as u64;
+    let expected = VerifyingKey::new(raw_verifying_key.clone(), num_variables);
+    let process = Process::<CurrentNetwork>::load()?;
+
+    assert_eq!(expected, process.get_verifying_key(credits_id, credits_record_name)?);
+
+    process.remove_verifying_key(&credits_id, &credits_record_name)?;
+    assert!(process.get_verifying_key(credits_id, credits_record_name).is_err());
+
+    process.lock().update_credits_verifying_keys()?;
+    assert_eq!(expected, process.get_verifying_key(credits_id, credits_record_name)?);
+    Ok(())
+}
 
 /// Samples a new finalize store.
 macro_rules! sample_finalize_store {
@@ -70,7 +90,7 @@ macro_rules! test_atomic_finalize {
 
 /// Samples a new finalize state.
 fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
 }
 
 /// Returns the `value` for the given `key` in the `mapping` for the given `program_id`.
@@ -339,7 +359,7 @@ fn execute_function<F: FinalizeStorage<CurrentNetwork>>(
     let block_height = block_height.unwrap_or(1);
 
     // Add an atomic finalize wrapper around the finalize function.
-    process.finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
+    process.lock().finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
 
     Ok(())
 }
@@ -621,7 +641,7 @@ fn test_bond_validator_below_min_stake_fails() {
 
     /* Ensure bonding as a validator below the MIN_VALIDATOR_STAKE fails. */
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
-        let amount = rng.gen_range(1_000_000..MIN_VALIDATOR_STAKE);
+        let amount = rng.random_range(1_000_000..MIN_VALIDATOR_STAKE);
         let result =
             bond_validator(&process, &store, validator_private_key, withdrawal_address, amount, TEST_COMMISSION, rng);
         assert!(result.is_err());
@@ -1022,7 +1042,7 @@ fn test_bond_delegator_below_min_stake_fails() {
         .unwrap();
 
         // Bond the delegator.
-        let delegator_amount = rng.gen_range(1_000_000..MIN_DELEGATOR_STAKE);
+        let delegator_amount = rng.random_range(1_000_000..MIN_DELEGATOR_STAKE);
         let result = bond_public(
             &process,
             &store,
@@ -1520,7 +1540,7 @@ fn test_unbond_validator() {
 
         // Perform the first unbond.
         let unbond_amount_1 = MIN_VALIDATOR_STAKE;
-        let block_height_1 = rng.gen_range(1..100);
+        let block_height_1 = rng.random_range(1..100);
         unbond_public(
             &process,
             &store,
@@ -1551,7 +1571,7 @@ fn test_unbond_validator() {
 
         // Perform the second unbond.
         let unbond_amount_2 = MIN_VALIDATOR_STAKE;
-        let block_height_2 = rng.gen_range(block_height_1..1000);
+        let block_height_2 = rng.random_range(block_height_1..1000);
         unbond_public(
             &process,
             &store,
@@ -1583,7 +1603,7 @@ fn test_unbond_validator() {
 
         // Perform the third unbond, which should unbond all remaining stake.
         let unbond_amount_3 = 1; // Notice: This is 1 credit, when the remaining is MIN_VALIDATOR_STAKE.
-        let block_height_3 = rng.gen_range(block_height_2..10000);
+        let block_height_3 = rng.random_range(block_height_2..10000);
         unbond_public(
             &process,
             &store,
@@ -1610,7 +1630,7 @@ fn test_unbond_validator() {
 
         // Perform the fourth unbond, which should fail (as there is no stake left).
         let unbond_amount_4 = 1;
-        let block_height_4 = rng.gen_range(block_height_3..100000);
+        let block_height_4 = rng.random_range(block_height_3..100000);
         let result = unbond_public(
             &process,
             &store,
@@ -1667,7 +1687,7 @@ fn test_bond_validator_fails_if_unbonding_state() {
         assert_eq!(withdraw_state(&store, validator_address).unwrap(), Some(*withdrawal_address));
 
         // Perform the unbond
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         unbond_public(&process, &store, withdrawal_private_key, validator_address, validator_amount, block_height, rng)
             .unwrap();
 
@@ -1751,7 +1771,7 @@ fn test_unbond_validator_fails_if_unbonding_beyond_their_stake() {
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the unbond.
         let unbond_amount = validator_amount + 1;
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         let result = unbond_public(
             &process,
             &store,
@@ -1788,7 +1808,7 @@ fn test_unbond_validator_fails_if_unbonding_beyond_their_stake() {
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the unbond.
         let unbond_amount = validator_amount + 1;
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         let result = unbond_public(
             &process,
             &store,
@@ -1854,7 +1874,7 @@ fn test_unbond_validator_continues_if_there_is_a_delegator() {
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the first unbond.
         let unbond_amount_1 = MIN_VALIDATOR_STAKE;
-        let block_height_1 = rng.gen_range(1..100);
+        let block_height_1 = rng.random_range(1..100);
         unbond_public(
             &process,
             &store,
@@ -1868,7 +1888,7 @@ fn test_unbond_validator_continues_if_there_is_a_delegator() {
 
         // Perform the second unbond.
         let unbond_amount_2 = MIN_DELEGATOR_STAKE + 2;
-        let block_height_2 = rng.gen_range(block_height_1..1000);
+        let block_height_2 = rng.random_range(block_height_1..1000);
         let result = unbond_public(
             &process,
             &store,
@@ -1936,7 +1956,7 @@ fn test_unbond_delegator() {
 
         // Perform the first unbond.
         let unbond_amount_1 = MIN_DELEGATOR_STAKE;
-        let block_height_1 = rng.gen_range(1..100);
+        let block_height_1 = rng.random_range(1..100);
         unbond_public(&process, &store, delegator_private_key, delegator_address, unbond_amount_1, block_height_1, rng)
             .unwrap();
 
@@ -1966,7 +1986,7 @@ fn test_unbond_delegator() {
 
         // Perform the second unbond.
         let unbond_amount_2 = MIN_DELEGATOR_STAKE;
-        let block_height_2 = rng.gen_range(block_height_1..1000);
+        let block_height_2 = rng.random_range(block_height_1..1000);
         unbond_public(&process, &store, delegator_private_key, delegator_address, unbond_amount_2, block_height_2, rng)
             .unwrap();
 
@@ -1997,7 +2017,7 @@ fn test_unbond_delegator() {
 
         // Perform the third unbond, which should unbond all remaining stake.
         let unbond_amount_3 = 1; // Notice: This is 1 credit, when the remaining is MIN_DELEGATOR_STAKE.
-        let block_height_3 = rng.gen_range(block_height_2..10000);
+        let block_height_3 = rng.random_range(block_height_2..10000);
         unbond_public(&process, &store, delegator_private_key, delegator_address, unbond_amount_3, block_height_3, rng)
             .unwrap();
 
@@ -2025,7 +2045,7 @@ fn test_unbond_delegator() {
 
         // Perform the fourth unbond, which should fail (as there is no stake left).
         let unbond_amount_4 = 1;
-        let block_height_4 = rng.gen_range(block_height_3..100000);
+        let block_height_4 = rng.random_range(block_height_3..100000);
         let result = unbond_public(
             &process,
             &store,
@@ -2082,7 +2102,7 @@ fn test_unbond_delegator_without_validator() {
     /* Ensure the delegator can unbond their entire balance. */
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the unbond.
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         unbond_public(&process, &store, delegator_private_key, delegator_address, delegator_amount, block_height, rng)
             .unwrap();
 
@@ -2153,7 +2173,7 @@ fn test_unbond_delegator_removes_validator_with_insufficient_stake() {
         assert_eq!(withdraw_state(&store, validator_address).unwrap(), Some(*withdrawal_address));
         assert_eq!(withdraw_state(&store, delegator_address).unwrap(), Some(*delegator_address));
 
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         unbond_public(&process, &store, delegator_private_key, delegator_address, delegator_amount, block_height, rng)
             .unwrap();
 
@@ -2240,7 +2260,7 @@ fn test_unbond_delegator_as_validator() {
     /* Ensure unbonding a delegator for another closed validator fails. */
 
     // Ensure that unbonding a delegator as an open validator fails.
-    let block_height = rng.gen_range(1..100);
+    let block_height = rng.random_range(1..100);
 
     assert!(
         unbond_public(&process, &finalize_store, &withdrawal_private_key_2, delegator_address, 0u64, block_height, rng)
@@ -2824,7 +2844,7 @@ fn test_bond_validator_with_different_commission_fails() {
 
 mod sanity_checks {
     use super::*;
-    use crate::{Assignments, CallStack, Stack};
+    use crate::{Assignments, CallStack, Stack, tests::test_utils::shared_process};
     use circuit::Assignment;
     use console::{program::Request, types::Field};
     use snarkvm_synthesizer_program::StackTrait;
@@ -2849,7 +2869,7 @@ mod sanity_checks {
         };
         // Sample 'root_tvk'.
         let root_tvk = None;
-        // Sample 'is_root'.
+        // Set 'is_root' to true.
         let is_root = true;
         // Compute the request.
         let request = Request::sign(
@@ -2861,13 +2881,14 @@ mod sanity_checks {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )
         .unwrap();
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.
-        let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), None, None);
+        let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), None, None, None);
         // Synthesize the circuit.
         let _response = stack.execute_function::<A, _>(call_stack, None, None, rng).unwrap();
         // Retrieve the assignment.
@@ -2882,10 +2903,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let caller = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("transfer_private").unwrap();
@@ -2904,7 +2923,7 @@ mod sanity_checks {
         assert_eq!(18, assignment.num_public());
         assert_eq!(62398, assignment.num_private());
         assert_eq!(62461, assignment.num_constraints());
-        assert_eq!((121404, 135548, 94473), assignment.num_nonzeros());
+        assert_eq!((121399, 135544, 94473), assignment.num_nonzeros());
     }
 
     #[test]
@@ -2915,10 +2934,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let caller = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("transfer_public").unwrap();
@@ -2943,10 +2960,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let signer = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("transfer_public_as_signer").unwrap();
@@ -2971,10 +2986,8 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let caller = Address::try_from(&private_key).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("fee_private").unwrap();
@@ -2994,7 +3007,7 @@ mod sanity_checks {
         assert_eq!(16, assignment.num_public());
         assert_eq!(45456, assignment.num_private());
         assert_eq!(45502, assignment.num_constraints());
-        assert_eq!((86977, 97375, 67786), assignment.num_nonzeros());
+        assert_eq!((86974, 97373, 67786), assignment.num_nonzeros());
     }
 
     #[test]
@@ -3004,10 +3017,8 @@ mod sanity_checks {
         // Initialize a new caller account.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
-        // Construct a new process.
-        let process = Process::load().unwrap();
         // Retrieve the stack.
-        let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
         // Declare the function name.
         let function_name = Identifier::from_str("fee_public").unwrap();

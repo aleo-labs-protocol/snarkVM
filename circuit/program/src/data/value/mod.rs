@@ -20,7 +20,7 @@ mod to_bits_raw;
 mod to_fields;
 mod to_fields_raw;
 
-use crate::{Access, Entry, Future, Plaintext, Record};
+use crate::{Access, DynamicFuture, DynamicRecord, Entry, Future, Plaintext, Record};
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 
@@ -32,6 +32,10 @@ pub enum Value<A: Aleo> {
     Record(Record<A, Plaintext<A>>),
     /// A future.
     Future(Future<A>),
+    /// A dynamic record.
+    DynamicRecord(DynamicRecord<A>),
+    /// A dynamic future.
+    DynamicFuture(DynamicFuture<A>),
 }
 
 impl<A: Aleo> Inject for Value<A> {
@@ -43,6 +47,12 @@ impl<A: Aleo> Inject for Value<A> {
             console::Value::Plaintext(plaintext) => Value::Plaintext(Plaintext::new(mode, plaintext)),
             console::Value::Record(record) => Value::Record(Record::new(Mode::Private, record)),
             console::Value::Future(future) => Value::Future(Future::new(mode, future)),
+            console::Value::DynamicRecord(dynamic_record) => {
+                Value::DynamicRecord(DynamicRecord::new(Mode::Private, dynamic_record))
+            }
+            console::Value::DynamicFuture(dynamic_future) => {
+                Value::DynamicFuture(DynamicFuture::new(mode, dynamic_future))
+            }
         }
     }
 }
@@ -56,6 +66,8 @@ impl<A: Aleo> Eject for Value<A> {
             Value::Plaintext(plaintext) => plaintext.eject_mode(),
             Value::Record(record) => record.eject_mode(),
             Value::Future(future) => future.eject_mode(),
+            Value::DynamicRecord(dynamic_record) => dynamic_record.eject_mode(),
+            Value::DynamicFuture(dynamic_future) => dynamic_future.eject_mode(),
         }
     }
 
@@ -65,6 +77,8 @@ impl<A: Aleo> Eject for Value<A> {
             Value::Plaintext(plaintext) => console::Value::Plaintext(plaintext.eject_value()),
             Value::Record(record) => console::Value::Record(record.eject_value()),
             Value::Future(future) => console::Value::Future(future.eject_value()),
+            Value::DynamicRecord(dynamic_record) => console::Value::DynamicRecord(dynamic_record.eject_value()),
+            Value::DynamicFuture(dynamic_future) => console::Value::DynamicFuture(dynamic_future.eject_value()),
         }
     }
 }
@@ -87,5 +101,19 @@ impl<A: Aleo> From<Future<A>> for Value<A> {
     /// Initializes the value from a future.
     fn from(future: Future<A>) -> Self {
         Self::Future(future)
+    }
+}
+
+impl<A: Aleo> From<DynamicRecord<A>> for Value<A> {
+    /// Initializes the value from a dynamic record.
+    fn from(dynamic_record: DynamicRecord<A>) -> Self {
+        Self::DynamicRecord(dynamic_record)
+    }
+}
+
+impl<A: Aleo> From<DynamicFuture<A>> for Value<A> {
+    /// Initializes the value from a dynamic future.
+    fn from(dynamic_future: DynamicFuture<A>) -> Self {
+        Self::DynamicFuture(dynamic_future)
     }
 }

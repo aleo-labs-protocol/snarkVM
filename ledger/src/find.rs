@@ -34,6 +34,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns the latest transaction ID that contains the given `program ID`.
+    /// If amendments exist for the latest edition, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID for the latest edition.
     pub fn find_latest_transaction_id_from_program_id(
         &self,
         program_id: &ProgramID<N>,
@@ -41,13 +43,40 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.transaction_store().find_latest_transaction_id_from_program_id(program_id)
     }
 
-    /// Returns the transaction ID that contains the given `program ID` and `edition`.
-    pub fn find_transaction_id_from_program_id_and_edition(
+    /// Returns the original deployment transaction ID for the given `program ID` and `edition`.
+    /// This returns the initial deployment, not any subsequent amendments.
+    pub fn find_original_transaction_id_from_program_id_and_edition(
         &self,
         program_id: &ProgramID<N>,
         edition: u16,
     ) -> Result<Option<N::TransactionID>> {
-        self.vm.transaction_store().find_transaction_id_from_program_id_and_edition(program_id, edition)
+        self.vm.transaction_store().find_original_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the latest transaction ID for the given `program ID` and `edition`.
+    /// If amendments exist, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID.
+    pub fn find_latest_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    pub fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_transaction_id_from_program_id_edition_and_amendment(
+            program_id,
+            edition,
+            amendment_index,
+        )
     }
 
     /// Returns the transaction ID that contains the given `transition ID`.

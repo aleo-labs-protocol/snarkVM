@@ -28,7 +28,7 @@ use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{cfg_par_bridge, cfg_reduce};
 
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -40,7 +40,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     /// Output the fifth round message and the next state.
-    pub fn prover_fifth_round<R: RngCore>(
+    pub fn prover_fifth_round<R: Rng>(
         verifier_message: verifier::FourthMessage<F>,
         state: prover::State<'_, F, SM>,
         _r: &mut R,

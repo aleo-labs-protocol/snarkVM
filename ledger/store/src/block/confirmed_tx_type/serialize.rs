@@ -87,7 +87,7 @@ impl<'de, N: Network> Deserialize<'de> for ConfirmedTxType<N> {
                     _ => Err(de::Error::custom(error("Invalid confirmed transaction type"))),
                 }
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(
+            false => FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(
                 deserializer,
                 "confirmed transaction type",
             ),
@@ -130,6 +130,10 @@ mod tests {
         // Deserialize
         assert_eq!(expected, T::read_le(&expected_bytes[..]).unwrap());
         assert_eq!(expected, bincode::deserialize(&expected_bytes_with_size_encoding[..]).unwrap());
+        assert_eq!(
+            expected,
+            snarkvm_utilities::bytes::unchecked_deserialize(&expected_bytes_with_size_encoding[..]).unwrap()
+        );
     }
 
     #[test]

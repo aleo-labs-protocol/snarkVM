@@ -24,6 +24,8 @@ impl<N: Network> ToBitsRaw for Value<N> {
             // Note: We use the standard `write_bits_le` for records and futures because they are Aleo-specific types.
             Self::Record(record) => record.write_bits_le(vec),
             Self::Future(future) => future.write_bits_le(vec),
+            Self::DynamicRecord(dynamic_record) => dynamic_record.write_bits_le(vec),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.write_bits_le(vec),
         };
     }
 
@@ -35,6 +37,8 @@ impl<N: Network> ToBitsRaw for Value<N> {
             // Note: We use `write_bits_be` for records and futures to maintain consistency with the `ToBits` trait.
             Self::Record(record) => record.write_bits_be(vec),
             Self::Future(future) => future.write_bits_be(vec),
+            Self::DynamicRecord(dynamic_record) => dynamic_record.write_bits_be(vec),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.write_bits_be(vec),
         };
     }
 }

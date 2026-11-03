@@ -13,7 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, Operation, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    Operation,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{Literal, LiteralType, PlaintextType, Register, RegisterType},
@@ -80,8 +89,8 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
         let inputs: Vec<_> =
             self.operands.iter().map(|operand| registers.load_literal(stack, operand)).try_collect()?;
         // Compute the operands register types.
-        let input_types: Vec<_> =
-            inputs.iter().map(|input| RegisterType::Plaintext(PlaintextType::from(input.to_type()))).collect();
+        let input_types: [_; NUM_OPERANDS] =
+            std::array::from_fn(|i| RegisterType::Plaintext(PlaintextType::from(inputs[i].to_type())));
 
         // Prepare the inputs.
         let inputs: [Literal<N>; NUM_OPERANDS] =
@@ -140,7 +149,12 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         self.evaluate(stack, registers)
     }
 
@@ -169,7 +183,9 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
                 | RegisterType::Plaintext(PlaintextType::Array(..))
                 | RegisterType::Record(..)
                 | RegisterType::ExternalRecord(..)
-                | RegisterType::Future(..) => bail!("Expected literal type, found '{input_type}'"),
+                | RegisterType::Future(..)
+                | RegisterType::DynamicRecord
+                | RegisterType::DynamicFuture => bail!("Expected literal type, found '{input_type}'"),
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -185,7 +201,7 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
     for Literals<N, O, NUM_OPERANDS>
 {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*O::OPCODE)(string)?;
         // Parse the whitespace from the string.

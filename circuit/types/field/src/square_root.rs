@@ -68,8 +68,8 @@ impl<E: Environment> Field<E> {
     /// Returns both square roots of `self` and a `Boolean` flag, which is set iff `self` is not a square.
     ///
     /// If `self` is a non-zero square,
-    ///  - the first field result is the positive root (i.e. closer to 0)
-    ///  - the second field result is the negative root (i.e. closer to the prime)
+    ///  - the first field result is one root and the second field result is its negation,
+    ///    but which of the two roots is returned first is **not** enforced
     ///  - the flag is 0
     ///
     /// If `self` is 0,
@@ -80,8 +80,11 @@ impl<E: Environment> Field<E> {
     ///  - both field results are 0
     ///  - the flag is 1
     ///
-    /// Note that the constraints do **not** impose an ordering on the two roots returned by this function;
+    /// The constraints do **not** impose an ordering on the two roots returned by this function;
     /// this is what the `nondeterministic` part of this function name refers to.
+    /// This is safe in the only production caller, `Group::from_x_coordinate_flagged`,
+    /// which constructs both candidate points and selects the one in the prime-order
+    /// subgroup, so it does not depend on which root is returned first.
     pub fn square_roots_flagged_nondeterministic(&self) -> (Self, Self, Boolean<E>) {
         // Obtain (p-1)/2, as a constant field element.
         let modulus_minus_one_div_two = match E::BaseField::from_bigint(E::BaseField::modulus_minus_one_div_two()) {

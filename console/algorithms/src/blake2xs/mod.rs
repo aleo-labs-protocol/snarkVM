@@ -44,7 +44,7 @@ impl Blake2Xs {
         for node_offset in 0..num_rounds {
             // Calculate the digest length for this round.
             let is_final_round = node_offset == num_rounds - 1;
-            let has_remainder = xof_digest_length % 32 != 0;
+            let has_remainder = !xof_digest_length.is_multiple_of(32);
             let digest_length = match is_final_round && has_remainder {
                 true => (xof_digest_length % 32) as usize,
                 false => 32,

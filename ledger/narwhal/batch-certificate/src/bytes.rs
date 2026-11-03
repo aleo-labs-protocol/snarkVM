@@ -31,9 +31,15 @@ impl<N: Network> BatchCertificate<N> {
         let mut signature_bytes = vec![0u8; num_signatures as usize * Signature::<N>::size_in_bytes()];
         reader.read_exact(&mut signature_bytes)?;
         // Read the signatures.
-        cfg_chunks!(signature_bytes, Signature::<N>::size_in_bytes())
+        let signatures = cfg_chunks!(signature_bytes, Signature::<N>::size_in_bytes())
             .map(|data| Signature::read_le_with_unchecked(data, unchecked))
-            .collect::<Result<IndexSet<_>, _>>()
+            .collect::<Result<IndexSet<_>, _>>()?;
+        // Ensure no signature was repeated. The set absorbs a repeat, so it would
+        // otherwise give one certificate a second encoding.
+        if signatures.len() != num_signatures as usize {
+            return Err(error("Duplicate signature in batch certificate"));
+        }
+        Ok(signatures)
     }
 }
 impl<N: Network> FromBytes for BatchCertificate<N> {
@@ -104,5 +110,36 @@ mod tests {
             assert_eq!(expected, BatchCertificate::read_le(&expected_bytes[..]).unwrap());
             assert_eq!(expected, BatchCertificate::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
+    }
+
+    #[test]
+    fn test_duplicate_signature_is_rejected() {
+        let rng = &mut TestRng::default();
+        let certificate = crate::test_helpers::sample_batch_certificate(rng);
+        let exact = certificate.to_bytes_le().unwrap();
+
+        // The honest encoding must keep working.
+        assert_eq!(certificate, BatchCertificate::read_le(&exact[..]).unwrap());
+
+        // version, then the batch header, then the signature count.
+        let count_at = 1 + certificate.batch_header().to_bytes_le().unwrap().len();
+        let count = u16::from_le_bytes([exact[count_at], exact[count_at + 1]]) as usize;
+        assert_eq!(count, certificate.signatures().count(), "offset arithmetic is wrong if this fails");
+        assert!(count > 0, "a sampled certificate carries signatures");
+
+        let width = certificate.signatures().next().unwrap().to_bytes_le().unwrap().len();
+        let signatures_at = count_at + 2;
+        let mut padded = exact.clone();
+        padded[count_at..count_at + 2].copy_from_slice(&(u16::try_from(count).unwrap() + 1).to_le_bytes());
+        let first = exact[signatures_at..signatures_at + width].to_vec();
+        padded.splice(signatures_at + width..signatures_at + width, first);
+        assert_ne!(padded, exact);
+
+        // The set absorbs the repeat, so the certificate is unchanged and only
+        // its bytes differ.
+        assert!(
+            BatchCertificate::<console::network::MainnetV0>::read_le(&padded[..]).is_err(),
+            "a certificate repeating a signature must be rejected"
+        );
     }
 }

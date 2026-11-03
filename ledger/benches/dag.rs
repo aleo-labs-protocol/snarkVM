@@ -19,6 +19,9 @@ use snarkvm_utilities::bytes::unchecked_deserialize;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
+/// Fixed RNG seed so benchmark inputs are reproducible across CI runs.
+const BENCH_RNG_SEED: u64 = 0x00BA_6DAB_5EED_00D1;
+
 /// Helper method to benchmark serialization.
 fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + Clone>(
     c: &mut Criterion,
@@ -76,7 +79,7 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 }
 
 fn subdag_serialization(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
     let subdag = sample_subdag(rng);
     let batch = subdag.iter().next().unwrap().1.iter().next().unwrap().clone();
     let batch_header = batch.batch_header().clone();
@@ -86,10 +89,6 @@ fn subdag_serialization(c: &mut Criterion) {
     bench_serialization(c, "Subdag", subdag.clone());
 }
 
-criterion_group! {
-    name = subdag;
-    config = Criterion::default().sample_size(10);
-    targets = subdag_serialization
-}
+criterion_group!(subdag, subdag_serialization);
 
 criterion_main!(subdag);

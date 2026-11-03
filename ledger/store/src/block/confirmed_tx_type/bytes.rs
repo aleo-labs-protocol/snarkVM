@@ -16,18 +16,34 @@
 use super::*;
 
 impl<N: Network> FromBytes for ConfirmedTxType<N> {
-    /// Reads the confirmed transaction type from the buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    /// Reads the confirmed transaction type from the buffer, either with or without checking the data.
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the variant.
         let variant = u8::read_le(&mut reader)?;
         // Match the variant.
         match variant {
             0 => Ok(Self::AcceptedDeploy(u32::read_le(&mut reader)?)),
             1 => Ok(Self::AcceptedExecute(u32::read_le(&mut reader)?)),
-            2 => Ok(Self::RejectedDeploy(u32::read_le(&mut reader)?, Rejected::read_le(&mut reader)?)),
-            3 => Ok(Self::RejectedExecute(u32::read_le(&mut reader)?, Rejected::read_le(&mut reader)?)),
+            2 => Ok(Self::RejectedDeploy(
+                u32::read_le(&mut reader)?,
+                Rejected::read_le_with_unchecked(&mut reader, unchecked)?,
+            )),
+            3 => Ok(Self::RejectedExecute(
+                u32::read_le(&mut reader)?,
+                Rejected::read_le_with_unchecked(&mut reader, unchecked)?,
+            )),
             4.. => Err(error("Invalid confirmed transaction type variant")),
         }
+    }
+
+    /// Reads the confirmed transaction type from the buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the confirmed transaction type from the buffer without checking the data.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -78,6 +94,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, ConfirmedTxType::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, ConfirmedTxType::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

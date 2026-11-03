@@ -16,7 +16,10 @@
 use super::*;
 
 mod append;
+mod empty_hash;
 mod remove;
+mod state;
+mod test_print;
 mod update;
 mod update_many;
 

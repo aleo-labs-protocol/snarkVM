@@ -14,27 +14,25 @@
 // limitations under the License.
 
 use super::*;
+use crate::errors::ParameterError;
 use snarkvm_curves::traits::{PairingCurve, PairingEngine};
-use snarkvm_utilities::{
-    CanonicalDeserialize,
-    CanonicalSerialize,
-    Compress,
-    FromBytes,
-    Read,
-    SerializationError,
-    ToBytes,
-    Valid,
-    Validate,
-    Write,
-    dev_println,
-};
+use snarkvm_utilities::CanonicalDeserialize;
 
 use anyhow::{Result, anyhow, bail, ensure};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::BTreeMap, ops::Range, sync::Arc};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    io::{self, BufReader, Read},
+    ops::Range,
+    sync::Arc,
+};
+
+#[cfg(all(feature = "no-embedded-srs", not(feature = "filesystem"), not(feature = "wasm")))]
+compile_error!("`no-embedded-srs` needs `filesystem` or `wasm` to load the powers that are not embedded");
 
 const NUM_POWERS_15: usize = 1 << 15;
 const NUM_POWERS_16: usize = 1 << 16;
@@ -69,10 +67,197 @@ lazy_static::lazy_static! {
     static ref BETA_H: Vec<u8> = BetaH::load_bytes().expect("Failed to load negative powers of beta in universal SRS");
 }
 
+/// One SRS degree file. The prefix file of `num_powers` holds the powers
+/// `num_powers / 2..num_powers`, and the shifted one the powers
+/// `MAX_NUM_POWERS - num_powers..MAX_NUM_POWERS - num_powers / 2`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PowersFile {
+    shifted: bool,
+    num_powers: usize,
+    name: String,
+    checksum: String,
+    size: usize,
+}
+
+impl PowersFile {
+    fn new(shifted: bool, num_powers: usize) -> Result<Self> {
+        let metadata = match (shifted, num_powers) {
+            (false, NUM_POWERS_16) => Degree16::METADATA,
+            (false, NUM_POWERS_17) => Degree17::METADATA,
+            (false, NUM_POWERS_18) => Degree18::METADATA,
+            (false, NUM_POWERS_19) => Degree19::METADATA,
+            (false, NUM_POWERS_20) => Degree20::METADATA,
+            (false, NUM_POWERS_21) => Degree21::METADATA,
+            (false, NUM_POWERS_22) => Degree22::METADATA,
+            (false, NUM_POWERS_23) => Degree23::METADATA,
+            (false, NUM_POWERS_24) => Degree24::METADATA,
+            (false, NUM_POWERS_25) => Degree25::METADATA,
+            // TODO (nkls): restore on CI.
+            #[cfg(feature = "large_params")]
+            (false, NUM_POWERS_26) => Degree26::METADATA,
+            #[cfg(feature = "large_params")]
+            (false, NUM_POWERS_27) => Degree27::METADATA,
+            #[cfg(feature = "large_params")]
+            (false, NUM_POWERS_28) => Degree28::METADATA,
+            #[cfg(feature = "no-embedded-srs")]
+            (true, NUM_POWERS_16) => ShiftedDegree16::METADATA,
+            (true, NUM_POWERS_17) => ShiftedDegree17::METADATA,
+            (true, NUM_POWERS_18) => ShiftedDegree18::METADATA,
+            (true, NUM_POWERS_19) => ShiftedDegree19::METADATA,
+            (true, NUM_POWERS_20) => ShiftedDegree20::METADATA,
+            (true, NUM_POWERS_21) => ShiftedDegree21::METADATA,
+            (true, NUM_POWERS_22) => ShiftedDegree22::METADATA,
+            (true, NUM_POWERS_23) => ShiftedDegree23::METADATA,
+            (true, NUM_POWERS_24) => ShiftedDegree24::METADATA,
+            (true, NUM_POWERS_25) => ShiftedDegree25::METADATA,
+            // TODO (nkls): restore on CI.
+            #[cfg(feature = "large_params")]
+            (true, NUM_POWERS_26) => ShiftedDegree26::METADATA,
+            #[cfg(feature = "large_params")]
+            (true, NUM_POWERS_27) => ShiftedDegree27::METADATA,
+            _ => bail!("Cannot download an invalid degree of '{num_powers}'"),
+        };
+        let metadata: serde_json::Value = serde_json::from_str(metadata)?;
+        let checksum = metadata["checksum"].as_str().ok_or_else(|| anyhow!("Failed to parse checksum"))?.to_string();
+        let size = metadata["size"].as_u64().ok_or_else(|| anyhow!("Failed to retrieve the file size"))? as usize;
+        let prefix = if shifted { "shifted-" } else { "" };
+        let name = format!("{prefix}powers-of-beta-{}.usrs.{}", num_powers.trailing_zeros(), &checksum[..7]);
+        Ok(Self { shifted, num_powers, name, checksum, size })
+    }
+
+    /// The name snarkVM fetches the file by.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The SHA-256 of the file, in hex.
+    pub fn checksum(&self) -> &str {
+        &self.checksum
+    }
+
+    /// The size of the file in bytes.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Whether the file holds shifted powers, which grow downward from
+    /// `MAX_NUM_POWERS`, rather than prefix powers, which grow upward from 0.
+    pub fn shifted(&self) -> bool {
+        self.shifted
+    }
+
+    /// The number of powers on the file's side once it is added. The file
+    /// holds the upper half of them, counted from its side's end.
+    pub fn num_powers(&self) -> usize {
+        self.num_powers
+    }
+
+    /// Reads the length-prefixed powers in the file, rejecting any other number of them.
+    fn read_powers<E: PairingEngine>(&self, mut reader: impl Read) -> Result<Vec<E::G1Affine>> {
+        let expected = self.num_powers / 2;
+        let len = u64::deserialize_uncompressed_unchecked(&mut reader)?;
+        ensure!(len == expected as u64, "{} holds {len} powers, not {expected}", self.name());
+        let mut powers = Vec::with_capacity(expected);
+        for _ in 0..expected {
+            powers.push(E::G1Affine::deserialize_uncompressed_unchecked(&mut reader)?);
+        }
+        Ok(powers)
+    }
+
+    /// Reads the powers in the file from `reader`, rejecting it unless it has the
+    /// file's size and checksum.
+    fn read_checked_powers<E: PairingEngine>(&self, reader: impl Read) -> Result<Vec<E::G1Affine>> {
+        let size = self.size;
+        let mut hashed = Sha256Reader { reader: reader.take(size as u64 + 1), hasher: Sha256::new(), len: 0 };
+        let mut buffered = BufReader::new(&mut hashed);
+        let powers = self.read_powers::<E>(&mut buffered);
+        io::copy(&mut buffered, &mut io::sink())?;
+        ensure!(hashed.len == size, ParameterError::SizeMismatch(size, hashed.len));
+        let checksum = hex::encode(hashed.hasher.finalize());
+        ensure!(checksum == self.checksum, ParameterError::ChecksumMismatch(self.checksum.clone(), checksum));
+        powers
+    }
+}
+
+/// Hashes and counts the bytes read through it.
+struct Sha256Reader<R> {
+    reader: R,
+    hasher: Sha256,
+    len: usize,
+}
+
+impl<R: Read> Read for Sha256Reader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let len = self.reader.read(buf)?;
+        self.hasher.update(&buf[..len]);
+        self.len += len;
+        Ok(len)
+    }
+}
+
+/// Loads `file` as `load()` does, through the `Degree*` and `ShiftedDegree*`
+/// `load_bytes`. With `wasm`, it fetches the file into memory. Otherwise, it
+/// reads `~/.aleo/resources`, else fetches the file from the remote parameter
+/// URLs and stores it there. The bytes have the file's size and checksum.
+#[cfg(any(feature = "filesystem", feature = "wasm"))]
+pub fn default_load_powers_file_sync(file: &PowersFile) -> Result<Vec<u8>> {
+    Ok(match (file.shifted, file.num_powers) {
+        (false, NUM_POWERS_16) => Degree16::load_bytes()?,
+        (false, NUM_POWERS_17) => Degree17::load_bytes()?,
+        (false, NUM_POWERS_18) => Degree18::load_bytes()?,
+        (false, NUM_POWERS_19) => Degree19::load_bytes()?,
+        (false, NUM_POWERS_20) => Degree20::load_bytes()?,
+        (false, NUM_POWERS_21) => Degree21::load_bytes()?,
+        (false, NUM_POWERS_22) => Degree22::load_bytes()?,
+        (false, NUM_POWERS_23) => Degree23::load_bytes()?,
+        (false, NUM_POWERS_24) => Degree24::load_bytes()?,
+        (false, NUM_POWERS_25) => Degree25::load_bytes()?,
+        // TODO (nkls): restore on CI.
+        #[cfg(feature = "large_params")]
+        (false, NUM_POWERS_26) => Degree26::load_bytes()?,
+        #[cfg(feature = "large_params")]
+        (false, NUM_POWERS_27) => Degree27::load_bytes()?,
+        #[cfg(feature = "large_params")]
+        (false, NUM_POWERS_28) => Degree28::load_bytes()?,
+        #[cfg(feature = "no-embedded-srs")]
+        (true, NUM_POWERS_16) => ShiftedDegree16::load_bytes()?,
+        (true, NUM_POWERS_17) => ShiftedDegree17::load_bytes()?,
+        (true, NUM_POWERS_18) => ShiftedDegree18::load_bytes()?,
+        (true, NUM_POWERS_19) => ShiftedDegree19::load_bytes()?,
+        (true, NUM_POWERS_20) => ShiftedDegree20::load_bytes()?,
+        (true, NUM_POWERS_21) => ShiftedDegree21::load_bytes()?,
+        (true, NUM_POWERS_22) => ShiftedDegree22::load_bytes()?,
+        (true, NUM_POWERS_23) => ShiftedDegree23::load_bytes()?,
+        (true, NUM_POWERS_24) => ShiftedDegree24::load_bytes()?,
+        (true, NUM_POWERS_25) => ShiftedDegree25::load_bytes()?,
+        // TODO (nkls): restore on CI.
+        #[cfg(feature = "large_params")]
+        (true, NUM_POWERS_26) => ShiftedDegree26::load_bytes()?,
+        #[cfg(feature = "large_params")]
+        (true, NUM_POWERS_27) => ShiftedDegree27::load_bytes()?,
+        _ => bail!("{} has no built-in loader", file.name()),
+    })
+}
+
+/// The error the SRS returns, on a native build without `filesystem`, for
+/// powers it does not hold, naming the files that hold them.
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("The SRS lacks the powers files {}", .files.iter().map(PowersFile::name).collect::<Vec<_>>().join(", "))]
+pub struct MissingPowers {
+    /// The files, in the order `add_powers_file` accepts them.
+    pub files: Vec<PowersFile>,
+}
+
+/// One end of the powers of beta G: immutable once made, and replaced by a
+/// longer one when more powers are fetched.
+pub type PowersSnapshot<E> = Arc<Vec<<E as PairingEngine>::G1Affine>>;
+
 /// A vector of powers of beta G.
 #[derive(Debug)]
 pub struct PowersOfG<E: PairingEngine> {
-    /// The powers of beta G.
+    /// The powers of beta G. Each end is an immutable snapshot, replaced, never
+    /// mutated, when more powers are fetched, so a key may share one for as
+    /// long as it lives.
     powers_of_beta_g: RwLock<PowersOfBetaG<E>>,
     /// Group elements of form `{ \beta^i \gamma G }`, where `i` is from 0 to `degree`,
     /// This is used for hiding.
@@ -116,9 +301,43 @@ impl<E: PairingEngine> PowersOfG<E> {
         })
     }
 
-    /// Download the powers of beta G specified by `range`.
+    /// Download the powers of beta G specified by `range`. On a native build
+    /// without `filesystem`, it downloads nothing, and returns `MissingPowers`
+    /// naming the files that `missing_files_for` lists.
     pub fn download_powers_for(&self, range: Range<usize>) -> Result<()> {
-        self.powers_of_beta_g.write().download_powers_for(&range)
+        if range.is_empty() || self.powers_of_beta_g.read().contains_powers(&range) {
+            return Ok(());
+        }
+        ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
+        self.powers_of_beta_g.write().download_powers_for(&[range])
+    }
+
+    /// Downloads the first `prefix` and the last `suffix` powers of beta G. On a
+    /// native build without `filesystem`, it downloads nothing, and returns one
+    /// `MissingPowers` naming the files of both.
+    pub fn download_powers_for_ends(&self, prefix: usize, suffix: usize) -> Result<()> {
+        ensure!(prefix.max(suffix) <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
+        let ranges = [0..prefix, MAX_NUM_POWERS - suffix..MAX_NUM_POWERS];
+        if self.powers_of_beta_g.read().missing_files_for(&ranges)?.is_empty() {
+            return Ok(());
+        }
+        self.powers_of_beta_g.write().download_powers_for(&ranges)
+    }
+
+    /// The files this SRS still needs to hold `range`, in the order `add_powers_file` accepts them.
+    /// An embedded file is never listed.
+    pub fn missing_files_for(&self, range: Range<usize>) -> Result<Vec<PowersFile>> {
+        self.powers_of_beta_g.read().missing_files_for(&[range])
+    }
+
+    /// Reads `file` from `reader`, checks its size and checksum, and appends its
+    /// powers. A file already held is not read. `reader` need not be buffered.
+    pub fn add_powers_file(&self, file: &PowersFile, reader: impl Read) -> Result<()> {
+        if !self.powers_of_beta_g.read().accepts(file)? {
+            return Ok(());
+        }
+        let powers = file.read_checked_powers::<E>(reader)?;
+        self.powers_of_beta_g.write().extend(file, powers)
     }
 
     /// Returns the number of contiguous powers of beta G starting from the 0-th power.
@@ -138,12 +357,34 @@ impl<E: PairingEngine> PowersOfG<E> {
 
     /// Returns the `index`-th power of beta * G.
     pub fn power_of_beta_g(&self, index: usize) -> Result<E::G1Affine> {
-        self.powers_of_beta_g.write().power(index)
+        self.download_powers_for(index..index + 1)?;
+        Ok(self.powers_of_beta_g.read().held_powers(index..index + 1)?[0])
     }
 
     /// Returns the powers of `beta * G` that lie within `range`.
     pub fn powers_of_beta_g(&self, range: Range<usize>) -> Result<Vec<E::G1Affine>> {
-        Ok(self.powers_of_beta_g.write().powers(range)?.to_vec())
+        self.download_powers_for(range.clone())?;
+        Ok(self.powers_of_beta_g.read().held_powers(range)?.to_vec())
+    }
+
+    /// The powers of `beta * G` in `range`, as the snapshot holding them and
+    /// their range within it, fetching them first if needed. The snapshot never
+    /// changes, so a caller may hold it, and slice it, for as long as it likes.
+    pub fn shared_powers_of_beta_g(&self, range: Range<usize>) -> Result<(PowersSnapshot<E>, Range<usize>)> {
+        self.download_powers_for(range.clone())?;
+        self.held_shared_powers_of_beta_g(range)
+            .ok_or_else(|| anyhow!("Requested range is not contained in the available powers"))
+    }
+
+    /// The powers of `beta * G` in `range`, as `shared_powers_of_beta_g` gives
+    /// them, if they are already held; downloads nothing.
+    pub fn held_shared_powers_of_beta_g(&self, range: Range<usize>) -> Option<(PowersSnapshot<E>, Range<usize>)> {
+        if range.is_empty() {
+            return Some((Arc::new(Vec::new()), 0..0));
+        }
+        let powers = self.powers_of_beta_g.read();
+        let (store, within) = powers.locate(range).ok()?;
+        Some((store.clone(), within))
     }
 
     pub fn negative_powers_of_beta_h(&self) -> &BTreeMap<usize, E::G2Affine> {
@@ -159,85 +400,13 @@ impl<E: PairingEngine> PowersOfG<E> {
     }
 }
 
-impl<E: PairingEngine> CanonicalSerialize for PowersOfG<E> {
-    fn serialize_with_mode<W: Write>(&self, mut writer: W, mode: Compress) -> Result<(), SerializationError> {
-        self.powers_of_beta_g.read().serialize_with_mode(&mut writer, mode)?;
-        self.powers_of_beta_times_gamma_g.serialize_with_mode(&mut writer, mode)?;
-        self.negative_powers_of_beta_h.serialize_with_mode(&mut writer, mode)?;
-        self.beta_h.serialize_with_mode(&mut writer, mode)?;
-        Ok(())
-    }
-
-    fn serialized_size(&self, mode: Compress) -> usize {
-        self.powers_of_beta_g.read().serialized_size(mode)
-            + self.powers_of_beta_times_gamma_g.serialized_size(mode)
-            + self.negative_powers_of_beta_h.serialized_size(mode)
-            + self.beta_h.serialized_size(mode)
-    }
-}
-
-impl<E: PairingEngine> CanonicalDeserialize for PowersOfG<E> {
-    fn deserialize_with_mode<R: Read>(mut reader: R, compress: Compress, validate: Validate) -> Result<Self, SerializationError> {
-        let powers_of_beta_g = RwLock::new(PowersOfBetaG::deserialize_with_mode(&mut reader, compress, Validate::No)?);
-
-        // Reconstruct powers of beta_times_gamma_g.
-        let powers_of_beta_times_gamma_g = BTreeMap::deserialize_with_mode(&mut reader, compress, Validate::No)?;
-
-        // Reconstruct negative powers of beta_h.
-        let negative_powers_of_beta_h: BTreeMap<usize, E::G2Affine> =
-            BTreeMap::deserialize_with_mode(&mut reader, compress, Validate::No)?;
-
-        // Compute the prepared negative powers of beta_h.
-        let prepared_negative_powers_of_beta_h: Arc<BTreeMap<usize, <E::G2Affine as PairingCurve>::Prepared>> =
-            Arc::new(negative_powers_of_beta_h.iter().map(|(d, affine)| (*d, affine.prepare())).collect());
-
-        let beta_h = E::G2Affine::deserialize_with_mode(&mut reader, compress, Validate::No)?;
-
-        let powers = Self {
-            powers_of_beta_g,
-            powers_of_beta_times_gamma_g,
-            negative_powers_of_beta_h,
-            prepared_negative_powers_of_beta_h,
-            beta_h,
-        };
-        if let Validate::Yes = validate {
-            powers.check()?;
-        }
-        Ok(powers)
-    }
-}
-
-impl<E: PairingEngine> Valid for PowersOfG<E> {
-    fn check(&self) -> Result<(), SerializationError> {
-        self.powers_of_beta_g.read().check()?;
-        self.powers_of_beta_times_gamma_g.check()?;
-        self.negative_powers_of_beta_h.check()?;
-        self.prepared_negative_powers_of_beta_h.check()?;
-        self.beta_h.check()
-    }
-}
-
-impl<E: PairingEngine> FromBytes for PowersOfG<E> {
-    /// Reads the powers from the buffer.
-    fn read_le<R: Read>(reader: R) -> std::io::Result<Self> {
-        Self::deserialize_with_mode(reader, Compress::No, Validate::No).map_err(|e| e.into())
-    }
-}
-
-impl<E: PairingEngine> ToBytes for PowersOfG<E> {
-    /// Writes the powers to the buffer.
-    fn write_le<W: Write>(&self, writer: W) -> std::io::Result<()> {
-        self.serialize_with_mode(writer, Compress::No).map_err(|e| e.into())
-    }
-}
-
-#[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug)]
 pub struct PowersOfBetaG<E: PairingEngine> {
     /// Group elements of form `[G, \beta * G, \beta^2 * G, ..., \beta^d G]`.
-    powers_of_beta_g: Vec<E::G1Affine>,
+    powers_of_beta_g: PowersSnapshot<E>,
     /// Group elements of form `[\beta^i * G, \beta^2 * G, ..., \beta^D G]`.
     /// where D is the maximum degree supported by the SRS.
-    shifted_powers_of_beta_g: Vec<E::G1Affine>,
+    shifted_powers_of_beta_g: PowersSnapshot<E>,
 }
 
 impl<E: PairingEngine> PowersOfBetaG<E> {
@@ -254,9 +423,19 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         // Ensure the number of elements is correct.
         ensure!(powers_of_beta_g.len() == NUM_POWERS_15, "Incorrect number of powers in the recovered SRS");
 
-        let shifted_powers_of_beta_g = Vec::deserialize_uncompressed_unchecked(&**SHIFTED_POWERS_OF_BETA_G_15)?;
+        let shifted_powers_of_beta_g: Vec<E::G1Affine> = Vec::deserialize_uncompressed_unchecked(&**SHIFTED_POWERS_OF_BETA_G_15)?;
         ensure!(shifted_powers_of_beta_g.len() == NUM_POWERS_15, "Incorrect number of powers in the recovered SRS");
-        Ok(PowersOfBetaG { powers_of_beta_g, shifted_powers_of_beta_g })
+        // The embedded shifted file is held from the start, so `missing_files_for` never lists it.
+        #[cfg(not(feature = "no-embedded-srs"))]
+        let shifted_powers_of_beta_g = {
+            let lower: Vec<E::G1Affine> = Vec::deserialize_uncompressed_unchecked(&*ShiftedDegree16::load_bytes()?)?;
+            ensure!(lower.len() == NUM_POWERS_15, "Incorrect number of powers in the recovered SRS");
+            [lower, shifted_powers_of_beta_g].concat()
+        };
+        Ok(PowersOfBetaG {
+            powers_of_beta_g: Arc::new(powers_of_beta_g),
+            shifted_powers_of_beta_g: Arc::new(shifted_powers_of_beta_g),
+        })
     }
 
     /// Returns the range of powers of beta G.
@@ -292,234 +471,318 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         self.contains_in_normal_powers(range) || self.contains_in_shifted_powers(range)
     }
 
-    fn distance_from_normal_of(&self, range: &Range<usize>) -> usize {
-        (range.end as isize - self.available_powers().0.end as isize).unsigned_abs()
-    }
-
-    fn distance_from_shifted_of(&self, range: &Range<usize>) -> usize {
-        (range.start as isize - self.available_powers().1.start as isize).unsigned_abs()
-    }
-
-    /// Assumes that we have the requisite powers.
-    fn shifted_powers(&self, range: Range<usize>) -> Result<&[E::G1Affine]> {
-        ensure!(self.contains_in_shifted_powers(&range), "Requested range is not contained in the available shifted powers");
-
+    /// Which snapshot holds the powers in `range`, and where in it, if they
+    /// are already held; downloads nothing.
+    fn locate(&self, range: Range<usize>) -> Result<(&PowersSnapshot<E>, Range<usize>)> {
+        if range.is_empty() {
+            return Ok((&self.powers_of_beta_g, 0..0));
+        }
+        ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
+        if self.contains_in_normal_powers(&range) {
+            return Ok((&self.powers_of_beta_g, range));
+        }
+        ensure!(self.contains_in_shifted_powers(&range), "Requested range is not contained in the available powers");
         if range.start < MAX_NUM_POWERS / 2 {
             ensure!(self.shifted_powers_of_beta_g.is_empty());
             // In this case, we have downloaded all the powers, and so
             // all the powers reside in self.powers_of_beta_g.
-            Ok(&self.powers_of_beta_g[range])
+            Ok((&self.powers_of_beta_g, range))
         } else {
             // In this case, the shifted powers still reside in self.shifted_powers_of_beta_g.
             let lower = self.shifted_powers_of_beta_g.len() - (MAX_NUM_POWERS - range.start);
             let upper = self.shifted_powers_of_beta_g.len() - (MAX_NUM_POWERS - range.end);
-            Ok(&self.shifted_powers_of_beta_g[lower..upper])
+            Ok((&self.shifted_powers_of_beta_g, lower..upper))
         }
     }
 
-    /// Assumes that we have the requisite powers.
-    fn normal_powers(&self, range: Range<usize>) -> Result<&[E::G1Affine]> {
-        ensure!(self.contains_in_normal_powers(&range), "Requested range is not contained in the available powers");
-        Ok(&self.powers_of_beta_g[range])
+    /// The powers in `range`, if they are already held; downloads nothing.
+    fn held_powers(&self, range: Range<usize>) -> Result<&[E::G1Affine]> {
+        let (store, within) = self.locate(range)?;
+        Ok(&store[within])
     }
 
-    /// Returns the power of beta times G specified by `target`.
-    fn power(&mut self, target: usize) -> Result<E::G1Affine> {
-        self.powers(target..(target + 1)).map(|s| s[0])
+    /// Downloads the files that `missing_files_for` lists for `ranges`. On a
+    /// native build without `filesystem`, it downloads nothing, and returns
+    /// `MissingPowers` naming them.
+    pub fn download_powers_for(&mut self, ranges: &[Range<usize>]) -> Result<()> {
+        let files = self.missing_files_for(ranges)?;
+        #[cfg(not(any(feature = "filesystem", feature = "wasm")))]
+        {
+            ensure!(files.is_empty(), MissingPowers { files });
+            Ok(())
+        }
+        #[cfg(any(feature = "filesystem", feature = "wasm"))]
+        self.download_files(files)
     }
 
-    /// Slices the underlying file to return a vector of affine elements between `lower` and `upper`.
-    fn powers(&mut self, range: Range<usize>) -> Result<&[E::G1Affine]> {
-        if range.is_empty() {
-            return Ok(&self.powers_of_beta_g[0..0]);
+    /// Downloads `files` with `default_load_powers_file_sync` and appends them.
+    #[cfg(any(feature = "filesystem", feature = "wasm"))]
+    fn download_files(&mut self, files: Vec<PowersFile>) -> Result<()> {
+        if let Some(last) = files.iter().rfind(|file| !file.shifted) {
+            self.prefix_mut(last.num_powers);
         }
-        ensure!(range.start < range.end, "Lower power must be less than upper power");
-        ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
-        if !self.contains_powers(&range) {
-            // We must download the powers.
-            self.download_powers_for(&range)?;
+        // A file that fails leaves the ones before it appended, so a retry
+        // resumes from them rather than fetching them again.
+        for file in files {
+            snarkvm_utilities::dev_println!("Loading {}", file.name());
+            let powers = file.read_powers::<E>(&*default_load_powers_file_sync(&file)?)?;
+            self.extend(&file, powers)?;
         }
-        match self.contains_in_normal_powers(&range) {
-            true => self.normal_powers(range),
-            false => self.shifted_powers(range),
-        }
+        Ok(())
     }
 
-    pub fn download_powers_for(&mut self, range: &Range<usize>) -> Result<()> {
-        if self.contains_in_normal_powers(range) || self.contains_in_shifted_powers(range) {
+    /// The files `download_powers_for` fetches to hold `ranges`, in the order
+    /// `extend` accepts them: prefix files upward, then shifted files downward
+    /// from the top.
+    fn missing_files_for(&self, ranges: &[Range<usize>]) -> Result<Vec<PowersFile>> {
+        let half_max = MAX_NUM_POWERS / 2;
+        let (held, held_shifted) = (self.powers_of_beta_g.len(), self.shifted_powers_of_beta_g.len());
+        let (mut target, mut target_shifted) = (held, held_shifted);
+        let shifted_start = MAX_NUM_POWERS - held_shifted;
+        for range in ranges {
+            if range.is_empty() || range.end <= held || (range.start >= shifted_start && range.end <= MAX_NUM_POWERS) {
+                continue;
+            }
+            ensure!(range.end <= MAX_NUM_POWERS, "Upper bound must be less than the maximum number of powers");
+            // Shifted files hold only powers above the midpoint, so a range starting at or below it needs the
+            // prefix, which rounds up to a power of two.
+            if range.start <= half_max || range.end.abs_diff(held) <= range.start.abs_diff(shifted_start) {
+                target = target.max(range.end.next_power_of_two());
+            } else {
+                target_shifted = target_shifted.max((MAX_NUM_POWERS - range.start).next_power_of_two());
+            }
+        }
+        // A full prefix holds the shifted powers too.
+        if target == MAX_NUM_POWERS {
+            target_shifted = held_shifted;
+        }
+        // Each side holds a power of two, or nothing, whose `trailing_zeros` exceeds any target's.
+        let files = |shifted, held: usize, target: usize| {
+            (held.trailing_zeros() + 1..=target.trailing_zeros()).map(move |k| PowersFile::new(shifted, 1 << k))
+        };
+        files(false, held, target).chain(files(true, held_shifted, target_shifted)).collect()
+    }
+
+    /// Whether `file` is the next one to append: `false` if it is already held,
+    /// and an error if the file before it is not.
+    fn accepts(&self, file: &PowersFile) -> Result<bool> {
+        let held = if file.shifted { self.shifted_powers_of_beta_g.len() } else { self.powers_of_beta_g.len() };
+        // An empty shifted side means the prefix holds every power.
+        if held >= file.num_powers || (file.shifted && held == 0) {
+            return Ok(false);
+        }
+        if held != file.num_powers / 2 {
+            bail!("Add {} before {}", PowersFile::new(file.shifted, held * 2)?.name(), file.name());
+        }
+        Ok(true)
+    }
+
+    /// Appends the powers read from `file`, if it is the next one to append.
+    fn extend(&mut self, file: &PowersFile, powers: Vec<E::G1Affine>) -> Result<()> {
+        if !self.accepts(file)? {
             return Ok(());
         }
-        let half_max = MAX_NUM_POWERS / 2;
-        if (range.start <= half_max) && (range.end > half_max) {
-            // If the range contains the midpoint, then we must download all the powers.
-            // (because we round up to the next power of two).
-            self.download_powers_up_to(range.end)?;
-            self.shifted_powers_of_beta_g = Vec::new();
-        } else if self.distance_from_shifted_of(range) < self.distance_from_normal_of(range) {
-            // If the range is closer to the shifted powers, then we download the shifted powers.
-            self.download_shifted_powers_from(range.start)?;
+        if file.shifted {
+            self.shifted_powers_of_beta_g = Arc::new([&powers[..], &self.shifted_powers_of_beta_g[..]].concat());
         } else {
-            // Otherwise, we download the normal powers.
-            self.download_powers_up_to(range.end)?;
+            self.prefix_mut(file.num_powers).extend(powers);
+            if self.powers_of_beta_g.len() == MAX_NUM_POWERS {
+                self.shifted_powers_of_beta_g = Arc::new(Vec::new());
+            }
         }
         Ok(())
     }
 
-    /// This method downloads the universal SRS powers up to the `next_power_of_two(target_degree)`,
-    /// and updates `Self` in place with the new powers.
-    fn download_powers_up_to(&mut self, end: usize) -> Result<()> {
-        // Determine the new power of two.
-        let final_power_of_two = end.checked_next_power_of_two().ok_or_else(|| anyhow!("Requesting too many powers"))?;
-        // Ensure the total number of powers is less than the maximum number of powers.
-        ensure!(final_power_of_two <= MAX_NUM_POWERS, "Requesting more powers than exist in the SRS");
-
-        // Retrieve the current power of two.
-        let current_power_of_two =
-            self.powers_of_beta_g.len().checked_next_power_of_two().ok_or_else(|| anyhow!("The current degree is too large"))?;
-
-        // Initialize a vector for the powers of two to be downloaded.
-        let mut download_queue = Vec::with_capacity(14);
-
-        // Initialize the first degree to download.
-        let mut accumulator = current_power_of_two * 2;
-        // Determine the powers of two to download.
-        while accumulator <= final_power_of_two {
-            download_queue.push(accumulator);
-            accumulator = accumulator.checked_mul(2).ok_or_else(|| anyhow!("Overflowed while requesting a larger degree"))?;
+    /// The prefix, with room for `capacity` powers. A snapshot a key shares
+    /// never changes, so a shared one is first replaced by a copy. Not
+    /// `Arc::make_mut`, whose clone is sized to the old length, so growing it
+    /// would copy a shared snapshot a second time.
+    fn prefix_mut(&mut self, capacity: usize) -> &mut Vec<E::G1Affine> {
+        if Arc::get_mut(&mut self.powers_of_beta_g).is_none() {
+            let mut copy = Vec::with_capacity(capacity);
+            copy.extend_from_slice(&self.powers_of_beta_g);
+            self.powers_of_beta_g = Arc::new(copy);
         }
-        ensure!(final_power_of_two * 2 == accumulator, "Ensure the loop terminates at the right power of two");
-
-        // Reserve capacity for the new powers of two.
-        let additional_size = final_power_of_two
-            .checked_sub(self.powers_of_beta_g.len())
-            .ok_or_else(|| anyhow!("final_power_of_two is smaller than existing powers"))?;
-        self.powers_of_beta_g.reserve(additional_size);
-
-        // Download the powers of two.
-        for num_powers in &download_queue {
-            dev_println!("Loading {num_powers} powers");
-
-            // Download the universal SRS powers if they're not already on disk.
-            let additional_bytes = match *num_powers {
-                NUM_POWERS_16 => Degree16::load_bytes()?,
-                NUM_POWERS_17 => Degree17::load_bytes()?,
-                NUM_POWERS_18 => Degree18::load_bytes()?,
-                NUM_POWERS_19 => Degree19::load_bytes()?,
-                NUM_POWERS_20 => Degree20::load_bytes()?,
-                NUM_POWERS_21 => Degree21::load_bytes()?,
-                NUM_POWERS_22 => Degree22::load_bytes()?,
-                NUM_POWERS_23 => Degree23::load_bytes()?,
-                NUM_POWERS_24 => Degree24::load_bytes()?,
-                NUM_POWERS_25 => Degree25::load_bytes()?,
-                // TODO (nkls): restore on CI.
-                #[cfg(feature = "large_params")]
-                NUM_POWERS_26 => Degree26::load_bytes()?,
-                #[cfg(feature = "large_params")]
-                NUM_POWERS_27 => Degree27::load_bytes()?,
-                #[cfg(feature = "large_params")]
-                NUM_POWERS_28 => Degree28::load_bytes()?,
-                _ => bail!("Cannot download an invalid degree of '{num_powers}'"),
-            };
-
-            // Deserialize the group elements.
-            let additional_powers = Vec::deserialize_uncompressed_unchecked(&*additional_bytes)?;
-            // Extend the powers.
-            self.powers_of_beta_g.extend(&additional_powers);
-        }
-        ensure!(self.powers_of_beta_g.len() == final_power_of_two, "Loaded an incorrect number of powers");
-        Ok(())
-    }
-
-    /// This method downloads the universal SRS powers from
-    /// `start` up to `MAXIMUM_NUM_POWERS - self.shifted_powers_of_beta_g.len()`,
-    /// and updates `Self` in place with the new powers.
-    fn download_shifted_powers_from(&mut self, start: usize) -> Result<()> {
-        // Ensure the total number of powers is less than the maximum number of powers.
-        ensure!(start <= MAX_NUM_POWERS, "Requesting more powers than exist in the SRS");
-
-        // The possible powers are:
-        // (2^28 - 2^15)..=(2^28)       = 2^15 powers
-        // (2^28 - 2^16)..(2^28 - 2^15) = 2^15 powers
-        // (2^28 - 2^17)..(2^28 - 2^16) = 2^16 powers
-        // (2^28 - 2^18)..(2^28 - 2^17) = 2^17 powers
-        // (2^28 - 2^19)..(2^28 - 2^18) = 2^18 powers
-        // (2^28 - 2^20)..(2^28 - 2^19) = 2^19 powers
-        // (2^28 - 2^21)..(2^28 - 2^20) = 2^20 powers
-        // (2^28 - 2^22)..(2^28 - 2^21) = 2^21 powers
-        // (2^28 - 2^23)..(2^28 - 2^22) = 2^22 powers
-        // (2^28 - 2^24)..(2^28 - 2^23) = 2^23 powers
-        // (2^28 - 2^25)..(2^28 - 2^24) = 2^24 powers
-        // (2^28 - 2^26)..(2^28 - 2^25) = 2^25 powers
-        // (2^28 - 2^27)..(2^28 - 2^26) = 2^26 powers
-
-        // Figure out the number of powers to download, as follows:
-        // Let `start := 2^28 - k`.
-        // We know that `shifted_powers_of_beta_g.len() = 2^s` such that `2^s < k`.
-        // That is, we have already downloaded the powers `2^28 - 2^s` up to `2^28`.
-        // Then, we have to download the powers 2^s..k.next_power_of_two().
-        let final_num_powers = MAX_NUM_POWERS
-            .checked_sub(start)
-            .ok_or_else(|| anyhow!("Requesting too many powers: `start ({start}) > MAX_NUM_POWERS ({MAX_NUM_POWERS})`"))?
-            .checked_next_power_of_two()
-            .ok_or_else(|| anyhow!("Requesting too many powers"))?; // Calculated k.next_power_of_two().
-
-        let mut download_queue = Vec::with_capacity(14);
-        let mut existing_num_powers = self.shifted_powers_of_beta_g.len();
-        while existing_num_powers < final_num_powers {
-            existing_num_powers =
-                existing_num_powers.checked_mul(2).ok_or_else(|| anyhow!("Overflowed while requesting additional powers"))?;
-            download_queue.push(existing_num_powers);
-        }
-        download_queue.reverse(); // We want to download starting from the smallest power.
-
-        let mut final_powers = Vec::with_capacity(final_num_powers);
-        // If the `target_degree` exceeds the current `degree`, proceed to download the new powers.
-        for num_powers in &download_queue {
-            dev_println!("Loading {num_powers} shifted powers");
-
-            // Download the universal SRS powers if they're not already on disk.
-            let additional_bytes = match *num_powers {
-                NUM_POWERS_16 => ShiftedDegree16::load_bytes()?,
-                NUM_POWERS_17 => ShiftedDegree17::load_bytes()?,
-                NUM_POWERS_18 => ShiftedDegree18::load_bytes()?,
-                NUM_POWERS_19 => ShiftedDegree19::load_bytes()?,
-                NUM_POWERS_20 => ShiftedDegree20::load_bytes()?,
-                NUM_POWERS_21 => ShiftedDegree21::load_bytes()?,
-                NUM_POWERS_22 => ShiftedDegree22::load_bytes()?,
-                NUM_POWERS_23 => ShiftedDegree23::load_bytes()?,
-                NUM_POWERS_24 => ShiftedDegree24::load_bytes()?,
-                NUM_POWERS_25 => ShiftedDegree25::load_bytes()?,
-                // TODO (nkls): restore on CI.
-                #[cfg(feature = "large_params")]
-                NUM_POWERS_26 => ShiftedDegree26::load_bytes()?,
-                #[cfg(feature = "large_params")]
-                NUM_POWERS_27 => ShiftedDegree27::load_bytes()?,
-                _ => bail!("Cannot download an invalid degree of '{num_powers}'"),
-            };
-
-            // Deserialize the group elements.
-            let additional_powers = Vec::deserialize_uncompressed_unchecked(&*additional_bytes)?;
-
-            final_powers.extend(additional_powers.iter());
-        }
-        final_powers.extend(self.shifted_powers_of_beta_g.iter());
-        self.shifted_powers_of_beta_g = final_powers;
-
-        ensure!(self.shifted_powers_of_beta_g.len() == final_num_powers, "Loaded an incorrect number of shifted powers");
-        Ok(())
+        // `&mut self` excludes every other reference to the `Arc`, and it is
+        // unshared by now, so it stays so.
+        let powers = Arc::get_mut(&mut self.powers_of_beta_g).expect("an unshared snapshot stays unshared under &mut self");
+        powers.reserve(capacity.saturating_sub(powers.len()));
+        powers
     }
 }
 
-impl<E: PairingEngine> FromBytes for PowersOfBetaG<E> {
-    /// Reads the powers from the buffer.
-    fn read_le<R: Read>(reader: R) -> std::io::Result<Self> {
-        Self::deserialize_with_mode(reader, Compress::No, Validate::No).map_err(|e| e.into())
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_curves::bls12_377::Bls12_377;
 
-impl<E: PairingEngine> ToBytes for PowersOfBetaG<E> {
-    /// Writes the powers to the buffer.
-    fn write_le<W: Write>(&self, writer: W) -> std::io::Result<()> {
-        self.serialize_with_mode(writer, Compress::No).map_err(|e| e.into())
+    type Powers = PowersOfG<Bls12_377>;
+
+    const SHIFTED_16: Range<usize> = MAX_NUM_POWERS - NUM_POWERS_16..MAX_NUM_POWERS;
+    const SHIFTED_17: Range<usize> = MAX_NUM_POWERS - NUM_POWERS_17..MAX_NUM_POWERS;
+
+    fn names(files: &[PowersFile]) -> Vec<String> {
+        files.iter().map(|file| file.name().to_string()).collect()
+    }
+
+    /// The bytes of `file`. Without `filesystem`, they are read from
+    /// `~/.aleo/resources`, where a test run with `filesystem` leaves them.
+    fn file_bytes(file: &PowersFile) -> Vec<u8> {
+        #[cfg(feature = "filesystem")]
+        return default_load_powers_file_sync(file).unwrap();
+        #[cfg(not(feature = "filesystem"))]
+        {
+            let path = aleo_std::aleo_dir().join("resources").join(file.name());
+            std::fs::read(&path).unwrap_or_else(|error| panic!("Run the tests with `filesystem` first: {path:?}: {error}"))
+        }
+    }
+
+    fn add_files_for(powers: &Powers, range: Range<usize>) {
+        for file in &powers.missing_files_for(range.clone()).unwrap() {
+            powers.add_powers_file(file, &*file_bytes(file)).unwrap();
+        }
+    }
+
+    fn prefix(powers: &Powers) -> PowersSnapshot<Bls12_377> {
+        powers.powers_of_beta_g.read().powers_of_beta_g.clone()
+    }
+
+    fn shifted(powers: &Powers) -> PowersSnapshot<Bls12_377> {
+        powers.powers_of_beta_g.read().shifted_powers_of_beta_g.clone()
+    }
+
+    #[test]
+    fn each_file_is_named_and_sized_for_its_powers() {
+        let top = if cfg!(feature = "large_params") { 28 } else { 25 };
+        let shifted_bottom = if cfg!(feature = "no-embedded-srs") { 16 } else { 17 };
+        for (shifted, k) in (16..=top).map(|k| (false, k)).chain((shifted_bottom..=top.min(27)).map(|k| (true, k))) {
+            let file = PowersFile::new(shifted, 1 << k).unwrap();
+            assert_eq!(file.size(), 8 + 96 * (1 << (k - 1)));
+            let stem = if shifted { "shifted-powers-of-beta" } else { "powers-of-beta" };
+            assert_eq!(file.name(), format!("{stem}-{k}.usrs.{}", &file.checksum()[..7]));
+        }
+        assert_eq!(PowersFile::new(false, NUM_POWERS_16).unwrap().name(), "powers-of-beta-16.usrs.84631bc");
+        assert!(PowersFile::new(false, NUM_POWERS_15).is_err());
+        assert_eq!(PowersFile::new(true, NUM_POWERS_16).is_ok(), cfg!(feature = "no-embedded-srs"));
+    }
+
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn the_default_loader_returns_the_bytes_load_bytes_does() {
+        let file = PowersFile::new(false, NUM_POWERS_16).unwrap();
+        assert!(!file.shifted() && file.num_powers() == NUM_POWERS_16);
+        assert_eq!(default_load_powers_file_sync(&file).unwrap(), Degree16::load_bytes().unwrap());
+        let file = PowersFile::new(true, NUM_POWERS_17).unwrap();
+        assert!(file.shifted() && file.num_powers() == NUM_POWERS_17);
+        assert_eq!(default_load_powers_file_sync(&file).unwrap(), ShiftedDegree17::load_bytes().unwrap());
+    }
+
+    #[cfg(not(any(feature = "filesystem", feature = "wasm")))]
+    #[test]
+    #[ignore = "reads the powers files that a run with `filesystem` caches"]
+    fn each_growth_path_names_the_files_it_needs() {
+        fn missing_powers(error: anyhow::Error) -> Vec<PowersFile> {
+            error.downcast::<MissingPowers>().unwrap().files
+        }
+        let powers = Powers::load().unwrap();
+        let prefix_files = powers.missing_files_for(0..NUM_POWERS_17).unwrap();
+        let shifted_files = powers.missing_files_for(SHIFTED_17).unwrap();
+        assert_eq!(prefix_files.len(), 2);
+        assert!(!shifted_files.is_empty());
+        let (before, before_shifted) = (prefix(&powers), shifted(&powers));
+        assert_eq!(missing_powers(powers.download_powers_for(0..NUM_POWERS_17).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.powers_of_beta_g(0..NUM_POWERS_17).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.shared_powers_of_beta_g(0..NUM_POWERS_17).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.power_of_beta_g(NUM_POWERS_16).unwrap_err()), prefix_files);
+        assert_eq!(missing_powers(powers.powers_of_beta_g(SHIFTED_17).unwrap_err()), shifted_files);
+        let both = powers.download_powers_for_ends(NUM_POWERS_17, NUM_POWERS_17).unwrap_err();
+        assert_eq!(missing_powers(both), [&prefix_files[..], &shifted_files[..]].concat());
+        assert!(powers.download_powers_for_ends(MAX_NUM_POWERS + 1, 0).is_err());
+        assert!(Arc::ptr_eq(&before, &prefix(&powers)) && Arc::ptr_eq(&before_shifted, &shifted(&powers)));
+
+        add_files_for(&powers, 0..NUM_POWERS_17);
+        add_files_for(&powers, SHIFTED_17);
+        powers.download_powers_for_ends(NUM_POWERS_17, NUM_POWERS_17).unwrap();
+        assert_eq!(powers.powers_of_beta_g(0..NUM_POWERS_17).unwrap(), prefix(&powers)[..NUM_POWERS_17]);
+        let shifted_powers = shifted(&powers);
+        assert_eq!(powers.powers_of_beta_g(SHIFTED_17).unwrap(), shifted_powers[shifted_powers.len() - NUM_POWERS_17..]);
+    }
+
+    #[test]
+    fn missing_powers_survives_context_and_names_its_files() {
+        let files = vec![PowersFile::new(false, NUM_POWERS_16).unwrap(), PowersFile::new(true, NUM_POWERS_17).unwrap()];
+        let error = anyhow::Error::from(MissingPowers { files: files.clone() }).context("trimming");
+        assert_eq!(error.downcast_ref::<MissingPowers>().map(|error| &error.files), Some(&files));
+        let message = error.root_cause().to_string();
+        assert!(message.contains(files[0].name()) && message.contains(files[1].name()), "{message}");
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "filesystem"), ignore = "reads the powers files that a run with `filesystem` caches")]
+    fn missing_files_are_listed_in_the_order_they_are_added() {
+        let powers = Powers::load().unwrap();
+        assert!(powers.missing_files_for(0..0).unwrap().is_empty());
+        assert!(powers.missing_files_for(0..NUM_POWERS_15).unwrap().is_empty());
+        assert_eq!(powers.missing_files_for(SHIFTED_16).unwrap().is_empty(), cfg!(not(feature = "no-embedded-srs")));
+        assert!(powers.missing_files_for(0..MAX_NUM_POWERS + 1).is_err());
+        assert_eq!(names(&powers.missing_files_for(0..NUM_POWERS_17).unwrap()), [
+            "powers-of-beta-16.usrs.84631bc",
+            "powers-of-beta-17.usrs.7c27308",
+        ]);
+        let shifted_files = names(&powers.missing_files_for(SHIFTED_17).unwrap());
+        assert_eq!(shifted_files.len(), if cfg!(feature = "no-embedded-srs") { 2 } else { 1 });
+        assert_eq!(shifted_files.last().map(String::as_str), Some(PowersFile::new(true, NUM_POWERS_17).unwrap().name()));
+        add_files_for(&powers, 0..NUM_POWERS_16);
+        assert_eq!(names(&powers.missing_files_for(0..NUM_POWERS_17).unwrap()), ["powers-of-beta-17.usrs.7c27308"]);
+        add_files_for(&powers, 0..NUM_POWERS_17);
+        add_files_for(&powers, SHIFTED_17);
+        assert!(powers.missing_files_for(0..NUM_POWERS_17).unwrap().is_empty());
+        assert!(powers.missing_files_for(SHIFTED_17).unwrap().is_empty());
+    }
+
+    #[cfg(feature = "filesystem")]
+    #[test]
+    fn an_added_file_matches_a_downloaded_one() {
+        let (added, downloaded) = (Powers::load().unwrap(), Powers::load().unwrap());
+        for range in [0..NUM_POWERS_17, SHIFTED_17] {
+            add_files_for(&added, range.clone());
+            downloaded.download_powers_for(range).unwrap();
+        }
+        assert_eq!(prefix(&added).len(), NUM_POWERS_17);
+        assert_eq!(prefix(&added), prefix(&downloaded));
+        assert_eq!(shifted(&added).len(), NUM_POWERS_17);
+        assert_eq!(shifted(&added), shifted(&downloaded));
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "filesystem"), ignore = "reads the powers files that a run with `filesystem` caches")]
+    fn a_rejected_file_leaves_the_srs_unchanged() {
+        let powers = Powers::load().unwrap();
+        let (before, before_shifted) = (prefix(&powers), shifted(&powers));
+        let file = PowersFile::new(false, NUM_POWERS_16).unwrap();
+        let bytes = file_bytes(&file);
+        let mut flipped = bytes.clone();
+        *flipped.last_mut().unwrap() ^= 1;
+        let mut header = bytes.clone();
+        header[0] ^= 1;
+        let longer = [&bytes[..], &[0]].concat();
+        let other = file_bytes(&PowersFile::new(true, NUM_POWERS_17).unwrap());
+        for candidate in [&flipped[..], &header, &bytes[..bytes.len() - 1], &longer, &other, &[]] {
+            assert!(powers.add_powers_file(&file, candidate).is_err());
+        }
+        let error = powers.add_powers_file(&PowersFile::new(false, NUM_POWERS_17).unwrap(), &[][..]).unwrap_err();
+        assert!(error.to_string().contains("powers-of-beta-16.usrs.84631bc"), "{error}");
+        assert!(Arc::ptr_eq(&before, &prefix(&powers)), "a rejected file replaced the prefix");
+        assert!(Arc::ptr_eq(&before_shifted, &shifted(&powers)), "a rejected file replaced the shifted powers");
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "filesystem"), ignore = "reads the powers files that a run with `filesystem` caches")]
+    fn a_held_file_is_not_read() {
+        let powers = Powers::load().unwrap();
+        add_files_for(&powers, 0..NUM_POWERS_16);
+        let before = prefix(&powers);
+        powers.add_powers_file(&PowersFile::new(false, NUM_POWERS_16).unwrap(), &[][..]).unwrap();
+        assert!(Arc::ptr_eq(&before, &prefix(&powers)));
     }
 }

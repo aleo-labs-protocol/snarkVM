@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{
@@ -105,7 +113,8 @@ fn check_destination_type_is_valid(variant: u8, destination_type: &PlaintextType
             | LiteralType::U32
             | LiteralType::U64
             | LiteralType::U128
-            | LiteralType::Scalar => Ok(()),
+            | LiteralType::Scalar
+            | LiteralType::Identifier => Ok(()),
             _ => bail!("Invalid literal type '{literal_type}' for 'deserialize' instruction"),
         }
     }
@@ -722,7 +731,12 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         self.evaluate(stack, registers)
     }
 
@@ -774,9 +788,9 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
 
 impl<N: Network, const VARIANT: u8> Parser for DeserializeInstruction<N, VARIANT> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parse the operands from the string.
-        fn parse_operands<N: Network>(string: &str, num_operands: usize) -> ParserResult<Vec<Operand<N>>> {
+        fn parse_operands<N: Network>(string: &str, num_operands: usize) -> ParserResult<'_, Vec<Operand<N>>> {
             let mut operands = Vec::with_capacity(num_operands);
             let mut string = string;
 
@@ -930,6 +944,7 @@ mod tests {
             PlaintextType::Literal(LiteralType::U64),
             PlaintextType::Literal(LiteralType::U128),
             PlaintextType::Literal(LiteralType::Scalar),
+            PlaintextType::Literal(LiteralType::Identifier),
         ]
     }
 

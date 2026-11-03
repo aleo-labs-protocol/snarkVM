@@ -20,7 +20,7 @@ static SIGNATURE_PREFIX: &str = "sign";
 impl<N: Network> Parser for Signature<N> {
     /// Parses a string into an signature.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Prepare a parser for the Aleo signature.
         let parse_signature = recognize(pair(
             pair(tag(SIGNATURE_PREFIX), tag("1")),
@@ -40,16 +40,16 @@ impl<N: Network> FromStr for Signature<N> {
     /// Reads in the signature string.
     fn from_str(signature: &str) -> Result<Self, Self::Err> {
         // Decode the signature string from bech32m.
-        let (hrp, data, variant) = bech32::decode(signature)?;
-        if hrp != SIGNATURE_PREFIX {
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(signature)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
+        if hrp.as_str() != SIGNATURE_PREFIX {
             bail!("Failed to decode signature: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode signature: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found an signature that is not bech32m encoded: {signature}");
         }
-        // Decode the signature data from u5 to u8, and into the signature.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the signature data into the signature.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -65,8 +65,8 @@ impl<N: Network> Display for Signature<N> {
         // Convert the signature to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string =
-            bech32::encode(SIGNATURE_PREFIX, bytes.to_base32(), bech32::Variant::Bech32m).map_err(|_| fmt::Error)?;
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(SIGNATURE_PREFIX), &bytes)
+            .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
     }

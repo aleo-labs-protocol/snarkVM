@@ -145,7 +145,7 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given previous block hash, block header, authority,
     /// ratifications, solutions, aborted solution IDs, transactions, and aborted transaction IDs.
-    pub fn from(
+    fn from(
         previous_hash: N::BlockHash,
         header: Header<N>,
         authority: Authority<N>,
@@ -198,6 +198,8 @@ impl<N: Network> Block<N> {
                 ensure!(signature.verify(&address, &[block_hash]), "Invalid signature for block {}", header.height());
             }
             Authority::Quorum(subdag) => {
+                // Ensure the certificates follow the canonical order for this consensus version.
+                subdag.check_certificate_order(header.height())?;
                 // Ensure the transmission IDs from the subdag correspond to the block.
                 Self::check_subdag_transmissions(
                     subdag,
@@ -778,7 +780,7 @@ mod tests {
 
         // Ensure the transaction is not found.
         for _ in 0..10 {
-            let transition_id = &rng.r#gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transaction_for_transition_id(transition_id), None);
             assert_eq!(transactions.find_transaction_for_transition_id(transition_id), None);
         }
@@ -803,7 +805,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transaction_for_commitment(commitment), None);
             assert_eq!(transactions.find_transaction_for_commitment(commitment), None);
         }
@@ -829,7 +831,7 @@ mod tests {
 
         // Ensure the transitions are not found.
         for _ in 0..10 {
-            let transition_id = &rng.r#gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transition(transition_id), None);
             assert_eq!(transactions.find_transition(transition_id), None);
             assert_eq!(transaction.find_transition(transition_id), None);
@@ -862,7 +864,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transition_for_commitment(commitment), None);
             assert_eq!(transactions.find_transition_for_commitment(commitment), None);
             assert_eq!(transaction.find_transition_for_commitment(commitment), None);
@@ -889,7 +891,7 @@ mod tests {
 
         // Ensure the records are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_record(commitment), None);
             assert_eq!(transactions.find_record(commitment), None);
             assert_eq!(transaction.find_record(commitment), None);

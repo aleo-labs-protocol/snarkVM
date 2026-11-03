@@ -30,7 +30,7 @@ use snarkvm_synthesizer_program::{Instruction, Program, RegistersCircuit as _, S
 
 use aleo_std::prelude::{finish, lap, timer};
 use anyhow::{Result, anyhow, bail, ensure};
-use rand::Rng;
+use rand::RngExt;
 use rand_chacha::ChaChaRng;
 use std::{
     fmt::{self, Debug, Formatter},
@@ -158,7 +158,7 @@ mod tests {
         let mut rng = TestRng::default();
 
         // Initialize a random epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
         // Initialize a new epoch program.
         let epoch_program_0 = EpochProgram::<CurrentNetwork>::new(epoch_hash).unwrap();
         // Initialize a new epoch program.
@@ -172,7 +172,7 @@ mod tests {
         let mut rng = TestRng::default();
 
         // Initialize a random epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
         // Initialize a new epoch program.
         let epoch_program = EpochProgram::<CurrentNetwork>::new(epoch_hash).unwrap();
         // Retrieve the instructions.

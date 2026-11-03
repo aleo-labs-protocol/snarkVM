@@ -19,6 +19,8 @@ use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
     /// Authorizes a call to the program function for the given inputs.
+    ///
+    // This method is meant to be completely stateless. It has no notion of block height or consensus version.
     #[inline]
     pub fn authorize<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,

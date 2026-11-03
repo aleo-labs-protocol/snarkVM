@@ -21,7 +21,7 @@ use crate::{
         MontgomeryParameters,
         ProjectiveCurve,
         TwistedEdwardsParameters,
-        tests_field::{field_serialization_test, field_test, primefield_test},
+        tests_field::{field_serialization_test, field_test, fp256_inverse_test, primefield_test},
         tests_group::*,
         tests_projective::curve_tests,
     },
@@ -33,25 +33,30 @@ use snarkvm_utilities::{
     to_bytes_le,
 };
 
-use rand::Rng;
+use rand::RngExt;
 
 #[test]
 fn test_edwards_bls12_fr() {
     let mut rng = TestRng::default();
 
-    let a: Fr = rng.r#gen();
-    let b: Fr = rng.r#gen();
+    let a: Fr = rng.random();
+    let b: Fr = rng.random();
     field_test(a, b, &mut rng);
     primefield_test::<Fr>(&mut rng);
     field_serialization_test::<Fr>(&mut rng);
 }
 
 #[test]
+fn test_edwards_bls12_fr_inverse() {
+    fp256_inverse_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
 fn test_edwards_bls12_fq() {
     let mut rng = TestRng::default();
 
-    let a: Fq = rng.r#gen();
-    let b: Fq = rng.r#gen();
+    let a: Fq = rng.random();
+    let b: Fq = rng.random();
     field_test(a, b, &mut rng);
     primefield_test::<Fq>(&mut rng);
     field_serialization_test::<Fq>(&mut rng);
@@ -70,8 +75,8 @@ fn test_projective_group() {
     let mut rng = TestRng::default();
 
     for _i in 0..10 {
-        let a = rng.r#gen();
-        let b = rng.r#gen();
+        let a = rng.random();
+        let b = rng.random();
         projective_test::<EdwardsProjective>(a, b, &mut rng);
     }
 }
@@ -81,9 +86,14 @@ fn test_affine_group() {
     let mut rng = TestRng::default();
 
     for _i in 0..10 {
-        let a: EdwardsAffine = rng.r#gen();
+        let a: EdwardsAffine = rng.random();
         affine_test::<EdwardsAffine>(a);
     }
+}
+
+#[test]
+fn test_serialization_round_trip() {
+    serialization_round_trip_test::<EdwardsAffine>();
 }
 
 #[test]
@@ -97,8 +107,8 @@ fn test_generator() {
 fn test_conversion() {
     let mut rng = TestRng::default();
 
-    let a: EdwardsAffine = rng.r#gen();
-    let b: EdwardsAffine = rng.r#gen();
+    let a: EdwardsAffine = rng.random();
+    let b: EdwardsAffine = rng.random();
     assert_eq!(a.to_projective().to_affine(), a);
     assert_eq!(b.to_projective().to_affine(), b);
 }
@@ -113,7 +123,7 @@ fn test_montgomery_conversion() {
 fn test_edwards_to_montgomery_point() {
     let mut rng = TestRng::default();
 
-    let a: EdwardsAffine = rng.r#gen();
+    let a: EdwardsAffine = rng.random();
     let (x, y) = (a.x, a.y);
 
     // Montgomery element (u, v)

@@ -5,7 +5,9 @@
 **storage_db
 **/*.prover.*
 **/*.verifier.*
+**/varuna_verifier_artifacts/
 *.usrs
+flamegraph.svg
 !**/powers-of-beta-15.usrs*
 !**/shifted-powers-of-beta-15.usrs*
 !**/powers-of-beta-16.usrs*
@@ -15,6 +17,7 @@
 !**/neg-powers-of-beta.usrs
 **/proptest-regressions/
 artifacts
+/.rusty-hook.toml
 
 # Claude Code
 **/CLAUDE.md

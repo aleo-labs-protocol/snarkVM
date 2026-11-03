@@ -26,7 +26,10 @@ const REMOTE_URLS: [&str; 2] =
     ["https://parameters.provable.com/mainnet", "https://s3.us-west-1.amazonaws.com/mainnet.parameters"];
 
 // Degrees
+#[cfg(not(feature = "no-embedded-srs"))]
 impl_local!(Degree15, "resources/", "powers-of-beta-15", "usrs");
+#[cfg(feature = "no-embedded-srs")]
+impl_remote!(Degree15, REMOTE_URLS, "resources/", "powers-of-beta-15", "usrs");
 impl_remote!(Degree16, REMOTE_URLS, "resources/", "powers-of-beta-16", "usrs");
 impl_remote!(Degree17, REMOTE_URLS, "resources/", "powers-of-beta-17", "usrs");
 impl_remote!(Degree18, REMOTE_URLS, "resources/", "powers-of-beta-18", "usrs");
@@ -50,8 +53,14 @@ impl_remote!(Degree27, REMOTE_URLS, "resources/", "powers-of-beta-27", "usrs");
 impl_remote!(Degree28, REMOTE_URLS, "resources/", "powers-of-beta-28", "usrs");
 
 // Shifted Degrees
+#[cfg(not(feature = "no-embedded-srs"))]
 impl_local!(ShiftedDegree15, "resources/", "shifted-powers-of-beta-15", "usrs");
+#[cfg(feature = "no-embedded-srs")]
+impl_remote!(ShiftedDegree15, REMOTE_URLS, "resources/", "shifted-powers-of-beta-15", "usrs");
+#[cfg(not(feature = "no-embedded-srs"))]
 impl_local!(ShiftedDegree16, "resources/", "shifted-powers-of-beta-16", "usrs");
+#[cfg(feature = "no-embedded-srs")]
+impl_remote!(ShiftedDegree16, REMOTE_URLS, "resources/", "shifted-powers-of-beta-16", "usrs");
 impl_remote!(ShiftedDegree17, REMOTE_URLS, "resources/", "shifted-powers-of-beta-17", "usrs");
 impl_remote!(ShiftedDegree18, REMOTE_URLS, "resources/", "shifted-powers-of-beta-18", "usrs");
 impl_remote!(ShiftedDegree19, REMOTE_URLS, "resources/", "shifted-powers-of-beta-19", "usrs");
@@ -248,12 +257,63 @@ lazy_static! {
         InclusionVerifier::load_bytes().expect("Failed to load inclusion verifying key");
 }
 
+// Translation
+impl_remote!(TranslationCreditsProver, REMOTE_URLS, "resources/", "translation_credits", "prover", "credits");
+impl_local!(TranslationCreditsVerifier, "resources/", "translation_credits", "verifier", "credits");
+
+lazy_static! {
+    pub static ref TRANSLATION_CREDITS_PROVING_KEY: Vec<u8> =
+        TranslationCreditsProver::load_bytes().expect("Failed to load translation proving key");
+    pub static ref TRANSLATION_CREDITS_VERIFYING_KEY: Vec<u8> =
+        TranslationCreditsVerifier::load_bytes().expect("Failed to load translation verifying key");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use wasm_bindgen_test::*;
     wasm_bindgen_test_configure!(run_in_browser);
 
+    #[cfg(all(feature = "filesystem", not(feature = "wasm"), not(target_env = "sgx")))]
+    #[test]
+    fn test_lock_download_waits_for_holder() {
+        use std::time::Duration;
+
+        let directory = std::env::temp_dir().join(format!("snarkvm-lock-download-{}", std::process::id()));
+        let file_path = directory.join("inclusion.prover");
+        let holder = InclusionProver::lock_download(&file_path).expect("Failed to take the download lock");
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let waiter = std::thread::spawn(move || {
+            let lock = InclusionProver::lock_download(&file_path);
+            sender.send(()).expect("Failed to signal the test thread");
+            lock
+        });
+
+        assert!(receiver.recv_timeout(Duration::from_millis(200)).is_err(), "The waiter took a held lock");
+        drop(holder);
+        assert!(receiver.recv_timeout(Duration::from_secs(10)).is_ok(), "The waiter did not take a released lock");
+        assert!(waiter.join().expect("The waiter panicked").is_some());
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[test]
+    fn test_verify_bytes() {
+        use crate::errors::ParameterError;
+
+        let bytes = FeePublicProver::load_bytes().expect("Failed to load fee_public prover");
+        FeePublicProver::verify_bytes(&bytes).expect("The loaded bytes do not verify");
+
+        let mut flipped = bytes.clone();
+        flipped[bytes.len() / 2] ^= 1;
+        assert!(matches!(FeePublicProver::verify_bytes(&flipped), Err(ParameterError::ChecksumMismatch(..))));
+        assert!(matches!(FeePublicProver::verify_bytes(&bytes[..bytes.len() - 1]), Err(ParameterError::SizeMismatch(..))));
+        assert!(FeePrivateProver::verify_bytes(&bytes).is_err());
+    }
+
+    #[cfg(feature = "filesystem")]
     #[ignore]
     #[test]
     fn test_load_bytes_mini() {

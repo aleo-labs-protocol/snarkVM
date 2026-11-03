@@ -22,6 +22,10 @@ impl<E: Environment> ToLowerBits for Field<E> {
     /// Outputs the lower `k` bits of an `n`-bit field element in little-endian representation.
     /// Enforces that the upper `n - k` bits are zero.
     ///
+    /// The decomposition is unique: for `k < n`, the bits encode an integer less than
+    /// the modulus, and for `k == n`, the unique decomposition from `to_bits_le` is
+    /// returned, which enforces that the bits are less than the modulus.
+    ///
     fn to_lower_bits_le(&self, k: usize) -> Vec<Self::Boolean> {
         // Ensure the size is within the allowed capacity.
         if k > E::BaseField::size_in_bits() {
@@ -31,7 +35,14 @@ impl<E: Environment> ToLowerBits for Field<E> {
             ))
         }
 
+        // An `n`-bit decomposition can encode integers that are at least the modulus,
+        // so use the unique decomposition, which enforces that the bits are less than the modulus.
+        if k == E::BaseField::size_in_bits() {
+            return self.to_bits_le();
+        }
+
         // Construct a vector of `Boolean`s comprising the bits of the field value.
+        // As `k < n`, the bits encode an integer less than the modulus, so the decomposition is unique.
         let bits = witness!(|self| self.to_bits_le().into_iter().take(k).collect::<Vec<_>>());
 
         // Reconstruct the bits as a linear combination representing the original field value.
@@ -53,6 +64,8 @@ impl<E: Environment> ToLowerBits for Field<E> {
     /// Outputs the lower `k` bits of an `n`-bit field element in big-endian representation.
     /// Enforces that the upper `n - k` bits are zero.
     ///
+    /// The decomposition is unique, as this returns the little-endian decomposition in reverse order.
+    ///
     fn to_lower_bits_be(&self, k: usize) -> Vec<Self::Boolean> {
         let mut bits_be = self.to_lower_bits_le(k);
         bits_be.reverse();
@@ -66,6 +79,9 @@ impl<E: Environment> Metrics<dyn ToLowerBits<Boolean = Boolean<E>>> for Field<E>
     fn count(case: &Self::Case) -> Count {
         match case {
             (Mode::Constant, k) => Count::is(*k, 0, 0, 0),
+            (mode, k) if *k == E::BaseField::size_in_bits() as u64 => {
+                count!(Field<E>, ToBits<Boolean = Boolean<E>>, mode)
+            }
             (_, k) => Count::is(0, 0, *k, k + 1),
         }
     }
@@ -113,6 +129,40 @@ mod tests {
                 assert_output_mode!(ToLowerBits<Boolean>() => Field, &mode, candidate);
             });
         }
+    }
+
+    fn check_to_lower_size_in_bits_le(mode: Mode) {
+        let size_in_bits = console::Field::<<Circuit as Environment>::Network>::size_in_bits();
+
+        let mut rng = TestRng::default();
+
+        // Sample random field elements, and the largest field element.
+        let values = (0..ITERATIONS).map(|_| Uniform::rand(&mut rng)).chain([-console::Field::one()]);
+        for (i, expected) in values.enumerate() {
+            let candidate = Field::<Circuit>::new(mode, expected);
+
+            Circuit::scope(format!("{mode} {i}"), || {
+                let candidate = candidate.to_lower_bits_le(size_in_bits);
+                assert_eq!(expected.to_bits_le(), candidate.eject_value());
+                assert_count!(ToLowerBits<Boolean>() => Field, &(mode, size_in_bits as u64));
+                assert_output_mode!(ToLowerBits<Boolean>() => Field, &mode, candidate);
+            });
+        }
+    }
+
+    #[test]
+    fn test_to_size_in_bits_constant() {
+        check_to_lower_size_in_bits_le(Mode::Constant);
+    }
+
+    #[test]
+    fn test_to_size_in_bits_public() {
+        check_to_lower_size_in_bits_le(Mode::Public);
+    }
+
+    #[test]
+    fn test_to_size_in_bits_private() {
+        check_to_lower_size_in_bits_le(Mode::Private);
     }
 
     // 8 bits

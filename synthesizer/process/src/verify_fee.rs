@@ -38,16 +38,17 @@ impl<N: Network> Process<N> {
 
         #[cfg(debug_assertions)]
         {
-            // Ensure the number of function calls in this function is 1.
-            if stack.get_number_of_calls(function.name())? != 1 {
+            // Ensure that there are no dynamic calls in this function.
+            if stack.contains_dynamic_call(function.name())? {
+                bail!("The function '{}/{}' should not have dynamic calls", stack.program_id(), function.name())
+            }
+            // Ensure the minimum number of function calls in this function is 1.
+            if stack.get_minimum_number_of_calls(function.name())? != 1 {
                 bail!("The number of function calls in '{}/{}' should be 1", stack.program_id(), function.name())
             }
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
-            debug_assert_eq!(
-                **fee.id(),
-                N::hash_bhp512(&(fee.to_root()?, *fee.tcm()).to_bits_le())?,
-                "Transition ID of the fee is incorrect"
-            );
+            let expected_id = N::hash_bhp512(&(fee.to_root()?, *fee.tcm()).to_bits_le())?;
+            debug_assert_eq!(**fee.id(), expected_id, "Transition ID of the fee is incorrect");
         }
 
         // Determine if the fee is private.
@@ -64,10 +65,24 @@ impl<N: Network> Process<N> {
         // Ensure the input and output types are equivalent to the ones defined in the function.
         // We only need to check that the variant type matches because we already check the hashes in
         // the `Input::verify` and `Output::verify` functions.
-        let fee_input_variants = fee.inputs().iter().map(Input::variant).collect::<Vec<_>>();
-        let fee_output_variants = fee.outputs().iter().map(Output::variant).collect::<Vec<_>>();
-        ensure!(function.input_variants() == fee_input_variants, "The fee input variants do not match");
-        ensure!(function.output_variants() == fee_output_variants, "The fee output variants do not match");
+        ensure!(
+            function.input_types().len() == fee.inputs().len(),
+            "The number of fee inputs is incorrect: expected {}, found {}",
+            function.input_types().len(),
+            fee.inputs().len()
+        );
+        for (function_input, fee_input) in function.input_types().iter().zip_eq(fee.inputs().iter()) {
+            ensure!(fee_input.is_type(function_input), "The fee input variants do not match");
+        }
+        ensure!(
+            function.output_types().len() == fee.outputs().len(),
+            "The number of fee outputs is incorrect: expected {}, found {}",
+            function.output_types().len(),
+            fee.outputs().len()
+        );
+        for (function_output, fee_output) in function.output_types().iter().zip_eq(fee.outputs().iter()) {
+            ensure!(fee_output.is_type(function_output), "The fee output variants do not match");
+        }
 
         // Retrieve the candidate deployment or execution ID.
         let Ok(candidate_id) = fee.deployment_or_execution_id() else {
@@ -270,10 +285,12 @@ mod tests {
 
         // Fetch transactions.
         let transactions = [
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
             snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),

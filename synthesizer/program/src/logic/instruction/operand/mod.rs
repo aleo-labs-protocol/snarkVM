@@ -18,7 +18,7 @@ mod parse;
 
 use console::{
     network::prelude::*,
-    program::{Literal, ProgramID, Register},
+    program::{Identifier, Literal, ProgramID, Register},
     types::{Group, U32},
 };
 
@@ -63,6 +63,10 @@ pub enum Operand<N: Network> {
     /// If no program ID is specified, the owner is for the current program.
     /// If a program ID is specified, the owner is for an external program.
     ProgramOwner(Option<ProgramID<N>>),
+    /// The operand is the checksum of a named program component (a function, closure, or view).
+    /// If no program ID is specified, the component is in the current program.
+    /// If a program ID is specified, the component is in an external program.
+    ComponentChecksum(Option<ProgramID<N>>, Identifier<N>),
 }
 
 impl<N: Network> From<Literal<N>> for Operand<N> {

@@ -92,7 +92,7 @@ fn batch_prove(c: &mut Criterion) {
         CurrentAleo::reset();
 
         // Select the leaf index to prove.
-        let leaf_index = rng.gen_range(0..max_num_leaves as usize);
+        let leaf_index = rng.random_range(0..max_num_leaves as usize);
         // Initialize the leaf.
         let merkle_leaf = leaves[leaf_index].clone();
         // Initialize the Merkle path.

@@ -76,7 +76,7 @@ impl<E: Environment> Eject for Address<E> {
 impl<E: Environment> Parser for Address<E> {
     /// Parses a string into an address circuit.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the address from the string.
         let (string, address) = console::Address::parse(string)?;
         // Parse the mode from the string.

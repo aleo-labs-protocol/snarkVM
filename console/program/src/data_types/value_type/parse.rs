@@ -18,10 +18,12 @@ use super::*;
 impl<N: Network> Parser for ValueType<N> {
     /// Parses the string into a value type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the mode from the string.
         // Note that the order of the parsers matters.
         alt((
+            map(tag("dynamic.record"), |_| Self::DynamicRecord),
+            map(tag("dynamic.future"), |_| Self::DynamicFuture),
             map(pair(PlaintextType::parse, tag(".constant")), |(plaintext_type, _)| Self::Constant(plaintext_type)),
             map(pair(PlaintextType::parse, tag(".public")), |(plaintext_type, _)| Self::Public(plaintext_type)),
             map(pair(PlaintextType::parse, tag(".private")), |(plaintext_type, _)| Self::Private(plaintext_type)),
@@ -66,6 +68,8 @@ impl<N: Network> Display for ValueType<N> {
             Self::Record(identifier) => write!(f, "{identifier}.record"),
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
             Self::Future(locator) => write!(f, "{locator}.future"),
+            Self::DynamicRecord => write!(f, "dynamic.record"),
+            Self::DynamicFuture => write!(f, "dynamic.future"),
         }
     }
 }
@@ -141,6 +145,18 @@ mod tests {
             ValueType::<CurrentNetwork>::parse("credits.aleo/mint_public.future")?.1
         );
 
+        // DynamicRecord type
+        assert_eq!(
+            Ok(("", ValueType::<CurrentNetwork>::from_str("dynamic.record")?)),
+            ValueType::<CurrentNetwork>::parse("dynamic.record")
+        );
+
+        // DynamicFuture type
+        assert_eq!(
+            Ok(("", ValueType::<CurrentNetwork>::from_str("dynamic.future")?)),
+            ValueType::<CurrentNetwork>::parse("dynamic.future")
+        );
+
         Ok(())
     }
 
@@ -201,6 +217,9 @@ mod tests {
             ValueType::<CurrentNetwork>::from_str("howard.aleo/message.record")?.to_string(),
             "howard.aleo/message.record"
         );
+
+        assert_eq!(ValueType::<CurrentNetwork>::from_str("dynamic.record")?.to_string(), "dynamic.record");
+        assert_eq!(ValueType::<CurrentNetwork>::from_str("dynamic.future")?.to_string(), "dynamic.future");
 
         Ok(())
     }

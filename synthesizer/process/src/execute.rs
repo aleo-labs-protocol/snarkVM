@@ -30,6 +30,10 @@ impl<N: Network> Process<N> {
         let request = authorization.peek_next()?;
         // Construct the locator.
         let locator = Locator::new(*request.program_id(), *request.function_name());
+        // A root request has no caller, so it cannot be dynamic.
+        if request.is_dynamic() {
+            return Err(anyhow!("The root request for '{locator}' is flagged dynamic").into());
+        }
 
         dev_println!("{}", format!(" • Executing '{locator}'...",));
 
@@ -39,22 +43,38 @@ impl<N: Network> Process<N> {
         let root_tvk = None;
         // Initialize the trace.
         let trace = Arc::new(RwLock::new(Trace::new()));
+        // Initialize the translations.
+        let translations = Arc::new(RwLock::new(Vec::new()));
+        // Retrieve the number of requests, which `execute_function` consumes.
+        let num_requests = authorization.len();
         // Initialize the call stack.
-        let call_stack = CallStack::execute(authorization, trace.clone())?;
+        let call_stack = CallStack::execute(authorization, trace.clone(), translations)?;
         lap!(timer, "Initialize call stack");
 
         // Retrieve the stack.
         let stack = self.get_stack(request.program_id())?;
         // Execute the circuit.
-        let response = stack.execute_function::<A, R>(call_stack, caller, root_tvk, rng)?;
+        let Some(response) = stack.execute_function::<A, R>(call_stack, caller, root_tvk, rng)? else {
+            return Err(anyhow!("Response should be present in `Execute` mode.").into());
+        };
         lap!(timer, "Execute the function");
 
         // Extract the trace.
-        let trace = Arc::try_unwrap(trace).unwrap().into_inner();
+        let mut trace = Arc::try_unwrap(trace).unwrap().into_inner();
         // Ensure the trace is not empty.
         if trace.transitions().is_empty() {
             return Err(anyhow!("Execution of '{locator}' is empty").into());
         }
+        // Ensure every request was used.
+        if trace.transitions().len() != num_requests {
+            return Err(anyhow!(
+                "Execution of '{locator}' used {} of its {num_requests} requests",
+                trace.transitions().len()
+            )
+            .into());
+        }
+        // Construct the call graph.
+        trace.construct_call_graph(self)?;
 
         finish!(timer);
         Ok((response, trace))
@@ -81,9 +101,9 @@ mod tests {
         let owner = Address::try_from(private_key).unwrap();
 
         // Sample a base fee in microcredits.
-        let base_fee_in_microcredits = rng.gen_range(1_000_000..u64::MAX / 2);
+        let base_fee_in_microcredits = rng.random_range(1_000_000..u64::MAX / 2);
         // Sample a priority fee in microcredits.
-        let priority_fee_in_microcredits = rng.gen_range(0..u64::MAX / 2);
+        let priority_fee_in_microcredits = rng.random_range(0..u64::MAX / 2);
         // Sample a deployment or execution ID.
         let deployment_or_execution_id = Field::rand(rng);
 
@@ -131,9 +151,9 @@ mod tests {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
         // Sample a base fee in microcredits.
-        let base_fee_in_microcredits = rng.gen_range(1_000_000..u64::MAX / 2);
+        let base_fee_in_microcredits = rng.random_range(1_000_000..u64::MAX / 2);
         // Sample a priority fee in microcredits.
-        let priority_fee_in_microcredits = rng.gen_range(0..u64::MAX / 2);
+        let priority_fee_in_microcredits = rng.random_range(0..u64::MAX / 2);
         // Sample a deployment or execution ID.
         let deployment_or_execution_id = Field::rand(rng);
 

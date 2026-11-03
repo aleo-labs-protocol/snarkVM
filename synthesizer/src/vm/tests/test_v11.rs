@@ -15,8 +15,6 @@
 
 use super::*;
 
-use crate::vm::test_helpers::*;
-
 use console::{
     network::ConsensusVersion,
     program::Value,

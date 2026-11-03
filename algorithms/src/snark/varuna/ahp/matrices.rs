@@ -25,7 +25,7 @@ use crate::{
     },
 };
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{cfg_into_iter, serialize::*};
+use snarkvm_utilities::{cfg_into_iter, defer, serialize::*};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -240,25 +240,28 @@ impl<F: PrimeField> MatrixArithmetization<F> {
         label: &str,
         matrix_evals: &MatrixEvals<F>,
     ) -> Result<MatrixArithmetization<F>> {
-        let interpolate_time = start_timer!(|| "Interpolating on K");
-        let non_zero_domain = matrix_evals.domain()?;
-        let row = matrix_evals.row.clone().interpolate();
-        let col = matrix_evals.col.clone().interpolate();
-        let row_col = if let Some(row_col) = matrix_evals.row_col.as_ref() {
-            row_col.clone().interpolate()
-        } else {
-            ensure!(matrix_evals.row.evaluations.len() == matrix_evals.col.evaluations.len());
-            let row_col_evals: Vec<F> = matrix_evals
-                .row
-                .evaluations
-                .iter()
-                .zip_eq(&matrix_evals.col.evaluations)
-                .map(|(&r, &c)| r * c)
-                .collect();
-            EvaluationsOnDomain::<F>::from_vec_and_domain(row_col_evals, non_zero_domain).interpolate()
+        let (row, col, row_col, row_col_val) = {
+            let interpolate_time = start_timer!(|| "Interpolating on K");
+            defer! { end_timer!(interpolate_time); }
+            let non_zero_domain = matrix_evals.domain()?;
+            let row = matrix_evals.row.clone().interpolate();
+            let col = matrix_evals.col.clone().interpolate();
+            let row_col = if let Some(row_col) = matrix_evals.row_col.as_ref() {
+                row_col.clone().interpolate()
+            } else {
+                ensure!(matrix_evals.row.evaluations.len() == matrix_evals.col.evaluations.len());
+                let row_col_evals: Vec<F> = matrix_evals
+                    .row
+                    .evaluations
+                    .iter()
+                    .zip_eq(&matrix_evals.col.evaluations)
+                    .map(|(&r, &c)| r * c)
+                    .collect();
+                EvaluationsOnDomain::<F>::from_vec_and_domain(row_col_evals, non_zero_domain).interpolate()
+            };
+            let row_col_val = matrix_evals.row_col_val.clone().interpolate();
+            (row, col, row_col, row_col_val)
         };
-        let row_col_val = matrix_evals.row_col_val.clone().interpolate();
-        end_timer!(interpolate_time);
 
         let mut labels = AHPForR1CS::<F, SM>::index_polynomial_labels_single(label, id);
         ensure!(labels.len() == 4);

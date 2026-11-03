@@ -22,6 +22,8 @@ pub enum Argument<A: Aleo> {
     Plaintext(Plaintext<A>),
     /// A future.
     Future(Future<A>),
+    /// A dynamic future.
+    DynamicFuture(DynamicFuture<A>),
 }
 
 impl<A: Aleo> Inject for Argument<A> {
@@ -32,6 +34,7 @@ impl<A: Aleo> Inject for Argument<A> {
         match value {
             console::Argument::Plaintext(plaintext) => Self::Plaintext(Inject::new(mode, plaintext)),
             console::Argument::Future(future) => Self::Future(Inject::new(mode, future)),
+            console::Argument::DynamicFuture(dynamic_future) => Self::DynamicFuture(Inject::new(mode, dynamic_future)),
         }
     }
 }
@@ -44,6 +47,7 @@ impl<A: Aleo> Eject for Argument<A> {
         match self {
             Self::Plaintext(plaintext) => plaintext.eject_mode(),
             Self::Future(future) => future.eject_mode(),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.eject_mode(),
         }
     }
 
@@ -52,6 +56,7 @@ impl<A: Aleo> Eject for Argument<A> {
         match self {
             Self::Plaintext(plaintext) => Self::Primitive::Plaintext(plaintext.eject_value()),
             Self::Future(future) => Self::Primitive::Future(future.eject_value()),
+            Self::DynamicFuture(dynamic_future) => Self::Primitive::DynamicFuture(dynamic_future.eject_value()),
         }
     }
 }
@@ -62,18 +67,20 @@ impl<A: Aleo> Equal<Self> for Argument<A> {
     /// Returns `true` if `self` and `other` are equal.
     fn is_equal(&self, other: &Self) -> Self::Output {
         match (self, other) {
-            (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_equal(plaintext_b),
-            (Self::Future(future_a), Self::Future(future_b)) => future_a.is_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::constant(false),
+            (Self::Plaintext(a), Self::Plaintext(b)) => a.is_equal(b),
+            (Self::Future(a), Self::Future(b)) => a.is_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_equal(b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::constant(false),
         }
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.
     fn is_not_equal(&self, other: &Self) -> Self::Output {
         match (self, other) {
-            (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_not_equal(plaintext_b),
-            (Self::Future(future_a), Self::Future(future_b)) => future_a.is_not_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::constant(true),
+            (Self::Plaintext(a), Self::Plaintext(b)) => a.is_not_equal(b),
+            (Self::Future(a), Self::Future(b)) => a.is_not_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_not_equal(b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::constant(true),
         }
     }
 }
@@ -93,6 +100,17 @@ impl<A: Aleo> ToBits for Argument<A> {
                 vec.push(Boolean::constant(true));
                 future.write_bits_le(vec);
             }
+            Self::DynamicFuture(dynamic_future) => {
+                vec.push(Boolean::constant(true));
+                // Note. This encoding is needed to uniquely disambiguate dynamic futures from static futures.
+                // This is sound because:
+                //  - a static future expects the program ID bits after the initial tag bit
+                //  - a program ID contains two `Identifier`s
+                //  - an `Identifier` cannot lead with a zero byte, since a leading zero byte implies an empty string.
+                // The 12 bits consist of: 8 bits for disambiguation (zero byte) + 4 bits reserved for future variants.
+                vec.extend(std::iter::repeat_n(Boolean::constant(false), 12));
+                dynamic_future.write_bits_le(vec);
+            }
         }
     }
 
@@ -107,6 +125,17 @@ impl<A: Aleo> ToBits for Argument<A> {
             Self::Future(future) => {
                 vec.push(Boolean::constant(true));
                 future.write_bits_be(vec);
+            }
+            Self::DynamicFuture(dynamic_future) => {
+                vec.push(Boolean::constant(true));
+                // Note. This encoding is needed to uniquely disambiguate dynamic futures from static futures.
+                // This is sound because:
+                //  - a static future expects the program ID bits after the initial tag bit
+                //  - a program ID contains two `Identifier`s
+                //  - an `Identifier` cannot lead with a zero byte, since a leading zero byte implies an empty string.
+                // The 12 bits consist of: 8 bits for disambiguation (zero byte) + 4 bits reserved for future variants.
+                vec.extend(std::iter::repeat_n(Boolean::constant(false), 12));
+                dynamic_future.write_bits_be(vec);
             }
         }
     }

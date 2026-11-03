@@ -26,9 +26,10 @@ use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions};
 use snarkvm_ledger_puzzle_epoch::MerklePuzzle;
 
 use criterion::Criterion;
-use rand::{self, CryptoRng, RngCore, thread_rng};
+use rand::{self, CryptoRng, RngExt};
+use std::time::Duration;
 
-fn sample_address_and_counter(rng: &mut (impl CryptoRng + RngCore)) -> (Address<MainnetV0>, u64) {
+fn sample_address_and_counter(rng: &mut impl CryptoRng) -> (Address<MainnetV0>, u64) {
     let private_key = PrivateKey::new(rng).unwrap();
     let address = Address::try_from(private_key).unwrap();
     let counter = rng.next_u64();
@@ -36,13 +37,13 @@ fn sample_address_and_counter(rng: &mut (impl CryptoRng + RngCore)) -> (Address<
 }
 
 fn puzzle_prove(c: &mut Criterion) {
-    let rng = &mut thread_rng();
+    let rng = &mut rand::rng();
 
     // Initialize a new puzzle.
     let puzzle = Puzzle::<MainnetV0>::new::<MerklePuzzle<MainnetV0>>();
 
     // Initialize an epoch hash.
-    let epoch_hash = rng.r#gen();
+    let epoch_hash = rng.random();
 
     c.bench_function("Puzzle::prove", |b| {
         let (address, counter) = sample_address_and_counter(rng);
@@ -51,13 +52,13 @@ fn puzzle_prove(c: &mut Criterion) {
 }
 
 fn puzzle_verify(c: &mut Criterion) {
-    let rng = &mut thread_rng();
+    let rng = &mut rand::rng();
 
     // Initialize a new puzzle.
     let puzzle = Puzzle::<MainnetV0>::new::<MerklePuzzle<MainnetV0>>();
 
     // Initialize an epoch hash.
-    let epoch_hash = rng.r#gen();
+    let epoch_hash = rng.random();
 
     for batch_size in [1, 2, <MainnetV0 as Network>::MAX_SOLUTIONS] {
         let solutions = (0..batch_size)
@@ -75,9 +76,18 @@ fn puzzle_verify(c: &mut Criterion) {
 }
 
 criterion_group! {
-    name = puzzle;
-    config = Criterion::default().sample_size(10);
-    targets = puzzle_prove, puzzle_verify,
+    name = puzzle_prove_group;
+    config = Criterion::default()
+        .sample_size(100)
+        .warm_up_time(Duration::from_secs(3))
+        .measurement_time(Duration::from_secs(10));
+    targets = puzzle_prove,
 }
 
-criterion_main!(puzzle);
+criterion_group! {
+    name = puzzle_verify_group;
+    config = Criterion::default().sample_size(10);
+    targets = puzzle_verify,
+}
+
+criterion_main!(puzzle_prove_group, puzzle_verify_group);

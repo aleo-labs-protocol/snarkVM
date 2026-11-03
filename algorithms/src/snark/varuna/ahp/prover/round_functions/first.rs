@@ -29,7 +29,7 @@ use snarkvm_fields::PrimeField;
 use snarkvm_utilities::cfg_into_iter;
 
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::BTreeMap;
 
 #[cfg(not(feature = "serial"))]
@@ -58,7 +58,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     /// Output the first round message and the next state.
-    pub fn prover_first_round<'a, R: RngCore>(
+    pub fn prover_first_round<'a, R: Rng>(
         mut state: prover::State<'a, F, SM>,
         rng: &mut R,
     ) -> Result<prover::State<'a, F, SM>, AHPError> {
@@ -99,7 +99,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Ok(state)
     }
 
-    fn calculate_mask_poly<R: RngCore>(variable_domain: EvaluationDomain<F>, rng: &mut R) -> LabeledPolynomial<F> {
+    fn calculate_mask_poly<R: Rng>(variable_domain: EvaluationDomain<F>, rng: &mut R) -> LabeledPolynomial<F> {
         assert!(SM::ZK);
         let mask_poly_time = start_timer!(|| "Computing mask polynomial");
         // We'll use the masking technique from Lunar (https://eprint.iacr.org/2020/1069.pdf, pgs 20-22).

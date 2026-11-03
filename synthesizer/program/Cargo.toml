@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-program"
-version = "4.4.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -78,9 +78,7 @@ features = [ "sha3" ]
 workspace = true
 
 [dev-dependencies.k256]
-version = "0.13"
-features = [ "digest", "ecdsa" ]
-default-features = false
+workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true

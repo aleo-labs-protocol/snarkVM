@@ -444,7 +444,7 @@ fn test_profiler() -> Result<()> {
         generate_leaves!(1, &mut rng)
             .into_iter()
             .map(|leaf| {
-                let index: usize = Uniform::rand(&mut rng);
+                let index = usize::try_from(rng.random::<u64>()).unwrap();
                 (index % num_leaves, leaf)
             })
             .for_each(|(index, leaf)| {

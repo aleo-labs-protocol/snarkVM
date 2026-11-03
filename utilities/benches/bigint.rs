@@ -19,14 +19,14 @@
 use snarkvm_utilities::{BigInteger256, BigInteger384, TestRng};
 
 use criterion::*;
-use rand::Rng;
+use rand::RngExt;
 use std::hint::black_box;
 
 fn bigint_256(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
     let n = 900_000;
-    let values: Vec<BigInteger256> = (0..n).map(|_| rng.r#gen()).collect();
+    let values: Vec<BigInteger256> = (0..n).map(|_| rng.random()).collect();
 
     c.bench_function("bigint_256_cmp", |b| {
         b.iter_batched(
@@ -44,7 +44,7 @@ fn bigint_384(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
     let n = 500_000;
-    let values: Vec<BigInteger384> = (0..n).map(|_| rng.r#gen()).collect();
+    let values: Vec<BigInteger384> = (0..n).map(|_| rng.random()).collect();
 
     c.bench_function("bigint_384_cmp", |b| {
         b.iter_batched(

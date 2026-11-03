@@ -27,11 +27,14 @@ use core::{
 };
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use std::io::{Read, Result as IoResult, Write};
 
+// The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Debug)]
+#[repr(C)]
 pub struct Projective<P: Parameters> {
     pub x: P::BaseField,
     pub y: P::BaseField,
@@ -117,12 +120,12 @@ impl<P: Parameters> PartialEq<Affine<P>> for Projective<P> {
     }
 }
 
-impl<P: Parameters> Distribution<Projective<P>> for Standard {
+impl<P: Parameters> Distribution<Projective<P>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Projective<P> {
         loop {
             let x = P::BaseField::rand(rng);
-            let greatest = rng.r#gen();
+            let greatest = rng.random();
 
             if let Some(p) = Affine::from_x_coordinate(x, greatest) {
                 return p.mul_by_cofactor_to_projective();

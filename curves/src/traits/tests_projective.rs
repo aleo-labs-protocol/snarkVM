@@ -17,6 +17,7 @@ use crate::traits::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::Zero;
 use snarkvm_utilities::rand::{TestRng, Uniform};
 
+use rand::distr::{Distribution, Uniform as UniformDistr};
 use std::ops::Mul;
 
 pub const ITERATIONS: usize = 5;
@@ -193,8 +194,7 @@ fn random_transformation_test<G: ProjectiveCurve>(rng: &mut TestRng) {
             assert!(!i.is_normalized());
         }
 
-        use rand::distributions::{Distribution, Uniform};
-        let between = Uniform::from(0..ITERATIONS);
+        let between = UniformDistr::new(0, ITERATIONS).unwrap();
         // Sprinkle in some normalized points
         for _ in 0..5 {
             v[between.sample(rng)] = G::zero();

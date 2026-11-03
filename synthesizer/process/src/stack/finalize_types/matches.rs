@@ -58,6 +58,8 @@ impl<N: Network> FinalizeTypes<N> {
                         FinalizeType::Plaintext(plaintext_type) => plaintext_type,
                         // If the register is a future, throw an error.
                         FinalizeType::Future(..) => bail!("Struct member cannot be a future"),
+                        // If the register is a dynamic future, throw an error.
+                        FinalizeType::DynamicFuture => bail!("Struct member cannot be a dynamic future"),
                     };
                     // Ensure the register type matches the member type.
                     ensure!(
@@ -65,7 +67,7 @@ impl<N: Network> FinalizeTypes<N> {
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{plaintext_type}' in the operand '{operand}'.",
                     )
                 }
-                // Ensure the program ID, block height, block timestamp, network ID, generator, checksum, edition, and program owner types matches the member type.
+                // Ensure the program ID, block height, block timestamp, network ID, generator, checksum, edition, program owner, and component checksum types matches the member type.
                 Operand::ProgramID(..)
                 | Operand::BlockHeight
                 | Operand::BlockTimestamp
@@ -74,7 +76,8 @@ impl<N: Network> FinalizeTypes<N> {
                 | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
-                | Operand::ProgramOwner(_) => {
+                | Operand::ProgramOwner(_)
+                | Operand::ComponentChecksum(..) => {
                     // Retrieve the operand type.
                     let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(stack, operand)? else {
                         bail!(
@@ -139,6 +142,8 @@ impl<N: Network> FinalizeTypes<N> {
                         FinalizeType::Plaintext(plaintext_type) => plaintext_type,
                         // If the register is a future, throw an error.
                         FinalizeType::Future(..) => bail!("Array element cannot be a future"),
+                        // If the register is a dynamic future, throw an error.
+                        FinalizeType::DynamicFuture => bail!("Array element cannot be a dynamic future"),
                     };
                     // Ensure the register type matches the element type.
                     ensure!(
@@ -156,7 +161,8 @@ impl<N: Network> FinalizeTypes<N> {
                 | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
-                | Operand::ProgramOwner(_) => {
+                | Operand::ProgramOwner(_)
+                | Operand::ComponentChecksum(..) => {
                     // Retrieve the operand type.
                     let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(stack, operand)? else {
                         bail!("Expected a plaintext type for the operand '{operand}' in array element '{array_type}'")

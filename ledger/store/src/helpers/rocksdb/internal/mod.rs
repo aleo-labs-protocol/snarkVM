@@ -22,6 +22,9 @@ pub use map::*;
 mod nested_map;
 pub use nested_map::*;
 
+mod schema;
+pub use schema::{STORAGE_VERSION, StorageVersion};
+
 #[cfg(test)]
 mod tests;
 
@@ -42,7 +45,7 @@ use std::{
     sync::{
         Arc,
         LazyLock,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
 };
 
@@ -102,6 +105,9 @@ pub struct RocksDB {
     pub(super) atomic_writes_paused: Arc<AtomicBool>,
     /// This is an optimization that avoids some allocations when querying the database.
     pub(super) default_readopts: rocksdb::ReadOptions,
+    /// Options that own the statistics object opened with the database.
+    #[cfg(feature = "metrics")]
+    options: Arc<rocksdb::Options>,
 }
 
 impl Clone for RocksDB {
@@ -114,6 +120,8 @@ impl Clone for RocksDB {
             atomic_depth: self.atomic_depth.clone(),
             atomic_writes_paused: self.atomic_writes_paused.clone(),
             default_readopts: Default::default(),
+            #[cfg(feature = "metrics")]
+            options: Arc::clone(&self.options),
         }
     }
 }
@@ -123,6 +131,28 @@ impl Deref for RocksDB {
 
     fn deref(&self) -> &Self::Target {
         &self.rocksdb
+    }
+}
+
+impl RocksDB {
+    /// Deletes the mapping-history prefixes written by the compile-time `history` features.
+    ///
+    /// The rest of the ledger is left in place. `snarkos clean --history` calls this.
+    pub fn delete_legacy_mapping_history(&self) -> Result<()> {
+        for map in [ProgramMap::MappingUpdate, ProgramMap::MappingUpdateHeights, ProgramMap::StakingRewards] {
+            let prefix = schema::map_prefix(self.network_id, MapID::Program(map));
+            // The first key after every key that starts with `prefix`.
+            let end = u32::from_be_bytes(prefix)
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("Map prefix {prefix:?} has no successor"))?
+                .to_be_bytes();
+            let mut batch = rocksdb::WriteBatch::default();
+            batch.delete_range(&prefix, &end);
+            self.rocksdb.write(batch)?;
+            // `delete_range` hides the keys. Compaction drops the files that held them.
+            self.rocksdb.compact_range(Some(&prefix), Some(&end));
+        }
+        Ok(())
     }
 }
 
@@ -136,28 +166,58 @@ impl Database for RocksDB {
     fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
         let storage = storage.into();
 
-        // Retrieve the database.
-        let db_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        // Obtain the path to the primary instance.
+        let primary_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        // Obtain the path to the secondary instance, if applicable.
+        let secondary_path = aleo_std_storage::aleo_secondary_ledger_dir(network_id, &storage);
+        // A secondary instance is registered under its own path.
+        let db_path = secondary_path.as_ref().unwrap_or(&primary_path);
+
         let mut databases = DATABASES.lock();
-        let database = if let Some(db) = databases.get(&db_path) {
+        let database = if let Some(db) = databases.get(db_path) {
             db.clone()
         } else {
             // Customize database options.
             let mut options = rocksdb::Options::default();
             options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+            // The databases in `DATABASES` are never closed, so a process can exit while RocksDB's
+            // timer thread is dumping stats, which reads C++ statics that exit has already destroyed.
+            // The first dump runs as the database opens, and a test process exits soon after that.
+            if matches!(storage, StorageMode::Test(_)) {
+                options.set_stats_dump_period_sec(0);
+            }
 
             // Register the prefix length.
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
             options.set_prefix_extractor(prefix_extractor);
 
-            let rocksdb = {
+            let rocksdb = if let Some(secondary_path) = &secondary_path {
+                // Keep all the files open, so that the ones removed by the primary's compactions
+                // remain readable until the next catch-up with the primary.
+                options.set_max_open_files(-1);
+
+                Arc::new(rocksdb::DB::open_as_secondary(&options, &primary_path, secondary_path)?)
+            } else {
                 options.increase_parallelism(2);
                 options.set_max_background_jobs(4);
                 options.create_if_missing(true);
                 options.set_max_open_files(8192);
+                // Ticker statistics, without histograms or timers.
+                #[cfg(feature = "metrics")]
+                {
+                    options.enable_statistics();
+                    options.set_statistics_level(rocksdb::statistics::StatsLevel::ExceptHistogramOrTimers);
+                }
 
-                Arc::new(rocksdb::DB::open(&options, &db_path)?)
+                Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
+            // Refuse a database written by a newer build before any map is opened.
+            // A secondary instance is read-only, so the primary is the one that stamps `V0`.
+            if secondary_path.is_some() {
+                schema::get_storage_version(&rocksdb, network_id)?;
+            } else {
+                schema::migrate_storage(&rocksdb, network_id)?;
+            }
 
             let db = RocksDB {
                 rocksdb,
@@ -167,6 +227,8 @@ impl Database for RocksDB {
                 atomic_depth: Default::default(),
                 atomic_writes_paused: Default::default(),
                 default_readopts: Default::default(),
+                #[cfg(feature = "metrics")]
+                options: Arc::new(options),
             };
 
             databases.insert(db_path.clone(), db.clone());
@@ -212,6 +274,7 @@ impl Database for RocksDB {
             database,
             context,
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoints: Default::default(),
         })))
@@ -241,6 +304,7 @@ impl Database for RocksDB {
             database,
             context,
             batch_in_progress: Default::default(),
+            atomic_owner: Default::default(),
             atomic_batch: Default::default(),
             checkpoints: Default::default(),
         })
@@ -296,6 +360,79 @@ impl RocksDB {
     /// Checks whether the atomic writes are currently paused.
     fn are_atomic_writes_paused(&self) -> bool {
         self.atomic_writes_paused.load(Ordering::SeqCst)
+    }
+
+    /// Reads key RocksDB internal properties and publishes them to the metrics registry.
+    ///
+    /// This is a lightweight, synchronous call — properties are read from RocksDB's in-memory
+    /// counters with no disk I/O.  Call it from an existing background loop (e.g. the
+    /// auto-checkpoint polling loop in snarkOS); there is no need to spawn a dedicated thread.
+    #[cfg(feature = "metrics")]
+    pub fn export_rocksdb_metrics(&self) {
+        use snarkvm_metrics::rocksdb as names;
+
+        /// Read a single integer property; silently skip on error (DB may be closing).
+        fn prop(db: &rocksdb::DB, key: &str) -> Option<u64> {
+            db.property_int_value(key).ok().flatten()
+        }
+
+        let db = &self.rocksdb;
+
+        // Compaction pressure
+        if let Some(v) = prop(db, "rocksdb.compaction-pending") {
+            snarkvm_metrics::gauge(names::COMPACTION_PENDING, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.estimate-pending-compaction-bytes") {
+            snarkvm_metrics::gauge(names::ESTIMATE_PENDING_COMPACTION_BYTES, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.num-running-compactions") {
+            snarkvm_metrics::gauge(names::NUM_RUNNING_COMPACTIONS, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.num-running-flushes") {
+            snarkvm_metrics::gauge(names::NUM_RUNNING_FLUSHES, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.mem-table-flush-pending") {
+            snarkvm_metrics::gauge(names::MEM_TABLE_FLUSH_PENDING, v as f64);
+        }
+
+        // Disk footprint
+        if let Some(v) = prop(db, "rocksdb.total-sst-files-size") {
+            snarkvm_metrics::gauge(names::TOTAL_SST_FILES_SIZE, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.live-sst-files-size") {
+            snarkvm_metrics::gauge(names::LIVE_SST_FILES_SIZE, v as f64);
+        }
+
+        // Cumulative compaction and flush I/O. These reset when the process restarts.
+        snarkvm_metrics::counter(
+            names::COMPACT_READ_BYTES,
+            self.options.get_ticker_count(rocksdb::statistics::Ticker::CompactReadBytes),
+        );
+        snarkvm_metrics::counter(
+            names::COMPACT_WRITE_BYTES,
+            self.options.get_ticker_count(rocksdb::statistics::Ticker::CompactWriteBytes),
+        );
+        snarkvm_metrics::counter(
+            names::FLUSH_WRITE_BYTES,
+            self.options.get_ticker_count(rocksdb::statistics::Ticker::FlushWriteBytes),
+        );
+
+        // `rocksdb.estimate-num-keys` is not published.
+        // It includes overwritten copies, subtracts each deletion twice, and after a restart it is
+        // extrapolated from about 20 sampled files.
+
+        // General state
+        if let Some(v) = prop(db, "rocksdb.num-snapshots") {
+            snarkvm_metrics::gauge(names::NUM_SNAPSHOTS, v as f64);
+        }
+
+        // Per-level SST file counts (levels 0–6)
+        for (level, &name) in names::NUM_FILES_AT_LEVEL.iter().enumerate() {
+            let key = format!("rocksdb.num-files-at-level{level}");
+            if let Some(v) = prop(db, &key) {
+                snarkvm_metrics::gauge(name, v as f64);
+            }
+        }
     }
 }
 

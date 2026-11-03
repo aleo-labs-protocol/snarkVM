@@ -56,6 +56,12 @@ impl<N: Network> Serialize for InputID<N> {
                     input.serialize_field("id", &id)?;
                     input.end()
                 }
+                Self::DynamicRecord(id) => {
+                    let mut input = serializer.serialize_struct("InputID", 2)?;
+                    input.serialize_field("type", "record_dynamic")?;
+                    input.serialize_field("id", &id)?;
+                    input.end()
+                }
             },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
@@ -84,6 +90,9 @@ impl<'de, N: Network> Deserialize<'de> for InputID<N> {
                     Some("external_record") => {
                         InputID::ExternalRecord(DeserializeExt::take_from_value::<D>(&mut input, "id")?)
                     }
+                    Some("record_dynamic") => {
+                        InputID::DynamicRecord(DeserializeExt::take_from_value::<D>(&mut input, "id")?)
+                    }
                     _ => return Err(de::Error::custom("Invalid input type")),
                 };
                 Ok(input_id)
@@ -107,6 +116,7 @@ mod tests {
         "{\"type\":\"private\",\"id\":\"123field\"}",
         "{\"type\":\"record\",\"commitment\":\"123123field\",\"tag\":\"0field\",\"record_view_key\":\"0field\",\"serial_number\":\"123456789field\",\"gamma\":\"0group\"}",
         "{\"type\":\"external_record\",\"id\":\"123456789field\"}",
+        "{\"type\":\"record_dynamic\",\"id\":\"987654321field\"}",
     ];
 
     fn check_serde_json<

@@ -73,6 +73,9 @@ mod tests {
         "hello.record",
         // ExternalRecord
         "token.aleo/token.record",
+        // DynamicRecord and DynamicFuture
+        "dynamic.record",
+        "dynamic.future",
     ];
 
     fn check_serde_json<

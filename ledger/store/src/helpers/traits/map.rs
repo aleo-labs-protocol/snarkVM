@@ -169,6 +169,18 @@ pub trait MapRead<
     }
 
     ///
+    /// Returns the (key, value) pair for the greatest confirmed key that is ≤ the given key,
+    /// or `None` if no such entry exists.
+    ///
+    /// This enables O(log n) "floor" lookups over ordered keys (e.g., block heights encoded
+    /// as big-endian bytes so that lexicographic ≤ matches numeric ≤).
+    ///
+    fn get_floor_confirmed<Q>(&'a self, key: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        K: Borrow<Q>,
+        Q: PartialEq + Eq + Hash + Serialize + ?Sized;
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator;
@@ -187,4 +199,27 @@ pub trait MapRead<
     /// Returns an iterator over each value in the map.
     ///
     fn values_confirmed(&'a self) -> Self::Values;
+
+    ///
+    /// Returns the confirmed keys whose serialized form begins with the serialized `prefix`.
+    ///
+    /// This enables prefix range scans over composite keys (e.g. retrieving every `height` recorded
+    /// for a given `(program ID, mapping name, key)`) without scanning the entire map. The `prefix`
+    /// must serialize to a byte-prefix of the stored keys, which holds for a leading sub-tuple of a
+    /// tuple key, since `bincode` serializes tuple fields in order.
+    ///
+    fn get_keys_confirmed_with_prefix<Q>(&'a self, prefix: &Q) -> Result<Vec<K>>
+    where
+        Q: Serialize,
+    {
+        // Default implementation: scan every confirmed key and filter by the serialized prefix.
+        let prefix = bincode::serialize(prefix)?;
+        let mut keys = Vec::new();
+        for key in self.keys_confirmed() {
+            if bincode::serialize(key.as_ref())?.starts_with(&prefix) {
+                keys.push(key.into_owned());
+            }
+        }
+        Ok(keys)
+    }
 }

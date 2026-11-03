@@ -14,8 +14,8 @@
 // limitations under the License.
 
 use super::{LabeledPolynomial, PolynomialInfo};
-use crate::{crypto_hash::sha256::sha256, fft::EvaluationDomain, polycommit::kzg10};
-use snarkvm_curves::PairingEngine;
+use crate::{crypto_hash::sha256::Sha256Writer, fft::EvaluationDomain, polycommit::kzg10};
+use snarkvm_curves::{AffineCurve, PairingEngine};
 use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
 use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
 use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
@@ -26,7 +26,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
     io,
-    ops::{AddAssign, MulAssign, SubAssign},
+    ops::{AddAssign, Deref, MulAssign, Range, SubAssign},
+    sync::Arc,
 };
 
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
@@ -38,12 +39,90 @@ pub type Randomness<E> = kzg10::KZGRandomness<E>;
 /// `Commitment` is the commitment for the KZG10 scheme.
 pub type Commitment<E> = kzg10::KZGCommitment<E>;
 
+/// A committer key's bases: points it owns, or a range of an SRS snapshot it
+/// shares. A snapshot never changes once made, so a shared range stays valid
+/// for as long as the key holds it.
+#[derive(Clone)]
+pub enum Bases<G> {
+    Owned(Vec<G>),
+    Shared { store: Arc<Vec<G>>, range: Range<usize> },
+}
+
+/// The key's own points, not the whole snapshot a shared range is cut from,
+/// which can be millions of them.
+impl<G: fmt::Debug> fmt::Debug for Bases<G> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+impl<G> Deref for Bases<G> {
+    type Target = [G];
+
+    fn deref(&self) -> &[G] {
+        match self {
+            Self::Owned(points) => points,
+            Self::Shared { store, range } => &store[range.clone()],
+        }
+    }
+}
+
+impl<G> Bases<G> {
+    /// A range of `store`, checked here rather than on first use.
+    pub fn shared(store: Arc<Vec<G>>, range: Range<usize>) -> Self {
+        assert!(
+            range.start <= range.end && range.end <= store.len(),
+            "a shared range {range:?} outside a snapshot of {} points",
+            store.len()
+        );
+        Self::Shared { store, range }
+    }
+}
+
+impl<G: Clone> Bases<G> {
+    /// Points this key allocated itself: none when it shares them, which is
+    /// what a key cache should budget for. A shared key can still keep an
+    /// older snapshot alive after the SRS grows past it; that is bounded by
+    /// the SRS, not by the key, and is not counted here.
+    pub fn owned_capacity(&self) -> usize {
+        match self {
+            Self::Owned(points) => points.capacity(),
+            Self::Shared { .. } => 0,
+        }
+    }
+
+    /// The points, to edit; a shared range becomes an owned copy first.
+    pub fn to_mut(&mut self) -> &mut Vec<G> {
+        if let Self::Shared { .. } = self {
+            *self = Self::Owned(self.to_vec());
+        }
+        match self {
+            Self::Owned(points) => points,
+            Self::Shared { .. } => unreachable!("made owned above"),
+        }
+    }
+}
+
+/// Written as a `Vec` of the points is, so a key's bytes and hash don't depend
+/// on whether it shares them.
+impl<G: ToBytes> ToBytes for Bases<G> {
+    fn write_le<W: Write>(&self, writer: W) -> io::Result<()> {
+        (&**self).write_le(writer)
+    }
+}
+
+impl<G> From<Vec<G>> for Bases<G> {
+    fn from(points: Vec<G>) -> Self {
+        Self::Owned(points)
+    }
+}
+
 /// `CommitterKey` is used to commit to, and create evaluation proofs for, a
 /// given polynomial.
 #[derive(Debug)]
 pub struct CommitterKey<E: PairingEngine> {
     /// The key used to commit to polynomials.
-    pub powers_of_beta_g: Vec<E::G1Affine>,
+    pub powers_of_beta_g: Bases<E::G1Affine>,
 
     /// The key used to commit to polynomials in Lagrange basis.
     pub lagrange_bases_at_beta_g: BTreeMap<usize, Vec<E::G1Affine>>,
@@ -53,7 +132,7 @@ pub struct CommitterKey<E: PairingEngine> {
 
     /// The powers used to commit to shifted polynomials.
     /// This is `None` if `self` does not support enforcing any degree bounds.
-    pub shifted_powers_of_beta_g: Option<Vec<E::G1Affine>>,
+    pub shifted_powers_of_beta_g: Option<Bases<E::G1Affine>>,
 
     /// The powers used to commit to shifted hiding polynomials.
     /// This is `None` if `self` does not support enforcing any degree bounds.
@@ -66,7 +145,26 @@ pub struct CommitterKey<E: PairingEngine> {
 }
 
 impl<E: PairingEngine> FromBytes for CommitterKey<E> {
-    fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
+    fn read_le<R: Read>(reader: R) -> io::Result<Self> {
+        Self::read_le_sharing(reader, None)
+    }
+}
+
+impl<E: PairingEngine> CommitterKey<E> {
+    /// Reads the bytes `read_le` reads, but shares both ends of the powers of
+    /// beta G with `srs`, skipping those points in `reader`. Skipped points are
+    /// never parsed or used: the key's hash checks the shared points in their
+    /// place.
+    ///
+    /// It never grows `srs`, and fails if `srs` does not hold either end.
+    /// A key shares the snapshot `srs` holds when it is read, and growing `srs`
+    /// later leaves that snapshot alive beside the new one. So grow `srs` to
+    /// the largest degree any key needs, then read the keys.
+    pub fn read_le_with_srs<R: Read>(reader: R, srs: &UniversalParams<E>) -> io::Result<Self> {
+        Self::read_le_sharing(reader, Some(srs))
+    }
+
+    pub(crate) fn read_le_sharing<R: Read>(mut reader: R, srs: Option<&UniversalParams<E>>) -> io::Result<Self> {
         // Deserialize `powers`.
         let powers_len: u32 = FromBytes::read_le(&mut reader)?;
         // Ensure the number of powers is within bounds.
@@ -75,45 +173,53 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
                 "CommitterKey (from 'read_le') has too many points ({powers_len} > {MAX_NUM_POWERS})"
             )));
         }
-        let mut powers_of_beta_g = Vec::with_capacity(powers_len as usize);
-        for _ in 0..powers_len {
-            let power: E::G1Affine = FromBytes::read_le(&mut reader)?;
-            powers_of_beta_g.push(power);
-        }
+        let held = srs
+            .map(|srs| {
+                srs.held_shared_powers_of_beta_g(0, powers_len as usize)
+                    .ok_or_else(|| error(format!("The SRS does not hold the committer key's {powers_len} powers")))
+            })
+            .transpose()?;
+        let powers_of_beta_g = read_bases(&mut reader, powers_len as usize, held)?;
 
         // Deserialize `lagrange_basis_at_beta`.
         let lagrange_bases_at_beta_len: u32 = FromBytes::read_le(&mut reader)?;
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
         for _ in 0..lagrange_bases_at_beta_len {
             let size: u32 = FromBytes::read_le(&mut reader)?;
-            let mut basis = Vec::with_capacity(size as usize);
-            for _ in 0..size {
-                let power: E::G1Affine = FromBytes::read_le(&mut reader)?;
-                basis.push(power);
-            }
+            let basis = read_bounded(&mut reader, size as usize, "Lagrange basis points")?;
             lagrange_bases_at_beta_g.insert(size as usize, basis);
         }
 
         // Deserialize `powers_of_beta_times_gamma_g`.
         let powers_of_beta_times_gamma_g_len: u32 = FromBytes::read_le(&mut reader)?;
-        let mut powers_of_beta_times_gamma_g = Vec::with_capacity(powers_of_beta_times_gamma_g_len as usize);
-        for _ in 0..powers_of_beta_times_gamma_g_len {
-            let powers_of_g: E::G1Affine = FromBytes::read_le(&mut reader)?;
-            powers_of_beta_times_gamma_g.push(powers_of_g);
-        }
+        let powers_of_beta_times_gamma_g =
+            read_bounded(&mut reader, powers_of_beta_times_gamma_g_len as usize, "hiding points")?;
 
         // Deserialize `shifted_powers_of_beta_g`.
         let has_shifted_powers_of_beta_g: bool = FromBytes::read_le(&mut reader)?;
         let shifted_powers_of_beta_g = match has_shifted_powers_of_beta_g {
             true => {
                 let shifted_powers_len: u32 = FromBytes::read_le(&mut reader)?;
-                let mut shifted_powers_of_beta_g = Vec::with_capacity(shifted_powers_len as usize);
-                for _ in 0..shifted_powers_len {
-                    let shifted_power: E::G1Affine = FromBytes::read_le(&mut reader)?;
-                    shifted_powers_of_beta_g.push(shifted_power);
+                // Ensure the number of shifted powers is within bounds.
+                if shifted_powers_len as usize > MAX_NUM_POWERS {
+                    return Err(error(format!(
+                        "CommitterKey (from 'read_le') has too many shifted points ({shifted_powers_len} > {MAX_NUM_POWERS})"
+                    )));
                 }
-
-                Some(shifted_powers_of_beta_g)
+                // The shifted powers are the highest powers of the SRS.
+                let held = srs
+                    .map(|srs| {
+                        let end = srs.max_degree() + 1;
+                        end.checked_sub(shifted_powers_len as usize)
+                            .and_then(|start| srs.held_shared_powers_of_beta_g(start, end))
+                            .ok_or_else(|| {
+                                error(format!(
+                                    "The SRS does not hold the committer key's {shifted_powers_len} shifted powers"
+                                ))
+                            })
+                    })
+                    .transpose()?;
+                Some(read_bases(&mut reader, shifted_powers_len as usize, held)?)
             }
             false => None,
         };
@@ -128,11 +234,7 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
                     let key: u32 = FromBytes::read_le(&mut reader)?;
 
                     let value_len: u32 = FromBytes::read_le(&mut reader)?;
-                    let mut value = Vec::with_capacity(value_len as usize);
-                    for _ in 0..value_len {
-                        let val: E::G1Affine = FromBytes::read_le(&mut reader)?;
-                        value.push(val);
-                    }
+                    let value = read_bounded(&mut reader, value_len as usize, "shifted hiding points")?;
 
                     shifted_powers_of_beta_times_gamma_g.insert(key as usize, value);
                 }
@@ -147,52 +249,38 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
         let enforced_degree_bounds = match has_enforced_degree_bounds {
             true => {
                 let enforced_degree_bounds_len: u32 = FromBytes::read_le(&mut reader)?;
-                let mut enforced_degree_bounds = Vec::with_capacity(enforced_degree_bounds_len as usize);
-                for _ in 0..enforced_degree_bounds_len {
-                    let enforced_degree_bound: u32 = FromBytes::read_le(&mut reader)?;
-                    enforced_degree_bounds.push(enforced_degree_bound as usize);
-                }
+                let enforced_degree_bounds =
+                    read_bounded::<u32, _>(&mut reader, enforced_degree_bounds_len as usize, "degree bounds")?;
+                let enforced_degree_bounds = enforced_degree_bounds.into_iter().map(|bound| bound as usize).collect();
 
                 Some(enforced_degree_bounds)
             }
             false => None,
         };
 
-        // Construct the hash of the group elements.
-        let mut hash_input = powers_of_beta_g.to_bytes_le().map_err(|_| error("Could not serialize powers"))?;
-        powers_of_beta_times_gamma_g
-            .write_le(&mut hash_input)
-            .map_err(|_| error("Could not serialize powers_of_beta_times_gamma_g"))?;
-
-        if let Some(shifted_powers_of_beta_g) = &shifted_powers_of_beta_g {
-            shifted_powers_of_beta_g
-                .write_le(&mut hash_input)
-                .map_err(|_| error("Could not serialize shifted_powers_of_beta_g"))?;
-        }
-
-        if let Some(shifted_powers_of_beta_times_gamma_g) = &shifted_powers_of_beta_times_gamma_g {
-            for value in shifted_powers_of_beta_times_gamma_g.values() {
-                value.write_le(&mut hash_input).map_err(|_| error("Could not serialize shifted_power_of_gamma_g"))?;
-            }
-        }
-
-        // Deserialize `hash`.
-        let hash = sha256(&hash_input);
-        let expected_hash: [u8; 32] = FromBytes::read_le(&mut reader)?;
-
-        // Enforce the group elements construct the expected hash.
-        if expected_hash != hash {
-            return Err(error("Mismatching group elements"));
-        }
-
-        Ok(Self {
+        let key = Self {
             powers_of_beta_g,
             lagrange_bases_at_beta_g,
             powers_of_beta_times_gamma_g,
             shifted_powers_of_beta_g,
             shifted_powers_of_beta_times_gamma_g,
             enforced_degree_bounds,
-        })
+        };
+
+        // Deserialize `hash`.
+        let expected_hash: [u8; 32] = FromBytes::read_le(&mut reader)?;
+
+        // Enforce the group elements construct the expected hash. This also
+        // checks the points shared with `srs` in place of the skipped ones.
+        if key.points_hash()? != expected_hash {
+            return Err(error(match srs {
+                Some(_) => {
+                    "Mismatching group elements: the committer key does not match the SRS, or its hiding powers are corrupt"
+                }
+                None => "Mismatching group elements",
+            }));
+        }
+        Ok(key)
     }
 }
 
@@ -200,7 +288,7 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Serialize `powers`.
         (self.powers_of_beta_g.len() as u32).write_le(&mut writer)?;
-        for power in &self.powers_of_beta_g {
+        for power in self.powers_of_beta_g.iter() {
             power.write_le(&mut writer)?;
         }
 
@@ -223,7 +311,7 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
         self.shifted_powers_of_beta_g.is_some().write_le(&mut writer)?;
         if let Some(shifted_powers_of_beta_g) = &self.shifted_powers_of_beta_g {
             (shifted_powers_of_beta_g.len() as u32).write_le(&mut writer)?;
-            for shifted_power in shifted_powers_of_beta_g {
+            for shifted_power in shifted_powers_of_beta_g.iter() {
                 shifted_power.write_le(&mut writer)?;
             }
         }
@@ -250,8 +338,51 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
             }
         }
 
+        // Serialize `hash`
+        self.points_hash()?.write_le(&mut writer)
+    }
+}
+
+/// Reads `len` points, or, given the SRS range that holds them, skips them in
+/// `reader` and shares that range.
+fn read_bases<G: AffineCurve, R: Read>(
+    mut reader: R,
+    len: usize,
+    held: Option<(Arc<Vec<G>>, Range<usize>)>,
+) -> io::Result<Bases<G>> {
+    match held {
+        Some((store, range)) => {
+            let point_size = G::zero().to_bytes_le().map_err(into_io_error)?.len() as u64;
+            let skip = point_size * len as u64;
+            if io::copy(&mut (&mut reader).take(skip), &mut io::sink())? != skip {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
+            Ok(Bases::shared(store, range))
+        }
+        None => read_bounded(&mut reader, len, "points").map(Bases::Owned),
+    }
+}
+
+/// Reads `len` values, failing before it allocates if `len` exceeds
+/// `MAX_NUM_POWERS`.
+fn read_bounded<T: FromBytes, R: Read>(mut reader: R, len: usize, what: &str) -> io::Result<Vec<T>> {
+    if len > MAX_NUM_POWERS {
+        return Err(error(format!("CommitterKey (from 'read_le') has too many {what} ({len} > {MAX_NUM_POWERS})")));
+    }
+    let mut values = Vec::with_capacity(len);
+    for _ in 0..len {
+        values.push(T::read_le(&mut reader)?);
+    }
+    Ok(values)
+}
+
+impl<E: PairingEngine> CommitterKey<E> {
+    /// The hash a key's bytes end with. It covers every point except the
+    /// Lagrange bases.
+    fn points_hash(&self) -> io::Result<[u8; 32]> {
         // Construct the hash of the group elements.
-        let mut hash_input = self.powers_of_beta_g.to_bytes_le().map_err(|_| error("Could not serialize powers"))?;
+        let mut hash_input = Sha256Writer::default();
+        self.powers_of_beta_g.write_le(&mut hash_input).map_err(|_| error("Could not serialize powers"))?;
         self.powers_of_beta_times_gamma_g
             .write_le(&mut hash_input)
             .map_err(|_| error("Could not serialize powers_of_beta_times_gamma_g"))?;
@@ -268,15 +399,7 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
             }
         }
 
-        // Serialize `hash`
-        let hash = sha256(&hash_input);
-        hash.write_le(&mut writer)
-    }
-}
-
-impl<E: PairingEngine> CommitterKey<E> {
-    fn len(&self) -> usize {
-        if self.shifted_powers_of_beta_g.is_some() { self.shifted_powers_of_beta_g.as_ref().unwrap().len() } else { 0 }
+        Ok(hash_input.finalize())
     }
 }
 
@@ -285,21 +408,21 @@ impl<E: PairingEngine> CommitterKey<E> {
 #[derive(Debug)]
 pub struct CommitterUnionKey<'a, E: PairingEngine> {
     /// The key used to commit to polynomials.
-    pub powers_of_beta_g: Option<&'a Vec<E::G1Affine>>,
+    pub powers_of_beta_g: Option<&'a [E::G1Affine]>,
 
     /// The key used to commit to polynomials in Lagrange basis.
     pub lagrange_bases_at_beta_g: BTreeMap<usize, &'a Vec<E::G1Affine>>,
 
     /// The key used to commit to hiding polynomials.
-    pub powers_of_beta_times_gamma_g: Option<&'a Vec<E::G1Affine>>,
+    pub powers_of_beta_times_gamma_g: Option<&'a [E::G1Affine]>,
 
     /// The powers used to commit to shifted polynomials.
     /// This is `None` if `self` does not support enforcing any degree bounds.
-    pub shifted_powers_of_beta_g: Option<&'a Vec<E::G1Affine>>,
+    pub shifted_powers_of_beta_g: Option<&'a [E::G1Affine]>,
 
     /// The powers used to commit to shifted hiding polynomials.
     /// This is `None` if `self` does not support enforcing any degree bounds.
-    pub shifted_powers_of_beta_times_gamma_g: Option<BTreeMap<usize, &'a Vec<E::G1Affine>>>,
+    pub shifted_powers_of_beta_times_gamma_g: Option<BTreeMap<usize, &'a [E::G1Affine]>>,
 
     /// The degree bounds that are supported by `self`.
     /// Sorted in ascending order from smallest bound to largest bound.
@@ -309,15 +432,15 @@ pub struct CommitterUnionKey<'a, E: PairingEngine> {
 
 impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     /// Obtain powers for the underlying KZG10 construction
-    pub fn powers(&self) -> kzg10::Powers<E> {
+    pub fn powers(&self) -> kzg10::Powers<'_, E> {
         kzg10::Powers {
-            powers_of_beta_g: self.powers_of_beta_g.unwrap().as_slice().into(),
-            powers_of_beta_times_gamma_g: self.powers_of_beta_times_gamma_g.unwrap().as_slice().into(),
+            powers_of_beta_g: self.powers_of_beta_g.unwrap().into(),
+            powers_of_beta_times_gamma_g: self.powers_of_beta_times_gamma_g.unwrap().into(),
         }
     }
 
     /// Obtain powers for committing to shifted polynomials.
-    pub fn shifted_powers_of_beta_g(&self, degree_bound: impl Into<Option<usize>>) -> Option<kzg10::Powers<E>> {
+    pub fn shifted_powers_of_beta_g(&self, degree_bound: impl Into<Option<usize>>) -> Option<kzg10::Powers<'_, E>> {
         match (&self.shifted_powers_of_beta_g, &self.shifted_powers_of_beta_times_gamma_g) {
             (Some(shifted_powers_of_beta_g), Some(shifted_powers_of_beta_times_gamma_g)) => {
                 let max_bound = self.enforced_degree_bounds.as_ref().unwrap().last().unwrap();
@@ -330,7 +453,7 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
 
                 let ck = kzg10::Powers {
                     powers_of_beta_g: shifted_powers_of_beta_g[powers_range].into(),
-                    powers_of_beta_times_gamma_g: shifted_powers_of_beta_times_gamma_g[&bound].clone().into(),
+                    powers_of_beta_times_gamma_g: shifted_powers_of_beta_times_gamma_g[&bound].into(),
                 };
 
                 Some(ck)
@@ -342,7 +465,7 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
 
     /// Obtain elements of the SRS in the lagrange basis powers, for use with
     /// the underlying KZG10 construction.
-    pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Option<kzg10::LagrangeBasis<E>> {
+    pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Option<kzg10::LagrangeBasis<'_, E>> {
         self.lagrange_bases_at_beta_g.get(&domain.size()).map(|basis| kzg10::LagrangeBasis {
             lagrange_basis_at_beta_g: Cow::Borrowed(basis),
             powers_of_beta_times_gamma_g: Cow::Borrowed(self.powers_of_beta_times_gamma_g.unwrap()),
@@ -360,11 +483,20 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
             enforced_degree_bounds: None,
         };
         let mut enforced_degree_bounds = vec![];
-        let mut biggest_ck: Option<&CommitterKey<E>> = None;
-        let mut shifted_powers_of_beta_times_gamma_g = BTreeMap::new();
+        // Every key's arrays are cut from one SRS, whose top degree is the constant
+        // `MAX_NUM_POWERS - 1`: its prefix and hiding powers from the start, its
+        // shifted powers from the end, and each bound's shifted hiding powers from
+        // that bound's shift. So the longest of each array, across keys, contains the
+        // others, and one key need not hold the longest of all of them.
+        let mut shifted_powers_of_beta_times_gamma_g: BTreeMap<usize, &'a [E::G1Affine]> = BTreeMap::new();
         for ck in committer_keys {
-            if biggest_ck.is_none() || biggest_ck.unwrap().len() < ck.len() {
-                biggest_ck = Some(ck);
+            keep_longer(ck_union.powers_of_beta_g.get_or_insert(&ck.powers_of_beta_g), &ck.powers_of_beta_g);
+            keep_longer(
+                ck_union.powers_of_beta_times_gamma_g.get_or_insert(&ck.powers_of_beta_times_gamma_g),
+                &ck.powers_of_beta_times_gamma_g,
+            );
+            if let Some(shifted_powers) = ck.shifted_powers_of_beta_g.as_ref() {
+                keep_longer(ck_union.shifted_powers_of_beta_g.get_or_insert(shifted_powers), shifted_powers);
             }
             let lagrange_bases = &ck.lagrange_bases_at_beta_g;
             for (bound_base, bases) in lagrange_bases.iter() {
@@ -372,27 +504,36 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
             }
             if let Some(shifted_powers) = ck.shifted_powers_of_beta_times_gamma_g.as_ref() {
                 for (bound_power, powers) in shifted_powers.iter() {
-                    shifted_powers_of_beta_times_gamma_g.entry(*bound_power).or_insert(powers);
+                    keep_longer(shifted_powers_of_beta_times_gamma_g.entry(*bound_power).or_insert(powers), powers);
                 }
             }
             if let Some(degree_bounds) = &ck.enforced_degree_bounds {
-                enforced_degree_bounds.append(&mut degree_bounds.clone());
+                enforced_degree_bounds.extend_from_slice(degree_bounds);
             }
         }
-
-        let biggest_ck = biggest_ck.unwrap();
-        ck_union.powers_of_beta_g = Some(&biggest_ck.powers_of_beta_g);
-        ck_union.powers_of_beta_times_gamma_g = Some(&biggest_ck.powers_of_beta_times_gamma_g);
-        ck_union.shifted_powers_of_beta_g = biggest_ck.shifted_powers_of_beta_g.as_ref();
+        assert!(ck_union.powers_of_beta_g.is_some(), "a union needs at least one committer key");
 
         if !enforced_degree_bounds.is_empty() {
             enforced_degree_bounds.sort();
             enforced_degree_bounds.dedup();
+            // `shifted_powers_of_beta_g(bound)` slices from `max_bound - bound`, which
+            // is only right if the array starts at the largest bound's shift.
+            assert_eq!(
+                ck_union.shifted_powers_of_beta_g.map(<[_]>::len),
+                enforced_degree_bounds.last().map(|max_bound| max_bound + 1),
+                "the longest shifted powers do not start at the largest degree bound's shift"
+            );
             ck_union.enforced_degree_bounds = Some(enforced_degree_bounds);
             ck_union.shifted_powers_of_beta_times_gamma_g = Some(shifted_powers_of_beta_times_gamma_g);
         }
 
         ck_union
+    }
+}
+
+fn keep_longer<'a, T>(kept: &mut &'a [T], candidate: &'a [T]) {
+    if kept.len() < candidate.len() {
+        *kept = candidate;
     }
 }
 

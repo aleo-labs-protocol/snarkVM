@@ -43,6 +43,8 @@ use crate::{
             bench_sqrt,
             field_serialization_test,
             field_test,
+            fp256_inverse_test,
+            fp384_inverse_test,
             frobenius_test,
             primefield_test,
             random_sqrt_tonelli_tests,
@@ -71,7 +73,7 @@ use snarkvm_utilities::{
     rand::{TestRng, Uniform},
 };
 
-use rand::Rng;
+use rand::RngExt;
 use std::{
     cmp::Ordering,
     ops::{AddAssign, Mul, MulAssign, SubAssign},
@@ -84,8 +86,8 @@ fn test_bls12_377_fr() {
     let mut rng = TestRng::default();
 
     for _ in 0..ITERATIONS {
-        let a: Fr = rng.r#gen();
-        let b: Fr = rng.r#gen();
+        let a: Fr = rng.random();
+        let b: Fr = rng.random();
         field_test(a, b, &mut rng);
         primefield_test::<Fr>(&mut rng);
         sqrt_field_test(b, &mut rng);
@@ -94,12 +96,17 @@ fn test_bls12_377_fr() {
 }
 
 #[test]
+fn test_bls12_377_fr_inverse() {
+    fp256_inverse_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
 fn test_bls12_377_fq() {
     let mut rng = TestRng::default();
 
     for _ in 0..ITERATIONS {
-        let a: Fq = rng.r#gen();
-        let b: Fq = rng.r#gen();
+        let a: Fq = rng.random();
+        let b: Fq = rng.random();
         field_test(a, b, &mut rng);
         primefield_test::<Fq>(&mut rng);
         sqrt_field_test(a, &mut rng);
@@ -108,12 +115,17 @@ fn test_bls12_377_fq() {
 }
 
 #[test]
+fn test_bls12_377_fq_inverse() {
+    fp384_inverse_test::<FqParameters>(&mut TestRng::default());
+}
+
+#[test]
 fn test_bls12_377_fq2() {
     let mut rng = TestRng::default();
 
     for _ in 0..ITERATIONS {
-        let a: Fq2 = rng.r#gen();
-        let b: Fq2 = rng.r#gen();
+        let a: Fq2 = rng.random();
+        let b: Fq2 = rng.random();
         field_test(a, b, &mut rng);
         sqrt_field_test(a, &mut rng);
     }
@@ -126,8 +138,8 @@ fn test_bls12_377_fq6() {
     let mut rng = TestRng::default();
 
     for _ in 0..ITERATIONS {
-        let g: Fq6 = rng.r#gen();
-        let h: Fq6 = rng.r#gen();
+        let g: Fq6 = rng.random();
+        let h: Fq6 = rng.random();
         field_test(g, h, &mut rng);
     }
     frobenius_test::<Fq6, _>(Fq::characteristic(), 13, &mut rng);
@@ -139,8 +151,8 @@ fn test_bls12_377_fq12() {
     let mut rng = TestRng::default();
 
     for _ in 0..ITERATIONS {
-        let g: Fq12 = rng.r#gen();
-        let h: Fq12 = rng.r#gen();
+        let g: Fq12 = rng.random();
+        let h: Fq12 = rng.random();
         field_test(g, h, &mut rng);
     }
     frobenius_test::<Fq12, _>(Fq::characteristic(), 13, &mut rng);
@@ -180,8 +192,8 @@ fn test_fq_is_half() {
 fn test_fr_sum_of_products() {
     let mut rng = TestRng::default();
     for i in [2, 4, 8, 16, 32] {
-        let a = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
-        let b = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let a = (0..i).map(|_| rng.random()).collect::<Vec<_>>();
+        let b = (0..i).map(|_| rng.random()).collect::<Vec<_>>();
         assert_eq!(Fr::sum_of_products(&a, &b), a.into_iter().zip(b).map(|(a, b)| a * b).sum());
     }
 }
@@ -190,8 +202,8 @@ fn test_fr_sum_of_products() {
 fn test_fq_sum_of_products() {
     let mut rng = TestRng::default();
     for i in [2, 4, 8, 16, 32] {
-        let a = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
-        let b = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let a = (0..i).map(|_| rng.random()).collect::<Vec<_>>();
+        let b = (0..i).map(|_| rng.random()).collect::<Vec<_>>();
         assert_eq!(Fq::sum_of_products(&a, &b), a.into_iter().zip(b).map(|(a, b)| a * b).sum());
     }
 }
@@ -641,9 +653,14 @@ fn test_g1_projective_curve() {
 fn test_g1_projective_group() {
     let mut rng = TestRng::default();
 
-    let a: G1Projective = rng.r#gen();
-    let b: G1Projective = rng.r#gen();
+    let a: G1Projective = rng.random();
+    let b: G1Projective = rng.random();
     projective_test(a, b, &mut rng);
+}
+
+#[test]
+fn test_g1_serialization_round_trip() {
+    serialization_round_trip_test::<G1Affine>();
 }
 
 #[test]
@@ -665,9 +682,14 @@ fn test_g2_projective_curve() {
 fn test_g2_projective_group() {
     let mut rng = TestRng::default();
 
-    let a: G2Projective = rng.r#gen();
-    let b: G2Projective = rng.r#gen();
+    let a: G2Projective = rng.random();
+    let b: G2Projective = rng.random();
     projective_test(a, b, &mut rng);
+}
+
+#[test]
+fn test_g2_serialization_round_trip() {
+    serialization_round_trip_test::<G2Affine>();
 }
 
 #[test]
@@ -681,9 +703,9 @@ fn test_g2_generator() {
 fn test_bilinearity() {
     let mut rng = TestRng::default();
 
-    let a: G1Projective = rng.r#gen();
-    let b: G2Projective = rng.r#gen();
-    let s: Fr = rng.r#gen();
+    let a: G1Projective = rng.random();
+    let b: G2Projective = rng.random();
+    let s: Fr = rng.random();
 
     let sa = a * s;
     let sb = b * s;

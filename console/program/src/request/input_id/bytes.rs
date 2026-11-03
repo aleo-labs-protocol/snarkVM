@@ -45,6 +45,8 @@ impl<N: Network> FromBytes for InputID<N> {
             }
             // External record input.
             4 => Ok(Self::ExternalRecord(Field::read_le(&mut reader)?)),
+            // Dynamic record input.
+            5 => Ok(Self::DynamicRecord(Field::read_le(&mut reader)?)),
             // Invalid input.
             _ => Err(error("Invalid input ID variant")),
         }
@@ -95,6 +97,13 @@ impl<N: Network> ToBytes for InputID<N> {
             Self::ExternalRecord(value) => {
                 // Write the variant.
                 4u8.write_le(&mut writer)?;
+                // Write the value.
+                value.write_le(&mut writer)
+            }
+            // Dynamic record input.
+            Self::DynamicRecord(value) => {
+                // Write the variant.
+                5u8.write_le(&mut writer)?;
                 // Write the value.
                 value.write_le(&mut writer)
             }

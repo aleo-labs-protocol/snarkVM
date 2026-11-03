@@ -82,14 +82,14 @@ impl<N: Network> StatePath<N> {
     ) -> Result<Self> {
         // Compute an arbitrary transactions path.
         let local_state_root_bits = local_state_root.to_bits_le();
-        let transactions_tree: TransactionsTree<N> = N::merkle_tree_bhp(&[local_state_root_bits.clone()])?;
+        let transactions_tree: TransactionsTree<N> = N::merkle_tree_bhp(std::slice::from_ref(&local_state_root_bits))?;
         let transactions_path = transactions_tree.prove(0, &local_state_root_bits)?;
         let transactions_root = transactions_tree.root();
 
         // Compute an arbitrary block header path.
         let header_leaf = HeaderLeaf::<N>::new(0, *transactions_root);
         let header_leaf_bits = header_leaf.to_bits_le();
-        let header_tree: HeaderTree<N> = N::merkle_tree_bhp(&[header_leaf_bits.clone()])?;
+        let header_tree: HeaderTree<N> = N::merkle_tree_bhp(std::slice::from_ref(&header_leaf_bits))?;
         let header_path = header_tree.prove(0, &header_leaf_bits)?;
         let header_root = *header_tree.root();
 
@@ -97,7 +97,7 @@ impl<N: Network> StatePath<N> {
         let previous_block_hash: N::BlockHash = Field::<N>::zero().into();
         let block_hash: N::BlockHash = previous_block_hash;
         let block_hash_bits = block_hash.to_bits_le();
-        let block_tree: BlockTree<N> = N::merkle_tree_bhp(&[block_hash_bits.clone()])?;
+        let block_tree: BlockTree<N> = N::merkle_tree_bhp(std::slice::from_ref(&block_hash_bits))?;
         let block_path = block_tree.prove(0, &block_hash_bits)?;
 
         // Return the state path.
@@ -256,7 +256,7 @@ pub mod test_helpers {
         let tcm = Field::rand(rng);
 
         // Construct the transition path and transaction leaf.
-        let transition_leaf = TransitionLeaf::new_with_version(0, 3, commitment);
+        let transition_leaf = TransitionLeaf::new(0, 3, commitment);
         let transition_tree: TransitionTree<N> = N::merkle_tree_bhp(&[transition_leaf.to_bits_le()])?;
         let transition_root = *transition_tree.root();
         let transition_id = N::hash_bhp512(&(transition_root, tcm).to_bits_le())?;
@@ -324,7 +324,7 @@ pub mod test_helpers {
         let tcm = Field::rand(rng);
 
         // Construct the transition path and transaction leaf.
-        let transition_leaf = TransitionLeaf::new_with_version(0, 3, commitment);
+        let transition_leaf = TransitionLeaf::new(0, 3, commitment);
         let transition_tree: TransitionTree<N> = N::merkle_tree_bhp(&[transition_leaf.to_bits_le()])?;
         let transition_root = *transition_tree.root();
         let transition_id = N::hash_bhp512(&(transition_root, tcm).to_bits_le())?;
@@ -342,7 +342,7 @@ pub mod test_helpers {
         let transactions_path = transactions_tree.prove(0, &transaction_id.to_bits_le())?;
 
         // Prepare random header leaves.
-        let random_header_index = rng.gen_range(0..7);
+        let random_header_index = rng.random_range(0..7);
         let mut random_header_leaves = vec![Field::<N>::zero().to_bits_le(); (random_header_index + 1) as usize];
         let header_leaf = HeaderLeaf::<N>::new(random_header_index, *transactions_root);
         random_header_leaves[random_header_index as usize] = header_leaf.to_bits_le();

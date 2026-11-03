@@ -87,8 +87,9 @@ impl<A: Aleo> Literal<A> {
             Self::U64(integer) => cast_lossy_integer_to_type(integer, to_type),
             Self::U128(integer) => cast_lossy_integer_to_type(integer, to_type),
             Self::Scalar(scalar) => cast_lossy_scalar_to_type(scalar, to_type),
-            Self::Signature(..) => bail!("Cannot cast a signature literal to another type."),
-            Self::String(..) => bail!("Cannot cast a string literal to another type."),
+            Self::Signature(..) => bail!("Cannot cast (lossy) a signature literal to another type."),
+            Self::String(..) => bail!("Cannot cast (lossy) a string literal to another type."),
+            Self::Identifier(..) => bail!("Cannot cast (lossy) an identifier literal to another type."),
         }
     }
 }
@@ -117,6 +118,9 @@ macro_rules! impl_cast_body {
             }
             LiteralType::String => {
                 bail!(concat!("Cannot cast (lossy) a ", stringify!($type_name), " literal to a string type."))
+            }
+            LiteralType::Identifier => {
+                bail!(concat!("Cannot cast (lossy) a ", stringify!($type_name), " literal to an identifier type."))
             }
         }
     };

@@ -105,7 +105,7 @@ mod tests {
             let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
             let address = Address::try_from(private_key).unwrap();
 
-            let partial_solution = PartialSolution::new(rng.r#gen(), address, u64::rand(rng)).unwrap();
+            let partial_solution = PartialSolution::new(rng.random(), address, u64::rand(rng)).unwrap();
             let solution = Solution::new(partial_solution, u64::rand(rng));
             solutions.push(solution);
         }

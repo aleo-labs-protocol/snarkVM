@@ -16,7 +16,6 @@
 use crate::prelude::*;
 
 use anyhow::Result;
-use bech32::{self, FromBase32, ToBase32};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::borrow::Borrow;
 
@@ -97,17 +96,16 @@ impl<T: Clone + Debug + ToBytes + FromBytes + PartialEq + Eq + Sync + Send, cons
     /// Reads in a bech32m string.
     #[inline]
     fn from_str(string: &str) -> Result<Self, Self::Err> {
-        let (hrp, data, variant) = bech32::decode(string)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(string)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_bytes() != PREFIX.to_le_bytes() {
             bail!("Invalid prefix for a bech32m hash: {hrp}")
         };
         if data.is_empty() {
             bail!("Bech32m hash data is empty")
         }
-        if variant != bech32::Variant::Bech32m {
-            bail!("Hash is not a bech32m hash")
-        }
-        Ok(Self::read_le(&*Vec::from_base32(&data)?)?)
+        Ok(Self::read_le(&*data)?)
     }
 }
 
@@ -116,13 +114,12 @@ impl<T: Clone + Debug + ToBytes + FromBytes + PartialEq + Eq + Sync + Send, cons
 {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        bech32::encode_to_fmt(
+        bech32::encode_to_fmt::<LongBech32m, _>(
             f,
-            &Self::prefix(),
-            self.0.to_bytes_le().expect("Failed to write data as bytes").to_base32(),
-            bech32::Variant::Bech32m,
+            bech32::Hrp::parse_unchecked(&Self::prefix()),
+            &self.0.to_bytes_le().expect("Failed to write data as bytes"),
         )
-        .expect("Failed to encode in bech32m")
+        .map_err(|_| fmt::Error)
     }
 }
 

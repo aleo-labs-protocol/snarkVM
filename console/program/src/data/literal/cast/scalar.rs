@@ -86,3 +86,12 @@ impl<E: Environment> Cast<Scalar<E>> for Scalar<E> {
         Ok(*self)
     }
 }
+
+impl<E: Environment> Cast<IdentifierLiteral<E>> for Scalar<E> {
+    /// Casts a `Scalar` to an `IdentifierLiteral`.
+    #[inline]
+    fn cast(&self) -> Result<IdentifierLiteral<E>> {
+        let field: Field<E> = self.cast()?;
+        field.cast()
+    }
+}

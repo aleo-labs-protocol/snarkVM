@@ -2,7 +2,7 @@
 
 # Inputs: network
 
-cargo run --release --example inclusion testnet -- --nocapture || exit
+cargo run --release --features filesystem --example inclusion testnet -- --nocapture || exit
 
 mv inclusion.metadata ../../src/testnet/resources/credits || exit
 mv inclusion.prover.* ~/.aleo/resources || exit

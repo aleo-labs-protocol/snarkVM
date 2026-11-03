@@ -30,4 +30,6 @@ pub enum FinalizeType<N: Network> {
     Plaintext(PlaintextType<N>),
     /// A future.
     Future(Locator<N>),
+    /// A dynamic future.
+    DynamicFuture,
 }

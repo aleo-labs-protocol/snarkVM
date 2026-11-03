@@ -18,7 +18,7 @@ use super::*;
 impl Parser for LiteralType {
     /// Parses a string into a literal type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the type from the string.
         alt((
             map(tag(Self::Address.type_name()), |_| Self::Address),
@@ -38,6 +38,7 @@ impl Parser for LiteralType {
             map(tag(Self::Scalar.type_name()), |_| Self::Scalar),
             map(tag(Self::Signature.type_name()), |_| Self::Signature),
             map(tag(Self::String.type_name()), |_| Self::String),
+            map(tag(Self::Identifier.type_name()), |_| Self::Identifier),
         ))(string)
     }
 }

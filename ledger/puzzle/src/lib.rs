@@ -50,8 +50,10 @@ use console::{
     },
     types::U64,
 };
+use snarkvm_utilities::ensure_equals;
 
 use aleo_std::prelude::*;
+use anyhow::Context;
 use core::num::NonZeroUsize;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -128,10 +130,18 @@ impl<N: Network> Puzzle<N> {
 
     /// Returns the proof target given the solution.
     pub fn get_proof_target(&self, solution: &Solution<N>) -> Result<u64> {
+        let solution_id = solution.id();
+
         // Calculate the proof target.
-        let proof_target = self.get_proof_target_unchecked(solution)?;
+        let proof_target = self
+            .get_proof_target_unchecked(solution)
+            .with_context(|| format!("Failed to get proof target for solution {solution_id}"))?;
         // Ensure the proof target matches the expected proof target.
-        ensure!(solution.target() == proof_target, "The proof target does not match the expected proof target");
+        ensure_equals!(
+            solution.target(),
+            proof_target,
+            "The proof target for solution {solution_id} does not match the expected proof target"
+        );
         // Return the proof target.
         Ok(proof_target)
     }
@@ -176,9 +186,10 @@ impl<N: Network> Puzzle<N> {
                 // If the proof target is in the cache, then store it.
                 Some(proof_target) => {
                     // Ensure that the proof target matches the expected proof target.
-                    ensure!(
-                        solution.target() == *proof_target,
-                        "The proof target does not match the cached proof target"
+                    ensure_equals!(
+                        solution.target(),
+                        *proof_target,
+                        "The proof target for solution {id} does not match the cached proof target"
                     );
                     targets[i] = *proof_target
                 }
@@ -199,9 +210,10 @@ impl<N: Network> Puzzle<N> {
                     // Get the proof target.
                     let proof_target = Self::leaves_to_proof_target(leaves)?;
                     // Ensure that the proof target matches the expected proof target.
-                    ensure!(
-                        solution.target() == proof_target,
-                        "The proof target does not match the computed proof target"
+                    ensure_equals!(
+                        solution.target(),
+                        proof_target,
+                        "The proof target for solution {solution_id} does not match the computed proof target"
                     );
                     // Insert the proof target into the cache.
                     self.proof_target_cache.write().put(*solution_id, proof_target);
@@ -240,10 +252,10 @@ impl<N: Network> Puzzle<N> {
         // Compute the proof target.
         let proof_target = self.get_proof_target_from_partial_solution(&partial_solution)?;
         // Check that the minimum proof target is met.
-        if let Some(minimum_proof_target) = minimum_proof_target {
-            if proof_target < minimum_proof_target {
-                bail!("Solution was below the minimum proof target ({proof_target} < {minimum_proof_target})")
-            }
+        if let Some(minimum_proof_target) = minimum_proof_target
+            && proof_target < minimum_proof_target
+        {
+            bail!("Solution was below the minimum proof target ({proof_target} < {minimum_proof_target})")
         }
 
         // Construct the solution.
@@ -258,12 +270,7 @@ impl<N: Network> Puzzle<N> {
         expected_proof_target: u64,
     ) -> Result<()> {
         // Ensure the epoch hash matches.
-        if solution.epoch_hash() != expected_epoch_hash {
-            bail!(
-                "Solution does not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')",
-                solution.epoch_hash()
-            )
-        }
+        ensure_equals!(solution.epoch_hash(), expected_epoch_hash, "Solution does not match the expected epoch hash");
         // Ensure the solution is greater than or equal to the expected proof target.
         let proof_target = self.get_proof_target(solution)?;
         if proof_target < expected_proof_target {
@@ -281,12 +288,8 @@ impl<N: Network> Puzzle<N> {
         expected_proof_target: u64,
     ) -> Result<()> {
         // Ensure the epoch hash matches.
-        if solution.epoch_hash() != expected_epoch_hash {
-            bail!(
-                "Solution does not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')",
-                solution.epoch_hash()
-            )
-        }
+        ensure_equals!(solution.epoch_hash(), expected_epoch_hash, "Solution does not match the expected epoch hash");
+
         // Calculate the proof target of the solution.
         let proof_target = self.get_proof_target_unchecked(solution)?;
 
@@ -323,9 +326,11 @@ impl<N: Network> Puzzle<N> {
 
         // Ensure the epoch hash matches.
         cfg_iter!(solutions).try_for_each(|(solution_id, solution)| {
-            if solution.epoch_hash() != expected_epoch_hash {
-                bail!("Solution '{solution_id}' did not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')", solution.epoch_hash())
-            }
+            ensure_equals!(
+                solution.epoch_hash(),
+                expected_epoch_hash,
+                "Solution {solution_id} did not match the expected epoch hash"
+            );
             Ok(())
         })?;
         lap!(timer, "Verify each epoch hash matches");
@@ -370,7 +375,7 @@ mod tests {
 
     use anyhow::Result;
     use core::marker::PhantomData;
-    use rand::{CryptoRng, Rng, RngCore, SeedableRng};
+    use rand::{CryptoRng, RngExt, SeedableRng};
     use rand_chacha::ChaChaRng;
 
     type CurrentNetwork = console::network::MainnetV0;
@@ -422,7 +427,7 @@ mod tests {
             // Seed a random number generator from the epoch hash.
             let mut epoch_rng = ChaChaRng::seed_from_u64(seed);
             // Sample a random number of leaves.
-            Ok(epoch_rng.gen_range(MIN_NUMBER_OF_LEAVES..MAX_NUMBER_OF_LEAVES))
+            Ok(epoch_rng.random_range(MIN_NUMBER_OF_LEAVES..MAX_NUMBER_OF_LEAVES))
         }
     }
 
@@ -439,12 +444,12 @@ mod tests {
         let puzzle = sample_puzzle();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         for batch_size in 1..=CurrentNetwork::MAX_SOLUTIONS {
             // Initialize the solutions.
             let solutions = (0..batch_size)
-                .map(|_| puzzle.prove(epoch_hash, rng.r#gen(), rng.r#gen(), None).unwrap())
+                .map(|_| puzzle.prove(epoch_hash, rng.random(), rng.random(), None).unwrap())
                 .collect::<Vec<_>>();
             let solutions = PuzzleSolutions::new(solutions).unwrap();
 
@@ -452,7 +457,7 @@ mod tests {
             assert!(puzzle.check_solutions(&solutions, epoch_hash, 0u64).is_ok());
 
             // Ensure the solutions are invalid.
-            let bad_epoch_hash = rng.r#gen();
+            let bad_epoch_hash = rng.random();
             assert!(puzzle.check_solutions(&solutions, bad_epoch_hash, 0u64).is_err());
         }
     }
@@ -465,7 +470,7 @@ mod tests {
         let puzzle = sample_puzzle();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         for _ in 0..ITERATIONS {
             let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
@@ -493,20 +498,20 @@ mod tests {
 
     #[test]
     fn test_prove_with_no_minimum_proof_target() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Initialize a new puzzle.
         let puzzle = sample_puzzle();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         // Generate inputs.
         let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
         let address = Address::try_from(private_key).unwrap();
 
         // Generate a solution.
-        let solution = puzzle.prove(epoch_hash, address, rng.r#gen(), None).unwrap();
+        let solution = puzzle.prove(epoch_hash, address, rng.random(), None).unwrap();
         assert!(puzzle.check_solution(&solution, epoch_hash, 0u64).is_ok());
 
         let solutions = PuzzleSolutions::new(vec![solution]).unwrap();
@@ -515,20 +520,20 @@ mod tests {
 
     #[test]
     fn test_check_solution_with_incorrect_target_fails() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Initialize a new puzzle.
         let puzzle = sample_puzzle();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         // Generate inputs.
         let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
         let address = Address::try_from(private_key).unwrap();
 
         // Generate a solution.
-        let solution = puzzle.prove(epoch_hash, address, rng.r#gen(), None).unwrap();
+        let solution = puzzle.prove(epoch_hash, address, rng.random(), None).unwrap();
 
         // Generate a solution with an incorrect target.
         let incorrect_solution = Solution::new(*solution.partial_solution(), solution.target().saturating_add(1));
@@ -557,13 +562,13 @@ mod tests {
         let puzzle = sample_puzzle();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         for batch_size in 1..=CurrentNetwork::MAX_SOLUTIONS {
             // Initialize the incorrect solutions.
             let incorrect_solutions = (0..batch_size)
                 .map(|_| {
-                    let solution = puzzle.prove(epoch_hash, rng.r#gen(), rng.r#gen(), None).unwrap();
+                    let solution = puzzle.prove(epoch_hash, rng.random(), rng.random(), None).unwrap();
                     Solution::new(*solution.partial_solution(), solution.target().saturating_add(1))
                 })
                 .collect::<Vec<_>>();
@@ -586,11 +591,11 @@ mod tests {
         let puzzle = sample_puzzle();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
         // Initialize an address.
-        let address = rng.r#gen();
+        let address = rng.random();
         // Initialize a counter.
-        let counter = rng.r#gen();
+        let counter = rng.random();
 
         for batch_size in 1..=CurrentNetwork::MAX_SOLUTIONS {
             // Initialize the solutions.
@@ -616,14 +621,14 @@ mod tests {
         let mut rng = TestRng::default();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         for batch_size in 1..=CurrentNetwork::MAX_SOLUTIONS {
             // Initialize a new puzzle.
             let puzzle = sample_puzzle();
             // Initialize the solutions.
             let solutions = (0..batch_size)
-                .map(|_| puzzle.prove(epoch_hash, rng.r#gen(), rng.r#gen(), None).unwrap())
+                .map(|_| puzzle.prove(epoch_hash, rng.random(), rng.random(), None).unwrap())
                 .collect::<Vec<_>>();
             let solutions = PuzzleSolutions::new(solutions).unwrap();
 
@@ -645,14 +650,14 @@ mod tests {
         let mut rng = TestRng::default();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         for batch_size in 1..=CurrentNetwork::MAX_SOLUTIONS {
             // Initialize a new puzzle.
             let puzzle = sample_puzzle();
             // Initialize the solutions.
             let solutions = (0..batch_size)
-                .map(|_| puzzle.prove(epoch_hash, rng.r#gen(), rng.r#gen(), None).unwrap())
+                .map(|_| puzzle.prove(epoch_hash, rng.random(), rng.random(), None).unwrap())
                 .collect::<Vec<_>>();
             let solutions = PuzzleSolutions::new(solutions).unwrap();
 
@@ -662,7 +667,7 @@ mod tests {
             // Partially fill the cache.
             for solution in solutions.values() {
                 // Flip a coin.
-                if rng.r#gen::<bool>() {
+                if rng.random::<bool>() {
                     // This operation will fill the cache.
                     puzzle.get_proof_target(solution).unwrap();
                 }
@@ -682,20 +687,20 @@ mod tests {
     #[ignore]
     #[test]
     fn test_profiler() -> Result<()> {
-        fn sample_address_and_counter(rng: &mut (impl CryptoRng + RngCore)) -> (Address<CurrentNetwork>, u64) {
+        fn sample_address_and_counter(rng: &mut impl CryptoRng) -> (Address<CurrentNetwork>, u64) {
             let private_key = PrivateKey::new(rng).unwrap();
             let address = Address::try_from(private_key).unwrap();
             let counter = rng.next_u64();
             (address, counter)
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Initialize a new puzzle.
         let puzzle = sample_puzzle();
 
         // Initialize an epoch hash.
-        let epoch_hash = rng.r#gen();
+        let epoch_hash = rng.random();
 
         for batch_size in [1, 2, <CurrentNetwork as Network>::MAX_SOLUTIONS] {
             // Generate the solutions.

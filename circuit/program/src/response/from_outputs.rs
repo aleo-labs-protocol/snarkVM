@@ -58,6 +58,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => A::halt("Expected a plaintext output, found a record output"),
                             Value::Future(..) => A::halt("Expected a plaintext output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic future output")
+                            }
                         }
                     }
                     // For a public output, compute the hash (using `tcm`) of the output.
@@ -78,6 +84,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => A::halt("Expected a plaintext output, found a record output"),
                             Value::Future(..) => A::halt("Expected a plaintext output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic future output")
+                            }
                         }
                     }
                     // For a private output, compute the ciphertext (using `tvk`) and hash the ciphertext.
@@ -92,6 +104,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => A::halt("Expected a plaintext output, found a record output"),
                             Value::Future(..) => A::halt("Expected a plaintext output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic future output")
+                            }
                         };
                         // Return the output ID.
                         OutputID::private(A::hash_psd8(&ciphertext.to_fields()))
@@ -104,6 +122,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a record.
                             Value::Plaintext(..) => A::halt("Expected a record output, found a plaintext output"),
                             Value::Future(..) => A::halt("Expected a record output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a record output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a record output, found a dynamic future output")
+                            }
                         };
 
                         // Retrieve the output register.
@@ -152,6 +176,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a record.
                             Value::Plaintext(..) => A::halt("Expected a record output, found a plaintext output"),
                             Value::Future(..) => A::halt("Expected a record output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a record output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a record output, found a dynamic future output")
+                            }
                         }
                     }
                     // For a future output, compute the hash (using `tcm`) of the output.
@@ -172,6 +202,63 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a future.
                             Value::Plaintext(..) => A::halt("Expected a future output, found a plaintext output"),
                             Value::Record(..) => A::halt("Expected a future output, found a record output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a future output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a future output, found a dynamic future output")
+                            }
+                        }
+                    }
+                    // For a dynamic record output, compute the hash (using `tvk`) of the output.
+                    console::ValueType::DynamicRecord => {
+                        // Prepare the index as a constant field element.
+                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id.clone());
+                        preimage.extend(output.to_fields());
+                        preimage.push(tvk.clone());
+                        preimage.push(output_index);
+
+                        // Return the output ID.
+                        match &output {
+                            Value::DynamicRecord(..) => OutputID::dynamic_record(A::hash_psd8(&preimage)),
+                            // Ensure the output is a dynamic record.
+                            Value::Plaintext(..) => {
+                                A::halt("Expected a dynamic record output, found a plaintext output")
+                            }
+                            Value::Future(..) => A::halt("Expected a dynamic record output, found a future output"),
+                            Value::Record(..) => A::halt("Expected a dynamic record output, found a record output"),
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a dynamic record output, found a dynamic future output")
+                            }
+                        }
+                    }
+                    // For a dynamic future output, compute the hash (using `tcm`) of the output.
+                    console::ValueType::DynamicFuture => {
+                        // Prepare the index as a constant field element.
+                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id.clone());
+                        preimage.extend(output.to_fields());
+                        preimage.push(tcm.clone());
+                        preimage.push(output_index);
+
+                        // Hash the output to a field element.
+                        match &output {
+                            // Return the output ID.
+                            Value::DynamicFuture(..) => OutputID::dynamic_future(A::hash_psd8(&preimage)),
+                            // Ensure the output is a dynamic future.
+                            Value::Plaintext(..) => {
+                                A::halt("Expected a dynamic future output, found a plaintext output")
+                            }
+                            Value::Record(..) => A::halt("Expected a dynamic future output, found a record output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a dynamic future output, found a dynamic record output")
+                            }
+                            Value::Future(..) => A::halt("Expected a dynamic future output, found a future output"),
                         }
                     }
                 }
@@ -187,7 +274,7 @@ impl<A: Aleo> Response<A> {
 mod tests {
     use super::*;
     use crate::Circuit;
-    use snarkvm_circuit_types::U16;
+    use snarkvm_circuit_types::{U16, environment::UpdatableCount};
     use snarkvm_utilities::{TestRng, Uniform};
 
     use anyhow::Result;
@@ -196,10 +283,11 @@ mod tests {
 
     fn check_from_outputs(
         mode: Mode,
-        num_constants: u64,
-        num_public: u64,
-        num_private: u64,
-        num_constraints: u64,
+        program_id: &str,
+        function_name: &str,
+        is_dynamic: bool,
+        use_record: bool,
+        expected_count: UpdatableCount,
     ) -> Result<()> {
         use console::Network;
 
@@ -228,34 +316,49 @@ mod tests {
             );
             let output_record = console::Value::<<Circuit as Environment>::Network>::Record(console::Record::from_str(&format!("{{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: {nonce}.public }}")).unwrap());
             let output_external_record = console::Value::<<Circuit as Environment>::Network>::Record(console::Record::from_str("{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public }").unwrap());
-            let outputs = vec![output_constant, output_public, output_private, output_record, output_external_record];
+            let outputs = if use_record {
+                vec![output_constant, output_public, output_private, output_record, output_external_record]
+            } else {
+                vec![output_constant, output_public, output_private, output_external_record]
+            };
 
             // Construct the output types.
-            let output_types = vec![
-                console::ValueType::from_str("amount.constant").unwrap(),
-                console::ValueType::from_str("amount.public").unwrap(),
-                console::ValueType::from_str("amount.private").unwrap(),
-                console::ValueType::from_str("token.record").unwrap(),
-                console::ValueType::from_str("token.aleo/token.record").unwrap(),
-            ];
+            let output_types = if use_record {
+                vec![
+                    console::ValueType::from_str("amount.constant").unwrap(),
+                    console::ValueType::from_str("amount.public").unwrap(),
+                    console::ValueType::from_str("amount.private").unwrap(),
+                    console::ValueType::from_str("token.record").unwrap(),
+                    console::ValueType::from_str("token.aleo/token.record").unwrap(),
+                ]
+            } else {
+                vec![
+                    console::ValueType::from_str("amount.constant").unwrap(),
+                    console::ValueType::from_str("amount.public").unwrap(),
+                    console::ValueType::from_str("amount.private").unwrap(),
+                    console::ValueType::from_str("token.aleo/token.record").unwrap(),
+                ]
+            };
 
             // Construct the output registers.
-            let output_registers = vec![
+            let mut output_registers = vec![
                 Some(console::Register::Locator(5)),
                 Some(console::Register::Locator(6)),
                 Some(console::Register::Locator(7)),
                 Some(console::Register::Locator(8)),
-                Some(console::Register::Locator(9)),
             ];
+            if use_record {
+                output_registers.push(Some(console::Register::Locator(9)));
+            }
 
             // Construct a signer.
             let signer = console::Address::rand(rng);
             // Construct a network ID.
             let network_id = console::U16::new(<Circuit as Environment>::Network::ID);
             // Construct a program ID.
-            let program_id = console::ProgramID::from_str("test.aleo")?;
+            let program_id = console::ProgramID::from_str(program_id)?;
             // Construct a function name.
-            let function_name = console::Identifier::from_str("check")?;
+            let function_name = console::Identifier::from_str(function_name)?;
 
             // Construct the response.
             let response = console::Response::new(
@@ -274,8 +377,14 @@ mod tests {
             // Inject the signer, network ID, program ID, function name, `tvk`, `tcm`, and outputs.
             let signer = Address::<Circuit>::new(mode, signer);
             let network_id = U16::<Circuit>::constant(network_id);
-            let program_id = ProgramID::<Circuit>::new(mode, program_id);
-            let function_name = Identifier::<Circuit>::new(mode, function_name);
+            let program_id = match is_dynamic {
+                false => ProgramID::<Circuit>::constant(program_id),
+                true => ProgramID::<Circuit>::public(program_id),
+            };
+            let function_name = match is_dynamic {
+                false => Identifier::<Circuit>::constant(function_name),
+                true => Identifier::<Circuit>::public(function_name),
+            };
             let tvk = Field::<Circuit>::new(mode, tvk);
             let tcm = Field::<Circuit>::new(mode, tcm);
             let outputs = Inject::new(mode, outputs);
@@ -295,10 +404,12 @@ mod tests {
                     &output_registers,
                 );
                 assert_eq!(response, candidate.eject_value());
-                match mode.is_constant() {
-                    true => assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints),
-                    false => assert_scope!(<=num_constants, num_public, num_private, num_constraints),
-                }
+                expected_count.assert_matches(
+                    Circuit::num_constants_in_scope(),
+                    Circuit::num_public_in_scope(),
+                    Circuit::num_private_in_scope(),
+                    Circuit::num_constraints_in_scope(),
+                );
             });
             Circuit::reset();
         }
@@ -308,18 +419,72 @@ mod tests {
     // Note: These counts are correct. At this (high) level of a program, we override the default mode in many cases,
     // based on the user-defined visibility in the types. Thus, we have nonzero public, private, and constraint values.
 
+    // TODO: Explain why the first runs of the tests for `Public` and `Private` modes yield a large number of constants
+
     #[test]
+    #[rustfmt::skip]
     fn test_from_outputs_constant() -> Result<()> {
-        check_from_outputs(Mode::Constant, 38500, 7, 13500, 13500)
+        // Static response without records.
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19397, 4, 1497, 1505))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1011, 4, 1497, 1505))?; 
+
+        // Static response with records.
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(19445, 7, 13274, 13300))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(5176, 7, 13376, 13402))?;
+
+
+        // Dynamic response without records.
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, false, count_less_than!(713, 4, 6571, 6585))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_less_than!(713, 4, 6571, 6585))?;
+
+        // Dynamic response with records.
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, true, count_less_than!(4848, 7, 19481, 19517))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_less_than!(4716, 7, 19653, 19689))?;
+
+        Ok(())
     }
 
     #[test]
+    #[rustfmt::skip]
     fn test_from_outputs_public() -> Result<()> {
-        check_from_outputs(Mode::Public, 37257, 7, 18057, 18085)
+        // Static response without records.
+        check_from_outputs(Mode::Public, "test.aleo", "foo", false, false, count_is!(<=19397, 4, 3762, 3770))?;
+        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 3762, 3770))?;
+
+        // Static response with records.
+        check_from_outputs(Mode::Public, "test.aleo", "foo", false, true, count_is!(<=18692, 7, 18057, 18085))?;
+        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4419, 7, 18159, 18187))?;
+
+        // Dynamic response without records.
+        check_from_outputs(Mode::Public, "test.aleo", "foo", true, false, count_is!(705, 4, 5472, 5486))?;
+        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(707, 4, 5677, 5691))?;
+
+        // Dynamic response with records.
+        check_from_outputs(Mode::Public, "test.aleo", "foo", true, true, count_is!(4087, 7, 19890, 19924))?;
+        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3957, 7, 20267, 20301))?;
+
+        Ok(())
     }
 
     #[test]
+    #[rustfmt::skip]
     fn test_from_outputs_private() -> Result<()> {
-        check_from_outputs(Mode::Private, 37257, 7, 18057, 18085)
+        // Static response without records.
+        check_from_outputs(Mode::Private, "test.aleo", "foo", false, false, count_is!(<=19397, 4, 3762, 3770))?;
+        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 3762, 3770))?;
+
+        // Static response with records.
+        check_from_outputs(Mode::Private, "test.aleo", "foo", false, true, count_is!(<=18692, 7, 18057, 18085))?;
+        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4419, 7, 18159, 18187))?;
+
+        // Dynamic response without records.
+        check_from_outputs(Mode::Private, "test.aleo", "foo", true, false, count_is!(705, 4, 5472, 5486))?;
+        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(707, 4, 5677, 5691))?;
+
+        // Dynamic response with records.
+        check_from_outputs(Mode::Private, "test.aleo", "foo", true, true, count_is!(4087, 7, 19890, 19924))?;
+        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3957, 7, 20267, 20301))?;
+
+        Ok(())
     }
 }

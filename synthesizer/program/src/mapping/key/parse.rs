@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for MapKey<N> {
     /// Parses a string into a key statement of the form `key as {plaintext_type}.public;`.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the keyword from the string.

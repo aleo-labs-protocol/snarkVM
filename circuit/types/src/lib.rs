@@ -42,7 +42,7 @@ pub mod modules {
     pub use snarkvm_circuit_types_scalar::Scalar;
 
     pub use snarkvm_circuit_types_string as string;
-    pub use snarkvm_circuit_types_string::StringType;
+    pub use snarkvm_circuit_types_string::{IdentifierLiteral, StringType};
 }
 
 pub mod prelude {

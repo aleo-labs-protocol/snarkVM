@@ -106,6 +106,14 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
                 };
                 return Ok(Value::Plaintext(Plaintext::from(Literal::Address(address))));
             }
+            // If the operand is a component checksum, load the checksum of the named component.
+            Operand::ComponentChecksum(program_id, name) => {
+                let checksum = match program_id {
+                    Some(program_id) => *stack.get_external_stack(program_id)?.component_checksum(name)?,
+                    None => *stack.component_checksum(name)?,
+                };
+                return Ok(Value::Plaintext(Plaintext::from(checksum)));
+            }
         };
 
         // Retrieve the value.
@@ -127,6 +135,7 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             }
             // Ensure the future value matches the register type.
             (Ok(FinalizeType::Future(locator)), Value::Future(future)) => stack.matches_future(future, &locator)?,
+            (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_)) => {}
             // Ensure the load is valid in a finalize context.
             (Ok(finalize_type), stack_value) => bail!(
                 "Attempted to load a '{stack_value}' value from a register '{register}' of type '{finalize_type}' in a finalize scope",
@@ -159,13 +168,23 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
                 // Ensure the type of the register is valid.
                 match (self.finalize_types.get_type(stack, register), &stack_value) {
                     // Ensure the plaintext value matches the plaintext type.
-                    (Ok(FinalizeType::Plaintext(plaintext_type)), Value::Plaintext(plaintext_value)) => {
+                    (Ok(FinalizeType::Plaintext(mut plaintext_type)), Value::Plaintext(plaintext_value)) => {
+                        if N::CONSENSUS_VERSION(self.state().block_height())? < ConsensusVersion::V13 {
+                            // Pre-V13, the `ExternalStruct` type did not exist. If the type happens to be qualified in
+                            // `get_type` above, we need to unqualify it (i.e. `ExternalStruct` becomes `Struct`) in order
+                            // to obtain the same behavior we had pre-V13.
+                            //
+                            // Note: we don't need to rescursively check `Struct` definitions since external structs
+                            // were not allowed before V13.
+                            plaintext_type = plaintext_type.unqualify();
+                        }
                         stack.matches_plaintext(plaintext_value, &plaintext_type)?
                     }
                     // Ensure the future value matches the future type.
                     (Ok(FinalizeType::Future(locator)), Value::Future(future)) => {
                         stack.matches_future(future, &locator)?
                     }
+                    (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_)) => {}
                     // Ensure the store is valid in a finalize context.
                     (Ok(finalize_type), stack_value) => bail!(
                         "Attempted to store a '{stack_value}' value in a register '{register}' of type '{finalize_type}' in a finalize scope",

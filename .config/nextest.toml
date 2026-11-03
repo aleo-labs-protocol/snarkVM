@@ -1,0 +1,7 @@
+[profile.ci]
+fail-fast = false
+slow-timeout = "60s"
+status-level = "fail"
+
+[profile.ci.junit]
+path = "junit.xml"

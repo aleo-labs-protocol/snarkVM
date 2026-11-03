@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{Literal, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Scalar, Value},
@@ -33,8 +41,21 @@ pub type CommitPED64<N> = CommitInstruction<N, { CommitVariant::CommitPED64 as u
 /// Pedersen128 is a collision-resistant function that processes inputs in 128-bit chunks.
 pub type CommitPED128<N> = CommitInstruction<N, { CommitVariant::CommitPED128 as u8 }>;
 
+/// BHP256 commit over raw bits (no type-tagged serialization).
+pub type CommitBHP256Raw<N> = CommitInstruction<N, { CommitVariant::CommitBHP256Raw as u8 }>;
+/// BHP512 commit over raw bits.
+pub type CommitBHP512Raw<N> = CommitInstruction<N, { CommitVariant::CommitBHP512Raw as u8 }>;
+/// BHP768 commit over raw bits.
+pub type CommitBHP768Raw<N> = CommitInstruction<N, { CommitVariant::CommitBHP768Raw as u8 }>;
+/// BHP1024 commit over raw bits.
+pub type CommitBHP1024Raw<N> = CommitInstruction<N, { CommitVariant::CommitBHP1024Raw as u8 }>;
+/// Pedersen64 commit over raw bits.
+pub type CommitPED64Raw<N> = CommitInstruction<N, { CommitVariant::CommitPED64Raw as u8 }>;
+/// Pedersen128 commit over raw bits.
+pub type CommitPED128Raw<N> = CommitInstruction<N, { CommitVariant::CommitPED128Raw as u8 }>;
+
 /// Which commit function to use.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CommitVariant {
     CommitBHP256,
     CommitBHP512,
@@ -42,6 +63,13 @@ pub enum CommitVariant {
     CommitBHP1024,
     CommitPED64,
     CommitPED128,
+    // The variants that commit over raw inputs.
+    CommitBHP256Raw,
+    CommitBHP512Raw,
+    CommitBHP768Raw,
+    CommitBHP1024Raw,
+    CommitPED64Raw,
+    CommitPED128Raw,
 }
 
 impl CommitVariant {
@@ -54,8 +82,20 @@ impl CommitVariant {
             3 => "commit.bhp1024",
             4 => "commit.ped64",
             5 => "commit.ped128",
-            6.. => panic!("Invalid 'commit' instruction opcode"),
+            // The variants that commit over raw inputs.
+            6 => "commit.bhp256.raw",
+            7 => "commit.bhp512.raw",
+            8 => "commit.bhp768.raw",
+            9 => "commit.bhp1024.raw",
+            10 => "commit.ped64.raw",
+            11 => "commit.ped128.raw",
+            12.. => panic!("Invalid 'commit' instruction opcode"),
         }
+    }
+
+    // Returns `true` if the variant commits over raw bits.
+    pub const fn is_raw(variant: u8) -> bool {
+        matches!(variant, 6..=11)
     }
 }
 
@@ -129,16 +169,21 @@ impl<N: Network, const VARIANT: u8> CommitInstruction<N, VARIANT> {
 macro_rules! do_commit {
     ($N: ident, $variant: expr, $destination_type: expr, $input: expr, $randomizer: expr, $ty: ty, $q: expr) => {{
         let func = match $variant {
-            0 => $N::commit_to_group_bhp256,
-            1 => $N::commit_to_group_bhp512,
-            2 => $N::commit_to_group_bhp768,
-            3 => $N::commit_to_group_bhp1024,
-            4 => $N::commit_to_group_ped64,
-            5 => $N::commit_to_group_ped128,
-            6.. => bail!("Invalid 'commit' variant: {}", $variant),
+            0 | 6 => $N::commit_to_group_bhp256,
+            1 | 7 => $N::commit_to_group_bhp512,
+            2 | 8 => $N::commit_to_group_bhp768,
+            3 | 9 => $N::commit_to_group_bhp1024,
+            4 | 10 => $N::commit_to_group_ped64,
+            5 | 11 => $N::commit_to_group_ped128,
+            12.. => bail!("Invalid 'commit' variant: {}", $variant),
         };
 
-        let literal_output: $ty = $q(func(&$input.to_bits_le(), $randomizer))?.into();
+        let bits = match CommitVariant::is_raw($variant) {
+            true => $input.to_bits_raw_le(),
+            false => $input.to_bits_le(),
+        };
+
+        let literal_output: $ty = $q(func(&bits, $randomizer))?.into();
         literal_output.cast_lossy($destination_type)?
     }};
 }
@@ -196,7 +241,7 @@ impl<N: Network, const VARIANT: u8> CommitInstruction<N, VARIANT> {
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
     ) -> Result<()> {
-        use circuit::traits::ToBits;
+        use circuit::traits::{ToBits, ToBitsRaw};
 
         // Ensure the number of operands is correct.
         if self.operands.len() != 2 {
@@ -227,7 +272,12 @@ impl<N: Network, const VARIANT: u8> CommitInstruction<N, VARIANT> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         self.evaluate(stack, registers)
     }
 
@@ -251,15 +301,15 @@ impl<N: Network, const VARIANT: u8> CommitInstruction<N, VARIANT> {
         // TODO (howardwu): If the operation is Pedersen, check that it is within the number of bits.
 
         match VARIANT {
-            0..=5 => Ok(vec![RegisterType::Plaintext(PlaintextType::Literal(self.destination_type))]),
-            6.. => bail!("Invalid 'commit' variant: {VARIANT}"),
+            0..=11 => Ok(vec![RegisterType::Plaintext(PlaintextType::Literal(self.destination_type))]),
+            12.. => bail!("Invalid 'commit' variant: {VARIANT}"),
         }
     }
 }
 
 impl<N: Network, const VARIANT: u8> Parser for CommitInstruction<N, VARIANT> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the opcode from the string.
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.
@@ -396,5 +446,47 @@ mod tests {
             assert_eq!(commit.destination, Register::Locator(2), "The destination register is incorrect");
             assert_eq!(commit.destination_type, *destination_type, "The destination type is incorrect");
         }
+    }
+
+    #[test]
+    fn test_parse_raw() {
+        for destination_type in valid_destination_types() {
+            let instruction = format!("commit.bhp256.raw r0 r1 into r2 as {destination_type}");
+            let (string, commit) = CommitBHP256Raw::<CurrentNetwork>::parse(&instruction).unwrap();
+            assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+            assert_eq!(commit.operands.len(), 2, "The number of operands is incorrect");
+            assert_eq!(commit.operands[0], Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+            assert_eq!(commit.operands[1], Operand::Register(Register::Locator(1)), "The second operand is incorrect");
+            assert_eq!(commit.destination, Register::Locator(2), "The destination register is incorrect");
+            assert_eq!(commit.destination_type, *destination_type, "The destination type is incorrect");
+        }
+    }
+
+    #[test]
+    fn test_raw_differs_from_standard() {
+        use console::{
+            program::{Literal, Plaintext, Value},
+            types::{Field, Scalar},
+        };
+
+        type N = CurrentNetwork;
+
+        // Use a non-trivial field literal (not zero) so the bits actually differ between
+        // to_bits_le (type-tagged) and to_bits_raw_le (untagged).
+        let input_field = Field::<N>::one();
+        let randomizer = Scalar::<N>::one();
+        let value = Value::Plaintext(Plaintext::from(Literal::Field(input_field)));
+
+        let standard = evaluate_commit(CommitVariant::CommitBHP256, &value, &randomizer, LiteralType::Field).unwrap();
+        let raw = evaluate_commit(CommitVariant::CommitBHP256Raw, &value, &randomizer, LiteralType::Field).unwrap();
+
+        assert_ne!(
+            standard, raw,
+            "commit.bhp256 and commit.bhp256.raw must produce different outputs for the same input"
+        );
+
+        // Check that committing on the field element is equivalent to the raw commit via the instruction.
+        let expected_commitment = N::commit_bhp256(&input_field.to_bits_le(), &randomizer).unwrap();
+        assert_eq!(Literal::Field(expected_commitment), raw);
     }
 }

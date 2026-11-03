@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Parser for Literal<N> {
     /// Parses a string into a literal.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         alt((
             map(Address::<N>::parse, |literal| Self::Address(literal)),
             map(Boolean::<N>::parse, |literal| Self::Boolean(literal)),
@@ -36,6 +36,7 @@ impl<N: Network> Parser for Literal<N> {
             map(U128::<N>::parse, |literal| Self::U128(literal)),
             map(Scalar::<N>::parse, |literal| Self::Scalar(literal)),
             map(Signature::<N>::parse, |literal| Self::Signature(Box::new(literal))),
+            map(IdentifierLiteral::<N>::parse, |literal| Self::Identifier(Box::new(literal))),
             map(StringType::<N>::parse, |literal| Self::String(literal)),
             // This allows users to implicitly declare program IDs as literals.
             map_res(ProgramID::<N>::parse, |program_id| Ok::<Self, Error>(Self::Address(program_id.to_address()?))),
@@ -87,6 +88,7 @@ impl<N: Network> Display for Literal<N> {
             Self::Scalar(literal) => Display::fmt(literal, f),
             Self::Signature(literal) => Display::fmt(literal, f),
             Self::String(literal) => Display::fmt(literal, f),
+            Self::Identifier(literal) => Display::fmt(literal, f),
         }
     }
 }

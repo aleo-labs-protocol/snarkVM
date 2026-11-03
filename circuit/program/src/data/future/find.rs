@@ -27,6 +27,8 @@ impl<A: Aleo> Future<A> {
             Plaintext(&'a Plaintext<A>),
             /// A future.
             Future(&'a Future<A>),
+            /// A dynamic future.
+            DynamicFuture(&'a DynamicFuture<A>),
         }
 
         // Initialize a value starting from the top-level.
@@ -66,6 +68,10 @@ impl<A: Aleo> Future<A> {
                         Some(Argument::Future(future)) => value = ArgumentRefType::Future(future),
                         // If the argument is a plaintext, update `value` for the next iteration.
                         Some(Argument::Plaintext(plaintext)) => value = ArgumentRefType::Plaintext(plaintext),
+                        // If the argument is a dynamic future, update `value` for the next iteration.
+                        Some(Argument::DynamicFuture(dynamic_future)) => {
+                            value = ArgumentRefType::DynamicFuture(dynamic_future)
+                        }
                         // Halts if the index is out of bounds.
                         None => bail!("Index '{index}' is out of bounds"),
                     }
@@ -77,6 +83,7 @@ impl<A: Aleo> Future<A> {
         match value {
             ArgumentRefType::Plaintext(plaintext) => Ok(Value::Plaintext(plaintext.clone())),
             ArgumentRefType::Future(future) => Ok(Value::Future(future.clone())),
+            ArgumentRefType::DynamicFuture(dynamic_future) => Ok(Value::DynamicFuture(dynamic_future.clone())),
         }
     }
 }

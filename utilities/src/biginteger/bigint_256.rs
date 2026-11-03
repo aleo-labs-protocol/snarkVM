@@ -32,11 +32,14 @@ use core::fmt::{Debug, Display};
 use num_bigint::BigUint;
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use zeroize::Zeroize;
 
+// The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash, Zeroize)]
+#[repr(transparent)]
 pub struct BigInteger256(pub [u64; 4]);
 
 impl BigInteger256 {
@@ -51,7 +54,7 @@ impl crate::biginteger::BigInteger for BigInteger256 {
     #[inline]
     fn add_nocarry(&mut self, other: &Self) -> bool {
         #[cfg(target_arch = "x86_64")]
-        unsafe {
+        {
             use core::arch::x86_64::_addcarry_u64;
             let mut carry = 0;
             carry = _addcarry_u64(carry, self.0[0], other.0[0], &mut self.0[0]);
@@ -74,7 +77,7 @@ impl crate::biginteger::BigInteger for BigInteger256 {
     #[inline]
     fn sub_noborrow(&mut self, other: &Self) -> bool {
         #[cfg(target_arch = "x86_64")]
-        unsafe {
+        {
             use core::arch::x86_64::_subborrow_u64;
             let mut borrow = 0;
             borrow = _subborrow_u64(borrow, self.0[0], other.0[0], &mut self.0[0]);
@@ -333,9 +336,9 @@ impl PartialOrd for BigInteger256 {
     }
 }
 
-impl Distribution<BigInteger256> for Standard {
+impl Distribution<BigInteger256> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BigInteger256 {
-        BigInteger256(rng.r#gen())
+        BigInteger256(rng.random())
     }
 }
 

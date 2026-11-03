@@ -58,7 +58,7 @@ use indexmap::IndexMap;
 /// # Example: Restricting a program
 ///
 /// ## In the `test_restrictions_list_comparison` function of `synthesizer/src/restrictions/mod.rs`:
-/// ```rust
+/// ```ignore
 /// // Set the network.
 /// type Network = console::network::MainnetV0;
 /// // Initialize the restrictions.
@@ -94,7 +94,7 @@ use indexmap::IndexMap;
 /// Make sure to import `console::types::Address`, e.g., by replacing `use console::types::I8;` with `use console::types::{Address, I8};`.
 ///
 /// ## In the `test_restrictions_list_comparison function` of `synthesizer/src/restrictions/mod.rs`:
-/// ```rust
+/// ```ignore
 /// // Set the network.
 /// type Network = console::network::MainnetV0;
 /// // Initialize the restrictions.
@@ -246,10 +246,10 @@ impl<N: Network> Restrictions<N> {
                                     Input::Constant(_, Some(plaintext)) | Input::Public(_, Some(plaintext)) => {
                                         match plaintext {
                                             Plaintext::Literal(literal, _) => {
-                                                if let Some(range) = arguments.get(literal) {
-                                                    if range.contains(block_height) {
-                                                        return true;
-                                                    }
+                                                if let Some(range) = arguments.get(literal)
+                                                    && range.contains(block_height)
+                                                {
+                                                    return true;
                                                 }
                                             }
                                             Plaintext::Struct(..) | Plaintext::Array(..) => continue,
@@ -265,10 +265,10 @@ impl<N: Network> Restrictions<N> {
                                     Output::Constant(_, Some(plaintext)) | Output::Public(_, Some(plaintext)) => {
                                         match plaintext {
                                             Plaintext::Literal(literal, _) => {
-                                                if let Some(range) = arguments.get(literal) {
-                                                    if range.contains(block_height) {
-                                                        return true;
-                                                    }
+                                                if let Some(range) = arguments.get(literal)
+                                                    && range.contains(block_height)
+                                                {
+                                                    return true;
                                                 }
                                             }
                                             Plaintext::Struct(..) | Plaintext::Array(..) => continue,
@@ -425,9 +425,9 @@ mod tests {
             indexmap!( ArgumentLocator::new(true, index) => indexmap!( literal.clone() => range )),
         );
 
-        let input = Input::Public(rng.r#gen(), Some(literal.into()));
+        let input = Input::Public(rng.random(), Some(literal.into()));
         let transition =
-            Transition::new(program_id, function_id, vec![input], vec![], rng.r#gen(), rng.r#gen(), rng.r#gen())
+            Transition::new(program_id, function_id, vec![input], vec![], rng.random(), rng.random(), rng.random())
                 .unwrap();
         assert!(!restrictions.is_argument_restricted(&transition, 5));
         assert!(restrictions.is_argument_restricted(&transition, 10));

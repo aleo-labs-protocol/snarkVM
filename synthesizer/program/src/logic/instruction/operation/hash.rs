@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{Identifier, Literal, LiteralType, Locator, Plaintext, PlaintextType, Register, RegisterType, Value},
@@ -410,6 +418,7 @@ fn is_valid_destination_type<N: Network>(variant: u8, destination_type: &Plainte
             destination_type,
             PlaintextType::Literal(LiteralType::Boolean)
                 | PlaintextType::Literal(LiteralType::String)
+                | PlaintextType::Literal(LiteralType::Identifier)
                 | PlaintextType::Struct(..)
                 | PlaintextType::ExternalStruct(..)
                 | PlaintextType::Array(..)
@@ -640,7 +649,12 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         self.evaluate(stack, registers)
     }
 
@@ -746,9 +760,9 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
 
 impl<N: Network, const VARIANT: u8> Parser for HashInstruction<N, VARIANT> {
     /// Parses a string into an operation.
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         /// Parse the operands from the string.
-        fn parse_operands<N: Network>(string: &str, num_operands: usize) -> ParserResult<Vec<Operand<N>>> {
+        fn parse_operands<N: Network>(string: &str, num_operands: usize) -> ParserResult<'_, Vec<Operand<N>>> {
             let mut operands = Vec::with_capacity(num_operands);
             let mut string = string;
 
@@ -788,11 +802,11 @@ impl<N: Network, const VARIANT: u8> Parser for HashInstruction<N, VARIANT> {
         let (string, destination_type) = PlaintextType::parse(string)?;
         // Ensure the destination type is allowed.
         match destination_type {
-            PlaintextType::Literal(LiteralType::Boolean) | PlaintextType::Literal(LiteralType::String) => {
-                map_res(fail, |_: ParserResult<Self>| {
-                    Err(error(format!("Failed to parse 'hash': '{destination_type}' is invalid")))
-                })(string)
-            }
+            PlaintextType::Literal(LiteralType::Boolean)
+            | PlaintextType::Literal(LiteralType::String)
+            | PlaintextType::Literal(LiteralType::Identifier) => map_res(fail, |_: ParserResult<Self>| {
+                Err(error(format!("Failed to parse 'hash': '{destination_type}' is invalid")))
+            })(string),
             _ => Ok((string, Self { operands, destination, destination_type })),
         }
     }
@@ -897,7 +911,7 @@ mod tests {
                 .map(|_| {
                     PlaintextType::Array(
                         ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(
-                            u32::try_from(rng.gen_range(1..=CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS())).unwrap(),
+                            u32::try_from(rng.random_range(1..=CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS())).unwrap(),
                         )])
                         .unwrap(),
                     )

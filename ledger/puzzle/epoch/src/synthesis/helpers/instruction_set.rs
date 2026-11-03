@@ -33,33 +33,66 @@ type Destination = PuzzleDestination;
 /// - The sampling weight of the instruction set.
 pub type InstructionSet<N> = Vec<(Vec<(Instruction, Vec<Operand<N>>, Vec<Destination>)>, u16)>;
 
+/// The total number of entries in the instruction set.
+const NUM_INSTRUCTION_SET_ENTRIES: usize = 2540;
+
 // TODO: ultimately we can replace variables with constants and remove the non_snake_case
-#[rustfmt::skip]
+// The constants for the instruction weights.
+const DEFAULT: u16 = 512;
+const DEFAULT_BOOLEAN: u16 = 4;
+const DEFAULT_U8: u16 = 4;
+const DEFAULT_U16: u16 = 256;
+const DEFAULT_U32: u16 = 512;
+const DEFAULT_U64: u16 = 512;
+const DEFAULT_U128: u16 = 512;
+const DEFAULT_I8: u16 = 4;
+const DEFAULT_I16: u16 = 256;
+const DEFAULT_I32: u16 = 512;
+const DEFAULT_I64: u16 = 512;
+const DEFAULT_I128: u16 = 512;
+const NUM_CAST: u16 = 200;
+const NUM_POWER: u16 = 20;
+const VERY_LOW: u16 = 4;
+const LOW: u16 = 40;
+const MEDIUM_LOW: u16 = 128;
+const DIV_DIVIDER: u16 = 128;
+const U128_DIVIDER: u16 = 512;
+
+/// Returns the instruction set, which is the set of instructions that may be sampled
+/// for an epoch program, along with the sampling weight of each entry.
+///
+/// The entries are split across several functions purely to keep each function body
+/// small; a single body holding every entry made this crate cost ~2 GiB to compile.
+///
+/// The order of the entries and their weights are consensus-critical, as they determine
+/// the instructions sampled for an epoch program. They must not be changed.
 pub fn instruction_set<N: Network>() -> InstructionSet<N> {
-    // Initialize constants for the instruction weights.
-    const DEFAULT: u16 = 512;
-    const DEFAULT_BOOLEAN: u16 = 4;
-    const DEFAULT_U8: u16 = 4;
-    const DEFAULT_U16: u16 = 256;
-    const DEFAULT_U32: u16 = 512;
-    const DEFAULT_U64: u16 = 512;
-    const DEFAULT_U128: u16 = 512;
-    const DEFAULT_I8: u16 = 4;
-    const DEFAULT_I16: u16 = 256;
-    const DEFAULT_I32: u16 = 512;
-    const DEFAULT_I64: u16 = 512;
-    const DEFAULT_I128: u16 = 512;
+    let mut instruction_set = InstructionSet::<N>::with_capacity(NUM_INSTRUCTION_SET_ENTRIES);
+    instruction_set.extend(instruction_set_00::<N>());
+    instruction_set.extend(instruction_set_01::<N>());
+    instruction_set.extend(instruction_set_02::<N>());
+    instruction_set.extend(instruction_set_03::<N>());
+    instruction_set.extend(instruction_set_04::<N>());
+    instruction_set.extend(instruction_set_05::<N>());
+    instruction_set.extend(instruction_set_06::<N>());
+    instruction_set.extend(instruction_set_07::<N>());
+    instruction_set.extend(instruction_set_08::<N>());
+    instruction_set.extend(instruction_set_09::<N>());
+    instruction_set.extend(instruction_set_10::<N>());
+    instruction_set.extend(instruction_set_11::<N>());
+    instruction_set.extend(instruction_set_12::<N>());
+    instruction_set.extend(instruction_set_13::<N>());
+    instruction_set.extend(instruction_set_14::<N>());
+    instruction_set.extend(instruction_set_15::<N>());
+    instruction_set.extend(instruction_set_16::<N>());
+    instruction_set.extend(instruction_set_17::<N>());
+    instruction_set.extend(instruction_set_18::<N>());
+    debug_assert_eq!(instruction_set.len(), NUM_INSTRUCTION_SET_ENTRIES);
+    instruction_set
+}
 
-    const NUM_CAST: u16 = 200;
-    const NUM_POWER: u16 = 20;
-
-    const VERY_LOW: u16 = 4;
-    const LOW: u16 = 40;
-    const MEDIUM_LOW: u16 = 128;
-
-    const DIV_DIVIDER: u16 = 128;
-    const U128_DIVIDER: u16 = 512;
-
+#[rustfmt::skip]
+fn instruction_set_00<N: Network>() -> InstructionSet<N> {
     vec![
         // abs
         (vec![(Instruction::Abs, vec![Operand::Register(LiteralType::I8)], vec![Destination::Register(LiteralType::I8)])], 0),
@@ -206,6 +239,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
               (Instruction::DivWrapped, vec![Operand::RegisterOffset(LiteralType::U64, 1), Operand::Ephemeral(LiteralType::U64, 0)], vec![Destination::Ephemeral(LiteralType::U64, 1)])], DEFAULT_U64 / DIV_DIVIDER),
         (vec![(Instruction::Or, vec![Operand::Register(LiteralType::U128), Operand::Literal(Literal::U128(U128::new(1)))], vec![Destination::Ephemeral(LiteralType::U128, 0)]),
               (Instruction::DivWrapped, vec![Operand::RegisterOffset(LiteralType::U128, 1), Operand::Ephemeral(LiteralType::U128, 0)], vec![Destination::Ephemeral(LiteralType::U128, 1)])], DEFAULT_U128 / U128_DIVIDER),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_01<N: Network>() -> InstructionSet<N> {
+    vec![
         // double
         (vec![(Instruction::Double, vec![Operand::Register(LiteralType::Field)], vec![Destination::Ephemeral(LiteralType::Field, 0)])], 0),
         // gt
@@ -377,6 +416,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashBhp256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashBhp256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashBhp256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 1),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_02<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.bhp512
         (vec![(Instruction::HashBhp512, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashBhp512, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -522,6 +567,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashBhp512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashBhp512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashBhp512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_03<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.bhp768
         (vec![(Instruction::HashBhp768, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashBhp768, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -667,6 +718,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashBhp768, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashBhp768, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashBhp768, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_04<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.bhp1024
         (vec![(Instruction::HashBhp1024, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashBhp1024, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -812,6 +869,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashBhp1024, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashBhp1024, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashBhp1024, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_05<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.keccak256
         (vec![(Instruction::HashKeccak256, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashKeccak256, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -957,6 +1020,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashKeccak256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashKeccak256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashKeccak256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_06<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.keccak384
         (vec![(Instruction::HashKeccak384, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashKeccak384, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -1102,6 +1171,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashKeccak384, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashKeccak384, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashKeccak384, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_07<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.keccak512
         (vec![(Instruction::HashKeccak512, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashKeccak512, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -1247,6 +1322,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashKeccak512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashKeccak512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashKeccak512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_08<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.ped64
         (vec![(Instruction::HashPed64, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashPed64, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -1441,6 +1522,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashPed128, vec![Operand::Register(LiteralType::U64)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashPed128, vec![Operand::Register(LiteralType::U64)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashPed128, vec![Operand::Register(LiteralType::U64)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_09<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.psd2
         (vec![(Instruction::HashPsd2, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashPsd2, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -1586,6 +1673,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashPsd2, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashPsd2, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashPsd2, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_10<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.psd4
         (vec![(Instruction::HashPsd4, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashPsd4, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -1731,6 +1824,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashPsd4, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashPsd4, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashPsd4, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_11<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.psd8
         (vec![(Instruction::HashPsd8, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashPsd8, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -1876,6 +1975,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashPsd8, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashPsd8, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashPsd8, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_12<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.sha3_256
         (vec![(Instruction::HashSha3256, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashSha3256, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -2021,6 +2126,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashSha3256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashSha3256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashSha3256, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_13<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.sha3_384
         (vec![(Instruction::HashSha3384, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashSha3384, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -2166,6 +2277,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashSha3384, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashSha3384, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashSha3384, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_14<N: Network>() -> InstructionSet<N> {
+    vec![
         // hash.sha3_512
         (vec![(Instruction::HashSha3512, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Boolean)])], 0),
         (vec![(Instruction::HashSha3512, vec![Operand::Register(LiteralType::Boolean)], vec![Destination::Register(LiteralType::Field)])], 0),
@@ -2311,6 +2428,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::HashSha3512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::HashSha3512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::HashSha3512, vec![Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_15<N: Network>() -> InstructionSet<N> {
+    vec![
         // inv
         (vec![(Instruction::IsEq, vec![Operand::Register(LiteralType::Field), Operand::Literal(Literal::Field(Field::zero()))], vec![Destination::Ephemeral(LiteralType::Boolean, 0)]),
               (Instruction::Ternary, vec![Operand::Ephemeral(LiteralType::Boolean, 0), Operand::Input(LiteralType::Field, 0), Operand::Register(LiteralType::Field)], vec![Destination::Ephemeral(LiteralType::Field, 1)]),
@@ -2454,6 +2577,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::Or, vec![Operand::Register(LiteralType::U32), Operand::Register(LiteralType::U32)], vec![Destination::Ephemeral(LiteralType::U32, 0)])], VERY_LOW),
         (vec![(Instruction::Or, vec![Operand::Register(LiteralType::U64), Operand::Register(LiteralType::U64)], vec![Destination::Ephemeral(LiteralType::U64, 0)])], VERY_LOW),
         (vec![(Instruction::Or, vec![Operand::Register(LiteralType::U128), Operand::Register(LiteralType::U128)], vec![Destination::Ephemeral(LiteralType::U128, 0)])], VERY_LOW),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_16<N: Network>() -> InstructionSet<N> {
+    vec![
         // pow
         (vec![(Instruction::Pow, vec![Operand::Register(LiteralType::Field), Operand::Register(LiteralType::Field)], vec![Destination::Register(LiteralType::Field)])], VERY_LOW),
         (vec![(Instruction::Pow, vec![Operand::Register(LiteralType::I8), Operand::Register(LiteralType::U8)], vec![Destination::Ephemeral(LiteralType::I8, 0)])], 0),
@@ -2590,6 +2719,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::Shl, vec![Operand::Register(LiteralType::U128), Operand::Register(LiteralType::U8)], vec![Destination::Ephemeral(LiteralType::U128, 0)])], 0),
         (vec![(Instruction::Shl, vec![Operand::Register(LiteralType::U128), Operand::Register(LiteralType::U16)], vec![Destination::Ephemeral(LiteralType::U128, 0)])], 0),
         (vec![(Instruction::Shl, vec![Operand::Register(LiteralType::U128), Operand::Register(LiteralType::U32)], vec![Destination::Ephemeral(LiteralType::U128, 0)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_17<N: Network>() -> InstructionSet<N> {
+    vec![
         // shl.w
         (vec![(Instruction::ShlWrapped, vec![Operand::Register(LiteralType::I8), Operand::Register(LiteralType::U8)], vec![Destination::Ephemeral(LiteralType::I8, 0)])], DEFAULT_I8),
         (vec![(Instruction::ShlWrapped, vec![Operand::Register(LiteralType::I8), Operand::Register(LiteralType::U16)], vec![Destination::Ephemeral(LiteralType::I8, 0)])], DEFAULT_I8),
@@ -2699,6 +2834,12 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
         (vec![(Instruction::Sub, vec![Operand::Register(LiteralType::U32), Operand::Register(LiteralType::U32)], vec![Destination::Register(LiteralType::U32)])], 0),
         (vec![(Instruction::Sub, vec![Operand::Register(LiteralType::U64), Operand::Register(LiteralType::U64)], vec![Destination::Register(LiteralType::U64)])], 0),
         (vec![(Instruction::Sub, vec![Operand::Register(LiteralType::U128), Operand::Register(LiteralType::U128)], vec![Destination::Register(LiteralType::U128)])], 0),
+    ]
+}
+
+#[rustfmt::skip]
+fn instruction_set_18<N: Network>() -> InstructionSet<N> {
+    vec![
         // sub.w
         (vec![(Instruction::SubWrapped, vec![Operand::Register(LiteralType::I8), Operand::Register(LiteralType::I8)], vec![Destination::Register(LiteralType::I8)])], VERY_LOW),
         (vec![(Instruction::SubWrapped, vec![Operand::Register(LiteralType::I16), Operand::Register(LiteralType::I16)], vec![Destination::Register(LiteralType::I16)])], DEFAULT_I16/4),
@@ -2744,9 +2885,34 @@ pub fn instruction_set<N: Network>() -> InstructionSet<N> {
 mod test {
     use super::*;
     use crate::synthesis::helpers::NUM_SEQUENCE_INSTRUCTIONS;
+    use sha2::{Digest, Sha256};
     use std::collections::HashSet;
 
     type CurrentNetwork = console::network::MainnetV0;
+
+    /// The SHA-256 hash of the instruction set, which pins its exact contents and ordering.
+    const INSTRUCTION_SET_CHECKSUM: &str = "d73d0f4cdc6d1d3b7807ed4b53bbf6ebc5aecfd1d76cc80fd08c06003f5f2e7a";
+
+    #[test]
+    fn check_instruction_set_is_unchanged() {
+        // Get the instruction set.
+        let instruction_set = instruction_set::<CurrentNetwork>();
+
+        // Check that every entry is present.
+        assert_eq!(instruction_set.len(), NUM_INSTRUCTION_SET_ENTRIES);
+
+        // Compute the SHA-256 hash over the entries, in order.
+        let mut hasher = Sha256::new();
+        for entry in &instruction_set {
+            hasher.update(format!("{entry:?}\n"));
+        }
+        let checksum = hex::encode(hasher.finalize());
+
+        // Check that the instruction set is unchanged. The contents, ordering, and weights of the
+        // instruction set determine the instructions sampled for an epoch program, so any change
+        // to them is a consensus-breaking change that will fork the network.
+        assert_eq!(checksum, INSTRUCTION_SET_CHECKSUM, "The instruction set has changed");
+    }
 
     #[test]
     fn check_weights_are_valid() {

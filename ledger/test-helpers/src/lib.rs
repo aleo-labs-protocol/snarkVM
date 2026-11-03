@@ -131,13 +131,37 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
         (Uniform::rand(rng), Output::Public(Uniform::rand(rng), None)),
         (Uniform::rand(rng), Output::Public(plaintext_hash, Some(plaintext))),
         (Uniform::rand(rng), Output::Private(Uniform::rand(rng), None)),
-        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext))),
+        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext.clone()))),
         (Uniform::rand(rng), Output::Record(Uniform::rand(rng), Uniform::rand(rng), None, sender_ciphertext)),
         (
             Uniform::rand(rng),
-            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext), sender_ciphertext),
+            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext.clone()), sender_ciphertext),
         ),
         (Uniform::rand(rng), Output::ExternalRecord(Uniform::rand(rng))),
+        // RecordWithDynamicID with record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                record_checksum,
+                Some(record_ciphertext),
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // RecordWithDynamicID without record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                Uniform::rand(rng),
+                None,
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // ExternalRecordWithDynamicID.
+        (Uniform::rand(rng), Output::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
     ]
 }
 
@@ -166,11 +190,7 @@ function compute:
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment.
-            let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Unset the checksum.
-            deployment.set_program_checksum_raw(None);
-            // Unset the owner.
-            deployment.set_program_owner_raw(None);
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
@@ -181,13 +201,13 @@ function compute:
         edition % 2,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
-        deployment.program_checksum(),
-        deployment.program_owner(),
+        None,
+        None,
     )
     .unwrap()
 }
 
-pub fn sample_deployment_v2(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v2_without_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -210,11 +230,7 @@ function compute:
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment.
-            let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Set the program checksum.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // Set the program owner.
-            deployment.set_program_owner_raw(Some(Address::rand(rng)));
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
@@ -226,23 +242,80 @@ function compute:
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
-        deployment.program_owner(),
+        Some(Address::rand(rng)),
     )
     .unwrap()
+}
+
+pub fn sample_deployment_v2_with_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
+    let deployment = INSTANCE
+        .get_or_init(|| {
+            // Initialize a new program.
+            let (string, program) = Program::<CurrentNetwork>::parse(
+                r"
+program testing_three.aleo;
+
+record data:
+    owner as address.private;
+    one as field.private;
+    two as group.public;
+
+mapping store:
+    key as u32.public;
+    value as u32.public;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+            )
+            .unwrap();
+            assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+            // Construct the process.
+            let process = Process::load().unwrap();
+            // Compute the deployment.
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+            // Return the deployment.
+            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+            Deployment::from_str(&deployment.to_string()).unwrap()
+        })
+        .clone();
+    // Create a new deployment with the desired edition.
+    Deployment::<CurrentNetwork>::new(
+        edition,
+        deployment.program().clone(),
+        deployment.verifying_keys().clone(),
+        deployment.program_checksum(),
+        Some(Address::rand(rng)),
+    )
+    .unwrap()
+}
+
+/// Samples a V3 deployment (amendment) for the same program as V2 without translation keys.
+/// The edition must match an existing deployment's edition.
+/// V3 = checksum + no owner.
+pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    // Sample a V2 deployment without translation keys, then remove the owner to make it V3.
+    let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
+    deployment.set_program_owner_raw(None);
+    deployment
 }
 
 /// Samples a rejected deployment.
 pub fn sample_rejected_deployment(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
-    let deployment = match crate::sample_deployment_transaction(version, edition, is_fee_private, rng) {
-        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-        _ => unreachable!(),
-    };
+    let deployment =
+        match crate::sample_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng) {
+            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
+            _ => unreachable!(),
+        };
 
     // Sample a new program owner.
     let private_key = PrivateKey::new(rng).unwrap();
@@ -434,24 +507,32 @@ function large_transaction:
 pub fn sample_deployment_transaction(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Transaction<CurrentNetwork> {
     // Sample a private key.
     let private_key = PrivateKey::new(rng).unwrap();
     // Sample a deployment.
-    let deployment = match version {
-        1 => sample_deployment_v1(edition, rng),
-        2 => {
-            let mut deployment = sample_deployment_v2(edition, rng);
-            // Set the program checksum.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+    let deployment = match (version, has_translation_keys) {
+        (1, false) => sample_deployment_v1(edition, rng),
+        (2, false) => {
+            let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-            // Return the deployment.
             deployment
         }
-        _ => panic!("Invalid deployment version: {version}"),
+        (2, true) => {
+            let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
+            // Set the program owner to the address of the private key.
+            deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+            deployment
+        }
+        (3, _) => {
+            // V3 is an amendment - uses the same program as V2 but with additional translation VKs and no program_owner.
+            sample_deployment_v3(edition, rng)
+        }
+        _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
     };
 
     // Compute the deployment ID.
@@ -500,9 +581,9 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             let program = large_transaction_program();
 
             // Construct the process.
-            let mut process = snarkvm_synthesizer_process::Process::load().unwrap();
+            let process = snarkvm_synthesizer_process::Process::load().unwrap();
             // Add the program.
-            process.add_program(&program).unwrap();
+            process.lock().add_program(&program).unwrap();
 
             // Initialize a private key.
             let private_key = PrivateKey::new(rng).unwrap();

@@ -76,6 +76,7 @@ use aleo_std::{
     prelude::{finish, lap, timer},
 };
 use anyhow::{Context, Result};
+use cfg_if::cfg_if;
 use core::ops::Range;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -83,7 +84,7 @@ use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
-use rand::{prelude::IteratorRandom, rngs::OsRng};
+use rand::prelude::IteratorRandom;
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use time::OffsetDateTime;
 
@@ -94,6 +95,53 @@ pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;
 
 /// The capacity of the LRU cache holding the recently queried committees.
 const COMMITTEE_CACHE_SIZE: usize = 16;
+
+/// Options describing the deterministic dev committee to install on a [`Ledger`].
+///
+/// Installs an override that is returned by [`Ledger::get_committee_for_round`]
+/// and [`Ledger::get_committee_lookback_for_round`] for any round at or after
+/// the resolved start round.
+///
+/// This is used by devnet deployments that hot-swap the on-chain mainnet
+/// committee with a deterministic dev committee on top of a mainnet snapshot.
+/// Without it, validators that fall behind enough to enter `BlockSync` (and
+/// therefore go through `check_block_subdag_quorum`) would look up the mainnet
+/// committee at the lookback round and reject the dev-signed certificates.
+#[cfg(feature = "dev-committee")]
+#[derive(Clone, Copy, Debug)]
+pub struct DevCommitteeOptions {
+    /// The round the committee was swapped.
+    /// If none is set, the latest round in the ledger is chosen.
+    pub start_round: Option<u64>,
+    /// Number of members in the dev committee.
+    pub dev_num_validators: u16,
+    /// Seed used to deterministically derive the dev committee's keys.
+    ///
+    /// Every node in a devnet deployment must use the same value, or their
+    /// committees won't match. Callers can pass a project-wide constant such
+    /// as `snarkos_utilities::DEVELOPMENT_MODE_RNG_SEED`.
+    pub seed: u64,
+}
+
+/// Deterministically builds the dev committee from the given parameters.
+///
+/// Every member is given equal stake (`MIN_VALIDATOR_STAKE`). Two callers that
+/// pass the same `(start_round, dev_num_validators, seed)` get bitwise-
+/// identical committees.
+#[cfg(feature = "dev-committee")]
+pub fn build_dev_committee<N: Network>(start_round: u64, dev_num_validators: u16, seed: u64) -> Result<Committee<N>> {
+    use rand::SeedableRng;
+    let mut rng = rand_chacha::ChaChaRng::seed_from_u64(seed);
+    let dev_keys = (0..dev_num_validators).map(|_| PrivateKey::<N>::new(&mut rng)).collect::<Result<Vec<_>>>()?;
+    let members = dev_keys
+        .iter()
+        .map(Address::<N>::try_from)
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(|address| (address, (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0)))
+        .collect::<IndexMap<_, _>>();
+    Committee::new(start_round, members)
+}
 
 #[derive(Copy, Clone, Debug)]
 pub enum RecordsFilter<N: Network> {
@@ -170,6 +218,14 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     committee_cache: Mutex<LruCache<u64, Committee<N>>>,
     /// The cache that holds the provers and the number of solutions they have submitted for the current epoch.
     epoch_provers_cache: Arc<RwLock<IndexMap<Address<N>, u32>>>,
+
+    /// Optional dev committee, returned for any round `>= committee.starting_round()`.
+    ///
+    /// See [`DevCommitteeOptions`] for details. This is only consulted by the
+    /// round-based committee lookups; the height-based lookups and the
+    /// on-chain `current_committee` continue to read from the finalize store.
+    #[cfg(feature = "dev-committee")]
+    dev_committee: Option<Committee<N>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
@@ -194,7 +250,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
         // Sample random block heights.
         let block_heights: Vec<u32> =
-            (0..=latest_height).choose_multiple(&mut OsRng, (latest_height as usize).min(NUM_BLOCKS));
+            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
         cfg_into_iter!(block_heights).try_for_each(|height| {
             ledger.get_block(height)?;
             Ok::<_, Error>(())
@@ -207,6 +263,68 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Loads the ledger from storage, without performing integrity checks.
     pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
+        cfg_if! {
+            if #[cfg(feature="dev-committee")] {
+                Self::load_unchecked_inner(genesis_block, storage_mode, None)
+            } else {
+                Self::load_unchecked_inner(genesis_block, storage_mode)
+            }
+        }
+    }
+
+    /// Like [`Self::load`], but installs a dev committee override that is
+    /// returned by [`Self::get_committee_for_round`] and
+    /// [`Self::get_committee_lookback_for_round`] for any round at or after
+    /// `dev_committee.start_round`. See [`DevCommitteeOptions`].
+    #[cfg(feature = "dev-committee")]
+    pub fn load_with_dev_committee(
+        genesis_block: Block<N>,
+        storage_mode: StorageMode,
+        dev_committee_opts: DevCommitteeOptions,
+    ) -> Result<Self> {
+        let timer = timer!("Ledger::load_with_dev_committee");
+
+        // Retrieve the genesis hash.
+        let genesis_hash = genesis_block.hash();
+        // Initialize the ledger.
+        let ledger = Self::load_unchecked_with_dev_committee(genesis_block, storage_mode, dev_committee_opts)?;
+
+        // Ensure the ledger contains the correct genesis block.
+        if !ledger.contains_block_hash(&genesis_hash)? {
+            bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
+        }
+
+        // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
+        const NUM_BLOCKS: usize = 10;
+        let latest_height = ledger.current_block.read().height();
+        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
+        let block_heights: Vec<u32> =
+            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
+        cfg_into_iter!(block_heights).try_for_each(|height| {
+            ledger.get_block(height)?;
+            Ok::<_, Error>(())
+        })?;
+        lap!(timer, "Check existence of {NUM_BLOCKS} random blocks");
+
+        finish!(timer);
+        Ok(ledger)
+    }
+
+    /// Like [`Self::load_unchecked`], but installs a dev committee override.
+    #[cfg(feature = "dev-committee")]
+    pub fn load_unchecked_with_dev_committee(
+        genesis_block: Block<N>,
+        storage_mode: StorageMode,
+        dev_committee_opts: DevCommitteeOptions,
+    ) -> Result<Self> {
+        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts))
+    }
+
+    fn load_unchecked_inner(
+        genesis_block: Block<N>,
+        storage_mode: StorageMode,
+        #[cfg(feature = "dev-committee")] dev_committee_opts: Option<DevCommitteeOptions>,
+    ) -> Result<Self> {
         let timer = timer!("Ledger::load_unchecked");
 
         info!("Loading the ledger from storage...");
@@ -223,9 +341,39 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Retrieve the current committee.
         let current_committee = vm.finalize_store().committee_store().current_committee().ok();
-
         // Create a committee cache.
         let committee_cache = Mutex::new(LruCache::new(COMMITTEE_CACHE_SIZE.try_into().unwrap()));
+
+        // If a dev committee override was requested, resolve its start round
+        // (defaulting to the round of the latest block in storage, or the
+        // genesis round when storage is empty) and build the committee now,
+        // before the `InnerLedger` is constructed.
+        #[cfg(feature = "dev-committee")]
+        let dev_committee = match dev_committee_opts {
+            Some(opts) => {
+                let start_round = if let Some(round) = opts.start_round {
+                    round
+                } else {
+                    match vm.block_store().max_height() {
+                        Some(h) => {
+                            let hash = vm
+                                .block_store()
+                                .get_block_hash(h)?
+                                .ok_or_else(|| anyhow!("Missing block hash at height {h}"))?;
+                            let block = vm
+                                .block_store()
+                                .get_block(&hash)?
+                                .ok_or_else(|| anyhow!("Missing block at height {h}"))?;
+                            block.round()
+                        }
+                        None => genesis_block.round(),
+                    }
+                };
+
+                Some(build_dev_committee::<N>(start_round, opts.dev_num_validators, opts.seed)?)
+            }
+            None => None,
+        };
 
         // Initialize the ledger.
         let ledger = Self(Arc::new(InnerLedger {
@@ -236,6 +384,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             current_block: RwLock::new(genesis_block.clone()),
             committee_cache,
             epoch_provers_cache: Default::default(),
+            #[cfg(feature = "dev-committee")]
+            dev_committee,
         }));
 
         // Attempt to obtain the maximum height from the storage.
@@ -251,15 +401,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         lap!(timer, "Initialize genesis");
 
         // Ensure that the greatest stored height matches that of the block tree.
+        let tree_derived_block_height = ledger.vm().block_store().current_block_height();
         ensure!(
-            latest_height == ledger.vm().block_store().current_block_height(),
-            "The stored height is different than the one in the block tree; \
-            please ensure that the cached block tree is valid or delete the \
-            'block_tree' file from the ledger folder"
+            latest_height == tree_derived_block_height,
+            "The stored height ({latest_height}) is different than the one in \
+            the block tree ({tree_derived_block_height}); please ensure that \
+            the cached block tree is valid or delete the 'block_tree' file from \
+            the ledger folder"
         );
 
         // Verify that the root of the cached block tree matches the one in the storage.
         let tree_root = <N::StateRoot>::from(ledger.vm().block_store().get_block_tree_root());
+        // Height 0 stores `Field::one()` as its state root.
+        #[cfg(feature = "dev_genesis_state_root")]
+        let tree_root = if latest_height == 0 { Field::<N>::one().into() } else { tree_root };
         let state_root = ledger
             .vm()
             .block_store()
@@ -292,6 +447,16 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
+    /// Returns the installed dev committee, if any.
+    ///
+    /// The committee is determined at load time by
+    /// [`Ledger::load_with_dev_committee`] (or its `unchecked` variant) and is
+    /// immutable thereafter.
+    #[cfg(feature = "dev-committee")]
+    pub fn dev_committee(&self) -> Option<&Committee<N>> {
+        self.dev_committee.as_ref()
+    }
+
     /// Creates a rocksdb checkpoint in the specified directory, which needs to not exist at the
     /// moment of calling. The checkpoints are based on hard links, which means they can both be
     /// incremental (i.e. they aren't full physical copies), and used as full rollback points
@@ -323,9 +488,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
 
         // Collect the addresses of the solutions submitted in the current epoch.
-        let existing_epoch_blocks: Vec<_> = (start..=current_block_height).collect();
-        let solution_addresses = cfg_iter!(existing_epoch_blocks)
-            .flat_map(|height| match self.get_solutions(*height).as_deref() {
+        let solution_addresses = cfg_into_iter!(start..=current_block_height)
+            .flat_map(|height| match self.get_solutions(height).as_deref() {
                 Ok(Some(solutions)) => solutions.iter().map(|(_, s)| s.address()).collect::<Vec<_>>(),
                 _ => vec![],
             })

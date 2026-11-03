@@ -254,7 +254,7 @@ pub const G1_GENERATOR_Y: Fq = field!(
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
+    use rand::RngExt;
     use snarkvm_fields::Field;
     use snarkvm_utilities::{BitIteratorBE, TestRng, Uniform};
 
@@ -270,7 +270,7 @@ mod tests {
             let p = G1Affine::rand(rng);
             assert!(Bls12_377G1Parameters::is_in_correct_subgroup_assuming_on_curve(&p));
             let x = Fq::rand(rng);
-            let greatest = rng.r#gen();
+            let greatest = rng.random();
 
             if let Some(p) = G1Affine::from_x_coordinate(x, greatest) {
                 assert_eq!(

@@ -39,6 +39,7 @@ impl<N: Network> Literal<N> {
                 Some(size) => size,
                 None => N::halt("String exceeds usize::MAX bits."),
             },
+            Self::Identifier(..) => IdentifierLiteral::<N>::size_in_bits(),
         };
         u16::try_from(size).or_halt_with::<N>("Literal exceeds u16::MAX bits.")
     }

@@ -24,6 +24,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the committee for the given `round`.
     pub fn get_committee_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
+        // If a devnet committee hotswap is installed and active at this round,
+        // it takes precedence over both the cache and the on-chain committee.
+        #[cfg(feature = "dev-committee")]
+        if let Some(committee) = self.dev_committee.as_ref()
+            && round >= committee.starting_round()
+        {
+            return Ok(Some(committee.clone()));
+        }
+
         // Check if the committee is already in the cache.
         if let Some(committee) = self.committee_cache.lock().get(&round) {
             return Ok(Some(committee.clone()));
@@ -52,9 +61,19 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the committee lookback for the given round.
     pub fn get_committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
+        // If a devnet committee hotswap is installed and active at this round,
+        // short-circuit before computing the lookback round (which would otherwise
+        // fall ~100 rounds earlier into the pre-hotswap mainnet committee).
+        #[cfg(feature = "dev-committee")]
+        if let Some(committee) = self.dev_committee.as_ref()
+            && round >= committee.starting_round()
+        {
+            return Ok(Some(committee.clone()));
+        }
+
         // Get the round number for the previous committee. Note, we subtract 2 from odd rounds,
         // because committees are updated in even rounds.
-        let previous_round = match round % 2 == 0 {
+        let previous_round = match round.is_multiple_of(2) {
             true => round.saturating_sub(1),
             false => round.saturating_sub(2),
         };

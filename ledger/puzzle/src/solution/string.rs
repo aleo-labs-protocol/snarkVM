@@ -52,7 +52,7 @@ mod tests {
         let address = Address::try_from(private_key)?;
 
         // Sample a new solution.
-        let partial_solution = PartialSolution::new(rng.r#gen(), address, u64::rand(&mut rng)).unwrap();
+        let partial_solution = PartialSolution::new(rng.random(), address, u64::rand(&mut rng)).unwrap();
         let target = u64::rand(&mut rng);
         let expected = Solution::new(partial_solution, target);
 

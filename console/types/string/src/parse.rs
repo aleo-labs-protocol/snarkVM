@@ -18,9 +18,16 @@ use super::*;
 impl<E: Environment> Parser for StringType<E> {
     /// Parses a string into a string type.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Parse the starting and ending quote '"' keyword from the string.
         let (string, value) = string_parser::parse_string(string)?;
+
+        // Return an error if the literal exceeds the maximum length. Note: this must be checked here
+        // rather than left to `StringType::new`, which halts instead of failing; a parser is reached
+        // from untrusted input, such as a program deserialized from its human-readable form.
+        if value.len() > E::MAX_STRING_BYTES as usize {
+            return Err(Err::Error(make_error(string, ErrorKind::TooLarge)));
+        }
 
         Ok((string, StringType::new(&value)))
     }
@@ -103,5 +110,23 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_oversized_string_fails_without_halting() {
+        let max_bytes = CurrentEnvironment::MAX_STRING_BYTES as usize;
+
+        // A literal of the maximum length is accepted.
+        let at_capacity = format!("\"{}\"", "a".repeat(max_bytes));
+        assert!(StringType::<CurrentEnvironment>::parse(&at_capacity).is_ok());
+
+        // A literal that exceeds it is rejected, rather than halting. Note: `StringType::new` halts on
+        // an oversized string, so the parser has to reject it beforehand; it is reachable from
+        // untrusted input, such as a program deserialized from its human-readable form.
+        for excess in 1..=4 {
+            let over_capacity = format!("\"{}\"", "a".repeat(max_bytes + excess));
+            assert!(StringType::<CurrentEnvironment>::parse(&over_capacity).is_err());
+            assert!(StringType::<CurrentEnvironment>::from_str(&over_capacity).is_err());
+        }
     }
 }

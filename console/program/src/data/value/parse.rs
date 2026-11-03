@@ -18,12 +18,14 @@ use super::*;
 impl<N: Network> Parser for Value<N> {
     /// Parses a string into a value.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    fn parse(string: &str) -> ParserResult<'_, Self> {
         // Note that the order of the parsers matters.
         alt((
             map(Future::parse, Value::Future),
+            map(DynamicFuture::parse, Value::DynamicFuture),
             map(Plaintext::parse, Value::Plaintext),
             map(Record::parse, Value::Record),
+            map(DynamicRecord::parse, Value::DynamicRecord),
         ))(string)
     }
 }
@@ -60,6 +62,8 @@ impl<N: Network> Display for Value<N> {
             Value::Plaintext(plaintext) => Display::fmt(plaintext, f),
             Value::Record(record) => Display::fmt(record, f),
             Value::Future(future) => Display::fmt(future, f),
+            Value::DynamicRecord(dynamic_record) => Display::fmt(dynamic_record, f),
+            Value::DynamicFuture(dynamic_future) => Display::fmt(dynamic_future, f),
         }
     }
 }
@@ -67,7 +71,10 @@ impl<N: Network> Display for Value<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Argument, Entry, Identifier, Literal, Owner, ProgramID};
     use snarkvm_console_network::MainnetV0;
+    use snarkvm_console_types::{Group, U8, U64};
+    use snarkvm_utilities::{TestRng, Uniform};
 
     type CurrentNetwork = MainnetV0;
 
@@ -114,5 +121,59 @@ mod tests {
         let expected = Value::<CurrentNetwork>::from_str(string).unwrap();
         assert!(matches!(expected, Value::Future(..)));
         assert_eq!(string, format!("{expected}"));
+    }
+
+    #[test]
+    fn test_value_dynamic_record_parse() {
+        let rng = &mut TestRng::default();
+
+        // Create a record and convert to dynamic record.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let expected = DynamicRecord::from_record(&record).unwrap();
+
+        // Round-trip through string parsing.
+        let string = Value::DynamicRecord(expected.clone()).to_string();
+        let Value::DynamicRecord(candidate) = Value::<CurrentNetwork>::from_str(&string).unwrap() else {
+            panic!("Expected DynamicRecord value");
+        };
+
+        // Verify the fields match.
+        assert_eq!(expected.owner(), candidate.owner());
+        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.nonce(), candidate.nonce());
+        assert_eq!(expected.version(), candidate.version());
+    }
+
+    #[test]
+    fn test_value_dynamic_future_parse() {
+        // Create a future and convert to dynamic future.
+        let future = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
+        );
+        let expected = DynamicFuture::from_future(&future).unwrap();
+
+        // Round-trip through string parsing.
+        let string = Value::DynamicFuture(expected.clone()).to_string();
+        let Value::DynamicFuture(candidate) = Value::<CurrentNetwork>::from_str(&string).unwrap() else {
+            panic!("Expected DynamicFuture value");
+        };
+
+        // Verify the fields match.
+        assert_eq!(expected.program_name(), candidate.program_name());
+        assert_eq!(expected.program_network(), candidate.program_network());
+        assert_eq!(expected.function_name(), candidate.function_name());
+        assert_eq!(expected.checksum(), candidate.checksum());
     }
 }

@@ -81,6 +81,16 @@ impl<E: Environment> Cast<Scalar<E>> for Field<E> {
     }
 }
 
+impl<E: Environment> Cast<IdentifierLiteral<E>> for Field<E> {
+    /// Casts a `Field` to an `IdentifierLiteral`.
+    ///
+    /// This operation validates that the field element represents a valid identifier literal.
+    #[inline]
+    fn cast(&self) -> IdentifierLiteral<E> {
+        IdentifierLiteral::from_field(self.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

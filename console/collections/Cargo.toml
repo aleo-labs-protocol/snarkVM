@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-collections"
-version = "4.4.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Collections for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -44,6 +44,9 @@ workspace = true
 [dev-dependencies.snarkvm-console-network]
 path = "../network"
 
+[dev-dependencies.bincode]
+workspace = true
+
 [dev-dependencies.criterion]
 workspace = true
 
@@ -52,5 +55,6 @@ workspace = true
 
 [features]
 serial = [ ]
+test-utils = [ ]
 locktick = [ "dep:locktick" ]
 timer = [ "aleo-std/timer" ]

@@ -29,6 +29,7 @@ use console::{
         LiteralType,
         Locator,
         PlaintextType,
+        ProgramID,
         RecordType,
         Register,
         RegisterType,
@@ -53,6 +54,8 @@ use snarkvm_synthesizer_program::{
 use snarkvm_utilities::dev_eprintln;
 
 use indexmap::{IndexMap, IndexSet};
+
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegisterTypes<N: Network> {
@@ -115,6 +118,9 @@ impl<N: Network> RegisterTypes<N> {
             Operand::Checksum(_) => bail!("'checksum' is not a valid operand in a non-finalize context."),
             Operand::Edition(_) => bail!("'edition' is not a valid operand in a non-finalize context."),
             Operand::ProgramOwner(_) => bail!("'program_owner' is not a valid operand in a non-finalize context."),
+            Operand::ComponentChecksum(..) => {
+                bail!("a component checksum is not a valid operand in a non-finalize context.")
+            }
         })
     }
 
@@ -149,6 +155,8 @@ impl<N: Network> RegisterTypes<N> {
             Plaintext(PlaintextType<N>),
             /// A future.
             Future(Locator<N>),
+            // A dynamic future.
+            DynamicFuture,
         }
 
         // A literal address type.
@@ -206,13 +214,33 @@ impl<N: Network> RegisterTypes<N> {
                     };
                     // Retrieve the entry type from the external record.
                     match external_record.entries().get(path_name) {
-                        // Retrieve the plaintext type.
-                        Some(entry_type) => RegisterAccessType::Plaintext(entry_type.plaintext_type().clone()),
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(entry_type) => {
+                            let qualified = entry_type.plaintext_type().clone().qualify(*locator.program_id());
+                            RegisterAccessType::Plaintext(qualified)
+                        }
                         None => bail!("'{path_name}' does not exist in external record '{locator}'"),
                     }
                 }
             }
             RegisterType::Future(locator) => RegisterAccessType::Future(*locator),
+            // A dynamic record cannot be accessed directly.
+            RegisterType::DynamicRecord => {
+                // Retrieve the first access.
+                // Note: this unwrap is safe since the path is checked to be non-empty above.
+                let access = path_iter.next().unwrap();
+                // Retrieve the member type from the external record.
+                if access == &Access::Member(Identifier::from_str("owner")?) {
+                    // If the member is the owner, then output the address type.
+                    RegisterAccessType::Plaintext(literal_address_type)
+                } else {
+                    bail!(
+                        "Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead."
+                    )
+                }
+            }
+            // A dynamic future cannot be accessed directly.
+            RegisterType::DynamicFuture => bail!("Cannot access a dynamic future value directly"),
         };
 
         // Traverse the path to find the register type.
@@ -234,10 +262,13 @@ impl<N: Network> RegisterTypes<N> {
                 }
                 (RegisterAccessType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
                     let external_stack = stack.get_external_stack(locator.program_id())?;
-                    // Retrieve the member type from the struct.
+                    // Retrieve the member type from the external struct.
                     match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
-                        // Update the member type.
-                        Some(member_type) => register_type = RegisterAccessType::Plaintext(member_type.clone()),
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(member_type) => {
+                            let qualified = member_type.clone().qualify(*locator.program_id());
+                            register_type = RegisterAccessType::Plaintext(qualified);
+                        }
                         None => bail!("'{identifier}' does not exist in struct '{locator}'"),
                     }
                 }
@@ -273,9 +304,25 @@ impl<N: Network> RegisterTypes<N> {
                         Some(input) => {
                             register_type = match input.finalize_type() {
                                 FinalizeType::Plaintext(plaintext_type) => {
-                                    RegisterAccessType::Plaintext(plaintext_type.clone())
+                                    let plaintext = match external_stack {
+                                        Some(ref external_stack) => {
+                                            // Qualify the finalize input type with the external program ID so that any
+                                            // subsequent accesses are resolved against the correct program context.
+                                            // Without this, the type would appear "local" and later lookups could
+                                            // incorrectly search the current program instead of the external one the
+                                            // struct originated from.
+                                            //
+                                            // Note: this was added in ConsensusVersion::V13 and a check was added to make
+                                            // sure this doesn't affect older consensus versions.
+                                            plaintext_type.clone().qualify(*external_stack.program_id())
+                                        }
+                                        None => plaintext_type.clone(),
+                                    };
+
+                                    RegisterAccessType::Plaintext(plaintext)
                                 }
                                 FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
+                                FinalizeType::DynamicFuture => RegisterAccessType::DynamicFuture,
                             }
                         }
                         // Halts if the index is out of bounds.
@@ -287,7 +334,8 @@ impl<N: Network> RegisterTypes<N> {
                     Access::Index(..),
                 )
                 | (RegisterAccessType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (RegisterAccessType::Future(..), Access::Member(..)) => {
+                | (RegisterAccessType::Future(..), Access::Member(..))
+                | (RegisterAccessType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -297,6 +345,7 @@ impl<N: Network> RegisterTypes<N> {
         Ok(match register_type {
             RegisterAccessType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
             RegisterAccessType::Future(locator) => RegisterType::Future(locator),
+            RegisterAccessType::DynamicFuture => RegisterType::DynamicFuture,
         })
     }
 }

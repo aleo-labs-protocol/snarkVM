@@ -62,7 +62,11 @@ mod tests {
                 "{expected_name_string}.aleo"
             ))?;
 
-            let candidate = ProgramID::<Circuit>::new(mode, expected);
+            let candidate = match mode {
+                Mode::Constant => ProgramID::<Circuit>::constant(expected),
+                Mode::Public => ProgramID::<Circuit>::public(expected),
+                Mode::Private => panic!("ProgramID cannot be private"),
+            };
             assert_eq!(expected.to_bits_le(), candidate.to_bits_le().eject_value());
         }
         Ok(())
@@ -76,7 +80,11 @@ mod tests {
                 "{expected_name_string}.aleo"
             ))?;
 
-            let candidate = ProgramID::<Circuit>::new(mode, expected);
+            let candidate = match mode {
+                Mode::Constant => ProgramID::<Circuit>::constant(expected),
+                Mode::Public => ProgramID::<Circuit>::public(expected),
+                Mode::Private => panic!("ProgramID cannot be private"),
+            };
             assert_eq!(expected.to_bits_be(), candidate.to_bits_be().eject_value());
         }
         Ok(())
@@ -86,7 +94,6 @@ mod tests {
     fn test_to_bits_le() -> Result<()> {
         check_to_bits_le(Mode::Constant)?;
         check_to_bits_le(Mode::Public)?;
-        check_to_bits_le(Mode::Private)?;
         Ok(())
     }
 
@@ -94,7 +101,6 @@ mod tests {
     fn test_to_bits_be() -> Result<()> {
         check_to_bits_be(Mode::Constant)?;
         check_to_bits_be(Mode::Public)?;
-        check_to_bits_be(Mode::Private)?;
         Ok(())
     }
 }

@@ -61,5 +61,5 @@ pub mod modules {
     #[cfg(feature = "string")]
     pub use snarkvm_console_types_string as string;
     #[cfg(feature = "string")]
-    pub use snarkvm_console_types_string::StringType;
+    pub use snarkvm_console_types_string::{IdentifierLiteral, StringType};
 }

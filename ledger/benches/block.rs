@@ -17,9 +17,10 @@
 extern crate criterion;
 
 use snarkvm_console::{account::PrivateKey, network::MainnetV0, prelude::*};
-use snarkvm_ledger::test_helpers::{TestChainBuilder, sample_genesis_block};
+use snarkvm_ledger::test_helpers::sample_genesis_block;
 
-use criterion::Criterion;
+use criterion::{Criterion, measurement::WallTime};
+use std::time::Duration;
 
 type CurrentNetwork = MainnetV0;
 
@@ -38,11 +39,6 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 
     // bincode::serialize
     c.bench_function(&format!("{name}::serialize (bincode)"), |b| b.iter(|| bincode::serialize(&object).unwrap()));
-
-    // serde_json::to_string
-    c.bench_function(&format!("{name}::to_string (serde_json)"), |b| {
-        b.iter(|| serde_json::to_string(&object).unwrap())
-    });
 
     /////////////////
     // Deserialize //
@@ -65,57 +61,28 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
             b.iter(|| bincode::deserialize::<T>(&buffer).unwrap())
         });
     }
-    // serde_json::from_str
-    {
-        let object = serde_json::to_string(&object).unwrap();
-        c.bench_function(&format!("{name}::from_str (serde_json)"), move |b| {
-            b.iter(|| serde_json::from_str::<T>(&object).unwrap())
-        });
-    }
 }
 
-fn block_serialization(c: &mut Criterion) {
+/// Serialization benches for one sampled genesis block and derived header, transactions, transaction, and transition.
+///
+/// A single `sample_genesis_block` call amortizes construction across all nested types.
+fn block_and_nested_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
+    let block = sample_genesis_block(&mut rng);
 
-    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
-    let block = builder.generate_block(&mut rng).unwrap();
-
-    bench_serialization(c, "Block", block);
-}
-
-fn block_header_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-
-    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
-    let block = builder.generate_block(&mut rng).unwrap();
-
+    bench_serialization(c, "Block", block.clone());
     bench_serialization(c, "Header", *block.header());
-}
-
-fn block_transactions_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
     bench_serialization(c, "Transactions", block.transactions().clone());
-}
 
-fn transaction_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
     let transaction = block.transactions().iter().next().unwrap().clone();
-    bench_serialization(c, "Transaction", transaction);
-}
-
-fn transition_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
-    let transaction = block.transactions().iter().next().unwrap().clone();
+    bench_serialization(c, "Transaction", transaction.clone());
     let transition = transaction.transitions().next().unwrap().clone();
     bench_serialization(c, "Transition", transition);
 }
 
 fn signature_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
-    let data = rng.r#gen();
+    let data = rng.random();
 
     let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
     let signature = private_key.sign(&[data], &mut rng).unwrap();
@@ -125,9 +92,8 @@ fn signature_serialization(c: &mut Criterion) {
 
 criterion_group! {
     name = block;
-    config = Criterion::default().sample_size(10);
-    targets = block_serialization,block_header_serialization, block_transactions_serialization,
-    transaction_serialization, transition_serialization, signature_serialization,
+    config = Criterion::<WallTime>::default().sample_size(10).measurement_time(Duration::from_secs(2));
+    targets = block_and_nested_serialization, signature_serialization,
 }
 
 criterion_main!(block);

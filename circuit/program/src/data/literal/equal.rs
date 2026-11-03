@@ -38,6 +38,7 @@ impl<A: Aleo> Equal<Self> for Literal<A> {
             (Self::Scalar(a), Self::Scalar(b)) => a.is_equal(b),
             (Self::Signature(a), Self::Signature(b)) => a.is_equal(b),
             (Self::String(a), Self::String(b)) => a.is_equal(b),
+            (Self::Identifier(a), Self::Identifier(b)) => a.is_equal(b),
             _ => Boolean::constant(false),
         }
     }
@@ -62,6 +63,7 @@ impl<A: Aleo> Equal<Self> for Literal<A> {
             (Self::Scalar(a), Self::Scalar(b)) => a.is_not_equal(b),
             (Self::Signature(a), Self::Signature(b)) => a.is_not_equal(b),
             (Self::String(a), Self::String(b)) => a.is_not_equal(b),
+            (Self::Identifier(a), Self::Identifier(b)) => a.is_not_equal(b),
             _ => Boolean::constant(true),
         }
     }

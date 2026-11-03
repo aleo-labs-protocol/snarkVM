@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-wasm"
-version = "4.4.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "WASM for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -86,8 +86,8 @@ features = [ "wasm" ]
 optional = true
 
 [dependencies.getrandom]
-version = "0.2"
-features = [ "js" ]
+version = "0.4.2"
+features = [ "wasm_js" ]
 
 [dev-dependencies.wasm-bindgen-test]
 version = "0.3.37"

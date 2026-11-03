@@ -306,11 +306,11 @@ pub(crate) mod test_helpers {
     use crate::vm::TestRng;
     use snarkvm_ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_STAKE};
 
-    use rand::{CryptoRng, Rng};
+    use rand::{CryptoRng, RngExt};
 
     /// Returns the stakers, given the map of `(validator, (microcredits, is_open, commission))` entries.
     /// This method simulates the existence of delegators for the members.
-    pub(crate) fn to_stakers<N: Network, R: Rng + CryptoRng>(
+    pub(crate) fn to_stakers<N: Network, R: CryptoRng>(
         members: &IndexMap<Address<N>, (u64, bool, u8)>,
         rng: &mut R,
     ) -> IndexMap<Address<N>, (Address<N>, u64)> {
@@ -325,11 +325,11 @@ pub(crate) mod test_helpers {
                 let num_iterations = (remaining_microcredits / staker_amount).saturating_sub(1);
 
                 // Construct the map of stakers.
-                let rngs = (0..num_iterations).map(|_| TestRng::from_seed(rng.r#gen())).collect::<Vec<_>>();
+                let rngs = (0..num_iterations).map(|_| TestRng::from_seed(rng.random())).collect::<Vec<_>>();
                 let mut stakers: IndexMap<_, _> = cfg_into_iter!(rngs)
                     .map(|mut rng| {
                         // Sample a random staker.
-                        let staker = Address::<N>::new(rng.r#gen());
+                        let staker = Address::<N>::new(rng.random());
                         // Output the staker.
                         (staker, (*validator, staker_amount))
                     })
@@ -341,7 +341,7 @@ pub(crate) mod test_helpers {
                 // Insert the last staker.
                 let final_amount = remaining_microcredits.saturating_sub(num_iterations * staker_amount);
                 if final_amount > 0 {
-                    let staker = Address::<N>::new(rng.r#gen());
+                    let staker = Address::<N>::new(rng.random());
                     stakers.insert(staker, (*validator, final_amount));
                 }
                 // Return the stakers.
@@ -360,7 +360,7 @@ pub(crate) mod test_helpers {
 
     /// Returns the withdrawal addresses, given the stakers.
     /// This method simulates the existence of unique withdrawal addresses for the stakers.
-    pub(crate) fn to_withdraw_addresses<N: Network, R: Rng + CryptoRng>(
+    pub(crate) fn to_withdraw_addresses<N: Network, R: CryptoRng>(
         stakers: &IndexMap<Address<N>, (Address<N>, u64)>,
         rng: &mut R,
     ) -> IndexMap<Address<N>, Address<N>> {
@@ -368,7 +368,7 @@ pub(crate) mod test_helpers {
             .into_iter()
             .map(|(staker, _)| {
                 // Sample a random withdraw address.
-                let withdraw_address = Address::<N>::new(rng.r#gen());
+                let withdraw_address = Address::<N>::new(rng.random());
                 // Return the withdraw address.
                 (*staker, withdraw_address)
             })

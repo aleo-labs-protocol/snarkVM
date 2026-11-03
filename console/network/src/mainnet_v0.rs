@@ -70,6 +70,11 @@ lazy_static! {
     /// The Poseidon hash function, using a rate of 8.
     pub static ref POSEIDON_8: Poseidon8<MainnetV0> = Poseidon8::<MainnetV0>::setup("AleoPoseidon8").expect("Failed to setup Poseidon8");
 
+    /// The Poseidon leaf hasher for dynamic records, using a rate of 8.
+    pub static ref DYNAMIC_RECORD_LEAF_HASHER: Poseidon8<MainnetV0> = Poseidon8::<MainnetV0>::setup("DynamicRecordLeafHasher").expect("Failed to setup DynamicRecordLeafHasher");
+    /// The Poseidon path hasher for dynamic records, using a rate of 2.
+    pub static ref DYNAMIC_RECORD_PATH_HASHER: Poseidon2<MainnetV0> = Poseidon2::<MainnetV0>::setup("DynamicRecordPathHasher").expect("Failed to setup DynamicRecordPathHasher");
+
     pub static ref CREDITS_V0_PROVING_KEYS: IndexMap<String, Arc<VarunaProvingKey<Console>>> = {
         let mut map = IndexMap::new();
         snarkvm_parameters::insert_credit_v0_keys!(map, VarunaProvingKey<Console>, Prover);
@@ -133,6 +138,9 @@ impl Environment for MainnetV0 {
     const MONTGOMERY_B: Self::Field = Console::MONTGOMERY_B;
 }
 
+/// The inclusion proving key, read from the shipped bytes or loaded against an SRS.
+static INCLUSION_PROVING_KEY: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+
 impl Network for MainnetV0 {
     /// The block hash type.
     type BlockHash = AleoID<Field<Self>, { hrp2!("ab") }>;
@@ -169,21 +177,23 @@ impl Network for MainnetV0 {
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::mainnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(not(any(test, feature = "test")))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6] = [
         (ConsensusVersion::V1, 16),
         (ConsensusVersion::V3, 25),
         (ConsensusVersion::V5, 30),
         (ConsensusVersion::V6, 35),
         (ConsensusVersion::V9, 40),
+        (ConsensusVersion::V20, 40),
     ];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6] = [
         (ConsensusVersion::V1, 100),
         (ConsensusVersion::V3, 101),
         (ConsensusVersion::V5, 102),
         (ConsensusVersion::V6, 103),
         (ConsensusVersion::V9, 104),
+        (ConsensusVersion::V20, 105),
     ];
     /// The (long) network name.
     const NAME: &'static str = "Aleo Mainnet (v0)";
@@ -239,6 +249,11 @@ impl Network for MainnetV0 {
             .ok_or_else(|| anyhow!("Verifying key for credits.aleo/{function_name}' not found"))
     }
 
+    /// Checks that `file` is the shipped proving key file for `credits.aleo/{function_name}`.
+    fn verify_credits_proving_key_file(function_name: &str, file: &[u8]) -> Result<()> {
+        verify_credits_proving_key_file!(mainnet, function_name, file)
+    }
+
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion_v0 circuit.
     fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
@@ -289,8 +304,7 @@ impl Network for MainnetV0 {
     #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
+        INCLUSION_PROVING_KEY.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
                 CircuitProvingKey::from_bytes_le(&snarkvm_parameters::mainnet::INCLUSION_PROVING_KEY[1..])
@@ -299,11 +313,18 @@ impl Network for MainnetV0 {
         })
     }
 
+    /// Sets the inclusion proving key to the key in `file`, read against `srs` so that it shares its powers.
+    fn load_inclusion_proving_key(file: &[u8], srs: &UniversalParams<Self::PairingCurve>) -> Result<()> {
+        ensure!(INCLUSION_PROVING_KEY.get().is_none(), "The inclusion proving key is already loaded");
+        snarkvm_parameters::mainnet::InclusionProver::verify_bytes(file)?;
+        let key = read_proving_key_with_srs::<Self>(file, srs)?;
+        INCLUSION_PROVING_KEY.set(Arc::new(key)).map_err(|_| anyhow!("The inclusion proving key is already loaded"))
+    }
+
     #[cfg(feature = "wasm")]
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key(inclusion_key_bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
+        INCLUSION_PROVING_KEY.get_or_init(|| {
             inclusion_key_bytes
                 .map(|bytes| {
                     snarkvm_parameters::mainnet::InclusionProver::verify_bytes(&bytes)
@@ -329,6 +350,59 @@ impl Network for MainnetV0 {
             Arc::new(
                 CircuitVerifyingKey::from_bytes_le(&snarkvm_parameters::mainnet::INCLUSION_VERIFYING_KEY[1..])
                     .expect("Failed to load inclusion verifying key."),
+            )
+        })
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the credits.aleo credits record translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            // Skipping the first byte, which is the encoded version.
+            Arc::new(
+                CircuitProvingKey::from_bytes_le(&snarkvm_parameters::mainnet::TRANSLATION_CREDITS_PROVING_KEY[1..])
+                    .expect("Failed to load translation credits proving key."),
+            )
+        })
+    }
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation credits circuit.
+    fn translation_credits_proving_key(
+        translation_credits_key_bytes: Option<Vec<u8>>,
+    ) -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            translation_credits_key_bytes
+                .map(|bytes| {
+                    snarkvm_parameters::mainnet::TranslationCreditsProver::verify_bytes(&bytes)
+                        .expect("Bytes provided did not match expected translation credits checksum.");
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(&bytes[1..])
+                            .expect("Failed to load translation credits proving key."),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(
+                            &snarkvm_parameters::mainnet::TRANSLATION_CREDITS_PROVING_KEY[1..],
+                        )
+                        .expect("Failed to load translation credits proving key."),
+                    )
+                })
+        })
+    }
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            Arc::new(
+                CircuitVerifyingKey::from_bytes_le(
+                    &snarkvm_parameters::mainnet::TRANSLATION_CREDITS_VERIFYING_KEY[1..],
+                )
+                .expect("Failed to load translation verifying key."),
             )
         })
     }
@@ -612,6 +686,14 @@ impl Network for MainnetV0 {
         MerkleTree::new(&*BHP_1024, &*BHP_512, leaves)
     }
 
+    /// Recreates a Merkle tree with a BHP leaf hasher of 1024-bits and a BHP path hasher of
+    /// 512-bits from the given state, e.g. one that was previously cached on disk.
+    fn merkle_tree_bhp_from_state<const DEPTH: u8>(
+        state: MerkleTreeState<'_, Self>,
+    ) -> Result<BHPMerkleTree<Self, DEPTH>> {
+        MerkleTree::from_state(&*BHP_1024, &*BHP_512, state)
+    }
+
     /// Returns a Merkle tree with a Poseidon leaf hasher with input rate of 4 and a Poseidon path hasher with input rate of 2.
     fn merkle_tree_psd<const DEPTH: u8>(leaves: &[Vec<Field<Self>>]) -> Result<PoseidonMerkleTree<Self, DEPTH>> {
         MerkleTree::new(&*POSEIDON_4, &*POSEIDON_2, leaves)
@@ -634,6 +716,16 @@ impl Network for MainnetV0 {
     ) -> bool {
         path.verify(&*POSEIDON_4, &*POSEIDON_2, root, leaf)
     }
+
+    /// Returns the Poseidon leaf hasher for dynamic records (rate 8).
+    fn dynamic_record_leaf_hasher() -> &'static Poseidon8<Self> {
+        &DYNAMIC_RECORD_LEAF_HASHER
+    }
+
+    /// Returns the Poseidon path hasher for dynamic records (rate 2).
+    fn dynamic_record_path_hasher() -> &'static Poseidon2<Self> {
+        &DYNAMIC_RECORD_PATH_HASHER
+    }
 }
 
 #[cfg(test)]
@@ -648,5 +740,43 @@ mod tests {
         let scalar = Scalar::rand(&mut TestRng::default());
         let group = CurrentNetwork::g_scalar_multiply(&scalar);
         assert_eq!(group, CurrentNetwork::g_powers()[0] * scalar);
+    }
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[test]
+    fn test_verify_credits_proving_key_file() {
+        let file = snarkvm_parameters::mainnet::TransferPublicProver::load_bytes().expect("the file loads");
+        CurrentNetwork::verify_credits_proving_key_file("transfer_public", &file).expect("the shipped file verifies");
+
+        let mut flipped = file.clone();
+        flipped[file.len() / 2] ^= 1;
+        assert!(CurrentNetwork::verify_credits_proving_key_file("transfer_public", &flipped).is_err());
+        assert!(CurrentNetwork::verify_credits_proving_key_file("transfer_private", &file).is_err());
+        assert!(CurrentNetwork::verify_credits_proving_key_file("inclusion", &file).is_err());
+    }
+
+    #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
+    #[test]
+    fn test_verify_credits_proving_key_file_then_read_with_srs() {
+        use snarkvm_algorithms::polycommit::{kzg10::UniversalParams, sonic_pc::Bases};
+
+        let file = snarkvm_parameters::mainnet::TransferPublicProver::load_bytes().expect("the file loads");
+        CurrentNetwork::verify_credits_proving_key_file("transfer_public", &file).expect("the shipped file verifies");
+        // Skipping the first byte, which is the encoded version.
+        let (powers, shifted) = {
+            let key = VarunaProvingKey::<CurrentNetwork>::from_bytes_le(&file[1..]).expect("the key reads");
+            let committer_key = &key.committer_key;
+            (
+                committer_key.powers_of_beta_g.len(),
+                committer_key.shifted_powers_of_beta_g.as_ref().map_or(0, |b| b.len()),
+            )
+        };
+        let srs = UniversalParams::load().expect("the SRS loads");
+        srs.download_powers_for_ends(powers, shifted).expect("the powers download");
+
+        let key = VarunaProvingKey::<CurrentNetwork>::read_le_with_srs(&file[1..], &srs).expect("the key reads");
+        assert!(matches!(key.committer_key.powers_of_beta_g, Bases::Shared { .. }));
+        // `assert!`, since a failing `assert_eq!` would print both keys.
+        assert!(key.to_bytes_le().expect("the key writes") == file[1..], "the key read is not the shipped one");
     }
 }

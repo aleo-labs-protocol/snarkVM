@@ -21,8 +21,27 @@ mod to_bits;
 use snarkvm_console_network::prelude::*;
 use snarkvm_console_types::Field;
 
-/// The transition leaf version.
-const TRANSITION_LEAF_VERSION: u8 = 1u8;
+/// The version of a transition leaf.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LeafVersion {
+    /// Static leaf (version 1) — standard inputs/outputs.
+    Static = 1,
+    /// Dynamic leaf (version 2) — record inputs/outputs from dynamic transition calls.
+    Dynamic = 2,
+}
+
+impl TryFrom<u8> for LeafVersion {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self> {
+        match value {
+            1 => Ok(Self::Static),
+            2 => Ok(Self::Dynamic),
+            _ => bail!("Invalid transition leaf version: {value}"),
+        }
+    }
+}
 
 /// The Merkle leaf for an input or output ID in the transition.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -38,14 +57,31 @@ pub struct TransitionLeaf<N: Network> {
 }
 
 impl<N: Network> TransitionLeaf<N> {
-    /// Initializes a new instance of `TransitionLeaf`.
-    pub const fn new_with_version(index: u8, variant: u8, id: Field<N>) -> Self {
-        Self { version: TRANSITION_LEAF_VERSION, index, variant, id }
+    /// Initializes a new instance of `TransitionLeaf` with static version.
+    pub const fn new(index: u8, variant: u8, id: Field<N>) -> Self {
+        Self { version: LeafVersion::Static as u8, index, variant, id }
     }
 
-    /// Initializes a new instance of `TransitionLeaf`.
-    pub const fn from(version: u8, index: u8, variant: u8, id: Field<N>) -> Self {
-        Self { version, index, variant, id }
+    /// Initializes a new instance of `TransitionLeaf` for a record input/output with a dynamic ID (variant 3).
+    pub const fn new_record_with_dynamic_id(index: u8, id: Field<N>) -> Self {
+        Self { version: LeafVersion::Dynamic as u8, index, variant: 3, id }
+    }
+
+    /// Initializes a new instance of `TransitionLeaf` for an external record input/output with a dynamic ID (variant 4).
+    pub const fn new_external_record_with_dynamic_id(index: u8, id: Field<N>) -> Self {
+        Self { version: LeafVersion::Dynamic as u8, index, variant: 4, id }
+    }
+
+    /// Initializes a new instance of `TransitionLeaf` from raw fields.
+    /// Returns an error if the version/variant combination is invalid.
+    pub fn from(version: u8, index: u8, variant: u8, id: Field<N>) -> Result<Self> {
+        // Validate the version.
+        let leaf_version = LeafVersion::try_from(version)?;
+        // Dynamic version is only allowed for Record (3) and ExternalRecord (4) variants.
+        if matches!(leaf_version, LeafVersion::Dynamic) && variant != 3 && variant != 4 {
+            bail!("Dynamic transition leaf variant must be 3 (Record) or 4 (ExternalRecord), found {variant}");
+        }
+        Ok(Self { version, index, variant, id })
     }
 
     /// Returns the version of the Merkle leaf.
@@ -76,8 +112,19 @@ mod test_helpers {
 
     type CurrentNetwork = MainnetV0;
 
+    /// Samples a transition leaf with version 1 (static).
     pub(super) fn sample_leaf(rng: &mut TestRng) -> TransitionLeaf<CurrentNetwork> {
         // Construct a new leaf.
-        TransitionLeaf::new_with_version(rng.r#gen(), rng.r#gen(), Uniform::rand(rng))
+        TransitionLeaf::new(rng.random(), rng.random(), Uniform::rand(rng))
+    }
+
+    /// Samples a transition leaf with version 2 (dynamic).
+    pub(super) fn sample_dynamic_leaf(rng: &mut TestRng) -> TransitionLeaf<CurrentNetwork> {
+        // Randomly choose between Record (variant 3) and ExternalRecord (variant 4).
+        if rng.random() {
+            TransitionLeaf::new_record_with_dynamic_id(rng.random(), Uniform::rand(rng))
+        } else {
+            TransitionLeaf::new_external_record_with_dynamic_id(rng.random(), Uniform::rand(rng))
+        }
     }
 }

@@ -1,16 +1,8 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    self_caller_in_closure.aleo/dummy:
-      outputs:
-      - '{"type":"private","id":"2216227416503041347433412034872956491846811102146440372685849103494739704020field","value":"ciphertext1qyqya6k83s309kj2l82tj5fr80n7e7w7t56ff72ug8ueqhqzevn2vys72rsev"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-- execute: 'Failed to execute instruction (call check_caller self.caller;): Failed to evaluate instruction (assert.eq self.caller r0 ;): Caller address (console) is not set in the registers.'
-additional:
-- child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"7718771598168275830568214808516419506185731287938173896061440207543931919734field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1gj8900ftrtm5gpjljk9tuv8tmr46m88s5dvugdx8hnmftvpfv5rqempqfd,\n    1334u64\n  ]\n}"}'
-- {}
+- verified: true
+  speculate: the execution was accepted
+  add_next_block: succeeded.

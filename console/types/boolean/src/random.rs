@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<E: Environment> Distribution<Boolean<E>> for Standard {
+impl<E: Environment> Distribution<Boolean<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Boolean<E> {
         Boolean::new(Uniform::rand(rng))

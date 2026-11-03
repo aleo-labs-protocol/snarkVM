@@ -108,6 +108,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     fn scm_map(&self) -> &Self::SCMMap {
         &self.scm_map
     }
+
 }
 
 /// An in-memory transition input storage.
@@ -129,6 +130,10 @@ pub struct InputMemory<N: Network> {
     record_tag: MemoryMap<Field<N>, Field<N>>,
     /// The mapping of `external hash` to `()`. Note: This is **not** the record commitment.
     external_record: MemoryMap<Field<N>, ()>,
+    /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
+    dynamic_record: MemoryMap<Field<N>, ()>,
+    /// The mapping of `input ID` to `dynamic ID` for inputs with dynamic IDs.
+    dynamic_id: MemoryMap<Field<N>, Field<N>>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -143,6 +148,8 @@ impl<N: Network> InputStorage<N> for InputMemory<N> {
     type RecordMap = MemoryMap<Field<N>, Field<N>>;
     type RecordTagMap = MemoryMap<Field<N>, Field<N>>;
     type ExternalRecordMap = MemoryMap<Field<N>, ()>;
+    type DynamicRecordMap = MemoryMap<Field<N>, ()>;
+    type DynamicIDMap = MemoryMap<Field<N>, Field<N>>;
 
     /// Initializes the transition input storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -155,6 +162,8 @@ impl<N: Network> InputStorage<N> for InputMemory<N> {
             record: MemoryMap::default(),
             record_tag: MemoryMap::default(),
             external_record: MemoryMap::default(),
+            dynamic_record: MemoryMap::default(),
+            dynamic_id: MemoryMap::default(),
             storage_mode: storage.into(),
         })
     }
@@ -199,6 +208,16 @@ impl<N: Network> InputStorage<N> for InputMemory<N> {
         &self.external_record
     }
 
+    /// Returns the dynamic record map.
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap {
+        &self.dynamic_record
+    }
+
+    /// Returns the dynamic ID map.
+    fn dynamic_id_map(&self) -> &Self::DynamicIDMap {
+        &self.dynamic_id
+    }
+
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
         &self.storage_mode
@@ -229,6 +248,10 @@ pub struct OutputMemory<N: Network> {
     external_record: MemoryMap<Field<N>, ()>,
     /// The mapping of `future hash` to `(optional) future`.
     future: MemoryMap<Field<N>, Option<Future<N>>>,
+    /// The mapping of `dynamic hash` to `()`. Note: This is **not** the dynamic record commitment.
+    dynamic_record: MemoryMap<Field<N>, ()>,
+    /// The mapping of `output ID` to `dynamic ID` for outputs with dynamic IDs.
+    dynamic_id: MemoryMap<Field<N>, Field<N>>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -245,6 +268,9 @@ impl<N: Network> OutputStorage<N> for OutputMemory<N> {
     type RecordSenderMap = MemoryMap<Group<N>, Option<Field<N>>>;
     type ExternalRecordMap = MemoryMap<Field<N>, ()>;
     type FutureMap = MemoryMap<Field<N>, Option<Future<N>>>;
+    type DynamicRecordMap = MemoryMap<Field<N>, ()>;
+    type DynamicIDMap = MemoryMap<Field<N>, Field<N>>;
+
 
     /// Initializes the transition output storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -259,6 +285,8 @@ impl<N: Network> OutputStorage<N> for OutputMemory<N> {
             record_sender: Default::default(),
             external_record: Default::default(),
             future: Default::default(),
+            dynamic_record: Default::default(),
+            dynamic_id: Default::default(),
             storage_mode: storage.into(),
         })
     }
@@ -311,6 +339,16 @@ impl<N: Network> OutputStorage<N> for OutputMemory<N> {
     /// Returns the future map.
     fn future_map(&self) -> &Self::FutureMap {
         &self.future
+    }
+
+    /// Returns the dynamic record map.
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap {
+        &self.dynamic_record
+    }
+
+    /// Returns the dynamic ID map.
+    fn dynamic_id_map(&self) -> &Self::DynamicIDMap {
+        &self.dynamic_id
     }
 
     /// Returns the storage mode.

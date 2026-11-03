@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-error"
-version = "4.4.0"
+version = "4.12.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -19,15 +19,18 @@ categories = [
   "wasm",
   "web-programming"
 ]
-include = [ "Cargo.toml", "vm", "README.md", "LICENSE.md" ]
+include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.88.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
+rust-version = "1.96.0" # Attention - Change the MSRV in rust-toolchain as well
 
 [dependencies.snarkvm-circuit-environment]
 workspace = true
 
 [dependencies.snarkvm-console-network]
+workspace = true
+
+[dependencies.snarkvm-console-program]
 workspace = true
 
 [dependencies.anyhow]

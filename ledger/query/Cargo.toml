@@ -1,7 +1,7 @@
 [package]
 name = "snarkvm-ledger-query"
-version = "4.4.0"
-authors = [ "The Aleo Team <hello@aleo.org>" ]
+version = "4.12.0"
+authors = ["The Aleo Team <hello@aleo.org>"]
 description = "A query for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
@@ -10,25 +10,25 @@ keywords = [
   "cryptography",
   "blockchain",
   "decentralized",
-  "zero-knowledge"
+  "zero-knowledge",
 ]
-categories = [ "cryptography", "web-programming" ]
+categories = ["cryptography", "web-programming"]
 license = "Apache-2.0"
-include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
+include = ["Cargo.toml", "src", "README.md", "LICENSE.md"]
 edition = "2024"
 
 [features]
-default = [ "query" ]
-async = [ "dep:reqwest" ]
+default = ["query"]
+async = ["dep:reqwest"]
 serial = [
   "snarkvm-console/serial",
   "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer-program/serial"
+  "snarkvm-synthesizer-program/serial",
 ]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-store/wasm",
-  "snarkvm-synthesizer-program/wasm"
+  "snarkvm-synthesizer-program/wasm",
 ]
 query = [
   "dep:snarkvm-ledger-block",
@@ -63,19 +63,30 @@ workspace = true
 
 [dependencies.serde_json]
 workspace = true
-features = [ "preserve_order" ]
+features = ["preserve_order"]
 
-[dependencies.reqwest]
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies.reqwest]
 version = "0.13"
-features = [ "json" ]
+default-features = false
+features = ["json", "native-tls"]
 optional = true
 
-[target.'cfg(target_arch="wasm32")'.dependencies.ureq]
-workspace = true
-features = [ "json", "gzip" ]
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies.reqwest]
+version = "0.13"
+default-features = false
+features = ["json", "rustls"]
 optional = true
 
-[target.'cfg(not(target_arch="wasm32"))'.dependencies.ureq]
+[target.'cfg(target_family="wasm")'.dependencies.ureq]
 workspace = true
-features = [ "json", "gzip", "rustls" ]
+features = ["json", "gzip"]
 optional = true
+
+[target.'cfg(not(target_family="wasm"))'.dependencies.ureq]
+workspace = true
+features = ["json", "gzip", "rustls"]
+optional = true
+
+[dev-dependencies.tokio]
+version = "1"
+features = ["rt"]

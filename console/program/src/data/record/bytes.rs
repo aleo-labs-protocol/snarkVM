@@ -47,8 +47,18 @@ impl<N: Network, Private: Visibility> FromBytes for Record<N, Private> {
             // Read the entry bytes.
             let mut bytes = Vec::new();
             (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
+            // Ensure the declared region is entirely present.
+            if bytes.len() != num_bytes as usize {
+                return Err(error("Failed to read record: entry is truncated"));
+            }
             // Recover the entry value.
-            let entry = Entry::read_le(&mut bytes.as_slice())?;
+            let mut slice = bytes.as_slice();
+            let entry = Entry::read_le(&mut slice)?;
+            // Ensure the entry fills its region. Bytes left unread would be dropped on
+            // re-serialization, giving one value a second encoding.
+            if !slice.is_empty() {
+                return Err(error("Failed to read record: entry has trailing bytes"));
+            }
             // Add the entry.
             data.insert(identifier, entry);
         }
@@ -165,6 +175,40 @@ mod tests {
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;
         assert_eq!(expected, Record::read_le(&expected_bytes[..])?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_record_entry_rejects_trailing_bytes() -> Result<()> {
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
+            "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public }",
+        )?;
+        let exact = record.to_bytes_le()?;
+        assert_eq!(record, Record::read_le(&exact[..])?);
+
+        // Locate the sole data entry by its own encoding: the two bytes in front of it
+        // are the `u16` that delimits its region.
+        let identifier = Identifier::<CurrentNetwork>::from_str("token_amount")?;
+        let entry_bytes = record.data().get(&identifier).expect("the record has this entry").to_bytes_le()?;
+        let at = exact
+            .windows(entry_bytes.len())
+            .position(|window| window == entry_bytes.as_slice())
+            .expect("the entry's bytes appear in the record's bytes");
+        assert!(at >= 2);
+        assert_eq!(u16::from_le_bytes([exact[at - 2], exact[at - 1]]) as usize, entry_bytes.len());
+
+        // Declaring more bytes for the entry than it occupies leaves bytes unread.
+        for padding in [1usize, 8, 32] {
+            let mut padded = exact.clone();
+            let declared = u16::try_from(entry_bytes.len() + padding)?;
+            padded[at - 2..at].copy_from_slice(&declared.to_le_bytes());
+            padded.splice(at + entry_bytes.len()..at + entry_bytes.len(), std::iter::repeat_n(0u8, padding));
+            assert_ne!(padded, exact);
+            assert!(
+                Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::read_le(&padded[..]).is_err(),
+                "a record entry declaring {padding} bytes more than it uses must be rejected"
+            );
+        }
         Ok(())
     }
 }
