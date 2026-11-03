@@ -338,6 +338,7 @@ pub mod integer_type {
         + CheckedRem
         + CheckedShl
         + CheckedShr
+        + CheckedISqrt
         + Debug
         + Default
         + Display
@@ -537,6 +538,21 @@ pub mod integer_type {
     unary_impl!(WrappingAbs, i32, wrapping_abs, self, i32, i32::wrapping_abs(*self));
     unary_impl!(WrappingAbs, i64, wrapping_abs, self, i64, i64::wrapping_abs(*self));
     unary_impl!(WrappingAbs, i128, wrapping_abs, self, i128, i128::wrapping_abs(*self));
+
+    pub trait CheckedISqrt: Sized {
+        fn checked_isqrt(&self) -> Option<Self>;
+    }
+
+    unary_impl!(CheckedISqrt, u8, checked_isqrt, self, Option<u8>, Some(u8::isqrt(*self)));
+    unary_impl!(CheckedISqrt, u16, checked_isqrt, self, Option<u16>, Some(u16::isqrt(*self)));
+    unary_impl!(CheckedISqrt, u32, checked_isqrt, self, Option<u32>, Some(u32::isqrt(*self)));
+    unary_impl!(CheckedISqrt, u64, checked_isqrt, self, Option<u64>, Some(u64::isqrt(*self)));
+    unary_impl!(CheckedISqrt, u128, checked_isqrt, self, Option<u128>, Some(u128::isqrt(*self)));
+    unary_impl!(CheckedISqrt, i8, checked_isqrt, self, Option<i8>, i8::checked_isqrt(*self));
+    unary_impl!(CheckedISqrt, i16, checked_isqrt, self, Option<i16>, i16::checked_isqrt(*self));
+    unary_impl!(CheckedISqrt, i32, checked_isqrt, self, Option<i32>, i32::checked_isqrt(*self));
+    unary_impl!(CheckedISqrt, i64, checked_isqrt, self, Option<i64>, i64::checked_isqrt(*self));
+    unary_impl!(CheckedISqrt, i128, checked_isqrt, self, Option<i128>, i128::checked_isqrt(*self));
 
     /// Properties common to all integer types.
     pub trait IntegerProperties: PrimInt + Debug + Display {
