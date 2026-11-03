@@ -22,6 +22,7 @@ use rand::{
     TryRng,
     distr::{Distribution, StandardUniform},
 };
+use rand_chacha::ChaCha20Rng;
 use rand_xorshift::XorShiftRng;
 
 /// A trait for a uniform random number generator.
@@ -52,6 +53,8 @@ pub trait UniformExt: Uniform {
 impl<T: Uniform> UniformExt for T {}
 
 /// A fast RNG used **solely** for testing and benchmarking, **not** for any real world purposes.
+///
+/// Its output for a seed may change between versions. Use [`FixedRng`] where it must not.
 pub struct TestRng {
     seed: u64,
     rng: XorShiftRng,
@@ -175,6 +178,38 @@ impl Drop for TestRng {
     }
 }
 
+/// A ChaCha20 RNG whose output for a given seed is the same on every version and platform.
+///
+/// Tools whose runs must be reproducible, such as the circuit key setup, use it.
+/// Its output for a seed must never change. Values sampled through `rand`'s
+/// distributions can still change when `rand` does.
+pub struct FixedRng(ChaCha20Rng);
+
+impl FixedRng {
+    /// Initializes the RNG with the given seed.
+    pub fn new(seed: [u8; 32]) -> Self {
+        Self(ChaCha20Rng::from_seed(seed))
+    }
+}
+
+impl TryRng for FixedRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        self.0.try_next_u32()
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        self.0.try_next_u64()
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+        self.0.try_fill_bytes(dest)
+    }
+}
+
+impl TryCryptoRng for FixedRng {}
+
 /// This impl is Lemire's method with approximate zone. It reproduces rand 0.8's
 /// `rng.gen_range(low..=high)` for `usize` on 64-bit. It mustn't be modified
 /// to maintain backwards compatibility. It is a direct reimplementation of
@@ -240,4 +275,43 @@ pub fn choose_weighted_legacy<'a, T, R: Rng>(slice: &'a [T], weight_fn: impl Fn(
     // Binary search (partition_point).
     let idx = cumulative.partition_point(|w| *w <= chosen);
     &slice[idx]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ChaCha20 with an all-zero key and nonce, from test vectors 1 and 2 of
+    // https://tools.ietf.org/html/draft-nir-cfrg-chacha20-poly1305-04.
+    const FIRST_BLOCK: [u32; 16] = [
+        0xade0b876, 0x903df1a0, 0xe56a5d40, 0x28bd8653, 0xb819d2bd, 0x1aed8da0, 0xccef36a8, 0xc70d778b, 0x7c5941da,
+        0x8d485751, 0x3fe02477, 0x374ad8b8, 0xf4b8436a, 0x1ca11815, 0x69b687c3, 0x8665eeb2,
+    ];
+    const SECOND_BLOCK_START: u32 = 0xbee7079f;
+
+    #[test]
+    fn test_fixed_rng_next_u32() {
+        let mut rng = FixedRng::new([0u8; 32]);
+        for expected in FIRST_BLOCK {
+            assert_eq!(rng.next_u32(), expected);
+        }
+        assert_eq!(rng.next_u32(), SECOND_BLOCK_START);
+    }
+
+    #[test]
+    fn test_fixed_rng_next_u64() {
+        let mut rng = FixedRng::new([0u8; 32]);
+        for pair in FIRST_BLOCK.chunks_exact(2) {
+            assert_eq!(rng.next_u64(), (pair[1] as u64) << 32 | pair[0] as u64);
+        }
+    }
+
+    #[test]
+    fn test_fixed_rng_fill_bytes() {
+        let mut rng = FixedRng::new([0u8; 32]);
+        let mut bytes = [0u8; 68];
+        rng.fill_bytes(&mut bytes);
+        let expected = FIRST_BLOCK.into_iter().chain([SECOND_BLOCK_START]).flat_map(u32::to_le_bytes);
+        assert!(bytes.into_iter().eq(expected));
+    }
 }

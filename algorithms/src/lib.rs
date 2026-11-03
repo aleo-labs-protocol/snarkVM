@@ -46,6 +46,15 @@ pub use errors::*;
 /// any other target this reads `true` while nothing dispatches to the GPU.
 pub const CUDA_ENABLED: bool = cfg!(feature = "cuda");
 
+// Without nvcc, a `cuda` build would otherwise fail at link time, on undefined
+// kernel symbols. Clippy does not link, so it runs without nvcc.
+#[cfg(all(feature = "cuda", not(clippy)))]
+const _: () = assert!(
+    snarkvm_algorithms_cuda::HAVE_NVCC,
+    "the `cuda` feature needs nvcc, which the build did not find. Put nvcc on PATH or set NVCC to its path, \
+     or build without `cuda`."
+);
+
 /// Opens the token that carries the CUDA error code in a [`cuda_must_succeed`]
 /// panic message: this prefix, the code in decimal, then
 /// [`CUDA_ERROR_CODE_SUFFIX`].

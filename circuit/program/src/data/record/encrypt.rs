@@ -90,3 +90,73 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
         Record { owner, data: encrypted_data, nonce: self.nonce.clone(), version: self.version.clone() }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Circuit, Literal};
+    use snarkvm_circuit_types::{Address, Field};
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use anyhow::Result;
+
+    const ITERATIONS: u64 = 10;
+
+    fn check_encrypt<A: Aleo>(
+        view_key: &snarkvm_console_account::ViewKey<A::Network>,
+        owner: Owner<A, Plaintext<A>>,
+        rng: &mut TestRng,
+    ) -> Result<()> {
+        // Prepare the record.
+        let randomizer = Scalar::new(Mode::Private, Uniform::rand(rng));
+        let record = Record {
+            owner,
+            data: IndexMap::from_iter(vec![
+                (
+                    Identifier::from_str("a")?,
+                    Entry::Private(Plaintext::from(Literal::Field(Field::new(Mode::Private, Uniform::rand(rng))))),
+                ),
+                (
+                    Identifier::from_str("b")?,
+                    Entry::Private(Plaintext::from(Literal::Scalar(Scalar::new(Mode::Private, Uniform::rand(rng))))),
+                ),
+            ]),
+            nonce: A::g_scalar_multiply(&randomizer),
+            version: U8::new(Mode::Private, Uniform::rand(rng)),
+        };
+
+        // Encrypt the record.
+        let ciphertext = record.encrypt(&randomizer);
+        // Decrypt the record in console.
+        assert_eq!(record.eject_value(), ciphertext.eject_value().decrypt(view_key)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypt() -> Result<()> {
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // Generate a private key, view key, and address.
+            let private_key = snarkvm_console_account::PrivateKey::<<Circuit as Environment>::Network>::new(&mut rng)?;
+            let view_key = snarkvm_console_account::ViewKey::try_from(private_key)?;
+            let address = snarkvm_console_account::Address::try_from(private_key)?;
+
+            let owner = address;
+
+            // Public owner.
+            {
+                let owner = Owner::Public(Address::<Circuit>::new(Mode::Public, owner));
+                check_encrypt::<Circuit>(&view_key, owner, &mut rng)?;
+            }
+
+            // Private owner.
+            {
+                let owner =
+                    Owner::Private(Plaintext::from(Literal::Address(Address::<Circuit>::new(Mode::Private, owner))));
+                check_encrypt::<Circuit>(&view_key, owner, &mut rng)?;
+            }
+        }
+        Ok(())
+    }
+}

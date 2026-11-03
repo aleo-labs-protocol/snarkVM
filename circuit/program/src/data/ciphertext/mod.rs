@@ -13,16 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod decrypt;
 mod equal;
 mod from_bits;
 mod from_fields;
-mod num_randomizers;
 mod size_in_fields;
 mod to_bits;
 mod to_fields;
 
-use crate::{Plaintext, Visibility};
+use crate::Visibility;
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 

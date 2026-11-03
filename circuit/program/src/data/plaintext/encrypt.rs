@@ -47,3 +47,39 @@ impl<A: Aleo> Plaintext<A> {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Circuit;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use anyhow::Result;
+
+    const ITERATIONS: u64 = 10;
+
+    fn check_encrypt<A: Aleo>() -> Result<()> {
+        let mut rng = TestRng::default();
+
+        // Prepare the plaintext.
+        let plaintext = Plaintext::<A>::from(Literal::Field(Field::new(Mode::Private, Uniform::rand(&mut rng))));
+
+        // Encrypt the plaintext.
+        let plaintext_view_key = Field::new(Mode::Private, Uniform::rand(&mut rng));
+        let ciphertext = plaintext.encrypt_symmetric(plaintext_view_key.clone());
+        // Decrypt the plaintext in console.
+        assert_eq!(
+            plaintext.eject_value(),
+            ciphertext.eject_value().decrypt_symmetric(plaintext_view_key.eject_value())?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypt() -> Result<()> {
+        for _ in 0..ITERATIONS {
+            check_encrypt::<Circuit>()?;
+        }
+        Ok(())
+    }
+}

@@ -22,8 +22,8 @@ Jobs run in one of two places:
 | Event | Runs |
 |---|---|
 | Pull request | `fmt`, `deny`, `wasm`, `lint`, `test`, `ci-ok` |
-| Push to `staging`, `canary`, `testnet`, `mainnet`, or manual dispatch | the above, plus `test-merge`, `machete` |
-| Push to `canary`, `testnet`, `mainnet`, or manual dispatch | the above, plus `windows` |
+| Push to `staging`, or manual dispatch | the above, plus `test-merge`, `machete` |
+| Push to or pull request into `release/**`, or manual dispatch | the above, plus `windows` |
 
 ## Jobs
 
@@ -34,7 +34,7 @@ on every event.
 | Job | Runner | Trigger | Timeout (min) | What it runs | CircleCI job |
 |---|---|---|---|---|---|
 | `start-cpu-runners` | hosted | all | | starts fleet boxes | |
-| `ci-ok` | hosted | all | | fails unless every pull-request job above and every `test` entry succeeded; the check to require | |
+| `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; the check to require | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
 | `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |

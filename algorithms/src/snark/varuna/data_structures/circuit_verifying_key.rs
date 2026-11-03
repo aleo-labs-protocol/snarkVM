@@ -41,7 +41,7 @@ pub struct CircuitVerifyingKey<E: PairingEngine> {
 impl<E: PairingEngine> Valid for CircuitVerifyingKey<E> {
     fn check(&self) -> Result<(), SerializationError> {
         self.circuit_info.check()?;
-        sonic_pc::Commitment::<E>::batch_check(self.circuit_commitments.iter())?;
+        self.circuit_commitments.iter().try_for_each(|c| c.check())?;
         self.id.check()
     }
 
@@ -84,12 +84,9 @@ impl<E: PairingEngine> CanonicalDeserialize for CircuitVerifyingKey<E> {
 
         // Deserialize circuit_commitments
         let mut circuit_commitments = Vec::with_capacity(len as usize);
+        // Serial: a rayon worker loading a static key could steal a job waiting on it.
         for _ in 0..len {
-            circuit_commitments.push(sonic_pc::Commitment::deserialize_with_mode(&mut reader, compress, Validate::No)?);
-        }
-
-        if let Validate::Yes = validate {
-            sonic_pc::Commitment::<E>::batch_check(circuit_commitments.iter())?;
+            circuit_commitments.push(sonic_pc::Commitment::deserialize_with_mode(&mut reader, compress, validate)?);
         }
 
         // Deserialize id

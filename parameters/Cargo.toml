@@ -23,6 +23,22 @@ include = ["Cargo.toml", "src", "README.md", "LICENSE.md"]
 license = "Apache-2.0"
 edition = "2024"
 
+[[example]]
+name = "inclusion"
+required-features = ["filesystem"]
+
+[[example]]
+name = "setup"
+required-features = ["filesystem"]
+
+[[example]]
+name = "srs_shared_keys"
+required-features = ["filesystem"]
+
+[[example]]
+name = "translation"
+required-features = ["filesystem"]
+
 [features]
 # On native builds, `filesystem` controls the whole default loader: the cache in
 # `~/.aleo/resources` and the remote fetch. Without it, the crate does no I/O.

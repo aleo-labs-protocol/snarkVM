@@ -92,6 +92,10 @@ macro_rules! sqrt_impl {
             Zero => Some(*$self),
             QuadraticNonResidue => None,
             QuadraticResidue => {
+                if let Some(tables) = $P::sqrt_tables() {
+                    return tables.sqrt($self);
+                }
+
                 let n = $P::TWO_ADICITY as u64;
                 // `T` is equivalent to `m` in the paper.
                 let v = $self.pow($P::T_MINUS_ONE_DIV_TWO);

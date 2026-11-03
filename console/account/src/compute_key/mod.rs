@@ -32,14 +32,30 @@ use snarkvm_console_types::{Address, Boolean, Field, Group, Scalar};
 
 static _COMPUTE_KEY_PREFIX: [u8; 10] = [109, 249, 98, 224, 36, 15, 213, 187, 79, 190]; // AComputeKey1
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug)]
 pub struct ComputeKey<N: Network> {
     /// The signature public key `pk_sig` := G^sk_sig.
     pk_sig: Group<N>,
     /// The signature public randomizer `pr_sig` := G^r_sig.
     pr_sig: Group<N>,
-    /// The PRF secret key `sk_prf` := HashToScalar(pk_sig || pr_sig).
-    sk_prf: Scalar<N>,
+    /// The PRF secret key `sk_prf` := HashToScalar(pk_sig || pr_sig), or `None` if it is computed on each use.
+    sk_prf: Option<Scalar<N>>,
+}
+
+/// `sk_prf` is excluded, as it is derived from `pk_sig` and `pr_sig`.
+impl<N: Network> PartialEq for ComputeKey<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.pk_sig == other.pk_sig && self.pr_sig == other.pr_sig
+    }
+}
+
+impl<N: Network> Eq for ComputeKey<N> {}
+
+impl<N: Network> core::hash::Hash for ComputeKey<N> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.pk_sig.hash(state);
+        self.pr_sig.hash(state);
+    }
 }
 
 impl<N: Network> ComputeKey<N> {
@@ -53,8 +69,11 @@ impl<N: Network> ComputeKey<N> {
         self.pr_sig
     }
 
-    /// Returns a reference to the PRF secret key.
-    pub const fn sk_prf(&self) -> Scalar<N> {
-        self.sk_prf
+    /// Returns the PRF secret key.
+    pub fn sk_prf(&self) -> Scalar<N> {
+        self.sk_prf.unwrap_or_else(|| {
+            // Poseidon `hash_to_scalar` always returns `Ok`.
+            N::hash_to_scalar_psd4(&[self.pk_sig.to_x_coordinate(), self.pr_sig.to_x_coordinate()]).unwrap()
+        })
     }
 }

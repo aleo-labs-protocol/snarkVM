@@ -395,8 +395,16 @@ impl<F: FftField> EvaluationDomain<F> {
         })
     }
 
+    /// Computes the FFT and IFFT precomputations on the calling thread.
+    pub(crate) fn precompute_serial(&self) -> (FFTPrecomputation<F>, IFFTPrecomputation<F>) {
+        let half = self.size() / 2;
+        let fft = FFTPrecomputation { roots: compute_powers_serial(half, self.group_gen), domain: *self };
+        let ifft = IFFTPrecomputation { inverse_roots: compute_powers_serial(half, self.group_gen_inv), domain: *self };
+        (fft, ifft)
+    }
+
     /// Runs an in-order transform on the device, and returns whether it did.
-    /// A device error panics.
+    /// A device error panics, and so does a buffer that is not the domain.
     ///
     /// The kernels are compiled for BLS12-377's `Fr` and read every buffer as
     /// one, so any other coefficient or field takes the host path.
@@ -408,11 +416,7 @@ impl<F: FftField> EvaluationDomain<F> {
         ntt_type: snarkvm_algorithms_cuda::NTTType,
     ) -> bool {
         // SNP TODO: how to set threshold
-        if self.size < 32
-            || x_s.len() as u64 != self.size
-            || !super::is_cuda_field::<T>()
-            || !super::is_cuda_field::<F>()
-        {
+        if self.size < 32 || !super::is_cuda_field::<T>() || !super::is_cuda_field::<F>() {
             return false;
         }
         let result = snarkvm_algorithms_cuda::NTT(
@@ -1173,6 +1177,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_serial_precomputation_matches_parallel() {
+        for log_size in [0, 1, 7, 8, 9, 12, 16] {
+            let domain = EvaluationDomain::<Fr>::new(1 << log_size).expect("a domain");
+            let (fft_pc, ifft_pc) = domain.precompute_serial();
+            assert_eq!(fft_pc, domain.precompute_fft());
+            assert_eq!(ifft_pc, domain.precompute_ifft());
+        }
+    }
+
     /// A multiply of two polynomials over `max_domain()` fits the pool.
     ///
     /// `PolyMul` is the guard that binds: its product domain is
@@ -1394,6 +1408,16 @@ mod tests {
             as_fr,
             "the fixture must not agree with `Fr` over the same bytes, or it distinguishes nothing"
         );
+    }
+
+    /// A buffer that is not the domain panics instead of taking the host path.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    #[should_panic(expected = "exactly the domain")]
+    fn a_buffer_that_is_not_the_domain_panics() {
+        let domain = EvaluationDomain::<Fr>::new(64).unwrap();
+        let mut buffer = vec![Fr::zero(); 2 * domain.size()];
+        domain.in_order_fft_in_place(&mut buffer);
     }
 
     #[test]

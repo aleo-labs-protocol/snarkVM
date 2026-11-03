@@ -23,6 +23,14 @@ impl<N: Network> FromBytes for ComputeKey<N> {
         let pr_sig = Group::from_x_coordinate(Field::new(N::Field::read_le(&mut reader)?)).map_err(into_io_error)?;
         Self::try_from((pk_sig, pr_sig)).map_err(into_io_error)
     }
+
+    /// Reads an account compute key from a buffer, without computing `sk_prf`.
+    #[inline]
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        let pk_sig = Group::from_x_coordinate(Field::new(N::Field::read_le(&mut reader)?)).map_err(into_io_error)?;
+        let pr_sig = Group::from_x_coordinate(Field::new(N::Field::read_le(&mut reader)?)).map_err(into_io_error)?;
+        Ok(Self { pk_sig, pr_sig, sk_prf: None })
+    }
 }
 
 impl<N: Network> ToBytes for ComputeKey<N> {
@@ -55,6 +63,15 @@ mod tests {
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, ComputeKey::read_le(&expected_bytes[..])?);
             assert!(ComputeKey::<CurrentNetwork>::read_le(&expected_bytes[1..]).is_err());
+
+            // Check the unchecked byte representation.
+            let candidate = ComputeKey::read_le_unchecked(&expected_bytes[..])?;
+            assert!(candidate.sk_prf.is_none());
+            assert_eq!(expected, candidate);
+            assert_eq!(expected.sk_prf(), candidate.sk_prf());
+            assert_eq!(expected.to_address(), candidate.to_address());
+            assert_eq!(std::collections::HashSet::from([expected, candidate]).len(), 1);
+            assert!(ComputeKey::<CurrentNetwork>::read_le_unchecked(&expected_bytes[1..]).is_err());
         }
         Ok(())
     }

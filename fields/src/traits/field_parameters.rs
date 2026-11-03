@@ -37,7 +37,7 @@ pub trait FieldParameters:
     /// R2 = R^2 % Self::MODULUS
     const R2: Self::BigInteger;
 
-    /// INV = -(MODULUS^{-1} mod MODULUS) mod MODULUS
+    /// INV = -MODULUS^{-1} mod 2^64
     const INV: u64;
 
     /// A multiplicative generator that is also a quadratic nonresidue.

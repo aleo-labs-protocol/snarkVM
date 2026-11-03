@@ -20,7 +20,7 @@ extern crate criterion;
 
 use snarkvm_console::{
     account::*,
-    network::{MainnetV0, Network},
+    network::{ConsensusVersion, MainnetV0, Network, varuna_version_from_consensus},
     program::{Plaintext, Record, Value},
 };
 use snarkvm_ledger::Ledger;
@@ -28,13 +28,8 @@ use snarkvm_ledger_block::Transition;
 use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer::{VM, program::Program};
 
-#[cfg(feature = "bench-prove")]
-use snarkvm_console::network::ConsensusVersion;
-
 use aleo_std::StorageMode;
 use criterion::Criterion;
-#[cfg(not(feature = "bench-prove"))]
-use indexmap::IndexMap;
 #[cfg(feature = "bench-prove")]
 use std::time::Duration;
 
@@ -43,19 +38,18 @@ type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<Mainnet
 #[cfg(feature = "rocks")]
 type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<MainnetV0>;
 
-/// The consensus version the proving benchmarks run at.
+/// The consensus version every benchmark here runs at.
 ///
-/// **This is load-bearing, not cosmetic.** `VM::execute_authorization` reads the consensus version
-/// out of the current block height and derives the Varuna version from it, and Varuna's V1 to V2
-/// boundary is `ConsensusVersion::V4`. A benchmark on a chain that has only just been created runs
-/// at height 1, which is `ConsensusVersion::V1`, so it proves with Varuna V1 -- a prover the network
-/// stopped using at height 6_135_000, and one that never calls `prover_prepare_third_round` at all.
+/// **This is load-bearing, not cosmetic.** `VM::execute_authorization` and `VM::check_transaction`
+/// read the consensus version out of the current block height and derive the Varuna version from
+/// it. A chain that has only just been created is at `ConsensusVersion::V1`, so it proves and
+/// verifies with Varuna V1, which the network no longer runs.
 ///
-/// V19 is the most recent version the mainnet table activates at a real height; V20 and V21 sit at
-/// `u32::MAX`. Under `test_consensus_heights`, which `bench-prove` requires, it is reachable in a
-/// couple of dozen empty blocks.
-#[cfg(feature = "bench-prove")]
-const BENCH_CONSENSUS_VERSION: ConsensusVersion = ConsensusVersion::V19;
+/// Under `test_consensus_heights`, which this benchmark requires, each version from V2 onward lasts
+/// one block, so only the latest version stays put across the blocks the setup needs.
+fn bench_consensus_version() -> ConsensusVersion {
+    ConsensusVersion::latest()
+}
 
 /// Mints a private credits record at the current consensus version, and returns it.
 ///
@@ -68,7 +62,6 @@ const BENCH_CONSENSUS_VERSION: ConsensusVersion = ConsensusVersion::V19;
 ///
 /// `transfer_public_to_private` takes no private input, only the beacon's public balance, so it is
 /// the way to obtain a spendable record at a version the genesis records predate.
-#[cfg(feature = "bench-prove")]
 fn mint_private_record<R: Rng + CryptoRng>(
     ledger: &Ledger<MainnetV0, LedgerType>,
     private_key: &PrivateKey<MainnetV0>,
@@ -135,46 +128,28 @@ fn initialize_vm<R: Rng + CryptoRng>(
     let vm = VM::<MainnetV0, LedgerType>::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
     let genesis = vm.genesis_beacon(private_key, rng).unwrap();
 
-    // Fetch the unspent records. Only the genesis records are available here; with `bench-prove`
-    // they are replaced below by one minted at the benchmark's consensus version, because a record
-    // created at genesis is the wrong record version to spend there.
-    #[cfg(not(feature = "bench-prove"))]
-    let records: Vec<Record<MainnetV0, Plaintext<MainnetV0>>> = {
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let view_key = ViewKey::try_from(private_key).unwrap();
-        records.values().map(|record| record.decrypt(&view_key).unwrap()).collect()
-    };
-
     // Initialize the ledger with the genesis block.
     let ledger = Ledger::<MainnetV0, LedgerType>::load(genesis, StorageMode::new_test(None)).unwrap();
 
-    // Advance to the consensus version the proving benchmarks need, then mint a record that is
-    // spendable there. The block height decides the consensus version, which decides which Varuna
-    // prover runs and which record version the credits circuit expects, so a benchmark left at
-    // genesis measures a prover the network no longer uses, with a record it would reject.
-    #[cfg(feature = "bench-prove")]
-    let records = {
-        // One block below the target, so the block that mints the record lands exactly on it. These
-        // blocks are empty, so none of this costs any proving.
-        let target = MainnetV0::CONSENSUS_HEIGHT(BENCH_CONSENSUS_VERSION).unwrap();
-        while ledger.latest_height() + 1 < target {
-            let block = ledger.prepare_advance_to_next_beacon_block(private_key, vec![], vec![], vec![], rng).unwrap();
-            ledger.advance_to_next_block(&block).unwrap();
-        }
+    // Advance to the benchmark's consensus version. These blocks are empty, so none of this costs
+    // any proving.
+    let target = MainnetV0::CONSENSUS_HEIGHT(bench_consensus_version()).unwrap();
+    while ledger.latest_height() < target {
+        let block = ledger.prepare_advance_to_next_beacon_block(private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    }
 
-        let records = vec![mint_private_record(&ledger, private_key, rng)];
+    // The genesis records are the wrong record version to spend here; see `mint_private_record`.
+    let records = vec![mint_private_record(&ledger, private_key, rng)];
 
-        // Fail loudly rather than silently benchmarking a prover the network does not run.
-        let consensus_version = MainnetV0::CONSENSUS_VERSION(ledger.latest_height()).unwrap();
-        assert_eq!(
-            consensus_version,
-            BENCH_CONSENSUS_VERSION,
-            "the proving benchmarks must run at {BENCH_CONSENSUS_VERSION:?}, but height {} is {consensus_version:?}",
-            ledger.latest_height(),
-        );
-
-        records
-    };
+    // Fail loudly rather than silently benchmarking a prover or verifier the network does not run.
+    let height = ledger.latest_height();
+    let consensus_version = MainnetV0::CONSENSUS_VERSION(height).unwrap();
+    assert_eq!(consensus_version, bench_consensus_version(), "height {height} is {consensus_version:?}");
+    eprintln!(
+        "transaction: height {height}, {consensus_version:?}, Varuna {:?}",
+        varuna_version_from_consensus(consensus_version)
+    );
 
     (ledger, records)
 }
@@ -194,6 +169,9 @@ fn deploy(c: &mut Criterion) {
         r"
 program helloworld.aleo;
 
+constructor:
+    assert.eq edition 0u16;
+
 function hello:
     input r0 as u32.private;
     input r1 as u32.private;
@@ -209,7 +187,10 @@ function hello:
 
     let transaction = vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap();
 
-    c.bench_function("Transaction::Deploy - verify", |b| {
+    // `check_transaction` caches each transaction it accepts and skips proof verification on a
+    // repeat, so every `cached_verify` benchmark times a cache hit after its first iteration.
+    // `verify_transaction.rs` times verification itself.
+    c.bench_function("Transaction::Deploy - cached_verify", |b| {
         b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
     });
 }
@@ -267,8 +248,8 @@ fn execute(c: &mut Criterion) {
             })
         });
 
-        // Bench the execution of transfer_public.
-        c.bench_function("Transaction::Execute(transfer_public) - verify", |b| {
+        // Bench a cache hit in check_transaction for transfer_public.
+        c.bench_function("Transaction::Execute(transfer_public) - cached_verify", |b| {
             b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
         });
     }
@@ -318,8 +299,8 @@ fn execute(c: &mut Criterion) {
             })
         });
 
-        // Bench the check_transaction method.
-        c.bench_function("Transaction::Execute(transfer_private) - verify", |b| {
+        // Bench a cache hit in check_transaction for transfer_private.
+        c.bench_function("Transaction::Execute(transfer_private) - cached_verify", |b| {
             b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
         });
     }
