@@ -2,7 +2,7 @@
 
 # Inputs: network
 
-cargo run --release --example translation canary -- --nocapture || exit
+cargo run --release --features filesystem --example translation canary -- --nocapture || exit
 
 mv translation_credits.metadata ../../src/canary/resources/credits || exit
 mv translation_credits.prover.* ~/.aleo/resources || exit

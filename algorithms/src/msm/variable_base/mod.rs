@@ -112,7 +112,7 @@ mod tests {
         use snarkvm_curves::ProjectiveCurve;
 
         let mut rng = TestRng::default();
-        for msm_size in [1, 5, 10, 50, 100, 500, 1000] {
+        for msm_size in [1, 5, 10, 14, 15, 25, 31, 32, 33, 50, 100, 500, 1000] {
             let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, msm_size);
 
             let naive_a = VariableBase::msm_naive(bases.as_slice(), scalars.as_slice()).to_affine();
@@ -144,6 +144,111 @@ mod tests {
             let reduced_on_the_cpu = VariableBase::msm::<G1Affine>(&bases, &bigints);
             let reduced_on_the_gpu = VariableBase::msm_field::<G1Affine>(&bases, &fields);
             assert_eq!(reduced_on_the_cpu.to_affine(), reduced_on_the_gpu.to_affine(), "size {size}");
+        }
+    }
+
+    /// Every size below the bucket method's cutoff, with the scalars a signed
+    /// recoding mishandles first (zero, one, minus one, powers of two, the top
+    /// of the field) mixed among random ones, a base at infinity, and a base
+    /// that repeats.
+    #[test]
+    fn test_msm_small_edge_cases() {
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::{Field, One, Zero};
+
+        let two = Fr::from(2u64);
+        let special = [
+            Fr::zero(),
+            Fr::one(),
+            -Fr::one(),
+            two,
+            -two,
+            Fr::from(15u64),
+            Fr::from(17u64),
+            Fr::from(u64::MAX),
+            two.pow([63]),
+            two.pow([64]),
+            two.pow([128]),
+            two.pow([252]),
+            two.pow([252]) - Fr::one(),
+            -two.pow([252]),
+        ];
+
+        let mut rng = TestRng::default();
+        assert!(batched::msm::<G1Affine>(&[], &[]).is_zero());
+        for msm_size in 1..32 {
+            let (mut bases, mut scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, msm_size);
+            for (i, scalar) in scalars.iter_mut().enumerate().step_by(2) {
+                *scalar = special[(i / 2 + msm_size) % special.len()].to_bigint();
+            }
+            if msm_size > 2 {
+                bases[1] = G1Affine::zero();
+                bases[2] = bases[0];
+            }
+
+            let naive = VariableBase::msm_naive(bases.as_slice(), scalars.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), scalars.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}");
+
+            let all_special = special.iter().cycle().take(msm_size).map(|s| s.to_bigint()).collect::<Vec<_>>();
+            let naive = VariableBase::msm_naive(bases.as_slice(), all_special.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), all_special.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}, special scalars");
+        }
+    }
+
+    /// One base, at infinity or not, under the scalars of each one-base path:
+    /// zero, one, reduced scalars, and unreduced scalars below `2^253`.
+    #[test]
+    fn test_msm_one_base() {
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::{One, Zero};
+        use snarkvm_utilities::{BigInteger, BigInteger256, Uniform};
+
+        let mut rng = TestRng::default();
+        let reduced = [Fr::zero(), Fr::one(), -Fr::one(), Fr::rand(&mut rng)].map(|s| s.to_bigint());
+
+        let modulus = Fr::modulus();
+        let mut modulus_plus_one = modulus;
+        modulus_plus_one.add_nocarry(&BigInteger256::from(1u64));
+        let mut modulus_plus_random = modulus;
+        let mut offset = Fr::rand(&mut rng).to_bigint();
+        offset.0[3] &= (1 << 58) - 1;
+        modulus_plus_random.add_nocarry(&offset);
+        let top = BigInteger256::new([u64::MAX, u64::MAX, u64::MAX, (1 << 61) - 1]);
+        let unreduced = [modulus, modulus_plus_one, modulus_plus_random, top];
+        assert!(unreduced.iter().all(|s| Fr::from_bigint(*s).is_none()));
+
+        for base in [G1Affine::rand(&mut rng), G1Affine::zero()] {
+            for scalar in reduced.iter().chain(&unreduced) {
+                let naive = VariableBase::msm_naive(&[base], &[*scalar]).to_affine();
+                let candidate = batched::msm(&[base], &[*scalar]).to_affine();
+                assert_eq!(naive, candidate, "base: {base}, scalar: {scalar}");
+            }
+        }
+    }
+
+    /// Zero and unit scalars mixed with others, on more bases than scalars,
+    /// give the naive sum over the first bases.
+    #[test]
+    fn test_msm_small_zero_and_unit_scalars() {
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::{One, Zero};
+        use snarkvm_utilities::Uniform;
+
+        let mut rng = TestRng::default();
+        let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 6);
+        let [zero, one, a, b] = [Fr::zero(), Fr::one(), Fr::rand(&mut rng), Fr::rand(&mut rng)].map(|s| s.to_bigint());
+        for scalars in [
+            vec![zero, zero],
+            vec![one, one, one],
+            vec![zero, a],
+            vec![one, zero, a, b],
+            vec![a, one, zero, b, one],
+            vec![a, b],
+        ] {
+            let naive = VariableBase::msm_naive(&bases[..scalars.len()], &scalars).to_affine();
+            assert_eq!(batched::msm(&bases, &scalars).to_affine(), naive, "scalars: {scalars:?}");
         }
     }
 

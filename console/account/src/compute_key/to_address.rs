@@ -19,7 +19,7 @@ impl<N: Network> ComputeKey<N> {
     /// Returns the address corresponding to the compute key.
     pub fn to_address(&self) -> Address<N> {
         // Compute pk_prf := G^sk_prf.
-        let pk_prf = N::g_scalar_multiply(&self.sk_prf);
+        let pk_prf = N::g_scalar_multiply(&self.sk_prf());
         // Compute the address := pk_sig + pr_sig + pk_prf.
         Address::new(self.pk_sig + self.pr_sig + pk_prf)
     }

@@ -17,7 +17,7 @@
 //! all, as a prover would, then reports the points they own and the memory
 //! the process holds.
 //!
-//! `cargo run --release --example srs_shared_keys [-- --with-srs | --grow-srs]`
+//! `cargo run --release --features filesystem --example srs_shared_keys [-- --with-srs | --grow-srs]`
 //!
 //! - With no flag, each key is read with `ProvingKey::from_bytes_le` and owns
 //!   its points.

@@ -2,7 +2,7 @@
 
 # Inputs: program name
 
-cargo run --release --example setup credits testnet -- --nocapture || exit
+cargo run --release --features filesystem --example setup credits testnet -- --nocapture || exit
 
 mv *.metadata ../../src/testnet/resources/credits || exit
 mv *.prover.* ~/.aleo/resources || exit

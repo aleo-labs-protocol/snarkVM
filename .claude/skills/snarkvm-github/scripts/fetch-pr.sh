@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OWNER="ProvableHQ"
+OWNER="aleo-labs-protocol"
 REPO="snarkVM"
 WS="${WS:-.claude/workspace}"
 
@@ -83,7 +83,7 @@ source "$SCRIPT_DIR/refresh-threads.sh" "$NUM"
 # Linked issues (parse from body)
 log_info "Extracting linked issues..."
 jq -r '.body // ""' "$WS/context-pr-$NUM.json" | \
-  grep -oE '#[0-9]+|issues/[0-9]+|ProvableHQ/snarkVM/issues/[0-9]+' | \
+  grep -oE '#[0-9]+|issues/[0-9]+|aleo-labs-protocol/snarkVM/issues/[0-9]+' | \
   grep -oE '[0-9]+' | sort -u > "$WS/linked-issues-pr-$NUM.txt" || true
 
 # Compute counts for state file

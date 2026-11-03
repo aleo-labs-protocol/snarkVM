@@ -531,6 +531,15 @@ macro_rules! impl_tuple {
                 $(self.$no.check()?;)*
                 Ok(())
             }
+
+            // Serial, so a rayon worker initializing a static cannot steal a job that waits on it.
+            #[inline]
+            fn batch_check<'a>(mut batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), SerializationError>
+            where
+                Self: 'a,
+            {
+                batch.try_for_each(Self::check)
+            }
         }
 
         impl<$($ty, )+> CanonicalSerialize for ($($ty,)+) where

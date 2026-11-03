@@ -219,6 +219,11 @@ fn assert_type<T: 'static, Expected: 'static>() {
     );
 }
 
+/// Whether the build found nvcc and compiled the kernels. Without nvcc this
+/// crate still builds, so a workspace build, clippy and rust-analyzer need no
+/// nvcc, but nothing it declares links.
+pub const HAVE_NVCC: bool = cfg!(have_nvcc);
+
 /// How many CUDA devices the runtime reports. Zero means none, or that the
 /// runtime could not be queried at all. sppark uses only those of compute
 /// capability 7.0 or later that support cooperative launch.
@@ -728,7 +733,7 @@ pub mod resident_evals;
 ///
 /// The device-failure paths — `cudaSetDevice` throwing, the pool allocation
 /// failing — cannot be provoked from a test, so nothing here covers them.
-#[cfg(all(test, feature = "cuda"))]
+#[cfg(all(test, have_nvcc))]
 mod argument_guards {
     use super::Fr;
 

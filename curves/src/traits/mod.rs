@@ -26,4 +26,7 @@ pub mod tests_field;
 pub mod tests_group;
 
 #[cfg(test)]
+mod tests_sqrt;
+
+#[cfg(test)]
 pub mod tests_projective;

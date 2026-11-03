@@ -16,9 +16,9 @@
 use std::{env, path::PathBuf};
 
 fn main() {
-    // Declared here and set below once the kernels compile, so tests that call
-    // them build only then.
-    println!("cargo:rustc-check-cfg=cfg(feature, values(\"cuda\"))");
+    // Set below once the kernels compile. `HAVE_NVCC` and the tests that call
+    // the kernels read it.
+    println!("cargo:rustc-check-cfg=cfg(have_nvcc)");
     // One `rerun-if-changed` replaces cargo's default of watching every file
     // in the package, so every source compiled below must be listed here.
     println!("cargo:rerun-if-changed=src/lib.c");
@@ -101,9 +101,10 @@ fn main() {
             .file("cuda/div.cu")
             .compile("snarkvm_algorithms_cuda");
 
-        println!("cargo:rustc-cfg=feature=\"cuda\"");
+        println!("cargo:rustc-cfg=have_nvcc");
     } else {
-        println!("nvcc must be in the path. Consider adding /usr/local/cuda/bin.");
-        // panic!();
+        println!(
+            "cargo:warning=nvcc not found: the CUDA kernels are not built. Put nvcc on PATH or set NVCC to its path."
+        );
     }
 }
