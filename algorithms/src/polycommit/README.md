@@ -60,9 +60,11 @@ The key needs both ends of the powers of β:
 So a trimmed SRS cannot just drop its high powers.
 `trim` downloads both ends first, and the key then shares them with the SRS through `Bases::Shared`. It does not copy them.
 
-The serialized key still writes every point.
-`CommitterKey::read_le_with_srs` reads such bytes, skips the points, and shares the SRS points in their place.
-A hash of the points in the bytes makes sure the shared points are the same.
+The serialized key still writes every point. It ends with a hash of every point except the Lagrange bases.
+`CommitterKey::read_le_with_srs` reads such bytes, skips the powers of β, and shares the SRS points in their place.
+It never parses the skipped bytes, so it does not detect corrupt bytes there.
+Then it hashes the key it built and compares the result with the stored hash.
+So the check makes sure that the shared SRS points are the points the key was written with.
 
 The verifier key, `UniversalVerifier`, depends only on the SRS. It is the same for every circuit.
 
