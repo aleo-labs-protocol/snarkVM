@@ -78,6 +78,7 @@ members = [
   "ledger/store",
   "ledger/test-helpers",
   "ledger/testchain-generator",
+  "ledger/rocksdb-analyser",
   "metrics",
   "parameters",
   "synthesizer",

@@ -1,0 +1,32 @@
+[package]
+name = "snarkvm-rocksdb-analyser"
+version = "0.1.0"
+authors = [ "The Aleo Team <hello@aleo.org>" ]
+description = "Attribute snarkvm_rocksdb_estimate_num_keys to ledger maps"
+homepage = "https://aleo.org"
+repository = "https://github.com/ProvableHQ/snarkVM"
+keywords = [
+  "aleo",
+  "cryptography",
+  "blockchain",
+  "decentralized",
+  "zero-knowledge"
+]
+categories = [ "cryptography", "web-programming" ]
+license = "Apache-2.0"
+edition = "2024"
+include = ["../../LICENSE.md"]
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { version = "4", features = [ "derive" ] }
+rocksdb = { version = "0.24", default-features = false, features = [ "lz4" ] }
+tempfile = { workspace = true }
+
+[dependencies.snarkvm-ledger-store]
+workspace = true
+features = [ "rocks" ]
+
+[dependencies.aleo-std-storage]
+workspace = true
