@@ -24,6 +24,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
+announce-blocks = [ "dep:bincode" ]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",
@@ -136,6 +137,10 @@ features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
+
+[dependencies.bincode]
+workspace = true
+optional = true
 
 [dependencies.indexmap]
 workspace = true
