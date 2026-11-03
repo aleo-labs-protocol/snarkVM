@@ -133,14 +133,8 @@ impl Environment for TestnetV0 {
     const EDWARDS_D: Self::Field = Console::EDWARDS_D;
     /// The coefficient `A` of the Montgomery curve.
     const MONTGOMERY_A: Self::Field = Console::MONTGOMERY_A;
-    /// The coefficient `A / B` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_A_OVER_B: Self::Field = Console::MONTGOMERY_A_OVER_B;
     /// The coefficient `B` of the Montgomery curve.
     const MONTGOMERY_B: Self::Field = Console::MONTGOMERY_B;
-    /// The inverse of the coefficient `B` of the Montgomery curve.
-    const MONTGOMERY_B_INVERSE: Self::Field = Console::MONTGOMERY_B_INVERSE;
-    /// The coefficient `1 / B^2` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_B_INVERSE_SQUARED: Self::Field = Console::MONTGOMERY_B_INVERSE_SQUARED;
 }
 
 /// The inclusion proving key, read from the shipped bytes or loaded against an SRS.
@@ -722,14 +716,6 @@ mod tests {
     use super::*;
 
     type CurrentNetwork = TestnetV0;
-
-    #[test]
-    fn test_montgomery_derived_constants() {
-        let b_inverse = CurrentNetwork::MONTGOMERY_B.inverse().expect("B is nonzero");
-        assert_eq!(CurrentNetwork::MONTGOMERY_B_INVERSE, b_inverse);
-        assert_eq!(CurrentNetwork::MONTGOMERY_A_OVER_B, CurrentNetwork::MONTGOMERY_A * b_inverse);
-        assert_eq!(CurrentNetwork::MONTGOMERY_B_INVERSE_SQUARED, b_inverse.square());
-    }
 
     #[test]
     fn test_g_scalar_multiply() {

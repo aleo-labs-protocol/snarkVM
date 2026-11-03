@@ -25,8 +25,8 @@ impl<E: Environment, const RATE: usize> HashToGroup for Poseidon<E, RATE> {
         // Ensure that the input is not empty.
         ensure!(!input.is_empty(), "Input to hash to group cannot be empty");
         // Compute the group element as `MapToGroup(HashMany(input)[0]) + MapToGroup(HashMany(input)[1])`.
-        match self.hash_many(input, 2).iter().map(Elligator2::<E>::encode).collect_tuple() {
-            Some((Ok((h0, _)), Ok((h1, _)))) => Ok(h0 + h1),
+        match self.hash_many(input, 2).iter().map(Elligator2::<E>::encode_without_cofactor_clear).collect_tuple() {
+            Some((Ok((h0, _)), Ok((h1, _)))) => Ok(h0.mul_by_cofactor() + h1.mul_by_cofactor()),
             _ => bail!("Poseidon failed to compute hash to group on the given input"),
         }
     }
@@ -71,6 +71,30 @@ mod tests {
         }};
     }
 
+    macro_rules! check_hash_to_group_matches_encode {
+        ($poseidon:ident) => {{
+            // Initialize Poseidon.
+            let poseidon = $poseidon::<CurrentEnvironment>::setup("HashToGroupTest")?;
+
+            let mut rng = TestRng::default();
+
+            for _ in 0..ITERATIONS {
+                for num_inputs in 1..8 {
+                    // Sample random field elements.
+                    let inputs = (0..num_inputs).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
+
+                    // Compute `encode(HashMany(input)[0]) + encode(HashMany(input)[1])`.
+                    let hashes = poseidon.hash_many(&inputs, 2);
+                    let (h0, _) = Elligator2::<CurrentEnvironment>::encode(&hashes[0])?;
+                    let (h1, _) = Elligator2::<CurrentEnvironment>::encode(&hashes[1])?;
+
+                    assert_eq!(poseidon.hash_to_group(&inputs)?, h0 + h1);
+                }
+            }
+            Ok(())
+        }};
+    }
+
     #[test]
     fn test_poseidon2_hash_to_group() -> Result<()> {
         check_hash_to_group!(Poseidon2)
@@ -84,5 +108,20 @@ mod tests {
     #[test]
     fn test_poseidon8_hash_to_group() -> Result<()> {
         check_hash_to_group!(Poseidon8)
+    }
+
+    #[test]
+    fn test_poseidon2_hash_to_group_matches_encode() -> Result<()> {
+        check_hash_to_group_matches_encode!(Poseidon2)
+    }
+
+    #[test]
+    fn test_poseidon4_hash_to_group_matches_encode() -> Result<()> {
+        check_hash_to_group_matches_encode!(Poseidon4)
+    }
+
+    #[test]
+    fn test_poseidon8_hash_to_group_matches_encode() -> Result<()> {
+        check_hash_to_group_matches_encode!(Poseidon8)
     }
 }

@@ -119,17 +119,6 @@ fn test_montgomery_conversion() {
 }
 
 #[test]
-fn test_montgomery_derived_constants() {
-    const A: Fq = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_A;
-    const B: Fq = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_B;
-
-    let b_inverse = B.inverse().expect("B is nonzero");
-    assert_eq!(<EdwardsParameters as MontgomeryParameters>::MONTGOMERY_B_INVERSE, b_inverse);
-    assert_eq!(<EdwardsParameters as MontgomeryParameters>::MONTGOMERY_A_OVER_B, A * b_inverse);
-    assert_eq!(<EdwardsParameters as MontgomeryParameters>::MONTGOMERY_B_INVERSE_SQUARED, b_inverse.square());
-}
-
-#[test]
 #[allow(clippy::many_single_char_names)]
 fn test_edwards_to_montgomery_point() {
     let mut rng = TestRng::default();

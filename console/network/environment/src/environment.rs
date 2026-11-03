@@ -53,12 +53,6 @@ pub trait Environment:
     const MONTGOMERY_A: Self::Field;
     /// The coefficient `B` of the Montgomery curve.
     const MONTGOMERY_B: Self::Field;
-    /// The inverse of the coefficient `B` of the Montgomery curve.
-    const MONTGOMERY_B_INVERSE: Self::Field;
-    /// The coefficient `A / B` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_A_OVER_B: Self::Field;
-    /// The coefficient `1 / B^2` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_B_INVERSE_SQUARED: Self::Field;
 
     /// The maximum number of bytes allowed in a string.
     const MAX_STRING_BYTES: u32 = u8::MAX as u32;
@@ -86,13 +80,6 @@ impl Environment for Console {
     const EDWARDS_D: Self::Field = <EdwardsParameters as TwistedEdwardsParameters>::EDWARDS_D;
     /// The coefficient `A` of the Montgomery curve.
     const MONTGOMERY_A: Self::Field = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_A;
-    /// The coefficient `A / B` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_A_OVER_B: Self::Field = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_A_OVER_B;
     /// The coefficient `B` of the Montgomery curve.
     const MONTGOMERY_B: Self::Field = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_B;
-    /// The inverse of the coefficient `B` of the Montgomery curve.
-    const MONTGOMERY_B_INVERSE: Self::Field = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_B_INVERSE;
-    /// The coefficient `1 / B^2` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_B_INVERSE_SQUARED: Self::Field =
-        <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_B_INVERSE_SQUARED;
 }

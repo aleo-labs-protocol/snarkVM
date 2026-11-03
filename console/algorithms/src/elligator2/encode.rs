@@ -52,8 +52,11 @@ impl<E: Environment> Elligator2<E> {
 
         // Compute the mapping from Fq to E(Fq) as a Montgomery element (u, v).
         let (u, v) = {
-            // Define the coefficients for the Weierstrass form: y^2 == x^3 + A * x^2 + B * x.
-            let (a, b) = (Group::<E>::MONTGOMERY_A_OVER_B, Group::<E>::MONTGOMERY_B_INVERSE_SQUARED);
+            // Compute the coefficients for the Weierstrass form: y^2 == x^3 + A * x^2 + B * x.
+            let (a, b) = match Group::<E>::MONTGOMERY_B.inverse() {
+                Ok(b_inverse) => (Group::MONTGOMERY_A * b_inverse, b_inverse.square()),
+                Err(_) => bail!("Montgomery B must be invertible in order to use Elligator2"),
+            };
 
             // Let (u, r) = (D, input).
             let (u, r) = (Group::EDWARDS_D, input);

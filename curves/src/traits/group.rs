@@ -347,12 +347,6 @@ pub trait MontgomeryParameters: ModelParameters {
     const MONTGOMERY_A: Self::BaseField;
     /// The coefficient `B` of the Montgomery curve.
     const MONTGOMERY_B: Self::BaseField;
-    /// The inverse of the coefficient `B` of the Montgomery curve.
-    const MONTGOMERY_B_INVERSE: Self::BaseField;
-    /// The coefficient `A / B` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_A_OVER_B: Self::BaseField;
-    /// The coefficient `1 / B^2` of the Montgomery curve scaled to `y^2 == x^3 + (A / B) * x^2 + (1 / B^2) * x`.
-    const MONTGOMERY_B_INVERSE_SQUARED: Self::BaseField;
 
     type TwistedEdwardsParameters: TwistedEdwardsParameters<BaseField = Self::BaseField>;
 }
