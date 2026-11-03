@@ -21,7 +21,7 @@ use crate::{
         MontgomeryParameters,
         ProjectiveCurve,
         TwistedEdwardsParameters,
-        tests_field::{field_serialization_test, field_test, fp256_inverse_test, primefield_test},
+        tests_field::{field_serialization_test, field_test, fp256_inverse_test, fp256_legendre_test, primefield_test},
         tests_group::*,
         tests_projective::curve_tests,
     },
@@ -49,6 +49,11 @@ fn test_edwards_bls12_fr() {
 #[test]
 fn test_edwards_bls12_fr_inverse() {
     fp256_inverse_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
+fn test_edwards_bls12_fr_legendre() {
+    fp256_legendre_test::<FrParameters>(&mut TestRng::default());
 }
 
 #[test]

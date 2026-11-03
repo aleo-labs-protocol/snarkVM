@@ -44,7 +44,9 @@ use crate::{
             field_serialization_test,
             field_test,
             fp256_inverse_test,
+            fp256_legendre_test,
             fp384_inverse_test,
+            fp384_legendre_test,
             frobenius_test,
             primefield_test,
             random_sqrt_tonelli_tests,
@@ -101,6 +103,11 @@ fn test_bls12_377_fr_inverse() {
 }
 
 #[test]
+fn test_bls12_377_fr_legendre() {
+    fp256_legendre_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
 fn test_bls12_377_fq() {
     let mut rng = TestRng::default();
 
@@ -117,6 +124,11 @@ fn test_bls12_377_fq() {
 #[test]
 fn test_bls12_377_fq_inverse() {
     fp384_inverse_test::<FqParameters>(&mut TestRng::default());
+}
+
+#[test]
+fn test_bls12_377_fq_legendre() {
+    fp384_legendre_test::<FqParameters>(&mut TestRng::default());
 }
 
 #[test]

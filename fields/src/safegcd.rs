@@ -13,10 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Variable-time modular inversion by Bernstein-Yang safegcd, over `W` 64-bit words held as `L` signed 62-bit limbs.
+//! Variable-time modular inversion and Jacobi symbol by Bernstein-Yang safegcd, over `W` 64-bit
+//! words held as `L` signed 62-bit limbs.
 
-// The loop in `inverse` and the functions `divsteps_62_var`, `update_de_62`, `update_fg_62_var`
-// and `normalize_62` are ported from `src/modinv64_impl.h` in libsecp256k1
+// The loops in `inverse` and `jacobi` and the functions `divsteps_62_var`, `posdivsteps_62_var`,
+// `update_de_62`, `update_fg_62_var` and `normalize_62` are ported from `src/modinv64_impl.h` in libsecp256k1
 // (https://github.com/bitcoin-core/secp256k1). That file carries the copyright line
 // "Copyright (c) 2020 Peter Dettman" and is distributed under the project's MIT license:
 //
@@ -112,6 +113,37 @@ pub(crate) fn inverse<const W: usize, const L: usize>(
     from_signed62(&normalize_62(d, f[len - 1], modulus))
 }
 
+/// Returns the Jacobi symbol `(a | p)`, `1` or `-1`, of a nonzero `a` in `[0, p)` that is coprime to `p`.
+///
+/// `modulus` is the odd `p` from `to_signed62`. Returns `None` if the symbol is not found within
+/// `iterations` rounds of 62 posdivsteps. Its branches and running time depend on `a`.
+pub(crate) fn jacobi<const W: usize, const L: usize>(
+    a: &[u64; W],
+    modulus: &[i64; L],
+    iterations: usize,
+) -> Option<i8> {
+    let mut f = *modulus;
+    let mut g = to_signed62(a);
+    let mut len = L;
+    let mut eta = -1;
+    let mut jac = 0;
+    for _ in 0..iterations {
+        debug_assert!(sign_62(&f, modulus, 0) > 0 && sign_62(&f, modulus, -1) <= 0);
+        debug_assert!(sign_62(&g, modulus, 0) > 0 && sign_62(&g, modulus, -1) < 0);
+        let low = |x: &[i64; L]| x[0] as u64 | (x[1] as u64) << 62;
+        let t;
+        (eta, t) = posdivsteps_62_var(eta, low(&f), low(&g), &mut jac);
+        update_fg_62_var(len, &mut f, &mut g, t);
+        if f[0] == 1 && f[1..len].iter().all(|&limb| limb == 0) {
+            return Some(1 - 2 * (jac & 1) as i8);
+        }
+        if len > 1 && f[len - 1] == 0 && g[len - 1] == 0 {
+            len -= 1;
+        }
+    }
+    None
+}
+
 #[inline]
 /// Runs 62 divsteps on the low limbs of `f` and `g`, returning `eta` and the transition matrix `[u, v, q, r]`.
 fn divsteps_62_var(mut eta: i64, mut f: u64, mut g: u64) -> (i64, [i64; 4]) {
@@ -149,6 +181,47 @@ fn divsteps_62_var(mut eta: i64, mut f: u64, mut g: u64) -> (i64, [i64; 4]) {
     debug_assert_eq!(u * r - v * q, 1 << 62);
     debug_assert!(u.abs() + v.abs() <= 1 << 62 && q.abs() + r.abs() <= 1 << 62);
     (eta, t)
+}
+
+#[inline]
+/// Runs 62 posdivsteps on `f` and `g` mod 2^64, returning `eta` and the transition matrix `[u, v, q, r]`.
+///
+/// Flips bit 0 of `jac` each time the Jacobi symbol `(g | f)` changes sign.
+fn posdivsteps_62_var(mut eta: i64, mut f: u64, mut g: u64, jac: &mut u64) -> (i64, [i64; 4]) {
+    let (mut u, mut v, mut q, mut r) = (1u64, 0u64, 0u64, 1u64);
+    let mut i = 62u32;
+    loop {
+        let zeros = (g | (u64::MAX << i)).trailing_zeros();
+        g >>= zeros;
+        u <<= zeros;
+        v <<= zeros;
+        eta -= zeros as i64;
+        i -= zeros;
+        // (2 | f) is -1 when f is 3 or 5 mod 8.
+        *jac ^= zeros as u64 & ((f >> 1) ^ (f >> 2));
+        if i == 0 {
+            break;
+        }
+        let w = if eta < 0 {
+            eta = -eta;
+            (f, g) = (g, f);
+            (u, q) = (q, u);
+            (v, r) = (r, v);
+            // Quadratic reciprocity: swapping flips the sign when both are 3 mod 4.
+            *jac ^= (f & g) >> 1;
+            let limit = (eta + 1).min(i as i64) as u32;
+            let mask = (u64::MAX >> (64 - limit)) & 63;
+            f.wrapping_mul(g).wrapping_mul(f.wrapping_mul(f).wrapping_sub(2)) & mask
+        } else {
+            let limit = (eta + 1).min(i as i64) as u32;
+            let mask = (u64::MAX >> (64 - limit)) & 15;
+            f.wrapping_add((f.wrapping_add(1) & 4) << 1).wrapping_neg().wrapping_mul(g) & mask
+        };
+        g = g.wrapping_add(f.wrapping_mul(w));
+        q = q.wrapping_add(u.wrapping_mul(w));
+        r = r.wrapping_add(v.wrapping_mul(w));
+    }
+    (eta, [u as i64, v as i64, q as i64, r as i64])
 }
 
 #[inline]
