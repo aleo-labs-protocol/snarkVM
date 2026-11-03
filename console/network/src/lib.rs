@@ -120,6 +120,8 @@ pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::Pair
 pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::PairingCurve>;
 
 /// Explicitly configured or test consensus version heights, shared across networks.
+///
+/// The `wasm` feature needs this static for its `get_or_init_consensus_version_heights` API.
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
 static CONSENSUS_VERSION_HEIGHTS: OnceLock<[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]> = OnceLock::new();
 
