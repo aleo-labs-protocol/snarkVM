@@ -27,6 +27,8 @@ use core::any::TypeId;
 pub struct VariableBase;
 
 impl VariableBase {
+    /// Returns the sum of `base * scalar`. Every base must be in the
+    /// prime-order subgroup, as `batched::msm` requires.
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
         // For BLS12-377, we perform variable base MSM using a batched addition
         // technique.
@@ -128,7 +130,8 @@ mod tests {
     #[test]
     fn test_msm_small_edge_cases() {
         use snarkvm_curves::ProjectiveCurve;
-        use snarkvm_fields::{Field, One, Zero};
+        use snarkvm_fields::{Field, FieldParameters, One, Zero};
+        use snarkvm_utilities::BigInteger;
 
         let two = Fr::from(2u64);
         let special = [
@@ -168,6 +171,15 @@ mod tests {
             let naive = VariableBase::msm_naive(bases.as_slice(), all_special.as_slice()).to_affine();
             let candidate = batched::msm(bases.as_slice(), all_special.as_slice()).to_affine();
             assert_eq!(naive, candidate, "MSM size: {msm_size}, special scalars");
+
+            // A scalar at or above the modulus, below 2^253.
+            let mut above = scalars.clone();
+            let mut big = <Fr as PrimeField>::Parameters::MODULUS;
+            big.add_nocarry(&(msm_size as u64).into());
+            above[msm_size / 2] = big;
+            let naive = VariableBase::msm_naive(bases.as_slice(), above.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), above.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}, a scalar above the modulus");
         }
     }
 
