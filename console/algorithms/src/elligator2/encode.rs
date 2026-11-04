@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_encode_is_in_prime_order_subgroup() -> Result<()> {
-        // `encode` relies on clearing the cofactor instead of checking the subgroup in release builds.
+        // `encode` only checks subgroup membership in debug builds, so this also asserts it in release builds.
         let rng = &mut TestRng::default();
         for _ in 0..ITERATIONS {
             let (group, _) = Elligator2::<CurrentEnvironment>::encode(&Uniform::rand(rng))?;
