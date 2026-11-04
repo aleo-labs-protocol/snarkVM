@@ -45,6 +45,15 @@ pub trait Fp12Parameters: 'static + Copy + Clone + Debug + Default + PartialEq +
     fn mul_assign_fp12(a: &mut Fp12<Self>, b: &Fp12<Self>) {
         a.mul_assign_scalar(b)
     }
+
+    /// Returns `a^exp` by the chain of `Fp12::cyclotomic_exp`. `exp` lists the words of the exponent,
+    /// the least significant first. An override must not fall back to `Fp12::cyclotomic_exp`, which
+    /// calls this hook; `Fp12::cyclotomic_exp_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn cyclotomic_exp_fp12(a: &Fp12<Self>, exp: &[u64]) -> Fp12<Self> {
+        a.cyclotomic_exp_scalar(exp)
+    }
 }
 
 pub(crate) type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
@@ -191,7 +200,7 @@ impl<P: Fp12Parameters> Fp12<P> {
     }
 
     pub fn cyclotomic_exp<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        self.cyclotomic_exp_scalar(exp.as_ref())
+        P::cyclotomic_exp_fp12(self, exp.as_ref())
     }
 
     /// Returns `self^exp` by the scalar chain, without `Fp12Parameters::cyclotomic_exp_fp12`.
