@@ -109,7 +109,8 @@ impl CanaryV0 {
         let (base, _, _) = Blake2Xs::hash_to_curve::<<Self as Environment>::Affine>(message);
 
         // Compute the bases up to the size of the scalar field (in bits).
-        let mut g = Group::<Self>::new(base);
+        // `hash_to_curve` clears the cofactor, so this cannot fail.
+        let mut g = Group::<Self>::try_new(base).expect("hash_to_curve clears the cofactor");
         let mut g_bases = Vec::with_capacity(Scalar::<Self>::size_in_bits());
         for _ in 0..Scalar::<Self>::size_in_bits() {
             g_bases.push(g);

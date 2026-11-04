@@ -22,17 +22,17 @@ impl<E: Environment> Elligator2<E> {
         let (encoding, sign_high) = Self::encode_without_cofactor_clear(input)?;
 
         // Cofactor clear the twisted Edwards element (x, y).
-        let group = encoding.mul_by_cofactor().to_affine();
-        ensure!(group.is_on_curve(), "Elligator2 failed: element is not on curve");
+        let group = encoding.mul_by_cofactor().normalized();
+        ensure!(group.to_affine().is_on_curve(), "Elligator2 failed: element is not on curve");
         // The curve order is `COFACTOR * r` with `r` prime, so clearing the cofactor of a point on the curve
         // always lands in the prime-order subgroup. Only debug builds check it
         // (see `test_encode_is_in_prime_order_subgroup`).
         debug_assert!(
-            group.is_in_correct_subgroup_assuming_on_curve(),
+            group.to_affine().is_in_correct_subgroup_assuming_on_curve(),
             "Elligator2 failed: element in incorrect subgroup"
         );
 
-        Ok((Group::new(group), sign_high))
+        Ok((group, sign_high))
     }
 
     /// Returns the encoded affine group element and sign, given a field element.

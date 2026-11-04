@@ -69,9 +69,22 @@ impl<E: Environment> Group<E> {
     /// The coefficient B for the Montgomery curve equation.
     pub const MONTGOMERY_B: Field<E> = Field::<E>::new(E::MONTGOMERY_B);
 
-    /// Initializes a new group.
+    /// Initializes a new group without checking that `group` is a group element.
+    #[deprecated(since = "4.13.0", note = "use `Group::try_new`, which checks the point")]
     pub fn new(group: E::Affine) -> Self {
-        Self { group: group.into() }
+        Self::new_unchecked(group)
+    }
+
+    /// Initializes a new group, if `group` is on the curve and in the prime-order subgroup.
+    pub fn try_new(group: E::Affine) -> Result<Self> {
+        ensure!(group.is_on_curve(), "Group element is not on the curve");
+        ensure!(group.is_in_correct_subgroup_assuming_on_curve(), "Group element is not in the prime-order subgroup");
+        Ok(Self::new_unchecked(group))
+    }
+
+    /// Returns `self` with its projective `z` coordinate set to one, which makes `to_affine` skip an inversion.
+    pub fn normalized(&self) -> Self {
+        Self::new_unchecked(self.group.to_affine())
     }
 
     /// Returns the prime subgroup generator.
@@ -95,6 +108,11 @@ impl<E: Environment> Group<E> {
 }
 
 impl<E: Environment> Group<E> {
+    /// This internal function initializes a group element from affine coordinates, without checking them.
+    fn new_unchecked(group: E::Affine) -> Self {
+        Self { group: group.into() }
+    }
+
     /// This internal function initializes a group element from projective coordinates.
     const fn from_projective(group: E::Projective) -> Self {
         Self { group }
@@ -115,5 +133,73 @@ impl<E: Environment> Deref for Group<E> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.group
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network_environment::Console;
+
+    type CurrentEnvironment = Console;
+    type Affine = <CurrentEnvironment as Environment>::Affine;
+    type BaseField = <CurrentEnvironment as Environment>::Field;
+
+    const ITERATIONS: usize = 100;
+
+    #[test]
+    fn test_try_new_accepts_group_elements() {
+        let mut rng = TestRng::default();
+
+        for element in [Group::<CurrentEnvironment>::zero(), Group::generator()] {
+            assert_eq!(element, Group::try_new(element.to_affine()).unwrap());
+        }
+        for _ in 0..ITERATIONS {
+            let element = Group::<CurrentEnvironment>::rand(&mut rng);
+            assert_eq!(element, Group::try_new(element.to_affine()).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_try_new_rejects_points_off_the_curve() {
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let x = BaseField::rand(&mut rng);
+            let point = Affine::from_coordinates_unchecked((x, BaseField::zero()));
+            assert!(!point.is_on_curve());
+            assert!(Group::<CurrentEnvironment>::try_new(point).is_err());
+        }
+    }
+
+    #[test]
+    fn test_try_new_rejects_points_outside_the_subgroup() {
+        let mut rng = TestRng::default();
+
+        // The point of order two.
+        let order_two = Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one()));
+        assert!(order_two.is_on_curve());
+        assert!(Group::<CurrentEnvironment>::try_new(order_two).is_err());
+
+        // A group element plus the point of order two.
+        for _ in 0..ITERATIONS {
+            let element = Group::<CurrentEnvironment>::rand(&mut rng);
+            let point = element.to_affine().to_projective().add_mixed(&order_two).to_affine();
+            assert!(point.is_on_curve());
+            assert!(Group::<CurrentEnvironment>::try_new(point).is_err());
+        }
+    }
+
+    #[test]
+    fn test_normalized_is_the_same_element() {
+        let mut rng = TestRng::default();
+
+        assert_eq!(Group::<CurrentEnvironment>::zero(), Group::<CurrentEnvironment>::zero().normalized());
+        for _ in 0..ITERATIONS {
+            // The double has a projective `z` coordinate other than one.
+            let element = Group::<CurrentEnvironment>::rand(&mut rng).double();
+            assert_eq!(element, element.normalized());
+            assert_eq!(element.to_affine(), element.normalized().to_affine());
+        }
     }
 }

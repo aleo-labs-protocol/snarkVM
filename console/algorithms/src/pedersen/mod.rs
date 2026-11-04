@@ -46,7 +46,8 @@ impl<E: Environment, const NUM_BITS: u8> Pedersen<E, NUM_BITS> {
         // Construct the window with the base.
         let mut base_window = vec![Group::<E>::zero(); NUM_BITS as usize];
         {
-            let mut base_power = Group::<E>::new(generator);
+            // `hash_to_curve` clears the cofactor, so this cannot fail.
+            let mut base_power = Group::<E>::try_new(generator).expect("hash_to_curve clears the cofactor");
             for base in base_window.iter_mut().take(NUM_BITS as usize) {
                 *base = base_power;
                 base_power = base_power.double();
@@ -59,7 +60,8 @@ impl<E: Environment, const NUM_BITS: u8> Pedersen<E, NUM_BITS> {
         // Construct the window with the random base.
         let mut random_base = Vec::with_capacity(Scalar::<E>::size_in_bits());
         {
-            let mut base = Group::<E>::new(generator);
+            // `hash_to_curve` clears the cofactor, so this cannot fail.
+            let mut base = Group::<E>::try_new(generator).expect("hash_to_curve clears the cofactor");
             for _ in 0..Scalar::<E>::size_in_bits() {
                 random_base.push(base);
                 base = base.double();
