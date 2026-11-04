@@ -207,6 +207,14 @@ pub trait AffineCurve:
     /// an integer.
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective;
 
+    /// Returns the sum of `base * scalar` over the pairs of each of `msms`, or `None` if the curve
+    /// has no lane path for them. Every base must be in the prime-order subgroup: outside it, the
+    /// lanes compute another sum than `base * scalar`, so the result would depend on the CPU.
+    #[doc(hidden)]
+    fn msm_lanes(_msms: &[&[(Self, Self::ScalarField)]]) -> Option<Vec<Self::Projective>> {
+        None
+    }
+
     /// Multiply this element by the cofactor.
     #[must_use]
     fn mul_by_cofactor(&self) -> Self {
@@ -335,6 +343,15 @@ pub trait ShortWeierstrassParameters: ModelParameters {
         p: short_weierstrass_jacobian::Projective<Self>,
         by: Self::ScalarField,
     ) -> short_weierstrass_jacobian::Projective<Self>;
+
+    /// Returns the sum of `mul_projective` of each pair of each of `msms`, or `None` if there is no
+    /// lane path for them. See `AffineCurve::msm_lanes` for the condition on the bases.
+    #[doc(hidden)]
+    fn msm_lanes(
+        _msms: &[&[(short_weierstrass_jacobian::Affine<Self>, Self::ScalarField)]],
+    ) -> Option<Vec<short_weierstrass_jacobian::Projective<Self>>> {
+        None
+    }
 }
 
 /// Implementing this trait outside snarkVM is not supported. The next major release seals it,
