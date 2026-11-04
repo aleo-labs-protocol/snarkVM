@@ -191,6 +191,12 @@ impl<P: Fp12Parameters> Fp12<P> {
     }
 
     pub fn cyclotomic_exp<S: AsRef<[u64]>>(&self, exp: S) -> Self {
+        self.cyclotomic_exp_scalar(exp.as_ref())
+    }
+
+    /// Returns `self^exp` by the scalar chain, without `Fp12Parameters::cyclotomic_exp_fp12`.
+    #[doc(hidden)]
+    pub fn cyclotomic_exp_scalar(&self, exp: &[u64]) -> Self {
         let mut res = Self::one();
 
         let mut found_one = false;
