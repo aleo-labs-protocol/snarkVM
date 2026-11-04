@@ -43,6 +43,8 @@ pub mod g2;
 #[doc(inline)]
 pub use g2::*;
 
+mod msm_lanes;
+
 pub mod parameters;
 #[doc(inline)]
 pub use parameters::*;

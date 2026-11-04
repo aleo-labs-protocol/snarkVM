@@ -27,6 +27,8 @@ use core::any::TypeId;
 pub struct VariableBase;
 
 impl VariableBase {
+    /// Returns the sum of `base * scalar`. Every base must be in the
+    /// prime-order subgroup, as `batched::msm` requires.
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
         // For BLS12-377, we perform variable base MSM using a batched addition
         // technique.
@@ -45,6 +47,30 @@ impl VariableBase {
         else {
             standard::msm(bases, scalars)
         }
+    }
+
+    /// Multi-scalar multiplications over field elements, several at once.
+    ///
+    /// Returns the sum of `base * scalar` over each of `msms`, in their
+    /// order. The MSMs below the bucket method's cutoff go together through
+    /// `AffineCurve::msm_lanes` where the curve has lanes. Every other MSM goes
+    /// through [`Self::msm`], which picks its method by the MSM's size. Every
+    /// base must be in the prime-order subgroup, as `msm_lanes` requires.
+    pub fn msm_many<G: AffineCurve>(msms: &[&[(G, G::ScalarField)]]) -> Vec<G::Projective> {
+        let msm = |terms: &[(G, G::ScalarField)]| {
+            let (bases, scalars): (Vec<_>, Vec<_>) =
+                terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+            Self::msm(&bases, &scalars)
+        };
+        let is_small = |terms: &[(G, G::ScalarField)]| terms.len() < batched::BUCKET_MIN_BASES;
+        let small: Vec<_> = msms.iter().copied().filter(|terms| is_small(terms)).collect();
+        let mut small_sums = G::msm_lanes(&small).map(Vec::into_iter);
+        msms.iter()
+            .map(|terms| {
+                let sum = small_sums.as_mut().filter(|_| is_small(terms)).and_then(Iterator::next);
+                sum.unwrap_or_else(|| msm(terms))
+            })
+            .collect()
     }
 
     #[cfg(test)]
@@ -113,7 +139,8 @@ mod tests {
     #[test]
     fn test_msm_small_edge_cases() {
         use snarkvm_curves::ProjectiveCurve;
-        use snarkvm_fields::{Field, One, Zero};
+        use snarkvm_fields::{Field, FieldParameters, One, Zero};
+        use snarkvm_utilities::BigInteger;
 
         let two = Fr::from(2u64);
         let special = [
@@ -153,6 +180,15 @@ mod tests {
             let naive = VariableBase::msm_naive(bases.as_slice(), all_special.as_slice()).to_affine();
             let candidate = batched::msm(bases.as_slice(), all_special.as_slice()).to_affine();
             assert_eq!(naive, candidate, "MSM size: {msm_size}, special scalars");
+
+            // A scalar at or above the modulus, below 2^253.
+            let mut above = scalars.clone();
+            let mut big = <Fr as PrimeField>::Parameters::MODULUS;
+            big.add_nocarry(&(msm_size as u64).into());
+            above[msm_size / 2] = big;
+            let naive = VariableBase::msm_naive(bases.as_slice(), above.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), above.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}, a scalar above the modulus");
         }
     }
 
@@ -208,6 +244,54 @@ mod tests {
         ] {
             let naive = VariableBase::msm_naive(&bases[..scalars.len()], &scalars).to_affine();
             assert_eq!(batched::msm(&bases, &scalars).to_affine(), naive, "scalars: {scalars:?}");
+        }
+    }
+
+    /// `msm_many` over MSMs of mixed sizes, with an empty MSM, a base at
+    /// infinity and a zero scalar among them, gives each MSM's `msm`.
+    #[test]
+    fn test_msm_many() {
+        use itertools::Itertools;
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::Zero;
+        use snarkvm_utilities::Uniform;
+
+        let mut rng = TestRng::default();
+        let mut msms: Vec<Vec<(G1Affine, Fr)>> = [0, 1, 2, 5, 31, 32, 64]
+            .into_iter()
+            .map(|n| (0..n).map(|_| (G1Affine::rand(&mut rng), Fr::rand(&mut rng))).collect())
+            .collect();
+        msms[3][2].0 = G1Affine::zero();
+        msms[5][7].1 = Fr::zero();
+        let slices: Vec<&[_]> = msms.iter().map(Vec::as_slice).collect();
+        let sums = VariableBase::msm_many(&slices);
+        assert_eq!(sums.len(), msms.len());
+        for (msm, sum) in msms.iter().zip_eq(&sums) {
+            let (bases, scalars): (Vec<_>, Vec<_>) =
+                msm.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+            assert_eq!(sum.to_affine(), VariableBase::msm(&bases, &scalars).to_affine(), "{} bases", msm.len());
+        }
+    }
+
+    /// `msm` and `batched::msm` on more bases than scalars sum over the
+    /// first bases, one per scalar, below and above the bucket method's
+    /// cutoff; `msm_many` of those pairs gives the same sum.
+    #[test]
+    fn test_msm_more_bases_than_scalars() {
+        use snarkvm_curves::ProjectiveCurve;
+
+        let mut rng = TestRng::default();
+        for (num_bases, num_scalars) in [(5, 2), (40, 3), (40, 33)] {
+            let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, num_bases);
+            let (_, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, num_scalars);
+            let naive = VariableBase::msm_naive(&bases[..num_scalars], &scalars).to_affine();
+            let case = format!("{num_bases} bases, {num_scalars} scalars");
+            assert_eq!(VariableBase::msm(&bases, &scalars).to_affine(), naive, "{case}");
+            assert_eq!(batched::msm(&bases, &scalars).to_affine(), naive, "{case}");
+            // `create_scalar_bases` draws each scalar below the modulus.
+            let pairs: Vec<_> =
+                bases.iter().zip(&scalars).map(|(base, scalar)| (*base, Fr::from_bigint(*scalar).unwrap())).collect();
+            assert_eq!(VariableBase::msm_many(&[pairs.as_slice()])[0].to_affine(), naive, "{case}");
         }
     }
 

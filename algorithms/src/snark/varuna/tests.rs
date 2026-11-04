@@ -676,6 +676,64 @@ mod varuna_hiding {
         test_circuit_n_times(num_constraints, num_variables, 100, varuna_version, rng)
     }
 
+    /// The verifier sums each linear combination's commitments inside the batch
+    /// check's MSMs, so each commitment of the proof and of the circuit has
+    /// to stay bound to its terms: a proof with any one commitment doubled
+    /// is rejected.
+    #[test]
+    fn test_verify_rejects_a_tampered_commitment() {
+        use crate::polycommit::sonic_pc::Commitment;
+        use snarkvm_curves::{AffineCurve, ProjectiveCurve};
+
+        let rng = &mut TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
+        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+        let universal_prover = &universal_srs.to_universal_prover().unwrap();
+        let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
+        let fs_parameters = FS::sample_parameters();
+        let (circuit, public_inputs) = TestCircuit::gen_rand(2, 25, 25, rng);
+        let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let proof =
+            VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, VarunaVersion::V3, &circuit, rng).unwrap();
+        let verify = |index_vk: &CircuitVerifyingKey<Bls12_377>, proof: &_| {
+            VarunaInst::verify(
+                universal_verifier,
+                &fs_parameters,
+                index_vk,
+                VarunaVersion::V3,
+                public_inputs.clone(),
+                proof,
+            )
+            .unwrap_or(false)
+        };
+        assert!(verify(&index_vk, &proof));
+
+        let double = |c: &mut Commitment<Bls12_377>| c.0 = c.0.to_projective().double().to_affine();
+        let tampers: [fn(&mut crate::snark::varuna::Proof<Bls12_377>) -> Option<&mut Commitment<Bls12_377>>; 9] = [
+            |p| Some(&mut p.commitments.witness_commitments[0].w),
+            |p| p.commitments.mask_poly.as_mut(),
+            |p| Some(&mut p.commitments.h_0),
+            |p| Some(&mut p.commitments.g_1),
+            |p| Some(&mut p.commitments.h_1),
+            |p| Some(&mut p.commitments.g_a_commitments[0]),
+            |p| Some(&mut p.commitments.g_b_commitments[0]),
+            |p| Some(&mut p.commitments.g_c_commitments[0]),
+            |p| Some(&mut p.commitments.h_2),
+        ];
+        for (i, tamper) in tampers.iter().enumerate() {
+            let mut wrong = proof.clone();
+            // The hiding mode commits to a masking polynomial, so every commitment is
+            // present.
+            double(tamper(&mut wrong).unwrap());
+            assert!(!verify(&index_vk, &wrong), "proof commitment {i} doubled was accepted");
+        }
+        for i in 0..index_vk.circuit_commitments.len() {
+            let mut wrong = index_vk.clone();
+            double(&mut wrong.circuit_commitments[i]);
+            assert!(!verify(&wrong, &proof), "circuit commitment {i} doubled was accepted");
+        }
+    }
+
     fn test_serde_json(num_constraints: usize, num_variables: usize, rng: &mut TestRng) {
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
@@ -1033,10 +1091,43 @@ mod varuna_hiding {
         }
     }
 
+    /// Returns a point on the curve outside the prime-order subgroup.
+    fn g1_point_outside_subgroup() -> snarkvm_curves::bls12_377::G1Affine {
+        use snarkvm_curves::{AffineCurve, bls12_377::G1Affine};
+
+        // The curve's cofactor is above 1, so the search reaches a point outside the
+        // subgroup.
+        (0u64..)
+            .filter_map(|x| G1Affine::from_x_coordinate(Fq::from(x), true))
+            .find(|p| !p.is_in_correct_subgroup_assuming_on_curve())
+            .unwrap()
+    }
+
+    #[test]
+    fn a_proof_with_a_commitment_outside_the_subgroup_is_rejected() {
+        use crate::polycommit::kzg10::KZGCommitment;
+
+        let mut rng = TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
+        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+        let universal_prover = &universal_srs.to_universal_prover().unwrap();
+        let fs_parameters = FS::sample_parameters();
+        let (circuit, _) = TestCircuit::gen_rand(1, 26, 25, &mut rng);
+        let (index_pk, _) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let mut proof =
+            VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, VarunaVersion::V3, &circuit, &mut rng)
+                .unwrap();
+
+        proof.commitments.h_0 = KZGCommitment(g1_point_outside_subgroup());
+        let bytes = proof.to_bytes_le().unwrap();
+
+        assert!(crate::snark::varuna::Proof::<Bls12_377>::read_le(&bytes[..]).is_err());
+        assert!(crate::snark::varuna::Proof::<Bls12_377>::read_le_unchecked(&bytes[..]).is_ok());
+    }
+
     #[test]
     fn a_verifying_key_with_a_commitment_outside_the_subgroup_is_rejected() {
         use crate::polycommit::kzg10::KZGCommitment;
-        use snarkvm_curves::{AffineCurve, bls12_377::G1Affine};
         use snarkvm_utilities::serialize::*;
 
         let mut rng = TestRng::default();
@@ -1045,11 +1136,7 @@ mod varuna_hiding {
         let (circ, _) = TestCircuit::gen_rand(1, 26, 25, &mut rng);
         let (_, mut index_vk) = VarunaInst::circuit_setup(&universal_srs, &circ).unwrap();
 
-        let outside = (0u64..)
-            .filter_map(|x| G1Affine::from_x_coordinate(Fq::from(x), true))
-            .find(|p| !p.is_in_correct_subgroup_assuming_on_curve())
-            .unwrap();
-        index_vk.circuit_commitments[0] = KZGCommitment(outside);
+        index_vk.circuit_commitments[0] = KZGCommitment(g1_point_outside_subgroup());
         let bytes = index_vk.to_bytes_le().unwrap();
 
         assert!(CircuitVerifyingKey::<Bls12_377>::deserialize_compressed_unchecked(&bytes[..]).is_ok());
