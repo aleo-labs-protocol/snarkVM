@@ -18,7 +18,8 @@ use super::*;
 impl<E: Environment> Elligator2<E> {
     /// Returns the decoded field element, given the encoded affine group element and sign.
     pub fn decode(group: &Group<E>, sign_high: bool) -> Result<Field<E>> {
-        ensure!(
+        // A property of the curve's constants, so only debug builds check it.
+        debug_assert!(
             Group::<E>::EDWARDS_D.legendre().is_qnr(),
             "D on the twisted Edwards curve must be a quadratic nonresidue"
         );
