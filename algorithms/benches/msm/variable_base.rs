@@ -14,12 +14,17 @@
 // limitations under the License.
 
 use snarkvm_algorithms::msm::*;
-use snarkvm_curves::{AffineCurve, ProjectiveCurve};
+use snarkvm_curves::{
+    AffineCurve,
+    ProjectiveCurve,
+    bls12_377::{FqParameters, Fr, G1Affine, G1Projective},
+};
 use snarkvm_fields::{PrimeField, Zero};
-use snarkvm_utilities::{BigInteger, BitIteratorBE, TestRng, Uniform};
+use snarkvm_utilities::{BigInteger, BigInteger256, BitIteratorBE, TestRng, Uniform};
 
 use criterion::Criterion;
 use itertools::Itertools;
+use rand::RngExt;
 
 #[macro_use]
 extern crate criterion;
@@ -35,7 +40,6 @@ fn create_scalar_bases<G: AffineCurve<ScalarField = F>, F: PrimeField>(size: usi
 }
 
 fn variable_base_bls12_377(c: &mut Criterion) {
-    use snarkvm_curves::bls12_377::{Fr, G1Affine};
     let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(1_000_000);
 
     for size in [10_000, 100_000, 1_000_000] {
@@ -83,7 +87,6 @@ fn double_and_add<G: AffineCurve>(
 }
 
 fn small_variable_base_bls12_377(c: &mut Criterion) {
-    use snarkvm_curves::bls12_377::{Fr, G1Affine};
     let mut rng = TestRng::default();
     let bases = (0..1024).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
     let scalars = (0..1024).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
@@ -106,10 +109,94 @@ fn small_variable_base_bls12_377(c: &mut Criterion) {
     group.finish();
 }
 
+/// The scalar path of `batched::msm` below 32 bases: GLV `mul` for one base,
+/// Straus otherwise.
+fn scalar_msm(terms: &[(G1Affine, Fr)]) -> G1Projective {
+    if let [(base, scalar)] = terms {
+        return *base * *scalar;
+    }
+    let (bases, scalars): (Vec<_>, Vec<_>) = terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+    batched::straus::<G1Affine, 5>(&bases, &scalars)
+}
+
+/// `scalar_*` and `lanes_*` time one MSM of `n` random bases with random
+/// scalars below 2^168 or 2^253 by the scalar path and by the lanes. `many/*`
+/// times `VariableBase::msm_many` of MSMs of the listed sizes. Each row cycles
+/// through `SAMPLES` inputs. The
+/// `lanes_*` rows run only where `ifma::is_supported` is true: on a CPU without
+/// AVX-512 IFMA, or with `SNARKVM_NO_IFMA` set, `many/*` times the scalar path.
+fn lane_msm_bls12_377(c: &mut Criterion) {
+    const SAMPLES: usize = 16;
+    let mut rng = TestRng::default();
+    let short = |rng: &mut TestRng| {
+        // The top word is zero and the third is shifted to below 2^40, so the integer
+        // is below 2^168 < r.
+        Fr::from_bigint(BigInteger256::new([rng.random(), rng.random(), rng.random::<u64>() >> 24, 0])).unwrap()
+    };
+    let lanes = snarkvm_fields::ifma::is_supported::<FqParameters>();
+    let mut group = c.benchmark_group("lane_msm");
+    for bits in [168, 253] {
+        for n in [1, 2, 3, 4, 5, 7, 13, 14, 17, 25, 26, 30] {
+            let inputs: Vec<Vec<_>> = (0..SAMPLES)
+                .map(|_| {
+                    (0..n)
+                        .map(|_| {
+                            let scalar = if bits == 168 { short(&mut rng) } else { Fr::rand(&mut rng) };
+                            (G1Affine::rand(&mut rng), scalar)
+                        })
+                        .collect()
+                })
+                .collect();
+            let mut count = 0;
+            group.bench_function(format!("scalar_{bits}/{n}"), |b| {
+                b.iter(|| {
+                    count = (count + 1) % SAMPLES;
+                    scalar_msm(&inputs[count])
+                })
+            });
+            if lanes && n > 1 {
+                group.bench_function(format!("lanes_{bits}/{n}"), |b| {
+                    b.iter(|| {
+                        count = (count + 1) % SAMPLES;
+                        // This row runs only where the lanes run, on two or more terms, and
+                        // there `msm_lanes` returns one sum.
+                        G1Affine::msm_lanes(&[&inputs[count]]).expect("needs AVX-512 IFMA and two terms")[0]
+                    })
+                });
+            }
+        }
+    }
+    for sizes in [&[13, 3, 1][..], &[17, 2, 1, 1, 2, 5], &[30, 3, 2, 2, 2, 5], &[10, 20, 30, 50]] {
+        let inputs: Vec<Vec<Vec<_>>> = (0..SAMPLES)
+            .map(|_| {
+                sizes
+                    .iter()
+                    .map(|n| (0..*n).map(|_| (G1Affine::rand(&mut rng), Fr::rand(&mut rng))).collect())
+                    .collect()
+            })
+            .collect();
+        let mut count = 0;
+        group.bench_function(format!("many/{sizes:?}"), |b| {
+            b.iter(|| {
+                count = (count + 1) % SAMPLES;
+                let msms: Vec<&[_]> = inputs[count].iter().map(Vec::as_slice).collect();
+                VariableBase::msm_many(&msms)
+            })
+        });
+    }
+    group.finish();
+}
+
+criterion_group! {
+    name = lane_msm_group;
+    config = Criterion::default().sample_size(30);
+    targets = lane_msm_bls12_377
+}
+
 criterion_group! {
     name = variable_base_group;
     config = Criterion::default().sample_size(10);
     targets = small_variable_base_bls12_377, variable_base_bls12_377, variable_base_edwards_bls12
 }
 
-criterion_main!(variable_base_group);
+criterion_main!(variable_base_group, lane_msm_group);
