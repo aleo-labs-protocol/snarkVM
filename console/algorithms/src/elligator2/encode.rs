@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_edwards_d_is_quadratic_nonresidue() {
-        // `encode` relies on this instead of checking it on every call.
+        // `encode` only checks this in debug builds.
         assert!(Group::<CurrentEnvironment>::EDWARDS_D.legendre().is_qnr());
     }
 
