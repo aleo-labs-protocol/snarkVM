@@ -19,9 +19,7 @@ impl<E: Environment, I: IntegerType> Mul<Integer<E, I>> for Integer<E, I> {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
-        let mut output = self;
-        output *= other;
-        output
+        self * &other
     }
 }
 
@@ -29,9 +27,7 @@ impl<E: Environment, I: IntegerType> Mul<Integer<E, I>> for &Integer<E, I> {
     type Output = Integer<E, I>;
 
     fn mul(self, other: Integer<E, I>) -> Self::Output {
-        let mut output = self.clone();
-        output *= other;
-        output
+        self * &other
     }
 }
 
@@ -39,9 +35,7 @@ impl<E: Environment, I: IntegerType> Mul<&Integer<E, I>> for Integer<E, I> {
     type Output = Self;
 
     fn mul(self, other: &Self) -> Self::Output {
-        let mut output = self;
-        output *= other;
-        output
+        &self * other
     }
 }
 

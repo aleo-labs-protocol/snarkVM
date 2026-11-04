@@ -20,10 +20,7 @@ impl<E: Environment, I: IntegerType> BitAnd<Integer<E, I>> for Integer<E, I> {
 
     /// Returns `(self AND other)`.
     fn bitand(self, other: Integer<E, I>) -> Self::Output {
-        Self::Output {
-            bits_le: self.bits_le.into_iter().zip_eq(other.bits_le).map(|(a, b)| a & b).collect(),
-            phantom: Default::default(),
-        }
+        self & &other
     }
 }
 
@@ -32,10 +29,7 @@ impl<E: Environment, I: IntegerType> BitAnd<Integer<E, I>> for &Integer<E, I> {
 
     /// Returns `(self AND other)`.
     fn bitand(self, other: Integer<E, I>) -> Self::Output {
-        Self::Output {
-            bits_le: self.bits_le.iter().zip_eq(other.bits_le).map(|(a, b)| a & b).collect(),
-            phantom: Default::default(),
-        }
+        self & &other
     }
 }
 
@@ -44,10 +38,7 @@ impl<E: Environment, I: IntegerType> BitAnd<&Integer<E, I>> for Integer<E, I> {
 
     /// Returns `(self AND other)`.
     fn bitand(self, other: &Integer<E, I>) -> Self::Output {
-        Self::Output {
-            bits_le: self.bits_le.into_iter().zip_eq(other.bits_le.iter()).map(|(a, b)| a & b).collect(),
-            phantom: Default::default(),
-        }
+        &self & other
     }
 }
 
@@ -56,21 +47,16 @@ impl<E: Environment, I: IntegerType> BitAnd<&Integer<E, I>> for &Integer<E, I> {
 
     /// Returns `(self AND other)`.
     fn bitand(self, other: &Integer<E, I>) -> Self::Output {
-        Self::Output {
-            bits_le: self.bits_le.iter().zip_eq(other.bits_le.iter()).map(|(a, b)| a & b).collect(),
-            phantom: Default::default(),
-        }
+        let mut output = self.clone();
+        output &= other;
+        output
     }
 }
 
 impl<E: Environment, I: IntegerType> BitAndAssign<Integer<E, I>> for Integer<E, I> {
     /// Sets `self` as `(self AND other)`.
     fn bitand_assign(&mut self, other: Integer<E, I>) {
-        // Stores the bitwise AND of `self` and `other` in `self`.
-        *self = Self {
-            bits_le: std::mem::take(&mut self.bits_le).into_iter().zip_eq(other.bits_le).map(|(a, b)| a & b).collect(),
-            phantom: Default::default(),
-        }
+        *self &= &other;
     }
 }
 
@@ -79,11 +65,7 @@ impl<E: Environment, I: IntegerType> BitAndAssign<&Integer<E, I>> for Integer<E,
     fn bitand_assign(&mut self, other: &Integer<E, I>) {
         // Stores the bitwise AND of `self` and `other` in `self`.
         *self = Self {
-            bits_le: std::mem::take(&mut self.bits_le)
-                .into_iter()
-                .zip_eq(other.bits_le.iter())
-                .map(|(a, b)| a & b)
-                .collect(),
+            bits_le: self.bits_le.iter().zip_eq(other.bits_le.iter()).map(|(a, b)| a & b).collect(),
             phantom: Default::default(),
         }
     }
