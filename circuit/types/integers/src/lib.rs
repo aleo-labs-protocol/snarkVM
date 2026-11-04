@@ -79,6 +79,7 @@ use snarkvm_circuit_types_field::Field;
 use snarkvm_circuit_types_scalar::Scalar;
 
 use core::marker::PhantomData;
+use std::borrow::Cow;
 
 #[derive(Clone)]
 pub struct Integer<E: Environment, I: IntegerType> {
@@ -200,7 +201,7 @@ impl<E: Environment, I: IntegerType> From<&Integer<E, I>> for LinearCombination<
         let mut accumulator = E::zero();
         let mut coefficient = E::BaseField::one();
         for bit in &integer.bits_le {
-            accumulator += LinearCombination::from(bit) * coefficient;
+            accumulator += Cow::Owned(LinearCombination::from(bit) * coefficient);
             coefficient = coefficient.double();
         }
         accumulator

@@ -22,6 +22,7 @@ use snarkvm_circuit::{
 };
 
 use criterion::Criterion;
+use std::borrow::Cow;
 
 fn add(c: &mut Criterion) {
     let one = <Circuit as Environment>::BaseField::one();
@@ -42,7 +43,7 @@ fn add(c: &mut Criterion) {
         b.iter(|| {
             let mut candidate = <Circuit as Environment>::one();
             for _ in 0..ITERATIONS {
-                candidate += LinearCombination::from(Circuit::new_variable(Mode::Public, two));
+                candidate += Cow::Owned(LinearCombination::from(Circuit::new_variable(Mode::Public, two)));
             }
         })
     });

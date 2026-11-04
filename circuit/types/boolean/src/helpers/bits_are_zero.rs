@@ -15,13 +15,15 @@
 
 use super::*;
 
+use std::borrow::Cow;
+
 impl<E: Environment> Boolean<E> {
     /// Asserts that all bits in `bits_le` are zero.
     #[doc(hidden)]
     pub fn assert_bits_are_zero(bits_le: &[Boolean<E>]) {
         let mut sum = Self::constant(false).0;
         for bit in bits_le {
-            sum += &**bit;
+            sum += Cow::Borrowed(bit);
         }
         E::assert_eq(sum, E::zero()).expect("bits_are_zero assertion failed");
     }

@@ -18,9 +18,10 @@ use snarkvm_fields::PrimeField;
 
 use core::{
     fmt,
-    ops::{Add, AddAssign, Mul, Neg, Sub},
+    ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign},
 };
 use smallvec::SmallVec;
+use std::borrow::Cow;
 
 // Before high level program operations are converted into constraints, they are first tracked as linear combinations.
 // Each linear combination corresponds to a portion or all of a single row of an R1CS matrix, and consists of:
@@ -182,48 +183,25 @@ impl<F: PrimeField> LinearCombination<F> {
 
 impl<F: PrimeField> From<Variable<F>> for LinearCombination<F> {
     fn from(variable: Variable<F>) -> Self {
-        Self::from(&variable)
+        Self::from([Cow::Owned(variable)])
     }
 }
 
 impl<F: PrimeField> From<&Variable<F>> for LinearCombination<F> {
     fn from(variable: &Variable<F>) -> Self {
-        Self::from(std::slice::from_ref(variable))
+        Self::from([Cow::Borrowed(variable)])
     }
 }
 
-impl<F: PrimeField, const N: usize> From<[Variable<F>; N]> for LinearCombination<F> {
-    fn from(variables: [Variable<F>; N]) -> Self {
-        Self::from(&variables[..])
-    }
-}
-
-impl<F: PrimeField, const N: usize> From<&[Variable<F>; N]> for LinearCombination<F> {
-    fn from(variables: &[Variable<F>; N]) -> Self {
-        Self::from(&variables[..])
-    }
-}
-
-impl<F: PrimeField> From<Vec<Variable<F>>> for LinearCombination<F> {
-    fn from(variables: Vec<Variable<F>>) -> Self {
-        Self::from(variables.as_slice())
-    }
-}
-
-impl<F: PrimeField> From<&Vec<Variable<F>>> for LinearCombination<F> {
-    fn from(variables: &Vec<Variable<F>>) -> Self {
-        Self::from(variables.as_slice())
-    }
-}
-
-impl<F: PrimeField> From<&[Variable<F>]> for LinearCombination<F> {
-    fn from(variables: &[Variable<F>]) -> Self {
+impl<'a, F: PrimeField, I: IntoIterator<Item = Cow<'a, Variable<F>>>> From<I> for LinearCombination<F> {
+    fn from(variables: I) -> Self {
         let mut output = Self::zero();
-        for variable in variables {
+        for variable in variables.into_iter() {
+            let variable_value = variable.value();
             match variable.is_constant() {
-                true => output.constant += variable.value(),
+                true => output.constant += variable_value,
                 false => {
-                    match output.terms.binary_search_by(|(v, _)| v.cmp(variable)) {
+                    match output.terms.binary_search_by(|(v, _)| v.cmp(&variable)) {
                         Ok(idx) => {
                             // Increment the existing coefficient by 1.
                             output.terms[idx].1 += F::one();
@@ -234,13 +212,13 @@ impl<F: PrimeField> From<&[Variable<F>]> for LinearCombination<F> {
                         }
                         Err(idx) => {
                             // Insert the variable and a coefficient of 1 as a new term.
-                            output.terms.insert(idx, (variable.clone(), F::one()));
+                            output.terms.insert(idx, (variable.into_owned(), F::one()));
                         }
                     }
                 }
             }
             // Increment the value of the linear combination by the variable.
-            output.value += variable.value();
+            output.value += variable_value;
         }
         output
     }
@@ -273,7 +251,7 @@ impl<F: PrimeField> Add<Variable<F>> for LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn add(self, other: Variable<F>) -> Self::Output {
-        self + &other
+        self + Self::from(other)
     }
 }
 
@@ -290,7 +268,7 @@ impl<F: PrimeField> Add<Variable<F>> for &LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn add(self, other: Variable<F>) -> Self::Output {
-        self.clone() + &other
+        self + LinearCombination::<F>::from(other)
     }
 }
 
@@ -298,7 +276,15 @@ impl<F: PrimeField> Add<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
-        self + &other
+        if self.terms.len() > other.terms.len() {
+            let mut output = self;
+            output += Cow::Owned(other);
+            output
+        } else {
+            let mut output = other;
+            output += Cow::Owned(self);
+            output
+        }
     }
 }
 
@@ -306,7 +292,9 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: &Self) -> Self::Output {
-        &self + other
+        let mut output = self;
+        output += Cow::Borrowed(other);
+        output
     }
 }
 
@@ -314,7 +302,7 @@ impl<F: PrimeField> Add<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: LinearCombination<F>) -> Self::Output {
-        self + &other
+        other + self
     }
 }
 
@@ -322,50 +310,42 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: &LinearCombination<F>) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            other.clone()
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self.clone()
-        } else if self.terms.len() > other.terms.len() {
+        if self.terms.len() > other.terms.len() {
             let mut output = self.clone();
-            output += other;
+            output += Cow::Borrowed(other);
             output
         } else {
             let mut output = other.clone();
-            output += self;
+            output += Cow::Borrowed(self);
             output
         }
     }
 }
 
-impl<F: PrimeField> AddAssign<LinearCombination<F>> for LinearCombination<F> {
-    fn add_assign(&mut self, other: Self) {
-        *self += &other;
-    }
-}
+impl<'a, F: PrimeField> AddAssign<Cow<'a, LinearCombination<F>>> for LinearCombination<F> {
+    fn add_assign(&mut self, other: Cow<'a, LinearCombination<F>>) {
+        let other_value = other.value;
 
-impl<F: PrimeField> AddAssign<&LinearCombination<F>> for LinearCombination<F> {
-    fn add_assign(&mut self, other: &Self) {
         // If `other` is empty, return immediately.
         if other.constant.is_zero() && other.terms.is_empty() {
             return;
         }
 
         if self.constant.is_zero() && self.terms.is_empty() {
-            *self = other.clone();
+            *self = other.into_owned();
         } else {
             // Add the constant value from `other` to `self`.
             self.constant += other.constant;
 
             // Add the terms from `other` to the terms of `self`.
-            for (variable, coefficient) in other.terms.iter() {
+            for (variable, coefficient) in other.into_owned().terms.into_iter() {
                 match variable.is_constant() {
                     true => panic!("Malformed linear combination found"),
                     false => {
-                        match self.terms.binary_search_by(|(v, _)| v.cmp(variable)) {
+                        match self.terms.binary_search_by(|(v, _)| v.cmp(&variable)) {
                             Ok(idx) => {
                                 // Add the coefficient to the existing coefficient for this term.
-                                self.terms[idx].1 += *coefficient;
+                                self.terms[idx].1 += coefficient;
                                 // If the coefficient of the term is now zero, remove the entry.
                                 if self.terms[idx].1.is_zero() {
                                     self.terms.remove(idx);
@@ -373,7 +353,7 @@ impl<F: PrimeField> AddAssign<&LinearCombination<F>> for LinearCombination<F> {
                             }
                             Err(idx) => {
                                 // Insert the variable and coefficient as a new term.
-                                self.terms.insert(idx, (variable.clone(), *coefficient));
+                                self.terms.insert(idx, (variable, coefficient));
                             }
                         }
                     }
@@ -381,7 +361,7 @@ impl<F: PrimeField> AddAssign<&LinearCombination<F>> for LinearCombination<F> {
             }
 
             // Add the value from `other` to `self`.
-            self.value += other.value;
+            self.value += other_value;
         }
     }
 }
@@ -391,7 +371,7 @@ impl<F: PrimeField> Sub<Variable<F>> for LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn sub(self, other: Variable<F>) -> Self::Output {
-        self - &other
+        self - Self::from(other)
     }
 }
 
@@ -408,7 +388,7 @@ impl<F: PrimeField> Sub<Variable<F>> for &LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn sub(self, other: Variable<F>) -> Self::Output {
-        self.clone() - &other
+        self - LinearCombination::<F>::from(other)
     }
 }
 
@@ -416,7 +396,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        self - &other
+        self + (-other)
     }
 }
 
@@ -424,7 +404,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: &Self) -> Self::Output {
-        &self - other
+        self + (-other)
     }
 }
 
@@ -432,7 +412,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: LinearCombination<F>) -> Self::Output {
-        self - &other
+        self + (-other)
     }
 }
 
@@ -440,7 +420,13 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: &LinearCombination<F>) -> Self::Output {
-        self + &(-other)
+        self + (-other)
+    }
+}
+
+impl<F: PrimeField> SubAssign<LinearCombination<F>> for LinearCombination<F> {
+    fn sub_assign(&mut self, other: LinearCombination<F>) {
+        self.add_assign(Cow::Owned(-other))
     }
 }
 

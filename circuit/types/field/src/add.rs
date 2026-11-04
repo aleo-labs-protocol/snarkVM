@@ -15,11 +15,15 @@
 
 use super::*;
 
+use std::borrow::Cow;
+
 impl<E: Environment> Add<Field<E>> for Field<E> {
     type Output = Field<E>;
 
     fn add(self, other: Field<E>) -> Self::Output {
-        self + &other
+        let mut result = self;
+        result += other;
+        result
     }
 }
 
@@ -37,7 +41,7 @@ impl<E: Environment> Add<Field<E>> for &Field<E> {
     type Output = Field<E>;
 
     fn add(self, other: Field<E>) -> Self::Output {
-        self + &other
+        other + self
     }
 }
 
@@ -45,21 +49,19 @@ impl<E: Environment> Add<&Field<E>> for &Field<E> {
     type Output = Field<E>;
 
     fn add(self, other: &Field<E>) -> Self::Output {
-        let mut result = self.clone();
-        result += other;
-        result
+        self.clone() + other
     }
 }
 
 impl<E: Environment> AddAssign<Field<E>> for Field<E> {
     fn add_assign(&mut self, other: Field<E>) {
-        *self += &other;
+        self.linear_combination += Cow::Owned(other.linear_combination);
+        self.bits_le = Default::default();
     }
 }
-
 impl<E: Environment> AddAssign<&Field<E>> for Field<E> {
     fn add_assign(&mut self, other: &Field<E>) {
-        self.linear_combination += &other.linear_combination;
+        self.linear_combination += Cow::Borrowed(&other.linear_combination);
         self.bits_le = Default::default();
     }
 }

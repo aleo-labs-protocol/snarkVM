@@ -19,7 +19,8 @@ impl<E: Environment, I: IntegerType> Not for Integer<E, I> {
     type Output = Integer<E, I>;
 
     fn not(self) -> Self::Output {
-        (&self).not()
+        // Flip each bit in the representation of the `self` integer.
+        Integer { bits_le: self.bits_le.into_iter().map(|b| !b).collect(), phantom: Default::default() }
     }
 }
 
