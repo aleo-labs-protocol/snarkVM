@@ -17,6 +17,7 @@
 use crate::{
     bls12_377::{
         Bls12_377,
+        Bls12_377Parameters,
         Fq,
         Fq2,
         Fq2Parameters,
@@ -34,7 +35,11 @@ use crate::{
         g1::Bls12_377G1Parameters,
         g2::Bls12_377G2Parameters,
     },
-    templates::{short_weierstrass_jacobian::tests::sw_tests, twisted_edwards_extended::tests::edwards_test},
+    templates::{
+        bls12::Bls12Parameters,
+        short_weierstrass_jacobian::tests::sw_tests,
+        twisted_edwards_extended::tests::edwards_test,
+    },
     traits::{
         AffineCurve,
         PairingEngine,
@@ -788,6 +793,127 @@ fn test_fq12_mul_assign_lanes() {
         let a = Fq12::rand(&mut rng);
         check_fq12_mul(&a, &Fq12::rand(&mut rng));
         check_fq12_mul(&a, &a);
+    }
+}
+
+/// `Fq12::cyclotomic_square`'s formula from Fq2 operations only: with `z_0 = c0.c0`,
+/// `z_1 = c1.c1`, `z_2 = c1.c0`, `z_3 = c0.c2`, `z_4 = c0.c1` and `z_5 = c1.c2`, each pair
+/// `(A, B) = (z_{2g}, z_{2g+1})` gives `t_e = A^2 + u B^2` and `t_o = 2 A B`.
+fn fq12_cyclotomic_square_reference(x: &Fq12) -> Fq12 {
+    let u = Fq6Parameters::mul_fp2_by_nonresidue;
+    let t = |a: Fq2, b: Fq2| (a.square() + u(&b.square()), (a * b).double());
+    let (t0, t1) = t(x.c0.c0, x.c1.c1);
+    let (t2, t3) = t(x.c1.c0, x.c0.c2);
+    let (t4, t5) = t(x.c0.c1, x.c1.c2);
+    let three = |t: Fq2| t.double() + t;
+    Fq12::new(
+        Fq6::new(three(t0) - x.c0.c0.double(), three(t2) - x.c0.c1.double(), three(t4) - x.c0.c2.double()),
+        Fq6::new(three(u(&t5)) + x.c1.c0.double(), three(t1) + x.c1.c1.double(), three(t3) + x.c1.c2.double()),
+    )
+}
+
+/// `Fq12::cyclotomic_exp` from `fq12_cyclotomic_square_reference` and `fq12_schoolbook`.
+fn fq12_cyclotomic_exp_reference(x: &Fq12, exp: &[u64]) -> Fq12 {
+    let mut res = Fq12::one();
+    for bit in BitIteratorBE::new_without_leading_zeros(exp) {
+        res = fq12_cyclotomic_square_reference(&res);
+        if bit {
+            res = fq12_schoolbook(&res, x);
+        }
+    }
+    res
+}
+
+/// Returns `f^((p^6 - 1)(p^2 + 1))` for a random `f`: the easy part of the final exponentiation,
+/// which lies in the cyclotomic subgroup.
+fn fq12_cyclotomic_element(rng: &mut TestRng) -> Fq12 {
+    let f = Fq12::rand(rng);
+    let mut r = f;
+    r.conjugate();
+    // A random element is nonzero.
+    r = fq12_schoolbook(&r, &f.inverse().unwrap());
+    let mut s = r;
+    s.frobenius_map(2);
+    fq12_schoolbook(&s, &r)
+}
+
+/// Inputs for the cyclotomic squaring and exponentiation: every coefficient equal to an edge
+/// element, the 12 coefficients each 0 or p - 1 in 64 patterns, edge elements mixed with random
+/// ones, random elements and elements of the cyclotomic subgroup.
+fn fq12_cyclotomic_inputs(rng: &mut TestRng) -> Vec<Fq12> {
+    let edges = fq_edge_elements();
+    let mut inputs: Vec<Fq12> = edges.iter().map(|x| fq12_from_coefficients([*x; 12])).collect();
+    for _ in 0..64 {
+        inputs.push(fq12_from_coefficients(std::array::from_fn(|_| fq_zero_or_minus_one(rng))));
+    }
+    for _ in 0..200 {
+        let mut pick = || fq_edge_or_random(rng, &edges);
+        inputs.push(fq12_from_coefficients(std::array::from_fn(|_| pick())));
+    }
+    inputs.extend((0..200).map(|_| Fq12::rand(rng)));
+    inputs.extend((0..50).map(|_| fq12_cyclotomic_element(rng)));
+    inputs
+}
+
+#[test]
+fn test_fq12_cyclotomic_square() {
+    let mut rng = TestRng::default();
+
+    for x in fq12_cyclotomic_inputs(&mut rng) {
+        let expected = fq12_cyclotomic_square_reference(&x);
+        let c = x.cyclotomic_square();
+        assert_eq!(c, expected, "{x}");
+        assert!(fq12_coefficients(&c).all(|x| x.is_valid()), "{x}");
+    }
+
+    // On the cyclotomic subgroup, the formula squares.
+    for _ in 0..10 {
+        let x = fq12_cyclotomic_element(&mut rng);
+        assert_eq!(x.cyclotomic_square(), fq12_schoolbook(&x, &x));
+    }
+}
+
+#[test]
+fn test_fq12_cyclotomic_exp() {
+    let mut rng = TestRng::default();
+    let x = Bls12_377Parameters::X;
+    let mut exponents: Vec<Vec<u64>> = vec![
+        vec![],
+        vec![0],
+        vec![0, 0],
+        vec![1],
+        vec![2],
+        vec![3],
+        vec![u64::MAX],
+        vec![1 << 63],
+        vec![0, 1],
+        vec![u64::MAX, u64::MAX],
+        vec![5, 0, 0],
+        x.to_vec(),
+    ];
+    exponents.extend((0..20).map(|_| vec![rng.random::<u64>() >> rng.random_range(0..64)]));
+    exponents.extend((0..5).map(|_| vec![rng.random::<u64>(), rng.random::<u64>()]));
+
+    for (i, x) in fq12_cyclotomic_inputs(&mut rng).into_iter().enumerate() {
+        // Every exponent for a subset of the inputs, and a random one for the rest.
+        let chosen = if i % 25 == 0 {
+            &exponents[..]
+        } else {
+            let j = rng.random_range(0..exponents.len());
+            &exponents[j..=j]
+        };
+        for exp in chosen {
+            let c = x.cyclotomic_exp(exp);
+            assert_eq!(c, fq12_cyclotomic_exp_reference(&x, exp), "{x} ^ {exp:?}");
+            assert!(fq12_coefficients(&c).all(|x| x.is_valid()), "{x} ^ {exp:?}");
+            assert_eq!(x.cyclotomic_exp_scalar(exp), c, "{x} ^ {exp:?} by the scalar path");
+        }
+    }
+
+    // On the cyclotomic subgroup, the chain exponentiates.
+    for _ in 0..3 {
+        let a = fq12_cyclotomic_element(&mut rng);
+        assert_eq!(a.cyclotomic_exp(x), a.pow(x));
     }
 }
 
