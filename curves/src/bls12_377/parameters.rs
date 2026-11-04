@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkvm_fields::One;
+
 use crate::{
     bls12_377::{
         Fq,
@@ -52,6 +54,12 @@ impl Bls12Parameters for Bls12_377Parameters {
     const X: &'static [u64] = &[0x8508c00000000001];
     /// `x` is positive.
     const X_IS_NEGATIVE: bool = false;
+
+    fn miller_loop_fp12(pairs: &[(&G1Prepared<Self>, &G2Prepared<Self>)]) -> Fq12 {
+        let lines: Vec<_> = pairs.iter().map(|(p, q)| ([&p.0.x, &p.0.y], q.ell_coeffs.as_slice())).collect();
+        snarkvm_fields::ifma::miller_loop_fp12(&Fq12::one(), Self::X, &lines)
+            .unwrap_or_else(|| Bls12::<Self>::miller_loop_scalar(pairs))
+    }
 }
 
 pub type Bls12_377 = Bls12<Bls12_377Parameters>;
