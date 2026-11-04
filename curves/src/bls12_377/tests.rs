@@ -23,6 +23,7 @@ use crate::{
         Fq6,
         Fq6Parameters,
         Fq12,
+        Fq12Parameters,
         FqParameters,
         Fr,
         FrParameters,
@@ -624,9 +625,169 @@ fn test_fq12_mul_by_034() {
         let mut b = a;
 
         a.mul_by_034(&c0, &c3, &c4);
-        b.mul_assign(&Fq12::new(Fq6::new(c0, Fq2::zero(), Fq2::zero()), Fq6::new(c3, c4, Fq2::zero())));
+        b = fq12_schoolbook(&b, &Fq12::new(Fq6::new(c0, Fq2::zero(), Fq2::zero()), Fq6::new(c3, c4, Fq2::zero())));
 
         assert_eq!(a, b);
+    }
+}
+
+/// The elements at the edges of the lane kernel's input range: 0, 1, 2, -1, -2, and the
+/// Montgomery words 1, 2, p - 1 and R^2.
+fn fq_edge_elements() -> Vec<Fq> {
+    let mut p_minus_1 = FqParameters::MODULUS;
+    p_minus_1.sub_noborrow(&BigInteger384::from(1));
+    let montgomery = |w: BigInteger384| -> Fq { snarkvm_fields::field!(Fq, w) };
+    vec![
+        Fq::zero(),
+        Fq::one(),
+        Fq::from(2u64),
+        -Fq::one(),
+        -Fq::from(2u64),
+        montgomery(BigInteger384::from(1)),
+        montgomery(BigInteger384::from(2)),
+        montgomery(p_minus_1),
+        montgomery(FqParameters::R2),
+    ]
+}
+
+/// Schoolbook product in Fq6 = Fq2[v] / (v^3 - xi), from Fq2 products only.
+fn fq6_schoolbook(a: &Fq6, b: &Fq6) -> Fq6 {
+    let xi = Fq6Parameters::mul_fp2_by_nonresidue;
+    Fq6::new(
+        a.c0 * b.c0 + xi(&(a.c1 * b.c2 + a.c2 * b.c1)),
+        a.c0 * b.c1 + a.c1 * b.c0 + xi(&(a.c2 * b.c2)),
+        a.c0 * b.c2 + a.c1 * b.c1 + a.c2 * b.c0,
+    )
+}
+
+/// Schoolbook product in Fq12 = Fq6[w] / (w^2 - v), from `fq6_schoolbook` only.
+fn fq12_schoolbook(a: &Fq12, b: &Fq12) -> Fq12 {
+    let v = |x: Fq6| Fq6::new(Fq6Parameters::mul_fp2_by_nonresidue(&x.c2), x.c0, x.c1);
+    Fq12::new(
+        fq6_schoolbook(&a.c0, &b.c0) + v(fq6_schoolbook(&a.c1, &b.c1)),
+        fq6_schoolbook(&a.c0, &b.c1) + fq6_schoolbook(&a.c1, &b.c0),
+    )
+}
+
+/// The 12 coefficients of `x`, in the order `c0.c0.c0`, `c0.c0.c1`, `c0.c1.c0`, ..., `c1.c2.c1`.
+fn fq12_coefficients(x: &Fq12) -> impl Iterator<Item = Fq> {
+    [x.c0, x.c1].into_iter().flat_map(|x| [x.c0, x.c1, x.c2]).flat_map(|x| [x.c0, x.c1])
+}
+
+/// Returns 0 or p - 1.
+fn fq_zero_or_minus_one(rng: &mut TestRng) -> Fq {
+    if rng.random_bool(0.5) { -Fq::one() } else { Fq::zero() }
+}
+
+/// Returns one of `edges` or a random element.
+fn fq_edge_or_random(rng: &mut TestRng, edges: &[Fq]) -> Fq {
+    if rng.random_bool(0.5) { edges[rng.random_range(0..edges.len())] } else { Fq::rand(rng) }
+}
+
+/// Whether the lanes run on this CPU.
+fn lanes_supported() -> bool {
+    snarkvm_fields::ifma::is_supported::<FqParameters>()
+}
+
+/// The element whose coefficients are `c`, in the order of `fq12_coefficients`.
+fn fq12_from_coefficients(c: [Fq; 12]) -> Fq12 {
+    let fq6 = |c: &[Fq]| Fq6::new(Fq2::new(c[0], c[1]), Fq2::new(c[2], c[3]), Fq2::new(c[4], c[5]));
+    Fq12::new(fq6(&c[..6]), fq6(&c[6..]))
+}
+
+/// Checks `a * b` and, if `a == b`, `a.square()` against `fq12_schoolbook` through the `Fq12`
+/// API, and that every coefficient of the product is canonical.
+fn check_fq12_mul(a: &Fq12, b: &Fq12) {
+    let expected = fq12_schoolbook(a, b);
+    let mut c = *a;
+    c *= b;
+    assert_eq!(c, expected, "{a} * {b}");
+    let mut scalar = *a;
+    scalar.mul_assign_scalar(b);
+    assert_eq!(scalar, expected, "{a} * {b} by the scalar path");
+    assert!(fq12_coefficients(&c).all(|x| x.is_valid()), "{a} * {b}");
+    if a == b {
+        assert_eq!(a.square(), expected, "{a} squared");
+        let mut d = *a;
+        d.square_in_place();
+        assert_eq!(d, expected, "{a} squared in place");
+    }
+}
+
+/// `e(G1 generator, G2 generator)`, as the hex of its `to_bytes_le`.
+const PAIRING_OF_GENERATORS: &str = concat!(
+    "4c9b02ed807521637429bab75573514bfd46e7ac3b68bce149ea99ec7a3ca8a10e717554d44fa544a910b6a68ce13601",
+    "44bade45b2e7f8ab5d8831e7dd0c0782bad392cbac0c68853c579f7948d6dff9ea733597c11814e2a38ab639a4437800",
+    "4d00d020f6fb29e524f59d5ca3eeb2ac8cb3f400b1ee69b4f9646919d9fe95c28b923604d3c3382131e721b13c3d0401",
+    "e70b852425b201025cff3033bb6cd18a9c77e6c1775a94543cca3e947ac4d428f99c3e715b2af374182fc1a1c6866701",
+    "0dcc2d59f05f533e11373551a1e9a34cfdd910ea702cebd57950acae019b411776c8b512526aeb77758ad87cd1933500",
+    "89a40bbf0f2575850cb749e96fdfa565b710d304b5df99ecaa7bb7a4bdd7e63546ecf2290adc2e5247fe1b8d1997ef00",
+    "a935bcc1d1d182cd1ea21c47dd3e0d59344202489799be898114f255853908b952f49c4ca5de2074bfefb25d231f9900",
+    "d035577107267ab0466dfa759e30ab29bdc1f4fc9d24a431e9eff91ad05623f21cfdd291d7795fc8544c6bd2c70fb000",
+    "75394a71e15e901a0485611e1214f4d1ae0bf818e2b81182e5be85d2591320ddbb0ed9822cf56d2a1609b078d404c700",
+    "92127497958ac652fb20cf2decadb7f64316d33d7f5b59045f5f3d8d899829e224209001a18dfbc534fba6cfd60e4d01",
+    "4646d58f5709fbc0f5146d32432cceeaed06ba8ea7dfcc95c552fec3bf42336cd0706ec65adf7ba209c5fe94ff6b1b01",
+    "f0c0fcb90b760f5a742032c0962a483c6b5fc104667f4db87510906678c98dcc33bbbdc1096edc8fc9d8c13cbc508400",
+);
+
+#[test]
+fn test_pairing_of_generators() {
+    use snarkvm_utilities::ToBytes;
+
+    let e = Bls12_377::pairing(G1Affine::prime_subgroup_generator(), G2Affine::prime_subgroup_generator());
+    let hex: String = e.to_bytes_le().unwrap().iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(hex, PAIRING_OF_GENERATORS);
+}
+
+#[test]
+fn test_fq_ifma_supported() {
+    #[cfg(target_arch = "x86_64")]
+    let expected = std::is_x86_feature_detected!("avx512f")
+        && std::is_x86_feature_detected!("avx512ifma")
+        && std::env::var_os("SNARKVM_NO_IFMA").is_none_or(|value| value.is_empty());
+    #[cfg(not(target_arch = "x86_64"))]
+    let expected = false;
+    assert_eq!(lanes_supported(), expected);
+}
+
+#[test]
+fn test_fq12_mul_assign_lanes() {
+    let mut rng = TestRng::default();
+    let edges = fq_edge_elements();
+
+    // The tower of Fq12 runs in lanes exactly where the field does, and the hook multiplies in it.
+    assert_eq!(Fq2Parameters::NONRESIDUE, -Fq::from(5u64));
+    assert_eq!(Fq6Parameters::NONRESIDUE, Fq2::new(Fq::zero(), Fq::one()));
+    assert_eq!(snarkvm_fields::ifma::is_supported_tower::<Fq12Parameters, FqParameters>(), lanes_supported());
+
+    // Every coefficient equal, for every pair of edge elements: the largest operand sums.
+    for x in &edges {
+        for y in &edges {
+            check_fq12_mul(&fq12_from_coefficients([*x; 12]), &fq12_from_coefficients([*y; 12]));
+        }
+    }
+
+    // The 12 coefficients each 0 or p - 1, in 64 patterns, against themselves and against a
+    // random element.
+    for _ in 0..64 {
+        let a = fq12_from_coefficients(std::array::from_fn(|_| fq_zero_or_minus_one(&mut rng)));
+        check_fq12_mul(&a, &a);
+        check_fq12_mul(&a, &Fq12::rand(&mut rng));
+    }
+
+    // Edge elements mixed with random ones across the coefficients.
+    for _ in 0..2_000 {
+        let mut pick = || fq_edge_or_random(&mut rng, &edges);
+        let a = fq12_from_coefficients(std::array::from_fn(|_| pick()));
+        let b = fq12_from_coefficients(std::array::from_fn(|_| pick()));
+        check_fq12_mul(&a, &b);
+    }
+
+    // Random elements, and a product with itself.
+    for _ in 0..2_000 {
+        let a = Fq12::rand(&mut rng);
+        check_fq12_mul(&a, &Fq12::rand(&mut rng));
+        check_fq12_mul(&a, &a);
     }
 }
 
