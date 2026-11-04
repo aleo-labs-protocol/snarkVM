@@ -676,10 +676,13 @@ mod varuna_hiding {
         test_circuit_n_times(num_constraints, num_variables, 100, varuna_version, rng)
     }
 
-    /// The verifier sums each linear combination's commitments inside the batch
-    /// check's MSMs, so each commitment of the proof and of the circuit has
-    /// to stay bound to its terms: a proof with any one commitment doubled
-    /// is rejected.
+    /// A proof with any one commitment of the proof or of the circuit doubled
+    /// is rejected. The verifier's sponge absorbs these commitments, so a
+    /// doubled commitment also changes the later challenges, and this test
+    /// does not show that the batch check's MSMs bind a commitment to its
+    /// terms. `test_batch_check_rejects_a_tampered_commitment` and
+    /// `test_batch_check_terms_matches_batch_check` in `sonic_pc` hold the
+    /// challenges fixed and show that.
     #[test]
     fn test_verify_rejects_a_tampered_commitment() {
         use crate::polycommit::sonic_pc::Commitment;
@@ -704,7 +707,8 @@ mod varuna_hiding {
                 public_inputs.clone(),
                 proof,
             )
-            .unwrap_or(false)
+            // A doubled commitment leaves the proof well-formed, so `verify` returns `Ok`.
+            .unwrap()
         };
         assert!(verify(&index_vk, &proof));
 

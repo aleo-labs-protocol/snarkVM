@@ -582,6 +582,10 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut msms: Vec<&[_]> = Vec::with_capacity(groups.len() + 2);
         msms.extend(groups.values().map(Vec::as_slice));
         msms.extend([witness_terms.as_slice(), adjusted_terms.as_slice()]);
+        // Hazard: in a `cuda` build, an MSM above `VariableBase::msm`'s threshold runs
+        // on the device and panics on a device error. Under Varuna, the MSM with no
+        // degree bound holds one term per instance and 12 per circuit, so an execution
+        // with enough distinct circuits reaches the threshold.
         let msm_time =
             start_timer!(|| format!("{} MSMs of {} terms", msms.len(), msms.iter().map(|m| m.len()).sum::<usize>()));
         let mut sums = VariableBase::msm_many(&msms);
@@ -1366,12 +1370,13 @@ mod tests {
 
     /// `batch_check_terms` takes each commitment as a sum of terms, so a
     /// commitment split into two terms passes where the commitment does, and
-    /// a split whose sum is another point fails.
+    /// a split whose sum is another point fails, through a wrong coefficient
+    /// or a wrong base at either term.
     #[test]
     fn test_batch_check_terms_matches_batch_check() {
         use super::{BatchProof, Evaluations};
         use crate::AlgebraicSponge;
-        use snarkvm_curves::bls12_377::Fr;
+        use snarkvm_curves::{AffineCurve, ProjectiveCurve, bls12_377::Fr};
         use snarkvm_fields::{One, Zero};
         use snarkvm_utilities::Uniform;
         use std::collections::BTreeMap;
@@ -1379,7 +1384,9 @@ mod tests {
         let rng = &mut TestRng::default();
         let components = full_end_to_end_test::<Bls12_377, Sponge>().expect("test failed for bls12-377");
         let mut most_terms = 0;
-        for TestComponents { verification_key, commitments, query_set, evaluations, batch_proof, .. } in components {
+        for (i, TestComponents { verification_key, commitments, query_set, evaluations, batch_proof, .. }) in
+            components.into_iter().enumerate()
+        {
             // `test_template` fills `batch_proof` for every component it returns.
             let proof = batch_proof.unwrap();
             let check = |terms: BTreeMap<String, super::CommitmentTerms<Bls12_377>>,
@@ -1411,6 +1418,14 @@ mod tests {
             };
             assert!(check(split(Fr::zero()), &evaluations, &proof));
             assert!(!check(split(Fr::one()), &evaluations, &proof), "a wrong split passed");
+            let label = commitments[i % commitments.len()].label();
+            for term in 0..2 {
+                let mut wrong = split(Fr::zero());
+                // `split` keys every commitment by its label.
+                let base = &mut wrong.get_mut(label).unwrap().1[term].0;
+                *base = base.to_projective().double().to_affine();
+                assert!(!check(wrong, &evaluations, &proof), "a wrong base at term {term} of {label} passed");
+            }
             most_terms = most_terms.max(largest_group(&commitments, &query_set));
         }
         // Some degree-bound MSM holds the split terms of two or more
