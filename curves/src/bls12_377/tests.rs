@@ -886,3 +886,335 @@ fn test_bilinearity() {
     assert_eq!(ans2.pow(Fr::characteristic()), Fq12::one());
     assert_eq!(ans3.pow(Fr::characteristic()), Fq12::one());
 }
+
+/// Returns `sum_j 16^(n - 1 - j) (digits[j][0] P + digits[j][1] phi(P))` by double-and-add.
+fn glv_digits_reference(point: &G1Affine, digits: &[[i8; 2]]) -> G1Projective {
+    let phi = Bls12_377G1Parameters::glv_endomorphism(*point);
+    let mut acc = G1Projective::zero();
+    for [d1, d2] in digits {
+        for _ in 0..4 {
+            acc.double_in_place();
+        }
+        for (d, base) in [(d1, point), (d2, &phi)] {
+            let term = base.mul_bits(BitIteratorBE::new_without_leading_zeros([d.unsigned_abs() as u64]));
+            acc += if *d < 0 { -term } else { term };
+        }
+    }
+    acc
+}
+
+/// Returns the signed 4-bit windows of `k`, the most significant first.
+fn signed_windows_reference(k: i128) -> Vec<i8> {
+    let (mut m, mut windows) = (k.unsigned_abs(), vec![]);
+    while m != 0 {
+        let w = (m & 15) as i8;
+        let d = if w >= 8 { w - 16 } else { w };
+        windows.push(if k < 0 { -d } else { d });
+        m = (m as i128 - d as i128) as u128 >> 4;
+    }
+    windows.reverse();
+    windows
+}
+
+/// Returns the digits of `ifma::glv_mul_8` for `lanes[l] = (a, b)` in lane `l`: `a` in the first half
+/// and `b` in the second, each the most significant first and aligned at the end.
+fn glv_lane_digits(lanes: &[(Vec<i8>, Vec<i8>); 8]) -> Vec<[[i8; 8]; 2]> {
+    let len = lanes.iter().map(|(a, b)| a.len().max(b.len())).max().unwrap_or(0);
+    let mut digits = vec![[[0; 8]; 2]; len];
+    for (lane, (a, b)) in lanes.iter().enumerate() {
+        for (half, windows) in [a, b].into_iter().enumerate() {
+            for (i, d) in windows.iter().enumerate() {
+                digits[len - windows.len() + i][half][lane] = *d;
+            }
+        }
+    }
+    digits
+}
+
+/// The eigenvalue of `phi` on G1, as a signed integer: `phi(P) = LAMBDA P`.
+fn glv_lambda() -> i128 {
+    use crate::templates::bls12::Bls12Parameters;
+    let x = crate::bls12_377::Bls12_377Parameters::X[0] as i128;
+    let g = G1Affine::prime_subgroup_generator();
+    // The two roots of `t^2 + t + 1` mod r are `x^2 - 1` and `-x^2`.
+    let lambda = x * x - 1;
+    let words = [lambda as u64, (lambda >> 64) as u64];
+    let phi = Bls12_377G1Parameters::glv_endomorphism(g);
+    if g.mul_bits(BitIteratorBE::new_without_leading_zeros(words)) == phi.to_projective() { lambda } else { -(x * x) }
+}
+
+/// The point `(-1, 0)` of order 2 and `(0, 1)` of order 3 of `y^2 = x^3 + 1`, outside G1.
+fn g1_small_order_points() -> [G1Affine; 2] {
+    [G1Affine::new(-Fq::one(), Fq::zero(), false), G1Affine::new(Fq::zero(), Fq::one(), false)]
+}
+
+/// Returns 8 random points of G1.
+fn random_g1_slot(rng: &mut TestRng) -> [G1Affine; 8] {
+    std::array::from_fn(|_| G1Affine::rand(rng))
+}
+
+/// `check_fq_glv_mul_8_slots` with one slot, whose lane `l` takes the digits `lanes[l]`.
+fn check_fq_glv_mul_8_one_slot(points: &[G1Affine; 8], lanes: &[(Vec<i8>, Vec<i8>); 8], exceptional: u8) {
+    check_fq_glv_mul_8_slots(std::slice::from_ref(points), &glv_lane_digits(lanes), exceptional);
+}
+
+#[test]
+fn test_fq_glv_mul_8() {
+    let mut rng = TestRng::default();
+    let random_digit = |rng: &mut TestRng| rng.random_range(-8i8..=8);
+
+    // No digits: the sum is the point at infinity in every lane.
+    check_fq_glv_mul_8_slots(std::slice::from_ref(&random_g1_slot(&mut rng)), &[], 0);
+
+    // Random digits, with lanes that start at different windows and in either half.
+    for _ in 0..100 {
+        let points = random_g1_slot(&mut rng);
+        let len = rng.random_range(1..40);
+        let lanes = std::array::from_fn(|_| {
+            let (la, lb) = (rng.random_range(0..=len), rng.random_range(0..=len));
+            ((0..la).map(|_| random_digit(&mut rng)).collect(), (0..lb).map(|_| random_digit(&mut rng)).collect())
+        });
+        check_fq_glv_mul_8_one_slot(&points, &lanes, 0);
+    }
+
+    // Digits of 8 and -8 in every window, and a single digit of 1 at the end (a scalar of 1).
+    let lanes: [(Vec<i8>, Vec<i8>); 8] = std::array::from_fn(|lane| match lane {
+        0 => (vec![8; 33], vec![-8; 33]),
+        1 => (vec![-8; 33], vec![8; 33]),
+        2 => (vec![1], vec![]),
+        3 => (vec![], vec![1]),
+        4 => (vec![-1], vec![0]),
+        5 => (vec![8, 0, 0, -8], vec![0, 0, 0, 0]),
+        6 => (vec![0; 33], vec![0; 33]),
+        _ => (vec![7, -7, 1, 0, 3], vec![-1, 2, -8, 8, 0]),
+    });
+    check_fq_glv_mul_8_one_slot(&random_g1_slot(&mut rng), &lanes, 0);
+
+    // The cases the formulas exclude. `LAMBDA P = phi(P)`, so the digits of `(LAMBDA, 1)` add
+    // `phi(P)` to itself at the last window, and those of `(LAMBDA, -1)` add `-phi(P)` to `phi(P)`.
+    // With one more window, the ladder goes on from that sum. The points of order 2 and 3, and
+    // `(0, 1)`, the coordinates of the point at infinity, meet them in the table.
+    let lambda = signed_windows_reference(glv_lambda());
+    let then = |mut a: Vec<i8>, b: i8| {
+        let mut b = vec![0; a.len() - 1].into_iter().chain([b]).collect::<Vec<_>>();
+        a.push(3);
+        b.push(5);
+        (a, b)
+    };
+    let mut points = random_g1_slot(&mut rng);
+    let [order_2, order_3] = g1_small_order_points();
+    (points[4], points[5], points[6]) = (order_2, order_3, G1Affine::zero());
+    let lanes: [(Vec<i8>, Vec<i8>); 8] = std::array::from_fn(|lane| match lane {
+        0 => (lambda.clone(), vec![1]),
+        1 => (lambda.clone(), vec![-1]),
+        2 => then(lambda.clone(), 1),
+        3 => then(lambda.clone(), -1),
+        4..=6 => (vec![5, 1], vec![3]),
+        _ => (vec![2, -3], vec![1, 4]),
+    });
+    check_fq_glv_mul_8_one_slot(&points, &lanes, 0b0111_1111);
+    // The same cases with the exceptional lanes moved, so each lane meets one.
+    let points: [G1Affine; 8] = std::array::from_fn(|lane| points[(lane + 3) % 8]);
+    let lanes: [(Vec<i8>, Vec<i8>); 8] = std::array::from_fn(|lane| lanes[(lane + 3) % 8].clone());
+    check_fq_glv_mul_8_one_slot(&points, &lanes, 0b1110_1111);
+}
+
+/// A random scalar below 2^168, as the sponge squeezes for a challenge.
+fn short_scalar(rng: &mut TestRng) -> Fr {
+    // The top word is zero and the third is shifted to below 2^40, so the integer is below
+    // 2^168 < r.
+    Fr::from_bigint(BigInteger256::new([rng.random(), rng.random(), rng.random::<u64>() >> 24, 0])).unwrap()
+}
+
+/// A random G1 point with a scalar below 2^168, a product of two such scalars, or a full scalar.
+fn random_g1_term(rng: &mut TestRng) -> (G1Affine, Fr) {
+    let base = G1Projective::rand(rng).to_affine();
+    let scalar = match rng.random_range(0..3) {
+        0 => short_scalar(rng),
+        1 => short_scalar(rng) * short_scalar(rng),
+        _ => Fr::rand(rng),
+    };
+    (base, scalar)
+}
+
+/// The edge terms: the generator with the scalars zero, one, minus one and two; the point at
+/// infinity; the generator with a random scalar, and its negation with another.
+fn g1_edge_terms(rng: &mut TestRng) -> [(G1Affine, Fr); 8] {
+    let g = G1Affine::prime_subgroup_generator();
+    [
+        (g, Fr::zero()),
+        (g, Fr::one()),
+        (g, -Fr::one()),
+        (g, Fr::from(2u64)),
+        (G1Affine::zero(), Fr::rand(rng)),
+        (G1Affine::zero(), Fr::zero()),
+        (g, Fr::rand(rng)),
+        (-g, Fr::rand(rng)),
+    ]
+}
+
+/// Checks `ifma::glv_mul_8` with one slot per entry of `points` against the sum over the slots of
+/// `glv_digits_reference`, in every lane. The lanes in `exceptional` must return `Z = 0`.
+fn check_fq_glv_mul_8_slots(points: &[[G1Affine; 8]], digits: &[[[i8; 8]; 2]], exceptional: u8) {
+    let coordinates: Vec<_> = points.iter().map(|slot| slot.map(|p| [p.x, p.y])).collect();
+    // `digits` holds the windows most significant first, with each window's slots in order;
+    // `glv_mul_8` takes each slot's windows, the least significant first.
+    let per_slot: Vec<Vec<_>> =
+        (0..points.len()).map(|k| digits.chunks_exact(points.len()).rev().map(|window| window[k]).collect()).collect();
+    let slices: Vec<_> = per_slot.iter().map(Vec::as_slice).collect();
+    let out = snarkvm_fields::ifma::glv_mul_8(&coordinates, &Bls12_377G1Parameters::PHI, &slices);
+    assert_eq!(out.is_some(), lanes_supported());
+    let Some(out) = out else {
+        return;
+    };
+    let slots = points.len();
+    for (lane, [x, y, z]) in out.into_iter().enumerate() {
+        let expected: G1Projective = (0..slots)
+            .map(|k| {
+                let lane_digits: Vec<[i8; 2]> =
+                    digits.chunks_exact(slots).map(|w| [w[k][0][lane], w[k][1][lane]]).collect();
+                glv_digits_reference(&points[k][lane], &lane_digits)
+            })
+            .sum();
+        if exceptional >> lane & 1 == 1 || expected.is_zero() {
+            assert!(z.is_zero(), "{slots} slots, lane {lane}: Z is not zero");
+        } else {
+            assert!(!z.is_zero(), "{slots} slots, lane {lane}: Z is zero");
+            assert_eq!(G1Projective::new(x, y, z), expected, "{slots} slots, lane {lane}");
+        }
+    }
+}
+
+#[test]
+fn test_fq_glv_mul_8_slots() {
+    let mut rng = TestRng::default();
+
+    // Random digits, with lanes and slots that start at different windows and in either half.
+    for slots in 1..=5 {
+        check_fq_glv_mul_8_slots(&vec![random_g1_slot(&mut rng); slots], &vec![[[0; 8]; 2]; 2 * slots], 0);
+        for _ in 0..20 {
+            let points: Vec<_> = (0..slots).map(|_| random_g1_slot(&mut rng)).collect();
+            let len = rng.random_range(1..36);
+            let mut digits = vec![[[0i8; 8]; 2]; len * slots];
+            for d in digits.iter_mut().flatten().flatten() {
+                // Leading zeros in about a third of the windows.
+                if rng.random_range(0..3) > 0 {
+                    *d = rng.random_range(-8i8..=8);
+                }
+            }
+            check_fq_glv_mul_8_slots(&points, &digits, 0);
+        }
+    }
+
+    // The cases the formulas exclude, between slots: in lane 0 slot 1 adds `3 P` to the `3 P` of
+    // slot 0, and in lane 1 `-3 P`; in lanes 2 and 3 the table of slot 1 meets a point of order 2
+    // and the point at infinity, though its digits are zero. Lanes 4 to 7 hold random digits.
+    let [order_2, _] = g1_small_order_points();
+    let mut points = vec![random_g1_slot(&mut rng), random_g1_slot(&mut rng)];
+    points[1][0] = points[0][0];
+    points[1][1] = -points[0][1];
+    points[1][2] = order_2;
+    points[1][3] = G1Affine::zero();
+    // Three windows of two slots: `digits[2 w + k][half][lane]`.
+    let mut digits = vec![[[0i8; 8]; 2]; 2 * 3];
+    digits[0][0][..4].fill(3);
+    digits[1][0][..2].fill(3);
+    for (w, window) in digits.chunks_exact_mut(2).enumerate() {
+        window[0][0][4..].fill(3);
+        window[0][1][4..].fill(-5);
+        window[1][1][4..].fill([1, -8, 7][w]);
+    }
+    check_fq_glv_mul_8_slots(&points, &digits, 0b0000_1111);
+}
+
+#[test]
+fn test_g1_msm_lanes() {
+    let mut rng = TestRng::default();
+    let reference = |msm: &[(G1Affine, Fr)]| msm.iter().map(|(base, scalar)| *base * *scalar).sum::<G1Projective>();
+    let check = |msms: &[Vec<(G1Affine, Fr)>]| {
+        let slices: Vec<&[(G1Affine, Fr)]> = msms.iter().map(Vec::as_slice).collect();
+        let nonzero = msms.iter().flatten().filter(|(base, scalar)| !base.is_zero() && !scalar.is_zero()).count();
+        match G1Affine::msm_lanes(&slices) {
+            None => assert!(!lanes_supported() || nonzero < 2, "{nonzero} terms"),
+            Some(sums) => {
+                assert!(lanes_supported() && nonzero >= 2, "{nonzero} terms");
+                assert_eq!(sums.len(), msms.len());
+                for (i, (msm, sum)) in msms.iter().zip(&sums).enumerate() {
+                    assert_eq!(*sum, reference(msm), "MSM {i} of {} terms", msm.len());
+                }
+            }
+        }
+    };
+    let random_msm = |rng: &mut TestRng, n: usize| (0..n).map(|_| random_g1_term(rng)).collect::<Vec<_>>();
+
+    // One MSM of each size up to 40, and sizes that `lane_calls` splits.
+    for n in (0..=40).chain([64, 65, 100]) {
+        check(&[random_msm(&mut rng, n)]);
+    }
+    // Several MSMs at once: the sizes a check runs, more MSMs than lanes, and random sizes.
+    for sizes in
+        [&[2, 5][..], &[13, 3, 1], &[17, 2, 1, 1, 2, 5], &[30, 3, 2, 2, 2, 5], &[1, 1], &[1; 9], &[0, 3, 0], &[1; 20]]
+    {
+        check(&sizes.iter().map(|n| random_msm(&mut rng, *n)).collect::<Vec<_>>());
+    }
+    for _ in 0..30 {
+        let k = rng.random_range(1..=10);
+        check(
+            &(0..k)
+                .map(|_| {
+                    let n = rng.random_range(0..=12);
+                    random_msm(&mut rng, n)
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    // The edge terms among random terms, at every offset.
+    let edges = g1_edge_terms(&mut rng);
+    for start in 0..edges.len() {
+        for n in [2, 3, 5, 8, 11, 13, 25] {
+            let mut msm = random_msm(&mut rng, n);
+            for (i, edge) in edges.iter().cycle().skip(start).take(n.min(edges.len())).enumerate() {
+                if i % 2 == 0 {
+                    msm[i] = *edge;
+                }
+            }
+            check(&[msm.clone(), random_msm(&mut rng, 3)]);
+            check(&[msm]);
+        }
+    }
+    for n in [2, 7, 16] {
+        check(&[edges.iter().copied().cycle().take(n).collect()]);
+    }
+
+    // A base and its negation with the same scalar in one lane. With 16 terms and 4 streams per
+    // lane, terms `t` and `t + 8` share a lane, and the second cancels the first; with 2 terms and
+    // one stream, a base and the same base.
+    let mut msm = random_msm(&mut rng, 16);
+    for t in 0..8 {
+        msm[t + 8] = (-msm[t].0, msm[t].1);
+    }
+    check(&[msm.clone()]);
+    assert!(reference(&msm).is_zero());
+    let term = random_g1_term(&mut rng);
+    check(&[vec![term, term]]);
+    check(&[vec![term, (-term.0, term.1)]]);
+
+    // The lanes return other projective coordinates than the scalar path, so this checks that
+    // `msm_lanes` runs them exactly where the lanes are supported.
+    for n in [2, 5, 13, 25] {
+        let msm = random_msm(&mut rng, n);
+        match G1Affine::msm_lanes(&[&msm]) {
+            Some(sums) => assert!(lanes_supported() && sums[0].z != reference(&msm).z, "{n} terms"),
+            None => assert!(!lanes_supported(), "{n} terms"),
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "prime-order subgroup")]
+fn test_g1_msm_lanes_rejects_a_base_outside_g1() {
+    let [outside, _] = g1_small_order_points();
+    let _ = G1Affine::msm_lanes(&[&[(outside, Fr::one()), (outside, Fr::one())]]);
+}

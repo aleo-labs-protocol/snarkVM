@@ -178,6 +178,10 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         output
     }
 
+    fn msm_lanes(msms: &[&[(Self, P::ScalarField)]]) -> Option<Vec<Projective<P>>> {
+        P::msm_lanes(msms)
+    }
+
     fn mul_by_cofactor_to_projective(&self) -> Self::Projective {
         self.mul_bits(BitIteratorBE::new_without_leading_zeros(P::COFACTOR))
     }
