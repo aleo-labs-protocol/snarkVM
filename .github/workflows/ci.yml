@@ -140,6 +140,7 @@ jobs:
               nextest run -p snarkvm-parameters --features filesystem -E test(/powers::tests/)
               nextest run -p snarkvm-parameters --run-ignored all
               nextest run -p snarkvm-algorithms --run-ignored ignored-only
+              nextest run -p snarkvm-curves -p snarkvm-fields
           - name: ledger
             runs: |
               nextest run -p snarkvm-ledger
@@ -184,6 +185,11 @@ jobs:
           key: aleo-resources-${{ matrix.name }}-${{ hashFiles('parameters/**/*.metadata') }}
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest@0.9.114 }
+      # On a CPU without IFMA, the tests of the AVX-512 lanes pass without
+      # running them.
+      - name: Require AVX-512 IFMA
+        if: matrix.name == 'crates'
+        run: grep -qw avx512ifma /proc/cpuinfo
       # Each line of `runs` is one cargo command.
       - name: Test
         env:
@@ -191,6 +197,9 @@ jobs:
           # Exercises the download path, which a box's persistent
           # ~/.aleo/resources would otherwise skip.
           FRESH_HOME: ${{ matrix.name == 'parameters-uncached' }}
+          # Every runner has IFMA, so this is the entry that tests without the
+          # AVX-512 lanes. `crates` tests the same crates with them.
+          SNARKVM_NO_IFMA: ${{ matrix.name == 'narwhal' && '1' || '' }}
           NEXTEST_PROFILE: ci
           NEXTEST_NO_TESTS: fail
         run: |
