@@ -59,7 +59,11 @@ wasm = [
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
-dev-print = [ "snarkvm-utilities/dev-print", "snarkvm-console/dev-print" ]
+dev-print = [
+  "snarkvm-console/dev-print",
+  "snarkvm-synthesizer-snark/dev-print",
+  "snarkvm-utilities/dev-print"
+]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
 snark-print = [ "snarkvm-algorithms/snark-print" ]
 test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
