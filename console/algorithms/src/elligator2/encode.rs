@@ -37,8 +37,8 @@ impl<E: Environment> Elligator2<E> {
 
     /// Returns the encoded affine group element and sign, given a field element.
     pub(crate) fn encode_without_cofactor_clear(input: &Field<E>) -> Result<(Group<E>, bool)> {
-        // A property of the curve's constants, which costs a Legendre symbol to check, so only
-        // debug builds repeat it per call (see `test_edwards_d_is_quadratic_nonresidue`).
+        // A property of the curve's constants, so only debug builds check it
+        // (see `test_edwards_d_is_quadratic_nonresidue`).
         debug_assert!(
             Group::<E>::EDWARDS_D.legendre().is_qnr(),
             "D on the twisted Edwards curve must be a quadratic nonresidue"
