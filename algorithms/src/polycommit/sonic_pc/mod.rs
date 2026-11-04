@@ -578,20 +578,22 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             randomizer = private_sponge.squeeze_short_nonnative_field_element::<E::Fr>();
         }
 
-        let [witness_terms, adjusted_terms] = witnesses.into_terms(vk);
-        let mut msms: Vec<&[_]> = Vec::with_capacity(groups.len() + 2);
+        let [witness_terms, negated_adjusted_terms] = witnesses.into_terms(vk);
+        // The adjusted witness pairs with `h`, as do the commitments without a
+        // degree bound, so one MSM sums both.
+        groups.entry(None).or_default().extend(negated_adjusted_terms);
+        let mut msms: Vec<&[_]> = Vec::with_capacity(groups.len() + 1);
         msms.extend(groups.values().map(Vec::as_slice));
-        msms.extend([witness_terms.as_slice(), adjusted_terms.as_slice()]);
+        msms.push(witness_terms.as_slice());
         let msm_time =
             start_timer!(|| format!("{} MSMs of {} terms", msms.len(), msms.iter().map(|m| m.len()).sum::<usize>()));
         let mut sums = VariableBase::msm_many(&msms);
         end_timer!(msm_time);
-        // `msm_many` returns one sum per MSM, and `msms` ends with the two witness
-        // MSMs, so `sums` has both.
-        let combined_adjusted_witness = sums.pop().unwrap();
+        // `msm_many` returns one sum per MSM, and `msms` ends with the witness
+        // MSM, so `sums` has it.
         let combined_witness = sums.pop().unwrap();
         let combined_comms = groups.into_keys().zip_eq(sums).collect();
-        Self::check_elems(vk, combined_comms, combined_witness, combined_adjusted_witness)
+        Self::check_elems(vk, combined_comms, combined_witness)
     }
 
     pub fn open_combinations<'a>(
@@ -768,18 +770,18 @@ impl<E: PairingEngine> WitnessTerms<E> {
     }
 
     /// Returns the terms of the combined witness, which pairs with `beta_h`,
-    /// and of the combined adjusted witness, which pairs with `h`:
+    /// and of the negated combined adjusted witness, which pairs with `h`:
     ///
-    /// `Σ r_p w_p` and `(Σ r_p v_p) g + (Σ r_p ρ_p) gamma_g - Σ r_p z_p w_p`.
+    /// `Σ r_p w_p` and `Σ r_p z_p w_p - (Σ r_p v_p) g - (Σ r_p ρ_p) gamma_g`.
     fn into_terms(self, vk: &UniversalVerifier<E>) -> [Vec<(E::G1Affine, E::Fr)>; 2] {
         let Self { g, gamma_g, passes } = self;
 
         let witness = passes.iter().map(|(w, randomizer, _)| (*w, *randomizer)).collect();
-        let mut adjusted = Vec::with_capacity(passes.len() + 2);
-        adjusted.push((vk.vk.g, g));
-        adjusted.push((vk.vk.gamma_g, gamma_g));
-        adjusted.extend(passes.iter().map(|(w, randomizer, point)| (*w, -(*randomizer * point))));
-        [witness, adjusted]
+        let mut negated_adjusted = Vec::with_capacity(passes.len() + 2);
+        negated_adjusted.push((vk.vk.g, -g));
+        negated_adjusted.push((vk.vk.gamma_g, -gamma_g));
+        negated_adjusted.extend(passes.iter().map(|(w, randomizer, point)| (*w, *randomizer * point)));
+        [witness, negated_adjusted]
     }
 }
 
@@ -827,12 +829,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         vk: &UniversalVerifier<E>,
         combined_comms: BTreeMap<Option<usize>, E::G1Projective>,
         combined_witness: E::G1Projective,
-        combined_adjusted_witness: E::G1Projective,
     ) -> Result<bool> {
         let check_time = start_timer!(|| "Checking elems");
         defer! { end_timer!(check_time); }
-        let mut g1_projective_elems = Vec::with_capacity(combined_comms.len() + 2);
-        let mut g2_prepared_elems = Vec::with_capacity(combined_comms.len() + 2);
+        let mut g1_projective_elems = Vec::with_capacity(combined_comms.len() + 1);
+        let mut g2_prepared_elems = Vec::with_capacity(combined_comms.len() + 1);
 
         for (degree_bound, comm) in combined_comms.into_iter() {
             let shift_power = if let Some(degree_bound) = degree_bound {
@@ -848,9 +849,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             g1_projective_elems.push(comm);
             g2_prepared_elems.push(shift_power);
         }
-
-        g1_projective_elems.push(-combined_adjusted_witness);
-        g2_prepared_elems.push(vk.vk.prepared_h.clone());
 
         g1_projective_elems.push(-combined_witness);
         g2_prepared_elems.push(vk.vk.prepared_beta_h.clone());
