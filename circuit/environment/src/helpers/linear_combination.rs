@@ -358,8 +358,10 @@ impl<F: PrimeField> AddAssign<&LinearCombination<F>> for LinearCombination<F> {
             // Add the constant value from `other` to `self`.
             self.constant += other.constant;
 
+            debug_assert!(other.terms.windows(2).all(|pair| pair[0].0 < pair[1].0), "Unsorted linear combination");
+
             // Add the terms from `other` to the terms of `self`. Both lists are sorted, so every term of
-            // `self` before `cursor` is below the next term of `other`, which usually lands exactly at `cursor`.
+            // `self` before `cursor` is below the next term of `other`.
             let mut cursor = 0;
             for (variable, coefficient) in other.terms.iter() {
                 match variable.is_constant() {
@@ -688,16 +690,33 @@ mod tests {
             LinearCombination::from(selected.as_slice())
         };
 
+        let (zero, one) = (F::zero(), F::one());
+        let mut cases = Vec::new();
+        for negate in [false, true] {
+            for repeat in [false, true] {
+                for self_constant in [zero, one] {
+                    for other_constant in [zero, one] {
+                        cases.push((negate, repeat, self_constant, other_constant));
+                    }
+                }
+            }
+        }
+
         for self_mask in 0..1usize << variables.len() {
             for other_mask in 0..1usize << variables.len() {
-                for (negate, repeat) in [(false, false), (false, true), (true, false), (true, true)] {
-                    let other = select(other_mask, repeat);
+                for &(negate, repeat, self_constant, other_constant) in &cases {
+                    let mut other = select(other_mask, repeat);
+                    other.constant += other_constant;
+                    other.value += other_constant;
                     let other = if negate { -other } else { other };
                     let mut candidate = select(self_mask, false);
+                    candidate.constant += self_constant;
+                    candidate.value += self_constant;
                     candidate += &other;
 
+                    let expected_constant = self_constant + if negate { -other_constant } else { other_constant };
                     let mut expected = Vec::new();
-                    let mut expected_value = F::zero();
+                    let mut expected_value = expected_constant;
                     for (i, variable) in variables.iter().enumerate() {
                         let mut coefficient = if self_mask >> i & 1 == 1 { F::one() } else { F::zero() };
                         if other_mask >> i & 1 == 1 {
@@ -711,6 +730,7 @@ mod tests {
                     }
 
                     assert_eq!(expected.as_slice(), candidate.to_terms());
+                    assert_eq!(expected_constant, candidate.to_constant());
                     assert_eq!(expected_value, candidate.value());
                 }
             }
