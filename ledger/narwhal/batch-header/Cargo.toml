@@ -24,7 +24,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "rayon" ]
+default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers" ]
@@ -38,10 +38,6 @@ workspace = true
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]
-
-[dependencies.rayon]
-workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true

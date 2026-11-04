@@ -15,9 +15,14 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for BatchHeader<N> {
-    /// Read the batch header either with or without checks on the data.
-    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
+impl<N: Network> BatchHeader<N> {
+    /// Reads the batch header either with or without checks on the data, decoding the
+    /// signature's compute key only if `cache` holds no earlier decode of the same bytes.
+    pub fn read_le_with_cache<R: Read>(
+        mut reader: R,
+        unchecked: bool,
+        cache: &mut ComputeKeyCache<N>,
+    ) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -72,8 +77,9 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         let mut previous_certificate_id_bytes =
             vec![0u8; num_previous_certificate_ids as usize * Field::<N>::size_in_bytes()];
         reader.read_exact(&mut previous_certificate_id_bytes)?;
-        // Read the previous certificate IDs.
-        let previous_certificate_ids = cfg_chunks!(previous_certificate_id_bytes, Field::<N>::size_in_bytes())
+        // Read the previous certificate IDs. This stays serial: a rayon fork-join costs more than these reads.
+        let previous_certificate_ids = previous_certificate_id_bytes
+            .chunks(Field::<N>::size_in_bytes())
             .map(Field::read_le)
             .collect::<Result<IndexSet<_>, _>>()?;
         // Ensure no previous certificate ID was repeated, for the same reason.
@@ -82,10 +88,10 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         }
 
         // Read the signature.
+        let signature = Signature::read_le_with_cache(&mut reader, unchecked, cache)?;
 
         // Construct the batch.
         let batch = if unchecked {
-            let signature = Signature::read_le_unchecked(&mut reader)?;
             Self::from_unchecked(
                 author,
                 batch_id,
@@ -97,7 +103,6 @@ impl<N: Network> FromBytes for BatchHeader<N> {
                 signature,
             )
         } else {
-            let signature = Signature::read_le(&mut reader)?;
             Self::from(author, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature)
                 .map_err(io_error)?
         };
@@ -107,6 +112,13 @@ impl<N: Network> FromBytes for BatchHeader<N> {
             true => Ok(batch),
             false => Err(error("Invalid batch ID")),
         }
+    }
+}
+
+impl<N: Network> FromBytes for BatchHeader<N> {
+    /// Read the batch header either with or without checks on the data.
+    fn read_le_with_unchecked<R: Read>(reader: R, unchecked: bool) -> IoResult<Self> {
+        Self::read_le_with_cache(reader, unchecked, &mut ComputeKeyCache::default())
     }
 
     /// Reads the batch header from the buffer.
@@ -172,6 +184,42 @@ mod tests {
     }
 
     type CurrentNetwork = console::network::MainnetV0;
+
+    #[test]
+    fn test_signature_errors_with_cache_match_signature_reader() {
+        let rng = &mut TestRng::default();
+        let header = crate::test_helpers::sample_batch_header(rng);
+        let exact = header.to_bytes_le().unwrap();
+        let signature_at = exact.len() - Signature::<CurrentNetwork>::size_in_bytes();
+
+        // A non-canonical challenge, and an x-coordinate past the field modulus in `pk_sig`.
+        let mut bad_challenge = exact.clone();
+        bad_challenge[signature_at..signature_at + 32].fill(0xFF);
+        let mut bad_compute_key = exact.clone();
+        bad_compute_key[signature_at + 64..signature_at + 96].fill(0xFF);
+
+        for unchecked in [false, true] {
+            // The cache holds the author's compute key before any bad read.
+            let mut cache = ComputeKeyCache::default();
+            assert_eq!(header, BatchHeader::read_le_with_cache(&exact[..], unchecked, &mut cache).unwrap());
+            for bytes in [&exact, &bad_challenge, &bad_compute_key] {
+                for end in [signature_at, signature_at + 1, signature_at + 65, signature_at + 96, bytes.len()] {
+                    if bytes == &exact && end == bytes.len() {
+                        continue;
+                    }
+                    let header_error =
+                        BatchHeader::<CurrentNetwork>::read_le_with_cache(&bytes[..end], unchecked, &mut cache)
+                            .unwrap_err();
+                    let signature_error =
+                        Signature::<CurrentNetwork>::read_le_with_unchecked(&bytes[signature_at..end], unchecked)
+                            .unwrap_err();
+                    assert_eq!(header_error.kind(), signature_error.kind());
+                    assert_eq!(header_error.to_string(), signature_error.to_string());
+                }
+            }
+            assert_eq!(cache.len(), 1);
+        }
+    }
 
     /// Offset of the transmission-ID count: version, batch ID, author, round,
     /// timestamp, committee ID.

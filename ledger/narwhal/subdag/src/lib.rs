@@ -22,7 +22,12 @@ mod bytes;
 mod serialize;
 mod string;
 
-use console::{account::Address, prelude::*, program::SUBDAG_CERTIFICATES_DEPTH, types::Field};
+use console::{
+    account::{Address, ComputeKeyCache},
+    prelude::*,
+    program::SUBDAG_CERTIFICATES_DEPTH,
+    types::Field,
+};
 use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 use snarkvm_ledger_narwhal_batch_header::BatchHeader;
