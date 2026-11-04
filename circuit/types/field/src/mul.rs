@@ -47,7 +47,7 @@ impl<E: Environment> Mul<&Field<E>> for &Field<E> {
 
     fn mul(self, other: &Field<E>) -> Self::Output {
         match (self.is_constant(), other.is_constant()) {
-            (true, true) | (false, true) => (&self.linear_combination * *other.eject_value()).into(),
+            (_, true) => (&self.linear_combination * *other.eject_value()).into(),
             (true, false) => (&other.linear_combination * *self.eject_value()).into(),
             (false, false) => {
                 let product = witness!(|self, other| self * other);
