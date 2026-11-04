@@ -37,6 +37,14 @@ pub trait Fp12Parameters: 'static + Copy + Clone + Debug + Default + PartialEq +
 
     /// Coefficients for the Frobenius automorphism.
     const FROBENIUS_COEFF_FP12_C1: [Fp2<Fp2Params<Self>>; 12];
+
+    /// Sets `a` to `a * b`. An override must not fall back to `Fp12::mul_assign`, which calls this
+    /// hook; `Fp12::mul_assign_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_assign_fp12(a: &mut Fp12<Self>, b: &Fp12<Self>) {
+        a.mul_assign_scalar(b)
+    }
 }
 
 pub(crate) type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
@@ -422,7 +430,7 @@ impl<P: Fp12Parameters> SubAssign<&'_ Self> for Fp12<P> {
 impl<P: Fp12Parameters> MulAssign<&'_ Self> for Fp12<P> {
     #[inline]
     fn mul_assign(&mut self, other: &Self) {
-        self.mul_assign_scalar(other);
+        P::mul_assign_fp12(self, other);
     }
 }
 
