@@ -36,7 +36,7 @@ pub trait Fp12Parameters: 'static + Copy + Clone + Debug + Default + PartialEq +
     const FROBENIUS_COEFF_FP12_C1: [Fp2<Fp2Params<Self>>; 12];
 }
 
-type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
+pub(crate) type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
 
 /// An element of Fp12, represented by c0 + c1 * v
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -101,6 +101,16 @@ impl<P: Fp12Parameters> Fp12<P> {
         self.c0 = bb;
         self.c0 = Self::mul_fp6_by_nonresidue(&self.c0);
         self.c0.add_assign(aa);
+    }
+
+    /// Sets `self` to `self * other` by the scalar path, without `Fp12Parameters::mul_assign_fp12`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_assign_scalar(&mut self, other: &Self) {
+        let v0 = self.c0 * other.c0;
+        let v1 = self.c1 * other.c1;
+        self.c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1;
+        self.c0 = v0 + Self::mul_fp6_by_nonresidue(&v1);
     }
 
     pub fn cyclotomic_square(&self) -> Self {
@@ -408,12 +418,8 @@ impl<P: Fp12Parameters> SubAssign<&'_ Self> for Fp12<P> {
 
 impl<P: Fp12Parameters> MulAssign<&'_ Self> for Fp12<P> {
     #[inline]
-    #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &Self) {
-        let v0 = self.c0 * other.c0;
-        let v1 = self.c1 * other.c1;
-        self.c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1;
-        self.c0 = v0 + Self::mul_fp6_by_nonresidue(&v1);
+        self.mul_assign_scalar(other);
     }
 }
 
