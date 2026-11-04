@@ -42,17 +42,18 @@ pub struct Poseidon<E: Environment, const RATE: usize> {
     domain: Field<E>,
     /// The Poseidon parameters for hashing.
     parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
-    /// The rounds of the permutation, derived from the parameters with cheaper partial rounds.
-    rounds: Arc<PoseidonRounds<E::Field>>,
+    /// The partial rounds of `parameters` in sparse form, or `None` if they have none.
+    partial_rounds: Option<Arc<PartialRounds<E::Field>>>,
     /// The Merkle empty hash of this instance, once something has asked for it.
     empty_hash: OnceLock<Field<E>>,
 }
 
 impl<E: Environment, const RATE: usize> PartialEq for Poseidon<E, RATE> {
-    /// Ignores the cached empty hash, which is derived from the domain and parameters.
+    /// Ignores the partial rounds in sparse form and the cached empty hash, which are derived from
+    /// the domain and parameters.
     fn eq(&self, other: &Self) -> bool {
         // Destructured so that a new field must be considered here.
-        let Self { domain, parameters, rounds: _, empty_hash: _ } = self;
+        let Self { domain, parameters, partial_rounds: _, empty_hash: _ } = self;
         *domain == other.domain && *parameters == other.parameters
     }
 }
@@ -65,11 +66,12 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
         let max_bits = Field::<E>::size_in_data_bits();
         ensure!(num_bits <= max_bits, "Domain cannot exceed {max_bits} bits, found {num_bits} bits");
 
-        let parameters = E::Field::default_poseidon_parameters::<RATE>()?;
+        let parameters = Arc::new(E::Field::default_poseidon_parameters::<RATE>()?);
+        let partial_rounds = PartialRounds::new(&parameters).map(Arc::new);
         Ok(Self {
             domain: Field::<E>::new_domain_separator(domain),
-            rounds: Arc::new(PoseidonRounds::new(&parameters)?),
-            parameters: Arc::new(parameters),
+            parameters,
+            partial_rounds,
             empty_hash: OnceLock::new(),
         })
     }
@@ -163,14 +165,13 @@ mod tests {
     #[test]
     fn test_sponge() {
         const RATE: usize = 2;
-        let parameters = Fq::default_poseidon_parameters::<RATE>().unwrap();
-        let rounds = Arc::new(PoseidonRounds::new(&parameters).unwrap());
+        let parameters = Arc::new(Fq::default_poseidon_parameters::<RATE>().unwrap());
 
         for absorb in 0..10 {
             for squeeze in 0..10 {
                 let iteration = format!("absorb_{absorb}_squeeze_{squeeze}");
 
-                let mut sponge = PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY>::new(&rounds);
+                let mut sponge = PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY>::new(&parameters);
                 sponge.absorb(&vec![Field::<CurrentEnvironment>::from_u64(1237812u64); absorb]);
 
                 let next_absorb_index = if absorb % RATE != 0 || absorb == 0 { absorb % RATE } else { RATE };
