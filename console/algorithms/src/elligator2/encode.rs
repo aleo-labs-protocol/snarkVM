@@ -24,14 +24,22 @@ impl<E: Environment> Elligator2<E> {
         // Cofactor clear the twisted Edwards element (x, y).
         let group = encoding.mul_by_cofactor().to_affine();
         ensure!(group.is_on_curve(), "Elligator2 failed: element is not on curve");
-        ensure!(group.is_in_correct_subgroup_assuming_on_curve(), "Elligator2 failed: element in incorrect subgroup");
+        // The curve order is `COFACTOR * r` with `r` prime, so clearing the cofactor of a point on the curve
+        // always lands in the prime-order subgroup. Only debug builds check it
+        // (see `test_encode_is_in_prime_order_subgroup`).
+        debug_assert!(
+            group.is_in_correct_subgroup_assuming_on_curve(),
+            "Elligator2 failed: element in incorrect subgroup"
+        );
 
         Ok((Group::new(group), sign_high))
     }
 
     /// Returns the encoded affine group element and sign, given a field element.
     pub(crate) fn encode_without_cofactor_clear(input: &Field<E>) -> Result<(Group<E>, bool)> {
-        ensure!(
+        // A property of the curve's constants, so only debug builds check it
+        // (see `test_edwards_d_is_quadratic_nonresidue`).
+        debug_assert!(
             Group::<E>::EDWARDS_D.legendre().is_qnr(),
             "D on the twisted Edwards curve must be a quadratic nonresidue"
         );
@@ -124,5 +132,34 @@ impl<E: Environment> Elligator2<E> {
         ensure!(point.to_affine().is_on_curve(), "Elligator2 failed: point is not on the curve");
         // Return the recovered point.
         Ok((point, sign_high))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_types::environment::Console;
+
+    type CurrentEnvironment = Console;
+
+    const ITERATIONS: usize = 1000;
+
+    #[test]
+    fn test_edwards_d_is_quadratic_nonresidue() {
+        // `encode` only checks this in debug builds.
+        assert!(Group::<CurrentEnvironment>::EDWARDS_D.legendre().is_qnr());
+    }
+
+    #[test]
+    fn test_encode_is_in_prime_order_subgroup() -> Result<()> {
+        // `encode` only checks subgroup membership in debug builds, so this also asserts it in release builds.
+        let rng = &mut TestRng::default();
+        for _ in 0..ITERATIONS {
+            let (group, _) = Elligator2::<CurrentEnvironment>::encode(&Uniform::rand(rng))?;
+            let affine = group.to_affine();
+            assert!(affine.is_on_curve());
+            assert!(affine.is_in_correct_subgroup_assuming_on_curve());
+        }
+        Ok(())
     }
 }
