@@ -69,14 +69,18 @@ use snarkvm_fields::{
 };
 use snarkvm_utilities::{
     BitIteratorBE,
+    Compress,
+    Validate,
     biginteger::{BigInteger, BigInteger256, BigInteger384},
     rand::{TestRng, Uniform},
+    serialize::{CanonicalDeserialize, CanonicalSerialize},
 };
 
 use rand::RngExt;
 use std::{
     cmp::Ordering,
     ops::{AddAssign, Mul, MulAssign, SubAssign},
+    str::FromStr,
 };
 
 pub(crate) const ITERATIONS: usize = 10;
@@ -605,6 +609,30 @@ fn test_fq2_legendre() {
 }
 
 #[test]
+fn test_fq2_sqrt_of_nonresidue() {
+    // u^2 = (NONRESIDUE, 0), and NONRESIDUE is a QNR in Fq.
+    let u = Fq2::new(Fq::zero(), Fq::one());
+    let a = Fq2::new(Fq2Parameters::NONRESIDUE, Fq::zero());
+    assert_eq!(u.square(), a);
+    assert!(Fq2Parameters::NONRESIDUE.legendre().is_qnr());
+
+    let root = a.sqrt().expect("(NONRESIDUE, 0) is a square in Fq2");
+    assert!(root == u || root == -u);
+}
+
+#[test]
+fn test_fq2_sqrt_of_purely_imaginary_squares() {
+    let mut rng = TestRng::default();
+
+    for _ in 0..1000 {
+        // (0, d)^2 = (NONRESIDUE * d^2, 0), whose first coordinate is a QNR in Fq for nonzero d.
+        let elem = Fq2::new(Fq::zero(), Fq::rand(&mut rng));
+        let root = elem.square().sqrt().expect("a square has a square root");
+        assert!(root == elem || root == -elem);
+    }
+}
+
+#[test]
 fn test_fq2_mul_nonresidue() {
     let mut rng = TestRng::default();
 
@@ -757,6 +785,34 @@ fn test_g2_generator() {
     let generator = G2Affine::prime_subgroup_generator();
     assert!(generator.is_on_curve());
     assert!(generator.is_in_correct_subgroup_assuming_on_curve());
+}
+
+#[test]
+fn test_g2_from_x_coordinate_with_imaginary_y() {
+    let fq = |s: &str| Fq::from_str(s).expect("the literal is a canonical Fq element");
+    let x = Fq2::new(
+        fq(
+            "80453520267516129593051327224590975620090736720770429508396740963130851304924183393465498314279415142214774756387",
+        ),
+        fq(
+            "208004220316808651132818824654517262152313755570600949882521492435178790612687529516238401457775909276130267505865",
+        ),
+    );
+
+    // x^3 + b = (c0, 0) with c0 a QNR in Fq, so every y on the curve is purely imaginary.
+    let rhs = x.square() * x + Bls12_377G2Parameters::WEIERSTRASS_B;
+    assert!(rhs.c1.is_zero());
+    assert!(rhs.c0.legendre().is_qnr());
+
+    let p = G2Affine::from_x_coordinate(x, true).expect("x has an on-curve point");
+    assert!(p.y.c0.is_zero());
+    assert!(p.is_on_curve());
+    assert_eq!(G2Affine::from_x_coordinate(x, false), Some(-p));
+
+    // The point is outside the prime-order subgroup, so only an unchecked decode accepts it.
+    let mut bytes = Vec::new();
+    p.serialize_with_mode(&mut bytes, Compress::Yes).unwrap();
+    assert_eq!(G2Affine::deserialize_with_mode(&bytes[..], Compress::Yes, Validate::No).unwrap(), p);
 }
 
 #[test]
