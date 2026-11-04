@@ -19,10 +19,10 @@ use crate::{
     templates::twisted_edwards_extended::{Affine, Projective},
     traits::{AffineCurve, ModelParameters, MontgomeryParameters, TwistedEdwardsParameters},
 };
-use snarkvm_fields::field;
+use snarkvm_fields::{ExponentSchedule, field};
 use snarkvm_utilities::biginteger::BigInteger256;
 
-use std::str::FromStr;
+use std::{str::FromStr, sync::OnceLock};
 
 pub type EdwardsAffine = Affine<EdwardsParameters>;
 pub type EdwardsProjective = Projective<EdwardsParameters>;
@@ -59,6 +59,11 @@ impl TwistedEdwardsParameters for EdwardsParameters {
     /// SQRT_MINUS_ONE = 880904806456922042258150504921383618666682042621506879489
     const SQRT_MINUS_ONE: Fq =
         field!(Fq, BigInteger256([0x4bcacfd5d2103b0e, 0x4597a1b1b0ddeb5c, 0x713273b2dd764c92, 0x1208f485585ae1ea,]));
+
+    fn modulus_minus_one_div_four_schedule() -> &'static ExponentSchedule {
+        static SCHEDULE: OnceLock<ExponentSchedule> = OnceLock::new();
+        SCHEDULE.get_or_init(|| ExponentSchedule::new(Self::MODULUS_MINUS_ONE_DIV_FOUR))
+    }
 
     /// Multiplication by `a` is just negation.
     /// Is `a` 1 or -1?
