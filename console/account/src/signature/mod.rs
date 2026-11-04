@@ -27,10 +27,10 @@ mod verify;
 #[cfg(feature = "private_key")]
 mod sign;
 
-#[cfg(feature = "compute_key")]
-use crate::ComputeKey;
 #[cfg(feature = "private_key")]
 use crate::PrivateKey;
+#[cfg(feature = "compute_key")]
+use crate::{ComputeKey, ComputeKeyCache};
 
 use crate::address::Address;
 use snarkvm_console_network::prelude::*;
