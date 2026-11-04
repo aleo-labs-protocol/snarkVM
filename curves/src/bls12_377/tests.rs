@@ -36,12 +36,13 @@ use crate::{
         g2::Bls12_377G2Parameters,
     },
     templates::{
-        bls12::Bls12Parameters,
+        bls12::{Bls12Parameters, G1Prepared, G2Prepared},
         short_weierstrass_jacobian::tests::sw_tests,
         twisted_edwards_extended::tests::edwards_test,
     },
     traits::{
         AffineCurve,
+        PairingCurve,
         PairingEngine,
         ProjectiveCurve,
         ShortWeierstrassParameters,
@@ -915,6 +916,290 @@ fn test_fq12_cyclotomic_exp() {
         let a = fq12_cyclotomic_element(&mut rng);
         assert_eq!(a.cyclotomic_exp(x), a.pow(x));
     }
+}
+
+/// A G1 point and the line coefficients of its G2 point, as `ifma::miller_loop_fp12` takes them.
+type Pair<'a> = snarkvm_fields::ifma::MillerLoopPair<'a, Fq2Parameters>;
+
+/// A `Pair` that owns its point and lines.
+type OwnedPair = ([Fq; 2], Vec<(Fq2, Fq2, Fq2)>);
+
+/// `Bls12::ell` for the D-type twist, from `fq12_schoolbook`.
+fn ell_reference(f: &Fq12, (c0, c1, c2): &(Fq2, Fq2, Fq2), [x, y]: [&Fq; 2]) -> Fq12 {
+    let (mut c0, mut c1) = (*c0, *c1);
+    c0.mul_by_fp(y);
+    c1.mul_by_fp(x);
+    fq12_schoolbook(f, &Fq12::new(Fq6::new(c0, Fq2::zero(), Fq2::zero()), Fq6::new(c1, *c2, Fq2::zero())))
+}
+
+/// The loop of `Bls12::miller_loop` from `f`, before its final conjugation, from `fq12_schoolbook`
+/// and `ell_reference`.
+fn miller_loop_reference(mut f: Fq12, x: &[u64], pairs: &[Pair<'_>]) -> Fq12 {
+    let mut k = 0;
+    for bit in BitIteratorBE::new(x).skip(1) {
+        f = fq12_schoolbook(&f, &f);
+        for _ in 0..1 + bit as usize {
+            for (point, lines) in pairs {
+                f = ell_reference(&f, &lines[k], *point);
+            }
+            k += 1;
+        }
+    }
+    f
+}
+
+/// The number of lines the loop of `Bls12::miller_loop` takes from each pair for `x`.
+fn miller_loop_lines(x: &[u64]) -> usize {
+    BitIteratorBE::new(x).skip(1).map(|bit| 1 + bit as usize).sum()
+}
+
+/// Runs `snarkvm_fields::ifma::miller_loop_fp12` from `f` and checks it against
+/// `miller_loop_reference` where it runs.
+fn check_miller_loop_fp12(f: &Fq12, x: &[u64], pairs: &[Pair<'_>]) {
+    let c = snarkvm_fields::ifma::miller_loop_fp12(f, x, pairs);
+    assert_eq!(c.is_some(), lanes_supported() && !x.is_empty());
+    if let Some(c) = c {
+        assert_eq!(c, miller_loop_reference(*f, x, pairs), "x {x:?}, {} pairs", pairs.len());
+        assert!(fq12_coefficients(&c).all(|x| x.is_valid()), "x {x:?}, {} pairs", pairs.len());
+    }
+}
+
+#[test]
+fn test_fq12_miller_loop_lanes() {
+    let mut rng = TestRng::default();
+    let edges = fq_edge_elements();
+    // `n` pairs whose point and line coefficients `element` draws, with the lines the loop takes
+    // for `x`.
+    let pairs = |rng: &mut TestRng, n: usize, x: &[u64], element: &dyn Fn(&mut TestRng) -> Fq| -> Vec<OwnedPair> {
+        (0..n)
+            .map(|_| {
+                let mut fq2 = || Fq2::new(element(rng), element(rng));
+                let lines = (0..miller_loop_lines(x)).map(|_| (fq2(), fq2(), fq2())).collect();
+                ([element(rng), element(rng)], lines)
+            })
+            .collect()
+    };
+    let check = |f: &Fq12, x: &[u64], pairs: &[OwnedPair]| {
+        let pairs: Vec<Pair<'_>> = pairs.iter().map(|([x, y], lines)| ([x, y], lines.as_slice())).collect();
+        check_miller_loop_fp12(f, x, &pairs);
+    };
+    let random = |rng: &mut TestRng| Fq::rand(rng);
+
+    // Every number of pairs up to 8, with random elements, for short exponents, exponents of
+    // several words and with leading zeros, and the curve's.
+    let mut exponents: Vec<Vec<u64>> = vec![
+        vec![0],
+        vec![1],
+        vec![2],
+        vec![3],
+        vec![0b1011],
+        vec![1 << 63 | 0b101],
+        vec![5, 0],
+        vec![0, 1],
+        vec![0x8000_0000_0000_0003, 0b11],
+        Bls12_377Parameters::X.to_vec(),
+    ];
+    exponents.extend((0..4).map(|_| vec![rng.random::<u64>() >> rng.random_range(52..64)]));
+    for x in &exponents {
+        for n in 0..=8 {
+            check(&Fq12::rand(&mut rng), x, &pairs(&mut rng, n, x, &random));
+        }
+    }
+    for n in [1, 2, 6] {
+        let x = Bls12_377Parameters::X;
+        check(&Fq12::one(), x, &pairs(&mut rng, n, x, &random));
+    }
+
+    // Every coefficient of `f`, of the lines and of the points equal to an edge element, for each
+    // pair of edge elements.
+    let x = [0b1011];
+    for a in &edges {
+        for b in &edges {
+            check(&fq12_from_coefficients([*a; 12]), &x, &pairs(&mut rng, 3, &x, &|_| *b));
+        }
+    }
+
+    // The coefficients of `f`, the lines and the points each 0 or p - 1 in random patterns, and edge
+    // elements mixed with random ones.
+    let pick = |rng: &mut TestRng| fq_edge_or_random(rng, &edges);
+    for element in [&fq_zero_or_minus_one as &dyn Fn(&mut TestRng) -> Fq, &pick] {
+        for _ in 0..40 {
+            let f = fq12_from_coefficients(std::array::from_fn(|_| element(&mut rng)));
+            let n = rng.random_range(1..=4);
+            check(&f, &x, &pairs(&mut rng, n, &x, element));
+        }
+    }
+
+    // An empty exponent is left to the caller.
+    check(&Fq12::rand(&mut rng), &[], &pairs(&mut rng, 1, &[], &random));
+}
+
+/// Runs `snarkvm_fields::ifma::miller_loop_fp12` from an `f` whose first squaring in IFMA lanes
+/// takes the real part of `c0.c0` to `-59.998 p` before `below_2p`.
+///
+/// The lanes hold a coefficient `x` as an integer congruent to `x K`, `K = 2^416`. For the
+/// squaring's operands, `mont_n` returns an integer in `[0, p + 2^-28 p)`, congruent to `x y K`
+/// for the lanes of `x` and `y`. With `F_k = (a_k, b_k)` the Fp2 coefficient of `w^k` and `P(F)`
+/// the kernel product of `a` and `b`, that real part is
+/// `10 (P(F_1 + F_2) + P(F_1 + F_4) + P(F_4 + F_5) + P(F_2 + F_5)) + 4 P(F_0) + S(F_0)`
+/// `- 10 (P(F_1) + P(F_2) + P(F_3) + P(F_4) + P(F_5) + P(F_1 + F_2 + F_4 + F_5))`,
+/// with `S(F_0)` that of `a_0 + b_0` and `a_0 - 5 b_0`, so it is above `-60 (p + 2^-28 p)`. Here
+/// `a_k b_k K = -1` for `k > 0`, `P(F_1 + F_2 + F_4 + F_5)` is congruent to `-d` with `d < 2^366`,
+/// and the added products are congruent to values below 2^360.
+#[test]
+fn test_fq12_miller_loop_lanes_square_extreme() {
+    // Each word array is below p, so `from_bigint` returns `Some`.
+    let fq = |w: [u64; 6]| Fq::from_bigint(BigInteger384(w)).unwrap();
+    let r = fq([
+        0x03b133d785431441,
+        0xf38970778dd5a099,
+        0x341482310a31aeb2,
+        0xa52d3c89ce948422,
+        0xb956f8d025e11b53,
+        0x000d2e45cf10c793,
+    ]);
+    let s = fq([
+        0x34be9545a2427f10,
+        0x6a40bc98e70f9810,
+        0x3a35165e1a8bec94,
+        0xd19c595ab5512e1b,
+        0x4a4b6e0dd3143e07,
+        0x00a7e1455185eecf,
+    ]);
+    let f0 = Fq2::new(
+        fq([
+            0x9c143f9930f980f0,
+            0x1b3db2540f87199b,
+            0xcaa403154582d8d3,
+            0xe20d479f28999d7a,
+            0x4a85cca8e922c510,
+            0x018d60235136ee8a,
+        ]),
+        fq([
+            0x6c4c6fab9af04187,
+            0x7e95b4fb6e442a26,
+            0xd2dc06898bb66311,
+            0x3031ac447d6ed8a4,
+            0x33449bd54e111018,
+            0x013ea5dd61b661d0,
+        ]),
+    );
+    let k = Fq::from(2u64).pow([416]);
+    // `a K` is nonzero, so it has an inverse.
+    let coefficient = |a: Fq| Fq2::new(a, -(a * k).inverse().unwrap());
+    let [f1, f2, f3, f4, f5] = [Fq::one(), r, Fq::one(), r, r * s].map(coefficient);
+
+    let product = |a: Fq, b: Fq| a * b * k;
+    let fp2_product = |x: Fq2| product(x.c0, x.c1);
+    let added = [
+        fp2_product(f1 + f2),
+        fp2_product(f1 + f4),
+        fp2_product(f4 + f5),
+        fp2_product(f2 + f5),
+        fp2_product(f0),
+        product(f0.c0 + f0.c1, f0.c0 - Fq::from(5u64) * f0.c1),
+    ];
+    assert!(added.iter().all(|x| x.to_bigint().num_bits() <= 360));
+    assert!((-fp2_product(f1 + f2 + f4 + f5)).to_bigint().num_bits() <= 366);
+
+    check_miller_loop_fp12(&Fq12::new(Fq6::new(f0, f2, f4), Fq6::new(f1, f3, f5)), &[1], &[]);
+}
+
+type PreparedPair = (G1Prepared<Bls12_377Parameters>, G2Prepared<Bls12_377Parameters>);
+
+/// Returns `n` pairs of random points with their prepared forms, the G1 point of pair `i` at
+/// infinity where `zero_g1` contains `i`, and the G2 point where `zero_g2` does.
+fn prepared_pairs(rng: &mut TestRng, n: usize, zero_g1: &[usize], zero_g2: &[usize]) -> Vec<PreparedPair> {
+    (0..n)
+        .map(|i| {
+            let p = if zero_g1.contains(&i) { G1Affine::zero() } else { G1Projective::rand(rng).to_affine() };
+            let q = if zero_g2.contains(&i) { G2Affine::zero() } else { G2Projective::rand(rng).to_affine() };
+            (p.prepare(), q.prepare())
+        })
+        .collect()
+}
+
+/// `Bls12::miller_loop` from `miller_loop_reference`, over the pairs without a point at infinity.
+fn miller_loop_of_pairs_reference(pairs: &[PreparedPair]) -> Fq12 {
+    let pairs: Vec<Pair<'_>> = pairs
+        .iter()
+        .filter(|(p, q)| !p.is_zero() && !q.is_zero())
+        .map(|(p, q)| ([&p.0.x, &p.0.y], q.ell_coeffs.as_slice()))
+        .collect();
+    let mut f = miller_loop_reference(Fq12::one(), Bls12_377Parameters::X, &pairs);
+    if Bls12_377Parameters::X_IS_NEGATIVE {
+        f.conjugate();
+    }
+    f
+}
+
+#[test]
+fn test_miller_loop() {
+    let mut rng = TestRng::default();
+
+    // Every number of pairs up to 8, with points at infinity in G1, in G2, in both, or in none.
+    for n in 0..=8 {
+        for (zero_g1, zero_g2) in [(vec![], vec![]), (vec![0], vec![]), (vec![], vec![n / 2]), (vec![1, 3], vec![3, 5])]
+        {
+            let pairs = prepared_pairs(&mut rng, n, &zero_g1, &zero_g2);
+            let f = Bls12_377::miller_loop(pairs.iter().map(|(p, q)| (p, q)));
+            assert_eq!(
+                f,
+                miller_loop_of_pairs_reference(&pairs),
+                "{n} pairs, zero G1 {zero_g1:?}, zero G2 {zero_g2:?}"
+            );
+            assert!(fq12_coefficients(&f).all(|x| x.is_valid()));
+        }
+    }
+    assert_eq!(Bls12_377::miller_loop(std::iter::empty()), Fq12::one());
+
+    // The pairing and the product of pairings against the reference Miller loop.
+    for n in [1, 2, 6] {
+        let pairs = prepared_pairs(&mut rng, n, &[], &[]);
+        // The Miller loop of points not at infinity is nonzero, so it has an inverse.
+        let expected = Bls12_377::final_exponentiation(&miller_loop_of_pairs_reference(&pairs)).unwrap();
+        assert_eq!(Bls12_377::product_of_pairings(pairs.iter().map(|(p, q)| (p, q))), expected, "{n} pairs");
+    }
+    let (p, q) = (G1Projective::rand(&mut rng).to_affine(), G2Projective::rand(&mut rng).to_affine());
+    // As above.
+    let expected =
+        Bls12_377::final_exponentiation(&miller_loop_of_pairs_reference(&[(p.prepare(), q.prepare())])).unwrap();
+    assert_eq!(Bls12_377::pairing(p, q), expected);
+}
+
+#[test]
+fn test_bls12_377_miller_loop_lanes() {
+    let mut rng = TestRng::default();
+    let pairs = prepared_pairs(&mut rng, 2, &[], &[]);
+    let prepared: Vec<_> = pairs.iter().map(|(p, q)| (p, q)).collect();
+    let lines: Vec<Pair<'_>> = pairs.iter().map(|(p, q)| ([&p.0.x, &p.0.y], q.ell_coeffs.as_slice())).collect();
+
+    // The hook and the scalar path give the value of the loop.
+    let expected = miller_loop_of_pairs_reference(&pairs);
+    assert_eq!(Bls12_377Parameters::miller_loop_fp12(&prepared), expected);
+    assert_eq!(Bls12_377::miller_loop_scalar(&prepared), expected);
+
+    // The lanes run exactly where they are supported.
+    let run = |lines: &[Pair<'_>]| snarkvm_fields::ifma::miller_loop_fp12(&Fq12::one(), Bls12_377Parameters::X, lines);
+    let in_lanes = lanes_supported().then_some(expected);
+    assert_eq!(run(&lines), in_lanes);
+
+    // Coefficients past the ones the loop takes are not read; with one fewer, the lanes decline.
+    let coefficients = &pairs[1].1.ell_coeffs;
+    let mut long = coefficients.clone();
+    long.push((Fq2::rand(&mut rng), Fq2::rand(&mut rng), Fq2::rand(&mut rng)));
+    assert_eq!(run(&[lines[0], (lines[1].0, &long)]), in_lanes);
+    let short = &coefficients[..coefficients.len() - 1];
+    assert_eq!(run(&[lines[0], (lines[1].0, short)]), None);
+}
+
+#[test]
+#[should_panic(expected = "called `Option::unwrap()` on a `None` value")]
+fn test_miller_loop_short_coefficients() {
+    let p = G1Affine::prime_subgroup_generator().prepare();
+    let mut q = G2Affine::prime_subgroup_generator().prepare();
+    q.ell_coeffs.pop();
+    let _ = Bls12_377::miller_loop(std::iter::once((&p, &q)));
 }
 
 #[test]
