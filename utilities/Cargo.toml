@@ -32,10 +32,6 @@ harness = false
 workspace = true
 optional = true
 
-[dependencies.aleo-std]
-workspace = true
-features = [ "cpu" ]
-
 [dependencies.anyhow]
 workspace = true
 
@@ -44,9 +40,6 @@ workspace = true
 
 [dependencies.colored]
 workspace = true
-
-[dependencies.num_cpus]
-version = "1"
 
 [dependencies.num-bigint]
 version = "0.5"
