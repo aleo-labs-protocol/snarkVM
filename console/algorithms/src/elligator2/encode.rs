@@ -25,8 +25,8 @@ impl<E: Environment> Elligator2<E> {
         let group = encoding.mul_by_cofactor().to_affine();
         ensure!(group.is_on_curve(), "Elligator2 failed: element is not on curve");
         // The curve order is `COFACTOR * r` with `r` prime, so clearing the cofactor of a point on the curve
-        // always lands in the prime-order subgroup. Checking it is a full scalar multiplication, about two
-        // thirds of this function's cost, so only debug builds repeat it (see `test_encode_is_in_prime_order_subgroup`).
+        // always lands in the prime-order subgroup. Only debug builds check it
+        // (see `test_encode_is_in_prime_order_subgroup`).
         debug_assert!(
             group.is_in_correct_subgroup_assuming_on_curve(),
             "Elligator2 failed: element in incorrect subgroup"
