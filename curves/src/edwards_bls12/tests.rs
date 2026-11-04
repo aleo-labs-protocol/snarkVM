@@ -131,6 +131,21 @@ fn test_quartic_character_curve_shape() {
     assert_eq!(&q, Fq::characteristic());
 }
 
+/// Checks the stored schedule for `MODULUS_MINUS_ONE_DIV_FOUR` against `pow`.
+#[test]
+fn test_modulus_minus_one_div_four_schedule() {
+    const ITERATIONS: usize = 1000;
+    let mut rng = TestRng::default();
+    let schedule = EdwardsParameters::modulus_minus_one_div_four_schedule();
+    let exponent = EdwardsParameters::MODULUS_MINUS_ONE_DIV_FOUR;
+    let i = EdwardsParameters::SQRT_MINUS_ONE;
+
+    let edge_cases = [Fq::zero(), Fq::one(), -Fq::one(), i, -i];
+    for u in edge_cases.into_iter().chain((0..ITERATIONS).map(|_| rng.random())) {
+        assert_eq!(schedule.pow(&u), u.pow(exponent), "u = {u}");
+    }
+}
+
 /// Checks the character and the decode against plain double-and-add over every outcome, on the x-coordinates of:
 /// the torsion points, `x = 1`, `x = -1`, random field elements, and subgroup points plus each torsion point.
 #[test]
