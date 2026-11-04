@@ -46,6 +46,13 @@ impl<N: Network> fmt::Display for ViewKey<N> {
     }
 }
 
+impl<N: Network> fmt::Debug for ViewKey<N> {
+    /// Writes the account view key without revealing its contents.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("ViewKey").finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,6 +75,25 @@ mod tests {
             let candidate = format!("{expected}");
             assert_eq!(expected, ViewKey::from_str(&candidate)?);
             assert_eq!("AViewKey", candidate.split('1').next().unwrap());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_debug_is_redacted() -> Result<()> {
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // Sample a new view key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
+            let view_key = ViewKey::try_from(private_key)?;
+
+            // Check the debug representation reveals no secret.
+            assert_eq!("ViewKey(..)", format!("{view_key:?}"));
+            let candidate = format!("{view_key:#?}");
+            for secret in [view_key.to_string(), (*view_key).to_string()] {
+                assert!(!candidate.contains(&secret));
+            }
         }
         Ok(())
     }
