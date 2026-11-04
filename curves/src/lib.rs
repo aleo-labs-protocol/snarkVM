@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The curve templates use the fields and constructors that are deprecated for other crates.
+#![allow(deprecated)]
 #![allow(clippy::module_inception)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 #![doc = include_str!("../documentation/the_aleo_curves/00_overview.md")]

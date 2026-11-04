@@ -76,17 +76,17 @@ mod bls12_377_g1 {
 
         // String representation
         assert_eq!(
-            g1.x.to_string(),
+            g1.to_x_coordinate().to_string(),
             "89363714989903307245735717098563574705733591463163614225748337416674727625843187853442697973404985688481508350822",
         );
         assert_eq!(
-            g1.y.to_string(),
+            g1.to_y_coordinate().to_string(),
             "3702177272937190650578065972808860481433820514072818216637796320125658674906330993856598323293086021583822603349",
         );
 
         // BigInteger representation
         assert_eq!(
-            g1.x.to_bigint(),
+            g1.to_x_coordinate().to_bigint(),
             BigInteger384::new([
                 1089863619676461926,
                 2031922408020517912,
@@ -97,7 +97,7 @@ mod bls12_377_g1 {
             ])
         );
         assert_eq!(
-            g1.y.to_bigint(),
+            g1.to_y_coordinate().to_bigint(),
             BigInteger384::new([
                 8946822147630122069,
                 11486725844942458959,
@@ -110,7 +110,7 @@ mod bls12_377_g1 {
 
         // Montgomery BigInteger representation
         assert_eq!(
-            g1.x.0,
+            g1.to_x_coordinate().0,
             BigInteger384::new([
                 1171681672315280277,
                 6528257384425852712,
@@ -121,7 +121,7 @@ mod bls12_377_g1 {
             ])
         );
         assert_eq!(
-            g1.y.0,
+            g1.to_y_coordinate().0,
             BigInteger384::new([
                 13572190014569192121,
                 15344828677741220784,
@@ -157,17 +157,17 @@ mod bls12_377_g2 {
 
         // String representation
         assert_eq!(
-            g2.x.to_string(),
+            g2.to_x_coordinate().to_string(),
             "Fp2(170590608266080109581922461902299092015242589883741236963254737235977648828052995125541529645051927918098146183295 + 83407003718128594709087171351153471074446327721872642659202721143408712182996929763094113874399921859453255070254 * u)",
         );
         assert_eq!(
-            g2.y.to_string(),
+            g2.to_y_coordinate().to_string(),
             "Fp2(1843833842842620867708835993770650838640642469700861403869757682057607397502738488921663703124647238454792872005 + 33145532013610981697337930729788870077912093258611421158732879580766461459275194744385880708057348608045241477209 * u)",
         );
 
         // BigInteger representation
         assert_eq!(
-            g2.x.c0.to_bigint(),
+            g2.to_x_coordinate().c0.to_bigint(),
             BigInteger384::new([
                 6285382596397680767,
                 15748827462709656851,
@@ -178,7 +178,7 @@ mod bls12_377_g2 {
             ])
         );
         assert_eq!(
-            g2.x.c1.to_bigint(),
+            g2.to_x_coordinate().c1.to_bigint(),
             BigInteger384::new([
                 16087313950742852142,
                 593255854261604337,
@@ -189,7 +189,7 @@ mod bls12_377_g2 {
             ])
         );
         assert_eq!(
-            g2.y.c0.to_bigint(),
+            g2.to_y_coordinate().c0.to_bigint(),
             BigInteger384::new([
                 7702421029866889285,
                 16004466681641276576,
@@ -200,7 +200,7 @@ mod bls12_377_g2 {
             ])
         );
         assert_eq!(
-            g2.y.c1.to_bigint(),
+            g2.to_y_coordinate().c1.to_bigint(),
             BigInteger384::new([
                 14642269910726223961,
                 418400088670236579,
@@ -213,7 +213,7 @@ mod bls12_377_g2 {
 
         // Montgomery BigInteger representation
         assert_eq!(
-            g2.x.c0.0,
+            g2.to_x_coordinate().c0.0,
             BigInteger384::new([
                 1394603105513884269,
                 11069732150289508451,
@@ -224,7 +224,7 @@ mod bls12_377_g2 {
             ])
         );
         assert_eq!(
-            g2.x.c1.0,
+            g2.to_x_coordinate().c1.0,
             BigInteger384::new([
                 12672065269715576738,
                 3451530808602826578,
@@ -235,7 +235,7 @@ mod bls12_377_g2 {
             ])
         );
         assert_eq!(
-            g2.y.c0.0,
+            g2.to_y_coordinate().c0.0,
             BigInteger384::new([
                 1855632670224768760,
                 2989378521406112342,
@@ -246,7 +246,7 @@ mod bls12_377_g2 {
             ])
         );
         assert_eq!(
-            g2.y.c1.0,
+            g2.to_y_coordinate().c1.0,
             BigInteger384::new([
                 1532128906028652860,
                 14539073382194201855,
@@ -281,35 +281,41 @@ mod edwards_bls12 {
         );
 
         // String representation
-        assert_eq!(group.x.to_string(), "1540945439182663264862696551825005342995406165131907382295858612069623286213",);
-        assert_eq!(group.y.to_string(), "8003546896475222703853313610036801932325312921786952001586936882361378122196",);
+        assert_eq!(
+            group.to_x_coordinate().to_string(),
+            "1540945439182663264862696551825005342995406165131907382295858612069623286213",
+        );
+        assert_eq!(
+            group.to_y_coordinate().to_string(),
+            "8003546896475222703853313610036801932325312921786952001586936882361378122196",
+        );
 
         // BigInteger representation
         assert_eq!(
-            group.x.to_bigint(),
+            group.to_x_coordinate().to_bigint(),
             BigInteger256::new([1404703638504229317, 16672475576000152563, 1635533132911366150, 245486771465834503]),
             "\n\nExpected: {:?}\n\n",
-            group.x.to_bigint().0,
+            group.to_x_coordinate().to_bigint().0,
         );
         assert_eq!(
-            group.y.to_bigint(),
+            group.to_y_coordinate().to_bigint(),
             BigInteger256::new([15352153743387634132, 9180404173643694677, 4017395716581932261, 1275038582114391971]),
             "\n\nExpected: {:?}\n\n",
-            group.y.to_bigint().0,
+            group.to_y_coordinate().to_bigint().0,
         );
 
         // Montgomery BigInteger representation
         assert_eq!(
-            group.x.0,
+            group.to_x_coordinate().0,
             BigInteger256::new([15976313411695170452, 17230178952810798400, 11626259175167078036, 678729006091608048]),
             "\n\nExpected: {:?}\n\n",
-            group.x.0,
+            group.to_x_coordinate().0,
         );
         assert_eq!(
-            group.y.0,
+            group.to_y_coordinate().0,
             BigInteger256::new([926786653590077393, 18147000980977651608, 13077459464847727671, 1231472949076376191]),
             "\n\nExpected: {:?}\n\n",
-            group.y.0,
+            group.to_y_coordinate().0,
         );
 
         // Check that EdwardsAffine matches.

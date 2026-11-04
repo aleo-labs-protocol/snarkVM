@@ -34,14 +34,19 @@ use std::io::{Read, Result as IoResult, Write};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Projective<P: Parameters> {
+    #[deprecated(since = "4.13.0", note = "will become private")]
     pub x: P::BaseField,
+    #[deprecated(since = "4.13.0", note = "will become private")]
     pub y: P::BaseField,
+    #[deprecated(since = "4.13.0", note = "will become private")]
     pub t: P::BaseField,
+    #[deprecated(since = "4.13.0", note = "will become private")]
     pub z: P::BaseField,
 }
 
 impl<P: Parameters> Projective<P> {
     #[inline]
+    #[deprecated(since = "4.13.0", note = "convert from `Affine`")]
     pub const fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField, z: P::BaseField) -> Self {
         Self { x, y, t, z }
     }
