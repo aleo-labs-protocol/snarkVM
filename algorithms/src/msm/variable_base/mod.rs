@@ -52,14 +52,23 @@ impl VariableBase {
     /// Multi-scalar multiplications over field elements, several at once.
     ///
     /// Returns the sum of `base * scalar` over each of `msms`, in their
-    /// order. Each MSM goes through [`Self::msm`], which picks its method by
-    /// the MSM's size.
+    /// order. The MSMs below the bucket method's cutoff go together through
+    /// `AffineCurve::msm_lanes` where the curve has lanes. Every other MSM goes
+    /// through [`Self::msm`], which picks its method by the MSM's size. Every
+    /// base must be in the prime-order subgroup, as `msm_lanes` requires.
     pub fn msm_many<G: AffineCurve>(msms: &[&[(G, G::ScalarField)]]) -> Vec<G::Projective> {
+        let msm = |terms: &[(G, G::ScalarField)]| {
+            let (bases, scalars): (Vec<_>, Vec<_>) =
+                terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+            Self::msm(&bases, &scalars)
+        };
+        let is_small = |terms: &[(G, G::ScalarField)]| terms.len() < batched::BUCKET_MIN_BASES;
+        let small: Vec<_> = msms.iter().copied().filter(|terms| is_small(terms)).collect();
+        let mut small_sums = G::msm_lanes(&small).map(Vec::into_iter);
         msms.iter()
             .map(|terms| {
-                let (bases, scalars): (Vec<_>, Vec<_>) =
-                    terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
-                Self::msm(&bases, &scalars)
+                let sum = small_sums.as_mut().filter(|_| is_small(terms)).and_then(Iterator::next);
+                sum.unwrap_or_else(|| msm(terms))
             })
             .collect()
     }
