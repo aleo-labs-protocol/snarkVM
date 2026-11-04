@@ -499,7 +499,7 @@ version = "0.19"
 version = "0.2"
 
 [workspace.dependencies.nom]
-version = "7.1"
+version = "8.0"
 
 [workspace.dependencies.parking_lot]
 version = "0.12"
