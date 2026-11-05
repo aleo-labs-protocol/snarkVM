@@ -34,14 +34,12 @@ impl<E: Environment> Double for Group<E> {
             let y2 = self.y.square();
             let ax2 = &x2 * &a;
 
-            // Compute x3 and y3.
+            // Montgomery's trick: one inversion for x3 = 2xy / (ax^2 + y^2) and y3 = (y^2 - ax^2) / (2 - ax^2 - y^2).
+            // Divide, not `inverse().unwrap_or(..)`: a zero denominator must halt, not yield a wrong witness.
             let (x3, y3) = witness!(|two, xy, y2, ax2| {
-                // Assign x3 = (2xy) / (ax^2 + y^2).
-                let x3 = xy.double() / (ax2 + y2);
-                // Assign y3 = (y^2 - ax^2) / (2 - ax^2 - y^2).
-                let y3 = (y2 - ax2) / (two - ax2 - y2);
-                // Return (x3, y3).
-                (x3, y3)
+                let (x_den, y_den) = (ax2 + y2, two - ax2 - y2);
+                let inv = console::Field::one() / (x_den * y_den);
+                (xy.double() * y_den * inv, (y2 - ax2) * x_den * inv)
             });
 
             // Ensure x3 is well-formed.
@@ -135,6 +133,30 @@ mod tests {
             });
             Circuit::reset();
         }
+    }
+
+    #[test]
+    fn test_double_small_order() {
+        for point in small_order_points::<Circuit>() {
+            let candidate = inject_unchecked::<Circuit>(point.to_x_coordinate(), point.to_y_coordinate()).double();
+            assert_eq!(point.double(), candidate.eject_value());
+            assert!(Circuit::is_satisfied());
+            Circuit::reset();
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Field division by zero")]
+    fn test_double_zero_x_denominator() {
+        let zero = console::Field::zero();
+        inject_unchecked::<Circuit>(zero, zero).double();
+    }
+
+    #[test]
+    #[should_panic(expected = "Field division by zero")]
+    fn test_double_zero_y_denominator() {
+        let x = small_order_points::<Circuit>()[2].to_x_coordinate();
+        inject_unchecked::<Circuit>(x, console::Field::one()).double();
     }
 
     #[test]

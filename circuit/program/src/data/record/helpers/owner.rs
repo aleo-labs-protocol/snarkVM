@@ -139,33 +139,3 @@ impl<A: Aleo> Owner<A, Plaintext<A>> {
         }
     }
 }
-
-impl<A: Aleo> Owner<A, Ciphertext<A>> {
-    /// Decrypts the owner under the given randomizer.
-    pub fn decrypt(&self, randomizer: &[Field<A>]) -> Owner<A, Plaintext<A>> {
-        match self {
-            Self::Public(public) => {
-                // Ensure there is exactly zero randomizers.
-                if !randomizer.is_empty() {
-                    A::halt(format!("Expected 0 randomizers, found {}", randomizer.len()))
-                }
-                // Return the owner.
-                Owner::Public(public.clone())
-            }
-            Self::Private(ciphertext) => {
-                // Ensure there is exactly one randomizer.
-                if randomizer.len() != 1 {
-                    A::halt(format!("Expected 1 randomizer, found {}", randomizer.len()))
-                }
-                // Ensure there is exactly one field element in the ciphertext.
-                if ciphertext.len() != 1 {
-                    A::halt(format!("Expected 1 ciphertext, found {}", ciphertext.len()))
-                }
-                // Decrypt the owner.
-                let owner = Address::from_field(&ciphertext[0] - &randomizer[0]);
-                // Return the owner.
-                Owner::Private(Plaintext::from(Literal::Address(owner)))
-            }
-        }
-    }
-}

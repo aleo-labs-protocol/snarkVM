@@ -30,7 +30,7 @@ use snarkvm_console_types::{Address, Scalar};
 use zeroize::Zeroize;
 
 /// The account view key used to decrypt records and ciphertext.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Zeroize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Zeroize)]
 pub struct ViewKey<N: Network>(Scalar<N>);
 
 impl<N: Network> ViewKey<N> {

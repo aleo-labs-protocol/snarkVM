@@ -15,19 +15,20 @@
 
 use crate::{
     edwards_bls12::*,
-    templates::twisted_edwards_extended::tests::{edwards_test, montgomery_conversion_test},
+    templates::twisted_edwards_extended::tests::{edwards_test, montgomery_conversion_test, order_two_point},
     traits::{
         AffineCurve,
         MontgomeryParameters,
         ProjectiveCurve,
         TwistedEdwardsParameters,
-        tests_field::{field_serialization_test, field_test, primefield_test},
+        tests_field::{field_serialization_test, field_test, fp256_inverse_test, primefield_test},
         tests_group::*,
         tests_projective::curve_tests,
     },
 };
 use snarkvm_fields::{Field, LegendreSymbol, One, SquareRootField, Zero};
 use snarkvm_utilities::{
+    BitIteratorBE,
     ToBytes,
     rand::{TestRng, Uniform},
     to_bytes_le,
@@ -44,6 +45,11 @@ fn test_edwards_bls12_fr() {
     field_test(a, b, &mut rng);
     primefield_test::<Fr>(&mut rng);
     field_serialization_test::<Fr>(&mut rng);
+}
+
+#[test]
+fn test_edwards_bls12_fr_inverse() {
+    fp256_inverse_test::<FrParameters>(&mut TestRng::default());
 }
 
 #[test]
@@ -96,6 +102,43 @@ fn test_generator() {
     let generator = EdwardsAffine::prime_subgroup_generator();
     assert!(generator.is_on_curve());
     assert!(generator.is_in_correct_subgroup_assuming_on_curve());
+}
+
+#[test]
+fn test_mul_bits_matches_double_and_add() {
+    let mut rng = TestRng::default();
+
+    let double_and_add = |point: &EdwardsAffine, bits: &[bool]| {
+        let mut acc = EdwardsProjective::zero();
+        for &bit in bits {
+            acc.double_in_place();
+            if bit {
+                acc.add_assign_mixed(point);
+            }
+        }
+        acc
+    };
+
+    // -1 is a square in Fq, so (sqrt(-1), 0) exists. It has order four.
+    let t4 = EdwardsAffine::from_y_coordinate(Fq::zero(), false).unwrap();
+    let p: EdwardsAffine = rng.random();
+    let t2 = order_two_point::<EdwardsParameters>();
+    let points = [EdwardsAffine::zero(), t2, t4, p, (p.to_projective() + t4.to_projective()).to_affine()];
+
+    let mut scalars = vec![
+        vec![false; 3],
+        vec![true],
+        vec![true; 300],
+        BitIteratorBE::new(EdwardsParameters::COFACTOR).collect(),
+        BitIteratorBE::new(Fr::characteristic()).collect(),
+    ];
+    scalars.extend((0..300).map(|len| (0..len).map(|_| rng.random()).collect()));
+
+    for point in &points {
+        for bits in &scalars {
+            assert_eq!(point.mul_bits(bits.iter().copied()), double_and_add(point, bits), "{point} * {bits:?}");
+        }
+    }
 }
 
 #[test]

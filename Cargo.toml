@@ -440,11 +440,11 @@ path = "wasm"
 version = "=4.12.0"
 
 [workspace.dependencies.aleo-std]
-version = "=1.0.4"
+version = "1.0.4"
 
 [workspace.dependencies.aleo-std-storage]
 default-features=false
-version = "=1.0.4"
+version = "1.0.4"
 
 [workspace.dependencies.anyhow]
 version = "1.0.73"
@@ -510,8 +510,7 @@ version = "0.12"
 version = "1"
 
 [workspace.dependencies.proptest]
-# Pin to 1.6 to avoid pulling in rand >=0.9.
-version = "=1.12"
+version = "1.12"
 
 [workspace.dependencies.rand]
 version = "0.10"

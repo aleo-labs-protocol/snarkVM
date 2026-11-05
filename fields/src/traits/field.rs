@@ -119,6 +119,8 @@ pub trait Field:
     /// Squares `self` in place.
     fn square_in_place(&mut self) -> &mut Self;
 
+    /// Returns the sum of `a[i] * b[i]`, over the shorter of `a` and `b`. `Fp256` and `Fp384` panic
+    /// above the number of terms `n` with `(n + 1) p < R`, which they compute from the modulus.
     fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
         a.iter().zip(b).map(|(a, b)| *a * b).sum::<Self>()
     }

@@ -13,11 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::*;
+//! Each network reads its own consensus version heights. The test implementation reads one table for all networks.
 
-impl<A: Aleo> Ciphertext<A> {
-    /// Returns the number of field elements to encode `self`.
-    pub(crate) fn num_randomizers(&self) -> u16 {
-        self.size_in_fields()
-    }
+#![cfg(not(any(feature = "test", feature = "test_consensus_heights")))]
+
+use snarkvm_console_network::prelude::*;
+
+#[test]
+fn test_consensus_heights_are_network_specific() {
+    assert_eq!(TestnetV0::CONSENSUS_VERSION_HEIGHTS(), &TestnetV0::_CONSENSUS_VERSION_HEIGHTS);
+    assert_eq!(CanaryV0::CONSENSUS_VERSION_HEIGHTS(), &CanaryV0::_CONSENSUS_VERSION_HEIGHTS);
+    assert_eq!(MainnetV0::CONSENSUS_VERSION_HEIGHTS(), &MainnetV0::_CONSENSUS_VERSION_HEIGHTS);
 }

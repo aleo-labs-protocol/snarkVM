@@ -28,6 +28,8 @@ the ADX instructions at run time, from CPUID, so one binary runs on any x86_64 C
 
 A build with `cuda` does not fall back to the CPU. A failed device call panics, and the message carries the CUDA error
 code as `[snarkvm-cuda: code=N]`. `snarkvm_algorithms::cuda_error_code` reads it. To use the CPU, build without `cuda`.
+With no usable GPU, every call panics with `cudaErrorNoDevice` (100), and the message says whether the runtime found no
+device, could not enumerate them, or found none of compute capability 7.0 or higher.
 
 ## Usage Guide
 

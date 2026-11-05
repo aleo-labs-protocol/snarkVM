@@ -22,8 +22,6 @@ use crate::Blake2Xs;
 use snarkvm_console_types::prelude::*;
 use snarkvm_utilities::BigInteger;
 
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -123,7 +121,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         }
 
         // Compute the bases lookup.
-        let bases_lookup = cfg_iter!(bases)
+        // No rayon here: a worker setting up a static BHP could steal a job that waits on it.
+        let bases_lookup = bases
+            .iter()
             .map(|window| {
                 window
                     .iter()
@@ -164,7 +164,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         // corresponding to the first six bits of the input. Note that bases
         // lookup must still be kept around since the ending bits of an input
         // could end in the middle of any preprocessed combined chunk.
-        let combined_bases_lookup: Arc<[Vec<Vec<Group<E>>>]> = cfg_iter!(bases_lookup)
+        let combined_bases_lookup: Arc<[Vec<Vec<Group<E>>>]> = bases_lookup
+            .iter()
             .map(|window| {
                 window
                     .chunks_exact(BHP_NUM_COMBINED_CHUNKS)

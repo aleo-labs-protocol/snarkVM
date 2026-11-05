@@ -229,6 +229,24 @@ impl<E: Environment> From<&Group<E>> for LinearCombination<E::BaseField> {
     }
 }
 
+/// Injects `(x, y)` without `enforce_in_group`, which rejects off-subgroup and off-curve points.
+#[cfg(test)]
+fn inject_unchecked<E: Environment>(x: console::Field<E::Network>, y: console::Field<E::Network>) -> Group<E> {
+    Group::from_xy_coordinates_unchecked(Field::new(Mode::Private, x), Field::new(Mode::Private, y))
+}
+
+/// The identity and the points of order 2 and 4.
+#[cfg(test)]
+fn small_order_points<E: Environment>() -> [console::Group<E::Network>; 4] {
+    let (zero, one) = (console::Field::zero(), console::Field::one());
+    let x = console::Field::<E::Network>::new(E::EDWARDS_A)
+        .inverse()
+        .expect("a is nonzero")
+        .square_root()
+        .expect("a is a square");
+    [(zero, one), (zero, -one), (x, zero), (-x, zero)].map(|(x, y)| console::Group::from_xy_coordinates_unchecked(x, y))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
