@@ -51,7 +51,7 @@ mod string;
 mod verify;
 
 use console::{
-    account::PrivateKey,
+    account::{ComputeKeyCache, PrivateKey},
     network::prelude::*,
     program::{Ciphertext, Record},
     types::{Field, Group, U64},
