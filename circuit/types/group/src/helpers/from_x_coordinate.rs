@@ -97,6 +97,7 @@ mod tests {
     /// values, the additions and doublings of that scalar multiplication reach `Z = 0`, and the conversion to affine
     /// panics. Deployment verification rejects a program that synthesizes such a value, so this list is consensus
     /// behavior. It depends on the exact sequence of operations in `Affine::mul_bits`.
+    /// This list is not complete. See https://gist.github.com/cbeck88/e3c1de2c277754330e3d9d7702d1c54f for the search that found these values.
     const PANICKING_X: [&str; 8] = [
         "796759711718485194403126097657075135760429205353416317620271785354282588780",
         "1646887550125418539688483748007992615780454861634823357515367456465219956426",
@@ -109,7 +110,8 @@ mod tests {
     ];
 
     /// Values of `x` with no group element, where synthesizing `Group::from_x_coordinate` does not panic.
-    /// Scalar multiplication algorithms with a different sequence of operations panic on some of these values.
+    /// A `mul_bits` with a different sequence of operations can panic on these values. The 4-bit sliding window of
+    /// #3644 panics on 14 of them, including `993836843171880604782108004137850162404213406205532410908816984011375463874`.
     const NON_PANICKING_X: [&str; 34] = [
         "326388504612651405530442693138611165507040138194223459045676289122298132443",
         "691769809417834627886074228954081133072504848955644007490490573902669790128",
@@ -144,6 +146,22 @@ mod tests {
         "7524201687871734174171702764429583832346721409922786958572651656937670330721",
         "7550437626840288491086811774318306150652812592008338656946563493707175210416",
         "7752691940010535796362750709827465398303394486198419820444742882014739448913",
+        "8118073244815719018718382245642935365868859196959840368889557166795111106598",
+    ];
+
+    /// The values from `PANICKING_X` and `NON_PANICKING_X` where synthesizing `Group::from_x_coordinate_flagged` panics.
+    ///
+    /// A value with no square root gets the off-curve point `(x, 0)`, and `is_in_group` multiplies it by the subgroup
+    /// order. On these values, the witness of the circuit `Group::double` divides by zero. This path does not use
+    /// `Affine::mul_bits`. The values were not searched for this path, so this list covers only those two lists.
+    const FLAGGED_PANICKING_X: [&str; 8] = [
+        "326388504612651405530442693138611165507040138194223459045676289122298132443",
+        "796759711718485194403126097657075135760429205353416317620271785354282588780",
+        "3191513760873258386957126988742004355611086354488696025237095095423557019205",
+        "3731578311095584543118774412074246841508098021618500437186623585706364357852",
+        "4712883438332785881130050526707299689867801313535563390748609870211044881189",
+        "5252947988555112037291697950039542175764812980665367802698138360493852219836",
+        "7647702037709885229845698841124471395615470129800647510314961670563126650261",
         "8118073244815719018718382245642935365868859196959840368889557166795111106598",
     ];
 
@@ -201,6 +219,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_from_x_coordinate_flagged_off_curve_witness_panics() {
+        for x in PANICKING_X.iter().chain(&NON_PANICKING_X) {
+            let panics = FLAGGED_PANICKING_X.contains(x);
+            let x = console::Field::from_str(&format!("{x}field")).unwrap();
+
+            let result = try_vm_runtime(|| Group::<Circuit>::from_x_coordinate_flagged(Field::new(Mode::Private, x)));
+            assert_eq!(result.is_err(), panics, "x = {x}");
+            Circuit::reset();
+        }
+    }
+
+    /// Programs inject public and private inputs as `Mode::Private`. A constant input halts on all of these values.
     #[test]
     fn test_from_x_coordinate_off_curve_witness_panics() {
         for (values, panics) in [(PANICKING_X.as_slice(), true), (NON_PANICKING_X.as_slice(), false)] {
