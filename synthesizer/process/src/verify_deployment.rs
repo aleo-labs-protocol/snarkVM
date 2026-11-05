@@ -156,6 +156,24 @@ mod tests {
         }
     }
 
+    /// `off_curve_cast.deployment` is the output of `deploy` for this program on snarkVM v4.12.1, with its original keys
+    /// and certificate. A circuit change that breaks existing deployments fails here, even when `deploy` and
+    /// `verify_deployment` still agree with each other.
+    #[test]
+    fn test_verify_deployment_saved_off_curve_cast() {
+        let rng = &mut TestRng::default();
+
+        let bytes = include_bytes!("./resources/off_curve_cast.deployment");
+        let deployment = Deployment::<CurrentNetwork>::read_le(&bytes[..]).unwrap();
+        let x = "993836843171880604782108004137850162404213406205532410908816984011375463874";
+        assert_eq!(deployment.program(), &cast_program("cast", 0, x));
+
+        Process::load()
+            .unwrap()
+            .verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+            .unwrap();
+    }
+
     /// Use `cargo test profiler --features timer` to run this test.
     #[ignore]
     #[test]
