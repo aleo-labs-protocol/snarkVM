@@ -89,7 +89,7 @@ impl<F: PrimeField> R1CS<F> {
                     assert_eq!(
                         snarkvm_algorithms::r1cs::Index::Public(*index as usize),
                         gadget.get_unchecked(),
-                        "Public variables in the second system must match the first system (with an off-by-1 for the public case)"
+                        "Public variables in the second system must match the first system"
                     );
 
                     let result = converter.public.insert(*index, gadget);
@@ -146,21 +146,11 @@ impl<F: PrimeField> R1CS<F> {
                             Variable::Public(index_value) => {
                                 let (index, _value) = index_value.as_ref();
                                 let gadget = converter.public.get(index).unwrap();
-                                assert_eq!(
-                                    snarkvm_algorithms::r1cs::Index::Public((index + 1) as usize),
-                                    gadget.get_unchecked(),
-                                    "Failed during constraint translation. The public variable in the second system must match the first system (with an off-by-1 for the public case)"
-                                );
                                 linear_combination += (*coefficient, *gadget);
                             }
                             Variable::Private(index_value) => {
                                 let (index, _value) = index_value.as_ref();
                                 let gadget = converter.private.get(index).unwrap();
-                                assert_eq!(
-                                    snarkvm_algorithms::r1cs::Index::Private(*index as usize),
-                                    gadget.get_unchecked(),
-                                    "Failed during constraint translation. The private variable in the second system must match the first system"
-                                );
                                 linear_combination += (*coefficient, *gadget);
                             }
                         }
@@ -229,19 +219,35 @@ mod tests {
         candidate
     }
 
-    #[test]
-    fn test_constraint_converter() {
-        let _candidate_output = create_example_circuit::<Circuit>();
+    /// Converts the circuit into a `TestConstraintSystem` and checks its sizes and satisfiability.
+    fn assert_converts() {
+        use snarkvm_algorithms::r1cs::ConstraintSystem;
 
         let mut cs = snarkvm_algorithms::r1cs::TestConstraintSystem::new();
         Circuit.generate_constraints(&mut cs).unwrap();
-        {
-            use snarkvm_algorithms::r1cs::ConstraintSystem;
-            assert_eq!(Circuit::num_public(), cs.num_public_variables() as u64);
-            assert_eq!(Circuit::num_private(), cs.num_private_variables() as u64);
-            assert_eq!(Circuit::num_constraints(), cs.num_constraints() as u64);
-            assert!(cs.is_satisfied());
-        }
+        assert_eq!(Circuit::num_public(), cs.num_public_variables() as u64);
+        assert_eq!(Circuit::num_private(), cs.num_private_variables() as u64);
+        assert_eq!(Circuit::num_constraints(), cs.num_constraints() as u64);
+        assert!(cs.is_satisfied());
+    }
+
+    #[test]
+    fn test_constraint_converter() {
+        let _candidate_output = create_example_circuit::<Circuit>();
+        assert_converts();
+    }
+
+    #[test]
+    fn test_constraint_converter_with_public_terms() {
+        let one = snarkvm_console_types::Field::<<Circuit as Environment>::Network>::one();
+        let two = one + one;
+        let three = two + one;
+        let public = Field::<Circuit>::new(Mode::Public, two);
+        let private = Field::<Circuit>::new(Mode::Private, three);
+        // The product constraint has the public variable as a term.
+        let _product = &public * &private;
+        assert_eq!(1, Circuit::num_constraints());
+        assert_converts();
     }
 
     #[test]
