@@ -34,6 +34,7 @@ use snarkvm_utilities::{
     to_bytes_le,
 };
 
+use core::str::FromStr;
 use rand::RngExt;
 
 #[test]
@@ -230,6 +231,50 @@ fn test_subgroup_point_from_x_coordinate_edge_cases() {
 
     // `1 - d * x^2` has no root, because `d` is a non-square. The unwrap holds because `d` is non-zero.
     assert!(EdwardsParameters::EDWARDS_D.inverse().unwrap().sqrt().is_none());
+}
+
+/// Checks the decode and the character against `IsInSubGroup` of gnark-crypto `77390410395a`
+/// (`ecc/bls12-377/twistededwards/subgroup.go`), on the vectors in `resources/gnark_subgroup_vectors.txt`.
+/// Each line is `x -` if `x` has no point, and otherwise `x y in_y in_neg_y`: `y` is the smaller root as an integer,
+/// and `in_y`, `in_neg_y` are `IsInSubGroup` on `(x, y)` and `(x, -y)` as `0` or `1`.
+/// The x-coordinates are `0`, `1`, `-1`, `i`, `-i`, random field elements, and those of `P`, `P + (0, -1)`
+/// and `P ± (i, 0)` for random subgroup points `P`.
+#[test]
+fn test_subgroup_point_from_x_coordinate_matches_gnark() {
+    let vectors = include_str!("resources/gnark_subgroup_vectors.txt");
+
+    // The counts of `[no y, neither candidate accepted, p1 accepted, p2 accepted]`.
+    let mut outcomes = [0usize; 4];
+    for line in vectors.lines() {
+        let fields: Vec<&str> = line.split(' ').collect();
+        let x = Fq::from_str(fields[0]).unwrap();
+        let decoded = EdwardsAffine::subgroup_point_from_x_coordinate(x);
+        let Some((p1, p2)) = EdwardsAffine::pair_from_x_coordinate(x) else {
+            assert_eq!(fields[1..], ["-"], "x = {x}");
+            assert_eq!(decoded, None);
+            outcomes[0] += 1;
+            continue;
+        };
+        let [y, p1_in, p2_in] = fields[1..] else { panic!("x = {x} has a point, but the line is {line:?}") };
+        assert_eq!((p1.y, p2.y), (Fq::from_str(y).unwrap(), -Fq::from_str(y).unwrap()), "x = {x}");
+        let bit = |bit: &str| match bit {
+            "0" => false,
+            "1" => true,
+            _ => panic!("unexpected line {line:?}"),
+        };
+        let (p1_in, p2_in) = (bit(p1_in), bit(p2_in));
+        assert!(!(p1_in && p2_in), "x = {x}");
+        assert_eq!(p1.quartic_character().is_one(), p1_in, "x = {x}");
+        assert_eq!(p2.quartic_character().is_one(), p2_in, "x = {x}");
+        let (expected, outcome) = match (p1_in, p2_in) {
+            (true, _) => (Some(p1), 2),
+            (_, true) => (Some(p2), 3),
+            _ => (None, 1),
+        };
+        assert_eq!(decoded, expected, "x = {x}");
+        outcomes[outcome] += 1;
+    }
+    assert!(outcomes.iter().all(|count| *count > 0), "outcomes: {outcomes:?}");
 }
 
 #[test]

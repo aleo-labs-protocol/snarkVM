@@ -100,4 +100,29 @@ mod tests {
         }
         assert!(outcomes.iter().all(|count| *count > 0), "outcomes: {outcomes:?}");
     }
+
+    /// Checks the decode against gnark-crypto's `IsInSubGroup`, on the vectors of
+    /// `test_subgroup_point_from_x_coordinate_matches_gnark` in `snarkvm-curves`. That test describes the format.
+    #[test]
+    fn test_from_x_coordinate_matches_gnark() {
+        let vectors = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../curves/src/edwards_bls12/resources/gnark_subgroup_vectors.txt"
+        ));
+        let mut accepted = 0;
+        for line in vectors.lines() {
+            let fields: Vec<&str> = line.split(' ').collect();
+            let x = Field::<CurrentEnvironment>::new(BaseField::from_str(fields[0]).unwrap());
+            let expected = match fields[1..] {
+                [y, "1", "0"] => Some(BaseField::from_str(y).unwrap()),
+                [y, "0", "1"] => Some(-BaseField::from_str(y).unwrap()),
+                [_, "0", "0"] | ["-"] => None,
+                _ => panic!("unexpected line {line:?}"),
+            };
+            let expected = expected.map(|y| Group::new_unchecked(Affine::from_coordinates_unchecked((*x, y))));
+            accepted += expected.is_some() as usize;
+            assert_eq!(Group::from_x_coordinate(x).ok(), expected, "x = {x}");
+        }
+        assert!(accepted > 0);
+    }
 }
