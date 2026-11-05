@@ -45,7 +45,7 @@ impl<E: Environment> Sub<&Field<E>> for &Field<E> {
     type Output = Field<E>;
 
     fn sub(self, other: &Field<E>) -> Self::Output {
-        let mut result = self.clone();
+        let mut result: Field<E> = (&self.linear_combination).into();
         result -= other;
         result
     }
