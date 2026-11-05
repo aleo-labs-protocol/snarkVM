@@ -73,15 +73,11 @@ impl<N: Network> BatchHeader<N> {
             )));
         }
 
-        // Read the previous certificate ID bytes.
-        let mut previous_certificate_id_bytes =
-            vec![0u8; num_previous_certificate_ids as usize * Field::<N>::size_in_bytes()];
-        reader.read_exact(&mut previous_certificate_id_bytes)?;
-        // Read the previous certificate IDs. This stays serial: a rayon fork-join costs more than these reads.
-        let previous_certificate_ids = previous_certificate_id_bytes
-            .chunks(Field::<N>::size_in_bytes())
-            .map(Field::read_le)
-            .collect::<Result<IndexSet<_>, _>>()?;
+        // Read the previous certificate IDs.
+        let mut previous_certificate_ids = IndexSet::with_capacity(num_previous_certificate_ids as usize);
+        for _ in 0..num_previous_certificate_ids {
+            previous_certificate_ids.insert(Field::read_le(&mut reader)?);
+        }
         // Ensure no previous certificate ID was repeated, for the same reason.
         if previous_certificate_ids.len() != num_previous_certificate_ids as usize {
             return Err(error("Duplicate previous certificate ID in batch header"));
