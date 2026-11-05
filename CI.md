@@ -23,7 +23,7 @@ Jobs run in one of two places:
 |---|---|
 | Pull request | `fmt`, `deny`, `wasm`, `lint`, `test`, `ci-ok` |
 | Push to `staging`, or manual dispatch | the above, plus `test-merge`, `machete` |
-| Push to or pull request into `release/**`, or manual dispatch | the above, plus `windows` |
+| Push to or pull request into `release/**`, or manual dispatch | the above, plus `test-release`, `windows` |
 
 ## Jobs
 
@@ -56,6 +56,9 @@ on every event.
 | `test (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
 | `test (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests with `test,dev-print` | `synthesizer-integration` |
 | `test (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
+| `test (old-consensus-versions)` | `cpu` | release | 120 | the V8 to V14 tests of `snarkvm-synthesizer`, with `test-old-consensus-versions`, release; then the ignored ones | |
+| `test (integers-exhaustive)` | `cpu` | release | 120 | the ignored tests of `snarkvm-circuit-types-integers`, which check every 8-bit input | |
+| `test (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks`, release; again with `test,rocks`, then the ignored tests; then `test_vm_execute_and_finalize` with `test,rocks` | |
 | `machete` | hosted | merge | | `cargo machete` | `check-unused-dependencies` |
 | `windows` | hosted (Windows) | release | | `cargo check --examples --benches --tests` in `algorithms`, `circuit`, `console`, `curves`, `fields`, `ledger`, `parameters`, `synthesizer`, `utilities` | `verify-windows` |
 
@@ -68,10 +71,10 @@ have none, and a hosted job holds no fleet box.
 
 ## Test groups
 
-Each `test` and `test-merge` entry is one cargo build. `cargo test -p a -p b`
-unifies the features of `a` and `b`, and several crates enable `test`,
-`rocks` or `test_consensus_heights` on their dependencies, which changes what
-those dependencies compute. So crates share an entry only where that
+Each `test`, `test-merge` and `test-release` entry is one cargo build.
+`cargo test -p a -p b` unifies the features of `a` and `b`, and several crates
+enable `test`, `rocks` or `test_consensus_heights` on their dependencies, which
+changes what those dependencies compute. So crates share an entry only where that
 unification enables none of those features, nor `wasm` or `large_params`, on
 any snarkvm crate. Helper features such as `test-helpers` can still be
 unified, so a test may compile in its entry that would not under

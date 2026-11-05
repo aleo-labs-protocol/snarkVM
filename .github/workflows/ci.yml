@@ -298,6 +298,41 @@ jobs:
     name: test (${{ matrix.name }})
     steps: *test-steps
 
+  # Suites that take too long for every push. On a release branch, on pull
+  # requests to one, and on demand.
+  test-release:
+    needs: start-cpu-runners
+    runs-on: [self-hosted, linux, x64, cpu]
+    timeout-minutes: 120
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/heads/release/') ||
+      (startsWith(github.base_ref, 'release/') &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: old-consensus-versions
+            runs: |
+              nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+              nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 2 --run-ignored ignored-only -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+          # Not `--release`: that compiles out the check in `is_satisfied` that
+          # each constraint uses only declared variables.
+          - name: integers-exhaustive
+            runs: nextest run -p snarkvm-circuit-types-integers --run-ignored ignored-only
+          # `rocks` alone is the feature set nodes ship. `test` changes network
+          # constants and adds tests, so each set runs. Of the integration targets,
+          # only test_vm_execute_and_finalize opens a RocksDB store.
+          - name: synthesizer-rocks
+            runs: |
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 2 --run-ignored ignored-only
+              nextest run -p snarkvm-synthesizer --release --features test,rocks --test test_vm_execute_and_finalize
+    name: test (${{ matrix.name }})
+    steps: *test-steps
+
   machete:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
@@ -339,7 +374,7 @@ jobs:
   # meant to run.
   ci-ok:
     if: always()
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, machete, windows]
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -349,4 +384,4 @@ jobs:
             startsWith(github.ref, 'refs/heads/release/') ||
             startsWith(github.base_ref, 'release/') }}
         run: |
-          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
