@@ -88,10 +88,91 @@ impl<N: Network> Process<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use snarkvm_utilities::try_vm_runtime;
     use std::ops::Deref;
 
     type CurrentAleo = circuit::network::AleoV0;
     type CurrentNetwork = console::network::MainnetV0;
+
+    /// Returns a program that casts `x` to a group with `op`, as a non-constant value, for every sampled input.
+    fn cast_program(op: &str, index: usize, x: &str) -> Program<CurrentNetwork> {
+        Program::from_str(&format!(
+            "program off_curve_cast_{index}.aleo;\n\nfunction f:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\nconstructor:\n    assert.eq edition 0u16;\n"
+        ))
+        .unwrap()
+    }
+
+    /// The verdicts depend on the sequence of operations in the point arithmetic, through the off-curve witness of a
+    /// rejected `x`. The tests of the circuit `Group::from_x_coordinate` pin the full lists of values.
+    #[test]
+    fn test_verify_deployment_off_curve_cast_verdicts() {
+        let rng = &mut TestRng::default();
+
+        // `2` has a group element, and the others do not.
+        for (index, (op, x)) in [
+            ("cast", "2"),
+            ("cast", "1"),
+            ("cast", "993836843171880604782108004137850162404213406205532410908816984011375463874"),
+            ("cast.lossy", "2"),
+            ("cast.lossy", "1646887550125418539688483748007992615780454861634823357515367456465219956426"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let program = cast_program(op, index, x);
+            let deployment = Process::load().unwrap().deploy::<CurrentAleo, _>(&program, rng).unwrap();
+            Process::load()
+                .unwrap()
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+                .unwrap();
+        }
+
+        for (index, (op, x)) in [
+            ("cast", "7647702037709885229845698841124471395615470129800647510314961670563126650261"),
+            ("cast.lossy", "8118073244815719018718382245642935365868859196959840368889557166795111106598"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let program = cast_program(op, index, x);
+            let process = Process::load().unwrap();
+            assert!(try_vm_runtime(|| process.deploy::<CurrentAleo, _>(&program, &mut TestRng::default())).is_err());
+
+            // `deploy` panics on this value, so the deployment takes its keys from the program for `2`.
+            let keys = process.deploy::<CurrentAleo, _>(&cast_program(op, index, "2"), rng).unwrap();
+            let deployment = Deployment::new(
+                0,
+                program.clone(),
+                keys.verifying_keys().clone(),
+                Some(program.to_checksum()),
+                Some(console::types::Address::zero()),
+            )
+            .unwrap();
+            let process = Process::load().unwrap();
+            let result = try_vm_runtime(|| {
+                process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+            });
+            assert!(result.is_err(), "the deployment must be rejected by a panic during synthesis");
+        }
+    }
+
+    /// `off_curve_cast.deployment` is the output of `deploy` for this program on snarkVM v4.12.1, with its original keys
+    /// and certificate. A circuit change that breaks existing deployments fails here, even when `deploy` and
+    /// `verify_deployment` still agree with each other.
+    #[test]
+    fn test_verify_deployment_saved_off_curve_cast() {
+        let rng = &mut TestRng::default();
+
+        let bytes = include_bytes!("./resources/off_curve_cast.deployment");
+        let deployment = Deployment::<CurrentNetwork>::read_le(&bytes[..]).unwrap();
+        let x = "993836843171880604782108004137850162404213406205532410908816984011375463874";
+        assert_eq!(deployment.program(), &cast_program("cast", 0, x));
+
+        Process::load()
+            .unwrap()
+            .verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+            .unwrap();
+    }
 
     /// Use `cargo test profiler --features timer` to run this test.
     #[ignore]
