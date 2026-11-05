@@ -222,6 +222,13 @@ pub trait AffineCurve:
     #[must_use]
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool;
 
+    /// Returns a point with the given x-coordinate that is in the prime order subgroup, if there is one.
+    /// Checks the candidate with the larger y-coordinate first.
+    fn subgroup_point_from_x_coordinate(x: Self::BaseField) -> Option<Self> {
+        let (p1, p2) = Self::pair_from_x_coordinate(x)?;
+        [p2, p1].into_iter().find(Self::is_in_correct_subgroup_assuming_on_curve)
+    }
+
     /// Returns the x-coordinate of the point.
     #[must_use]
     fn to_x_coordinate(&self) -> Self::BaseField;
@@ -351,6 +358,11 @@ pub trait TwistedEdwardsParameters: ModelParameters {
     const COFACTOR_INV: Self::ScalarField;
     /// The affine generator of the twisted Edwards curve.
     const AFFINE_GENERATOR_COEFFS: (Self::BaseField, Self::BaseField);
+    /// A square root of `-1` in the base field. `Affine::subgroup_point_from_x_coordinate` requires
+    /// `a = -1`, a non-square `d`, and `4r` points on the curve with `r` odd.
+    const SQRT_MINUS_ONE: Self::BaseField;
+    /// `(q - 1) / 4` for the base field modulus `q`, as little-endian limbs.
+    const MODULUS_MINUS_ONE_DIV_FOUR: &'static [u64];
 
     type MontgomeryParameters: MontgomeryParameters<BaseField = Self::BaseField>;
 

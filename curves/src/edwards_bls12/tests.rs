@@ -28,6 +28,7 @@ use crate::{
 };
 use snarkvm_fields::{Field, LegendreSymbol, One, SquareRootField, Zero};
 use snarkvm_utilities::{
+    BitIteratorBE,
     ToBytes,
     rand::{TestRng, Uniform},
     to_bytes_le,
@@ -101,6 +102,134 @@ fn test_generator() {
     let generator = EdwardsAffine::prime_subgroup_generator();
     assert!(generator.is_on_curve());
     assert!(generator.is_in_correct_subgroup_assuming_on_curve());
+}
+
+/// Facts about the curve that the proof of `Affine::quartic_character` needs.
+#[test]
+fn test_quartic_character_curve_shape() {
+    let one = Fq::one();
+    let d = EdwardsParameters::EDWARDS_D;
+    assert_eq!(EdwardsParameters::EDWARDS_A, -one);
+    assert_eq!(EdwardsParameters::COFACTOR, &[4]);
+    assert_eq!(d.legendre(), LegendreSymbol::QuadraticNonResidue);
+    assert_eq!((one + d).legendre(), LegendreSymbol::QuadraticNonResidue);
+    assert_eq!(EdwardsParameters::SQRT_MINUS_ONE.square(), -one);
+    // `(1 + i)^4 = -4`, the value of the character's argument at the identity.
+    assert_eq!((one + EdwardsParameters::SQRT_MINUS_ONE).pow([4u64]), -Fq::from(4u8));
+    assert!(Fr::characteristic()[0] & 1 == 1);
+    // `4 * MODULUS_MINUS_ONE_DIV_FOUR + 1 = q`.
+    // The exponent has the four limbs of the modulus.
+    let exponent: &[u64; 4] = EdwardsParameters::MODULUS_MINUS_ONE_DIV_FOUR.try_into().unwrap();
+    let mut q = [0u64; 4];
+    let mut carry = 1u64;
+    for (limb, exponent_limb) in q.iter_mut().zip(exponent) {
+        *limb = (exponent_limb << 2) | carry;
+        carry = exponent_limb >> 62;
+    }
+    assert_eq!(carry, 0);
+    assert_eq!(&q, Fq::characteristic());
+}
+
+/// Checks the character and the decode against plain double-and-add over every outcome, on the x-coordinates of:
+/// the torsion points, `x = 1`, `x = -1`, random field elements, and subgroup points plus each torsion point.
+#[test]
+fn test_subgroup_point_from_x_coordinate_matches_double_and_add() {
+    const ITERATIONS: usize = 1000;
+    let mut rng = TestRng::default();
+    let i = EdwardsParameters::SQRT_MINUS_ONE;
+
+    let in_subgroup = |point: &EdwardsAffine| {
+        let mut acc = EdwardsProjective::zero();
+        for bit in BitIteratorBE::new(Fr::characteristic()) {
+            acc.double_in_place();
+            if bit {
+                acc.add_assign_mixed(point);
+            }
+        }
+        acc.is_zero()
+    };
+
+    // The counts of `[no y, character 0, character i or -i, character 1, character -1]`.
+    let mut outcomes = [0usize; 5];
+    let mut check = |x: Fq| {
+        let decoded = EdwardsAffine::subgroup_point_from_x_coordinate(x);
+        let Some((p1, p2)) = EdwardsAffine::pair_from_x_coordinate(x) else {
+            assert_eq!(decoded, None);
+            outcomes[0] += 1;
+            return;
+        };
+        assert!(p1.is_on_curve() && p2.is_on_curve());
+        assert!(p1.y <= p2.y);
+        let (p1_in, p2_in) = (in_subgroup(&p1), in_subgroup(&p2));
+        let character = p1.quartic_character();
+        if character.is_zero() {
+            assert_eq!(p1.x, i);
+            assert!(!p1_in && !p2_in && decoded.is_none());
+            outcomes[1] += 1;
+        } else if character == i || character == -i {
+            assert!(!p1_in && !p2_in && decoded.is_none());
+            assert_eq!(
+                (Fq::one() - EdwardsParameters::EDWARDS_D * x.square()).legendre(),
+                LegendreSymbol::QuadraticNonResidue
+            );
+            outcomes[2] += 1;
+        } else if character.is_one() {
+            assert!(p1_in && !p2_in);
+            assert_eq!(decoded, Some(p1));
+            outcomes[3] += 1;
+        } else {
+            assert_eq!(character, -Fq::one());
+            assert!(!p1_in && p2_in);
+            assert_eq!(decoded, Some(p2));
+            outcomes[4] += 1;
+        }
+    };
+
+    for x in [Fq::zero(), Fq::one(), -Fq::one(), i, -i] {
+        check(x);
+    }
+    let t4 = EdwardsAffine::from_coordinates_unchecked((i, Fq::zero())).to_projective();
+    let torsion = [EdwardsProjective::zero(), t4.double(), t4, -t4];
+    for _ in 0..ITERATIONS {
+        check(rng.random());
+        let point: EdwardsProjective = rng.random();
+        for torsion in torsion {
+            check((point + torsion).to_affine().x);
+        }
+    }
+    assert!(outcomes.iter().all(|count| *count > 0), "outcomes: {outcomes:?}");
+}
+
+/// Fixes the decode's result at the edge cases of the character.
+#[test]
+fn test_subgroup_point_from_x_coordinate_edge_cases() {
+    let i = EdwardsParameters::SQRT_MINUS_ONE;
+
+    // The candidates at `x = 0` are `(0, 1)`, the identity, and `(0, -1)`, which has order two.
+    let (p1, p2) = EdwardsAffine::pair_from_x_coordinate(Fq::zero()).unwrap();
+    assert_eq!((p1.y, p2.y), (Fq::one(), -Fq::one()));
+    assert_eq!(p1.quartic_character(), Fq::one());
+    assert_eq!(EdwardsAffine::subgroup_point_from_x_coordinate(Fq::zero()), Some(EdwardsAffine::zero()));
+
+    // The only point at `x = i` is `(i, 0)`, where the character is zero.
+    let (p1, p2) = EdwardsAffine::pair_from_x_coordinate(i).unwrap();
+    assert_eq!(p1, p2);
+    assert!(p1.y.is_zero());
+    assert!(p1.quartic_character().is_zero());
+    assert_eq!(EdwardsAffine::subgroup_point_from_x_coordinate(i), None);
+
+    // The only point at `x = -i` is `(-i, 0)`, where the character is `i` or `-i`.
+    let (p1, p2) = EdwardsAffine::pair_from_x_coordinate(-i).unwrap();
+    assert_eq!(p1, p2);
+    assert_eq!(p1.quartic_character().square(), -Fq::one());
+    assert_eq!(EdwardsAffine::subgroup_point_from_x_coordinate(-i), None);
+
+    // `x = 1` and `x = -1` give `y^2 = 2 / (1 - d)`, which is not a square on this curve.
+    assert!(EdwardsAffine::pair_from_x_coordinate(Fq::one()).is_none());
+    assert!(EdwardsAffine::pair_from_x_coordinate(-Fq::one()).is_none());
+
+    // `1 - d * x^2` has no root, because `d` is a non-square. The unwrap holds because `d` is non-zero.
+    assert!(EdwardsParameters::EDWARDS_D.inverse().unwrap().sqrt().is_none());
 }
 
 #[test]
