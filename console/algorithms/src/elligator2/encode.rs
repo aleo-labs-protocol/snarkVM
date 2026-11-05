@@ -23,12 +23,13 @@ impl<E: Environment> Elligator2<E> {
 
         // Cofactor clear the twisted Edwards element (x, y).
         let group = encoding.mul_by_cofactor().normalized();
-        ensure!(group.to_affine().is_on_curve(), "Elligator2 failed: element is not on curve");
+        let affine = group.to_affine();
+        ensure!(affine.is_on_curve(), "Elligator2 failed: element is not on curve");
         // The curve order is `COFACTOR * r` with `r` prime, so clearing the cofactor of a point on the curve
         // always lands in the prime-order subgroup. Only debug builds check it
         // (see `test_encode_is_in_prime_order_subgroup`).
         debug_assert!(
-            group.to_affine().is_in_correct_subgroup_assuming_on_curve(),
+            affine.is_in_correct_subgroup_assuming_on_curve(),
             "Elligator2 failed: element in incorrect subgroup"
         );
 

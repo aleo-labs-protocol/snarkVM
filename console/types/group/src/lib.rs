@@ -184,7 +184,7 @@ mod tests {
         // A group element plus the point of order two.
         for _ in 0..ITERATIONS {
             let element = Group::<CurrentEnvironment>::rand(&mut rng);
-            let point = element.to_affine().to_projective().add_mixed(&order_two).to_affine();
+            let point = element.add_mixed(&order_two).to_affine();
             assert!(point.is_on_curve());
             assert!(Group::<CurrentEnvironment>::try_new(point).is_err());
         }

@@ -98,11 +98,10 @@ mod tests {
 
     #[test]
     fn test_display() {
-        /// Attempts to construct a group from the given element,
-        /// format it in display mode, and recover a group from it.
-        fn check_display<E: Environment>(element: E::Affine) {
-            let candidate = Group::<E>::new_unchecked(element);
-            assert_eq!(format!("{}{}", element.to_x_coordinate(), Group::<E>::type_name()), format!("{candidate}"));
+        /// Attempts to format a group in display mode, and recover a group from it.
+        fn check_display<E: Environment>(candidate: Group<E>) {
+            let x_coordinate = candidate.to_affine().to_x_coordinate();
+            assert_eq!(format!("{}{}", x_coordinate, Group::<E>::type_name()), format!("{candidate}"));
 
             let candidate_recovered = Group::<E>::from_str(&format!("{candidate}")).unwrap();
             assert_eq!(candidate, candidate_recovered);
@@ -111,17 +110,15 @@ mod tests {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            let element = Uniform::rand(&mut rng);
+            let candidate = Group::<CurrentEnvironment>::rand(&mut rng);
 
-            check_display::<CurrentEnvironment>(element);
+            check_display(candidate);
         }
     }
 
     #[test]
     fn test_display_zero() {
-        let zero = <CurrentEnvironment as Environment>::Affine::zero();
-
-        let candidate = Group::<CurrentEnvironment>::new_unchecked(zero);
+        let candidate = Group::<CurrentEnvironment>::zero();
         assert_eq!("0group", &format!("{candidate}"));
     }
 }

@@ -46,7 +46,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample a new group.
-            let expected = Group::<CurrentEnvironment>::new_unchecked(Uniform::rand(&mut rng));
+            let expected = Group::<CurrentEnvironment>::rand(&mut rng);
 
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
