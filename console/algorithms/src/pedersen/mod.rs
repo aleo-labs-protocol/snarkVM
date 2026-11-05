@@ -44,7 +44,7 @@ impl<E: Environment, const NUM_BITS: u8> Pedersen<E, NUM_BITS> {
         // Construct the window with the base.
         let mut base_window = vec![Group::<E>::zero(); NUM_BITS as usize];
         {
-            // Construct an indexed message to attempt to sample a base.
+            // Compute the base.
             let mut base_power = Blake2Xs::hash_to_generator::<E>(&format!("Aleo.Pedersen.Base.{message}"));
             for base in base_window.iter_mut().take(NUM_BITS as usize) {
                 *base = base_power;

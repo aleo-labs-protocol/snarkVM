@@ -37,17 +37,20 @@ use std::{
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Affine<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
     pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
     pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "use `is_zero`")]
     pub infinity: bool,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    #[deprecated(since = "4.13.0", note = "use `AffineCurve::from_coordinates`, which checks the point")]
+    #[deprecated(
+        since = "4.13.0",
+        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
+    )]
     pub const fn new(x: P::BaseField, y: P::BaseField, infinity: bool) -> Self {
         Self { x, y, infinity }
     }

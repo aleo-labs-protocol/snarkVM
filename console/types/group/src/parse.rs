@@ -98,10 +98,12 @@ mod tests {
 
     #[test]
     fn test_display() {
-        /// Attempts to format a group in display mode, and recover a group from it.
-        fn check_display<E: Environment>(candidate: Group<E>) {
-            let x_coordinate = candidate.to_affine().to_x_coordinate();
-            assert_eq!(format!("{}{}", x_coordinate, Group::<E>::type_name()), format!("{candidate}"));
+        /// Attempts to construct a group from the given element,
+        /// format it in display mode, and recover a group from it.
+        fn check_display<E: Environment>(element: E::Affine) {
+            // `Uniform::rand` clears the cofactor, so this cannot fail.
+            let candidate = Group::<E>::try_new(element).unwrap();
+            assert_eq!(format!("{}{}", element.to_x_coordinate(), Group::<E>::type_name()), format!("{candidate}"));
 
             let candidate_recovered = Group::<E>::from_str(&format!("{candidate}")).unwrap();
             assert_eq!(candidate, candidate_recovered);
@@ -110,9 +112,9 @@ mod tests {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            let candidate = Group::<CurrentEnvironment>::rand(&mut rng);
+            let element = Uniform::rand(&mut rng);
 
-            check_display(candidate);
+            check_display::<CurrentEnvironment>(element);
         }
     }
 

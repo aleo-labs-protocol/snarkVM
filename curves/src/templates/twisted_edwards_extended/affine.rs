@@ -36,17 +36,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Affine<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
     pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
     pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "multiply the x and y coordinates")]
     pub t: P::BaseField,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    #[deprecated(since = "4.13.0", note = "use `AffineCurve::from_coordinates`, which checks the point")]
+    #[deprecated(
+        since = "4.13.0",
+        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
+    )]
     pub fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
         Self { x, y, t }
     }

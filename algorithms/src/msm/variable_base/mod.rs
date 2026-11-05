@@ -248,15 +248,16 @@ mod tests {
     /// An MSM of no points returns zero with every coordinate written.
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     #[test]
+    #[allow(deprecated)]
     fn test_msm_cuda_of_no_points_is_zero() {
         use snarkvm_curves::bls12_377::G1Projective;
         use snarkvm_fields::Zero;
-        use snarkvm_utilities::{BigInteger256, ToBytes};
+        use snarkvm_utilities::BigInteger256;
 
         let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&[], &[])
             .unwrap_or_else(|e| panic!("{e}"));
         let zero = G1Projective::zero();
-        assert_eq!(sum.to_bytes_le().unwrap(), zero.to_bytes_le().unwrap());
+        assert_eq!((sum.x, sum.y, sum.z), (zero.x, zero.y, zero.z));
     }
 
     /// blst's routines run the ADX code only if its CPUID constructor is in the

@@ -34,13 +34,13 @@ use std::io::{Read, Result as IoResult, Write};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Projective<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
     pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
     pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
     pub t: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "will become private")]
+    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
     pub z: P::BaseField,
 }
 

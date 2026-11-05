@@ -70,7 +70,10 @@ impl<E: Environment> Group<E> {
     pub const MONTGOMERY_B: Field<E> = Field::<E>::new(E::MONTGOMERY_B);
 
     /// Initializes a new group without checking that `group` is a group element.
-    #[deprecated(since = "4.13.0", note = "use `Group::try_new`, which checks the point")]
+    #[deprecated(
+        since = "4.13.0",
+        note = "use `Group::try_new`, which rejects invalid points; `from_xy_coordinates_unchecked` skips the check"
+    )]
     pub fn new(group: E::Affine) -> Self {
         Self::new_unchecked(group)
     }
@@ -165,8 +168,7 @@ mod tests {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            let x = BaseField::rand(&mut rng);
-            let point = Affine::from_coordinates_unchecked((x, BaseField::zero()));
+            let point = Affine::from_coordinates_unchecked((BaseField::rand(&mut rng), BaseField::rand(&mut rng)));
             assert!(!point.is_on_curve());
             assert!(Group::<CurrentEnvironment>::try_new(point).is_err());
         }
@@ -200,6 +202,8 @@ mod tests {
             let element = Group::<CurrentEnvironment>::rand(&mut rng).double();
             assert_eq!(element, element.normalized());
             assert_eq!(element.to_affine(), element.normalized().to_affine());
+            assert!(!element.is_normalized());
+            assert!(element.normalized().is_normalized());
         }
     }
 }
