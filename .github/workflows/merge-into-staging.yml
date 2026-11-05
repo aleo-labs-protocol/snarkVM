@@ -4,7 +4,7 @@ name: Merge release branches into staging
 # that staging lacks. These pull requests must be merged with a merge commit.
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '17 2,14 * * *'
   workflow_dispatch:
 
 permissions: {}
