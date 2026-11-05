@@ -29,3 +29,73 @@ impl<E: Environment> Group<E> {
         bail!("Failed to recover an affine group from an x-coordinate of {x_coordinate}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network_environment::Console;
+
+    type CurrentEnvironment = Console;
+    type Affine = <CurrentEnvironment as Environment>::Affine;
+    type Projective = <CurrentEnvironment as Environment>::Projective;
+    type BaseField = <CurrentEnvironment as Environment>::Field;
+
+    const ITERATIONS: usize = 1000;
+
+    /// Tries `p2`, then `p1`, each with a plain double-and-add subgroup check.
+    fn reference_from_x_coordinate(x: Field<CurrentEnvironment>) -> Option<Group<CurrentEnvironment>> {
+        let (p1, p2) = Affine::pair_from_x_coordinate(*x)?;
+        [p2, p1]
+            .into_iter()
+            .find(|point| {
+                let mut acc = Projective::zero();
+                for bit in <CurrentEnvironment as Environment>::Scalar::modulus().to_bits_be() {
+                    acc.double_in_place();
+                    if bit {
+                        acc.add_assign_mixed(point);
+                    }
+                }
+                acc.is_zero()
+            })
+            .map(Group::new)
+    }
+
+    /// Asserts that the decoders agree on `x`, and counts the outcome as
+    /// `[no y, no point in the subgroup, returned p2, returned p1]`.
+    fn check(x: BaseField, outcomes: &mut [usize; 4]) {
+        let x = Field::new(x);
+        let expected = reference_from_x_coordinate(x);
+        assert_eq!(Group::from_x_coordinate(x).ok(), expected, "x = {x}");
+        let outcome = match (Affine::pair_from_x_coordinate(*x), expected) {
+            (None, _) => 0,
+            (Some(_), None) => 1,
+            (Some((_, p2)), Some(group)) if (*group).to_affine() == p2 => 2,
+            (Some(_), Some(_)) => 3,
+        };
+        outcomes[outcome] += 1;
+    }
+
+    #[test]
+    fn test_from_x_coordinate_matches_reference() {
+        let mut rng = TestRng::default();
+        let mut outcomes = [0; 4];
+
+        // `-1` is a square in the base field, so `(i, 0)` exists. It has order four, and its double is `(0, -1)`.
+        // The unwrap cannot fail for the same reason.
+        let t4 = Affine::from_y_coordinate(BaseField::zero(), false).unwrap().to_projective();
+        let t2 = t4.double();
+        assert_eq!(t2, Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one())));
+
+        for x in [BaseField::zero(), BaseField::one(), -BaseField::one(), t4.to_affine().x, -t4.to_affine().x] {
+            check(x, &mut outcomes);
+        }
+        for _ in 0..ITERATIONS {
+            check(Uniform::rand(&mut rng), &mut outcomes);
+            let point = *Group::<CurrentEnvironment>::rand(&mut rng);
+            for torsion in [Projective::zero(), t2, t4, -t4] {
+                check((point + torsion).to_affine().x, &mut outcomes);
+            }
+        }
+        assert!(outcomes.iter().all(|count| *count > 0), "outcomes: {outcomes:?}");
+    }
+}
