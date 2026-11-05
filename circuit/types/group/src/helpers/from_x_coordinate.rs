@@ -231,7 +231,8 @@ mod tests {
         }
     }
 
-    /// Programs inject public and private inputs as `Mode::Private`. A constant input halts on all of these values.
+    /// Programs inject function inputs as `Mode::Private`, and cannot declare constant function inputs. A constant
+    /// value, such as a literal, halts on all of these values.
     #[test]
     fn test_from_x_coordinate_off_curve_witness_panics() {
         for (values, panics) in [(PANICKING_X.as_slice(), true), (NON_PANICKING_X.as_slice(), false)] {
