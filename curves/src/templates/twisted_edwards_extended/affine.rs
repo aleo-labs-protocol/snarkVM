@@ -60,6 +60,23 @@ impl<P: Parameters> Zero for Affine<P> {
     }
 }
 
+impl<P: Parameters> Affine<P> {
+    /// Returns `F = N^((q - 1) / 4)`, where `N = ((x - i) * (1 + y))^2 * (1 - d * x^2)` and `i^2 = -1`.
+    ///
+    /// On a curve with `a = -1`, a non-square `d`, and `4r` points with `r` odd, `F` is the reduced 4-Tate pairing
+    /// `t(T4, P)` with `T4 = (i, 0)`, because `N / (-4 * x^4)` has divisor `4(T4) - 4(O)`, and `-4 = (1 + i)^4` and
+    /// `x^4` are fourth powers. So `F = 1` iff the point is in the prime order subgroup
+    /// (Koshelev, <https://eprint.iacr.org/2022/037>, Lemma 1).
+    /// The exceptions are `(0, -1)` and `T4`, where `F` is zero. Neither point is in the subgroup.
+    ///
+    /// `F` says nothing about a point off the curve, so it doesn't replace a subgroup check on an unvalidated point.
+    pub(crate) fn quartic_character(&self) -> P::BaseField {
+        let one = P::BaseField::one();
+        let numerator = (self.x - P::SQRT_MINUS_ONE) * (one + self.y);
+        (numerator.square() * (one - P::EDWARDS_D * self.x.square())).pow(P::MODULUS_MINUS_ONE_DIV_FOUR)
+    }
+}
+
 impl<P: Parameters> PartialEq<Projective<P>> for Affine<P> {
     fn eq(&self, other: &Projective<P>) -> bool {
         other.eq(self)
@@ -203,6 +220,20 @@ impl<P: Parameters> AffineCurve for Affine<P> {
 
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
         self.mul_bits(BitIteratorBE::new(P::ScalarField::characteristic())).is_zero()
+    }
+
+    fn subgroup_point_from_x_coordinate(x: Self::BaseField) -> Option<Self> {
+        let (p1, p2) = Self::pair_from_x_coordinate(x)?;
+        // `p2 = -(p1 + T2)` with `T2 = (0, -1)`, and `t(T4, T2) = -1`, so `t(T4, p2) = -t(T4, p1)^-1`.
+        // One character therefore decides both candidates. `p1` is never `T2`, because it holds the smaller root.
+        let character = p1.quartic_character();
+        if character.is_one() {
+            Some(p1)
+        } else if (-character).is_one() {
+            Some(p2)
+        } else {
+            None
+        }
     }
 
     fn to_x_coordinate(&self) -> Self::BaseField {
