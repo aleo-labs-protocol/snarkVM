@@ -208,7 +208,18 @@ where
     fn sqrt(&self) -> Option<Self> {
         use crate::LegendreSymbol::*;
         if self.c1.is_zero() {
-            return self.c0.sqrt().map(|c0| Self::new(c0, P::Fp::zero()));
+            // Every element of Fp is a square in Fp2. A root of c0 is either
+            // (sqrt(c0), 0) or (0, sqrt(c0 / NONRESIDUE)), since u^2 = NONRESIDUE.
+            return Some(match self.c0.sqrt() {
+                Some(c0) => Self::new(c0, P::Fp::zero()),
+                None => {
+                    // NONRESIDUE is a QNR in Fp (the curve tests assert this), so c0 / NONRESIDUE is a QR and the
+                    // expect is unreachable.
+                    // TODO: make the inverse of NONRESIDUE a precomputed constant if measurements support it.
+                    let c1 = (self.c0 / P::NONRESIDUE).sqrt().expect("c0 / NONRESIDUE is a QR when c0 is a QNR");
+                    Self::new(P::Fp::zero(), c1)
+                }
+            });
         }
         match self.legendre() {
             // Square root based on the complex method. See

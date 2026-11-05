@@ -17,6 +17,7 @@ use crate::{Mode, *};
 use snarkvm_fields::PrimeField;
 
 use core::{
+    cmp::Ordering,
     fmt,
     ops::{Add, AddAssign, Mul, Neg, Sub},
 };
@@ -357,23 +358,42 @@ impl<F: PrimeField> AddAssign<&LinearCombination<F>> for LinearCombination<F> {
             // Add the constant value from `other` to `self`.
             self.constant += other.constant;
 
-            // Add the terms from `other` to the terms of `self`.
+            debug_assert!(other.terms.windows(2).all(|pair| pair[0].0 < pair[1].0), "Unsorted linear combination");
+
+            // Add the terms from `other` to the terms of `self`. Both lists are sorted, so every term of
+            // `self` before `cursor` is below the next term of `other`.
+            let mut cursor = 0;
             for (variable, coefficient) in other.terms.iter() {
                 match variable.is_constant() {
                     true => panic!("Malformed linear combination found"),
                     false => {
-                        match self.terms.binary_search_by(|(v, _)| v.cmp(variable)) {
+                        let position = match self.terms.get(cursor).map(|(v, _)| v.cmp(variable)) {
+                            None | Some(Ordering::Greater) => Err(cursor),
+                            Some(Ordering::Equal) => Ok(cursor),
+                            Some(Ordering::Less) => {
+                                let start = cursor + 1;
+                                match self.terms[start..].binary_search_by(|(v, _)| v.cmp(variable)) {
+                                    Ok(offset) => Ok(start + offset),
+                                    Err(offset) => Err(start + offset),
+                                }
+                            }
+                        };
+                        match position {
                             Ok(idx) => {
                                 // Add the coefficient to the existing coefficient for this term.
                                 self.terms[idx].1 += *coefficient;
                                 // If the coefficient of the term is now zero, remove the entry.
                                 if self.terms[idx].1.is_zero() {
                                     self.terms.remove(idx);
+                                    cursor = idx;
+                                } else {
+                                    cursor = idx + 1;
                                 }
                             }
                             Err(idx) => {
                                 // Insert the variable and coefficient as a new term.
                                 self.terms.insert(idx, (variable.clone(), *coefficient));
+                                cursor = idx + 1;
                             }
                         }
                     }
@@ -646,6 +666,74 @@ mod tests {
 
             let candidate = one_public + LinearCombination::one() + one_private - one_private;
             assert_eq!(expected, format!("{candidate:?}"));
+        }
+    }
+
+    #[test]
+    fn test_add_assign_merges_sorted_terms() {
+        type F = <Circuit as Environment>::BaseField;
+
+        let mut variables: Vec<_> = (0..6)
+            .map(|i| Circuit::new_variable(if i % 2 == 0 { Mode::Public } else { Mode::Private }, F::one()))
+            .collect();
+        variables.sort();
+
+        // Selects the variables in `mask`, repeating every other one when `repeat` is set.
+        let select = |mask: usize, repeat: bool| {
+            let mut selected = Vec::new();
+            for (i, variable) in variables.iter().enumerate().filter(|(i, _)| mask >> i & 1 == 1) {
+                selected.push(variable.clone());
+                if repeat && i % 2 == 1 {
+                    selected.push(variable.clone());
+                }
+            }
+            LinearCombination::from(selected.as_slice())
+        };
+
+        let (zero, one) = (F::zero(), F::one());
+        let mut cases = Vec::new();
+        for negate in [false, true] {
+            for repeat in [false, true] {
+                for self_constant in [zero, one] {
+                    for other_constant in [zero, one] {
+                        cases.push((negate, repeat, self_constant, other_constant));
+                    }
+                }
+            }
+        }
+
+        for self_mask in 0..1usize << variables.len() {
+            for other_mask in 0..1usize << variables.len() {
+                for &(negate, repeat, self_constant, other_constant) in &cases {
+                    let mut other = select(other_mask, repeat);
+                    other.constant += other_constant;
+                    other.value += other_constant;
+                    let other = if negate { -other } else { other };
+                    let mut candidate = select(self_mask, false);
+                    candidate.constant += self_constant;
+                    candidate.value += self_constant;
+                    candidate += &other;
+
+                    let expected_constant = self_constant + if negate { -other_constant } else { other_constant };
+                    let mut expected = Vec::new();
+                    let mut expected_value = expected_constant;
+                    for (i, variable) in variables.iter().enumerate() {
+                        let mut coefficient = if self_mask >> i & 1 == 1 { F::one() } else { F::zero() };
+                        if other_mask >> i & 1 == 1 {
+                            let scale = if repeat && i % 2 == 1 { F::one() + F::one() } else { F::one() };
+                            coefficient += if negate { -scale } else { scale };
+                        }
+                        if !coefficient.is_zero() {
+                            expected.push((variable.clone(), coefficient));
+                            expected_value += coefficient;
+                        }
+                    }
+
+                    assert_eq!(expected.as_slice(), candidate.to_terms());
+                    assert_eq!(expected_constant, candidate.to_constant());
+                    assert_eq!(expected_value, candidate.value());
+                }
+            }
         }
     }
 

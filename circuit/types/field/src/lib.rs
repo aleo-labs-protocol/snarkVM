@@ -155,7 +155,7 @@ impl<E: Environment> From<&LinearCombination<E::BaseField>> for Field<E> {
 
 impl<E: Environment> From<Field<E>> for LinearCombination<E::BaseField> {
     fn from(field: Field<E>) -> Self {
-        From::from(&field)
+        field.linear_combination
     }
 }
 
