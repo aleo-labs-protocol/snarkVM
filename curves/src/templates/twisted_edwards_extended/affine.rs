@@ -78,7 +78,9 @@ impl<P: Parameters> Affine<P> {
     ///
     /// `F` says nothing about a point off the curve, so it doesn't replace a subgroup check on an unvalidated point.
     pub(crate) fn quartic_character(&self) -> P::BaseField {
+        const { assert!(matches!(P::COFACTOR, [4]), "`quartic_character` requires a cofactor of 4") };
         let one = P::BaseField::one();
+        debug_assert!(P::EDWARDS_A == -one, "`quartic_character` requires `a = -1`");
         let numerator = (self.x - P::SQRT_MINUS_ONE) * (one + self.y);
         (numerator.square() * (one - P::EDWARDS_D * self.x.square())).pow(P::MODULUS_MINUS_ONE_DIV_FOUR)
     }
