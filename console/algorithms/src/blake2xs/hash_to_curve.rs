@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_console_types::prelude::AffineCurve;
+use snarkvm_console_types::prelude::{AffineCurve, Environment, Group};
 
 impl Blake2Xs {
     /// Runs hash-to-curve and returns the generator, message, and counter on success.
@@ -33,6 +33,13 @@ impl Blake2Xs {
 
         // Panic with probability 2^-128.
         panic!("Unable to hash to curve on {input}")
+    }
+
+    /// Runs hash-to-curve and returns the generator as a group element.
+    pub fn hash_to_generator<E: Environment>(input: &str) -> Group<E> {
+        let (generator, _, _) = Self::hash_to_curve::<E::Affine>(input);
+        // `hash_to_curve` clears the cofactor, so this cannot fail.
+        Group::try_new(generator).expect("hash_to_curve clears the cofactor")
     }
 
     /// Evaluates **one** round of hash-to-curve and returns a generator on success.
@@ -269,6 +276,7 @@ mod bls12_377_g2 {
 #[cfg(test)]
 mod edwards_bls12 {
     use super::*;
+    use snarkvm_console_types::environment::Console;
     use snarkvm_curves::edwards_bls12::EdwardsAffine;
     use snarkvm_fields::PrimeField;
     use snarkvm_utilities::{BigInteger256, CanonicalSerialize};
@@ -320,5 +328,9 @@ mod edwards_bls12 {
 
         // Check that EdwardsAffine matches.
         assert_eq!(EdwardsAffine::prime_subgroup_generator(), group);
+
+        // Check that the group element matches.
+        let generator = Blake2Xs::hash_to_generator::<Console>("Aleo Edwards BLS12");
+        assert_eq!(generator, Group::generator());
     }
 }

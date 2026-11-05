@@ -106,11 +106,9 @@ impl TestnetV0 {
     /// Initializes a new instance of group bases from a given input domain message.
     fn new_bases(message: &str) -> Vec<Group<Self>> {
         // Hash the given message to a point on the curve, to initialize the starting base.
-        let (base, _, _) = Blake2Xs::hash_to_curve::<<Self as Environment>::Affine>(message);
+        let mut g = Blake2Xs::hash_to_generator::<Self>(message);
 
         // Compute the bases up to the size of the scalar field (in bits).
-        // `hash_to_curve` clears the cofactor, so this cannot fail.
-        let mut g = Group::<Self>::try_new(base).expect("hash_to_curve clears the cofactor");
         let mut g_bases = Vec::with_capacity(Scalar::<Self>::size_in_bits());
         for _ in 0..Scalar::<Self>::size_in_bits() {
             g_bases.push(g);
