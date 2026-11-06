@@ -75,7 +75,7 @@ impl<P: Parameters> Affine<P> {
         let one = P::BaseField::one();
         debug_assert!(P::EDWARDS_A == -one, "`quartic_character` requires `a = -1`");
         let numerator = (self.x - P::SQRT_MINUS_ONE) * (one + self.y);
-        (numerator.square() * (one - P::EDWARDS_D * self.x.square())).pow(P::MODULUS_MINUS_ONE_DIV_FOUR)
+        P::modulus_minus_one_div_four_schedule().pow(&(numerator.square() * (one - P::EDWARDS_D * self.x.square())))
     }
 }
 
