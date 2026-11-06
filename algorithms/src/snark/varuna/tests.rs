@@ -1410,6 +1410,88 @@ mod varuna_test_vectors {
     }
 }
 
+mod unsatisfied_assignment {
+    use crate::{
+        crypto_hash::PoseidonSponge,
+        r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError},
+        snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK, VarunaVersion},
+        traits::{AlgebraicSponge, SNARK},
+    };
+    use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    use snarkvm_fields::{Field, One};
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+
+    type FS = PoseidonSponge<Fq, 2, 1>;
+    type Inst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
+
+    const NUM_CONSTRAINTS: usize = 96;
+    const NUM_VARIABLES: usize = 64;
+    /// The constraint domain's size, which holds these rows and the indexer's
+    /// hiding constraint.
+    const CONSTRAINT_DOMAIN_SIZE: usize = 128;
+
+    /// Enforces `a * b = c` on every row but `rows`, and `a * b = other` on
+    /// those, so `other` alone decides whether those rows of the assignment
+    /// fail.
+    struct SomeRows<F: Field> {
+        a: F,
+        b: F,
+        other: F,
+        rows: &'static [usize],
+    }
+
+    impl<F: Field> ConstraintSynthesizer<F> for SomeRows<F> {
+        fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+            let a = cs.alloc(|| "a", || Ok(self.a))?;
+            let b = cs.alloc(|| "b", || Ok(self.b))?;
+            let c = cs.alloc(|| "c", || Ok(self.a * self.b))?;
+            let other = cs.alloc(|| "other", || Ok(self.other))?;
+            for i in 5..NUM_VARIABLES {
+                cs.alloc(|| format!("padding {i}"), || Ok(self.a))?;
+            }
+            for i in 0..NUM_CONSTRAINTS {
+                let output = if self.rows.contains(&i) { other } else { c };
+                cs.enforce(|| format!("row {i}"), |lc| lc + a, |lc| lc + b, |lc| lc + output);
+            }
+            Ok(())
+        }
+    }
+
+    fn assert_failing_rows_make_the_prover_return_an_error(rows: &'static [usize]) {
+        let rng = &mut TestRng::default();
+        let max_degree =
+            AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_CONSTRAINTS)
+                .expect("the test circuit has a max degree");
+        let srs = Inst::universal_setup(max_degree).expect("the SRS for the test circuit");
+        let prover = &srs.to_universal_prover().expect("a prover from the SRS");
+        let fs = FS::sample_parameters();
+
+        let (a, b) = (Fr::rand(rng), Fr::rand(rng));
+        let satisfied = SomeRows { a, b, other: a * b, rows };
+        let unsatisfied = SomeRows { a, b, other: a * b + Fr::one(), rows };
+        let (pk, _) = Inst::circuit_setup(&srs, &satisfied).expect("the keys for the test circuit");
+        assert_eq!(pk.circuit.constraint_domain_size().expect("the circuit's domain"), CONSTRAINT_DOMAIN_SIZE);
+
+        for version in [VarunaVersion::V2, VarunaVersion::V3] {
+            Inst::prove(prover, &fs, &pk, version, &satisfied, rng).expect("a satisfied assignment proves");
+            assert!(Inst::prove(prover, &fs, &pk, version, &unsatisfied, rng).is_err());
+        }
+    }
+
+    #[test]
+    fn one_failing_row_makes_the_prover_return_an_error() {
+        assert_failing_rows_make_the_prover_return_an_error(&[NUM_CONSTRAINTS - 1]);
+    }
+
+    /// The rows are half the constraint domain apart, so equal errors on them
+    /// cancel in the top coefficient of the interpolated error. The quotient's
+    /// check of that coefficient does not see them.
+    #[test]
+    fn failing_rows_that_cancel_in_the_top_coefficient_make_the_prover_return_an_error() {
+        assert_failing_rows_make_the_prover_return_an_error(&[0, CONSTRAINT_DOMAIN_SIZE / 2]);
+    }
+}
+
 /// A proof, pinned by its hash, so the device and the host must agree on it.
 ///
 /// This checks the whole pipeline's output rather than one kernel. The circuit
