@@ -106,6 +106,16 @@ impl<F: PrimeField, SM: SNARKMode> PartialOrd for Circuit<F, SM> {
     }
 }
 
+#[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+impl<F: PrimeField, SM: SNARKMode> snarkvm_algorithms_cuda::resident_evals::Evals for Circuit<F, SM> {
+    fn evals(&self) -> [[(*const u8, usize); 3]; 3] {
+        [&self.a_arith, &self.b_arith, &self.c_arith].map(|m| {
+            [&m.row, &m.col, &m.row_col_val]
+                .map(|e| (e.evaluations.as_ptr() as *const u8, size_of_val(&e.evaluations[..])))
+        })
+    }
+}
+
 impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
     pub fn hash(
         index_info: &CircuitInfo,
