@@ -35,10 +35,14 @@ use anyhow::{Result, anyhow, bail};
 pub enum StorageVersion {
     /// No schema record, or a database stamped by the build that introduced the record.
     V0 = 0,
+    /// Adds the block metadata map, which holds the authority-pruning marker. A store without the
+    /// marker is unpruned, so the upgrade from `V0` is the stamp alone. `V0` builds refuse this
+    /// version; builds from before the version record open a pruned store without noticing.
+    V1 = 1,
 }
 
 /// The storage schema version this build writes and understands.
-pub const STORAGE_VERSION: StorageVersion = StorageVersion::V0;
+pub const STORAGE_VERSION: StorageVersion = StorageVersion::V1;
 
 /// The well-known keys of the storage metadata map.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +57,7 @@ impl StorageVersion {
     fn from_u32(version: u32) -> Result<Self> {
         match version {
             0 => Ok(Self::V0),
+            1 => Ok(Self::V1),
             version => bail!("Unknown storage schema version {version}"),
         }
     }
@@ -90,9 +95,19 @@ fn read_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<u32> 
     }
 }
 
-/// Reads the storage schema version. A missing record is [`StorageVersion::V0`].
+/// Reads the storage schema version. A missing record is [`StorageVersion::V0`], and a version newer
+/// than this build is an [`IncompatibleStore`](crate::IncompatibleStore) error.
 pub(crate) fn get_storage_version(database: &rocksdb::DB, network_id: u16) -> Result<StorageVersion> {
-    StorageVersion::from_u32(read_storage_version(database, network_id)?)
+    let version = read_storage_version(database, network_id)?;
+    if version > STORAGE_VERSION as u32 {
+        return Err(crate::IncompatibleStore(format!(
+            "This ledger was written by a newer version of snarkVM (storage schema v{version}; this build understands \
+             v{}). Upgrade snarkVM, or resync from genesis.",
+            STORAGE_VERSION as u32,
+        ))
+        .into());
+    }
+    StorageVersion::from_u32(version)
 }
 
 /// Writes the storage schema version.
@@ -102,28 +117,17 @@ pub(crate) fn set_storage_version(database: &rocksdb::DB, network_id: u16, versi
 
 /// Brings `database` up to [`STORAGE_VERSION`].
 ///
-/// A version newer than this build is an error. `V0` is written when the record is absent, which
-/// is the state of every database created before the record existed and of a database this build
-/// has just created.
+/// A version newer than this build is an error. A database without a record is `V0`, which is the
+/// state of every database created before the record existed and of a database this build has
+/// just created; it is brought forward like any older version.
 pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result<()> {
-    let version = read_storage_version(database, network_id)?;
-    if version > STORAGE_VERSION as u32 {
-        bail!(
-            "This ledger was written by a newer version of snarkVM (storage schema v{version}; this build understands \
-             v{}). Upgrade snarkVM, or resync from genesis.",
-            STORAGE_VERSION as u32,
-        );
+    // One arm per version, so a new variant does not compile until its migration is decided.
+    match get_storage_version(database, network_id)? {
+        // `V0` to `V1` adds only the block metadata map, which an unpruned store leaves empty, so
+        // there is nothing to rewrite before the stamp.
+        StorageVersion::V0 => set_storage_version(database, network_id, StorageVersion::V1),
+        StorageVersion::V1 => Ok(()),
     }
-    let version = get_storage_version(database, network_id)?;
-    if version < STORAGE_VERSION {
-        bail!("Storage schema v{} has no migration to v{}", version as u32, STORAGE_VERSION as u32);
-    }
-    // Stamp a database that has not recorded a version yet. The stamp is `V0`, matching the
-    // implicit version of an absent record, so a second open observes the same version.
-    if database.get(metadata_key(network_id, MetadataKey::StorageVersion))?.is_none() {
-        set_storage_version(database, network_id, StorageVersion::V0)?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -136,21 +140,40 @@ mod tests {
     const NETWORK_ID: u16 = 0;
 
     #[test]
-    fn test_fresh_database_is_stamped_v0() {
+    fn test_fresh_database_is_stamped_current() {
         let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
-        assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), StorageVersion::V0);
-        assert!(db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().is_some());
+        assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), STORAGE_VERSION);
+        let raw = db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().unwrap();
+        assert_eq!(raw, (STORAGE_VERSION as u32).to_le_bytes());
     }
 
     #[test]
+    fn test_v0_database_is_upgraded() {
+        let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
+        // A database stamped `V0` by the build that introduced the record.
+        db.put(metadata_key(NETWORK_ID, MetadataKey::StorageVersion), 0u32.to_le_bytes()).unwrap();
+        migrate_storage(&db, NETWORK_ID).unwrap();
+        assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), StorageVersion::V1);
+        // A database from before the record existed.
+        db.delete(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap();
+        migrate_storage(&db, NETWORK_ID).unwrap();
+        assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), StorageVersion::V1);
+    }
+
+    /// A build that predates `V1` takes this path on a `V1` store: the version is newer than it knows.
+    #[test]
     fn test_newer_version_is_refused() {
         let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None)).unwrap();
-        db.put(metadata_key(NETWORK_ID, MetadataKey::StorageVersion), 1u32.to_le_bytes()).unwrap();
-        let error = migrate_storage(&db, NETWORK_ID).unwrap_err().to_string();
-        assert!(error.contains("newer version"), "{error}");
+        let newer = STORAGE_VERSION as u32 + 1;
+        db.put(metadata_key(NETWORK_ID, MetadataKey::StorageVersion), newer.to_le_bytes()).unwrap();
+        let error = migrate_storage(&db, NETWORK_ID).unwrap_err();
+        assert!(error.is::<crate::IncompatibleStore>(), "{error}");
+        assert!(error.to_string().contains("newer version"), "{error}");
+        // A secondary instance only reads the version, and refuses it the same way.
+        assert!(get_storage_version(&db, NETWORK_ID).unwrap_err().is::<crate::IncompatibleStore>());
         // `from_bytes` rejects the unknown version, so the raw record is what remains.
         let raw = db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap().unwrap();
-        assert_eq!(raw, 1u32.to_le_bytes());
+        assert_eq!(raw, newer.to_le_bytes());
     }
 
     #[test]
@@ -180,6 +203,6 @@ mod tests {
         db.delete(metadata_key(NETWORK_ID, MetadataKey::StorageVersion)).unwrap();
         assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), StorageVersion::V0);
         migrate_storage(&db, NETWORK_ID).unwrap();
-        assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), StorageVersion::V0);
+        assert_eq!(get_storage_version(&db, NETWORK_ID).unwrap(), STORAGE_VERSION);
     }
 }

@@ -19,6 +19,8 @@ edition = "2024"
 [features]
 default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
+prune-authority-data = [ ]
+test_authority_retention = [ ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]
@@ -120,6 +122,10 @@ workspace = true
 
 [dev-dependencies.aleo-std]
 workspace = true
+
+[dev-dependencies.snarkvm-ledger-authority]
+workspace = true
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true

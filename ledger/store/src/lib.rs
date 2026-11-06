@@ -37,6 +37,19 @@ pub use transition::*;
 
 use console::prelude::{Result, bail};
 
+/// An error for a store that this build refuses to open but another build can: a pruned store
+/// without `prune-authority-data`, or a newer storage schema. Deleting the store is the wrong fix.
+#[derive(Debug)]
+pub struct IncompatibleStore(pub String);
+
+impl std::fmt::Display for IncompatibleStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for IncompatibleStore {}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FinalizeMode {
     /// Invoke finalize as a real run.
