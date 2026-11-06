@@ -41,7 +41,7 @@ use rand::Rng;
 use std::collections::BTreeMap;
 
 type Sum<F> = F;
-type Lhs<F> = DensePolynomial<F>;
+type Lhs<F> = LabeledPolynomial<F>;
 type Apoly<F> = LabeledPolynomial<F>;
 type Bpoly<F> = LabeledPolynomial<F>;
 type Gpoly<F> = LabeledPolynomial<F>;
@@ -183,19 +183,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             // coefficients. The device rejects a quotient with terms above
             // `q_len`, and the host trims what comes back.
             let q_len = domain - 1;
-            let mut a_v = vec![F::zero(); domain];
-            let mut b_v = vec![F::zero(); domain];
-            let mut g_v = vec![F::zero(); domain - 1];
-            let mut lhs_v = vec![F::zero(); q_len];
             let mut f0 = F::zero();
             let matrix_sumcheck_constants =
                 v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
             let selector_mult = non_zero_domain.size_as_field_element * max_non_zero_domain.size_inv;
             let result = snarkvm_algorithms_cuda::fourth_round_chain(
-                &mut a_v,
-                &mut b_v,
-                &mut g_v,
-                &mut lhs_v,
+                q_len,
                 &mut f0,
                 &row_on_K.evaluations,
                 &col_on_K.evaluations,
@@ -209,26 +202,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 &v_R_i_alpha_v_C_i_beta,
                 &selector_mult,
             );
-            crate::cuda_must_succeed!(result, "fourth_round_chain");
+            let outputs = crate::cuda_must_succeed!(result, "fourth_round_chain");
 
+            // In output order: a, b, g, lhs.
+            let [a_label, b_label, lhs_label] =
+                ["a_poly", "b_poly", "lhs"].map(|p| format!("circuit_{id}_{p}_{label}"));
+            let g_label = witness_label(id, &format!("g_{label}"), 0);
+            let mut info =
+                [(a_label, None), (b_label, None), (g_label, Some(non_zero_domain.size() - 2)), (lhs_label, None)]
+                    .into_iter();
+            // Called once per output, so `info` has one left for each.
+            let mut next = || info.next().unwrap();
             // `from_coefficients_vec` trims, which g needs to pass
-            // `check_degrees_and_bounds` against its degree bound.
-            let g = DensePolynomial::from_coefficients_vec(g_v);
-            let lhs = DensePolynomial::from_coefficients_vec(lhs_v);
-            let g_label = format!("g_{label}");
-            let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
-            let a_poly = LabeledPolynomial::new(
-                format!("circuit_{id}_a_poly_{label}"),
-                DensePolynomial::from_coefficients_vec(a_v),
-                None,
-                None,
-            );
-            let b_poly = LabeledPolynomial::new(
-                format!("circuit_{id}_b_poly_{label}"),
-                DensePolynomial::from_coefficients_vec(b_v),
-                None,
-                None,
-            );
+            // `check_degrees_and_bounds` against its degree bound. The device
+            // reports the trimmed lengths.
+            let [a_poly, b_poly, g, lhs] = match outputs {
+                Ok(kept) => kept.map(|d| {
+                    let (label, bound) = next();
+                    LabeledPolynomial::device_only(label, d, bound)
+                }),
+                Err(host) => host.map(|v| {
+                    let (label, bound) = next();
+                    LabeledPolynomial::new(label, DensePolynomial::from_coefficients_vec(v), bound, None)
+                }),
+            };
             assert!(lhs.degree() <= non_zero_domain.size() - 2);
             assert!(g.degree() <= non_zero_domain.size() - 2);
             return Ok((f0, lhs, g, a_poly, b_poly));
@@ -307,6 +304,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
         let a_poly = LabeledPolynomial::new(format!("circuit_{id}_a_poly_{label}"), a_poly, None, None);
         let b_poly = LabeledPolynomial::new(format!("circuit_{id}_b_poly_{label}"), b_poly, None, None);
+        let lhs = LabeledPolynomial::new(format!("circuit_{id}_lhs_{label}"), lhs, None, None);
 
         assert!(lhs.degree() <= non_zero_domain.size() - 2);
         assert!(g.degree() <= non_zero_domain.size() - 2);
@@ -476,6 +474,27 @@ mod gpu_fourth_round_polys_contract {
 /// `selector_mult` at the call site shows up only as a verification failure.
 #[cfg(all(test, feature = "cuda", target_arch = "x86_64"))]
 mod gpu_fourth_round_chain_contract {
+    /// The chain's outputs on the host and untrimmed: as returned, or
+    /// downloaded from the device and padded with zeros.
+    pub(super) fn host_outputs(
+        out: Result<[snarkvm_algorithms_cuda::DevicePoly; 4], [Vec<Fr>; 4]>,
+        domain: usize,
+        q_len: usize,
+    ) -> [Vec<Fr>; 4] {
+        let kept = match out {
+            Ok(kept) => kept,
+            Err(host) => return host,
+        };
+        let mut sizes = [domain, domain, domain - 1, q_len].into_iter();
+        kept.map(|d| {
+            let mut v = vec![Fr::zero(); d.len()];
+            d.download(&mut v).map_err(|e| e.code).expect("the download runs");
+            // One size per output.
+            v.resize(sizes.next().unwrap(), Fr::zero());
+            v
+        })
+    }
+
     use crate::{
         fft::{DensePolynomial, EvaluationDomain},
         snark::varuna::ahp::selectors::apply_randomized_selector,
@@ -567,16 +586,9 @@ mod gpu_fourth_round_chain_contract {
                 };
             assert!(remainder.is_none(), "asked for no remainder witness");
 
-            let mut got_a = vec![Fr::zero(); domain_size];
-            let mut got_b = vec![Fr::zero(); domain_size];
-            let mut got_g = vec![Fr::zero(); domain_size - 1];
-            let mut got_lhs = vec![Fr::zero(); domain_size - 1];
             let mut got_f0 = Fr::zero();
-            if snarkvm_algorithms_cuda::fourth_round_chain(
-                &mut got_a,
-                &mut got_b,
-                &mut got_g,
-                &mut got_lhs,
+            let Ok(out) = snarkvm_algorithms_cuda::fourth_round_chain(
+                domain_size - 1,
                 &mut got_f0,
                 &row,
                 &col,
@@ -589,12 +601,11 @@ mod gpu_fourth_round_chain_contract {
                 &b_scale,
                 &a_scale,
                 &selector_mult,
-            )
-            .is_err()
-            {
+            ) else {
                 bad.push(format!("lg {lg} len {len}: the chain failed"));
                 continue;
-            }
+            };
+            let [got_a, got_b, got_g, got_lhs] = host_outputs(out, domain_size, domain_size - 1);
 
             // `a` and `b` come back untrimmed and domain-sized on both sides.
             if want_a != got_a {
@@ -649,16 +660,9 @@ mod gpu_fourth_round_chain_contract {
         let a_scale = b_scale * coeff;
 
         let run = |q_len: usize| {
-            let mut a = vec![Fr::zero(); domain_size];
-            let mut b = vec![Fr::zero(); domain_size];
-            let mut g = vec![Fr::zero(); domain_size - 1];
-            let mut lhs = vec![Fr::zero(); q_len];
             let mut f0 = Fr::zero();
             snarkvm_algorithms_cuda::fourth_round_chain(
-                &mut a,
-                &mut b,
-                &mut g,
-                &mut lhs,
+                q_len,
                 &mut f0,
                 &row,
                 &col,
@@ -777,16 +781,9 @@ mod gpu_fourth_round_chain_contract {
             assert!(!h[2 * n - 2].is_zero(), "lg {lg}: the tail witness must be non-zero");
             assert!(h[2 * n - 1].is_zero(), "lg {lg}: nothing above the witness");
 
-            let mut a = vec![Fr::zero(); n];
-            let mut b = vec![Fr::zero(); n];
-            let mut g = vec![Fr::zero(); n - 1];
-            let mut lhs = vec![Fr::zero(); n - 2];
             let mut f0 = Fr::zero();
             let code = snarkvm_algorithms_cuda::fourth_round_chain(
-                &mut a,
-                &mut b,
-                &mut g,
-                &mut lhs,
+                n - 2,
                 &mut f0,
                 &row,
                 &col,
@@ -860,13 +857,9 @@ mod gpu_resident_evals {
         let (alpha, beta, coeff, b_scale, selector_mult) =
             (Fr::rand(rng), Fr::rand(rng), Fr::rand(rng), Fr::rand(rng), Fr::rand(rng));
         let n = 1usize << lg;
-        let (mut a, mut b, mut g, mut lhs, mut f0) =
-            (vec![Fr::zero(); n], vec![Fr::zero(); n], vec![Fr::zero(); n - 1], vec![Fr::zero(); n - 1], Fr::zero());
-        snarkvm_algorithms_cuda::fourth_round_chain(
-            &mut a,
-            &mut b,
-            &mut g,
-            &mut lhs,
+        let mut f0 = Fr::zero();
+        let out = snarkvm_algorithms_cuda::fourth_round_chain(
+            n - 1,
             &mut f0,
             row,
             col,
@@ -882,6 +875,7 @@ mod gpu_resident_evals {
         )
         .map_err(|e| e.code)
         .expect("the chain runs");
+        let [a, b, g, lhs] = super::gpu_fourth_round_chain_contract::host_outputs(out, n, n - 1);
         (a, b, g, lhs, f0)
     }
 
