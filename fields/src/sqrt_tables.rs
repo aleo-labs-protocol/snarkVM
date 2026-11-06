@@ -88,7 +88,10 @@ impl<P: Fp384Parameters> Default for SqrtTables<Fp384<P>> {
 }
 
 impl<F: PrimeField> SqrtTables<F> {
-    fn with_key(key: fn(&F) -> u64) -> Self {
+    /// Computes the tables with `key` as the hash of an element. `key` must be a function of the
+    /// element's value, and must differ between the roots of unity in the look-up table.
+    #[doc(hidden)]
+    pub fn with_key(key: fn(&F) -> u64) -> Self {
         let n = <F as FftField>::FftParameters::TWO_ADICITY;
         assert!(n < 64, "the 2-adicity must be less than 64");
         let g = F::two_adic_root_of_unity();
@@ -212,9 +215,9 @@ impl<F: PrimeField> SqrtTables<F> {
         }
 
         // Multiplying `bases[j]` by the corrections for windows `0..j` leaves `h^(-(t_j << (max_window - bits_j)))`,
-        // where `t_j` holds the bits of window `j`. A non-square has odd `t`; then the last window
-        // multiplies `x` by even powers of `g`, which leaves an element of order `2^n` that is not in
-        // the look-up table.
+        // where `t_j` holds the bits of window `j`. A non-square has odd `t`. Then the corrections
+        // leave bit 0 of `t` in place, and window `j` leaves an element of order `2^end_j`. That element
+        // is not in the look-up table once `end_j` exceeds `max_window`, which holds at the last window.
         let mut digits = [0u64; MAX_WINDOWS];
         let mut t = 0u64;
         for j in 0..k {
@@ -232,6 +235,7 @@ impl<F: PrimeField> SqrtTables<F> {
         for &(start, bits, table) in &self.half_windows {
             root *= self.powers[table][((half_t >> start) & ((1 << bits) - 1)) as usize];
         }
+        debug_assert_eq!(root.square(), *u, "the look-ups accepted a non-square");
         Some(root)
     }
 }
