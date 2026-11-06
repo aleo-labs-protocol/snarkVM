@@ -676,6 +676,68 @@ mod varuna_hiding {
         test_circuit_n_times(num_constraints, num_variables, 100, varuna_version, rng)
     }
 
+    /// A proof with any one commitment of the proof or of the circuit doubled
+    /// is rejected. The verifier's sponge absorbs these commitments, so a
+    /// doubled commitment also changes the later challenges, and this test
+    /// does not show that the batch check's MSMs bind a commitment to its
+    /// terms. `test_batch_check_rejects_a_tampered_commitment` and
+    /// `test_batch_check_terms_matches_batch_check` in `sonic_pc` hold the
+    /// challenges fixed and show that.
+    #[test]
+    fn test_verify_rejects_a_tampered_commitment() {
+        use crate::polycommit::sonic_pc::Commitment;
+        use snarkvm_curves::{AffineCurve, ProjectiveCurve};
+
+        let rng = &mut TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
+        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+        let universal_prover = &universal_srs.to_universal_prover().unwrap();
+        let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
+        let fs_parameters = FS::sample_parameters();
+        let (circuit, public_inputs) = TestCircuit::gen_rand(2, 25, 25, rng);
+        let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let proof =
+            VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, VarunaVersion::V3, &circuit, rng).unwrap();
+        let verify = |index_vk: &CircuitVerifyingKey<Bls12_377>, proof: &_| {
+            VarunaInst::verify(
+                universal_verifier,
+                &fs_parameters,
+                index_vk,
+                VarunaVersion::V3,
+                public_inputs.clone(),
+                proof,
+            )
+            // A doubled commitment leaves the proof well-formed, so `verify` returns `Ok`.
+            .unwrap()
+        };
+        assert!(verify(&index_vk, &proof));
+
+        let double = |c: &mut Commitment<Bls12_377>| c.0 = c.0.to_projective().double().to_affine();
+        let tampers: [fn(&mut crate::snark::varuna::Proof<Bls12_377>) -> Option<&mut Commitment<Bls12_377>>; 9] = [
+            |p| Some(&mut p.commitments.witness_commitments[0].w),
+            |p| p.commitments.mask_poly.as_mut(),
+            |p| Some(&mut p.commitments.h_0),
+            |p| Some(&mut p.commitments.g_1),
+            |p| Some(&mut p.commitments.h_1),
+            |p| Some(&mut p.commitments.g_a_commitments[0]),
+            |p| Some(&mut p.commitments.g_b_commitments[0]),
+            |p| Some(&mut p.commitments.g_c_commitments[0]),
+            |p| Some(&mut p.commitments.h_2),
+        ];
+        for (i, tamper) in tampers.iter().enumerate() {
+            let mut wrong = proof.clone();
+            // The hiding mode commits to a masking polynomial, so every commitment is
+            // present.
+            double(tamper(&mut wrong).unwrap());
+            assert!(!verify(&index_vk, &wrong), "proof commitment {i} doubled was accepted");
+        }
+        for i in 0..index_vk.circuit_commitments.len() {
+            let mut wrong = index_vk.clone();
+            double(&mut wrong.circuit_commitments[i]);
+            assert!(!verify(&wrong, &proof), "circuit commitment {i} doubled was accepted");
+        }
+    }
+
     fn test_serde_json(num_constraints: usize, num_variables: usize, rng: &mut TestRng) {
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
