@@ -20,6 +20,48 @@ The construction in this library obtains a preprocessing zkSNARK with a universa
 * an **algebraic holographic proof**
 * a **polynomial commitment scheme**
 
+## Keys
+
+The indexer turns each circuit into a proving key and a verifying key.
+Both keys use the universal SRS of SonicKZG10 (see `algorithms/src/polycommit/README.md`).
+
+### Proving key
+
+`CircuitProvingKey` has three fields:
+
+- `circuit_verifying_key`: the circuit's verifying key.
+- `circuit`: the indexed `Circuit`. It holds the `CircuitInfo`, the sparse A, B and C matrices, and the evaluations of their index polynomials.
+  `VarunaSNARK::batch_circuit_setup` prunes the `row_col` evaluations after it commits to them, to make the key smaller.
+- `committer_key`: the `CommitterKey` that `SonicKZG10::trim` cuts from the SRS for this circuit.
+  It supports the circuit's maximum degree, a hiding bound of 1 and the degree bounds from `AHPForR1CS::get_degree_bounds`.
+
+The committer key is the largest part of the proving key.
+In memory, it shares its points with the SRS. Its serialization still writes them all.
+
+### Verifying key
+
+`CircuitVerifyingKey` has three fields:
+
+- `circuit_info`: the `CircuitInfo`. It holds the number of public inputs, the number of public and private variables, the number of constraints and the number of non-zero entries in each of A, B and C.
+- `circuit_commitments`: twelve commitments, sorted by label.
+  For each matrix `m` in A, B and C, there is one commitment to each of `row_m`, `col_m`, `row_col_m` and `row_col_val_m` (see `AHPForR1CS::index_polynomial_labels_single`).
+  The commitments are not hiding.
+- `id`: the `CircuitId`, a hash of the circuit's info and matrices.
+
+The PC verifier key is not part of the verifying key. It depends only on the SRS, so every circuit shares it.
+
+### Certificates
+
+A key does not prove by itself that it matches a circuit.
+So a deployment carries a `Certificate` with each verifying key, which `VarunaSNARK::prove_vk` makes from the proving key.
+`VarunaSNARK::verify_vk` checks a verifying key and its certificate against a circuit:
+
+1. It indexes the circuit again, and compares its `CircuitInfo` and `CircuitId` with the key's.
+2. It evaluates the index polynomials at a challenge point from the sponge.
+3. It checks a KZG opening of a random combination of the key's commitments at that point.
+
+From `ConsensusVersion::V8`, validators run this check on each function's key in a deployment, and on each record's translation key if the deployment has them (see `Stack::verify_deployment`).
+
 ## Profiling
 
 This library is instrumented with profiling infrastructure that prints detailed traces of execution time. To enable this, compile with `cargo build --features profiler`.
