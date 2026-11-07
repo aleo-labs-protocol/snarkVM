@@ -56,14 +56,21 @@ pub enum CheckBlockError<N: Network> {
     #[error("Block has invalid hash")]
     InvalidHash,
     /// An error related to the given prefix of pending blocks.
-    #[error("The prefix as an error at index {index} - {error:?}")]
+    /// The inner error is printed with `Debug`: `{error}` and `#[source]` overflow trait resolution on the recursive box.
+    #[error("The prefix has an error at index {index}: {error:?}")]
     InvalidPrefix { index: usize, error: Box<CheckBlockError<N>> },
     #[error("The block contains solution '{solution_id}', but it already exists in the ledger")]
     SolutionAlreadyExists { solution_id: SolutionID<N> },
-    #[error("Failed to speculate over unconfirmed transactions - {inner}")]
-    SpeculationFailed { inner: anyhow::Error },
-    #[error("Failed to verify block - {inner}")]
-    VerificationFailed { inner: anyhow::Error },
+    #[error("Failed to speculate over unconfirmed transactions")]
+    SpeculationFailed {
+        #[source]
+        inner: anyhow::Error,
+    },
+    #[error("Failed to verify block")]
+    VerificationFailed {
+        #[source]
+        inner: anyhow::Error,
+    },
     #[error("Prover '{prover_address}' has reached their solution limit for the current epoch")]
     SolutionLimitReached { prover_address: Address<N> },
     #[error("The previous block should contain solution '{solution_id}', but it does not exist in the ledger")]

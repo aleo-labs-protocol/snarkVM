@@ -27,7 +27,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ProcessAuthError {
     /// Stack authorization failed.
-    #[error("Stack authorization failed: {0}")]
+    #[error("Stack authorization failed")]
     StackAuth(#[from] StackAuthError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -38,7 +38,7 @@ pub enum ProcessAuthError {
 #[derive(Debug, Error)]
 pub enum ProcessEvalError {
     /// Stack evaluation failed.
-    #[error("Stack evaluation failed: {0}")]
+    #[error("Stack evaluation failed")]
     StackEval(#[from] StackEvalError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -49,7 +49,7 @@ pub enum ProcessEvalError {
 #[derive(Debug, Error)]
 pub enum ProcessExecError {
     /// Stack execution failed.
-    #[error("Stack execution failed: {0}")]
+    #[error("Stack execution failed")]
     StackExec(#[from] StackExecError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -60,7 +60,7 @@ pub enum ProcessExecError {
 #[derive(Debug, Error)]
 pub enum ProcessDeployError {
     /// Stack execution failed during synthesis.
-    #[error("Stack synthesis failed: {0}")]
+    #[error("Stack synthesis failed")]
     StackExec(#[from] StackExecError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -71,7 +71,7 @@ pub enum ProcessDeployError {
 #[derive(Debug, Error)]
 pub enum CallEvalError {
     /// An error occurred during substack evaluation.
-    #[error("Substack evaluation failed: {0}")]
+    #[error("Substack evaluation failed")]
     StackEval(#[from] StackEvalError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -82,10 +82,10 @@ pub enum CallEvalError {
 #[derive(Debug, Error)]
 pub enum CallExecError {
     /// An error occurred during substack execution.
-    #[error("Substack execution failed: {0}")]
+    #[error("Substack execution failed")]
     StackExec(#[from] StackExecError),
     /// An error occurred during substack evaluation.
-    #[error("Substack evaluation failed: {0}")]
+    #[error("Substack evaluation failed")]
     StackEval(#[from] StackEvalError),
     /// A circuit constraint was not satisfied.
     #[error(transparent)]
@@ -99,10 +99,10 @@ pub enum CallExecError {
 #[derive(Debug, Error)]
 pub enum StackAuthError {
     /// Stack execution failed.
-    #[error("Stack execution failed: {0}")]
+    #[error("Stack execution failed")]
     Exec(#[from] StackExecError),
     /// Stack evaluation failed.
-    #[error("Stack evaluation failed: {0}")]
+    #[error("Stack evaluation failed")]
     Eval(#[from] StackEvalError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -136,13 +136,14 @@ pub enum StackEvalError {
 
 /// An instruction error occurred at a particular index.
 #[derive(Debug, Error)]
-#[error("Instruction ({instruction}) at index {index} failed: {error}")]
+#[error("Instruction ({instruction}) at index {index} failed")]
 pub struct IndexedInstructionError<E> {
     /// The index of the failing instruction.
     pub index: usize,
     /// The failing instruction formatted.
     pub instruction: String,
     /// The instruction error.
+    #[source]
     pub error: E,
 }
 
@@ -151,10 +152,10 @@ pub struct IndexedInstructionError<E> {
 #[derive(Debug, Error)]
 pub enum InstructionError {
     /// Failed to evaluate an instruction.
-    #[error("Failed to evaluate: {0}")]
+    #[error("Failed to evaluate")]
     Eval(#[from] InstructionEvalError),
     /// Failed to execute an instruction.
-    #[error("Failed to execute: {0}")]
+    #[error("Failed to execute")]
     Exec(#[from] InstructionExecError),
 }
 
@@ -165,7 +166,7 @@ pub enum InstructionEvalError {
     #[error(transparent)]
     Eval(#[from] EvalError),
     /// An error occurred during a `Call` instruction.
-    #[error("Call failed: {0}")]
+    #[error("Call failed")]
     Call(#[from] Box<CallEvalError>),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
@@ -176,7 +177,7 @@ pub enum InstructionEvalError {
 #[derive(Debug, Error)]
 pub enum InstructionExecError {
     /// An error occurred during a `Call` instruction.
-    #[error("Call failed: {0}")]
+    #[error("Call failed")]
     Call(#[from] Box<CallExecError>),
     /// An instruction execution error.
     #[error(transparent)]
