@@ -56,7 +56,8 @@ pub enum CheckBlockError<N: Network> {
     #[error("Block has invalid hash")]
     InvalidHash,
     /// An error related to the given prefix of pending blocks.
-    #[error("The prefix has an error at index {index}")]
+    /// The inner error is printed with `Debug`: `{error}` and `#[source]` overflow trait resolution on the recursive box.
+    #[error("The prefix has an error at index {index}: {error:?}")]
     InvalidPrefix { index: usize, error: Box<CheckBlockError<N>> },
     #[error("The block contains solution '{solution_id}', but it already exists in the ledger")]
     SolutionAlreadyExists { solution_id: SolutionID<N> },
