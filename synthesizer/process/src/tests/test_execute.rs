@@ -3609,10 +3609,12 @@ fn test_dynamic_record_inputs_reject_another_record() {
                 .get_stack(ProgramID::from_str("caller.aleo").unwrap())
                 .unwrap()
                 .authorize_requests::<CurrentAleo, _>(tampered.to_vec_deque().into(), rng)
+                .map_err(Error::from)
                 .expect_err(&case);
             assert!(format!("{error:#}").contains(expected), "{case}: {error:#}");
 
-            let error = process.execute::<CurrentAleo, _>(tampered, rng).map(|_| ()).expect_err(&case);
+            let error =
+                process.execute::<CurrentAleo, _>(tampered, rng).map(|_| ()).map_err(Error::from).expect_err(&case);
             assert!(format!("{error:#}").contains(expected), "{case}: {error:#}");
             let stack = process.get_stack(ProgramID::from_str(program).unwrap()).unwrap();
             assert!(!stack.contains_proving_key(&Identifier::from_str(function).unwrap()), "{case}");
