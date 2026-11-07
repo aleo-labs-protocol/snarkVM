@@ -42,15 +42,18 @@ pub struct Poseidon<E: Environment, const RATE: usize> {
     domain: Field<E>,
     /// The Poseidon parameters for hashing.
     parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
+    /// The partial rounds of `parameters` in sparse form, or `None` if they have none.
+    partial_rounds: Option<Arc<PartialRounds<E::Field>>>,
     /// The Merkle empty hash of this instance, once something has asked for it.
     empty_hash: OnceLock<Field<E>>,
 }
 
 impl<E: Environment, const RATE: usize> PartialEq for Poseidon<E, RATE> {
-    /// Ignores the cached empty hash, which is derived from the domain and parameters.
+    /// Ignores the partial rounds in sparse form and the cached empty hash, which are derived from
+    /// the domain and parameters.
     fn eq(&self, other: &Self) -> bool {
         // Destructured so that a new field must be considered here.
-        let Self { domain, parameters, empty_hash: _ } = self;
+        let Self { domain, parameters, partial_rounds: _, empty_hash: _ } = self;
         *domain == other.domain && *parameters == other.parameters
     }
 }
@@ -63,9 +66,12 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
         let max_bits = Field::<E>::size_in_data_bits();
         ensure!(num_bits <= max_bits, "Domain cannot exceed {max_bits} bits, found {num_bits} bits");
 
+        let parameters = Arc::new(E::Field::default_poseidon_parameters::<RATE>()?);
+        let partial_rounds = PartialRounds::new(&parameters).map(Arc::new);
         Ok(Self {
             domain: Field::<E>::new_domain_separator(domain),
-            parameters: Arc::new(E::Field::default_poseidon_parameters::<RATE>()?),
+            parameters,
+            partial_rounds,
             empty_hash: OnceLock::new(),
         })
     }
