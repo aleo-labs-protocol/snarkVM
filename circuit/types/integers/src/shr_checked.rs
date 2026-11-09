@@ -110,18 +110,12 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrChecked<Intege
     type Case = (Mode, Mode, bool, bool);
 
     fn count(case: &Self::Case) -> Count {
-        // A quick hack that matches `(u8 -> 0, u16 -> 1, u32 -> 2, u64 -> 3, u128 -> 4)`.
-        let index = |num_bits: u64| match [8, 16, 32, 64, 128].iter().position(|&bits| bits == num_bits) {
-            Some(index) => index as u64,
-            None => E::halt(format!("Integer of {num_bits} bits is not supported")),
-        };
-
         match (case.0, case.1) {
             (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
             (_, Mode::Constant) => Count::is(0, 0, 0, 0),
-            (Mode::Constant, _) | (_, _) => {
+            (_, _) => {
                 let wrapped_count = count!(Integer<E, I>, ShrWrapped<Integer<E, M>, Output=Integer<E, I>>, case);
-                wrapped_count + Count::is(0, 0, M::BITS - 4 - index(I::BITS), M::BITS - 3 - index(I::BITS))
+                wrapped_count + Count::is(0, 0, 0, 1)
             }
         }
     }
@@ -161,12 +155,14 @@ mod tests {
     ) {
         let a = Integer::<Circuit, I>::new(mode_a, first);
         let b = Integer::<Circuit, M>::new(mode_b, second);
+        let a_is_zero = a.is_zero().eject_value();
+        let b_is_zero = b.is_zero().eject_value();
         match first.checked_shr(second.to_u32().unwrap()) {
             Some(expected) => Circuit::scope(name, || {
                 let candidate = a.shr_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                // assert_count!(ShrChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
+                assert_count!(ShrChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
                 // assert_output_mode!(ShrChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b), candidate);
                 assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
             }),
@@ -195,6 +191,10 @@ mod tests {
             // Check that shift right by one is computed correctly.
             let name = format!("Half: {mode_a} >> {mode_b} {i}");
             check_shr::<I, M>(&name, first, console::Integer::one(), mode_a, mode_b);
+
+            // Check that zero shifted right by `second` is computed correctly.
+            let name = format!("Zero: {mode_a} >> {mode_b} {i}");
+            check_shr::<I, M>(&name, console::Integer::zero(), second, mode_a, mode_b);
         }
     }
 
