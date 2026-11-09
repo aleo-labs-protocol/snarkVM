@@ -80,6 +80,8 @@ impl<E: Environment> Group<E> {
 
     /// Initializes a new group, if `group` is on the curve and in the prime-order subgroup.
     pub fn try_new(group: E::Affine) -> Result<Self> {
+        // The subgroup check reads the Edwards `t` coordinate, which a caller can set to any value.
+        let group = E::Affine::from_coordinates_unchecked((group.to_x_coordinate(), group.to_y_coordinate()));
         ensure!(group.is_on_curve(), "Group element is not on the curve");
         ensure!(group.is_in_correct_subgroup_assuming_on_curve(), "Group element is not in the prime-order subgroup");
         Ok(Self::new_unchecked(group))
@@ -189,6 +191,24 @@ mod tests {
             let point = element.add_mixed(&order_two).to_affine();
             assert!(point.is_on_curve());
             assert!(Group::<CurrentEnvironment>::try_new(point).is_err());
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_try_new_ignores_a_forged_t() {
+        let mut rng = TestRng::default();
+
+        let order_two = Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one()));
+        for _ in 0..ITERATIONS {
+            let element = Group::<CurrentEnvironment>::rand(&mut rng);
+            let point = element.to_affine();
+            let forged = Affine::new(point.to_x_coordinate(), point.to_y_coordinate(), BaseField::rand(&mut rng));
+            assert_eq!(element, Group::try_new(forged).unwrap());
+
+            let point = element.add_mixed(&order_two).to_affine();
+            let forged = Affine::new(point.to_x_coordinate(), point.to_y_coordinate(), BaseField::rand(&mut rng));
+            assert!(Group::<CurrentEnvironment>::try_new(forged).is_err());
         }
     }
 
