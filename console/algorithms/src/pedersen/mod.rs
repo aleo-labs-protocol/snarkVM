@@ -41,12 +41,11 @@ pub struct Pedersen<E: Environment, const NUM_BITS: u8> {
 impl<E: Environment, const NUM_BITS: u8> Pedersen<E, NUM_BITS> {
     /// Initializes a new instance of Pedersen with the given setup message.
     pub fn setup(message: &str) -> Self {
-        // Construct an indexed message to attempt to sample a base.
-        let (generator, _, _) = Blake2Xs::hash_to_curve::<E::Affine>(&format!("Aleo.Pedersen.Base.{message}"));
         // Construct the window with the base.
         let mut base_window = vec![Group::<E>::zero(); NUM_BITS as usize];
         {
-            let mut base_power = Group::<E>::new(generator);
+            // Compute the base.
+            let mut base_power = Blake2Xs::hash_to_generator::<E>(&format!("Aleo.Pedersen.Base.{message}"));
             for base in base_window.iter_mut().take(NUM_BITS as usize) {
                 *base = base_power;
                 base_power = base_power.double();
@@ -54,12 +53,11 @@ impl<E: Environment, const NUM_BITS: u8> Pedersen<E, NUM_BITS> {
             assert_eq!(base_window.len(), NUM_BITS as usize);
         }
 
-        // Compute the random base.
-        let (generator, _, _) = Blake2Xs::hash_to_curve::<E::Affine>(&format!("Aleo.Pedersen.RandomBase.{message}"));
         // Construct the window with the random base.
         let mut random_base = Vec::with_capacity(Scalar::<E>::size_in_bits());
         {
-            let mut base = Group::<E>::new(generator);
+            // Compute the random base.
+            let mut base = Blake2Xs::hash_to_generator::<E>(&format!("Aleo.Pedersen.RandomBase.{message}"));
             for _ in 0..Scalar::<E>::size_in_bits() {
                 random_base.push(base);
                 base = base.double();

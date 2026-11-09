@@ -27,9 +27,10 @@ impl<E: Environment> Mul<&Field<E>> for Field<E> {
     type Output = Field<E>;
 
     fn mul(self, other: &Field<E>) -> Self::Output {
-        let mut output = self;
-        output *= other;
-        output
+        match other.is_constant() {
+            true => (self.linear_combination * *other.eject_value()).into(),
+            false => &self * other,
+        }
     }
 }
 
@@ -45,9 +46,18 @@ impl<E: Environment> Mul<&Field<E>> for &Field<E> {
     type Output = Field<E>;
 
     fn mul(self, other: &Field<E>) -> Self::Output {
-        let mut output = self.clone();
-        output *= other;
-        output
+        match (self.is_constant(), other.is_constant()) {
+            (_, true) => (&self.linear_combination * *other.eject_value()).into(),
+            (true, false) => (&other.linear_combination * *self.eject_value()).into(),
+            (false, false) => {
+                let product = witness!(|self, other| self * other);
+
+                // Ensure self * other == product.
+                E::enforce(|| (self, other, &product)).expect("Field multiplication constraint unsatisfied");
+
+                product
+            }
+        }
     }
 }
 
@@ -59,18 +69,7 @@ impl<E: Environment> MulAssign<Field<E>> for Field<E> {
 
 impl<E: Environment> MulAssign<&Field<E>> for Field<E> {
     fn mul_assign(&mut self, other: &Field<E>) {
-        match (self.is_constant(), other.is_constant()) {
-            (true, true) | (false, true) => *self = (&self.linear_combination * *other.eject_value()).into(),
-            (true, false) => *self = (&other.linear_combination * *self.eject_value()).into(),
-            (false, false) => {
-                let product = witness!(|self, other| self * other);
-
-                // Ensure self * other == product.
-                E::enforce(|| (&*self, other, &product)).expect("Field multiplication constraint unsatisfied");
-
-                *self = product;
-            }
-        }
+        *self = &*self * other;
     }
 }
 

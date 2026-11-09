@@ -22,7 +22,7 @@ impl<E: Environment> Group<E> {
         if let Some((p1, p2)) = E::Affine::pair_from_x_coordinate(*x_coordinate) {
             for point in [p2, p1] {
                 if point.is_in_correct_subgroup_assuming_on_curve() {
-                    return Ok(Self::new(point));
+                    return Ok(Self::new_unchecked(point));
                 }
             }
         }

@@ -25,9 +25,14 @@ impl<N: Network> FromStr for Request<N> {
 }
 
 impl<N: Network> Debug for Request<N> {
-    /// Prints the request as a JSON-string.
+    /// Prints the request's signer and function, without its inputs or secrets.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(self, f)
+        f.debug_struct("Request")
+            .field("signer", &self.signer)
+            .field("network_id", &self.network_id)
+            .field("program_id", &self.program_id)
+            .field("function_name", &self.function_name)
+            .finish_non_exhaustive()
     }
 }
 
@@ -54,6 +59,23 @@ mod tests {
             // Deserialize
             assert_eq!(expected, Request::from_str(expected_string).unwrap());
             assert_eq!(expected, serde_json::from_str(&candidate_string).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_debug_is_redacted() {
+        let mut rng = TestRng::default();
+
+        for request in test_helpers::sample_requests(&mut rng).into_iter() {
+            // Check the debug representation reveals no secret.
+            let candidate = format!("{request:#?}");
+            assert!(candidate.contains(&request.signer().to_string()));
+            for secret in [request.sk_tag().to_string(), request.tvk().to_string()] {
+                assert!(!candidate.contains(&secret));
+            }
+            for input in request.inputs() {
+                assert!(!candidate.contains(&input.to_string()));
+            }
         }
     }
 }

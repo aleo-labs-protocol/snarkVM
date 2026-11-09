@@ -46,6 +46,13 @@ impl<N: Network> fmt::Display for GraphKey<N> {
     }
 }
 
+impl<N: Network> fmt::Debug for GraphKey<N> {
+    /// Writes the account graph key without revealing its contents.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("GraphKey").finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +77,26 @@ mod tests {
             let candidate = format!("{expected}");
             assert_eq!(expected, GraphKey::from_str(&candidate)?);
             assert_eq!("AGraphKey", candidate.split('1').next().unwrap());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_debug_is_redacted() -> Result<()> {
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // Sample a new graph key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
+            let view_key = ViewKey::try_from(private_key)?;
+            let graph_key = GraphKey::try_from(view_key)?;
+
+            // Check the debug representation reveals no secret.
+            assert_eq!("GraphKey { .. }", format!("{graph_key:?}"));
+            let candidate = format!("{graph_key:#?}");
+            for secret in [graph_key.to_string(), graph_key.sk_tag().to_string()] {
+                assert!(!candidate.contains(&secret));
+            }
         }
         Ok(())
     }
