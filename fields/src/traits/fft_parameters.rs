@@ -45,8 +45,9 @@ pub trait FftParameters: 'static + Send + Sync + Sized {
     const LARGE_SUBGROUP_ROOT_OF_UNITY: Option<Self::BigInteger> = None;
 
     /// `TWO_ADIC_ROOT_OF_UNITY^2^i` for `i := 0..TWO_ADICITY-1`
-    ///
-    /// Only the table-free path of `sqrt` reads this. The next major release stops reading it and
-    /// removes it. Code that needs these powers should compute and keep its own copy.
+    #[deprecated(
+        since = "4.13.0",
+        note = "Only the table-free path of `sqrt` reads this, and the next major release removes it. Code that needs these powers should compute them and keep them in its own trait."
+    )]
     const POWERS_OF_ROOTS_OF_UNITY: &'static [Self::BigInteger];
 }
