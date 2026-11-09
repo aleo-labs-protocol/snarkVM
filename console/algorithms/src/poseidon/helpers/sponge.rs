@@ -35,7 +35,7 @@ pub struct PoseidonSponge<E: Environment, const RATE: usize, const CAPACITY: usi
     parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
     /// The partial rounds of `parameters` in sparse form. If `None`, every round multiplies the
     /// state by the MDS matrix.
-    partial_rounds: Option<Arc<PartialRounds<E::Field>>>,
+    sparse_rounds: Option<Arc<PartialRounds<E::Field, RATE, CAPACITY>>>,
     /// Current sponge's state (current elements in the permutation block)
     state: State<E, RATE, CAPACITY>,
     /// Current mode (whether its absorbing or squeezing)
@@ -50,7 +50,7 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> AlgebraicSponge<E
     fn new(parameters: &Self::Parameters) -> Self {
         Self {
             parameters: parameters.clone(),
-            partial_rounds: None,
+            sparse_rounds: None,
             state: State::default(),
             mode: DuplexSpongeMode::Absorbing { next_absorb_index: 0 },
         }
@@ -104,13 +104,12 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> AlgebraicSponge<E
 }
 
 impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E, RATE, CAPACITY> {
-    /// Initializes a new sponge with `parameters` and the sparse form `partial_rounds` of their
-    /// partial rounds.
-    pub(in crate::poseidon) fn with_partial_rounds(
-        parameters: &Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
-        partial_rounds: Option<&Arc<PartialRounds<E::Field>>>,
+    /// Initializes a new sponge with the parameters of `sparse_rounds` and their partial rounds in
+    /// that sparse form.
+    pub(in crate::poseidon) fn with_sparse_rounds(
+        sparse_rounds: &Arc<PartialRounds<E::Field, RATE, CAPACITY>>,
     ) -> Self {
-        Self { partial_rounds: partial_rounds.cloned(), ..Self::new(parameters) }
+        Self { sparse_rounds: Some(sparse_rounds.clone()), ..Self::new(&sparse_rounds.parameters) }
     }
 
     #[inline]
@@ -148,8 +147,8 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E,
 
     #[inline]
     fn permute(&mut self) {
-        match &self.partial_rounds {
-            Some(partial_rounds) => permute_sparse(&self.parameters, partial_rounds, &mut self.state),
+        match &self.sparse_rounds {
+            Some(sparse_rounds) => permute_sparse(sparse_rounds, &mut self.state),
             None => self.permute_dense(),
         }
     }
@@ -261,7 +260,9 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E,
 ///
 /// [poseidon]: https://eprint.iacr.org/2019/458
 #[derive(Debug)]
-pub struct PartialRounds<F: PrimeField> {
+pub struct PartialRounds<F: PrimeField, const RATE: usize, const CAPACITY: usize> {
+    /// The parameters these partial rounds are derived from.
+    parameters: Arc<PoseidonParameters<F, RATE, CAPACITY>>,
     /// The matrix of the last full round before the partial rounds.
     first_matrix: Vec<Vec<F>>,
     /// The partial rounds, in order.
@@ -280,13 +281,13 @@ struct PartialRound<F: PrimeField> {
     column: Vec<F>,
 }
 
-impl<F: PrimeField> PartialRounds<F> {
+impl<F: PrimeField, const RATE: usize> PartialRounds<F, RATE, 1> {
     /// Returns the partial rounds of `parameters`, or `None` if the parameters have no partial
     /// rounds, no full round before them, a round constant or MDS row whose length is not the state
     /// width, or an MDS matrix whose lower-right block of width `RATE` is singular.
-    pub(in crate::poseidon) fn new<const RATE: usize>(parameters: &PoseidonParameters<F, RATE, 1>) -> Option<Self> {
+    pub(in crate::poseidon) fn new(parameters: &Arc<PoseidonParameters<F, RATE, 1>>) -> Option<Self> {
         let width = RATE + 1;
-        let PoseidonParameters { full_rounds, partial_rounds, ark, mds, .. } = parameters;
+        let PoseidonParameters { full_rounds, partial_rounds, ark, mds, .. } = parameters.as_ref();
         let first_partial_round = full_rounds / 2;
         let last_partial_round = first_partial_round + partial_rounds;
         if first_partial_round == 0
@@ -346,7 +347,7 @@ impl<F: PrimeField> PartialRounds<F> {
             .map(|((constant, row), column)| PartialRound { constant, row, column })
             .collect();
 
-        Some(Self { first_matrix, rounds, last_ark })
+        Some(Self { parameters: parameters.clone(), first_matrix, rounds, last_ark })
     }
 }
 
@@ -377,14 +378,14 @@ fn invert<F: PrimeField>(matrix: &[Vec<F>]) -> Option<Vec<Vec<F>>> {
     Some(inverse)
 }
 
-/// Applies the permutation of `parameters` to `state`, with the partial rounds in the sparse form
-/// `partial_rounds` of the same parameters.
+/// Applies the permutation of the parameters of `sparse_rounds` to `state`, with the partial rounds
+/// in that sparse form.
 #[inline]
 fn permute_sparse<E: Environment, const RATE: usize, const CAPACITY: usize>(
-    parameters: &PoseidonParameters<E::Field, RATE, CAPACITY>,
-    partial_rounds: &PartialRounds<E::Field>,
+    sparse_rounds: &PartialRounds<E::Field, RATE, CAPACITY>,
     state: &mut State<E, RATE, CAPACITY>,
 ) {
+    let PartialRounds { parameters, first_matrix, rounds, last_ark } = sparse_rounds;
     let first_partial_round = parameters.full_rounds / 2;
     let last_partial_round = first_partial_round + parameters.partial_rounds;
     let num_rounds = parameters.full_rounds + parameters.partial_rounds;
@@ -403,14 +404,14 @@ fn permute_sparse<E: Environment, const RATE: usize, const CAPACITY: usize>(
     };
 
     for round in 0..first_partial_round {
-        let matrix = if round + 1 == first_partial_round { &partial_rounds.first_matrix } else { &parameters.mds };
+        let matrix = if round + 1 == first_partial_round { first_matrix } else { &parameters.mds };
         full_round(&mut current, &parameters.ark[round], matrix);
     }
-    for round in &partial_rounds.rounds {
+    for round in rounds {
         current[0] += round.constant;
         current[0] = current[0].pow([parameters.alpha]);
         let first = E::Field::sum_of_products(&current, &round.row);
-        // The partial rounds are of parameters with a capacity of 1, so the state is not empty.
+        // `PartialRounds::new` only accepts a capacity of 1, so the state is not empty.
         let (head, tail) = current.split_first_mut().unwrap();
         for (x, c) in tail.iter_mut().zip_eq(&round.column) {
             *x += *c * *head;
@@ -418,7 +419,7 @@ fn permute_sparse<E: Environment, const RATE: usize, const CAPACITY: usize>(
         *head = first;
     }
     for round in last_partial_round..num_rounds {
-        let ark = if round == last_partial_round { &partial_rounds.last_ark } else { &parameters.ark[round] };
+        let ark = if round == last_partial_round { last_ark } else { &parameters.ark[round] };
         full_round(&mut current, ark, &parameters.mds);
     }
 
@@ -438,14 +439,9 @@ mod tests {
 
     /// Checks that `chain` permutations of `state` give the same state with `permute` as with
     /// `permute_dense`.
-    fn check_state<const RATE: usize>(
-        parameters: &Arc<PoseidonParameters<F, RATE, 1>>,
-        partial_rounds: &Arc<PartialRounds<F>>,
-        state: &[F],
-        chain: usize,
-    ) {
-        let mut sparse =
-            PoseidonSponge::<CurrentEnvironment, RATE, 1>::with_partial_rounds(parameters, Some(partial_rounds));
+    fn check_state<const RATE: usize>(sparse_rounds: &Arc<PartialRounds<F, RATE, 1>>, state: &[F], chain: usize) {
+        let mut sparse = PoseidonSponge::<CurrentEnvironment, RATE, 1>::with_sparse_rounds(sparse_rounds);
+        assert!(Arc::ptr_eq(&sparse.parameters, &sparse_rounds.parameters));
         for (x, y) in sparse.state.iter_mut().zip_eq(state) {
             *x = Field::new(*y);
         }
@@ -460,29 +456,28 @@ mod tests {
     /// Checks the sparse permutation of `parameters` against the dense one on states of 0, 1 and
     /// p - 1, on random states, and on chains of permutations.
     fn check_parameters<const RATE: usize>(parameters: PoseidonParameters<F, RATE, 1>, rng: &mut TestRng) {
-        let parameters = Arc::new(parameters);
-        let partial_rounds = Arc::new(PartialRounds::new(&parameters).unwrap());
+        let sparse_rounds = Arc::new(PartialRounds::new(&Arc::new(parameters)).unwrap());
         let width = RATE + 1;
         let edges = [F::zero(), F::one(), -F::one()];
         if width <= 5 {
             for state in (0..width).map(|_| edges).multi_cartesian_product() {
-                check_state(&parameters, &partial_rounds, &state, 1);
+                check_state(&sparse_rounds, &state, 1);
             }
         } else {
             for (a, b) in edges.into_iter().cartesian_product(edges) {
                 for i in 0..width {
                     let state = (0..width).map(|j| if i == j { b } else { a }).collect_vec();
-                    check_state(&parameters, &partial_rounds, &state, 1);
+                    check_state(&sparse_rounds, &state, 1);
                 }
             }
         }
         for _ in 0..100 {
             let state = (0..width).map(|_| F::rand(rng)).collect_vec();
-            check_state(&parameters, &partial_rounds, &state, 1);
+            check_state(&sparse_rounds, &state, 1);
         }
         for chain in [2, 5, 200] {
             let state = (0..width).map(|_| F::rand(rng)).collect_vec();
-            check_state(&parameters, &partial_rounds, &state, chain);
+            check_state(&sparse_rounds, &state, chain);
         }
     }
 
@@ -558,9 +553,10 @@ mod tests {
             extra_mds_row,
         ];
         for parameters in cases {
+            let parameters = Arc::new(parameters);
             assert!(PartialRounds::new(&parameters).is_none(), "{parameters:?}");
         }
-        assert!(PartialRounds::new(&default).is_some());
+        assert!(PartialRounds::new(&Arc::new(default)).is_some());
     }
 
     #[test]

@@ -30,8 +30,10 @@ impl<E: Environment, const RATE: usize> HashMany for Poseidon<E, RATE> {
         preimage.resize(RATE, Field::<E>::zero()); // Pad up to RATE.
         preimage.extend_from_slice(input);
 
-        let mut sponge =
-            PoseidonSponge::<E, RATE, CAPACITY>::with_partial_rounds(&self.parameters, self.partial_rounds.as_ref());
+        let mut sponge = match &self.sparse_rounds {
+            Some(sparse_rounds) => PoseidonSponge::<E, RATE, CAPACITY>::with_sparse_rounds(sparse_rounds),
+            None => PoseidonSponge::<E, RATE, CAPACITY>::new(&self.parameters),
+        };
         sponge.absorb(&preimage);
         sponge.squeeze(num_outputs).into_vec()
     }

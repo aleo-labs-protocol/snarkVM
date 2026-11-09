@@ -44,7 +44,7 @@ pub struct Poseidon<E: Environment, const RATE: usize> {
     parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
     /// The partial rounds of `parameters` in sparse form. If `None`, every round multiplies the
     /// state by the MDS matrix.
-    partial_rounds: Option<Arc<PartialRounds<E::Field>>>,
+    sparse_rounds: Option<Arc<PartialRounds<E::Field, RATE, CAPACITY>>>,
     /// The Merkle empty hash of this instance, once something has asked for it.
     empty_hash: OnceLock<Field<E>>,
 }
@@ -54,7 +54,7 @@ impl<E: Environment, const RATE: usize> PartialEq for Poseidon<E, RATE> {
     /// the domain and parameters.
     fn eq(&self, other: &Self) -> bool {
         // Destructured so that a new field must be considered here.
-        let Self { domain, parameters, partial_rounds: _, empty_hash: _ } = self;
+        let Self { domain, parameters, sparse_rounds: _, empty_hash: _ } = self;
         *domain == other.domain && *parameters == other.parameters
     }
 }
@@ -68,11 +68,11 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
         ensure!(num_bits <= max_bits, "Domain cannot exceed {max_bits} bits, found {num_bits} bits");
 
         let parameters = Arc::new(E::Field::default_poseidon_parameters::<RATE>()?);
-        let partial_rounds = PartialRounds::new(&parameters).map(Arc::new);
+        let sparse_rounds = PartialRounds::new(&parameters).map(Arc::new);
         Ok(Self {
             domain: Field::<E>::new_domain_separator(domain),
             parameters,
-            partial_rounds,
+            sparse_rounds,
             empty_hash: OnceLock::new(),
         })
     }
@@ -167,23 +167,33 @@ mod tests {
     fn test_sponge() {
         const RATE: usize = 2;
         let parameters = Arc::new(Fq::default_poseidon_parameters::<RATE>().unwrap());
+        let sparse_rounds = Arc::new(PartialRounds::new(&parameters).unwrap());
 
         for absorb in 0..10 {
             for squeeze in 0..10 {
                 let iteration = format!("absorb_{absorb}_squeeze_{squeeze}");
 
-                let mut sponge = PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY>::new(&parameters);
-                sponge.absorb(&vec![Field::<CurrentEnvironment>::from_u64(1237812u64); absorb]);
+                // The dense and the sparse permutation are checked against the same snapshots.
+                for mut sponge in [
+                    PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY>::new(&parameters),
+                    PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY>::with_sparse_rounds(&sparse_rounds),
+                ] {
+                    sponge.absorb(&vec![Field::<CurrentEnvironment>::from_u64(1237812u64); absorb]);
 
-                let next_absorb_index = if absorb % RATE != 0 || absorb == 0 { absorb % RATE } else { RATE };
-                assert_eq!(sponge.mode, DuplexSpongeMode::Absorbing { next_absorb_index }, "{iteration}");
+                    let next_absorb_index = if absorb % RATE != 0 || absorb == 0 { absorb % RATE } else { RATE };
+                    assert_eq!(sponge.mode, DuplexSpongeMode::Absorbing { next_absorb_index }, "{iteration}");
 
-                assert_snapshot("test_sponge", &iteration, sponge.squeeze(u16::try_from(squeeze).unwrap()));
+                    assert_snapshot("test_sponge", &iteration, sponge.squeeze(u16::try_from(squeeze).unwrap()));
 
-                let next_squeeze_index = if squeeze % RATE != 0 || squeeze == 0 { squeeze % RATE } else { RATE };
-                match squeeze == 0 {
-                    true => assert_eq!(sponge.mode, DuplexSpongeMode::Absorbing { next_absorb_index }, "{iteration}"),
-                    false => assert_eq!(sponge.mode, DuplexSpongeMode::Squeezing { next_squeeze_index }, "{iteration}"),
+                    let next_squeeze_index = if squeeze % RATE != 0 || squeeze == 0 { squeeze % RATE } else { RATE };
+                    match squeeze == 0 {
+                        true => {
+                            assert_eq!(sponge.mode, DuplexSpongeMode::Absorbing { next_absorb_index }, "{iteration}")
+                        }
+                        false => {
+                            assert_eq!(sponge.mode, DuplexSpongeMode::Squeezing { next_squeeze_index }, "{iteration}")
+                        }
+                    }
                 }
             }
         }
