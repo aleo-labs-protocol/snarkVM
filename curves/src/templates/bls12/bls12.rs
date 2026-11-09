@@ -46,6 +46,9 @@ pub enum TwistType {
     D,
 }
 
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Code that needs to implement it should define its own
+/// trait instead. Bounds on it and calls through it are unaffected.
 pub trait Bls12Parameters: 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized {
     const X: &'static [u64];
     const X_IS_NEGATIVE: bool;
