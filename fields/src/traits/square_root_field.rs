@@ -16,6 +16,9 @@
 use crate::{Field, LegendreSymbol};
 
 /// The interface for a field that supports an efficient square-root operation.
+///
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Bounds on it and calls through it are unaffected.
 pub trait SquareRootField: Field {
     /// Returns the Legendre symbol.
     fn legendre(&self) -> LegendreSymbol;

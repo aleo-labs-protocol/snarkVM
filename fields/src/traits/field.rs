@@ -39,6 +39,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 /// The interface for a generic field.
+///
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Bounds on it and calls through it are unaffected.
 pub trait Field:
     'static
     + ToBits

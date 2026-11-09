@@ -16,6 +16,9 @@
 use snarkvm_utilities::biginteger::BigInteger;
 
 /// A trait that defines parameters for a field that can be used for FFTs.
+///
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Bounds on it and calls through it are unaffected.
 pub trait FftParameters: 'static + Send + Sync + Sized {
     type BigInteger: BigInteger;
 
@@ -41,5 +44,9 @@ pub trait FftParameters: 'static + Send + Sync + Sized {
     const LARGE_SUBGROUP_ROOT_OF_UNITY: Option<Self::BigInteger> = None;
 
     /// `TWO_ADIC_ROOT_OF_UNITY^2^i` for `i := 0..TWO_ADICITY-1`
+    #[deprecated(
+        since = "4.13.0",
+        note = "`sqrt` reads this only when `sqrt_tables` returns `None`, and the next major release removes it. Square `TWO_ADIC_ROOT_OF_UNITY` repeatedly instead."
+    )]
     const POWERS_OF_ROOTS_OF_UNITY: &'static [Self::BigInteger];
 }

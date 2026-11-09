@@ -46,8 +46,13 @@ use std::{
 };
 use zeroize::Zeroize;
 
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Bounds on it and calls through it are unaffected.
 pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {
     /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
+    ///
+    /// The next major release makes this method required and changes its return type to
+    /// `&'static SqrtTables<Fp256<Self>>`, so that `sqrt` always uses tables.
     fn sqrt_tables() -> Option<&'static SqrtTables<Fp256<Self>>> {
         None
     }

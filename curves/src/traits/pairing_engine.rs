@@ -18,6 +18,8 @@ use snarkvm_fields::{Field, PrimeField, SquareRootField, ToConstraintField};
 
 use core::{fmt::Debug, hash::Hash, iter};
 
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Bounds on it and calls through it are unaffected.
 pub trait PairingEngine: Sized + 'static + Copy + Debug + PartialEq + Eq + Hash + Sync + Send {
     /// This is the scalar field of the G1/G2 groups.
     type Fr: PrimeField + SquareRootField + Into<<Self::Fr as PrimeField>::BigInteger>;

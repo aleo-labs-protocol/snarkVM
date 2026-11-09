@@ -35,6 +35,8 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Bounds on it and calls through it are unaffected.
 pub trait Fp2Parameters:
     'static + Copy + Clone + Default + Debug + PartialEq + Eq + Hash + Serialize + for<'a> Deserialize<'a> + Send + Sync
 {

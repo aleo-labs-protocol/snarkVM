@@ -19,6 +19,9 @@ use crate::{FftField, FieldError, FieldParameters, PoseidonDefaultField};
 use snarkvm_utilities::biginteger::BigInteger;
 
 /// The interface for a prime field.
+///
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Bounds on it and calls through it are unaffected.
 pub trait PrimeField:
     FftField<FftParameters = <Self as PrimeField>::Parameters> + PoseidonDefaultField + FromStr<Err = FieldError>
 {
