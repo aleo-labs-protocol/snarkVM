@@ -218,7 +218,6 @@ mod tests {
     use snarkvm_fields::{FftField, Field, PrimeField};
 
     #[test]
-    #[allow(deprecated)]
     fn test_powers_of_root_of_unity() {
         let two = Fr::from(2u8);
 

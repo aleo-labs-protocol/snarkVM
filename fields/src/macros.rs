@@ -96,8 +96,6 @@ macro_rules! sqrt_impl {
                     return tables.sqrt($self);
                 }
 
-                #[allow(deprecated)]
-                let powers_of_roots_of_unity = $P::POWERS_OF_ROOTS_OF_UNITY;
                 let n = $P::TWO_ADICITY as u64;
                 // `T` is equivalent to `m` in the paper.
                 let v = $self.pow($P::T_MINUS_ONE_DIV_TWO);
@@ -141,7 +139,7 @@ macro_rules! sqrt_impl {
                         let n_minus_one_minus_i = n - 1 - i;
                         s += 2u64.pow(n_minus_one_minus_i as u32);
                         if i > 0 {
-                            delta *= $Self(powers_of_roots_of_unity[n_minus_one_minus_i as usize], PhantomData);
+                            delta *= $Self($P::POWERS_OF_ROOTS_OF_UNITY[n_minus_one_minus_i as usize], PhantomData);
                         } else {
                             delta = -delta;
                         }
@@ -161,7 +159,7 @@ macro_rules! sqrt_impl {
                             (0..l as usize).for_each(|k| {
                                 let bit = value & 1 == 1;
                                 if bit {
-                                    gamma *= $Self(powers_of_roots_of_unity[(kappa as usize) + k], PhantomData);
+                                    gamma *= $Self($P::POWERS_OF_ROOTS_OF_UNITY[(kappa as usize) + k], PhantomData);
                                 }
                                 value = value.wrapping_shr(1u32);
                             });

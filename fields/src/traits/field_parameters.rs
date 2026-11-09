@@ -20,7 +20,8 @@ use core::{fmt::Debug, hash::Hash};
 /// A trait that defines parameters for a prime field.
 ///
 /// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Bounds on it and calls through it are unaffected.
+/// which breaks such implementations. Code that needs to implement it should define its own
+/// trait instead. Bounds on it and calls through it are unaffected.
 pub trait FieldParameters:
     'static + FftParameters + PoseidonDefaultParameters + Copy + Clone + Debug + Default + PartialEq + Eq + Hash
 {
