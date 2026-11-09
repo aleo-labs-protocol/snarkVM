@@ -42,7 +42,8 @@ pub struct Poseidon<E: Environment, const RATE: usize> {
     domain: Field<E>,
     /// The Poseidon parameters for hashing.
     parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
-    /// The partial rounds of `parameters` in sparse form, or `None` if they have none.
+    /// The partial rounds of `parameters` in sparse form. If `None`, every round multiplies the
+    /// state by the MDS matrix.
     partial_rounds: Option<Arc<PartialRounds<E::Field>>>,
     /// The Merkle empty hash of this instance, once something has asked for it.
     empty_hash: OnceLock<Field<E>>,
