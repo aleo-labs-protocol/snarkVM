@@ -18,10 +18,15 @@ use super::*;
 impl<N: Network> BatchCertificate<N> {
     /// Reads the batch certificate either with or without checks on the data, decoding each
     /// compute key only if `cache` holds no earlier decode of the same bytes.
-    pub fn read_le_with_cache<R: Read>(
+    pub fn read_le_with_cache<R: Read>(reader: R, unchecked: bool, cache: &mut ComputeKeyCache<N>) -> IoResult<Self> {
+        Self::read_le_internal(reader, unchecked, Some(cache))
+    }
+
+    /// Reads the batch certificate either with or without checks on the data, through `cache` if there is one.
+    fn read_le_internal<R: Read>(
         mut reader: R,
         unchecked: bool,
-        cache: &mut ComputeKeyCache<N>,
+        mut cache: Option<&mut ComputeKeyCache<N>>,
     ) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
@@ -31,7 +36,10 @@ impl<N: Network> BatchCertificate<N> {
         }
 
         // Read the batch header and signatures.
-        let batch_header = BatchHeader::read_le_with_cache(&mut reader, unchecked, cache)?;
+        let batch_header = match cache.as_deref_mut() {
+            Some(cache) => BatchHeader::read_le_with_cache(&mut reader, unchecked, cache)?,
+            None => BatchHeader::read_le_with_unchecked(&mut reader, unchecked)?,
+        };
         let signatures = Self::read_signatures(reader, unchecked, cache)?;
 
         // Return the batch certificate, performing the additional checks only if `unchecked` is false.
@@ -42,11 +50,11 @@ impl<N: Network> BatchCertificate<N> {
         }
     }
 
-    /// Reads the signatures of a batch certificate.
+    /// Reads the signatures of a batch certificate, through `cache` if there is one.
     fn read_signatures<R: Read>(
         mut reader: R,
         unchecked: bool,
-        cache: &mut ComputeKeyCache<N>,
+        cache: Option<&mut ComputeKeyCache<N>>,
     ) -> IoResult<IndexSet<Signature<N>>> {
         // Read the number of signatures.
         let num_signatures = u16::read_le(&mut reader)?;
@@ -60,11 +68,20 @@ impl<N: Network> BatchCertificate<N> {
         // Read the signature bytes.
         let mut signature_bytes = vec![0u8; num_signatures as usize * Signature::<N>::size_in_bytes()];
         reader.read_exact(&mut signature_bytes)?;
-        // Read the signatures.
-        let mut signatures = IndexSet::with_capacity(num_signatures as usize);
-        for data in signature_bytes.chunks_exact(Signature::<N>::size_in_bytes()) {
-            signatures.insert(Signature::read_le_with_cache(data, unchecked, cache)?);
-        }
+        // Read the signatures. A cached read is serial, because a rayon fork-join costs more than
+        // reads whose compute keys are cached. Without a cache, every read decodes its compute key.
+        let signatures = match cache {
+            Some(cache) => {
+                let mut signatures = IndexSet::with_capacity(num_signatures as usize);
+                for data in signature_bytes.chunks_exact(Signature::<N>::size_in_bytes()) {
+                    signatures.insert(Signature::read_le_with_cache(data, unchecked, cache)?);
+                }
+                signatures
+            }
+            None => cfg_chunks!(signature_bytes, Signature::<N>::size_in_bytes())
+                .map(|data| Signature::read_le_with_unchecked(data, unchecked))
+                .collect::<Result<IndexSet<_>, _>>()?,
+        };
         // Ensure no signature was repeated. The set absorbs a repeat, so it would
         // otherwise give one certificate a second encoding.
         if signatures.len() != num_signatures as usize {
@@ -77,12 +94,12 @@ impl<N: Network> BatchCertificate<N> {
 impl<N: Network> FromBytes for BatchCertificate<N> {
     /// Reads the batch certificate from the buffer.
     fn read_le<R: Read>(reader: R) -> IoResult<Self> {
-        Self::read_le_with_cache(reader, false, &mut ComputeKeyCache::default())
+        Self::read_le_internal(reader, false, None)
     }
 
     /// Reads the batch certificate from the buffer.
     fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
-        Self::read_le_with_cache(reader, true, &mut ComputeKeyCache::default())
+        Self::read_le_internal(reader, true, None)
     }
 }
 
@@ -183,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn test_first_invalid_signature_sets_the_error() {
+    fn test_first_invalid_signature_sets_the_cached_error() {
         let rng = &mut TestRng::default();
         let certificate = crate::test_helpers::sample_batch_certificate(rng);
         let exact = certificate.to_bytes_le().unwrap();
@@ -212,10 +229,19 @@ mod tests {
             };
             let (first, last) = (read(signatures_at), read(last_at));
             assert_ne!(first, last);
+            let error = BatchCertificate::<CurrentNetwork>::read_le_with_cache(
+                &bytes[..],
+                unchecked,
+                &mut ComputeKeyCache::default(),
+            )
+            .unwrap_err()
+            .to_string();
+            assert_eq!(error, first);
+            // The parallel read without a cache may report either error.
             let error = BatchCertificate::<CurrentNetwork>::read_le_with_unchecked(&bytes[..], unchecked)
                 .unwrap_err()
                 .to_string();
-            assert_eq!(error, first);
+            assert!(error == first || error == last);
         }
     }
 
