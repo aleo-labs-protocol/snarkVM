@@ -93,10 +93,19 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlWrapped<Intege
             None => E::halt(format!("Integer of {num_bits} bits is not supported")),
         };
 
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (_, Mode::Constant) => Count::less_than(2 * I::BITS + 3, 0, 0, 0),
-            (Mode::Constant, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
+        match (case.0, case.1, case.2, case.3) {
+            (Mode::Constant, Mode::Constant, _, _) => Count::is(I::BITS, 0, 0, 0),
+            (_, Mode::Constant, _, _) => Count::less_than(2 * I::BITS + 3, 0, 0, 0),
+            (Mode::Constant, _, true, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
+                true => Count::is((2 * I::BITS) + index(I::BITS) + 3, 0, 0, 0),
+                false => Count::is(
+                    I::BITS + (I::BITS / 2) + 1,
+                    0,
+                    I::BITS + (2 * index(I::BITS)) + 4,
+                    I::BITS + (2 * index(I::BITS)) + 5,
+                ),
+            },
+            (Mode::Constant, _, false, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
                 true => Count::less_than(
                     (2 * I::BITS) + index(I::BITS) + 3,
                     0,
@@ -110,7 +119,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlWrapped<Intege
                     (2 * I::BITS) + (I::BITS / 2) + (2 * index(I::BITS)) + 7,
                 ),
             },
-            (_, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
+            (_, _, _, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
                 true => Count::is(
                     3 + index(I::BITS),
                     0,
@@ -191,6 +200,10 @@ mod tests {
             // Check that shift left by two is computed correctly.
             let name = format!("Quadruple: {mode_a} << {mode_b} {i}");
             check_shl::<I, M>(&name, first, console::Integer::one() + console::Integer::one(), mode_a, mode_b);
+
+            // Check that zero shifted left by `second` is computed correctly.
+            let name = format!("Zero: {mode_a} << {mode_b} {i}");
+            check_shl::<I, M>(&name, console::Integer::zero(), second, mode_a, mode_b);
         }
     }
 
