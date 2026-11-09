@@ -18,7 +18,7 @@ use super::*;
 impl<E: Environment> Distribution<Group<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Group<E> {
-        Group::new(Uniform::rand(rng))
+        Group::new_unchecked(Uniform::rand(rng))
     }
 }
 

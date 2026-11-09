@@ -30,6 +30,9 @@ use crate::{
 
 use std::ops::Neg;
 
+// The CUDA C++ reads `infinity` at byte 96 of an affine point.
+const _: () = assert!(std::mem::offset_of!(super::G1Affine, infinity) == 96);
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bls12_377G1Parameters;
 
