@@ -86,17 +86,18 @@ mod tests {
 
     /// Returns the `Debug` output of every compute key in `authority`, which shows `sk_prf`.
     fn compute_key_debug(authority: &Authority<console::network::MainnetV0>) -> Vec<String> {
-        let signatures: Vec<_> = match authority {
-            Authority::Beacon(signature) => vec![signature],
+        let debug = |signature: &Signature<_>| format!("{:?}", signature.compute_key());
+        match authority {
+            Authority::Beacon(signature) => vec![debug(signature)],
             Authority::Quorum(subdag) => subdag
                 .values()
                 .flatten()
                 .flat_map(|certificate| {
                     std::iter::once(certificate.batch_header().signature()).chain(certificate.signatures())
                 })
+                .map(debug)
                 .collect(),
-        };
-        signatures.into_iter().map(|signature| format!("{:?}", signature.compute_key())).collect()
+        }
     }
 
     #[test]

@@ -42,7 +42,7 @@ impl<N: Network> Default for ComputeKeyCache<N> {
 impl<N: Network> ComputeKeyCache<N> {
     /// Returns an empty cache that holds at most `capacity` compute keys.
     pub fn new(capacity: usize) -> Self {
-        Self { keys: HashMap::new(), capacity: capacity.max(1) }
+        Self { keys: HashMap::new(), capacity }
     }
 
     /// Returns the number of cached compute keys.
@@ -63,7 +63,7 @@ impl<N: Network> ComputeKeyCache<N> {
         reader.read_exact(pk_sig_bytes)?;
         if let Err(eof) = reader.read_exact(pr_sig_bytes) {
             // The decoder rejects a bad `pk_sig` before it reads `pr_sig`.
-            Group::<N>::from_x_coordinate(Field::new(N::Field::read_le(&pk_sig_bytes[..])?)).map_err(into_io_error)?;
+            Group::<N>::read_le(&pk_sig_bytes[..])?;
             return Err(eof);
         }
 
@@ -107,8 +107,8 @@ mod tests {
         let cold = ComputeKey::<CurrentNetwork>::read_le_with_unchecked(bytes, unchecked);
         let cached = cache.read_compute_key(bytes, unchecked);
         match (cold, cached) {
-            // `ComputeKey` equality ignores `sk_prf`, and `Debug` shows it.
-            (Ok(cold), Ok(cached)) => assert_eq!(format!("{cold:?}"), format!("{cached:?}")),
+            // `ComputeKey` equality ignores `sk_prf`.
+            (Ok(cold), Ok(cached)) => assert_eq!((cold, cold.sk_prf), (cached, cached.sk_prf)),
             (Err(cold), Err(cached)) => {
                 assert_eq!(cold.kind(), cached.kind());
                 assert_eq!(cold.to_string(), cached.to_string());
