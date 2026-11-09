@@ -47,9 +47,10 @@ impl<E: Environment, I: IntegerType> BitAnd<&Integer<E, I>> for &Integer<E, I> {
 
     /// Returns `(self AND other)`.
     fn bitand(self, other: &Integer<E, I>) -> Self::Output {
-        let mut output = self.clone();
-        output &= other;
-        output
+        Self::Output {
+            bits_le: self.bits_le.iter().zip_eq(other.bits_le.iter()).map(|(a, b)| a & b).collect(),
+            phantom: Default::default(),
+        }
     }
 }
 
@@ -63,11 +64,7 @@ impl<E: Environment, I: IntegerType> BitAndAssign<Integer<E, I>> for Integer<E, 
 impl<E: Environment, I: IntegerType> BitAndAssign<&Integer<E, I>> for Integer<E, I> {
     /// Sets `self` as `(self AND other)`.
     fn bitand_assign(&mut self, other: &Integer<E, I>) {
-        // Stores the bitwise AND of `self` and `other` in `self`.
-        *self = Self {
-            bits_le: self.bits_le.iter().zip_eq(other.bits_le.iter()).map(|(a, b)| a & b).collect(),
-            phantom: Default::default(),
-        }
+        *self = &*self & other;
     }
 }
 

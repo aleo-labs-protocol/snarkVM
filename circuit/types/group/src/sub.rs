@@ -35,7 +35,7 @@ impl<E: Environment> Sub<&Group<E>> for &Group<E> {
     type Output = Group<E>;
 
     fn sub(self, other: &Group<E>) -> Self::Output {
-        (*self).clone() - other
+        self + &(-other)
     }
 }
 
@@ -47,7 +47,7 @@ impl<E: Environment> SubAssign<Self> for Group<E> {
 
 impl<E: Environment> SubAssign<&Self> for Group<E> {
     fn sub_assign(&mut self, other: &Self) {
-        *self = self.clone() + -other;
+        *self = &*self + &(-other);
     }
 }
 
