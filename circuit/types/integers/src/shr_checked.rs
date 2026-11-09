@@ -107,7 +107,7 @@ impl<E: Environment, I: IntegerType> OutputMode<dyn Shr<Integer<E, I>, Output = 
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrChecked<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, Mode);
+    type Case = (Mode, Mode, bool, bool);
 
     fn count(case: &Self::Case) -> Count {
         // A quick hack that matches `(u8 -> 0, u16 -> 1, u32 -> 2, u64 -> 3, u128 -> 4)`.

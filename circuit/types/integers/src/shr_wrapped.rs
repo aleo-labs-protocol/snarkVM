@@ -158,7 +158,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, Mode);
+    type Case = (Mode, Mode, bool, bool);
 
     #[rustfmt::skip]
     fn count(case: &Self::Case) -> Count {
@@ -168,10 +168,14 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Intege
             None => E::halt(format!("Integer of {num_bits} bits is not supported")),
         };
 
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (_, Mode::Constant) => Count::is(0, 0, 0, 0),
-            (Mode::Constant, _) => {
+        match (case.0, case.1, case.2, case.3) {
+            (Mode::Constant, Mode::Constant, _, _) => Count::is(I::BITS, 0, 0, 0),
+            (_, Mode::Constant, _, _) => Count::is(0, 0, 0, 0),
+            (Mode::Constant, _, true, _) if 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 => match I::is_signed() {
+                true => Count::is((2 * I::BITS) + (2 * index(I::BITS)) + 6, 0, 0, 0),
+                false => Count::is((2 * I::BITS) + index(I::BITS) + 3, 0, 0, 0),
+            },
+            (Mode::Constant, _, _, _) => {
                 match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
                     (true, true) => Count::less_than((2 * I::BITS) + index(I::BITS) + 6, 0, (2 * I::BITS) + index(I::BITS) + 3, (2 * I::BITS) + index(I::BITS) + 4),
                     (true, false) => Count::less_than(5 * I::BITS, 0, 1622, 1633),
@@ -179,7 +183,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Intege
                     (false, false) => Count::less_than(I::BITS, 0, 849, 857),
                 }
             }
-            (_, _) => match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
+            (_, _, _, _) => match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
                 (true, true) => Count::is(6 + 2 * index(I::BITS), 0, (2 * I::BITS) + index(I::BITS) + 3, (2 * I::BITS) + index(I::BITS) + 4),
                 (true, false) => Count::is(4 * I::BITS, 0, 1622, 1633),
                 (false, true) => Count::is(3 + index(I::BITS), 0, (2 * I::BITS) + index(I::BITS) + 3, (2 * I::BITS) + index(I::BITS) + 4),
@@ -192,13 +196,14 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Intege
 impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn ShrWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, Mode);
+    type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (mode_a, Mode::Constant) => mode_a,
-            (_, _) => Mode::Private,
+        match (case.0, case.1, case.2, case.3) {
+            (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
+            (Mode::Constant, _, true, _) if 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 => Mode::Constant,
+            (mode_a, Mode::Constant, _, _) => mode_a,
+            (_, _, _, _) => Mode::Private,
         }
     }
 }
@@ -222,12 +227,14 @@ mod tests {
         let expected = first.wrapping_shr(second.to_u32().unwrap());
         let a = Integer::<Circuit, I>::new(mode_a, first);
         let b = Integer::<Circuit, M>::new(mode_b, second);
+        let a_is_zero = a.is_zero().eject_value();
+        let b_is_zero = b.is_zero().eject_value();
         Circuit::scope(name, || {
             let candidate = a.shr_wrapped(&b);
             assert_eq!(expected, *candidate.eject_value());
             assert_eq!(console::Integer::new(expected), candidate.eject_value());
-            assert_count!(ShrWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
-            // assert_output_mode!(ShrWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b), candidate);
+            assert_count!(ShrWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
+            assert_output_mode!(ShrWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero), candidate);
         });
         Circuit::reset();
     }
@@ -245,6 +252,10 @@ mod tests {
             // Check that shift right by one is computed correctly.
             let name = format!("Half: {mode_a} >> {mode_b} {i}");
             check_shr::<I, M>(&name, first, console::Integer::one(), mode_a, mode_b);
+
+            // Check that zero shifted right by `second` is computed correctly.
+            let name = format!("Zero: {mode_a} >> {mode_b} {i}");
+            check_shr::<I, M>(&name, console::Integer::zero(), second, mode_a, mode_b);
         }
     }
 
