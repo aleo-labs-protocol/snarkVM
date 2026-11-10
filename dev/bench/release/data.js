@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794285074033,
+  "lastUpdate": 1794322250904,
   "repoUrl": "https://github.com/aleo-labs-protocol/snarkVM",
   "entries": {
     "snarkVM Benchmarks": [
@@ -1721,6 +1721,1728 @@ window.BENCHMARK_DATA = {
             "name": "Puzzle::check_solutions #3",
             "value": 13438,
             "range": "± 391",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "121876847+snarkworld@users.noreply.github.com",
+            "name": "JR",
+            "username": "snarkworld"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8d4ca1b931845c2c0655e2f65be86e7d95813638",
+          "message": "Merge pull request #3698 from aleo-labs-protocol/chore/bump-v4.13.0\n\nBump the snarkVM crates to 4.13.0",
+          "timestamp": "2026-11-10T06:18:45-07:00",
+          "tree_id": "14b530a02eb68d89ce1e545c4d28891b5965395b",
+          "url": "https://github.com/aleo-labs-protocol/snarkVM/commit/8d4ca1b931845c2c0655e2f65be86e7d95813638"
+        },
+        "date": 1794322201972,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "small_msm/glv_mul/1",
+            "value": 85431,
+            "range": "± 365",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/1",
+            "value": 161400,
+            "range": "± 529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/1",
+            "value": 133321,
+            "range": "± 2808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/1",
+            "value": 135114,
+            "range": "± 447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/1",
+            "value": 130078,
+            "range": "± 1666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/1",
+            "value": 85701,
+            "range": "± 759",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/2",
+            "value": 238622,
+            "range": "± 2632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/2",
+            "value": 167712,
+            "range": "± 662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/2",
+            "value": 173921,
+            "range": "± 350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/2",
+            "value": 165061,
+            "range": "± 1501",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/2",
+            "value": 165080,
+            "range": "± 1329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/3",
+            "value": 313798,
+            "range": "± 442",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/3",
+            "value": 202192,
+            "range": "± 511",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/3",
+            "value": 212152,
+            "range": "± 1491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/3",
+            "value": 199329,
+            "range": "± 1527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/3",
+            "value": 199184,
+            "range": "± 1341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/4",
+            "value": 388709,
+            "range": "± 590",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/4",
+            "value": 238945,
+            "range": "± 5616",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/4",
+            "value": 248987,
+            "range": "± 2090",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/4",
+            "value": 233217,
+            "range": "± 2404",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/4",
+            "value": 233388,
+            "range": "± 1457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/5",
+            "value": 461023,
+            "range": "± 6320",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/5",
+            "value": 275582,
+            "range": "± 2109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/5",
+            "value": 287340,
+            "range": "± 3342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/5",
+            "value": 266687,
+            "range": "± 1728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/5",
+            "value": 266593,
+            "range": "± 736",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/7",
+            "value": 628614,
+            "range": "± 1221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/7",
+            "value": 345012,
+            "range": "± 1226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/7",
+            "value": 361927,
+            "range": "± 4743",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/7",
+            "value": 335781,
+            "range": "± 1460",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/7",
+            "value": 336431,
+            "range": "± 1676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/13",
+            "value": 1144011,
+            "range": "± 21876",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/13",
+            "value": 565615,
+            "range": "± 4272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/13",
+            "value": 591835,
+            "range": "± 4469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/13",
+            "value": 543715,
+            "range": "± 12078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/13",
+            "value": 546581,
+            "range": "± 22840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/14",
+            "value": 1227710,
+            "range": "± 2917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/14",
+            "value": 608000,
+            "range": "± 5431",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/14",
+            "value": 634151,
+            "range": "± 2975",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/14",
+            "value": 584573,
+            "range": "± 6290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/14",
+            "value": 583941,
+            "range": "± 8647",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/25",
+            "value": 2141149,
+            "range": "± 10882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/25",
+            "value": 1055948,
+            "range": "± 10290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/25",
+            "value": 1115858,
+            "range": "± 3596",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/25",
+            "value": 1015202,
+            "range": "± 4690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/25",
+            "value": 1015136,
+            "range": "± 13441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/26",
+            "value": 2214457,
+            "range": "± 25186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/26",
+            "value": 1092549,
+            "range": "± 3090",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/26",
+            "value": 1155307,
+            "range": "± 21439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/26",
+            "value": 1050123,
+            "range": "± 8454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/26",
+            "value": 1051247,
+            "range": "± 12259",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/31",
+            "value": 2626972,
+            "range": "± 6896",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/31",
+            "value": 1281793,
+            "range": "± 16051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/31",
+            "value": 1361984,
+            "range": "± 7126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/31",
+            "value": 1237103,
+            "range": "± 2489",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/31",
+            "value": 1237153,
+            "range": "± 5511",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/double_and_add/32",
+            "value": 2712842,
+            "range": "± 13579",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus4/32",
+            "value": 1324605,
+            "range": "± 20534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus6/32",
+            "value": 1408029,
+            "range": "± 10913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/32",
+            "value": 1274449,
+            "range": "± 10023",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/32",
+            "value": 1289059,
+            "range": "± 12249",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/48",
+            "value": 1872369,
+            "range": "± 21021",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/48",
+            "value": 1843006,
+            "range": "± 25398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/64",
+            "value": 2465149,
+            "range": "± 10103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/64",
+            "value": 2005503,
+            "range": "± 35377",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/96",
+            "value": 3652744,
+            "range": "± 36579",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/96",
+            "value": 2314663,
+            "range": "± 17060",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/128",
+            "value": 4831096,
+            "range": "± 36488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/128",
+            "value": 2587844,
+            "range": "± 26069",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/192",
+            "value": 7213865,
+            "range": "± 33771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/192",
+            "value": 3715655,
+            "range": "± 81708",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/256",
+            "value": 9592757,
+            "range": "± 15790",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/256",
+            "value": 4233677,
+            "range": "± 53259",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/384",
+            "value": 14385933,
+            "range": "± 28640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/384",
+            "value": 6409436,
+            "range": "± 65665",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/512",
+            "value": 19209355,
+            "range": "± 80618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/512",
+            "value": 7185722,
+            "range": "± 90926",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/768",
+            "value": 28790192,
+            "range": "± 277195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/768",
+            "value": 8751770,
+            "range": "± 84392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/straus5/1024",
+            "value": 38450489,
+            "range": "± 256467",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "small_msm/batched/1024",
+            "value": 10164456,
+            "range": "± 90997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "VariableBase MSM on BLS12-377 (10000)",
+            "value": 67212338,
+            "range": "± 143384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "VariableBase MSM on BLS12-377 (100000)",
+            "value": 436555615,
+            "range": "± 1264934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "VariableBase MSM on BLS12-377 (1000000)",
+            "value": 3592223821,
+            "range": "± 8054965",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Variable MSM on Edwards-BLS12 (10000)",
+            "value": 38569433,
+            "range": "± 194554",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Variable MSM on Edwards-BLS12 (100000)",
+            "value": 267521879,
+            "range": "± 1429934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Variable MSM on Edwards-BLS12 (1000000)",
+            "value": 2334089987,
+            "range": "± 32128348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "PoseidonSponge<2, 1> Absorb 100 native",
+            "value": 1506720,
+            "range": "± 8810",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "PoseidonSponge<2, 1> Absorb 100 nonnative",
+            "value": 5705560,
+            "range": "± 15941",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "LinearCombination::add",
+            "value": 5024057,
+            "range": "± 22446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "LinearCombination::add_assign",
+            "value": 143581,
+            "range": "± 7260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "to_value",
+            "value": 0,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "debug",
+            "value": 280841021,
+            "range": "± 972453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "account_private_key",
+            "value": 55158,
+            "range": "± 289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "account_view_key",
+            "value": 110242,
+            "range": "± 3113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "account_address",
+            "value": 146073,
+            "range": "± 2755",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon2 Hash 4 -> 1",
+            "value": 39365,
+            "range": "± 81",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon2 Hash 4 -> 2",
+            "value": 39621,
+            "range": "± 574",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon2 HashToGroup 4",
+            "value": 96912,
+            "range": "± 170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon2 Hash 10 -> 1",
+            "value": 79112,
+            "range": "± 1752",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon2 Hash 10 -> 4",
+            "value": 92236,
+            "range": "± 112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon2 Hash 10 -> 8",
+            "value": 119106,
+            "range": "± 193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon4 Hash 4 -> 1",
+            "value": 38503,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon4 Hash 4 -> 2",
+            "value": 38386,
+            "range": "± 181",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon4 HashToGroup 4",
+            "value": 95991,
+            "range": "± 93",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon4 Hash 10 -> 1",
+            "value": 77541,
+            "range": "± 126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon4 Hash 10 -> 4",
+            "value": 77472,
+            "range": "± 201",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon4 Hash 10 -> 8",
+            "value": 96870,
+            "range": "± 222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon8 Hash 4 -> 1",
+            "value": 67075,
+            "range": "± 98",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon8 Hash 4 -> 2",
+            "value": 67206,
+            "range": "± 79",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon8 HashToGroup 4",
+            "value": 125042,
+            "range": "± 527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon8 Hash 10 -> 1",
+            "value": 101080,
+            "range": "± 95",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon8 Hash 10 -> 4",
+            "value": 101451,
+            "range": "± 405",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Poseidon8 Hash 10 -> 8",
+            "value": 101276,
+            "range": "± 132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Elligator2 - Field of 253-bits",
+            "value": 31108,
+            "range": "± 1029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/1",
+            "value": 743705,
+            "range": "± 1513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/100",
+            "value": 4935261,
+            "range": "± 10434",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/depth3/8",
+            "value": 269155,
+            "range": "± 1134",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/depth5/2",
+            "value": 138585,
+            "range": "± 168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/depth5/4",
+            "value": 189229,
+            "range": "± 735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/depth5/16",
+            "value": 595374,
+            "range": "± 1968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/depth20/1",
+            "value": 454443,
+            "range": "± 10193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/new/depth20/8",
+            "value": 657278,
+            "range": "± 3606",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/hash_empty",
+            "value": 3,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/hash_children/zeros",
+            "value": 21655,
+            "range": "± 79",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/append/1/1",
+            "value": 742443,
+            "range": "± 5073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/append/1/100",
+            "value": 5240132,
+            "range": "± 39356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/append/100/1",
+            "value": 744350,
+            "range": "± 1627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/append/100/100",
+            "value": 5915230,
+            "range": "± 49377",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update/1/1",
+            "value": 740988,
+            "range": "± 7543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update/1/100",
+            "value": 84008292,
+            "range": "± 309918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update/100/1",
+            "value": 746235,
+            "range": "± 1418",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update/100/100",
+            "value": 85433723,
+            "range": "± 180096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update_many/1/1",
+            "value": 740433,
+            "range": "± 502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update_many/1/1 #2",
+            "value": 741329,
+            "range": "± 462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update_many/100/1",
+            "value": 746470,
+            "range": "± 4102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "MerkleTree/update_many/100/86",
+            "value": 4677690,
+            "range": "± 103370",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/1",
+            "value": 744480,
+            "range": "± 3199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/1",
+            "value": 775084,
+            "range": "± 11192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/2",
+            "value": 741229,
+            "range": "± 1170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/2",
+            "value": 770743,
+            "range": "± 10561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/3",
+            "value": 743546,
+            "range": "± 2804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/3",
+            "value": 772744,
+            "range": "± 8931",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/4",
+            "value": 744310,
+            "range": "± 3256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/4",
+            "value": 770257,
+            "range": "± 8145",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/5",
+            "value": 744055,
+            "range": "± 3132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/5",
+            "value": 769585,
+            "range": "± 10499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/6",
+            "value": 745452,
+            "range": "± 2086",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/6",
+            "value": 770966,
+            "range": "± 8664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/7",
+            "value": 745193,
+            "range": "± 909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/7",
+            "value": 770966,
+            "range": "± 8278",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Single/8",
+            "value": 749123,
+            "range": "± 7053",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "UpdateVSUpdateMany/Batch/8",
+            "value": 771147,
+            "range": "± 7861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_from_field",
+            "value": 91652021,
+            "range": "± 3314733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_from_field_on_curve",
+            "value": 151300994,
+            "range": "± 1424738",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "group_from_field_off_curve",
+            "value": 9871924,
+            "range": "± 19075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g1_rand",
+            "value": 131137,
+            "range": "± 2959",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g1_mul_assign",
+            "value": 95520,
+            "range": "± 417",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g1_add_assign",
+            "value": 919,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g1_add_assign_mixed",
+            "value": 631,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g1_double",
+            "value": 386,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g1_is_in_correct_subgroup",
+            "value": 67076,
+            "range": "± 453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g2_rand",
+            "value": 1357338,
+            "range": "± 15150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g2_mul_assign",
+            "value": 318633,
+            "range": "± 5225",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g2_add_assign",
+            "value": 3384,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g2_add_assign_mixed",
+            "value": 2359,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: g2_double",
+            "value": 1415,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_repr_add_nocarry",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_repr_sub_noborrow",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_repr_num_bits",
+            "value": 3,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_repr_mul2",
+            "value": 5,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_repr_div2",
+            "value": 5,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_add_assign",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_sub_assign",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_mul_assign",
+            "value": 56,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_double",
+            "value": 5,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_square",
+            "value": 53,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_inverse",
+            "value": 2108,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_negate",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_sqrt",
+            "value": 44788,
+            "range": "± 1479",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_to_bigint",
+            "value": 33,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq_from_bigint",
+            "value": 57,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq12_add_assign",
+            "value": 66,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq12_sub_assign",
+            "value": 50,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq12_mul_assign",
+            "value": 4952,
+            "range": "± 45",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq12_double",
+            "value": 69,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq12_square",
+            "value": 3362,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq12_inverse",
+            "value": 10465,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq2_add_assign",
+            "value": 8,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq2_sub_assign",
+            "value": 9,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq2_mul_assign",
+            "value": 210,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq2_double",
+            "value": 9,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq2_square",
+            "value": 135,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq2_inverse",
+            "value": 2345,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fq2_sqrt",
+            "value": 81500,
+            "range": "± 3266",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_repr_add_nocarry",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_repr_sub_noborrow",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_repr_num_bits",
+            "value": 3,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_repr_mul2",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_repr_div2",
+            "value": 5,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_add_assign",
+            "value": 3,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_sub_assign",
+            "value": 3,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_mul_assign",
+            "value": 29,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_double",
+            "value": 4,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_square",
+            "value": 22,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_inverse",
+            "value": 1315,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_negate",
+            "value": 3,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_sqrt",
+            "value": 15533,
+            "range": "± 215",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_to_bigint",
+            "value": 14,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: fr_from_bigint",
+            "value": 30,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: pairing_miller_loop",
+            "value": 465672,
+            "range": "± 1952",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: pairing_final_exponentiation",
+            "value": 857521,
+            "range": "± 3486",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "bls12_377: pairing_full",
+            "value": 1496695,
+            "range": "± 9419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Block::to_bytes_le",
+            "value": 10716,
+            "range": "± 98",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Block::serialize (bincode)",
+            "value": 21207,
+            "range": "± 122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Block::from_bytes_le",
+            "value": 5624597,
+            "range": "± 28747",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Block::from_bytes_le_unchecked",
+            "value": 2684462,
+            "range": "± 6964",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Block::deserialize (bincode)",
+            "value": 5649567,
+            "range": "± 18648",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Header::to_bytes_le",
+            "value": 242,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Header::serialize (bincode)",
+            "value": 541,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Header::from_bytes_le",
+            "value": 209,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Header::from_bytes_le_unchecked",
+            "value": 210,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Header::deserialize (bincode)",
+            "value": 258,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transactions::to_bytes_le",
+            "value": 7694,
+            "range": "± 80",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transactions::serialize (bincode)",
+            "value": 15119,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transactions::from_bytes_le",
+            "value": 4609513,
+            "range": "± 22963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transactions::from_bytes_le_unchecked",
+            "value": 2293954,
+            "range": "± 3708",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transactions::deserialize (bincode)",
+            "value": 4548792,
+            "range": "± 26797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::to_bytes_le",
+            "value": 3613,
+            "range": "± 58",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::serialize (bincode)",
+            "value": 7346,
+            "range": "± 32",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::from_bytes_le",
+            "value": 2268596,
+            "range": "± 6814",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::from_bytes_le_unchecked",
+            "value": 1166267,
+            "range": "± 9751",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::deserialize (bincode)",
+            "value": 2260894,
+            "range": "± 22344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transition::to_bytes_le",
+            "value": 1684,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transition::serialize (bincode)",
+            "value": 3422,
+            "range": "± 25",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transition::from_bytes_le",
+            "value": 713372,
+            "range": "± 7325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transition::from_bytes_le_unchecked",
+            "value": 460468,
+            "range": "± 5559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transition::deserialize (bincode)",
+            "value": 710088,
+            "range": "± 1302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Signature::to_bytes_le",
+            "value": 2772,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Signature::serialize (bincode)",
+            "value": 5582,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Signature::from_bytes_le",
+            "value": 388577,
+            "range": "± 827",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Signature::from_bytes_le_unchecked",
+            "value": 348733,
+            "range": "± 1904",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Signature::deserialize (bincode)",
+            "value": 386164,
+            "range": "± 4477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::to_bytes_le",
+            "value": 4280,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::serialize (bincode)",
+            "value": 8567,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::to_string (serde_json)",
+            "value": 15252,
+            "range": "± 52",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::from_bytes_le",
+            "value": 898801,
+            "range": "± 8069",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::from_bytes_le_unchecked",
+            "value": 357267,
+            "range": "± 3834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::deserialize (bincode)",
+            "value": 898661,
+            "range": "± 11822",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::unchecked_deserialize (bincode)",
+            "value": 353661,
+            "range": "± 7504",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchHeader::from_str (serde_json)",
+            "value": 922565,
+            "range": "± 6241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::to_bytes_le",
+            "value": 15092,
+            "range": "± 77",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::serialize (bincode)",
+            "value": 30289,
+            "range": "± 130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::to_string (serde_json)",
+            "value": 31542,
+            "range": "± 92",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::from_bytes_le",
+            "value": 2251501,
+            "range": "± 28360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::from_bytes_le_unchecked",
+            "value": 1085263,
+            "range": "± 27688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::deserialize (bincode)",
+            "value": 2251680,
+            "range": "± 29539",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::unchecked_deserialize (bincode)",
+            "value": 1086604,
+            "range": "± 21059",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "BatchCertificate::from_str (serde_json)",
+            "value": 3122794,
+            "range": "± 76194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::to_bytes_le",
+            "value": 88344,
+            "range": "± 221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::serialize (bincode)",
+            "value": 177101,
+            "range": "± 769",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::to_string (serde_json)",
+            "value": 177383,
+            "range": "± 2040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::from_bytes_le",
+            "value": 13908724,
+            "range": "± 187949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::from_bytes_le_unchecked",
+            "value": 6998639,
+            "range": "± 223601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::deserialize (bincode)",
+            "value": 13885184,
+            "range": "± 180522",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::unchecked_deserialize (bincode)",
+            "value": 7008406,
+            "range": "± 74988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Subdag::from_str (serde_json)",
+            "value": 19159310,
+            "range": "± 164821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::Deploy - cached_verify",
+            "value": 742937,
+            "range": "± 14931",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "LimitedWriter::new - transfer_public",
+            "value": 9458,
+            "range": "± 86",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::Execute(transfer_public) - cached_verify",
+            "value": 92751,
+            "range": "± 1332",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "LimitedWriter::new - transfer_private",
+            "value": 9954,
+            "range": "± 122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Transaction::Execute(transfer_private) - cached_verify",
+            "value": 108303,
+            "range": "± 714",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verify/check_fee (fee_public)",
+            "value": 7729724,
+            "range": "± 161966",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verify/check_transaction (transfer_public, fee_public)",
+            "value": 15390950,
+            "range": "± 467029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verify/check_fee (fee_private)",
+            "value": 10092583,
+            "range": "± 215741",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verify/check_transaction (transfer_public, fee_private)",
+            "value": 17973924,
+            "range": "± 335971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verify/check_transaction (transfer_public, fee_public, uncleared cache)",
+            "value": 93297,
+            "range": "± 2475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verify_throughput/check_transaction x4 (transfer_public, fee_public)",
+            "value": 25697284,
+            "range": "± 1363630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verify_throughput/check_transaction x4 (transfer_public, fee_private)",
+            "value": 29895148,
+            "range": "± 1511883",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Puzzle::prove",
+            "value": 617028730,
+            "range": "± 7460713",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Puzzle::check_solutions",
+            "value": 127,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Puzzle::check_solutions #2",
+            "value": 17147,
+            "range": "± 938",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "Puzzle::check_solutions #3",
+            "value": 18221,
+            "range": "± 2031",
             "unit": "ns/iter"
           }
         ]
