@@ -102,4 +102,33 @@ mod tests {
         assert_eq!(expected, candidate);
         Ok(())
     }
+
+    /// The owner's visibility has exactly one encoding: `0` for public, `1` for private.
+    ///
+    /// Any other byte used to decode as public and re-encode as `0`, which gave one record
+    /// type, and so one program, many encodings.
+    #[test]
+    fn test_owner_visibility_has_one_encoding() -> Result<()> {
+        let public = RecordType::<CurrentNetwork>::from_str("record data:\n    owner as address.public;")?;
+        let private = RecordType::<CurrentNetwork>::from_str("record data:\n    owner as address.private;")?;
+
+        // The name `data` (a length byte and four bytes), then the owner's visibility.
+        let public_bytes = public.to_bytes_le()?;
+        let private_bytes = private.to_bytes_le()?;
+        assert_eq!(public_bytes, [4, b'd', b'a', b't', b'a', 0, 0, 0]);
+        assert_eq!(private_bytes, [4, b'd', b'a', b't', b'a', 1, 0, 0]);
+        assert_eq!(RecordType::<CurrentNetwork>::from_bytes_le(&public_bytes)?, public);
+        assert_eq!(RecordType::<CurrentNetwork>::from_bytes_le(&private_bytes)?, private);
+
+        // Every other indicator is rejected.
+        for indicator in 2..=u8::MAX {
+            let mut bytes = public_bytes.clone();
+            bytes[5] = indicator;
+            assert!(
+                RecordType::<CurrentNetwork>::from_bytes_le(&bytes).is_err(),
+                "owner visibility indicator {indicator} must be rejected"
+            );
+        }
+        Ok(())
+    }
 }
