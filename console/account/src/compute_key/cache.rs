@@ -58,6 +58,7 @@ impl<N: Network> ComputeKeyCache<N> {
     /// Reads a compute key as `ComputeKey::read_le_with_unchecked` does, decoding it only if
     /// this cache holds no earlier decode of the same bytes.
     pub fn read_compute_key<R: Read>(&mut self, mut reader: R, unchecked: bool) -> IoResult<ComputeKey<N>> {
+        const { assert!(COMPUTE_KEY_SIZE == 2 * Field::<N>::SIZE_IN_BYTES) };
         let mut bytes = [0u8; COMPUTE_KEY_SIZE];
         let (pk_sig_bytes, pr_sig_bytes) = bytes.split_at_mut(COMPUTE_KEY_SIZE / 2);
         reader.read_exact(pk_sig_bytes)?;
