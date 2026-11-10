@@ -230,6 +230,12 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.certificate_map.compact()
     }
 
+    /// Keeps only the certificate rows whose value `retain` accepts. See `DataMap::retain_all`.
+    #[cfg(feature = "prune-authority-data")]
+    fn retain_certificate_indexes(&self, retain: impl Fn(&(u32, u64)) -> bool + Sync) -> Result<(usize, usize)> {
+        self.certificate_map.retain_all(retain)
+    }
+
     /// Returns the block metadata map.
     fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
         &self.block_metadata_map

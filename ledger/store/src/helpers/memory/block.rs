@@ -220,6 +220,12 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
         &self.block_metadata_map
     }
 
+    /// Keeps only the certificate rows whose value `retain` accepts.
+    #[cfg(feature = "prune-authority-data")]
+    fn retain_certificate_indexes(&self, retain: impl Fn(&(u32, u64)) -> bool + Sync) -> Result<(usize, usize)> {
+        self.certificate_map.retain_all(retain)
+    }
+
     /// Returns the transaction store.
     fn transaction_store(&self) -> &TransactionStore<N, Self::TransactionStorage> {
         &self.transaction_store

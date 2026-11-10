@@ -632,11 +632,142 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
     }
 }
 
+/// The number of key-range slices [`DataMap::retain_all`] rewrites, one write each. The keys of the
+/// maps it serves are hashes, uniform in their first bytes, so the slices split the first two key
+/// bytes evenly. Unit tests use a few slices, so each holds a few rows.
+#[cfg(feature = "prune-authority-data")]
+const RETAIN_SLICES: usize = if cfg!(test) { 4 } else { 256 };
+
+/// The number of threads that rewrite slices concurrently.
+#[cfg(feature = "prune-authority-data")]
+const RETAIN_THREADS: usize = if cfg!(test) { 2 } else { 4 };
+
+/// The iterator readahead of a slice scan, in bytes.
+#[cfg(feature = "prune-authority-data")]
+const RETAIN_READAHEAD: usize = 4 << 20;
+
+/// [`DataMap::retain_all`] logs progress about this often.
+#[cfg(feature = "prune-authority-data")]
+const RETAIN_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
 impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K, V> {
     /// Compacts this map's keys. See `RocksDB::compact_prefix`.
     pub fn compact(&self) -> Result<()> {
-        let prefix = <[u8; PREFIX_LEN]>::try_from(self.context.as_slice())?;
-        self.database.compact_prefix(prefix)
+        self.database.compact_prefix(self.prefix()?)
+    }
+
+    /// This map's key prefix.
+    fn prefix(&self) -> Result<[u8; PREFIX_LEN]> {
+        Ok(<[u8; PREFIX_LEN]>::try_from(self.context.as_slice())?)
+    }
+
+    /// Keeps only the rows whose value `retain` accepts, rewriting the map in [`RETAIN_SLICES`]
+    /// key-range slices on [`RETAIN_THREADS`] threads, and returns the numbers of kept and removed
+    /// rows. Each slice is one write, so an interrupted run leaves every slice untouched or done, and
+    /// a rerun changes nothing. Meant for maps whose keys are uniform in their first bytes, so the
+    /// slices are even. Bypasses the atomic batch, so it refuses to run while one is in progress.
+    #[cfg(feature = "prune-authority-data")]
+    pub(crate) fn retain_all(&self, retain: impl Fn(&V) -> bool + Sync) -> Result<(usize, usize)>
+    where
+        K: Send + Sync,
+        V: Send + Sync,
+    {
+        use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+        /// The first two key bytes of slice `i`.
+        fn slice_start(i: usize) -> [u8; 2] {
+            u16::try_from(i * 65536 / RETAIN_SLICES).expect("slice below count").to_be_bytes()
+        }
+
+        struct Progress {
+            done: usize,
+            kept: usize,
+            removed: usize,
+            next_report: std::time::Duration,
+        }
+
+        let timer = Instant::now();
+        let progress = Mutex::new(Progress { done: 0, kept: 0, removed: 0, next_report: RETAIN_REPORT_INTERVAL });
+
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(RETAIN_THREADS).build()?;
+        pool.install(|| {
+            (0..RETAIN_SLICES).into_par_iter().try_for_each(|i| -> Result<()> {
+                let end = (i + 1 < RETAIN_SLICES).then(|| slice_start(i + 1));
+                let (kept, removed) = self.retain_range(&slice_start(i), end.as_ref().map(|end| &end[..]), &retain)?;
+
+                let mut progress = progress.lock();
+                progress.done += 1;
+                progress.kept += kept;
+                progress.removed += removed;
+                let elapsed = timer.elapsed();
+                if elapsed >= progress.next_report && progress.done < RETAIN_SLICES {
+                    let remaining =
+                        elapsed.as_secs_f64() * (RETAIN_SLICES - progress.done) as f64 / progress.done as f64;
+                    tracing::info!(
+                        "Rewrote {} of {RETAIN_SLICES} slices, kept {} rows, removed {}, in {:.0} s, about {remaining:.0} s left",
+                        progress.done,
+                        progress.kept,
+                        progress.removed,
+                        elapsed.as_secs_f64()
+                    );
+                    progress.next_report = elapsed + RETAIN_REPORT_INTERVAL;
+                }
+                Ok(())
+            })
+        })?;
+
+        let progress = progress.lock();
+        Ok((progress.kept, progress.removed))
+    }
+
+    /// Keeps only the rows whose value `retain` accepts among those whose keys, after the map prefix,
+    /// are in `start..end` (`None`: the map's end), in one write: a range delete followed by puts of
+    /// the kept rows. Writes nothing if no row goes. Returns the numbers of kept and removed rows.
+    #[cfg(feature = "prune-authority-data")]
+    pub(crate) fn retain_range(
+        &self,
+        start: &[u8],
+        end: Option<&[u8]>,
+        mut retain: impl FnMut(&V) -> bool,
+    ) -> Result<(usize, usize)> {
+        ensure!(!self.batch_in_progress.load(Ordering::SeqCst), "retain_range bypasses the atomic batch");
+        let prefix = self.prefix()?;
+        let lower = [&prefix[..], start].concat();
+        // Any key under the prefix sorts below the prefix's successor, so the range stays in this map.
+        let upper = match end {
+            Some(end) => [&prefix[..], end].concat(),
+            None => super::prefix_end(prefix)?.to_vec(),
+        };
+        ensure!(lower < upper, "Empty key range {start:?}..{end:?}");
+
+        let mut options = rocksdb::ReadOptions::default();
+        options.set_total_order_seek(true);
+        options.set_iterate_lower_bound(lower.clone());
+        options.set_iterate_upper_bound(upper.clone());
+        options.set_readahead_size(RETAIN_READAHEAD);
+        // A one-off scan; keep the block cache for the maps the node reads.
+        options.fill_cache(false);
+        let mut iter = self.database.raw_iterator_opt(options);
+        iter.seek(&lower);
+
+        // The range delete applies before the puts that follow it.
+        let mut batch = rocksdb::WriteBatch::default();
+        batch.delete_range(&lower, &upper);
+        let (mut kept, mut removed) = (0, 0);
+        while let Some((key, value)) = iter.item() {
+            if retain(&unchecked_deserialize::<V>(value)?) {
+                batch.put(key, value);
+                kept += 1;
+            } else {
+                removed += 1;
+            }
+            iter.next();
+        }
+        iter.status()?;
+        if removed > 0 {
+            self.database.write(batch)?;
+        }
+        Ok((kept, removed))
     }
 
     #[inline]
@@ -1650,5 +1781,107 @@ mod tests {
         assert_eq!(test_storage.extra_maps.own_map1.iter_confirmed().count(), 1);
         assert_eq!(test_storage.extra_maps.own_map2.iter_confirmed().count(), 1);
         assert_eq!(test_storage.extra_maps.extra_maps.own_map.iter_confirmed().count(), 0);
+    }
+
+    #[cfg(feature = "prune-authority-data")]
+    mod retain_range {
+        use super::*;
+        use crate::helpers::rocksdb::{TestMap, internal::schema::map_prefix};
+
+        type Row = ([u8; 2], u32);
+
+        /// A map with the given rows, plus one raw row in each neighbouring prefix.
+        fn setup(rows: &[Row]) -> (DataMap<[u8; 2], u32>, Vec<Vec<u8>>) {
+            let map: DataMap<[u8; 2], u32> =
+                RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test)).unwrap();
+            for (key, value) in rows {
+                map.insert(*key, *value).unwrap();
+            }
+            let prefix = u32::from_be_bytes(map_prefix(0, MapID::Test(TestMap::Test)));
+            let neighbours: Vec<Vec<u8>> = [prefix - 1, prefix + 1]
+                .into_iter()
+                .flat_map(|p| {
+                    [[&p.to_be_bytes()[..], &[0, 0]].concat(), [&p.to_be_bytes()[..], &[0xff, 0xff]].concat()]
+                })
+                .collect();
+            for key in &neighbours {
+                map.database.put(key, b"n").unwrap();
+            }
+            (map, neighbours)
+        }
+
+        fn rows(map: &DataMap<[u8; 2], u32>) -> Vec<Row> {
+            map.iter_confirmed().map(|(k, v)| (*k, *v)).collect()
+        }
+
+        fn assert_neighbours_intact(map: &DataMap<[u8; 2], u32>, neighbours: &[Vec<u8>]) {
+            for key in neighbours {
+                assert_eq!(map.database.get(key).unwrap().as_deref(), Some(&b"n"[..]), "{key:?}");
+            }
+        }
+
+        const ROWS: [Row; 6] =
+            [([0, 0], 1), ([0, 1], 9), ([0x7f, 0xff], 1), ([0x80, 0], 9), ([0x80, 1], 1), ([0xff, 0xff], 9)];
+
+        #[test]
+        fn test_slice_keeps_retained_and_drops_the_rest() {
+            let (map, neighbours) = setup(&ROWS);
+            let (kept, removed) = map.retain_range(&[0, 0], Some(&[0x80, 0]), |v| *v > 5).unwrap();
+            assert_eq!((kept, removed), (1, 2));
+            // The slice `[0,0]..[0x80,0]` is half-open: `[0x80,0]` and above are untouched.
+            assert_eq!(rows(&map), vec![([0, 1], 9), ([0x80, 0], 9), ([0x80, 1], 1), ([0xff, 0xff], 9)]);
+            assert_neighbours_intact(&map, &neighbours);
+        }
+
+        #[test]
+        fn test_slice_to_the_map_end_covers_the_last_key() {
+            let (map, neighbours) = setup(&ROWS);
+            let (kept, removed) = map.retain_range(&[0x80, 0], None, |v| *v > 5).unwrap();
+            assert_eq!((kept, removed), (2, 1));
+            assert_eq!(rows(&map), vec![
+                ([0, 0], 1),
+                ([0, 1], 9),
+                ([0x7f, 0xff], 1),
+                ([0x80, 0], 9),
+                ([0xff, 0xff], 9)
+            ]);
+            assert_neighbours_intact(&map, &neighbours);
+        }
+
+        #[test]
+        fn test_rerunning_a_slice_changes_nothing() {
+            let (map, _) = setup(&ROWS);
+            map.retain_range(&[], None, |v| *v > 5).unwrap();
+            let after_first = rows(&map);
+            assert_eq!(after_first.len(), 3);
+            let (kept, removed) = map.retain_range(&[], None, |v| *v > 5).unwrap();
+            assert_eq!((kept, removed), (3, 0));
+            assert_eq!(rows(&map), after_first);
+            // An empty slice is a caller error, not a silent no-op.
+            assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
+        }
+
+        /// `retain_all` covers every slice, including rows at the slice boundaries.
+        #[test]
+        fn test_retain_all_covers_every_slice() {
+            let all: Vec<Row> = (0u16..16).map(|i| ((i * 0x1000).to_be_bytes(), u32::from(i % 2) * 9)).collect();
+            let expected: Vec<Row> = all.iter().copied().filter(|(_, v)| *v > 5).collect();
+            let (map, neighbours) = setup(&all);
+            assert_eq!(map.retain_all(|v| *v > 5).unwrap(), (8, 8));
+            assert_eq!(rows(&map), expected);
+            assert_neighbours_intact(&map, &neighbours);
+            // A rerun finds nothing to remove.
+            assert_eq!(map.retain_all(|v| *v > 5).unwrap(), (8, 0));
+            assert_eq!(rows(&map), expected);
+        }
+
+        #[test]
+        fn test_slice_boundaries_use_the_key_bytes() {
+            let (map, _) = setup(&ROWS);
+            // Everything in the first half goes; the second half is not read.
+            let (kept, removed) = map.retain_range(&[], Some(&[0x80]), |_| false).unwrap();
+            assert_eq!((kept, removed), (0, 3));
+            assert_eq!(rows(&map), vec![([0x80, 0], 9), ([0x80, 1], 1), ([0xff, 0xff], 9)]);
+        }
     }
 }
