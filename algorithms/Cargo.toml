@@ -78,9 +78,8 @@ workspace = true
 [dependencies.anyhow]
 workspace = true
 
-[dependencies.blake2]
-version = "0.11"
-default-features = true
+[dependencies.blake2s_simd]
+workspace = true
 
 [dependencies.cfg-if]
 workspace = true
