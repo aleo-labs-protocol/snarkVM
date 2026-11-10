@@ -111,6 +111,17 @@ mod varuna {
         .assert_eq(&snapshot);
     }
 
+    /// The circuit ID is absorbed into the Fiat-Shamir transcript, so a change
+    /// to `Circuit::hash` breaks every existing proof and verifying key.
+    #[test]
+    fn test_circuit_id_known_answer() {
+        let rng = &mut TestRng::fixed(20261110);
+        let (circuit, _) = TestCircuit::gen_rand(2, 32, 25, rng);
+        let id = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).expect("valid test fixture").id;
+        expect_test::expect!["ca745ad40aa3477726bfc6bb25bed91b0a039e3bb74f2f330fe53d2f2c40f60a"]
+            .assert_eq(&id.to_string());
+    }
+
     #[test]
     fn test_varuna_v3_key_reuse_and_batch() {
         use blake2::{Blake2s256, Digest};
