@@ -80,6 +80,7 @@ impl<N: Network> ComputeKeyCache<N> {
 
         let compute_key = ComputeKey::read_le_with_unchecked(&bytes[..], unchecked)?;
         if self.keys.len() >= self.capacity {
+            tracing::warn!("Clearing the compute-key cache, which is full at {} keys", self.capacity);
             self.keys.clear();
         }
         self.keys.insert(bytes, compute_key);
@@ -91,6 +92,8 @@ impl<N: Network> ComputeKeyCache<N> {
 mod tests {
     use super::*;
     use snarkvm_console_network::MainnetV0;
+
+    use tracing_test::traced_test;
 
     type CurrentNetwork = MainnetV0;
 
@@ -177,16 +180,20 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn test_full_cache_clears() {
         let rng = &mut TestRng::default();
         let keys = sample_compute_key_bytes(3, rng);
         let mut cache = ComputeKeyCache::new(2);
 
-        for bytes in &keys {
+        for bytes in &keys[..2] {
             assert_matches_cold(&mut cache, bytes, false);
         }
+        assert!(!logs_contain("Clearing the compute-key cache"));
+        assert_matches_cold(&mut cache, &keys[2], false);
         // The third insert found the cache full.
         assert_eq!(cache.len(), 1);
+        assert!(logs_contain("Clearing the compute-key cache, which is full at 2 keys"));
         // A cleared key decodes the same again.
         assert_matches_cold(&mut cache, &keys[0], false);
         assert_eq!(cache.len(), 2);

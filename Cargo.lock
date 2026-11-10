@@ -3245,6 +3245,8 @@ dependencies = [
  "serde_json",
  "snarkvm-console-network",
  "snarkvm-console-types",
+ "tracing",
+ "tracing-test",
  "zeroize",
 ]
 
