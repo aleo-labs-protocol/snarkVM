@@ -121,7 +121,7 @@ pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY: usiz
     adjustment_factor_lookup_table: Arc<[F]>,
     /// The partial rounds of `parameters` in sparse form, or `None` if they
     /// have none.
-    partial_rounds: Option<Arc<PartialRounds<F>>>,
+    sparse_rounds: Option<Arc<PartialRounds<F>>>,
 }
 
 impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSponge<F, RATE, 1> {
@@ -148,7 +148,7 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
 
                 table.into()
             },
-            partial_rounds: PartialRounds::cached(parameters),
+            sparse_rounds: PartialRounds::cached(parameters),
         }
     }
 
@@ -246,8 +246,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
 
     #[inline]
     fn permute(&mut self) {
-        match &self.partial_rounds {
-            Some(partial_rounds) => permute_sparse(&self.parameters, partial_rounds, &mut self.state),
+        match &self.sparse_rounds {
+            Some(sparse_rounds) => permute_sparse(&self.parameters, sparse_rounds, &mut self.state),
             None => self.permute_dense(),
         }
     }
@@ -565,24 +565,24 @@ impl<F: PrimeField> PartialRounds<F> {
     fn cached<const RATE: usize>(parameters: &Arc<PoseidonParameters<F, RATE, 1>>) -> Option<Arc<Self>> {
         let lookup = |entries: &[Arc<dyn Any + Send + Sync>]| {
             entries.iter().rev().find_map(|entry| {
-                let (cached_parameters, partial_rounds) = entry.downcast_ref::<CacheEntry<F, RATE>>()?;
+                let (cached_parameters, sparse_rounds) = entry.downcast_ref::<CacheEntry<F, RATE>>()?;
                 (Arc::ptr_eq(cached_parameters, parameters) || cached_parameters == parameters)
-                    .then(|| partial_rounds.clone())
+                    .then(|| sparse_rounds.clone())
             })
         };
-        if let Some(partial_rounds) = lookup(&PARTIAL_ROUNDS_CACHE.read().unwrap_or_else(PoisonError::into_inner)) {
-            return partial_rounds;
+        if let Some(sparse_rounds) = lookup(&PARTIAL_ROUNDS_CACHE.read().unwrap_or_else(PoisonError::into_inner)) {
+            return sparse_rounds;
         }
-        let partial_rounds = Self::new(parameters).map(Arc::new);
+        let sparse_rounds = Self::new(parameters).map(Arc::new);
         let mut entries = PARTIAL_ROUNDS_CACHE.write().unwrap_or_else(PoisonError::into_inner);
         if lookup(&entries).is_none() {
             if entries.len() == PARTIAL_ROUNDS_CACHE_SIZE {
                 entries.remove(0);
             }
-            let entry: CacheEntry<F, RATE> = (parameters.clone(), partial_rounds.clone());
+            let entry: CacheEntry<F, RATE> = (parameters.clone(), sparse_rounds.clone());
             entries.push(Arc::new(entry));
         }
-        partial_rounds
+        sparse_rounds
     }
 
     /// Returns the partial rounds of `parameters`, or `None` if the parameters
@@ -687,11 +687,11 @@ fn invert<F: PrimeField>(matrix: &[Vec<F>]) -> Option<Vec<Vec<F>>> {
 }
 
 /// Applies the permutation of `parameters` to `state`, with the partial rounds
-/// in the sparse form `partial_rounds` of the same parameters.
+/// in the sparse form `sparse_rounds` of the same parameters.
 #[inline]
 fn permute_sparse<F: PrimeField, const RATE: usize>(
     parameters: &PoseidonParameters<F, RATE, 1>,
-    partial_rounds: &PartialRounds<F>,
+    sparse_rounds: &PartialRounds<F>,
     state: &mut State<F, RATE, 1>,
 ) {
     let pow_alpha_in_place = pow_alpha_in_place::<F>(parameters.alpha);
@@ -713,10 +713,10 @@ fn permute_sparse<F: PrimeField, const RATE: usize>(
     };
 
     for round in 0..first_partial_round {
-        let matrix = if round + 1 == first_partial_round { &partial_rounds.first_matrix } else { &parameters.mds };
+        let matrix = if round + 1 == first_partial_round { &sparse_rounds.first_matrix } else { &parameters.mds };
         full_round(&mut current, &parameters.ark[round], matrix);
     }
-    for round in &partial_rounds.rounds {
+    for round in &sparse_rounds.rounds {
         current[0] += round.constant;
         pow_alpha_in_place(&mut current[0]);
         let first = F::sum_of_products(&current, &round.row);
@@ -728,7 +728,7 @@ fn permute_sparse<F: PrimeField, const RATE: usize>(
         *head = first;
     }
     for round in last_partial_round..num_rounds {
-        let ark = if round == last_partial_round { &partial_rounds.last_ark } else { &parameters.ark[round] };
+        let ark = if round == last_partial_round { &sparse_rounds.last_ark } else { &parameters.ark[round] };
         full_round(&mut current, ark, &parameters.mds);
     }
 
@@ -824,7 +824,7 @@ mod tests {
         rng: &mut TestRng,
     ) {
         let parameters = Arc::new(parameters);
-        assert!(PoseidonSponge::new_with_parameters(&parameters).partial_rounds.is_some());
+        assert!(PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.is_some());
         let width = RATE + 1;
         let edges = [F::zero(), F::one(), -F::one()];
         if width <= 5 {
@@ -943,7 +943,7 @@ mod tests {
         ];
         for parameters in cases {
             assert!(PartialRounds::new(&parameters).is_none(), "{parameters:?}");
-            assert!(PoseidonSponge::new_with_parameters(&Arc::new(parameters)).partial_rounds.is_none());
+            assert!(PoseidonSponge::new_with_parameters(&Arc::new(parameters)).sparse_rounds.is_none());
         }
         assert!(PartialRounds::new(&default).is_some());
     }
@@ -954,9 +954,9 @@ mod tests {
         let parameters = PoseidonSponge::<Fq, 2, 1>::sample_parameters();
         let equal_parameters = PoseidonSponge::<Fq, 2, 1>::sample_parameters();
         assert!(!Arc::ptr_eq(&parameters, &equal_parameters));
-        let a = PoseidonSponge::new_with_parameters(&parameters).partial_rounds.unwrap();
-        let b = PoseidonSponge::new_with_parameters(&parameters).partial_rounds.unwrap();
-        let c = PoseidonSponge::new_with_parameters(&equal_parameters).partial_rounds.unwrap();
+        let a = PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.unwrap();
+        let b = PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.unwrap();
+        let c = PoseidonSponge::new_with_parameters(&equal_parameters).sparse_rounds.unwrap();
         assert!(Arc::ptr_eq(&a, &b));
         assert!(Arc::ptr_eq(&a, &c));
 
@@ -964,7 +964,7 @@ mod tests {
         let mut other_parameters = (*parameters).clone();
         other_parameters.ark[20][1] += Fq::one();
         let other_parameters = Arc::new(other_parameters);
-        let d = PoseidonSponge::new_with_parameters(&other_parameters).partial_rounds.unwrap();
+        let d = PoseidonSponge::new_with_parameters(&other_parameters).sparse_rounds.unwrap();
         assert!(!Arc::ptr_eq(&a, &d));
         let rng = &mut TestRng::default();
         let state = (0..3).map(|_| Fq::rand(rng)).collect_vec();
@@ -976,12 +976,12 @@ mod tests {
         let others = (0..PARTIAL_ROUNDS_CACHE_SIZE)
             .map(|_| Arc::new(parameters_with_rounds::<Fq, 2>(8, 31, 17, rng)))
             .collect_vec();
-        let partial_rounds =
-            others.iter().map(|p| PoseidonSponge::new_with_parameters(p).partial_rounds.unwrap()).collect_vec();
-        for (p, r) in others.iter().zip_eq(&partial_rounds).skip(PARTIAL_ROUNDS_CACHE_SIZE / 2) {
-            assert!(Arc::ptr_eq(&PoseidonSponge::new_with_parameters(p).partial_rounds.unwrap(), r));
+        let sparse_rounds =
+            others.iter().map(|p| PoseidonSponge::new_with_parameters(p).sparse_rounds.unwrap()).collect_vec();
+        for (p, r) in others.iter().zip_eq(&sparse_rounds).skip(PARTIAL_ROUNDS_CACHE_SIZE / 2) {
+            assert!(Arc::ptr_eq(&PoseidonSponge::new_with_parameters(p).sparse_rounds.unwrap(), r));
         }
-        let e = PoseidonSponge::new_with_parameters(&parameters).partial_rounds.unwrap();
+        let e = PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.unwrap();
         assert!(!Arc::ptr_eq(&a, &e));
         check_state(&parameters, &state, 1);
     }
