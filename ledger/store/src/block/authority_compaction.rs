@@ -30,9 +30,8 @@ use std::{
 /// tests use a few blocks.
 const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 100_000 };
 
-/// The least time between two starts of the compaction. Unit tests use a few milliseconds.
-const AUTHORITY_COMPACTION_MIN_INTERVAL: Duration =
-    if cfg!(test) { Duration::from_millis(20) } else { Duration::from_secs(12 * 60 * 60) };
+/// The least time between two starts of the compaction.
+const AUTHORITY_COMPACTION_MIN_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 
 /// Compacts the authority map slice by slice (see [`BlockStorage::authority_compaction_plan`]),
 /// skipping the slices with nothing to reclaim. Stops between slices once `compaction` is stopping
@@ -59,7 +58,7 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
             storage.compact_authority_slice(i, total)?;
             if let Some((elapsed, remaining)) = progress.advance() {
                 info!(
-                    "Compacted {} of {to_compact} authority slices in {elapsed:.0} s, about {remaining:.0} s left",
+                    "Compacted {} of {to_compact} marked slices in {elapsed:.0} s, about {remaining:.0} s left",
                     progress.done()
                 );
             }
@@ -118,25 +117,22 @@ impl CompactionState {
     }
 }
 
-/// A [`BlockStore`]'s handle on its [`CompactionState`]; the stores share one [`Owner`].
-#[derive(Clone, Default)]
-pub(super) struct AuthorityCompaction(Arc<Owner>);
-
-/// Stops the compaction thread when the last [`BlockStore`] is dropped.
-#[derive(Default)]
-struct Owner(Arc<CompactionState>);
-
-impl Drop for Owner {
+/// The last store's drop of the state stops the thread, which holds the state only weakly.
+impl Drop for CompactionState {
     fn drop(&mut self) {
-        self.0.stop_and_join();
+        self.stop_and_join();
     }
 }
+
+/// A [`BlockStore`]'s share of its [`CompactionState`].
+#[derive(Clone, Default)]
+pub(super) struct AuthorityCompaction(Arc<CompactionState>);
 
 impl Deref for AuthorityCompaction {
     type Target = CompactionState;
 
     fn deref(&self) -> &Self::Target {
-        &self.0.0
+        &self.0
     }
 }
 
@@ -176,7 +172,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         #[cfg(test)]
         let delay = AUTHORITY_COMPACTION_THREAD.with(|thread| thread.get());
-        let (storage, weak) = (self.storage.clone(), Arc::downgrade(&compaction.0.0));
+        let (storage, weak) = (self.storage.clone(), Arc::downgrade(&compaction.0));
         let compact = move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 compact_authority_slices(
@@ -218,7 +214,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
     }
 
-    /// Stops the background authority map compaction; see [`CompactionState::stop_and_join`].
+    /// Stops the background authority map compaction; see `CompactionState::stop_and_join`.
     pub fn stop_background_work(&self) {
         self.authority_compaction.stop_and_join();
     }
@@ -238,109 +234,12 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "rocks")]
-    use crate::helpers::rocksdb::BlockDB;
     use crate::{block::test_chain::sample_block_chain, helpers::memory::BlockMemory};
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    #[cfg(feature = "rocks")]
-    fn open_rocksdb() -> BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>> {
-        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        BlockStore::open(StorageMode::new_test(Some(temp_dir))).unwrap()
-    }
-
     fn compactions() -> usize {
         AUTHORITY_COMPACTIONS.with(|count| count.get())
-    }
-
-    /// How long a slice of a test thread takes: long enough for a test to act before it ends.
-    #[cfg(feature = "rocks")]
-    const SLOW_SLICE: Duration = Duration::from_millis(100);
-
-    #[cfg(feature = "rocks")]
-    fn running_joins() -> usize {
-        AUTHORITY_COMPACTION_RUNNING_JOINS.with(|count| count.get())
-    }
-
-    /// Forgets the last start, so the floor does not apply to the next trigger.
-    #[cfg(feature = "rocks")]
-    fn clear_floor<B: BlockStorage<CurrentNetwork>>(store: &BlockStore<CurrentNetwork, B>) {
-        store.authority_compaction.last.lock().started = None;
-    }
-
-    /// Opens a store whose compaction runs on a thread that takes a while per slice.
-    #[cfg(feature = "rocks")]
-    fn open_with_slow_thread() -> BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>> {
-        AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(Some(SLOW_SLICE)));
-        let store = open_rocksdb();
-        AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(None));
-        assert!(store.authority_compaction.last.lock().thread.as_ref().is_some_and(|thread| !thread.is_finished()));
-        store
-    }
-
-    /// Ensures the real thread path starts at open, stops on request, and is not restarted.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_authority_compaction_thread_stops_rocksdb() {
-        let store = open_with_slow_thread();
-        let before = running_joins();
-        store.stop_background_work();
-        assert_eq!(running_joins(), before + 1);
-        assert!(store.authority_compaction.last.lock().thread.is_none());
-        clear_floor(&store);
-        assert!(!store.compact_authorities());
-        store.stop_background_work();
-    }
-
-    /// Ensures dropping the last store stops and joins a running compaction thread.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_dropping_the_store_stops_the_thread_rocksdb() {
-        let store = open_with_slow_thread();
-        let clone = store.clone();
-        let before = running_joins();
-        // A clone remains, so nothing stops yet.
-        drop(store);
-        assert_eq!(running_joins(), before);
-        assert!(clone.authority_compaction.last.lock().thread.as_ref().is_some_and(|thread| !thread.is_finished()));
-        drop(clone);
-        assert_eq!(running_joins(), before + 1);
-    }
-
-    /// Ensures a compaction stops at the next slice once its state is stopping or gone.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_authority_compaction_stops_without_a_store_rocksdb() {
-        let store = open_rocksdb();
-        let slices = u32::try_from(store.storage.authority_compaction_plan().unwrap().len()).unwrap();
-        let state = Arc::new(CompactionState::default());
-        let weak = Arc::downgrade(&state);
-
-        // A live state: every slice is passed.
-        let timer = Instant::now();
-        compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
-        assert!(timer.elapsed() >= SLOW_SLICE * slices);
-
-        // A stopping state, then a dropped one: the loop ends before its first slice.
-        state.stop.store(true, Ordering::SeqCst);
-        let timer = Instant::now();
-        compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
-        assert!(timer.elapsed() < SLOW_SLICE * slices);
-
-        drop(state);
-        let timer = Instant::now();
-        compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
-        assert!(timer.elapsed() < SLOW_SLICE * slices);
-    }
-
-    /// Ensures an open starts exactly one authority compaction.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_open_starts_authority_compaction_rocksdb() {
-        let before = compactions();
-        let _store = open_rocksdb();
-        assert_eq!(compactions(), before + 1);
     }
 
     /// Inserts `block`, through the deferred block tree path if `deferred`.
@@ -358,33 +257,6 @@ mod tests {
         }
     }
 
-    /// Checks that insert-time pruning compacts the authority map once per
-    /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities.
-    #[cfg(feature = "rocks")]
-    fn check_insert_time_pruning_compacts_after_interval(deferred: bool) {
-        let store = open_rocksdb();
-        let rng = &mut TestRng::default();
-        let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
-        clear_floor(&store);
-        let before = compactions();
-        // The insert at the retention height prunes nothing; the interval of inserts after it ends here.
-        let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
-        for block in &blocks {
-            insert(&store, block, deferred);
-            let expected = before + usize::from(block.height() >= trigger);
-            assert_eq!(compactions(), expected, "at block {}", block.height());
-        }
-    }
-
-    /// Ensures insert-time pruning compacts the authority map after the interval, through both
-    /// insert paths.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_insert_time_pruning_compacts_after_interval_rocksdb() {
-        check_insert_time_pruning_compacts_after_interval(false);
-        check_insert_time_pruning_compacts_after_interval(true);
-    }
-
     /// Ensures in-memory storage, which has nothing to compact, starts no compaction and counts no
     /// inserts.
     #[test]
@@ -400,69 +272,185 @@ mod tests {
         assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), 0);
     }
 
-    /// Checks that a trigger at the interval fires nothing and keeps its count while `block` holds,
-    /// and fires on the next insert once `release` lifts it.
     #[cfg(feature = "rocks")]
-    fn check_trigger_waits(
-        block: impl FnOnce(&BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>>),
-        release: impl FnOnce(&BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>>),
-    ) {
-        let store = open_rocksdb();
-        let rng = &mut TestRng::default();
-        let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
-        let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
-        clear_floor(&store);
-        block(&store);
+    mod rocks {
+        use super::*;
+        use crate::helpers::rocksdb::BlockDB;
 
-        let before = compactions();
-        for block in blocks.iter().filter(|block| block.height() <= trigger) {
-            store.insert(block).unwrap();
+        type Store = BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>>;
+
+        /// How long a slice of a test thread takes: long enough for a test to act before it ends.
+        const SLOW_SLICE: Duration = Duration::from_millis(100);
+
+        fn open() -> Store {
+            let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+            BlockStore::open(StorageMode::new_test(Some(temp_dir))).unwrap()
         }
-        assert_eq!(compactions(), before);
-        assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), AUTHORITY_COMPACTION_INTERVAL_BLOCKS);
 
-        release(&store);
-        store.insert(&blocks[trigger as usize + 1]).unwrap();
-        assert_eq!(compactions(), before + 1);
-        assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), 0);
-    }
+        fn running_joins() -> usize {
+            AUTHORITY_COMPACTION_RUNNING_JOINS.with(|count| count.get())
+        }
 
-    /// Ensures a trigger inside the floor after the last start waits for the floor.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_trigger_waits_for_the_floor_rocksdb() {
-        check_trigger_waits(
-            // A start in the future is inside the floor for the whole test.
-            |store| store.authority_compaction.last.lock().started = Some(Instant::now() + Duration::from_secs(3600)),
-            |store| {
-                store.authority_compaction.last.lock().started =
-                    Instant::now().checked_sub(AUTHORITY_COMPACTION_MIN_INTERVAL)
-            },
-        );
-    }
+        /// Forgets the last start, so the floor does not apply to the next trigger.
+        fn clear_floor(store: &Store) {
+            store.authority_compaction.last.lock().started = None;
+        }
 
-    /// Ensures a trigger while a compaction runs waits for it to end.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_trigger_waits_for_the_running_compaction_rocksdb() {
-        let release = Arc::new(AtomicBool::new(false));
-        let released = release.clone();
-        check_trigger_waits(
-            // A compaction that runs until released.
-            move |store| {
-                store.authority_compaction.last.lock().thread = Some(std::thread::spawn(move || {
-                    while !released.load(Ordering::SeqCst) {
+        /// Whether the store's compaction thread is running.
+        fn thread_running(store: &Store) -> bool {
+            store.authority_compaction.last.lock().thread.as_ref().is_some_and(|thread| !thread.is_finished())
+        }
+
+        /// Opens a store whose compaction runs on a thread that takes a while per slice.
+        fn open_with_slow_thread() -> Store {
+            AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(Some(SLOW_SLICE)));
+            let store = open();
+            AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(None));
+            assert!(thread_running(&store));
+            store
+        }
+
+        /// Ensures the real thread path starts at open, stops on request, and is not restarted.
+        #[test]
+        fn test_authority_compaction_thread_stops() {
+            let store = open_with_slow_thread();
+            let before = running_joins();
+            store.stop_background_work();
+            assert_eq!(running_joins(), before + 1);
+            assert!(store.authority_compaction.last.lock().thread.is_none());
+            clear_floor(&store);
+            assert!(!store.compact_authorities());
+            store.stop_background_work();
+        }
+
+        /// Ensures dropping the last store stops and joins a running compaction thread.
+        #[test]
+        fn test_dropping_the_store_stops_the_thread() {
+            let store = open_with_slow_thread();
+            let clone = store.clone();
+            let before = running_joins();
+            // A clone remains, so nothing stops yet.
+            drop(store);
+            assert_eq!(running_joins(), before);
+            assert!(thread_running(&clone));
+            drop(clone);
+            assert_eq!(running_joins(), before + 1);
+        }
+
+        /// Ensures a compaction stops at the next slice once its state is stopping or gone.
+        #[test]
+        fn test_authority_compaction_stops_without_a_store() {
+            let store = open();
+            let slices = u32::try_from(store.storage.authority_compaction_plan().unwrap().len()).unwrap();
+            let state = Arc::new(CompactionState::default());
+            let weak = Arc::downgrade(&state);
+
+            // A live state: every slice is passed.
+            let timer = Instant::now();
+            compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
+            assert!(timer.elapsed() >= SLOW_SLICE * slices);
+
+            // A stopping state, then a dropped one: the loop ends before its first slice.
+            state.stop.store(true, Ordering::SeqCst);
+            let timer = Instant::now();
+            compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
+            assert!(timer.elapsed() < SLOW_SLICE * slices);
+
+            drop(state);
+            let timer = Instant::now();
+            compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
+            assert!(timer.elapsed() < SLOW_SLICE * slices);
+        }
+
+        /// Ensures an open starts exactly one authority compaction.
+        #[test]
+        fn test_open_starts_authority_compaction() {
+            let before = compactions();
+            let _store = open();
+            assert_eq!(compactions(), before + 1);
+        }
+
+        /// Checks that insert-time pruning compacts the authority map once per
+        /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities.
+        fn check_insert_time_pruning_compacts_after_interval(deferred: bool) {
+            let store = open();
+            let rng = &mut TestRng::default();
+            let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
+            clear_floor(&store);
+            let before = compactions();
+            // The insert at the retention height prunes nothing; the interval of inserts after it ends here.
+            let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
+            for block in &blocks {
+                insert(&store, block, deferred);
+                let expected = before + usize::from(block.height() >= trigger);
+                assert_eq!(compactions(), expected, "at block {}", block.height());
+            }
+        }
+
+        /// Ensures insert-time pruning compacts the authority map after the interval, through both
+        /// insert paths.
+        #[test]
+        fn test_insert_time_pruning_compacts_after_interval() {
+            check_insert_time_pruning_compacts_after_interval(false);
+            check_insert_time_pruning_compacts_after_interval(true);
+        }
+
+        /// Checks that a trigger at the interval fires nothing and keeps its count while `block`
+        /// holds, and fires on the next insert once `release` lifts it.
+        fn check_trigger_waits(block: impl FnOnce(&Store), release: impl FnOnce(&Store)) {
+            let store = open();
+            let rng = &mut TestRng::default();
+            let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
+            let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
+            clear_floor(&store);
+            block(&store);
+
+            let before = compactions();
+            for block in blocks.iter().filter(|block| block.height() <= trigger) {
+                store.insert(block).unwrap();
+            }
+            assert_eq!(compactions(), before);
+            assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), AUTHORITY_COMPACTION_INTERVAL_BLOCKS);
+
+            release(&store);
+            store.insert(&blocks[trigger as usize + 1]).unwrap();
+            assert_eq!(compactions(), before + 1);
+            assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), 0);
+        }
+
+        /// Ensures a trigger inside the floor after the last start waits for the floor.
+        #[test]
+        fn test_trigger_waits_for_the_floor() {
+            check_trigger_waits(
+                |store| store.authority_compaction.last.lock().started = Some(Instant::now()),
+                |store| {
+                    store.authority_compaction.last.lock().started =
+                        Instant::now().checked_sub(AUTHORITY_COMPACTION_MIN_INTERVAL)
+                },
+            );
+        }
+
+        /// Ensures a trigger while a compaction runs waits for it to end.
+        #[test]
+        fn test_trigger_waits_for_the_running_compaction() {
+            let release = Arc::new(AtomicBool::new(false));
+            let released = release.clone();
+            check_trigger_waits(
+                // A compaction that runs until released.
+                move |store| {
+                    store.authority_compaction.last.lock().thread = Some(std::thread::spawn(move || {
+                        while !released.load(Ordering::SeqCst) {
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                    }));
+                },
+                move |store| {
+                    release.store(true, Ordering::SeqCst);
+                    while thread_running(store) {
                         std::thread::sleep(Duration::from_millis(1));
                     }
-                }));
-            },
-            move |store| {
-                release.store(true, Ordering::SeqCst);
-                while store.authority_compaction.last.lock().thread.as_ref().is_some_and(|thread| !thread.is_finished())
-                {
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            },
-        );
+                },
+            );
+        }
     }
 }

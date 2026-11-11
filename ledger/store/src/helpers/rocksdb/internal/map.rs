@@ -632,9 +632,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
     }
 }
 
-/// The number of key-range slices [`DataMap::retain_all`] rewrites, one write each. The keys of the
-/// maps it serves are hashes, uniform in their first bytes, so the slices split the first two key
-/// bytes evenly. Unit tests use a few slices, so each holds a few rows.
+/// The number of key-range slices [`DataMap::retain_all`] rewrites (see [`slice_bounds`]).
 #[cfg(feature = "prune-authority-data")]
 const RETAIN_SLICES: usize = if cfg!(test) { 4 } else { 256 };
 
@@ -645,6 +643,25 @@ const RETAIN_THREADS: usize = if cfg!(test) { 2 } else { 4 };
 /// The iterator readahead of a slice scan, in bytes.
 #[cfg(feature = "prune-authority-data")]
 const RETAIN_READAHEAD: usize = 4 << 20;
+
+/// A sliced compaction runs one slice per this many live SST files of the map, with at most
+/// [`MAX_COMPACTION_SLICES`] slices.
+#[cfg(feature = "prune-authority-data")]
+const COMPACTION_FILES_PER_SLICE: usize = 16;
+#[cfg(feature = "prune-authority-data")]
+const MAX_COMPACTION_SLICES: usize = 256;
+
+/// The number of slices a map of `files` live SST files is compacted in.
+#[cfg(feature = "prune-authority-data")]
+fn slices_for_files(files: usize) -> usize {
+    (files / COMPACTION_FILES_PER_SLICE).clamp(1, MAX_COMPACTION_SLICES)
+}
+
+/// [`slices_for_files`], except that unit tests use a few slices.
+#[cfg(feature = "prune-authority-data")]
+fn compaction_slices(files: usize) -> usize {
+    if cfg!(test) { 4 } else { slices_for_files(files) }
+}
 
 /// The first two key bytes at which slice `i` of `slices` starts and ends (`None`: the map's end).
 /// Block hashes and certificate IDs are uniform in their first bytes, so the slices split them evenly.
@@ -661,27 +678,26 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         self.database.compact_prefix(self.prefix()?)
     }
 
-    /// Plans a sliced compaction of this map after flushing it: one entry per slice (see
-    /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. `slices`
-    /// maps the number of live files holding keys of this map to the slice count. The maps share
-    /// one column family, so a file straddling the map's edge can carry a neighbour's deletions and
-    /// mark an edge slice.
+    /// Plans a sliced compaction of this map after flushing the database: one entry per slice (see
+    /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. The maps
+    /// share one column family, so a file straddling the map's edge can carry a neighbour's deletions
+    /// and mark an edge slice.
     #[cfg(feature = "prune-authority-data")]
-    pub(crate) fn compaction_plan(&self, slices: fn(usize) -> usize) -> Result<Vec<bool>> {
+    pub(crate) fn compaction_plan(&self) -> Result<Vec<bool>> {
         self.database.flush()?;
-        let (lower, upper) = self.key_range(&[], None)?;
-        let overlaps = |file: &rocksdb::LiveFile, lower: &[u8], upper: &[u8]| {
-            file.start_key.as_deref().is_none_or(|start| start < upper)
-                && file.end_key.as_deref().is_none_or(|end| end >= lower)
+        let (lower, end) = self.slice_key_range(0, 1)?;
+        let overlaps = |file: &rocksdb::LiveFile, lower: &[u8], end: &[u8]| {
+            file.start_key.as_deref().is_none_or(|start| start <= end)
+                && file.end_key.as_deref().is_none_or(|last| last >= lower)
         };
-        let files: Vec<_> =
-            self.database.live_files()?.into_iter().filter(|file| overlaps(file, &lower, &upper)).collect();
-        let count = slices(files.len());
-        (0..count)
+        let mut files: Vec<_> =
+            self.database.live_files()?.into_iter().filter(|file| overlaps(file, &lower, &end)).collect();
+        let slices = compaction_slices(files.len());
+        files.retain(|file| file.num_deletions > 0);
+        (0..slices)
             .map(|i| {
-                let (start, end) = slice_bounds(i, count);
-                let (lower, upper) = self.key_range(&start, end.as_ref().map(|end| &end[..]))?;
-                Ok(files.iter().any(|file| file.num_deletions > 0 && overlaps(file, &lower, &upper)))
+                let (lower, end) = self.slice_key_range(i, slices)?;
+                Ok(files.iter().any(|file| overlaps(file, &lower, &end)))
             })
             .collect()
     }
@@ -690,10 +706,23 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     /// bottom-level files too (see `RocksDB::compact_key_range`).
     #[cfg(feature = "prune-authority-data")]
     pub(crate) fn compact_slice(&self, i: usize, slices: usize) -> Result<()> {
-        let (start, end) = slice_bounds(i, slices);
-        let (lower, upper) = self.key_range(&start, end.as_ref().map(|end| &end[..]))?;
-        self.database.compact_key_range(&lower, &upper);
+        let (lower, end) = self.slice_key_range(i, slices)?;
+        self.database.compact_key_range(&lower, &end);
         Ok(())
+    }
+
+    /// The raw keys of the first and the last possible row of slice `i` of `slices`, for keys of 32
+    /// bytes: the end is the next slice's start less one, padded with `0xff`, or the map's greatest
+    /// key for the last slice.
+    #[cfg(feature = "prune-authority-data")]
+    fn slice_key_range(&self, i: usize, slices: usize) -> Result<(Vec<u8>, Vec<u8>)> {
+        let prefix = self.prefix()?;
+        let (start, next) = slice_bounds(i, slices);
+        let end = match next {
+            Some(next) => [&prefix[..], &(u16::from_be_bytes(next) - 1).to_be_bytes(), &[0xff; 30][..]].concat(),
+            None => [&prefix[..], &[0xff; 32][..]].concat(),
+        };
+        Ok(([&prefix[..], &start].concat(), end))
     }
 
     /// This map's key prefix.
@@ -1900,21 +1929,46 @@ mod tests {
         #[test]
         fn test_compaction_plan_marks_slices_with_deletions() {
             let (map, _) = setup(&ROWS);
-            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false; 4]);
+            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
             map.remove(&[0xff, 0xff]).unwrap();
-            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false, false, false, true]);
-            assert_eq!(map.compaction_plan(|files| files.min(2)).unwrap().len(), 2);
+            assert_eq!(map.compaction_plan().unwrap(), vec![false, false, false, true]);
             // Compacting the slice drops the tombstone.
             map.compact_slice(3, 4).unwrap();
-            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false; 4]);
+            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
 
             // A file of deletions straddling a slice boundary marks both slices. The rows are flushed
             // first, so the deletions land in a file of their own.
             let (map, _) = setup(&ROWS);
-            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false; 4]);
+            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
             map.remove(&[0x7f, 0xff]).unwrap();
             map.remove(&[0x80, 0]).unwrap();
-            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false, true, true, false]);
+            assert_eq!(map.compaction_plan().unwrap(), vec![false, true, true, false]);
+        }
+
+        #[test]
+        fn test_slice_count() {
+            assert_eq!([0, 15, 16, 32, 5000].map(slices_for_files), [1, 1, 1, 2, 256]);
+        }
+
+        #[test]
+        fn test_slice_bounds() {
+            assert_eq!(slice_bounds(0, 1), ([0, 0], None));
+            assert_eq!(slice_bounds(0, 4), ([0, 0], Some([0x40, 0])));
+            assert_eq!(slice_bounds(3, 4), ([0xc0, 0], None));
+        }
+
+        /// Each slice's inclusive end is below the next slice's start, and the last one stays inside
+        /// the map.
+        #[test]
+        fn test_slice_key_ranges_do_not_overlap() {
+            let (map, _) = setup(&[]);
+            let ranges: Vec<_> = (0..4).map(|i| map.slice_key_range(i, 4).unwrap()).collect();
+            for pair in ranges.windows(2) {
+                assert!(pair[0].0 < pair[0].1 && pair[0].1 < pair[1].0, "{pair:?}");
+            }
+            let prefix = map_prefix(0, MapID::Test(TestMap::Test));
+            let (last_lower, last_end) = &ranges[3];
+            assert!(last_lower < last_end && last_end.as_slice() < &super::super::prefix_end(prefix).unwrap()[..]);
         }
 
         /// Compacting every slice leaves every row and its neighbours.

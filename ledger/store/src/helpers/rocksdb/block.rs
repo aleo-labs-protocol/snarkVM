@@ -86,24 +86,6 @@ pub struct BlockDB<N: Network> {
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
 
-/// An authority map compaction runs one slice (see `slice_bounds`) per this many live SST files of
-/// the map, with at most [`MAX_AUTHORITY_COMPACTION_SLICES`] slices.
-#[cfg(feature = "prune-authority-data")]
-const AUTHORITY_COMPACTION_FILES_PER_SLICE: usize = 16;
-#[cfg(feature = "prune-authority-data")]
-const MAX_AUTHORITY_COMPACTION_SLICES: usize = 256;
-/// The number of slices an authority map of `files` live SST files is compacted in.
-#[cfg(feature = "prune-authority-data")]
-fn slices_for_files(files: usize) -> usize {
-    (files / AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, MAX_AUTHORITY_COMPACTION_SLICES)
-}
-
-/// [`slices_for_files`], except that unit tests use a few slices.
-#[cfg(feature = "prune-authority-data")]
-fn authority_compaction_slices(files: usize) -> usize {
-    if cfg!(test) { 4 } else { slices_for_files(files) }
-}
-
 #[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type StateRootMap = DataMap<u32, N::StateRoot>;
@@ -255,7 +237,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
 
     #[cfg(feature = "prune-authority-data")]
     fn authority_compaction_plan(&self) -> Result<Vec<bool>> {
-        self.authority_map.compaction_plan(authority_compaction_slices)
+        self.authority_map.compaction_plan()
     }
 
     #[cfg(feature = "prune-authority-data")]
@@ -350,15 +332,5 @@ impl<N: Network> BlockDB<N> {
     /// Any map can be used since they all share the same underlying RocksDB instance.
     pub fn export_rocksdb_metrics(&self) {
         self.id_map.export_rocksdb_metrics();
-    }
-}
-
-#[cfg(all(test, feature = "prune-authority-data"))]
-mod authority_compaction_tests {
-    use super::slices_for_files;
-
-    #[test]
-    fn test_slice_count() {
-        assert_eq!([0, 15, 16, 32, 5000].map(slices_for_files), [1, 1, 1, 2, 256]);
     }
 }
