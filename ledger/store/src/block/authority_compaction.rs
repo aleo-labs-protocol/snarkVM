@@ -21,7 +21,7 @@ use crate::helpers::Progress;
 use std::{
     sync::{
         Weak,
-        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -49,7 +49,7 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
     } else {
         info!("Compacting {to_compact} of {total} authority slices; this can take a while");
     }
-    let mut progress = Progress::new(total);
+    let mut progress = Progress::new(to_compact);
     for (i, &compact) in plan.iter().enumerate() {
         if compaction.upgrade().is_none_or(|compaction| compaction.stop.load(Ordering::SeqCst)) {
             info!("Stopped the authority map compaction before slice {i} of {total}; the next start redoes it");
@@ -57,23 +57,25 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
         }
         if compact {
             storage.compact_authority_slice(i, total)?;
+            if let Some((elapsed, remaining)) = progress.advance() {
+                info!(
+                    "Compacted {} of {to_compact} authority slices in {elapsed:.0} s, about {remaining:.0} s left",
+                    progress.done()
+                );
+            }
         }
         #[cfg(test)]
         if let Some(delay) = delay {
             std::thread::sleep(delay);
         }
-        if let Some((elapsed, remaining)) = progress.advance() {
-            info!(
-                "Passed {} of {total} authority slices in {elapsed:.0} s, about {remaining:.0} s left",
-                progress.done()
-            );
-        }
     }
-    info!(
-        "Compacted {to_compact} of {total} authority slices, skipped {} with nothing to reclaim, in {:.1} s",
-        total - to_compact,
-        progress.elapsed_secs()
-    );
+    if to_compact > 0 {
+        info!(
+            "Compacted {to_compact} of {total} authority slices, skipped {} with nothing to reclaim, in {:.1} s",
+            total - to_compact,
+            progress.elapsed_secs()
+        );
+    }
     Ok(())
 }
 
@@ -81,8 +83,6 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
 /// and held weakly by the compaction thread.
 #[derive(Default)]
 pub(super) struct CompactionState {
-    /// The number of [`AuthorityCompaction`] handles alive.
-    owners: AtomicUsize,
     /// The number of authorities pruned since the authority map was compacted.
     pruned: AtomicU32,
     /// Set at shutdown, so no compaction starts and the running one stops between slices.
@@ -118,29 +118,17 @@ impl CompactionState {
     }
 }
 
-/// A [`BlockStore`]'s handle on its [`CompactionState`]; the last handle dropped stops the thread.
-pub(super) struct AuthorityCompaction(Arc<CompactionState>);
+/// A [`BlockStore`]'s handle on its [`CompactionState`]; the stores share one [`Owner`].
+#[derive(Clone, Default)]
+pub(super) struct AuthorityCompaction(Arc<Owner>);
 
-impl Default for AuthorityCompaction {
-    fn default() -> Self {
-        let state = Arc::new(CompactionState::default());
-        state.owners.store(1, Ordering::SeqCst);
-        Self(state)
-    }
-}
+/// Stops the compaction thread when the last [`BlockStore`] is dropped.
+#[derive(Default)]
+struct Owner(Arc<CompactionState>);
 
-impl Clone for AuthorityCompaction {
-    fn clone(&self) -> Self {
-        self.0.owners.fetch_add(1, Ordering::SeqCst);
-        Self(self.0.clone())
-    }
-}
-
-impl Drop for AuthorityCompaction {
+impl Drop for Owner {
     fn drop(&mut self) {
-        if self.0.owners.fetch_sub(1, Ordering::SeqCst) == 1 {
-            self.0.stop_and_join();
-        }
+        self.0.stop_and_join();
     }
 }
 
@@ -148,7 +136,7 @@ impl Deref for AuthorityCompaction {
     type Target = CompactionState;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.0.0
     }
 }
 
@@ -158,7 +146,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// [`AUTHORITY_COMPACTION_MIN_INTERVAL`]. Counts by height, so after a rollback it overstates
     /// until the watermark catches up.
     pub(super) fn count_insert_time_pruning(&self, height: u32) {
-        if height < AUTHORITY_RETENTION_BLOCKS || !self.storage.compacts_authority_map() {
+        // The insert at the retention height expires genesis, which is never pruned.
+        if height <= AUTHORITY_RETENTION_BLOCKS || !self.storage.compacts_authority_map() {
             return;
         }
         let compaction = &self.authority_compaction;
@@ -187,7 +176,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         #[cfg(test)]
         let delay = AUTHORITY_COMPACTION_THREAD.with(|thread| thread.get());
-        let (storage, weak) = (self.storage.clone(), Arc::downgrade(&compaction.0));
+        let (storage, weak) = (self.storage.clone(), Arc::downgrade(&compaction.0.0));
         let compact = move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 compact_authority_slices(
@@ -229,8 +218,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
     }
 
-    /// Stops the background authority map compaction, if one runs, and waits for it: the running
-    /// slice finishes, then the thread is joined.
+    /// Stops the background authority map compaction; see [`CompactionState::stop_and_join`].
     pub fn stop_background_work(&self) {
         self.authority_compaction.stop_and_join();
     }
@@ -266,6 +254,10 @@ mod tests {
         AUTHORITY_COMPACTIONS.with(|count| count.get())
     }
 
+    /// How long a slice of a test thread takes: long enough for a test to act before it ends.
+    #[cfg(feature = "rocks")]
+    const SLOW_SLICE: Duration = Duration::from_millis(100);
+
     #[cfg(feature = "rocks")]
     fn running_joins() -> usize {
         AUTHORITY_COMPACTION_RUNNING_JOINS.with(|count| count.get())
@@ -280,10 +272,10 @@ mod tests {
     /// Opens a store whose compaction runs on a thread that takes a while per slice.
     #[cfg(feature = "rocks")]
     fn open_with_slow_thread() -> BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>> {
-        AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(Some(Duration::from_millis(30))));
+        AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(Some(SLOW_SLICE)));
         let store = open_rocksdb();
         AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(None));
-        assert!(store.authority_compaction.last.lock().thread.is_some());
+        assert!(store.authority_compaction.last.lock().thread.as_ref().is_some_and(|thread| !thread.is_finished()));
         store
     }
 
@@ -311,6 +303,7 @@ mod tests {
         // A clone remains, so nothing stops yet.
         drop(store);
         assert_eq!(running_joins(), before);
+        assert!(clone.authority_compaction.last.lock().thread.as_ref().is_some_and(|thread| !thread.is_finished()));
         drop(clone);
         assert_eq!(running_joins(), before + 1);
     }
@@ -320,24 +313,25 @@ mod tests {
     #[test]
     fn test_authority_compaction_stops_without_a_store_rocksdb() {
         let store = open_rocksdb();
-        let delay = Duration::from_millis(50);
-        let slices = store.storage.authority_compaction_plan().unwrap().len();
+        let slices = u32::try_from(store.storage.authority_compaction_plan().unwrap().len()).unwrap();
         let state = Arc::new(CompactionState::default());
         let weak = Arc::downgrade(&state);
 
+        // A live state: every slice is passed.
         let timer = Instant::now();
-        compact_authority_slices(&store.storage, &weak, Some(delay)).unwrap();
-        assert!(timer.elapsed() >= delay * u32::try_from(slices).unwrap());
+        compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
+        assert!(timer.elapsed() >= SLOW_SLICE * slices);
 
+        // A stopping state, then a dropped one: the loop ends before its first slice.
         state.stop.store(true, Ordering::SeqCst);
         let timer = Instant::now();
-        compact_authority_slices(&store.storage, &weak, Some(delay)).unwrap();
-        assert!(timer.elapsed() < delay);
+        compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
+        assert!(timer.elapsed() < SLOW_SLICE * slices);
 
         drop(state);
         let timer = Instant::now();
-        compact_authority_slices(&store.storage, &weak, Some(delay)).unwrap();
-        assert!(timer.elapsed() < delay);
+        compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
+        assert!(timer.elapsed() < SLOW_SLICE * slices);
     }
 
     /// Ensures an open starts exactly one authority compaction.
@@ -370,10 +364,11 @@ mod tests {
     fn check_insert_time_pruning_compacts_after_interval(deferred: bool) {
         let store = open_rocksdb();
         let rng = &mut TestRng::default();
-        let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 1, rng);
+        let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
         clear_floor(&store);
         let before = compactions();
-        let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS - 1;
+        // The insert at the retention height prunes nothing; the interval of inserts after it ends here.
+        let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
         for block in &blocks {
             insert(&store, block, deferred);
             let expected = before + usize::from(block.height() >= trigger);
@@ -414,8 +409,8 @@ mod tests {
     ) {
         let store = open_rocksdb();
         let rng = &mut TestRng::default();
-        let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 1, rng);
-        let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS - 1;
+        let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
+        let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
         clear_floor(&store);
         block(&store);
 

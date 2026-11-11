@@ -650,6 +650,7 @@ const RETAIN_READAHEAD: usize = 4 << 20;
 /// Block hashes and certificate IDs are uniform in their first bytes, so the slices split them evenly.
 #[cfg(feature = "prune-authority-data")]
 fn slice_bounds(i: usize, slices: usize) -> ([u8; 2], Option<[u8; 2]>) {
+    // `i < slices`, so `i * 65536 / slices < 65536` fits a `u16`.
     let start = |i: usize| u16::try_from(i * 65536 / slices).expect("slice below count").to_be_bytes();
     (start(i), (i + 1 < slices).then(|| start(i + 1)))
 }
@@ -673,7 +674,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
             file.start_key.as_deref().is_none_or(|start| start < upper)
                 && file.end_key.as_deref().is_none_or(|end| end >= lower)
         };
-        let files: Vec<rocksdb::LiveFile> =
+        let files: Vec<_> =
             self.database.live_files()?.into_iter().filter(|file| overlaps(file, &lower, &upper)).collect();
         let count = slices(files.len());
         (0..count)
@@ -1903,6 +1904,9 @@ mod tests {
             map.remove(&[0xff, 0xff]).unwrap();
             assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false, false, false, true]);
             assert_eq!(map.compaction_plan(|files| files.min(2)).unwrap().len(), 2);
+            // Compacting the slice drops the tombstone.
+            map.compact_slice(3, 4).unwrap();
+            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false; 4]);
 
             // A file of deletions straddling a slice boundary marks both slices. The rows are flushed
             // first, so the deletions land in a file of their own.
