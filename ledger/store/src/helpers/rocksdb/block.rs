@@ -230,11 +230,17 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.certificate_map.compact()
     }
 
-    /// Compacts the authority map, including its bottom-level files, where pruned rows sit between
-    /// retained ones.
+    /// Compacts one slice of the authority map, including its bottom-level files.
     #[cfg(feature = "prune-authority-data")]
-    fn compact_authority_map(&self) -> Result<()> {
-        self.authority_map.compact_in_slices("authority")
+    fn compact_authority_slice(&self, i: usize, slices: usize) -> Result<()> {
+        self.authority_map.compact_slice(i, slices)
+    }
+
+    /// Stops RocksDB's background work.
+    #[cfg(feature = "prune-authority-data")]
+    fn cancel_background_work(&self) {
+        // Any map can be used to retrieve the common RocksDB instance.
+        self.id_map.cancel_background_work()
     }
 
     /// Keeps only the certificate rows whose value `retain` accepts. See `DataMap::retain_all`.
