@@ -99,15 +99,28 @@ impl<N: Network> BatchHeader<N> {
                 signature,
             )
         } else {
-            Self::from(author, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature)
-                .map_err(io_error)?
+            Self::from_internal(
+                author,
+                round,
+                timestamp,
+                committee_id,
+                transmission_ids,
+                previous_certificate_ids,
+                signature,
+                Some(cache),
+            )
+            .map_err(io_error)?
         };
 
-        // Return the batch.
-        match batch.batch_id == batch_id {
-            true => Ok(batch),
-            false => Err(error("Invalid batch ID")),
+        // Ensure the batch ID matches.
+        if batch.batch_id != batch_id {
+            return Err(error("Invalid batch ID"));
         }
+        // Count the verified signature in the cache.
+        if !unchecked {
+            cache.count_verification(&batch.signature.compute_key());
+        }
+        Ok(batch)
     }
 }
 
@@ -166,6 +179,7 @@ impl<N: Network> ToBytes for BatchHeader<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use console::account::ComputeKey;
 
     #[test]
     fn test_bytes() {
@@ -180,6 +194,62 @@ mod tests {
     }
 
     type CurrentNetwork = console::network::MainnetV0;
+
+    #[test]
+    fn test_cached_reads_reject_bad_signatures() {
+        let rng = &mut TestRng::default();
+        let author = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let headers: Vec<_> = (0..8)
+            .map(|_| {
+                crate::test_helpers::sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+                    2,
+                    &author,
+                    (0..4).map(|_| Field::rand(rng)).collect(),
+                    rng,
+                )
+            })
+            .collect();
+        let mut cache = ComputeKeyCache::default();
+        for header in &headers {
+            let bytes = header.to_bytes_le().unwrap();
+            assert_eq!(header, &BatchHeader::read_le_with_cache(&bytes[..], false, &mut cache).unwrap());
+        }
+        assert!(cache.has_pk_sig_table(&ComputeKey::try_from(&author).unwrap()));
+
+        // With the author's table built, a bad response and another signer are still rejected.
+        let header = &headers[0];
+        let exact = header.to_bytes_le().unwrap();
+        let signature_at = exact.len() - Signature::<CurrentNetwork>::size_in_bytes();
+        let mut bad_response = exact.clone();
+        bad_response[signature_at + 32] ^= 1;
+        let mut other_signer = exact.clone();
+        let other = PrivateKey::<CurrentNetwork>::new(rng).unwrap().sign(&[header.batch_id()], rng).unwrap();
+        other_signer[signature_at..].copy_from_slice(&other.to_bytes_le().unwrap());
+        for bytes in [bad_response, other_signer] {
+            assert!(BatchHeader::<CurrentNetwork>::read_le_with_cache(&bytes[..], false, &mut cache).is_err());
+        }
+    }
+
+    #[test]
+    fn test_rejected_headers_build_no_tables() {
+        let rng = &mut TestRng::default();
+        let author = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let header = crate::test_helpers::sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+            2,
+            &author,
+            (0..4).map(|_| Field::rand(rng)).collect(),
+            rng,
+        );
+        // A wrong serialized batch ID, after the version byte. The signature still covers the computed ID.
+        let mut bad_batch_id = header.to_bytes_le().unwrap();
+        bad_batch_id[1..33].copy_from_slice(&Field::<CurrentNetwork>::rand(rng).to_bytes_le().unwrap());
+
+        let mut cache = ComputeKeyCache::default();
+        for _ in 0..8 {
+            assert!(BatchHeader::<CurrentNetwork>::read_le_with_cache(&bad_batch_id[..], false, &mut cache).is_err());
+        }
+        assert!(!cache.has_pk_sig_table(&ComputeKey::try_from(&author).unwrap()));
+    }
 
     #[test]
     fn test_signature_errors_with_cache_match_signature_reader() {

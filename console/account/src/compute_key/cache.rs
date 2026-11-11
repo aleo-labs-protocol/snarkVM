@@ -14,11 +14,18 @@
 // limitations under the License.
 
 use super::*;
+#[cfg(feature = "signature")]
+use crate::Signature;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 /// The serialized size of a compute key: the x-coordinates of `pk_sig` and `pr_sig`.
 const COMPUTE_KEY_SIZE: usize = 64;
+
+/// The number of verifications that ask for a key's `pk_sig` table before the cache builds it.
+///
+/// A table costs about as much to build as it saves over this many verifications.
+const PK_SIG_TABLE_MIN_VERIFICATIONS: u32 = 4;
 
 /// Compute keys decoded by earlier reads, keyed by their serialized bytes.
 ///
@@ -26,20 +33,31 @@ const COMPUTE_KEY_SIZE: usize = 64;
 /// or the same error, as `ComputeKey::read_le_with_unchecked`.
 #[derive(Clone, Debug)]
 pub struct ComputeKeyCache<N: Network> {
-    /// The decoded compute keys. An entry holds `sk_prf` once a checked read has needed it.
-    keys: HashMap<[u8; COMPUTE_KEY_SIZE], ComputeKey<N>>,
+    /// The decoded compute keys and what verification has derived from them.
+    keys: HashMap<[u8; COMPUTE_KEY_SIZE], CacheEntry<N>>,
     /// The number of entries at which the cache is cleared before the next insert.
     capacity: usize,
 }
 
+/// A decoded compute key and what verification has derived from it.
+#[derive(Clone, Debug)]
+struct CacheEntry<N: Network> {
+    /// The compute key. It holds `sk_prf` once a checked read has needed it.
+    compute_key: ComputeKey<N>,
+    /// The number of verifications that have asked for `pk_sig_table`.
+    verifications: u32,
+    /// The window table of `pk_sig`, built once `PK_SIG_TABLE_MIN_VERIFICATIONS` verifications have asked for it.
+    pk_sig_table: Option<Arc<GroupWindowTable<N>>>,
+}
+
 impl<N: Network> Default for ComputeKeyCache<N> {
-    /// Returns an empty cache that holds sixteen committees of the maximum size.
+    /// Returns an empty cache that holds four committees of the maximum size.
     ///
     /// Reading blocks signed by one committee fills about one committee's worth of entries.
     /// The extra room lets a cache that is kept across many blocks survive committee changes
-    /// without a clear. Each entry takes about 360 bytes, so a full cache stays under 1 MB on mainnet.
+    /// without a clear. An entry with a `pk_sig` table takes about 50 KB, so a full cache stays under 10 MB on mainnet.
     fn default() -> Self {
-        Self::new(16 * usize::from(N::LATEST_MAX_CERTIFICATES()))
+        Self::new(4 * usize::from(N::LATEST_MAX_CERTIFICATES()))
     }
 }
 
@@ -72,7 +90,8 @@ impl<N: Network> ComputeKeyCache<N> {
             return Err(eof);
         }
 
-        if let Some(compute_key) = self.keys.get_mut(&bytes) {
+        if let Some(entry) = self.keys.get_mut(&bytes) {
+            let compute_key = &mut entry.compute_key;
             if unchecked {
                 return Ok(ComputeKey { sk_prf: None, ..*compute_key });
             }
@@ -87,8 +106,64 @@ impl<N: Network> ComputeKeyCache<N> {
             tracing::warn!("Clearing the compute-key cache, which is full at {} keys", self.capacity);
             self.keys.clear();
         }
-        self.keys.insert(bytes, compute_key);
+        self.keys.insert(bytes, CacheEntry { compute_key, verifications: 0, pk_sig_table: None });
         Ok(compute_key)
+    }
+
+    /// Counts a successful verification of a signature by `compute_key`, and builds the key's `pk_sig` table
+    /// once enough verifications have been counted.
+    ///
+    /// Call it only once the data the signature covers has passed every other check, so that rejected data
+    /// builds nothing. A compute key that no read through this cache returned is ignored.
+    pub fn count_verification(&mut self, compute_key: &ComputeKey<N>) {
+        let Some(entry) = Self::key_bytes(compute_key)
+            .and_then(|bytes| self.keys.get_mut(&bytes))
+            .filter(|entry| entry.compute_key == *compute_key)
+        else {
+            return;
+        };
+        if entry.pk_sig_table.is_none() {
+            entry.verifications += 1;
+            if entry.verifications >= PK_SIG_TABLE_MIN_VERIFICATIONS {
+                entry.pk_sig_table = Some(Arc::new(GroupWindowTable::new(&entry.compute_key.pk_sig)));
+            }
+        }
+    }
+
+    /// Returns `true` if `count_verification` has built a `pk_sig` table for `compute_key`.
+    pub fn has_pk_sig_table(&self, compute_key: &ComputeKey<N>) -> bool {
+        self.entry(compute_key).is_some_and(|entry| entry.pk_sig_table.is_some())
+    }
+
+    /// Returns the entry of `compute_key`, if a read through this cache returned it.
+    ///
+    /// Compute keys with the same bytes can differ in the sign of `y` if one was built in memory without checks,
+    /// so the entry must hold `compute_key` itself.
+    fn entry(&self, compute_key: &ComputeKey<N>) -> Option<&CacheEntry<N>> {
+        Self::key_bytes(compute_key)
+            .and_then(|bytes| self.keys.get(&bytes))
+            .filter(|entry| entry.compute_key == *compute_key)
+    }
+
+    /// Returns the serialized `compute_key`, which keys the cache.
+    fn key_bytes(compute_key: &ComputeKey<N>) -> Option<[u8; COMPUTE_KEY_SIZE]> {
+        let mut bytes = [0u8; COMPUTE_KEY_SIZE];
+        compute_key.write_le(&mut bytes[..]).ok()?;
+        Some(bytes)
+    }
+}
+
+#[cfg(feature = "signature")]
+impl<N: Network> ComputeKeyCache<N> {
+    /// Returns the signer's address if `signature` is valid for `message`, and `None` otherwise,
+    /// as `Signature::verify_and_recover_signer` does.
+    ///
+    /// The check uses what `count_verification` has derived for the signer's compute key.
+    pub fn verify_and_recover_signer(&self, signature: &Signature<N>, message: &[Field<N>]) -> Option<Address<N>> {
+        let pk_sig_table = self.entry(&signature.compute_key()).and_then(|entry| entry.pk_sig_table.as_deref());
+        // A normalized address converts to affine, for hashing and comparison, without an inversion.
+        let address = Address::new(signature.to_address().normalized());
+        signature.verify_challenge(&address, message, pk_sig_table).then_some(address)
     }
 }
 
@@ -201,6 +276,51 @@ mod tests {
         // A cleared key decodes the same again.
         assert_matches_cold(&mut cache, &keys[0], false);
         assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn test_pk_sig_table_is_built_after_enough_verifications() {
+        let rng = &mut TestRng::default();
+        let keys = sample_compute_key_bytes(2, rng);
+        let mut cache = ComputeKeyCache::<CurrentNetwork>::default();
+        let compute_key = cache.read_compute_key(&keys[0][..], false).unwrap();
+        // A key the cache never read.
+        let unread = ComputeKey::<CurrentNetwork>::read_le(&keys[1][..]).unwrap();
+
+        for i in 1..=PK_SIG_TABLE_MIN_VERIFICATIONS {
+            cache.count_verification(&compute_key);
+            cache.count_verification(&unread);
+            assert_eq!(cache.has_pk_sig_table(&compute_key), i == PK_SIG_TABLE_MIN_VERIFICATIONS);
+        }
+        assert_eq!(
+            cache.entry(&compute_key).and_then(|entry| entry.pk_sig_table.as_deref()).map(GroupWindowTable::base),
+            Some(compute_key.pk_sig())
+        );
+        assert_eq!(cache.len(), 1);
+
+        // An unchecked read of the same bytes finds the same table.
+        let unchecked = cache.read_compute_key(&keys[0][..], true).unwrap();
+        assert!(cache.has_pk_sig_table(&unchecked));
+    }
+
+    #[test]
+    fn test_cached_verification_matches_signature() {
+        let rng = &mut TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let mut cache = ComputeKeyCache::<CurrentNetwork>::default();
+        let compute_key_bytes = ComputeKey::try_from(&private_key).unwrap().to_bytes_le().unwrap();
+        let compute_key = cache.read_compute_key(&compute_key_bytes[..], false).unwrap();
+
+        for i in 0..2 * PK_SIG_TABLE_MIN_VERIFICATIONS {
+            let message = [Field::rand(rng)];
+            let signature = private_key.sign(&message, rng).unwrap();
+            let expected = signature.verify_and_recover_signer(&message);
+            assert!(expected.is_some());
+            assert_eq!(cache.verify_and_recover_signer(&signature, &message), expected);
+            assert_eq!(cache.verify_and_recover_signer(&signature, &[Field::rand(rng)]), None);
+            assert_eq!(cache.has_pk_sig_table(&compute_key), i >= PK_SIG_TABLE_MIN_VERIFICATIONS);
+            cache.count_verification(&compute_key);
+        }
     }
 
     #[test]

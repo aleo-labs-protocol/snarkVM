@@ -19,19 +19,26 @@ impl<N: Network> Signature<N> {
     /// Verifies (challenge == challenge') && (address == address') where:
     ///     challenge' := HashToScalar(G^response pk_sig^challenge, pk_sig, pr_sig, address, message)
     pub fn verify(&self, address: &Address<N>, message: &[Field<N>]) -> bool {
-        self.verify_challenge(address, message) && *address == self.to_address()
+        self.verify_challenge(address, message, None) && *address == self.to_address()
     }
 
     /// Returns the signer's address if the signature is valid for `message`, and `None` otherwise.
     pub fn verify_and_recover_signer(&self, message: &[Field<N>]) -> Option<Address<N>> {
         // A normalized address converts to affine, for hashing and comparison, without an inversion.
         let address = Address::new(self.to_address().normalized());
-        self.verify_challenge(&address, message).then_some(address)
+        self.verify_challenge(&address, message, None).then_some(address)
     }
 
     /// Verifies challenge == challenge', where:
     ///     challenge' := HashToScalar(G^response pk_sig^challenge, pk_sig, pr_sig, address, message)
-    fn verify_challenge(&self, address: &Address<N>, message: &[Field<N>]) -> bool {
+    ///
+    /// A `pk_sig_table` built from this signature's `pk_sig` speeds up the check. Any other table is ignored.
+    pub(crate) fn verify_challenge(
+        &self,
+        address: &Address<N>,
+        message: &[Field<N>],
+        pk_sig_table: Option<&GroupWindowTable<N>>,
+    ) -> bool {
         // Ensure the number of field elements does not exceed the maximum allowed size.
         if message.len() > N::MAX_DATA_SIZE_IN_FIELDS as usize {
             eprintln!("Cannot sign the signature: the signed message exceeds maximum allowed size");
@@ -43,8 +50,13 @@ impl<N: Network> Signature<N> {
         // Retrieve pr_sig.
         let pr_sig = self.compute_key.pr_sig();
 
+        // Compute `challenge * pk_sig`. A table built from another element would bind the signature to the wrong key.
+        let pk_sig_challenge = match pk_sig_table {
+            Some(table) if table.base() == pk_sig => table.mul(&self.challenge),
+            _ => pk_sig * self.challenge,
+        };
         // Compute `g_r` := (response * G) + (challenge * pk_sig).
-        let g_r = N::g_scalar_multiply_public(&self.response) + (pk_sig * self.challenge);
+        let g_r = N::g_scalar_multiply_public(&self.response) + pk_sig_challenge;
 
         // Construct the hash input as (r * G, pk_sig, pr_sig, address, message).
         let mut preimage = Vec::with_capacity(4 + message.len());
@@ -118,22 +130,56 @@ mod tests {
             // Sample an address and a private key.
             let private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
             let address = Address::try_from(&private_key)?;
+            let message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let failure_message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let signature = Signature::sign(&private_key, &message, rng)?;
+            let table = GroupWindowTable::new(&signature.compute_key().pk_sig());
 
             // Check that a valid signature recovers its signer.
-            let message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
-            let signature = Signature::sign(&private_key, &message, rng)?;
             assert_eq!(signature.verify_and_recover_signer(&message), Some(address));
-
+            assert!(signature.verify_challenge(&address, &message, Some(&table)));
             // Check that a signature over another message recovers nothing.
-            let failure_message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
             if message != failure_message {
                 assert_eq!(signature.verify_and_recover_signer(&failure_message), None);
+                assert!(!signature.verify_challenge(&address, &failure_message, Some(&table)));
             }
 
             // Check that a message over the size limit recovers nothing, as `verify` rejects it.
             let oversized = vec![Field::<CurrentNetwork>::zero(); CurrentNetwork::MAX_DATA_SIZE_IN_FIELDS as usize + 1];
             assert!(!signature.verify(&address, &oversized));
             assert_eq!(signature.verify_and_recover_signer(&oversized), None);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_ignores_a_table_for_another_key() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // A signer whose secret key is known to the forger.
+            let forger_key = PrivateKey::<CurrentNetwork>::new(rng)?;
+            let forger_table = GroupWindowTable::new(&ComputeKey::try_from(&forger_key)?.pk_sig());
+
+            // The victim's compute key, with a signature made with the forger's `sk_sig`.
+            let victim = ComputeKey::try_from(&PrivateKey::<CurrentNetwork>::new(rng)?)?;
+            let victim_address = victim.to_address();
+            let message = [Field::<CurrentNetwork>::rand(rng)];
+            let nonce = Scalar::<CurrentNetwork>::rand(rng);
+            let g_r = CurrentNetwork::g_scalar_multiply(&nonce);
+            let preimage = [g_r, victim.pk_sig(), victim.pr_sig(), *victim_address]
+                .map(|point| point.to_x_coordinate())
+                .into_iter()
+                .chain(message)
+                .collect::<Vec<_>>();
+            let challenge = CurrentNetwork::hash_to_scalar_psd8(&preimage)?;
+            let response = nonce - challenge * forger_key.sk_sig();
+            let forgery = Signature::from((challenge, response, victim));
+
+            // With the forger's table in place of the victim's `pk_sig`, the forgery would verify.
+            assert_eq!(forger_table.mul(&challenge) + CurrentNetwork::g_scalar_multiply(&response), g_r);
+            // `verify_challenge` ignores the mismatched table, so the forgery fails.
+            assert!(!forgery.verify_challenge(&victim_address, &message, Some(&forger_table)));
         }
         Ok(())
     }

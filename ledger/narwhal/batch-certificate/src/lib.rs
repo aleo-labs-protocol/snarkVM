@@ -66,6 +66,17 @@ impl<N: Network> BatchCertificate<N> {
 impl<N: Network> BatchCertificate<N> {
     /// Initializes a new batch certificate.
     pub fn from(batch_header: BatchHeader<N>, signatures: IndexSet<Signature<N>>) -> Result<Self> {
+        Self::from_internal(batch_header, signatures, None)
+    }
+
+    /// Initializes a new batch certificate, verifying its signatures through `cache` if there is one.
+    ///
+    /// The caller counts the verifications in `cache` once the certificate passes its remaining checks.
+    fn from_internal(
+        batch_header: BatchHeader<N>,
+        signatures: IndexSet<Signature<N>>,
+        cache: Option<&ComputeKeyCache<N>>,
+    ) -> Result<Self> {
         // Ensure that the number of signatures is within bounds.
         ensure!(signatures.len() <= Self::max_signatures() as usize, "Invalid number of signatures");
 
@@ -77,9 +88,11 @@ impl<N: Network> BatchCertificate<N> {
         let batch_id = batch_header.batch_id();
         let signers = cfg_iter!(signature_list)
             .map(|signature| {
-                signature
-                    .verify_and_recover_signer(&[batch_id])
-                    .ok_or_else(|| anyhow!("Invalid batch certificate signature"))
+                match cache {
+                    Some(cache) => cache.verify_and_recover_signer(signature, &[batch_id]),
+                    None => signature.verify_and_recover_signer(&[batch_id]),
+                }
+                .ok_or_else(|| anyhow!("Invalid batch certificate signature"))
             })
             .collect::<Result<Vec<_>>>()?;
 
