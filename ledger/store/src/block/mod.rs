@@ -1158,12 +1158,14 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     pub fn insert(&self, block: &Block<N>) -> Result<()> {
         // Acquire the write lock on the block tree.
         let mut tree = self.tree.write();
-        // Compute the block tree root containing the new block hash.
-        let (root, state_root) = Self::next_block_tree_root(&tree, block)?;
-        // Insert the (state root, block height) pair.
-        self.storage.insert(state_root, block)?;
+        Self::ensure_next_height(&tree, block)?;
         // Append the block hash to the block tree in place.
-        tree.append_if_matches(&[block.hash().to_bits_le()], &root)?;
+        tree.append(&[block.hash().to_bits_le()])?;
+        // Insert the (state root, block height) pair, removing the block hash again if that fails.
+        if let Err(error) = self.storage.insert(stored_state_root(block.height(), *tree.root()), block) {
+            tree.remove_last_n(1)?;
+            return Err(error);
+        }
         // Add the block to the block cache.
         self.cache_block(block)
     }
@@ -1173,31 +1175,38 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// The live block tree is unchanged. `commit_paused_writes_and_publish_block_tree` appends
     /// `block` to it. `discard_prepared_block_tree` drops the retained root.
     ///
-    /// Installing the retained tree before its state root is readable from storage makes
+    /// Appending `block` before its state root is readable from storage makes
     /// `get_state_path_for_commitment` fail for every commitment.
     pub fn insert_deferring_block_tree(&self, block: &Block<N>) -> Result<()> {
         let mut prepared = self.prepared_block_tree_root.lock();
-        ensure!(prepared.is_none(), "A prepared block tree is already waiting to be installed");
+        ensure!(prepared.is_none(), "A block tree root is already waiting to be installed");
         // Compute the block tree root containing the new block hash.
-        let (root, state_root) = Self::next_block_tree_root(&self.tree.read(), block)?;
+        let root = {
+            let tree = self.tree.read();
+            Self::ensure_next_height(&tree, block)?;
+            tree.append_root(&[block.hash().to_bits_le()])?
+        };
         // Insert the (state root, block height) pair.
-        self.storage.insert(state_root, block)?;
+        self.storage.insert(stored_state_root(block.height(), root), block)?;
         // Retain the root until the caller installs or drops it.
         *prepared = Some(root);
         Ok(())
     }
 
-    /// Writes the paused atomic batch and appends `block` to the live block tree in place.
+    /// Appends `block` to the live block tree in place and writes the paused atomic batch.
     ///
     /// The block-tree write lock is held across the batch write.
     pub fn commit_paused_writes_and_publish_block_tree(&self, block: &Block<N>) -> Result<()> {
         let root =
-            self.prepared_block_tree_root.lock().take().context("No prepared block tree is waiting to be installed")?;
+            self.prepared_block_tree_root.lock().take().context("No block tree root is waiting to be installed")?;
         // Hold the live tree exclusive until the batch write returns.
         let mut tree = self.tree.write();
-        self.storage.unpause_atomic_writes::<false>()?;
-        // Append the block hash to the block tree in place.
+        // Append the block hash to the block tree in place, removing it again if the batch write fails.
         tree.append_if_matches(&[block.hash().to_bits_le()], &root)?;
+        if let Err(error) = self.storage.unpause_atomic_writes::<false>() {
+            tree.remove_last_n(1)?;
+            return Err(error);
+        }
         // Add the block to the block cache.
         self.cache_block(block)
     }
@@ -1207,14 +1216,12 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.prepared_block_tree_root.lock().take();
     }
 
-    /// Returns the root of the block tree that contains `block`, and the state root stored for it.
-    fn next_block_tree_root(tree: &BlockTree<N>, block: &Block<N>) -> Result<(Field<N>, N::StateRoot)> {
-        // Ensure the next block height is correct.
+    /// Ensures `block` is the next block for `tree`.
+    fn ensure_next_height(tree: &BlockTree<N>, block: &Block<N>) -> Result<()> {
         if block.height() != u32::try_from(tree.number_of_leaves())? {
             bail!("Attempted to insert a block at the incorrect height into storage")
         }
-        let root = tree.append_root(&[block.hash().to_bits_le()])?;
-        Ok((root, stored_state_root(block.height(), root)))
+        Ok(())
     }
 
     /// Adds the block to the block cache.
@@ -2051,7 +2058,7 @@ mod tests {
         .unwrap()
     }
 
-    /// The live block tree stays on the committed root until the retained tree is installed.
+    /// The live block tree stays on the committed root until the block is committed.
     fn assert_state_path_tracks_the_committed_tree<B: BlockStorage<CurrentNetwork>>(
         block_store: &BlockStore<CurrentNetwork, B>,
         pause_atomic_writes: bool,
@@ -2084,10 +2091,11 @@ mod tests {
         assert!(block_store.get_state_root(successor.height()).unwrap().is_some());
     }
 
-    /// Inserts a chain across several powers of two, alternating direct and deferred inserts.
-    /// After each, the block tree and stored state root match a tree built over every block hash.
+    /// Inserts a chain across several powers of two, directly or deferred. After each block, the
+    /// block tree and stored state root match a tree built over every block hash.
     fn assert_block_tree_matches_a_rebuilt_tree<B: BlockStorage<CurrentNetwork>>(
         block_store: &BlockStore<CurrentNetwork, B>,
+        deferred: bool,
         pause_atomic_writes: bool,
     ) {
         let rng = &mut TestRng::default();
@@ -2104,9 +2112,9 @@ mod tests {
         let mut hashes = vec![blocks[0].hash().to_bits_le()];
         block_store.insert(&blocks[0]).unwrap();
         assert_tree(&hashes);
-        for height in 1..18 {
+        for _ in 1..18 {
             let block = sample_successor_block(blocks.last().unwrap(), rng);
-            if height % 2 == 0 {
+            if !deferred {
                 block_store.insert(&block).unwrap();
             } else {
                 if pause_atomic_writes {
@@ -2128,9 +2136,6 @@ mod tests {
 
         // A retained root that no longer extends the live tree fails to commit and leaves the tree.
         let next = sample_successor_block(blocks.last().unwrap(), rng);
-        if pause_atomic_writes {
-            block_store.pause_atomic_writes().unwrap();
-        }
         block_store.insert_deferring_block_tree(&next).unwrap();
         block_store.insert(&next).unwrap();
         let tree = block_store.tree.read().clone();
@@ -2140,8 +2145,10 @@ mod tests {
 
     #[test]
     fn test_block_tree_matches_a_rebuilt_tree() {
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-        assert_block_tree_matches_a_rebuilt_tree(&block_store, false);
+        for deferred in [false, true] {
+            let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+            assert_block_tree_matches_a_rebuilt_tree(&block_store, deferred, false);
+        }
     }
 
     #[cfg(feature = "rocks")]
@@ -2150,7 +2157,7 @@ mod tests {
         use crate::helpers::rocksdb::BlockDB;
 
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(None)).unwrap();
-        assert_block_tree_matches_a_rebuilt_tree(&block_store, true);
+        assert_block_tree_matches_a_rebuilt_tree(&block_store, true, true);
     }
 
     #[test]

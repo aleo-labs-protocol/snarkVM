@@ -550,7 +550,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
                     self.process.lock().update_credits_verifying_keys()?;
                 }
-                // Write the paused batch and install the retained block tree.
+                // Write the paused batch and append the block to the live block tree.
                 #[cfg(feature = "rocks")]
                 self.block_store().commit_paused_writes_and_publish_block_tree(&block)?;
                 // If the block advances to a new consensus version, clear the partial verification cache.
