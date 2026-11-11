@@ -17,6 +17,9 @@
 
 use super::*;
 
+use crate::helpers::Progress;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
 /// The number of authorities pruned at insert time between compactions of the authority map.
 /// Pruned authorities are interleaved with retained ones in every file, so without a compaction
 /// their space is reclaimed only when RocksDB happens to rewrite the file. Each run reads and
@@ -26,21 +29,16 @@ use super::*;
 /// tests use a few blocks.
 const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 100_000 };
 
-/// The number of key-range slices the authority map is compacted in, one call each, so progress
-/// can be logged and a shutdown can stop between them. Block hashes are uniform in their first
-/// bytes, so the slices split the first two key bytes evenly. Unit tests use a few slices.
-const AUTHORITY_COMPACTION_SLICES: usize = if cfg!(test) { 4 } else { 256 };
-
-/// The authority map compaction logs progress about this often.
-const AUTHORITY_COMPACTION_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// Compacts the authority map in [`AUTHORITY_COMPACTION_SLICES`] slices. Stops between slices once
-/// `stop` is set; the next start, which always compacts, redoes the rest.
+/// Compacts the authority map in the storage's slices (see
+/// [`BlockStorage::authority_compaction_slices`]). Stops between slices once `stop` is set; the
+/// next start, which always compacts, redoes the rest.
 fn compact_authority_slices<N: Network, B: BlockStorage<N>>(storage: &B, stop: &AtomicBool) -> Result<()> {
-    let total = AUTHORITY_COMPACTION_SLICES;
+    let total = storage.authority_compaction_slices();
+    if total == 0 || stop.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     info!("Compacting the authority map in {total} slices; this can take a while");
-    let timer = std::time::Instant::now();
-    let mut next_report = AUTHORITY_COMPACTION_REPORT_INTERVAL;
+    let mut progress = Progress::new(total);
     for i in 0..total {
         if stop.load(Ordering::SeqCst) {
             info!("Stopped the authority map compaction before slice {i} of {total}; the next start redoes it");
@@ -54,18 +52,14 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(storage: &B, stop: &
                 stop.store(true, Ordering::SeqCst);
             }
         });
-
-        let (done, elapsed) = (i + 1, timer.elapsed());
-        if elapsed >= next_report && done < total {
-            let remaining = elapsed.as_secs_f64() * (total - done) as f64 / done as f64;
+        if let Some((elapsed, remaining)) = progress.advance(1) {
             info!(
-                "Compacted {done} of {total} authority slices in {:.0} s, about {remaining:.0} s left",
-                elapsed.as_secs_f64()
+                "Compacted {} of {total} authority slices in {elapsed:.0} s, about {remaining:.0} s left",
+                progress.done()
             );
-            next_report = elapsed + AUTHORITY_COMPACTION_REPORT_INTERVAL;
         }
     }
-    info!("Compacted the authority map in {:.1} s", timer.elapsed().as_secs_f64());
+    info!("Compacted the authority map in {:.1} s", progress.elapsed_secs());
     Ok(())
 }
 
@@ -74,51 +68,45 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(storage: &B, stop: &
 pub(super) struct AuthorityCompaction {
     /// The number of authorities pruned since the authority map was compacted.
     pruned: AtomicU32,
-    /// Whether an authority map compaction is running.
-    running: AtomicBool,
-    /// Set at shutdown, so the authority map compaction stops between slices.
+    /// Set at shutdown, so no compaction starts and the running one stops between slices.
     stop: AtomicBool,
-    /// The thread of the running authority map compaction, joined at shutdown.
+    /// The thread of the last compaction started; running while it is not finished.
     thread: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
-    /// Adds `pruned` to the authorities pruned since the last authority map compaction, and starts
-    /// one when they reach [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`].
-    fn count_pruned_authorities(&self, pruned: u32) {
-        let total = self.authority_compaction.pruned.fetch_add(pruned, Ordering::SeqCst) + pruned;
-        if total >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS && self.compact_authorities() {
+    /// Counts the authority pruned by the insert of the block at `height`, if any, and starts a
+    /// compaction every [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`] of them. Counts by height, so
+    /// after a rollback it overstates until the watermark catches up; a compaction a little early is
+    /// harmless.
+    pub(super) fn count_insert_time_pruning(&self, height: u32) {
+        if height < AUTHORITY_RETENTION_BLOCKS {
+            return;
+        }
+        let pruned = self.authority_compaction.pruned.fetch_add(1, Ordering::SeqCst) + 1;
+        if pruned >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS && self.compact_authorities() {
             self.authority_compaction.pruned.store(0, Ordering::SeqCst);
         }
     }
 
-    /// Counts the authority pruned by the insert of the block at `height`, if any.
-    pub(super) fn count_insert_time_pruning(&self, height: u32) {
-        if height >= AUTHORITY_RETENTION_BLOCKS {
-            self.count_pruned_authorities(1);
-        }
-    }
-
-    /// Starts an authority map compaction on a background thread, and returns `false` if one is
-    /// already running or the storage has nothing to compact. RocksDB reports compaction errors
-    /// only in its LOG. Tests compact inline by default, so they can count it.
+    /// Starts an authority map compaction on a background thread. Returns `false` and starts
+    /// nothing while one runs, once the store is stopping, when the storage has nothing to
+    /// compact, or when the thread cannot be spawned. Tests compact inline by default, so they can
+    /// count it.
     pub(super) fn compact_authorities(&self) -> bool {
-        /// Clears the running flag when the compaction ends, by return or by panic.
-        struct Running(Arc<AuthorityCompaction>);
-        impl Drop for Running {
-            fn drop(&mut self) {
-                self.0.running.store(false, Ordering::SeqCst);
-            }
-        }
-
-        if !self.storage.compacts_authority_map() || self.authority_compaction.running.swap(true, Ordering::SeqCst) {
+        let compaction = &self.authority_compaction;
+        if compaction.stop.load(Ordering::SeqCst) || self.storage.authority_compaction_slices() == 0 {
             return false;
         }
-        let running = Running(self.authority_compaction.clone());
-        let storage = self.storage.clone();
+        // One lock covers the running check, the spawn and the handle, so a concurrent stop cannot
+        // miss the thread.
+        let mut thread = compaction.thread.lock();
+        if thread.as_ref().is_some_and(|thread| !thread.is_finished()) {
+            return false;
+        }
+        let (storage, compaction) = (self.storage.clone(), compaction.clone());
         let compact = move || {
-            let running = running;
-            if let Err(error) = compact_authority_slices(&storage, &running.0.stop) {
+            if let Err(error) = compact_authority_slices(&storage, &compaction.stop) {
                 error!("Failed to compact the authority map: {error}");
             }
         };
@@ -130,34 +118,31 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
                 return true;
             }
         }
-        // Hold the slot while spawning, so a concurrent `stop_background_work` waits for the handle.
-        let mut thread = self.authority_compaction.thread.lock();
         match std::thread::Builder::new().name("authority-compaction".into()).spawn(compact) {
-            Ok(handle) => *thread = Some(handle),
-            Err(error) => error!("Failed to start the authority map compaction: {error}"),
+            Ok(handle) => {
+                *thread = Some(handle);
+                true
+            }
+            Err(error) => {
+                error!("Failed to start the authority map compaction: {error}");
+                false
+            }
         }
-        true
     }
 
     /// Stops the background authority map compaction, if one runs, and waits for it; the next
     /// start redoes it. The running slice finishes first: RocksDB's `cancel_all_background_work`
     /// is process-wide and irreversible, and the Rust bindings do not reach its
-    /// `DisableManualCompaction`, so a slice, one of [`AUTHORITY_COMPACTION_SLICES`], is the unit
-    /// of waiting. Call it once per process at shutdown; a second `BlockStore` on the same path is
-    /// not supported for background compaction, as it is not for pruning. A no-op when nothing runs.
+    /// `DisableManualCompaction`. Call it once per process, at shutdown.
     pub fn stop_background_work(&self) {
         self.authority_compaction.stop.store(true, Ordering::SeqCst);
         let Some(thread) = self.authority_compaction.thread.lock().take() else {
             return;
         };
-        if thread.is_finished() {
-            return;
-        }
         info!("Waiting for the authority map compaction to finish its slice");
         if thread.join().is_err() {
             error!("The authority map compaction thread panicked");
         }
-        info!("The authority map compaction stopped");
     }
 }
 
@@ -182,12 +167,28 @@ mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    /// Checks that a compaction stopped between slices leaves the rest, that nothing runs while the
+    #[cfg(feature = "rocks")]
+    fn open_rocksdb() -> BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>> {
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        BlockStore::open(StorageMode::new_test(Some(temp_dir))).unwrap()
+    }
+
+    fn compactions() -> usize {
+        AUTHORITY_COMPACTIONS.with(|count| count.get())
+    }
+
+    #[cfg(feature = "rocks")]
+    fn slices() -> usize {
+        AUTHORITY_SLICES_COMPACTED.with(|count| count.get())
+    }
+
+    /// Ensures a compaction stopped between slices leaves the rest, that nothing starts while the
     /// stop flag is set, and that the next compaction runs every slice again.
     #[cfg(feature = "rocks")]
-    fn check_authority_compaction_stops<B: BlockStorage<CurrentNetwork>>(store: BlockStore<CurrentNetwork, B>) {
-        let slices = || AUTHORITY_SLICES_COMPACTED.with(|count| count.get());
-        let total = AUTHORITY_COMPACTION_SLICES;
+    #[test]
+    fn test_authority_compaction_stops_rocksdb() {
+        let store = open_rocksdb();
+        let total = store.storage.authority_compaction_slices();
 
         let before = slices();
         AUTHORITY_COMPACTION_STOP_AFTER.with(|n| n.set(Some(before + 2)));
@@ -195,49 +196,28 @@ mod tests {
         assert_eq!(slices(), before + 2);
         AUTHORITY_COMPACTION_STOP_AFTER.with(|n| n.set(None));
 
-        // While the stop flag is set, a compaction ends before its first slice.
-        assert!(store.compact_authorities());
+        // While the stop flag is set, nothing starts.
+        assert!(!store.compact_authorities());
         assert_eq!(slices(), before + 2);
 
         store.authority_compaction.stop.store(false, Ordering::SeqCst);
         assert!(store.compact_authorities());
         assert_eq!(slices(), before + 2 + total);
-
-        // Stopping with nothing running is a no-op.
-        store.stop_background_work();
-        store.stop_background_work();
     }
 
-    /// Ensures a stopped authority compaction leaves the loop between slices, with RocksDB storage.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_authority_compaction_stops_rocksdb() {
-        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        check_authority_compaction_stops(
-            BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(Some(temp_dir))).unwrap(),
-        );
-    }
-
-    /// Ensures the real thread path starts, stops on request and leaves consistent state.
+    /// Ensures the real thread path starts at open, stops on request, and is not restarted.
     #[cfg(feature = "rocks")]
     #[test]
     fn test_authority_compaction_thread_stops_rocksdb() {
-        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         AUTHORITY_COMPACTION_INLINE.with(|inline| inline.set(false));
-        // The open starts the compaction on a thread.
-        let block_store =
-            BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
+        let store = open_rocksdb();
         AUTHORITY_COMPACTION_INLINE.with(|inline| inline.set(true));
-        assert!(block_store.authority_compaction.thread.lock().is_some());
+        assert!(store.authority_compaction.thread.lock().is_some());
 
-        block_store.stop_background_work();
-        assert!(block_store.authority_compaction.thread.lock().is_none());
-        assert!(!block_store.authority_compaction.running.load(Ordering::SeqCst));
-        assert!(block_store.authority_compaction.stop.load(Ordering::SeqCst));
-        // Stopped: nothing starts, and stopping again is a no-op.
-        assert!(block_store.compact_authorities());
-        block_store.stop_background_work();
-        assert!(!block_store.authority_compaction.running.load(Ordering::SeqCst));
+        store.stop_background_work();
+        assert!(store.authority_compaction.thread.lock().is_none());
+        assert!(!store.compact_authorities());
+        store.stop_background_work();
     }
 
     /// Ensures every open starts exactly one authority compaction, and that an open after a stopped
@@ -247,46 +227,32 @@ mod tests {
     fn test_open_starts_authority_compaction_rocksdb() {
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage_mode = StorageMode::new_test(Some(temp_dir));
-        let compactions = || AUTHORITY_COMPACTIONS.with(|count| count.get());
-        let slices = || AUTHORITY_SLICES_COMPACTED.with(|count| count.get());
-        let total = AUTHORITY_COMPACTION_SLICES;
 
         // This open's compaction is stopped after one slice.
         let (compactions_before, slices_before) = (compactions(), slices());
         AUTHORITY_COMPACTION_STOP_AFTER.with(|n| n.set(Some(slices_before + 1)));
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
+        let store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
         AUTHORITY_COMPACTION_STOP_AFTER.with(|n| n.set(None));
         assert_eq!((compactions(), slices()), (compactions_before + 1, slices_before + 1));
-        drop(block_store);
+        let total = store.storage.authority_compaction_slices();
+        drop(store);
 
-        let _block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
+        let _store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
         assert_eq!((compactions(), slices()), (compactions_before + 2, slices_before + 1 + total));
-    }
-
-    /// Ensures in-memory storage, which has nothing to compact, starts no compaction.
-    #[test]
-    fn test_memory_storage_starts_no_authority_compaction() {
-        let compactions = || AUTHORITY_COMPACTIONS.with(|count| count.get());
-        let before = compactions();
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-        assert!(!block_store.compact_authorities());
-        assert_eq!(compactions(), before);
-        block_store.stop_background_work();
     }
 
     /// Checks that insert-time pruning compacts the authority map once per
     /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities, if the storage compacts at all.
     fn check_insert_time_pruning_compacts_after_interval<B: BlockStorage<CurrentNetwork>>(
-        block_store: BlockStore<CurrentNetwork, B>,
+        store: BlockStore<CurrentNetwork, B>,
     ) {
         let rng = &mut TestRng::default();
         let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 1, rng);
-        let compactions = || AUTHORITY_COMPACTIONS.with(|count| count.get());
         let before = compactions();
         let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS - 1;
-        let compacts = block_store.storage.compacts_authority_map();
+        let compacts = store.storage.authority_compaction_slices() > 0;
         for block in &blocks {
-            block_store.insert(block).unwrap();
+            store.insert(block).unwrap();
             let expected = before + usize::from(compacts && block.height() >= trigger);
             assert_eq!(compactions(), expected, "at block {}", block.height());
         }
@@ -296,17 +262,52 @@ mod tests {
     #[cfg(feature = "rocks")]
     #[test]
     fn test_insert_time_pruning_compacts_after_interval_rocksdb() {
-        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        check_insert_time_pruning_compacts_after_interval(
-            BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(Some(temp_dir))).unwrap(),
-        );
+        check_insert_time_pruning_compacts_after_interval(open_rocksdb());
     }
 
-    /// Ensures in-memory storage, which has nothing to compact, never starts one.
+    /// Ensures in-memory storage, which has nothing to compact, never starts a compaction.
     #[test]
     fn test_insert_time_pruning_compacts_after_interval_memory() {
-        check_insert_time_pruning_compacts_after_interval(
-            BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap(),
-        );
+        let store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        assert!(!store.compact_authorities());
+        check_insert_time_pruning_compacts_after_interval(store);
+    }
+
+    /// Ensures a trigger that fires while a compaction runs keeps its count, and fires on the next
+    /// insert once the compaction has ended.
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_trigger_waits_for_the_running_compaction_rocksdb() {
+        let store = open_rocksdb();
+        let rng = &mut TestRng::default();
+        let blocks = sample_block_chain(AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 1, rng);
+        let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS - 1;
+
+        // A compaction that runs until released.
+        let release = Arc::new(AtomicBool::new(false));
+        let running = {
+            let release = release.clone();
+            std::thread::spawn(move || {
+                while !release.load(Ordering::SeqCst) {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            })
+        };
+        *store.authority_compaction.thread.lock() = Some(running);
+
+        let before = compactions();
+        for block in blocks.iter().filter(|block| block.height() <= trigger) {
+            store.insert(block).unwrap();
+        }
+        assert_eq!(compactions(), before);
+        assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), AUTHORITY_COMPACTION_INTERVAL_BLOCKS);
+
+        release.store(true, Ordering::SeqCst);
+        while store.authority_compaction.thread.lock().as_ref().is_some_and(|thread| !thread.is_finished()) {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        store.insert(&blocks[trigger as usize + 1]).unwrap();
+        assert_eq!(compactions(), before + 1);
+        assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), 0);
     }
 }

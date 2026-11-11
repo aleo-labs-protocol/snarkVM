@@ -64,8 +64,6 @@ use locktick::{
 };
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
-#[cfg(feature = "prune-authority-data")]
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
@@ -344,23 +342,15 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(
     let total = floor - start;
     info!("Pruning the authority data of {total} blocks below block {floor}");
 
-    let timer = std::time::Instant::now();
-    let report_every = (total / 100).max(AUTHORITY_PRUNING_CHUNK_HEIGHTS);
-    let mut next_report = report_every;
+    let mut progress = crate::helpers::Progress::new(usize::try_from(total)?);
     for chunk_start in (start..floor).step_by(AUTHORITY_PRUNING_CHUNK_HEIGHTS as usize) {
         let chunk_end = chunk_start.saturating_add(AUTHORITY_PRUNING_CHUNK_HEIGHTS).min(floor);
         atomic_batch_scope!(storage, { prune_authority_heights(storage, chunk_start..chunk_end) })?;
-
-        let done = chunk_end - start;
-        if done >= next_report && done < total {
-            let rate = f64::from(done) / timer.elapsed().as_secs_f64().max(f64::EPSILON);
-            let percent = 100.0 * f64::from(done) / f64::from(total);
-            let remaining = f64::from(total - done) / rate;
-            info!("Pruned {done} of {total} blocks ({percent:.0}%), {rate:.0} blocks/s, about {remaining:.0} s left");
-            next_report = done + report_every;
+        if let Some((elapsed, remaining)) = progress.advance(usize::try_from(chunk_end - chunk_start)?) {
+            info!("Pruned {} of {total} blocks in {elapsed:.0} s, about {remaining:.0} s left", progress.done());
         }
     }
-    info!("Pruned the authority data below block {floor} in {:.1} s", timer.elapsed().as_secs_f64());
+    info!("Pruned the authority data below block {floor} in {:.1} s", progress.elapsed_secs());
     Ok(Some(floor))
 }
 
@@ -488,19 +478,19 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(())
     }
 
-    /// Compacts slice `i` of `slices` of the authority map's key range, including its bottom-level
-    /// files, where pruned rows sit between retained ones. Storage without deferred compaction does
-    /// nothing.
+    /// The number of key-range slices [`Self::compact_authority_slice`] divides the authority map
+    /// into, so a compaction can log progress and stop between slices; 0 for storage with nothing
+    /// to compact.
+    #[cfg(feature = "prune-authority-data")]
+    fn authority_compaction_slices(&self) -> usize {
+        0
+    }
+
+    /// Compacts slice `i` of `slices` of the authority map's key range. Storage without deferred
+    /// compaction does nothing.
     #[cfg(feature = "prune-authority-data")]
     fn compact_authority_slice(&self, _i: usize, _slices: usize) -> Result<()> {
         Ok(())
-    }
-
-    /// Returns `true` if [`Self::compact_authority_slice`] does anything, so the pass is worth a
-    /// thread.
-    #[cfg(feature = "prune-authority-data")]
-    fn compacts_authority_map(&self) -> bool {
-        false
     }
 
     /// Keeps only the certificate rows whose value `retain` accepts and returns the numbers of kept
@@ -1525,11 +1515,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             #[cfg(feature = "prune-authority-data")]
             authority_compaction: Default::default(),
         };
-        // Every start compacts the authority map, so a compaction interrupted by a shutdown is redone
-        // and the rows the startup walk pruned are reclaimed. RocksDB skips the slices with nothing
-        // to merge; on a live node the inserts since the last compaction overlap every slice, so a
-        // restart typically rewrites the retained window, about 25 GB read and written on mainnet,
-        // a few minutes of background disk with no node impact measured.
+        // Every start compacts the authority map, so an interrupted compaction is redone and the
+        // rows the startup walk pruned are reclaimed.
         #[cfg(feature = "prune-authority-data")]
         if primary {
             store.compact_authorities();

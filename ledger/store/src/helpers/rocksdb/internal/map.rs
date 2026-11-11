@@ -646,12 +646,8 @@ const RETAIN_THREADS: usize = if cfg!(test) { 2 } else { 4 };
 #[cfg(feature = "prune-authority-data")]
 const RETAIN_READAHEAD: usize = 4 << 20;
 
-/// [`DataMap::retain_all`] logs progress about this often.
-#[cfg(feature = "prune-authority-data")]
-const RETAIN_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
-
 /// The first two key bytes at which slice `i` of `slices` starts and ends (`None`: the map's end).
-/// For maps whose keys are uniform in their first bytes, so the slices are even.
+/// Block hashes and certificate IDs are uniform in their first bytes, so the slices split them evenly.
 #[cfg(feature = "prune-authority-data")]
 fn slice_bounds(i: usize, slices: usize) -> ([u8; 2], Option<[u8; 2]>) {
     let start = |i: usize| u16::try_from(i * 65536 / slices).expect("slice below count").to_be_bytes();
@@ -664,8 +660,8 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         self.database.compact_prefix(self.prefix()?)
     }
 
-    /// Compacts slice `i` of `slices` of this map's keys, rewriting bottom-level files too (see
-    /// `RocksDB::compact_key_range`). Meant for maps whose keys are uniform in their first bytes.
+    /// Compacts slice `i` of `slices` of this map's keys (see [`slice_bounds`]), rewriting
+    /// bottom-level files too (see `RocksDB::compact_key_range`).
     #[cfg(feature = "prune-authority-data")]
     pub(crate) fn compact_slice(&self, i: usize, slices: usize) -> Result<()> {
         let (start, end) = slice_bounds(i, slices);
@@ -695,10 +691,10 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     }
 
     /// Keeps only the rows whose value `retain` accepts, rewriting the map in [`RETAIN_SLICES`]
-    /// key-range slices on [`RETAIN_THREADS`] threads, and returns the numbers of kept and removed
-    /// rows. Each slice is one write, so an interrupted run leaves every slice untouched or done, and
-    /// a rerun changes nothing. Meant for maps whose keys are uniform in their first bytes, so the
-    /// slices are even. Bypasses the atomic batch, so it refuses to run while one is in progress.
+    /// key-range slices (see [`slice_bounds`]) on [`RETAIN_THREADS`] threads, and returns the
+    /// numbers of kept and removed rows. Each slice is one write, so an interrupted run leaves every
+    /// slice untouched or done, and a rerun changes nothing. Bypasses the atomic batch, so it
+    /// refuses to run while one is in progress.
     #[cfg(feature = "prune-authority-data")]
     pub(crate) fn retain_all(&self, retain: impl Fn(&V) -> bool + Sync) -> Result<(usize, usize)>
     where
@@ -707,16 +703,8 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     {
         use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-        struct Progress {
-            done: usize,
-            kept: usize,
-            removed: usize,
-            next_report: std::time::Duration,
-        }
-
-        let timer = Instant::now();
-        let progress = Mutex::new(Progress { done: 0, kept: 0, removed: 0, next_report: RETAIN_REPORT_INTERVAL });
-
+        // The progress, and the rows kept and removed so far.
+        let progress = Mutex::new((crate::helpers::Progress::new(RETAIN_SLICES), 0, 0));
         let pool = rayon::ThreadPoolBuilder::new().num_threads(RETAIN_THREADS).build()?;
         pool.install(|| {
             (0..RETAIN_SLICES).into_par_iter().try_for_each(|i| -> Result<()> {
@@ -724,28 +712,22 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
                 let (kept, removed) = self.retain_range(&start, end.as_ref().map(|end| &end[..]), &retain)?;
 
                 let mut progress = progress.lock();
-                progress.done += 1;
-                progress.kept += kept;
-                progress.removed += removed;
-                let elapsed = timer.elapsed();
-                if elapsed >= progress.next_report && progress.done < RETAIN_SLICES {
-                    let remaining =
-                        elapsed.as_secs_f64() * (RETAIN_SLICES - progress.done) as f64 / progress.done as f64;
+                progress.1 += kept;
+                progress.2 += removed;
+                if let Some((elapsed, remaining)) = progress.0.advance(1) {
                     tracing::info!(
-                        "Rewrote {} of {RETAIN_SLICES} slices, kept {} rows, removed {}, in {:.0} s, about {remaining:.0} s left",
-                        progress.done,
-                        progress.kept,
-                        progress.removed,
-                        elapsed.as_secs_f64()
+                        "Rewrote {} of {RETAIN_SLICES} slices, kept {} rows, removed {}, in {elapsed:.0} s, about {remaining:.0} s left",
+                        progress.0.done(),
+                        progress.1,
+                        progress.2
                     );
-                    progress.next_report = elapsed + RETAIN_REPORT_INTERVAL;
                 }
                 Ok(())
             })
         })?;
 
         let progress = progress.lock();
-        Ok((progress.kept, progress.removed))
+        Ok((progress.1, progress.2))
     }
 
     /// Keeps only the rows whose value `retain` accepts among those whose keys, after the map prefix,
