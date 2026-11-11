@@ -19,6 +19,19 @@ impl<N: Network> Signature<N> {
     /// Verifies (challenge == challenge') && (address == address') where:
     ///     challenge' := HashToScalar(G^response pk_sig^challenge, pk_sig, pr_sig, address, message)
     pub fn verify(&self, address: &Address<N>, message: &[Field<N>]) -> bool {
+        self.verify_challenge(address, message) && *address == self.to_address()
+    }
+
+    /// Returns the signer's address if the signature is valid for `message`, and `None` otherwise.
+    pub fn verify_and_recover_signer(&self, message: &[Field<N>]) -> Option<Address<N>> {
+        // A normalized address converts to affine, for hashing and comparison, without an inversion.
+        let address = Address::new(self.to_address().normalized());
+        self.verify_challenge(&address, message).then_some(address)
+    }
+
+    /// Verifies challenge == challenge', where:
+    ///     challenge' := HashToScalar(G^response pk_sig^challenge, pk_sig, pr_sig, address, message)
+    fn verify_challenge(&self, address: &Address<N>, message: &[Field<N>]) -> bool {
         // Ensure the number of field elements does not exceed the maximum allowed size.
         if message.len() > N::MAX_DATA_SIZE_IN_FIELDS as usize {
             eprintln!("Cannot sign the signature: the signed message exceeds maximum allowed size");
@@ -39,23 +52,10 @@ impl<N: Network> Signature<N> {
         preimage.extend(message);
 
         // Hash to derive the verifier challenge, and return `false` if this operation fails.
-        let candidate_challenge = match N::hash_to_scalar_psd8(&preimage) {
-            // Output the computed candidate challenge.
-            Ok(candidate_challenge) => candidate_challenge,
-            // Return `false` if the challenge errored.
-            Err(_) => return false,
-        };
-
-        // Derive the address from the compute key, and return `false` if this operation fails.
-        let candidate_address = match Address::try_from(self.compute_key) {
-            // Output the computed candidate address.
-            Ok(candidate_address) => candidate_address,
-            // Return `false` if the address errored.
-            Err(_) => return false,
-        };
-
-        // Return `true` if the candidate challenge and address are correct.
-        self.challenge == candidate_challenge && *address == candidate_address
+        match N::hash_to_scalar_psd8(&preimage) {
+            Ok(candidate_challenge) => self.challenge == candidate_challenge,
+            Err(_) => false,
+        }
     }
 
     /// Verifies a signature for the given address and message (as bytes).
@@ -106,6 +106,34 @@ mod tests {
             if message != failure_message {
                 assert!(!signature.verify(&address, &failure_message));
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_and_recover_signer() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for i in 0..ITERATIONS {
+            // Sample an address and a private key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
+            let address = Address::try_from(&private_key)?;
+
+            // Check that a valid signature recovers its signer.
+            let message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let signature = Signature::sign(&private_key, &message, rng)?;
+            assert_eq!(signature.verify_and_recover_signer(&message), Some(address));
+
+            // Check that a signature over another message recovers nothing.
+            let failure_message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            if message != failure_message {
+                assert_eq!(signature.verify_and_recover_signer(&failure_message), None);
+            }
+
+            // Check that a message over the size limit recovers nothing, as `verify` rejects it.
+            let oversized = vec![Field::<CurrentNetwork>::zero(); CurrentNetwork::MAX_DATA_SIZE_IN_FIELDS as usize + 1];
+            assert!(!signature.verify(&address, &oversized));
+            assert_eq!(signature.verify_and_recover_signer(&oversized), None);
         }
         Ok(())
     }

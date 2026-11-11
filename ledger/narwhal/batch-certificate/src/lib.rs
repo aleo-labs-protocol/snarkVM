@@ -69,16 +69,19 @@ impl<N: Network> BatchCertificate<N> {
         // Ensure that the number of signatures is within bounds.
         ensure!(signatures.len() <= Self::max_signatures() as usize, "Invalid number of signatures");
 
-        // Collect the signatures so that they can be traversed alongside the recovered
-        // addresses below, and so that the recovery itself can be done in parallel.
+        // Collect the signatures so that they can be verified in parallel.
         let signature_list = signatures.iter().collect::<Vec<_>>();
 
-        // Recover the address of each signer, in the same order as `signatures`.
-        //
-        // This is the expensive step: each recovery is a fixed-base scalar multiplication.
-        // It is performed exactly once here, reused by both checks below, and then cached on
-        // the certificate so that later callers can use `signers` instead of recomputing it.
-        let signers = cfg_iter!(signature_list).map(|signature| signature.to_address()).collect::<Vec<_>>();
+        // Verify each signature and recover its signer's address, in the same order as `signatures`.
+        // The addresses are cached on the certificate so that `signers` need not recompute them.
+        let batch_id = batch_header.batch_id();
+        let signers = cfg_iter!(signature_list)
+            .map(|signature| {
+                signature
+                    .verify_and_recover_signer(&[batch_id])
+                    .ok_or_else(|| anyhow!("Invalid batch certificate signature"))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         // Ensure that the signature is from a unique signer and not from the author.
         let signature_authors = signers.iter().copied().collect::<HashSet<_>>();
@@ -87,14 +90,6 @@ impl<N: Network> BatchCertificate<N> {
             "The author's signature was included in the signers"
         );
         ensure!(signature_authors.len() == signatures.len(), "A duplicate author was found in the set of signatures");
-
-        // Verify the signatures are valid, reusing the addresses recovered above.
-        cfg_iter!(signature_list).zip(&signers).try_for_each(|(signature, signer)| {
-            if !signature.verify(signer, &[batch_header.batch_id()]) {
-                bail!("Invalid batch certificate signature")
-            }
-            Ok(())
-        })?;
 
         // Drop the borrows of `signatures` before handing it over.
         drop(signature_list);
@@ -310,7 +305,7 @@ pub mod test_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::{network::MainnetV0, prelude::TestRng};
+    use console::{account::PrivateKey, network::MainnetV0, prelude::TestRng, types::Field};
 
     type CurrentNetwork = MainnetV0;
 
@@ -329,6 +324,43 @@ mod tests {
             // and must preserve the order of `signatures`.
             assert_eq!(certificate.signers(), recompute_signers(&certificate));
         }
+    }
+
+    #[test]
+    fn test_from_rejects_invalid_signers() {
+        let rng = &mut TestRng::default();
+
+        let committee: Vec<_> = (0..5).map(|_| PrivateKey::<CurrentNetwork>::new(rng).unwrap()).collect();
+        let batch_header =
+            snarkvm_ledger_narwhal_batch_header::test_helpers::sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+                rng.random(),
+                &committee[0],
+                (0..10).map(|_| Field::rand(rng)).collect(),
+                rng,
+            );
+        let batch_id = batch_header.batch_id();
+        let endorse = |signers: &[PrivateKey<CurrentNetwork>], message: Field<CurrentNetwork>, rng: &mut TestRng| {
+            signers.iter().map(|private_key| private_key.sign(&[message], rng).unwrap()).collect::<IndexSet<_>>()
+        };
+
+        // An honest endorsement set is accepted.
+        assert!(BatchCertificate::from(batch_header.clone(), endorse(&committee[1..], batch_id, rng)).is_ok());
+
+        // A signature over another message is rejected, wherever it sits in the set.
+        for position in 1..committee.len() {
+            let mut signatures = endorse(&committee[1..], batch_id, rng);
+            let forged = committee[position].sign(&[Field::rand(rng)], rng).unwrap();
+            signatures.replace_index(position - 1, forged).unwrap();
+            assert!(BatchCertificate::from(batch_header.clone(), signatures).is_err());
+        }
+
+        // The author's own signature is rejected.
+        assert!(BatchCertificate::from(batch_header.clone(), endorse(&committee, batch_id, rng)).is_err());
+
+        // Two signatures from one signer are rejected.
+        let mut signatures = endorse(&committee[1..], batch_id, rng);
+        signatures.insert(committee[1].sign(&[batch_id], rng).unwrap());
+        assert!(BatchCertificate::from(batch_header, signatures).is_err());
     }
 
     #[test]
