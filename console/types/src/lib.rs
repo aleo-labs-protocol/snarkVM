@@ -46,7 +46,7 @@ pub mod modules {
     #[cfg(feature = "group")]
     pub use snarkvm_console_types_group as group;
     #[cfg(feature = "group")]
-    pub use snarkvm_console_types_group::Group;
+    pub use snarkvm_console_types_group::{Group, GroupWindowTable};
 
     #[cfg(feature = "integers")]
     pub use snarkvm_console_types_integers as integers;

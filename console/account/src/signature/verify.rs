@@ -44,7 +44,7 @@ impl<N: Network> Signature<N> {
         let pr_sig = self.compute_key.pr_sig();
 
         // Compute `g_r` := (response * G) + (challenge * pk_sig).
-        let g_r = N::g_scalar_multiply(&self.response) + (pk_sig * self.challenge);
+        let g_r = N::g_scalar_multiply_public(&self.response) + (pk_sig * self.challenge);
 
         // Construct the hash input as (r * G, pk_sig, pr_sig, address, message).
         let mut preimage = Vec::with_capacity(4 + message.len());
