@@ -34,6 +34,10 @@ pub struct ComputeKeyCache<N: Network> {
 
 impl<N: Network> Default for ComputeKeyCache<N> {
     /// Returns an empty cache that holds sixteen committees of the maximum size.
+    ///
+    /// Reading blocks signed by one committee fills about one committee's worth of entries.
+    /// The extra room lets a cache that is kept across many blocks survive committee changes
+    /// without a clear. Each entry takes about 360 bytes, so a full cache stays under 1 MB on mainnet.
     fn default() -> Self {
         Self::new(16 * usize::from(N::LATEST_MAX_CERTIFICATES()))
     }
