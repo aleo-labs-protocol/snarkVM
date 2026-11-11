@@ -70,8 +70,10 @@ impl<E: Environment, const NUM_BITS: u8>
         // Calculate the cost of summing the group elements.
         let (_, summation_count) =
             modes.fold((uncompressed_mode, Count::zero()), |(prev_mode, cumulative), curr_mode| {
-                let mode = output_mode!(Group<E>, Add<Group<E>, Output = Group<E>>, &(prev_mode, curr_mode));
-                let sum_count = count!(Group<E>, Add<Group<E>, Output = Group<E>>, &(prev_mode, curr_mode));
+                let mode =
+                    output_mode!(Group<E>, Add<Group<E>, Output = Group<E>>, &(prev_mode, curr_mode, false, false));
+                let sum_count =
+                    count!(Group<E>, Add<Group<E>, Output = Group<E>>, &(prev_mode, curr_mode, false, false));
                 (mode, cumulative + sum_count)
             });
 
