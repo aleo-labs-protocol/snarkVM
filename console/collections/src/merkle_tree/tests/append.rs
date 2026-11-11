@@ -640,6 +640,21 @@ fn test_append_matches_new() -> Result<()> {
 }
 
 #[test]
+fn test_append_root_matches_append() -> Result<()> {
+    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
+    let new = |n: usize| PoseidonTree::new(&lh, &ph, &leaves[..n]);
+
+    for old in 0..=17 {
+        let tree = new(old)?;
+        for k in 0..=17 {
+            assert_eq!(tree.append_root(&leaves[old..old + k])?, *new(old + k)?.root());
+        }
+        assert_same(&tree, &new(old)?);
+    }
+    Ok(())
+}
+
+#[test]
 fn test_append_fills_a_shallow_tree() -> Result<()> {
     let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
     let new = |n: usize| MerkleTree::<CurrentEnvironment, LeafHasher, PathHasher, 5>::new(&lh, &ph, &leaves[..n]);

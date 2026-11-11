@@ -3238,8 +3238,6 @@ dependencies = [
  "bincode",
  "criterion",
  "indexmap 2.14.0",
- "locktick",
- "parking_lot",
  "rayon",
  "serde",
  "snarkvm-console-algorithms",
