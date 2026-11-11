@@ -608,8 +608,11 @@ fn test_append_matches_new() -> Result<()> {
     for old in 0..=17 {
         for k in 0..=17 {
             let mut tree = new(old)?;
+            let root = tree.append_root(&leaves[old..old + k])?;
+            assert_same(&tree, &new(old)?);
             tree.append(&leaves[old..old + k])?;
             assert_same(&tree, &new(old + k)?);
+            assert_eq!(&root, tree.root());
         }
     }
 
@@ -636,21 +639,6 @@ fn test_append_matches_new() -> Result<()> {
     let mut expected = leaves[..7].to_vec();
     expected[1] = leaves[30].clone();
     assert_same(&updated, &PoseidonTree::new(&lh, &ph, &expected)?);
-    Ok(())
-}
-
-#[test]
-fn test_append_root_matches_append() -> Result<()> {
-    let (lh, ph, leaves) = poseidon_setup(&mut TestRng::default())?;
-    let new = |n: usize| PoseidonTree::new(&lh, &ph, &leaves[..n]);
-
-    for old in 0..=17 {
-        let tree = new(old)?;
-        for k in 0..=17 {
-            assert_eq!(tree.append_root(&leaves[old..old + k])?, *new(old + k)?.root());
-        }
-        assert_same(&tree, &new(old)?);
-    }
     Ok(())
 }
 

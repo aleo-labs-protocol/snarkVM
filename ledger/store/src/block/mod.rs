@@ -2114,14 +2114,14 @@ mod tests {
         assert_tree(&hashes);
         for _ in 1..18 {
             let block = sample_successor_block(blocks.last().unwrap(), rng);
-            if !deferred {
-                block_store.insert(&block).unwrap();
-            } else {
+            if deferred {
                 if pause_atomic_writes {
                     block_store.pause_atomic_writes().unwrap();
                 }
                 block_store.insert_deferring_block_tree(&block).unwrap();
                 block_store.commit_paused_writes_and_publish_block_tree(&block).unwrap();
+            } else {
+                block_store.insert(&block).unwrap();
             }
             hashes.push(block.hash().to_bits_le());
             blocks.push(block);

@@ -396,24 +396,27 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         }
         let timer = timer!("MerkleTree::append");
 
-        let Some((root, tree_size, tree_len, updated_hashes)) = self.in_place_append(new_leaves)? else {
-            let updated_tree = self.prepare_append(new_leaves)?;
-            check(&updated_tree.root)?;
-            *self = updated_tree;
-            finish!(timer);
-            return Ok(());
-        };
-
-        check(&root)?;
-
-        // `resize` alone would grow the capacity by doubling, past the size of the whole power of two.
-        self.tree.reserve_exact(tree_size - self.tree.len());
-        self.tree.resize(tree_len, self.empty_hash);
-        for (index, hash) in updated_hashes {
-            self.tree[index] = hash;
+        match self.in_place_append(new_leaves)? {
+            None => {
+                let updated_tree = self.prepare_append(new_leaves)?;
+                check(&updated_tree.root)?;
+                *self = updated_tree;
+            }
+            Some((root, updated_hashes)) => {
+                check(&root)?;
+                // `resize` alone would grow the capacity by doubling, past the size of the whole power of two.
+                self.tree.reserve_exact(2 * self.number_of_leaves.next_power_of_two() - 1 - self.tree.len());
+                // The new leaves come first and in index order, so this grows the tree to its new length.
+                for (index, hash) in updated_hashes {
+                    if index >= self.tree.len() {
+                        self.tree.resize(index + 1, self.empty_hash);
+                    }
+                    self.tree[index] = hash;
+                }
+                self.root = root;
+                self.number_of_leaves += new_leaves.len();
+            }
         }
-        self.root = root;
-        self.number_of_leaves += new_leaves.len();
         finish!(timer);
         Ok(())
     }
@@ -429,16 +432,15 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         }
     }
 
-    /// Returns the root after appending the non-empty `new_leaves` in place, the size of the full power of two, the
-    /// tree's new length, and every node that changes, without writing any of them.
+    /// Returns the root after appending the non-empty `new_leaves` in place, and every node that changes, without
+    /// writing either.
     ///
     /// Returns `None` if the append crosses a power of two, which moves every node to a new index. Otherwise every node
     /// keeps its index, and only the new leaves and their paths to the root change.
-    #[allow(clippy::type_complexity)]
     fn in_place_append(
         &self,
         new_leaves: &[LH::Leaf],
-    ) -> Result<Option<(Field<E>, usize, usize, impl Iterator<Item = NodeHash<E>> + use<E, LH, PH, DEPTH>)>> {
+    ) -> Result<Option<(Field<E>, impl Iterator<Item = NodeHash<E>> + use<E, LH, PH, DEPTH>)>> {
         let max_leaves = match self.number_of_leaves.checked_next_power_of_two() {
             Some(num_leaves) => num_leaves,
             None => bail!("Integer overflow when computing the maximum number of leaves in the Merkle tree"),
@@ -454,10 +456,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             leaf_hashes.push(self.empty_hash);
         }
         let start = num_nodes + self.number_of_leaves;
-        let tree_len = start + leaf_hashes.len();
-        let (root, updated_hashes) =
-            self.path_updates((start..).zip(leaf_hashes).collect(), tree_depth::<DEPTH>(num_nodes + max_leaves)?)?;
-        Ok(Some((root, num_nodes + max_leaves, tree_len, updated_hashes)))
+        self.path_updates((start..).zip(leaf_hashes).collect(), tree_depth::<DEPTH>(num_nodes + max_leaves)?).map(Some)
     }
 
     #[inline]
