@@ -86,6 +86,7 @@ pub enum ConsensusVersion {
     ///      Modifies the cost of the rand.chacha opcode to a more accurate value.
     V22 = 22,
     /// V23: Adds explicit availability status to block responses (snarkOS message version 34).
+    ///      Rejects deployments with a static `call` to a function that has a constant output.
     V23 = 23,
 }
 
