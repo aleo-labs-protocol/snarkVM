@@ -1163,7 +1163,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         tree.append(&[block.hash().to_bits_le()])?;
         // Insert the (state root, block height) pair, removing the block hash again if that fails.
         if let Err(error) = self.storage.insert(stored_state_root(block.height(), *tree.root()), block) {
-            tree.remove_last_n(1)?;
+            tree.remove_last_n(1).with_context(|| format!("Failed to remove the block hash after: {error}"))?;
             return Err(error);
         }
         // Add the block to the block cache.
@@ -1195,16 +1195,20 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Appends `block` to the live block tree in place and writes the paused atomic batch.
     ///
-    /// The block-tree write lock is held across the batch write.
+    /// The block-tree write lock is held across the batch write. If the live tree no longer extends
+    /// to the retained root, the paused batch is discarded.
     pub fn commit_paused_writes_and_publish_block_tree(&self, block: &Block<N>) -> Result<()> {
         let root =
             self.prepared_block_tree_root.lock().take().context("No block tree root is waiting to be installed")?;
         // Hold the live tree exclusive until the batch write returns.
         let mut tree = self.tree.write();
         // Append the block hash to the block tree in place, removing it again if the batch write fails.
-        tree.append_if_matches(&[block.hash().to_bits_le()], &root)?;
+        if let Err(error) = tree.append_if_matches(&[block.hash().to_bits_le()], &root) {
+            self.storage.unpause_atomic_writes::<true>()?;
+            return Err(error);
+        }
         if let Err(error) = self.storage.unpause_atomic_writes::<false>() {
-            tree.remove_last_n(1)?;
+            tree.remove_last_n(1).with_context(|| format!("Failed to remove the block hash after: {error}"))?;
             return Err(error);
         }
         // Add the block to the block cache.
@@ -2134,13 +2138,22 @@ mod tests {
         assert!(block_store.insert_deferring_block_tree(&taken).is_err());
         assert_tree(&hashes);
 
-        // A retained root that no longer extends the live tree fails to commit and leaves the tree.
+        // A retained root that no longer extends the live tree fails to commit, leaves the tree,
+        // and discards the paused batch.
         let next = sample_successor_block(blocks.last().unwrap(), rng);
+        if pause_atomic_writes {
+            block_store.pause_atomic_writes().unwrap();
+        }
         block_store.insert_deferring_block_tree(&next).unwrap();
         block_store.insert(&next).unwrap();
         let tree = block_store.tree.read().clone();
         assert!(block_store.commit_paused_writes_and_publish_block_tree(&next).is_err());
         assert_eq!(block_store.tree.read().tree(), tree.tree());
+        if pause_atomic_writes {
+            assert!(block_store.get_state_root(next.height()).unwrap().is_none());
+            block_store.pause_atomic_writes().unwrap();
+            block_store.unpause_atomic_writes::<true>().unwrap();
+        }
     }
 
     #[test]
