@@ -347,12 +347,11 @@ impl RocksDB {
         // storage operation that has accumulated from the moment the
         // writes have been paused becomes executed as a single atomic batch.
         let batch = mem::take(&mut *self.atomic_batch.lock());
+        // Unset the flag indicating that the pause is in effect, even if the write below fails.
+        self.atomic_writes_paused.store(false, Ordering::SeqCst);
         if !DISCARD_BATCH {
             self.rocksdb.write(batch)?;
         }
-
-        // Unset the flag indicating that the pause is in effect.
-        self.atomic_writes_paused.store(false, Ordering::SeqCst);
 
         Ok(())
     }

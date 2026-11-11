@@ -1207,7 +1207,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         let mut tree = self.tree.write();
         // Append the block hash to the block tree in place, removing it again if the batch write fails.
         if let Err(error) = tree.append_if_matches(&[block.hash().to_bits_le()], &root) {
-            self.storage.unpause_atomic_writes::<true>()?;
+            self.storage
+                .unpause_atomic_writes::<true>()
+                .with_context(|| format!("Failed to discard the paused batch after: {error}"))?;
             return Err(error);
         }
         self.storage.unpause_atomic_writes::<false>().or_else(|error| Self::undo_append(&mut tree, error))?;
@@ -2176,6 +2178,79 @@ mod tests {
             assert!(block_store.get_state_root(next.height()).unwrap().is_none());
             block_store.pause_atomic_writes().unwrap();
             block_store.unpause_atomic_writes::<true>().unwrap();
+        }
+    }
+
+    /// A secondary RocksDB instance refuses every write, so both insert paths fail at the storage
+    /// write. The block tree must be left exactly as it was.
+    ///
+    /// Only one non-test database can be open per process, so each instance runs in its own.
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_failed_write_leaves_the_block_tree() {
+        use crate::helpers::rocksdb::BlockDB;
+        use std::{env, path::PathBuf, process::Command};
+
+        const ROLE: &str = "FAILED_WRITE_TEST_ROLE";
+        const PRIMARY: &str = "FAILED_WRITE_TEST_PRIMARY";
+        const SECONDARY: &str = "FAILED_WRITE_TEST_SECONDARY";
+        const BLOCKS: &str = "FAILED_WRITE_TEST_BLOCKS";
+
+        fn chain(n: usize) -> Vec<Block<CurrentNetwork>> {
+            let mut blocks = vec![snarkvm_ledger_test_helpers::sample_genesis_block(&mut TestRng::from_seed(1))];
+            let rng = &mut TestRng::from_seed(2);
+            while blocks.len() < n {
+                blocks.push(sample_successor_block(blocks.last().unwrap(), rng));
+            }
+            blocks
+        }
+
+        if let Ok(role) = env::var(ROLE) {
+            let n: usize = env::var(BLOCKS).unwrap().parse().unwrap();
+            let primary = PathBuf::from(env::var(PRIMARY).unwrap());
+            if role == "primary" {
+                let store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::Custom(primary, None)).unwrap();
+                chain(n).iter().for_each(|block| store.insert(block).unwrap());
+                return;
+            }
+            let secondary = PathBuf::from(env::var(SECONDARY).unwrap());
+            let store =
+                BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::Custom(primary, Some(secondary))).unwrap();
+            let next = chain(n + 1).pop().unwrap();
+            let before = store.tree.read().clone();
+            assert_eq!(before.number_of_leaves(), n);
+            let assert_unchanged = || {
+                let tree = store.tree.read();
+                assert_eq!((tree.tree(), tree.root()), (before.tree(), before.root()));
+            };
+
+            assert!(store.insert(&next).is_err());
+            assert_unchanged();
+
+            store.pause_atomic_writes().unwrap();
+            store.insert_deferring_block_tree(&next).unwrap();
+            assert!(store.commit_paused_writes_and_publish_block_tree(&next).is_err());
+            assert_unchanged();
+            // The failed write leaves atomic writes unpaused.
+            store.pause_atomic_writes().unwrap();
+            store.unpause_atomic_writes::<true>().unwrap();
+            return;
+        }
+
+        // The failed append crosses a power of two (4) or stays inside one (5).
+        for n in [4usize, 5] {
+            let (primary, secondary) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+            for role in ["primary", "secondary"] {
+                let status = Command::new(env::current_exe().unwrap())
+                    .args(["block::tests::test_failed_write_leaves_the_block_tree", "--exact"])
+                    .env(ROLE, role)
+                    .env(BLOCKS, n.to_string())
+                    .env(PRIMARY, primary.path())
+                    .env(SECONDARY, secondary.path())
+                    .status()
+                    .unwrap();
+                assert!(status.success(), "{role} failed for {n} blocks");
+            }
         }
     }
 

@@ -46,6 +46,7 @@ use rayon::prelude::*;
 /// Padding levels are then added as needed to reach the full `DEPTH`, each of
 /// which is constructed by hashing the root of the previous level together with
 /// `e`.
+#[derive(Clone)]
 pub struct MerkleTree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> {
     /// The leaf hasher for the Merkle tree.
     leaf_hasher: LH,
@@ -92,21 +93,6 @@ impl<E: Environment> MerkleTreeState<'_, E> {
         MerkleTreeState {
             root: self.root,
             tree: Cow::Owned(self.tree.into_owned()),
-            empty_hash: self.empty_hash,
-            number_of_leaves: self.number_of_leaves,
-        }
-    }
-}
-
-impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> Clone
-    for MerkleTree<E, LH, PH, DEPTH>
-{
-    fn clone(&self) -> Self {
-        Self {
-            leaf_hasher: self.leaf_hasher.clone(),
-            path_hasher: self.path_hasher.clone(),
-            root: self.root,
-            tree: self.tree.clone(),
             empty_hash: self.empty_hash,
             number_of_leaves: self.number_of_leaves,
         }
@@ -404,17 +390,18 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             }
             Some((root, updated_hashes)) => {
                 check(&root)?;
+                let num_nodes = self.number_of_leaves.next_power_of_two() - 1;
+                let number_of_leaves = self.number_of_leaves + new_leaves.len();
+                let tree_len =
+                    num_nodes + number_of_leaves + if number_of_leaves > 1 { number_of_leaves % 2 } else { 0 };
                 // `resize` alone would grow the capacity by doubling, past the size of the whole power of two.
-                self.tree.reserve_exact(2 * self.number_of_leaves.next_power_of_two() - 1 - self.tree.len());
-                // The new leaves come first and in index order, so this grows the tree to its new length.
+                self.tree.reserve_exact(2 * num_nodes + 1 - self.tree.len());
+                self.tree.resize(tree_len, self.empty_hash);
                 for (index, hash) in updated_hashes {
-                    if index >= self.tree.len() {
-                        self.tree.resize(index + 1, self.empty_hash);
-                    }
                     self.tree[index] = hash;
                 }
                 self.root = root;
-                self.number_of_leaves += new_leaves.len();
+                self.number_of_leaves = number_of_leaves;
             }
         }
         finish!(timer);
@@ -438,9 +425,10 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
     /// The full tree becomes the left subtree of a new top node. The right subtree holds only `leaf`, so each sibling
     /// on its path is the root of an empty subtree of that height.
     fn root_adding_a_level(&self, leaf: &LH::Leaf) -> Result<PH::Hash> {
-        let max_leaves =
-            self.number_of_leaves.checked_mul(2).ok_or_else(|| anyhow!("Integer overflow in the Merkle tree size"))?;
-        let tree_depth = tree_depth::<DEPTH>(2 * max_leaves - 1)?;
+        let tree_size =
+            self.number_of_leaves.checked_mul(4).ok_or_else(|| anyhow!("Integer overflow in the Merkle tree size"))?
+                - 1;
+        let tree_depth = tree_depth::<DEPTH>(tree_size)?;
         let mut right = self.leaf_hasher.hash_leaf(leaf)?;
         let mut empty = self.empty_hash;
         for _ in 0..self.number_of_leaves.trailing_zeros() {
@@ -921,6 +909,10 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
 
         // Compute and store the hashes for each level, iterating from the penultimate level to the root level.
         let empty_hash = self.path_hasher.hash_empty()?;
+        // When the tree grows a level, nodes below `child_boundary` on the level below have leaves under them, and the
+        // rest are roots of empty subtrees, all of which hash to `empty_subtree_hash`.
+        let mut child_boundary = tree.len();
+        let mut empty_subtree_hash = empty_hash;
         while let (Some(start), Some(middle)) = (parent(start_index), parent(middle_index)) {
             // Compute the end index of the current level.
             let end = left_child(start);
@@ -985,8 +977,13 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
                     );
                 }
             } else {
+                // Only the nodes before `boundary` have leaves under them; hash those, and fill the rest.
+                let boundary = (child_boundary / 2).clamp(middle, end);
+                empty_subtree_hash = self.path_hasher.hash_children(&empty_subtree_hash, &empty_subtree_hash)?;
+                tree[boundary..end].fill(empty_subtree_hash);
+                child_boundary = boundary;
                 // Construct the children for the new indices in the current level.
-                let tuples = (middle..end)
+                let tuples = (middle..boundary)
                     .map(|i| {
                         (
                             tree.get(left_child(i)).copied().unwrap_or(empty_hash),
@@ -998,19 +995,21 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
                 // If any level requires computing more than 100 nodes, borrow the tree for performance.
                 match tuples.len() >= 100 {
                     // Option 1: Borrow the tree to compute and store the hashes for the new indices in the current level.
-                    true => cfg_iter_mut!(tree[middle..end]).zip_eq(cfg_iter!(tuples)).try_for_each(
+                    true => cfg_iter_mut!(tree[middle..boundary]).zip_eq(cfg_iter!(tuples)).try_for_each(
                         |(node, (left, right))| {
                             *node = self.path_hasher.hash_children(left, right)?;
                             Ok::<_, Error>(())
                         },
                     )?,
                     // Option 2: Compute and store the hashes for the new indices in the current level.
-                    false => tree[middle..end].iter_mut().zip_eq(&tuples).try_for_each(|(node, (left, right))| {
-                        *node = self.path_hasher.hash_children(left, right)?;
-                        Ok::<_, Error>(())
-                    })?,
+                    false => {
+                        tree[middle..boundary].iter_mut().zip_eq(&tuples).try_for_each(|(node, (left, right))| {
+                            *node = self.path_hasher.hash_children(left, right)?;
+                            Ok::<_, Error>(())
+                        })?
+                    }
                 }
-                lap!(timer, "Compute: {middle} -> {end}");
+                lap!(timer, "Compute: {middle} -> {boundary}");
             }
 
             // Update the start index for the next level.
