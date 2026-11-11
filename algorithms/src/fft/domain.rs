@@ -509,6 +509,8 @@ impl<F: FftField> EvaluationDomain<F> {
     /// the product on this domain. The host path checks only the quotient's top
     /// coefficient. That catches a disagreement on one point, but not every
     /// disagreement, and the result is not the quotient without agreement.
+    /// Callers that cannot guarantee agreement must check each point
+    /// themselves.
     pub(crate) fn divide_product_by_vanishing_poly(
         &self,
         a: Cow<'_, DensePolynomial<F>>,
@@ -544,9 +546,23 @@ impl<F: FftField> EvaluationDomain<F> {
         self.divide_product_by_vanishing_poly_on_host(a, b, c, scale, fft_pc, ifft_pc)
     }
 
-    /// With `a * b = L + X^n H` and `L`, `H` of degree below `n`, the quotient
-    /// is `H` and `c = L + H`. On the coset where `X^n = -1`, the product
-    /// interpolates to `L - H`, so no transform is larger than `n`.
+    // Computes `scale * Q`, where `Q` is the quotient of `a * b - c` by
+    // `X^n - 1`, assuming that `c` agrees with `a * b` on this domain `D`.
+    //
+    // Suppose `a * b = L + X^n * H` with `deg(L) < n` and `deg(H) < n - 1`. We want
+    // the unique `Q` such that `a * b - c = (X^n - 1) * Q`. Subtracting the two
+    // equations and comparing degrees yields `Q = H` and `c = L + H`.
+    //
+    // It therefore suffices to compute `L - H` and then recover `Q` as
+    // `(c - (L - H)) / 2`.
+    //
+    // Let `omega` be a primitive `2n`-th root of unity. Then `omega^n = -1` and,
+    // for any `n`-th root of unity `r`, with `s = omega * r`, one has
+    // `a(s) * b(s) = L(s) + s^n * H(s) = L(s) - H(s)`. In other words, `a * b`
+    // coincides with `L - H` on the coset `omega * D`.
+    //
+    // We can therefore evaluate `a` and `b` over `omega * D` with two size-`n`
+    // coset FFTs and then interpolate `L - H` with one size-`n` coset inverse FFT.
     fn divide_product_by_vanishing_poly_on_host(
         &self,
         a: Cow<'_, DensePolynomial<F>>,
