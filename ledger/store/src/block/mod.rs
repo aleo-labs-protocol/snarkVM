@@ -486,12 +486,17 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(())
     }
 
-    /// The number of key-range slices [`Self::compact_authority_slice`] divides the authority map
-    /// into, so a compaction can log progress and stop between slices; 0 for storage with nothing
-    /// to compact.
+    /// Returns `true` if the authority map is compacted after pruning.
     #[cfg(feature = "prune-authority-data")]
-    fn authority_compaction_slices(&self) -> usize {
-        0
+    fn compacts_authority_map(&self) -> bool {
+        false
+    }
+
+    /// Plans an authority map compaction: one entry per key-range slice, `true` if the slice holds
+    /// deletions to reclaim. Storage without deferred compaction has no slices.
+    #[cfg(feature = "prune-authority-data")]
+    fn authority_compaction_plan(&self) -> Result<Vec<bool>> {
+        Ok(Vec::new())
     }
 
     /// Compacts slice `i` of `slices` of the authority map's key range. Storage without deferred
@@ -1504,7 +1509,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         let store = Self {
             #[cfg(feature = "prune-authority-data")]
-            authority_compaction: Arc::new(AuthorityCompaction::new(storage.authority_compaction_slices() > 0)),
+            authority_compaction: Arc::new(AuthorityCompaction::new(storage.compacts_authority_map())),
             storage,
             tree: Arc::new(RwLock::new(tree)),
             prepared_block_tree: Arc::new(Mutex::new(None)),
@@ -1520,8 +1525,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
                 prune_expired_authorities(&store.storage, latest_height)
                     .context("Failed to prune expired authority data")?;
             }
-            // Every start compacts the authority map, so an interrupted compaction is redone and the
-            // rows the startup walk pruned are reclaimed.
+            // Compact at every start.
             store.compact_authorities();
         }
         Ok(store)

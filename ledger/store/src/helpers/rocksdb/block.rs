@@ -92,6 +92,20 @@ pub struct BlockDB<N: Network> {
 const AUTHORITY_COMPACTION_FILES_PER_SLICE: usize = 16;
 #[cfg(feature = "prune-authority-data")]
 const MAX_AUTHORITY_COMPACTION_SLICES: usize = 256;
+/// The slice count when the map's files cannot be listed.
+#[cfg(feature = "prune-authority-data")]
+const FALLBACK_AUTHORITY_COMPACTION_SLICES: usize = 64;
+
+/// The number of slices an authority map of `files` live SST files is compacted in. Unit tests use
+/// a few slices.
+#[cfg(feature = "prune-authority-data")]
+fn authority_compaction_slices(files: usize) -> usize {
+    if cfg!(test) {
+        4
+    } else {
+        (files / AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, MAX_AUTHORITY_COMPACTION_SLICES)
+    }
+}
 
 #[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockDB<N> {
@@ -237,17 +251,20 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.certificate_map.compact()
     }
 
-    /// Unit tests use a few slices.
     #[cfg(feature = "prune-authority-data")]
-    fn authority_compaction_slices(&self) -> usize {
-        if cfg!(test) {
-            return 4;
-        }
-        match self.authority_map.live_files() {
-            Ok(files) => (files / AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, MAX_AUTHORITY_COMPACTION_SLICES),
+    fn compacts_authority_map(&self) -> bool {
+        true
+    }
+
+    #[cfg(feature = "prune-authority-data")]
+    fn authority_compaction_plan(&self) -> Result<Vec<bool>> {
+        match self.authority_map.compaction_plan(authority_compaction_slices) {
+            Ok(plan) => Ok(plan),
             Err(error) => {
-                tracing::error!("Failed to count the authority map's files, compacting in 64 slices: {error}");
-                64
+                tracing::error!(
+                    "Failed to plan the authority map compaction, compacting in {FALLBACK_AUTHORITY_COMPACTION_SLICES} slices: {error}"
+                );
+                Ok(vec![true; FALLBACK_AUTHORITY_COMPACTION_SLICES])
             }
         }
     }
@@ -257,6 +274,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.authority_map.compact_slice(i, slices)
     }
 
+    /// Keeps only the certificate rows whose value `retain` accepts. See `DataMap::retain_all`.
     #[cfg(feature = "prune-authority-data")]
     fn retain_certificate_indexes(&self, retain: impl Fn(&(u32, u64)) -> bool + Sync) -> Result<(usize, usize)> {
         self.certificate_map.retain_all(retain)
@@ -343,5 +361,19 @@ impl<N: Network> BlockDB<N> {
     /// Any map can be used since they all share the same underlying RocksDB instance.
     pub fn export_rocksdb_metrics(&self) {
         self.id_map.export_rocksdb_metrics();
+    }
+}
+
+#[cfg(all(test, feature = "prune-authority-data"))]
+mod authority_compaction_tests {
+    /// The slice count for a file count, without the test override.
+    fn slices(files: usize) -> usize {
+        (files / super::AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, super::MAX_AUTHORITY_COMPACTION_SLICES)
+    }
+
+    #[test]
+    fn test_slice_count() {
+        assert_eq!([0, 15, 16, 32, 5000].map(slices), [1, 1, 1, 2, 256]);
+        assert_eq!(super::authority_compaction_slices(5000), 4);
     }
 }

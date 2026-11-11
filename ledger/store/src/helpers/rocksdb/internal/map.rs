@@ -660,15 +660,27 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         self.database.compact_prefix(self.prefix()?)
     }
 
-    /// Returns the number of live SST files that hold keys of this map.
+    /// Plans a sliced compaction of this map after flushing it: one entry per slice (see
+    /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. `slices`
+    /// maps the number of live files holding keys of this map to the slice count.
     #[cfg(feature = "prune-authority-data")]
-    pub(crate) fn live_files(&self) -> Result<usize> {
+    pub(crate) fn compaction_plan(&self, slices: fn(usize) -> usize) -> Result<Vec<bool>> {
+        self.database.flush()?;
         let (lower, upper) = self.key_range(&[], None)?;
-        let overlaps = |file: &rocksdb::LiveFile| {
-            file.start_key.as_deref().is_some_and(|start| start < upper.as_slice())
-                && file.end_key.as_deref().is_some_and(|end| end >= lower.as_slice())
+        let overlaps = |file: &rocksdb::LiveFile, lower: &[u8], upper: &[u8]| {
+            file.start_key.as_deref().is_some_and(|start| start < upper)
+                && file.end_key.as_deref().is_some_and(|end| end >= lower)
         };
-        Ok(self.database.live_files()?.iter().filter(|file| overlaps(file)).count())
+        let files: Vec<rocksdb::LiveFile> =
+            self.database.live_files()?.into_iter().filter(|file| overlaps(file, &lower, &upper)).collect();
+        let count = slices(files.len());
+        (0..count)
+            .map(|i| {
+                let (start, end) = slice_bounds(i, count);
+                let (lower, upper) = self.key_range(&start, end.as_ref().map(|end| &end[..]))?;
+                Ok(files.iter().any(|file| file.num_deletions > 0 && overlaps(file, &lower, &upper)))
+            })
+            .collect()
     }
 
     /// Compacts slice `i` of `slices` of this map's keys (see [`slice_bounds`]), rewriting
@@ -1880,13 +1892,15 @@ mod tests {
             assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
         }
 
-        /// Rows reach a live file at the first flush.
+        /// A plan marks only the slices whose flushed files hold deletions.
         #[test]
-        fn test_live_files_count_the_flushed_rows() {
+        fn test_compaction_plan_marks_slices_with_deletions() {
             let (map, _) = setup(&ROWS);
-            assert_eq!(map.live_files().unwrap(), 0);
-            map.database.flush().unwrap();
-            assert!(map.live_files().unwrap() >= 1);
+            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false; 4]);
+            map.remove(&[0xff, 0xff]).unwrap();
+            let plan = map.compaction_plan(|_| 4).unwrap();
+            assert!(plan[3]);
+            assert_eq!(map.compaction_plan(|files| files.min(2)).unwrap().len(), 2);
         }
 
         /// Compacting every slice leaves every row and its neighbours.
