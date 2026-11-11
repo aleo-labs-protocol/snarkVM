@@ -86,11 +86,12 @@ pub struct BlockDB<N: Network> {
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
 
-/// The number of key-range slices the authority map is compacted in, on the first two key bytes
-/// (see `slice_bounds`), so the compaction can log progress and stop between slices. Unit tests use
-/// a few slices.
+/// An authority map compaction runs one slice (see `slice_bounds`) per this many live SST files of
+/// the map, with at most [`MAX_AUTHORITY_COMPACTION_SLICES`] slices.
 #[cfg(feature = "prune-authority-data")]
-const AUTHORITY_COMPACTION_SLICES: usize = if cfg!(test) { 4 } else { 256 };
+const AUTHORITY_COMPACTION_FILES_PER_SLICE: usize = 16;
+#[cfg(feature = "prune-authority-data")]
+const MAX_AUTHORITY_COMPACTION_SLICES: usize = 256;
 
 #[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockDB<N> {
@@ -236,9 +237,19 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.certificate_map.compact()
     }
 
+    /// Unit tests use a few slices.
     #[cfg(feature = "prune-authority-data")]
     fn authority_compaction_slices(&self) -> usize {
-        AUTHORITY_COMPACTION_SLICES
+        if cfg!(test) {
+            return 4;
+        }
+        match self.authority_map.live_files() {
+            Ok(files) => (files / AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, MAX_AUTHORITY_COMPACTION_SLICES),
+            Err(error) => {
+                tracing::error!("Failed to count the authority map's files, compacting in 64 slices: {error}");
+                64
+            }
+        }
     }
 
     #[cfg(feature = "prune-authority-data")]

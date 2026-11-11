@@ -660,6 +660,17 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         self.database.compact_prefix(self.prefix()?)
     }
 
+    /// Returns the number of live SST files that hold keys of this map.
+    #[cfg(feature = "prune-authority-data")]
+    pub(crate) fn live_files(&self) -> Result<usize> {
+        let (lower, upper) = self.key_range(&[], None)?;
+        let overlaps = |file: &rocksdb::LiveFile| {
+            file.start_key.as_deref().is_some_and(|start| start < upper.as_slice())
+                && file.end_key.as_deref().is_some_and(|end| end >= lower.as_slice())
+        };
+        Ok(self.database.live_files()?.iter().filter(|file| overlaps(file)).count())
+    }
+
     /// Compacts slice `i` of `slices` of this map's keys (see [`slice_bounds`]), rewriting
     /// bottom-level files too (see `RocksDB::compact_key_range`).
     #[cfg(feature = "prune-authority-data")]
@@ -719,7 +730,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
                 let (progress, counts) = &mut *guard;
                 counts.kept += kept;
                 counts.removed += removed;
-                if let Some((elapsed, remaining)) = progress.advance(1) {
+                if let Some((elapsed, remaining)) = progress.advance() {
                     tracing::info!(
                         "Rewrote {} of {RETAIN_SLICES} slices, kept {} rows, removed {}, in {elapsed:.0} s, about {remaining:.0} s left",
                         progress.done(),
@@ -1867,6 +1878,15 @@ mod tests {
             assert_eq!(rows(&map), after_first);
             // An empty slice is a caller error, not a silent no-op.
             assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
+        }
+
+        /// Rows reach a live file at the first flush.
+        #[test]
+        fn test_live_files_count_the_flushed_rows() {
+            let (map, _) = setup(&ROWS);
+            assert_eq!(map.live_files().unwrap(), 0);
+            map.database.flush().unwrap();
+            assert!(map.live_files().unwrap() >= 1);
         }
 
         /// Compacting every slice leaves every row and its neighbours.

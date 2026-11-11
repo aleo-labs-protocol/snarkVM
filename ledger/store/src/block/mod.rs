@@ -1502,31 +1502,26 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         let block_cache = RwLock::new(BlockCache::new(initial_cache)?);
 
-        // A secondary instance is read-only: the primary prunes, and the secondary sees the result
-        // when it catches up.
-        #[cfg(feature = "prune-authority-data")]
-        let primary = aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_none();
-        #[cfg(feature = "prune-authority-data")]
-        if primary
-            // Block heights start at zero, so the latest height is one less than the number of leaves.
-            && let Some(latest_height) = cache_end_height.checked_sub(1)
-        {
-            // Inserts prune only the height that expires with them, so the watermark must be caught up here.
-            prune_expired_authorities(&storage, latest_height).context("Failed to prune expired authority data")?;
-        }
-
         let store = Self {
+            #[cfg(feature = "prune-authority-data")]
+            authority_compaction: Arc::new(AuthorityCompaction::new(storage.authority_compaction_slices() > 0)),
             storage,
             tree: Arc::new(RwLock::new(tree)),
             prepared_block_tree: Arc::new(Mutex::new(None)),
             block_cache: Arc::new(Some(block_cache)),
-            #[cfg(feature = "prune-authority-data")]
-            authority_compaction: Default::default(),
         };
-        // Every start compacts the authority map, so an interrupted compaction is redone and the
-        // rows the startup walk pruned are reclaimed.
+        // A secondary instance is read-only: the primary prunes, and the secondary sees the result
+        // when it catches up.
         #[cfg(feature = "prune-authority-data")]
-        if primary {
+        if aleo_secondary_ledger_dir(N::ID, store.storage.storage_mode()).is_none() {
+            // Inserts prune only the height that expires with them, so the watermark must be caught up here.
+            // Block heights start at zero, so the latest height is one less than the number of leaves.
+            if let Some(latest_height) = cache_end_height.checked_sub(1) {
+                prune_expired_authorities(&store.storage, latest_height)
+                    .context("Failed to prune expired authority data")?;
+            }
+            // Every start compacts the authority map, so an interrupted compaction is redone and the
+            // rows the startup walk pruned are reclaimed.
             store.compact_authorities();
         }
         Ok(store)

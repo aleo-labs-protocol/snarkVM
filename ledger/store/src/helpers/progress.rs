@@ -31,10 +31,10 @@ impl Progress {
         Self { total, done: 0, timer: Instant::now(), next_report: REPORT_INTERVAL }
     }
 
-    /// Counts `n` more units done. Returns the seconds elapsed and the seconds estimated to remain
+    /// Counts one more unit done. Returns the seconds elapsed and the seconds estimated to remain
     /// when a progress line is due, which is never after the last unit.
-    pub(crate) fn advance(&mut self, n: usize) -> Option<(f64, f64)> {
-        self.done += n;
+    pub(crate) fn advance(&mut self) -> Option<(f64, f64)> {
+        self.done += 1;
         let elapsed = self.timer.elapsed();
         if elapsed < self.next_report || self.done >= self.total {
             return None;
