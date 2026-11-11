@@ -44,7 +44,7 @@ workspace = true
 workspace = true
 
 [dependencies.blake2s_simd]
-version = "1.0"
+workspace = true
 
 [dependencies.hex]
 version = "0.4"

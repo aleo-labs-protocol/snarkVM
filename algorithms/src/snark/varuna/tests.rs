@@ -56,8 +56,6 @@ mod varuna {
 
     #[test]
     fn test_varuna_legacy_bytes() {
-        use blake2::{Blake2s256, Digest};
-
         fn snapshot<SM: SNARKMode>() -> String {
             type Inst<SM> = VarunaSNARK<Bls12_377, FS, SM>;
             let rng = &mut TestRng::fixed(20261002);
@@ -74,9 +72,9 @@ mod varuna {
             let mut snapshot = format!(
                 "hiding={}\npk={}\nvk={}\ncertificate={}\n",
                 SM::ZK,
-                hex::encode(Blake2s256::digest(pk.to_bytes_le().expect("valid test fixture"))),
-                hex::encode(Blake2s256::digest(vk.to_bytes_le().expect("valid test fixture"))),
-                hex::encode(Blake2s256::digest(certificate.to_bytes_le().expect("valid test fixture"))),
+                hex::encode(blake2s_simd::blake2s(&pk.to_bytes_le().expect("valid test fixture"))),
+                hex::encode(blake2s_simd::blake2s(&vk.to_bytes_le().expect("valid test fixture"))),
+                hex::encode(blake2s_simd::blake2s(&certificate.to_bytes_le().expect("valid test fixture"))),
             );
             for version in [VarunaVersion::V1, VarunaVersion::V2] {
                 let proof =
@@ -87,7 +85,7 @@ mod varuna {
                 );
                 snapshot.push_str(&format!(
                     "{version:?}={}\n",
-                    hex::encode(Blake2s256::digest(proof.to_bytes_le().expect("valid test fixture")))
+                    hex::encode(blake2s_simd::blake2s(&proof.to_bytes_le().expect("valid test fixture")))
                 ));
             }
             snapshot
@@ -111,9 +109,19 @@ mod varuna {
         .assert_eq(&snapshot);
     }
 
+    /// The circuit ID is absorbed into the Fiat-Shamir transcript, so a change
+    /// to `Circuit::hash` breaks every existing proof and verifying key.
+    #[test]
+    fn test_circuit_id_known_answer() {
+        let rng = &mut TestRng::fixed(20261110);
+        let (circuit, _) = TestCircuit::gen_rand(2, 32, 25, rng);
+        let id = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).expect("valid test fixture").id;
+        expect_test::expect!["ca745ad40aa3477726bfc6bb25bed91b0a039e3bb74f2f330fe53d2f2c40f60a"]
+            .assert_eq(&id.to_string());
+    }
+
     #[test]
     fn test_varuna_v3_key_reuse_and_batch() {
-        use blake2::{Blake2s256, Digest};
         use snarkvm_utilities::FromBytes;
 
         fn check<SM: SNARKMode>() -> String {
@@ -152,7 +160,7 @@ mod varuna {
                 snapshot.push_str(&format!(
                     "hiding={} {version:?}={}\n",
                     SM::ZK,
-                    hex::encode(Blake2s256::digest(&bytes))
+                    hex::encode(blake2s_simd::blake2s(&bytes))
                 ));
                 let proof =
                     crate::snark::varuna::Proof::<Bls12_377>::from_bytes_le(&bytes).expect("valid test fixture");
@@ -1422,7 +1430,6 @@ mod proof_vector {
         snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK, VarunaVersion, test_circuit::TestCircuit},
         traits::{AlgebraicSponge, SNARK},
     };
-    use blake2::Digest;
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{ToBytes, rand::TestRng};
 
@@ -1480,7 +1487,7 @@ mod proof_vector {
                 .unwrap_or_else(|e| panic!("the pinned {version:?} proof must verify, and verification errored: {e}"));
             assert!(verified, "the pinned {version:?} proof must verify");
 
-            let digest = hex::encode(blake2::Blake2s256::digest(proof.to_bytes_le().expect("a proof serializes")));
+            let digest = hex::encode(blake2s_simd::blake2s(&proof.to_bytes_le().expect("a proof serializes")));
             assert_eq!(
                 digest, expected,
                 "the {version:?} proof for a fixed input changed; see this constant's documentation"
