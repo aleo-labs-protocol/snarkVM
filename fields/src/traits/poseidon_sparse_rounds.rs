@@ -25,7 +25,10 @@ use itertools::Itertools;
 /// multiplies by `first_matrix` in place of the MDS matrix, and the first full round after them
 /// adds `last_ark` in place of its round constants.
 ///
+/// This is not a stable API. It serves the Poseidon sponges in snarkVM and may change.
+///
 /// [poseidon]: https://eprint.iacr.org/2019/458
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct PoseidonSparseRounds<F: PrimeField> {
     /// The matrix of the last full round before the partial rounds.
@@ -39,6 +42,7 @@ pub struct PoseidonSparseRounds<F: PrimeField> {
 /// A partial round: add `constant` to the first state element, apply the S-box to it, and multiply
 /// the state by the matrix whose first row is `row`, whose first column below the first row is
 /// `column`, and which is the identity elsewhere.
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct PoseidonSparseRound<F: PrimeField> {
     constant: F,
