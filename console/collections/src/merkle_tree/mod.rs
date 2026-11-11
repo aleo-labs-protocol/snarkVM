@@ -443,11 +443,9 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         let tree_depth = tree_depth::<DEPTH>(2 * max_leaves - 1)?;
         let mut right = self.leaf_hasher.hash_leaf(leaf)?;
         let mut empty = self.empty_hash;
-        for level in 0..self.number_of_leaves.trailing_zeros() {
-            if level > 0 {
-                empty = self.path_hasher.hash_children(&empty, &empty)?;
-            }
+        for _ in 0..self.number_of_leaves.trailing_zeros() {
             right = self.path_hasher.hash_children(&right, &empty)?;
+            empty = self.path_hasher.hash_children(&empty, &empty)?;
         }
         let mut root = self.path_hasher.hash_children(&self.tree[0], &right)?;
         for _ in tree_depth..DEPTH {

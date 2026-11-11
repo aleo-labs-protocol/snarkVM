@@ -1164,10 +1164,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // Append the block hash to the block tree in place.
         tree.append(&[block.hash().to_bits_le()])?;
         // Insert the (state root, block height) pair, removing the block hash again if that fails.
-        if let Err(error) = self.storage.insert(stored_state_root(block.height(), *tree.root()), block) {
-            tree.remove_last_n(1).with_context(|| format!("Failed to remove the block hash after: {error}"))?;
-            return Err(error);
-        }
+        self.storage
+            .insert(stored_state_root(block.height(), *tree.root()), block)
+            .or_else(|error| Self::undo_append(&mut tree, error))?;
         // Add the block to the block cache.
         self.cache_block(block)
     }
@@ -1211,10 +1210,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             self.storage.unpause_atomic_writes::<true>()?;
             return Err(error);
         }
-        if let Err(error) = self.storage.unpause_atomic_writes::<false>() {
-            tree.remove_last_n(1).with_context(|| format!("Failed to remove the block hash after: {error}"))?;
-            return Err(error);
-        }
+        self.storage.unpause_atomic_writes::<false>().or_else(|error| Self::undo_append(&mut tree, error))?;
         // Add the block to the block cache.
         self.cache_block(block)
     }
@@ -1222,6 +1218,12 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Drops a block tree root retained by `insert_deferring_block_tree`.
     pub fn discard_prepared_block_tree(&self) {
         self.prepared_block_tree_root.lock().take();
+    }
+
+    /// Removes the block hash appended before `error`, and returns `error`.
+    fn undo_append(tree: &mut BlockTree<N>, error: anyhow::Error) -> Result<()> {
+        tree.remove_last_n(1).with_context(|| format!("Failed to remove the block hash after: {error}"))?;
+        Err(error)
     }
 
     /// Ensures `block` is the next block for `tree`.
