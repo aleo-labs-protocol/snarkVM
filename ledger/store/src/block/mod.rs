@@ -1156,6 +1156,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Stores the given block into storage.
     pub fn insert(&self, block: &Block<N>) -> Result<()> {
+        let prepared = self.prepared_block_tree_root.lock();
+        ensure!(prepared.is_none(), "Cannot insert a block while a block tree root is waiting to be installed");
         // Acquire the write lock on the block tree.
         let mut tree = self.tree.write();
         Self::ensure_next_height(&tree, block)?;
@@ -1172,7 +1174,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Stores `block` and retains the block tree root that contains it.
     ///
-    /// The live block tree is unchanged. `commit_paused_writes_and_publish_block_tree` appends
+    /// The live block tree is unchanged, and `insert` and `remove_last_n` fail until the root is
+    /// installed or dropped. `commit_paused_writes_and_publish_block_tree` appends
     /// `block` to it. `discard_prepared_block_tree` drops the retained root.
     ///
     /// Appending `block` before its state root is readable from storage makes
@@ -1195,11 +1198,12 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Appends `block` to the live block tree in place and writes the paused atomic batch.
     ///
-    /// The block-tree write lock is held across the batch write. If the live tree no longer extends
-    /// to the retained root, the paused batch is discarded.
+    /// The retained root and the block-tree write lock are held across the batch write, so no other
+    /// tree change can land in between. If the live tree no longer extends to the retained root,
+    /// the paused batch is discarded.
     pub fn commit_paused_writes_and_publish_block_tree(&self, block: &Block<N>) -> Result<()> {
-        let root =
-            self.prepared_block_tree_root.lock().take().context("No block tree root is waiting to be installed")?;
+        let mut prepared = self.prepared_block_tree_root.lock();
+        let root = prepared.take().context("No block tree root is waiting to be installed")?;
         // Hold the live tree exclusive until the batch write returns.
         let mut tree = self.tree.write();
         // Append the block hash to the block tree in place, removing it again if the batch write fails.
@@ -1249,6 +1253,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // Ensure 'n' is non-zero.
         ensure!(n > 0, "Cannot remove zero blocks");
 
+        let prepared = self.prepared_block_tree_root.lock();
+        ensure!(prepared.is_none(), "Cannot remove blocks while a block tree root is waiting to be installed");
         // Acquire the write lock on the block tree.
         let mut tree = self.tree.write();
 
@@ -2138,6 +2144,21 @@ mod tests {
         assert!(block_store.insert_deferring_block_tree(&taken).is_err());
         assert_tree(&hashes);
 
+        // While a root is retained, other tree changes fail, and the root still commits.
+        let next = sample_successor_block(blocks.last().unwrap(), rng);
+        if pause_atomic_writes {
+            block_store.pause_atomic_writes().unwrap();
+        }
+        block_store.insert_deferring_block_tree(&next).unwrap();
+        assert!(block_store.insert(&next).is_err());
+        assert!(block_store.remove_last_n(1).is_err());
+        block_store.commit_paused_writes_and_publish_block_tree(&next).unwrap();
+        hashes.push(next.hash().to_bits_le());
+        blocks.push(next);
+        assert_tree(&hashes);
+        let commitment = blocks[0].transactions().commitments().next().unwrap();
+        block_store.get_state_path_for_commitment(commitment).unwrap();
+
         // A retained root that no longer extends the live tree fails to commit, leaves the tree,
         // and discards the paused batch.
         let next = sample_successor_block(blocks.last().unwrap(), rng);
@@ -2145,7 +2166,7 @@ mod tests {
             block_store.pause_atomic_writes().unwrap();
         }
         block_store.insert_deferring_block_tree(&next).unwrap();
-        block_store.insert(&next).unwrap();
+        block_store.tree.write().append(&[taken.hash().to_bits_le()]).unwrap();
         let tree = block_store.tree.read().clone();
         assert!(block_store.commit_paused_writes_and_publish_block_tree(&next).is_err());
         assert_eq!(block_store.tree.read().tree(), tree.tree());
