@@ -211,13 +211,15 @@ const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = if cfg!(test) { 16 } else { 10_000 
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_LOG_INTERVAL: u32 = 10_000;
 
-/// The number of pruned authorities, at startup or at insert time, between compactions of the
-/// authority map. Pruned authorities are interleaved with retained ones in every file, so without a
-/// compaction their space is reclaimed only when RocksDB happens to rewrite the file. Each compaction
-/// reads the retained window plus the rows pruned since the last one, about 40 GB per day of blocks
-/// on mainnet; 20,000 blocks is about 14 hours. Unit tests use a few blocks.
+/// The number of authorities pruned at insert time between compactions of the authority map.
+/// Pruned authorities are interleaved with retained ones in every file, so without a compaction
+/// their space is reclaimed only when RocksDB happens to rewrite the file. Each run reads and
+/// rewrites the retained window, about 25 GB each way on mainnet, to reclaim the rows pruned since
+/// the last run, about 5 GB at 100,000 blocks (about three days), so the interval trades disk
+/// headroom for I/O. A height-keyed authority layout, in a later change, removes that cost. Unit
+/// tests use a few blocks.
 #[cfg(feature = "prune-authority-data")]
-const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 20_000 };
+const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 100_000 };
 
 /// The number of key-range slices the authority map is compacted in, one call each, so progress
 /// can be logged and a shutdown can stop between them. Block hashes are uniform in their first
