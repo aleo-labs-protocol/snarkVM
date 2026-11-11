@@ -80,7 +80,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// after a rollback it overstates until the watermark catches up; a compaction a little early is
     /// harmless.
     pub(super) fn count_insert_time_pruning(&self, height: u32) {
-        if height < AUTHORITY_RETENTION_BLOCKS {
+        if height < AUTHORITY_RETENTION_BLOCKS || self.authority_compaction.stop.load(Ordering::SeqCst) {
             return;
         }
         let pruned = self.authority_compaction.pruned.fetch_add(1, Ordering::SeqCst) + 1;
@@ -95,13 +95,13 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// count it.
     pub(super) fn compact_authorities(&self) -> bool {
         let compaction = &self.authority_compaction;
-        if compaction.stop.load(Ordering::SeqCst) || self.storage.authority_compaction_slices() == 0 {
+        if self.storage.authority_compaction_slices() == 0 {
             return false;
         }
-        // One lock covers the running check, the spawn and the handle, so a concurrent stop cannot
-        // miss the thread.
+        // One lock covers the stop and running checks, the spawn and the handle, so a concurrent
+        // stop cannot miss the thread.
         let mut thread = compaction.thread.lock();
-        if thread.as_ref().is_some_and(|thread| !thread.is_finished()) {
+        if compaction.stop.load(Ordering::SeqCst) || thread.as_ref().is_some_and(|thread| !thread.is_finished()) {
             return false;
         }
         let (storage, compaction) = (self.storage.clone(), compaction.clone());
@@ -114,6 +114,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         {
             AUTHORITY_COMPACTIONS.with(|count| count.set(count.get() + 1));
             if AUTHORITY_COMPACTION_INLINE.with(|inline| inline.get()) {
+                drop(thread);
                 compact();
                 return true;
             }
@@ -139,7 +140,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         let Some(thread) = self.authority_compaction.thread.lock().take() else {
             return;
         };
-        info!("Waiting for the authority map compaction to finish its slice");
+        if !thread.is_finished() {
+            info!("Waiting for the authority map compaction to finish its slice");
+        }
         if thread.join().is_err() {
             error!("The authority map compaction thread panicked");
         }

@@ -703,31 +703,36 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     {
         use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-        // The progress, and the rows kept and removed so far.
-        let progress = Mutex::new((crate::helpers::Progress::new(RETAIN_SLICES), 0, 0));
+        #[derive(Default)]
+        struct Counts {
+            kept: usize,
+            removed: usize,
+        }
+        let progress = Mutex::new((crate::helpers::Progress::new(RETAIN_SLICES), Counts::default()));
         let pool = rayon::ThreadPoolBuilder::new().num_threads(RETAIN_THREADS).build()?;
         pool.install(|| {
             (0..RETAIN_SLICES).into_par_iter().try_for_each(|i| -> Result<()> {
                 let (start, end) = slice_bounds(i, RETAIN_SLICES);
                 let (kept, removed) = self.retain_range(&start, end.as_ref().map(|end| &end[..]), &retain)?;
 
-                let mut progress = progress.lock();
-                progress.1 += kept;
-                progress.2 += removed;
-                if let Some((elapsed, remaining)) = progress.0.advance(1) {
+                let mut guard = progress.lock();
+                let (progress, counts) = &mut *guard;
+                counts.kept += kept;
+                counts.removed += removed;
+                if let Some((elapsed, remaining)) = progress.advance(1) {
                     tracing::info!(
                         "Rewrote {} of {RETAIN_SLICES} slices, kept {} rows, removed {}, in {elapsed:.0} s, about {remaining:.0} s left",
-                        progress.0.done(),
-                        progress.1,
-                        progress.2
+                        progress.done(),
+                        counts.kept,
+                        counts.removed
                     );
                 }
                 Ok(())
             })
         })?;
 
-        let progress = progress.lock();
-        Ok((progress.1, progress.2))
+        let counts = &progress.lock().1;
+        Ok((counts.kept, counts.removed))
     }
 
     /// Keeps only the rows whose value `retain` accepts among those whose keys, after the map prefix,

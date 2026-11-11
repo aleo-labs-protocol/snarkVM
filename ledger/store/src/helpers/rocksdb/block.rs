@@ -86,34 +86,33 @@ pub struct BlockDB<N: Network> {
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
 
-#[rustfmt::skip]
 /// The number of key-range slices the authority map is compacted in, on the first two key bytes
 /// (see `slice_bounds`), so the compaction can log progress and stop between slices. Unit tests use
 /// a few slices.
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_COMPACTION_SLICES: usize = if cfg!(test) { 4 } else { 256 };
 
+#[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockDB<N> {
-    type AbortedSolutionHeightsMap = DataMap<SolutionID<N>, u32>;
-    type AbortedSolutionIDsMap = DataMap<N::BlockHash, Vec<SolutionID<N>>>;
-    type AbortedTransactionIDsMap = DataMap<N::BlockHash, Vec<N::TransactionID>>;
-    type AuthorityMap = DataMap<N::BlockHash, Authority<N>>;
-    type BlockMetadataMap = DataMap<BlockMetadataKey, Vec<u8>>;
-    type CertificateMap = DataMap<Field<N>, (u32, u64)>;
-    type ConfirmedTransactionsMap =
-        DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
-    type HeaderMap = DataMap<N::BlockHash, Header<N>>;
-    type IDMap = DataMap<u32, N::BlockHash>;
-    type RatificationsMap = DataMap<N::BlockHash, Ratifications<N>>;
-    type RejectedDeploymentOrExecutionMap = DataMap<Field<N>, Rejected<N>>;
-    type RejectedOrAbortedTransactionIDMap = DataMap<N::TransactionID, N::BlockHash>;
-    type ReverseIDMap = DataMap<N::BlockHash, u32>;
-    type ReverseStateRootMap = DataMap<N::StateRoot, u32>;
-    type SolutionIDsMap = DataMap<SolutionID<N>, u32>;
-    type SolutionsMap = DataMap<N::BlockHash, Solutions<N>>;
     type StateRootMap = DataMap<u32, N::StateRoot>;
-    type TransactionStorage = TransactionDB<N>;
+    type ReverseStateRootMap = DataMap<N::StateRoot, u32>;
+    type IDMap = DataMap<u32, N::BlockHash>;
+    type ReverseIDMap = DataMap<N::BlockHash, u32>;
+    type HeaderMap = DataMap<N::BlockHash, Header<N>>;
+    type AuthorityMap = DataMap<N::BlockHash, Authority<N>>;
+    type CertificateMap = DataMap<Field<N>, (u32, u64)>;
+    type RatificationsMap = DataMap<N::BlockHash, Ratifications<N>>;
+    type SolutionsMap = DataMap<N::BlockHash, Solutions<N>>;
+    type SolutionIDsMap = DataMap<SolutionID<N>, u32>;
+    type AbortedSolutionIDsMap = DataMap<N::BlockHash, Vec<SolutionID<N>>>;
+    type AbortedSolutionHeightsMap = DataMap<SolutionID<N>, u32>;
     type TransactionsMap = DataMap<N::BlockHash, Vec<N::TransactionID>>;
+    type AbortedTransactionIDsMap = DataMap<N::BlockHash, Vec<N::TransactionID>>;
+    type RejectedOrAbortedTransactionIDMap = DataMap<N::TransactionID, N::BlockHash>;
+    type ConfirmedTransactionsMap = DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
+    type RejectedDeploymentOrExecutionMap = DataMap<Field<N>, Rejected<N>>;
+    type BlockMetadataMap = DataMap<BlockMetadataKey, Vec<u8>>;
+    type TransactionStorage = TransactionDB<N>;
     type TransitionStorage = TransitionDB<N>;
 
     /// Initializes the block storage.
@@ -126,62 +125,22 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         // Return the block storage.
         Ok(Self {
             state_root_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::StateRoot))?,
-            reverse_state_root_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::ReverseStateRoot),
-            )?,
+            reverse_state_root_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ReverseStateRoot))?,
             id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ID))?,
             reverse_id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ReverseID))?,
             header_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Header))?,
             authority_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Authority))?,
             certificate_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Certificate))?,
-            ratifications_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::Ratifications),
-            )?,
+            ratifications_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Ratifications))?,
             solutions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Solutions))?,
-            solution_ids_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::PuzzleCommitments),
-            )?,
-            aborted_solution_ids_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::AbortedSolutionIDs),
-            )?,
-            aborted_solution_heights_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::AbortedSolutionHeights),
-            )?,
-            transactions_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::Transactions),
-            )?,
-            aborted_transaction_ids_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::AbortedTransactionIDs),
-            )?,
-            rejected_or_aborted_transaction_id_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::RejectedOrAbortedTransactionID),
-            )?,
-            confirmed_transactions_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::ConfirmedTransactions),
-            )?,
-            rejected_deployment_or_execution_map: internal::RocksDB::open_map(
-                N::ID,
-                storage.clone(),
-                MapID::Block(BlockMap::RejectedDeploymentOrExecution),
-            )?,
+            solution_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::PuzzleCommitments))?,
+            aborted_solution_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedSolutionIDs))?,
+            aborted_solution_heights_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedSolutionHeights))?,
+            transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Transactions))?,
+            aborted_transaction_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedTransactionIDs))?,
+            rejected_or_aborted_transaction_id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedOrAbortedTransactionID))?,
+            confirmed_transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ConfirmedTransactions))?,
+            rejected_deployment_or_execution_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedDeploymentOrExecution))?,
             block_metadata_map: internal::RocksDB::open_map(N::ID, storage, MapID::Block(BlockMap::Metadata))?,
             transaction_store,
         })

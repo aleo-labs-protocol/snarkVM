@@ -342,15 +342,23 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(
     let total = floor - start;
     info!("Pruning the authority data of {total} blocks below block {floor}");
 
-    let mut progress = crate::helpers::Progress::new(usize::try_from(total)?);
+    let timer = std::time::Instant::now();
+    let report_every = (total / 100).max(AUTHORITY_PRUNING_CHUNK_HEIGHTS);
+    let mut next_report = report_every;
     for chunk_start in (start..floor).step_by(AUTHORITY_PRUNING_CHUNK_HEIGHTS as usize) {
         let chunk_end = chunk_start.saturating_add(AUTHORITY_PRUNING_CHUNK_HEIGHTS).min(floor);
         atomic_batch_scope!(storage, { prune_authority_heights(storage, chunk_start..chunk_end) })?;
-        if let Some((elapsed, remaining)) = progress.advance(usize::try_from(chunk_end - chunk_start)?) {
-            info!("Pruned {} of {total} blocks in {elapsed:.0} s, about {remaining:.0} s left", progress.done());
+
+        let done = chunk_end - start;
+        if done >= next_report && done < total {
+            let rate = f64::from(done) / timer.elapsed().as_secs_f64().max(f64::EPSILON);
+            let percent = 100.0 * f64::from(done) / f64::from(total);
+            let remaining = f64::from(total - done) / rate;
+            info!("Pruned {done} of {total} blocks ({percent:.0}%), {rate:.0} blocks/s, about {remaining:.0} s left");
+            next_report = done + report_every;
         }
     }
-    info!("Pruned the authority data below block {floor} in {:.1} s", progress.elapsed_secs());
+    info!("Pruned the authority data below block {floor} in {:.1} s", timer.elapsed().as_secs_f64());
     Ok(Some(floor))
 }
 
