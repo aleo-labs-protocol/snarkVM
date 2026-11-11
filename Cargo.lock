@@ -3205,6 +3205,8 @@ dependencies = [
  "serde_json",
  "snarkvm-console-network",
  "snarkvm-console-types",
+ "tracing",
+ "tracing-test",
  "zeroize",
 ]
 
@@ -3567,7 +3569,6 @@ version = "4.13.0"
 dependencies = [
  "bincode",
  "indexmap 2.14.0",
- "rayon",
  "serde_json",
  "snarkvm-console",
  "snarkvm-ledger-narwhal-batch-header",

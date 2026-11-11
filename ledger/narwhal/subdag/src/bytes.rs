@@ -16,8 +16,13 @@
 use super::*;
 
 impl<N: Network> Subdag<N> {
-    /// Shared functionality between FromBytes and FromBytesUnchecked.
-    fn internal_read_le<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
+    /// Reads the subDAG either with or without checks on the data, decoding each compute key
+    /// only if `cache` holds no earlier decode of the same bytes.
+    pub fn read_le_with_cache<R: Read>(
+        mut reader: R,
+        unchecked: bool,
+        cache: &mut ComputeKeyCache<N>,
+    ) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -55,7 +60,7 @@ impl<N: Network> Subdag<N> {
             // Read the certificates.
             let mut certificates = IndexSet::with_capacity(num_certificates as usize);
             for _ in 0..num_certificates {
-                let cert = BatchCertificate::read_le_with_unchecked(&mut reader, unchecked)?;
+                let cert = BatchCertificate::read_le_with_cache(&mut reader, unchecked, cache)?;
                 certificates.insert(cert);
             }
             // Ensure no certificate was repeated within the round.
@@ -73,12 +78,12 @@ impl<N: Network> Subdag<N> {
 impl<N: Network> FromBytes for Subdag<N> {
     /// Reads the subDAG from the given buffer.
     fn read_le<R: Read>(reader: R) -> IoResult<Self> {
-        Self::internal_read_le(reader, false)
+        Self::read_le_with_cache(reader, false, &mut ComputeKeyCache::default())
     }
 
     /// Reads the subDAG from the given buffer without performing any checks on the data.
     fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
-        Self::internal_read_le(reader, true)
+        Self::read_le_with_cache(reader, true, &mut ComputeKeyCache::default())
     }
 }
 

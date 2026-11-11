@@ -38,6 +38,22 @@ impl<N: Network> FromBytes for Signature<N> {
     }
 }
 
+impl<N: Network> Signature<N> {
+    /// Reads an account signature from a buffer as `read_le_with_unchecked` does, decoding the
+    /// compute key only if `cache` holds no earlier decode of the same bytes.
+    #[inline]
+    pub fn read_le_with_cache<R: Read>(
+        mut reader: R,
+        unchecked: bool,
+        cache: &mut ComputeKeyCache<N>,
+    ) -> IoResult<Self> {
+        let challenge = Scalar::new(FromBytes::read_le(&mut reader)?);
+        let response = Scalar::new(FromBytes::read_le(&mut reader)?);
+        let compute_key = cache.read_compute_key(&mut reader, unchecked)?;
+        Ok(Self { challenge, response, compute_key })
+    }
+}
+
 impl<N: Network> ToBytes for Signature<N> {
     /// Writes an account signature to a buffer.
     #[inline]
@@ -71,6 +87,27 @@ mod tests {
             assert_eq!(signature, Signature::read_le_unchecked(&signature_bytes[..])?);
             assert!(Signature::<CurrentNetwork>::read_le(&signature_bytes[1..]).is_err());
             assert!(Signature::<CurrentNetwork>::read_le_unchecked(&signature_bytes[1..]).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_bytes_with_cache() -> Result<()> {
+        let mut rng = TestRng::default();
+        let mut cache = ComputeKeyCache::default();
+
+        for i in 0..ITERATIONS {
+            let signature = test_helpers::sample_signature(i, &mut rng);
+            let signature_bytes = signature.to_bytes_le()?;
+            // The second read of each mode hits the cache.
+            for unchecked in [false, true, false, true] {
+                let cold = Signature::<CurrentNetwork>::read_le_with_unchecked(&signature_bytes[..], unchecked)?;
+                let cached = Signature::read_le_with_cache(&signature_bytes[..], unchecked, &mut cache)?;
+                assert_eq!(signature, cached);
+                // `ComputeKey` equality ignores `sk_prf`, and `Debug` shows it.
+                assert_eq!(format!("{:?}", cold.compute_key()), format!("{:?}", cached.compute_key()));
+                assert!(Signature::read_le_with_cache(&signature_bytes[1..], unchecked, &mut cache).is_err());
+            }
         }
         Ok(())
     }
