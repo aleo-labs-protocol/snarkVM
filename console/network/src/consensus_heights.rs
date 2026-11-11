@@ -801,18 +801,9 @@ mod tests {
     /// Ensure that a trailing run of unscheduled versions is accepted.
     #[test]
     fn test_consensus_heights_accept_trailing_unscheduled() {
-        let heights = load_test_consensus_heights_inner(Some(test_heights_string(&[
-            (18, u32::MAX),
-            (19, u32::MAX),
-            (20, u32::MAX),
-            (21, u32::MAX),
-            (22, u32::MAX),
-        ])));
+        let overrides: Vec<_> = (18..NUM_CONSENSUS_VERSIONS).map(|index| (index, u32::MAX)).collect();
+        let heights = load_test_consensus_heights_inner(Some(test_heights_string(&overrides)));
         assert_eq!(heights[17].1, 21);
-        assert_eq!(heights[18].1, u32::MAX);
-        assert_eq!(heights[19].1, u32::MAX);
-        assert_eq!(heights[20].1, u32::MAX);
-        assert_eq!(heights[21].1, u32::MAX);
-        assert_eq!(heights[22].1, u32::MAX);
+        assert!(heights[18..].iter().all(|(_, height)| *height == u32::MAX));
     }
 }
