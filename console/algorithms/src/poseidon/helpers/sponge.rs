@@ -269,14 +269,14 @@ impl<F: PrimeField, const RATE: usize> PartialRounds<F, RATE, 1> {
     }
 }
 
-/// Applies the permutation of the parameters of `sparse_rounds` to `state`, with the partial rounds
-/// in that sparse form.
+/// Applies the permutation of the parameters of `partial_rounds` to `state`, with the partial
+/// rounds in their sparse form.
 #[inline]
 fn permute_sparse<E: Environment, const RATE: usize, const CAPACITY: usize>(
-    sparse_rounds: &PartialRounds<E::Field, RATE, CAPACITY>,
+    partial_rounds: &PartialRounds<E::Field, RATE, CAPACITY>,
     state: &mut State<E, RATE, CAPACITY>,
 ) {
-    let PartialRounds { parameters, sparse_rounds } = sparse_rounds;
+    let PartialRounds { parameters, sparse_rounds } = partial_rounds;
     let first_partial_round = parameters.full_rounds / 2;
     let last_partial_round = first_partial_round + parameters.partial_rounds;
     let num_rounds = parameters.full_rounds + parameters.partial_rounds;

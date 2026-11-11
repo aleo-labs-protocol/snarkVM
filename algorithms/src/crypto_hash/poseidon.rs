@@ -119,8 +119,8 @@ pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY: usiz
     pub mode: DuplexSpongeMode,
     /// A persistent lookup table used when compressing elements.
     adjustment_factor_lookup_table: Arc<[F]>,
-    /// The partial rounds of `parameters` in sparse form, or `None` if they
-    /// have none.
+    /// The partial rounds of `parameters` in sparse form. If `None`, every
+    /// round multiplies the state by the MDS matrix.
     sparse_rounds: Option<Arc<PoseidonSparseRounds<F>>>,
 }
 
@@ -785,31 +785,12 @@ mod tests {
     #[serial]
     fn test_sparse_permutation_fallback() {
         let rng = &mut TestRng::default();
-        let default = parameters_with_rounds::<Fq, 2>(8, 31, 17, rng);
-        let mut singular = default.clone();
+        let mut singular = parameters_with_rounds::<Fq, 2>(8, 31, 17, rng);
         singular.mds[2] = vec![Fq::rand(rng), singular.mds[1][1], singular.mds[1][2]];
-        let mut short_ark = default.clone();
-        short_ark.ark.pop();
-        let mut long_ark_row = default.clone();
-        long_ark_row.ark[38].push(Fq::one());
-        let mut short_mds_row = default.clone();
-        short_mds_row.mds[1].pop();
-        let mut extra_mds_row = default.clone();
-        extra_mds_row.mds.push(vec![Fq::one(); 3]);
-        let cases = [
-            parameters_with_rounds::<Fq, 2>(0, 31, 17, rng),
-            parameters_with_rounds::<Fq, 2>(1, 31, 17, rng),
-            parameters_with_rounds::<Fq, 2>(8, 0, 17, rng),
-            singular,
-            short_ark,
-            long_ark_row,
-            short_mds_row,
-            extra_mds_row,
-        ];
-        for parameters in cases {
-            assert!(PoseidonSponge::new_with_parameters(&Arc::new(parameters)).sparse_rounds.is_none());
-        }
-        assert!(PoseidonSponge::new_with_parameters(&Arc::new(default)).sparse_rounds.is_some());
+        let singular = Arc::new(singular);
+        assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
+        // The second sponge reads the `None` from `PARTIAL_ROUNDS_CACHE`.
+        assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
     }
 
     #[test]

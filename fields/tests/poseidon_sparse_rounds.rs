@@ -19,19 +19,6 @@ use snarkvm_utilities::{TestRng, Uniform};
 
 use itertools::Itertools;
 
-/// Returns parameters with the given rounds and `alpha`, random round constants, and the MDS
-/// matrix of the default parameters of `RATE`.
-fn parameters_with_rounds<const RATE: usize>(
-    full_rounds: usize,
-    partial_rounds: usize,
-    alpha: u64,
-    rng: &mut TestRng,
-) -> PoseidonParameters<Fq, RATE, 1> {
-    let ark = (0..full_rounds + partial_rounds).map(|_| (0..RATE + 1).map(|_| Fq::rand(rng)).collect()).collect();
-    let mds = Fq::default_poseidon_parameters::<RATE>().unwrap().mds;
-    PoseidonParameters { full_rounds, partial_rounds, alpha, ark, mds }
-}
-
 /// Checks the shapes of the partial rounds of `parameters`, and that the row of the last partial
 /// round below its first element, times the lower-right block of width `RATE` of the MDS matrix,
 /// is the first row of the MDS matrix below its first element.
@@ -89,7 +76,7 @@ fn test_sparse_rounds_random_matrix() {
 fn test_sparse_rounds_zero_pivot() {
     // The lower-right block [[0, 1], [1, 1]] has a zero first pivot, so inverting it swaps rows.
     let rng = &mut TestRng::default();
-    let mut parameters = parameters_with_rounds::<2>(8, 31, 17, rng);
+    let mut parameters = Fq::default_poseidon_parameters::<2>().unwrap();
     parameters.mds = vec![
         vec![Fq::rand(rng), Fq::rand(rng), Fq::rand(rng)],
         vec![Fq::rand(rng), Fq::zero(), Fq::one()],
@@ -101,7 +88,13 @@ fn test_sparse_rounds_zero_pivot() {
 #[test]
 fn test_sparse_rounds_fallback() {
     let rng = &mut TestRng::default();
-    let default = parameters_with_rounds::<2>(8, 31, 17, rng);
+    let default = Fq::default_poseidon_parameters::<2>().unwrap();
+    let mut no_full_rounds = default.clone();
+    no_full_rounds.full_rounds = 0;
+    let mut one_full_round = default.clone();
+    one_full_round.full_rounds = 1;
+    let mut no_partial_rounds = default.clone();
+    no_partial_rounds.partial_rounds = 0;
     let mut singular = default.clone();
     singular.mds[2] = vec![Fq::rand(rng), singular.mds[1][1], singular.mds[1][2]];
     let mut short_ark = default.clone();
@@ -113,9 +106,9 @@ fn test_sparse_rounds_fallback() {
     let mut extra_mds_row = default.clone();
     extra_mds_row.mds.push(vec![Fq::one(); 3]);
     let cases = [
-        parameters_with_rounds::<2>(0, 31, 17, rng),
-        parameters_with_rounds::<2>(1, 31, 17, rng),
-        parameters_with_rounds::<2>(8, 0, 17, rng),
+        no_full_rounds,
+        one_full_round,
+        no_partial_rounds,
         singular,
         short_ark,
         long_ark_row,
