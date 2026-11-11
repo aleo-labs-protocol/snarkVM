@@ -492,15 +492,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         false
     }
 
-    /// Plans an authority map compaction: one entry per key-range slice, `true` if the slice holds
-    /// deletions to reclaim. Storage without deferred compaction has no slices.
+    /// Plans a sliced compaction of the authority map. See `DataMap::compaction_plan`.
     #[cfg(feature = "prune-authority-data")]
     fn authority_compaction_plan(&self) -> Result<Vec<bool>> {
         Ok(Vec::new())
     }
 
-    /// Compacts slice `i` of `slices` of the authority map's key range. Storage without deferred
-    /// compaction does nothing.
+    /// Compacts one slice of the authority map. See `DataMap::compact_slice`.
     #[cfg(feature = "prune-authority-data")]
     fn compact_authority_slice(&self, _i: usize, _slices: usize) -> Result<()> {
         Ok(())
@@ -1460,7 +1458,7 @@ pub struct BlockStore<N: Network, B: BlockStorage<N>> {
     block_cache: Arc<Option<RwLock<BlockCache<N>>>>,
     /// The state of the background authority map compaction.
     #[cfg(feature = "prune-authority-data")]
-    authority_compaction: Arc<AuthorityCompaction>,
+    authority_compaction: AuthorityCompaction,
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
@@ -1509,7 +1507,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         let store = Self {
             #[cfg(feature = "prune-authority-data")]
-            authority_compaction: Arc::new(AuthorityCompaction::new(storage.compacts_authority_map())),
+            authority_compaction: Default::default(),
             storage,
             tree: Arc::new(RwLock::new(tree)),
             prepared_block_tree: Arc::new(Mutex::new(None)),
@@ -1525,7 +1523,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
                 prune_expired_authorities(&store.storage, latest_height)
                     .context("Failed to prune expired authority data")?;
             }
-            // Compact at every start.
             store.compact_authorities();
         }
         Ok(store)

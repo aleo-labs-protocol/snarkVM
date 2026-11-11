@@ -662,14 +662,16 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
 
     /// Plans a sliced compaction of this map after flushing it: one entry per slice (see
     /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. `slices`
-    /// maps the number of live files holding keys of this map to the slice count.
+    /// maps the number of live files holding keys of this map to the slice count. The maps share
+    /// one column family, so a file straddling the map's edge can carry a neighbour's deletions and
+    /// mark an edge slice.
     #[cfg(feature = "prune-authority-data")]
     pub(crate) fn compaction_plan(&self, slices: fn(usize) -> usize) -> Result<Vec<bool>> {
         self.database.flush()?;
         let (lower, upper) = self.key_range(&[], None)?;
         let overlaps = |file: &rocksdb::LiveFile, lower: &[u8], upper: &[u8]| {
-            file.start_key.as_deref().is_some_and(|start| start < upper)
-                && file.end_key.as_deref().is_some_and(|end| end >= lower)
+            file.start_key.as_deref().is_none_or(|start| start < upper)
+                && file.end_key.as_deref().is_none_or(|end| end >= lower)
         };
         let files: Vec<rocksdb::LiveFile> =
             self.database.live_files()?.into_iter().filter(|file| overlaps(file, &lower, &upper)).collect();
@@ -1892,15 +1894,23 @@ mod tests {
             assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
         }
 
-        /// A plan marks only the slices whose flushed files hold deletions.
+        /// A plan marks only the slices whose flushed files hold deletions. Each plan flushes once;
+        /// with at most two flushed files, no automatic compaction merges them.
         #[test]
         fn test_compaction_plan_marks_slices_with_deletions() {
             let (map, _) = setup(&ROWS);
             assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false; 4]);
             map.remove(&[0xff, 0xff]).unwrap();
-            let plan = map.compaction_plan(|_| 4).unwrap();
-            assert!(plan[3]);
+            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false, false, false, true]);
             assert_eq!(map.compaction_plan(|files| files.min(2)).unwrap().len(), 2);
+
+            // A file of deletions straddling a slice boundary marks both slices. The rows are flushed
+            // first, so the deletions land in a file of their own.
+            let (map, _) = setup(&ROWS);
+            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false; 4]);
+            map.remove(&[0x7f, 0xff]).unwrap();
+            map.remove(&[0x80, 0]).unwrap();
+            assert_eq!(map.compaction_plan(|_| 4).unwrap(), vec![false, true, true, false]);
         }
 
         /// Compacting every slice leaves every row and its neighbours.

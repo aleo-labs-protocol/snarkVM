@@ -92,10 +92,6 @@ pub struct BlockDB<N: Network> {
 const AUTHORITY_COMPACTION_FILES_PER_SLICE: usize = 16;
 #[cfg(feature = "prune-authority-data")]
 const MAX_AUTHORITY_COMPACTION_SLICES: usize = 256;
-/// The slice count when the map's files cannot be listed.
-#[cfg(feature = "prune-authority-data")]
-const FALLBACK_AUTHORITY_COMPACTION_SLICES: usize = 64;
-
 /// The number of slices an authority map of `files` live SST files is compacted in.
 #[cfg(feature = "prune-authority-data")]
 fn slices_for_files(files: usize) -> usize {
@@ -259,15 +255,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
 
     #[cfg(feature = "prune-authority-data")]
     fn authority_compaction_plan(&self) -> Result<Vec<bool>> {
-        match self.authority_map.compaction_plan(authority_compaction_slices) {
-            Ok(plan) => Ok(plan),
-            Err(error) => {
-                tracing::error!(
-                    "Failed to plan the authority map compaction, compacting in {FALLBACK_AUTHORITY_COMPACTION_SLICES} slices: {error}"
-                );
-                Ok(vec![true; FALLBACK_AUTHORITY_COMPACTION_SLICES])
-            }
-        }
+        self.authority_map.compaction_plan(authority_compaction_slices)
     }
 
     #[cfg(feature = "prune-authority-data")]
@@ -367,11 +355,10 @@ impl<N: Network> BlockDB<N> {
 
 #[cfg(all(test, feature = "prune-authority-data"))]
 mod authority_compaction_tests {
-    use super::{authority_compaction_slices, slices_for_files};
+    use super::slices_for_files;
 
     #[test]
     fn test_slice_count() {
         assert_eq!([0, 15, 16, 32, 5000].map(slices_for_files), [1, 1, 1, 2, 256]);
-        assert_eq!(authority_compaction_slices(5000), 4);
     }
 }
