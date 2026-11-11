@@ -220,10 +220,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         end_timer!(f_poly_time);
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
         let f_at_zero = f.coeffs[0];
-        // `b` and `f` multiply to `a` on the domain, since `alpha` and `beta` lie
-        // outside the domains that `row` and `col` take their values from. `lhs` is
-        // `(a - b * f) / v_K_i * (K_i.size() / K.size())`. The combiners are applied in
-        // the fifth round.
+        // `b * f = a` on the domain for any `alpha` and `beta`: where
+        // `(alpha - row) * (beta - col)` is zero, batch inversion leaves `f` zero, and
+        // `v_R_i(alpha) * v_C_i(beta)` is zero, so `a` is zero too. `lhs` is
+        // `(a - b * f) / v_K_i * (K_i.size() / K.size())`. The scale is negated
+        // because the helper returns the quotient of `b * f - a`. The combiners are
+        // applied in the fifth round.
         let lhs = non_zero_domain.divide_product_by_vanishing_poly(
             Cow::Borrowed(&b_poly),
             Cow::Owned(f),
