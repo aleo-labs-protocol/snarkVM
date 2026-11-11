@@ -164,6 +164,17 @@ impl RocksDB {
         self.rocksdb.compact_range(Some(&prefix), Some(&prefix_end(prefix)?));
         Ok(())
     }
+
+    /// Compacts the keys in `lower..=end` now, rewriting bottom-level files too, which a plain
+    /// `compact_range` skips, so point deletes among live rows are reclaimed. RocksDB reports
+    /// compaction errors only in its LOG.
+    #[cfg(feature = "prune-authority-data")]
+    pub(crate) fn compact_key_range(&self, lower: &[u8], end: &[u8]) {
+        let mut options = rocksdb::CompactOptions::default();
+        options.set_bottommost_level_compaction(rocksdb::BottommostLevelCompaction::ForceOptimized);
+        options.set_exclusive_manual_compaction(false);
+        self.rocksdb.compact_range_opt(Some(lower), Some(end), &options);
+    }
 }
 
 impl Database for RocksDB {

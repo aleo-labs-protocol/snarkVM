@@ -20,6 +20,11 @@ pub mod rocksdb;
 #[cfg(test)]
 pub(crate) mod test_helpers;
 
+#[cfg(feature = "prune-authority-data")]
+mod progress;
+#[cfg(feature = "prune-authority-data")]
+pub(crate) use progress::Progress;
+
 mod traits;
 pub use traits::*;
 
