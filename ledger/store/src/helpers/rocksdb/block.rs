@@ -96,15 +96,16 @@ const MAX_AUTHORITY_COMPACTION_SLICES: usize = 256;
 #[cfg(feature = "prune-authority-data")]
 const FALLBACK_AUTHORITY_COMPACTION_SLICES: usize = 64;
 
-/// The number of slices an authority map of `files` live SST files is compacted in. Unit tests use
-/// a few slices.
+/// The number of slices an authority map of `files` live SST files is compacted in.
+#[cfg(feature = "prune-authority-data")]
+fn slices_for_files(files: usize) -> usize {
+    (files / AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, MAX_AUTHORITY_COMPACTION_SLICES)
+}
+
+/// [`slices_for_files`], except that unit tests use a few slices.
 #[cfg(feature = "prune-authority-data")]
 fn authority_compaction_slices(files: usize) -> usize {
-    if cfg!(test) {
-        4
-    } else {
-        (files / AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, MAX_AUTHORITY_COMPACTION_SLICES)
-    }
+    if cfg!(test) { 4 } else { slices_for_files(files) }
 }
 
 #[rustfmt::skip]
@@ -366,14 +367,11 @@ impl<N: Network> BlockDB<N> {
 
 #[cfg(all(test, feature = "prune-authority-data"))]
 mod authority_compaction_tests {
-    /// The slice count for a file count, without the test override.
-    fn slices(files: usize) -> usize {
-        (files / super::AUTHORITY_COMPACTION_FILES_PER_SLICE).clamp(1, super::MAX_AUTHORITY_COMPACTION_SLICES)
-    }
+    use super::{authority_compaction_slices, slices_for_files};
 
     #[test]
     fn test_slice_count() {
-        assert_eq!([0, 15, 16, 32, 5000].map(slices), [1, 1, 1, 2, 256]);
-        assert_eq!(super::authority_compaction_slices(5000), 4);
+        assert_eq!([0, 15, 16, 32, 5000].map(slices_for_files), [1, 1, 1, 2, 256]);
+        assert_eq!(authority_compaction_slices(5000), 4);
     }
 }
