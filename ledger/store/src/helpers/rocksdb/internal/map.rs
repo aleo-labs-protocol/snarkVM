@@ -648,6 +648,7 @@ const RETAIN_READAHEAD: usize = 4 << 20;
 /// [`MAX_COMPACTION_SLICES`] slices.
 #[cfg(feature = "prune-authority-data")]
 const COMPACTION_FILES_PER_SLICE: usize = 16;
+/// The most slices a sliced compaction runs.
 #[cfg(feature = "prune-authority-data")]
 const MAX_COMPACTION_SLICES: usize = 256;
 
@@ -685,6 +686,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     #[cfg(feature = "prune-authority-data")]
     pub(crate) fn compaction_plan(&self) -> Result<Vec<bool>> {
         self.database.flush()?;
+        // Slice 0 of 1 is the whole map.
         let (lower, end) = self.slice_key_range(0, 1)?;
         let overlaps = |file: &rocksdb::LiveFile, lower: &[u8], end: &[u8]| {
             file.start_key.as_deref().is_none_or(|start| start <= end)
@@ -722,7 +724,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
             Some(next) => [&prefix[..], &(u16::from_be_bytes(next) - 1).to_be_bytes(), &[0xff; 30][..]].concat(),
             None => [&prefix[..], &[0xff; 32][..]].concat(),
         };
-        Ok(([&prefix[..], &start].concat(), end))
+        Ok((self.key_range(&start, None)?.0, end))
     }
 
     /// This map's key prefix.
@@ -1928,7 +1930,10 @@ mod tests {
         /// with at most two flushed files, no automatic compaction merges them.
         #[test]
         fn test_compaction_plan_marks_slices_with_deletions() {
-            let (map, _) = setup(&ROWS);
+            let (map, neighbours) = setup(&ROWS);
+            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
+            // A neighbour map's deletion below the prefix marks nothing.
+            map.database.delete(&neighbours[0]).unwrap();
             assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
             map.remove(&[0xff, 0xff]).unwrap();
             assert_eq!(map.compaction_plan().unwrap(), vec![false, false, false, true]);

@@ -34,13 +34,17 @@ const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 100
 const AUTHORITY_COMPACTION_MIN_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 
 /// Compacts the authority map slice by slice (see [`BlockStorage::authority_compaction_plan`]),
-/// skipping the slices with nothing to reclaim. Stops between slices once `compaction` is stopping
-/// or dropped.
+/// skipping the slices with nothing to reclaim. Stops between slices once `signal` says so or every
+/// store sharing `state` is gone.
 fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
     storage: &B,
-    compaction: &Weak<CompactionState>,
-    #[cfg(test)] delay: Option<Duration>,
+    signal: &Signal,
+    state: &Weak<CompactionState>,
+    #[cfg(test)] gate: Option<Arc<Gate>>,
 ) -> Result<()> {
+    // The thread must not upgrade `state`: holding the last strong reference would run the state's
+    // drop, and its join, on this thread.
+    let stopping = || signal.stop.load(Ordering::SeqCst) || state.strong_count() == 0;
     let plan = storage.authority_compaction_plan()?;
     let (total, to_compact) = (plan.len(), plan.iter().filter(|&&compact| compact).count());
     if to_compact == 0 {
@@ -50,7 +54,11 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
     }
     let mut progress = Progress::new(to_compact);
     for (i, &compact) in plan.iter().enumerate() {
-        if compaction.upgrade().is_none_or(|compaction| compaction.stop.load(Ordering::SeqCst)) {
+        #[cfg(test)]
+        if let Some(gate) = &gate {
+            gate.wait(stopping);
+        }
+        if stopping() {
             info!("Stopped the authority map compaction before slice {i} of {total}; the next start redoes it");
             return Ok(());
         }
@@ -63,10 +71,6 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
                 );
             }
         }
-        #[cfg(test)]
-        if let Some(delay) = delay {
-            std::thread::sleep(delay);
-        }
     }
     if to_compact > 0 {
         info!(
@@ -78,14 +82,22 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
     Ok(())
 }
 
-/// The state of the background authority map compaction, shared by the clones of a [`BlockStore`]
-/// and held weakly by the compaction thread.
+/// What the compaction thread shares with the stores.
+#[derive(Default)]
+struct Signal {
+    /// Set at shutdown, so no compaction starts and the running one stops between slices.
+    stop: AtomicBool,
+    /// Set when a compaction failed, so the next trigger starts one without waiting for the floor.
+    failed: AtomicBool,
+}
+
+/// The state of the background authority map compaction, shared by the clones of a [`BlockStore`];
+/// the compaction thread holds only its [`Signal`] and a weak reference.
 #[derive(Default)]
 pub(super) struct CompactionState {
     /// The number of authorities pruned since the authority map was compacted.
     pruned: AtomicU32,
-    /// Set at shutdown, so no compaction starts and the running one stops between slices.
-    stop: AtomicBool,
+    signal: Arc<Signal>,
     /// The last compaction started.
     last: Mutex<LastRun>,
 }
@@ -97,11 +109,17 @@ struct LastRun {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
+impl LastRun {
+    fn running(&self) -> bool {
+        self.thread.as_ref().is_some_and(|thread| !thread.is_finished())
+    }
+}
+
 impl CompactionState {
     /// Stops the compaction, if one runs, and waits for it: the running slice finishes, then the
     /// thread is joined.
     fn stop_and_join(&self) {
-        self.stop.store(true, Ordering::SeqCst);
+        self.signal.stop.store(true, Ordering::SeqCst);
         let Some(thread) = self.last.lock().thread.take() else {
             return;
         };
@@ -117,7 +135,7 @@ impl CompactionState {
     }
 }
 
-/// The last store's drop of the state stops the thread, which holds the state only weakly.
+/// The last store's drop of the state stops the thread, which never holds the state strongly.
 impl Drop for CompactionState {
     fn drop(&mut self) {
         self.stop_and_join();
@@ -161,41 +179,45 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             return false;
         }
         let compaction = &self.authority_compaction;
+        let signal = compaction.signal.clone();
         // One lock covers the checks, the spawn and the handle, so a concurrent stop cannot miss
         // the thread.
         let mut last = compaction.last.lock();
-        if compaction.stop.load(Ordering::SeqCst)
-            || last.thread.as_ref().is_some_and(|thread| !thread.is_finished())
-            || last.started.is_some_and(|started| started.elapsed() < AUTHORITY_COMPACTION_MIN_INTERVAL)
-        {
+        let floor = last.started.is_some_and(|started| started.elapsed() < AUTHORITY_COMPACTION_MIN_INTERVAL);
+        if signal.stop.load(Ordering::SeqCst) || last.running() || (floor && !signal.failed.load(Ordering::SeqCst)) {
             return false;
         }
         #[cfg(test)]
-        let delay = AUTHORITY_COMPACTION_THREAD.with(|thread| thread.get());
-        let (storage, weak) = (self.storage.clone(), Arc::downgrade(&compaction.0));
+        let gate = AUTHORITY_COMPACTION_GATE.with(|gate| gate.borrow().clone());
+        let (storage, state) = (self.storage.clone(), Arc::downgrade(&compaction.0));
         let compact = move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 compact_authority_slices(
                     &storage,
-                    &weak,
+                    &signal,
+                    &state,
                     #[cfg(test)]
-                    delay,
+                    gate,
                 )
             }));
             match result {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => error!("Failed to compact the authority map: {error}"),
+                Ok(Err(error)) => {
+                    error!("Failed to compact the authority map: {error}");
+                    signal.failed.store(true, Ordering::SeqCst);
+                }
                 Err(_) => {
                     error!("The authority map compaction panicked");
                     std::process::abort();
                 }
             }
         };
+        compaction.signal.failed.store(false, Ordering::SeqCst);
         last.started = Some(Instant::now());
         #[cfg(test)]
         {
             AUTHORITY_COMPACTIONS.with(|count| count.set(count.get() + 1));
-            if delay.is_none() {
+            if AUTHORITY_COMPACTION_GATE.with(|gate| gate.borrow().is_none()) {
                 drop(last);
                 compact();
                 return true;
@@ -220,13 +242,44 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 }
 
+/// A test's control over a compaction thread: the thread waits before each slice until the test
+/// has released more slices than have passed, or until it is stopping.
+#[cfg(test)]
+#[derive(Default)]
+struct Gate {
+    released: std::sync::atomic::AtomicUsize,
+    passed: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(test)]
+impl Gate {
+    #[cfg(feature = "rocks")]
+    fn release(&self, slices: usize) {
+        self.released.fetch_add(slices, Ordering::SeqCst);
+    }
+
+    fn passed(&self) -> usize {
+        self.passed.load(Ordering::SeqCst)
+    }
+
+    /// Waits for a released slice, or for `stopping`.
+    fn wait(&self, stopping: impl Fn() -> bool) {
+        while self.released.load(Ordering::SeqCst) <= self.passed() {
+            if stopping() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        self.passed.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     /// The number of authority map compactions started on this thread.
     static AUTHORITY_COMPACTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    /// How this thread's stores compact: inline (`None`), or on a thread that sleeps this long per
-    /// slice.
-    static AUTHORITY_COMPACTION_THREAD: std::cell::Cell<Option<Duration>> = const { std::cell::Cell::new(None) };
+    /// How this thread's stores compact: inline (`None`), or on a thread driven by the gate.
+    static AUTHORITY_COMPACTION_GATE: std::cell::RefCell<Option<Arc<Gate>>> = const { std::cell::RefCell::new(None) };
     /// The number of running compaction threads this thread has stopped and joined.
     static AUTHORITY_COMPACTION_RUNNING_JOINS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -279,9 +332,6 @@ mod tests {
 
         type Store = BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>>;
 
-        /// How long a slice of a test thread takes: long enough for a test to act before it ends.
-        const SLOW_SLICE: Duration = Duration::from_millis(100);
-
         fn open() -> Store {
             let temp_dir = Arc::new(tempfile::tempdir().unwrap());
             BlockStore::open(StorageMode::new_test(Some(temp_dir))).unwrap()
@@ -298,35 +348,47 @@ mod tests {
 
         /// Whether the store's compaction thread is running.
         fn thread_running(store: &Store) -> bool {
-            store.authority_compaction.last.lock().thread.as_ref().is_some_and(|thread| !thread.is_finished())
+            store.authority_compaction.last.lock().running()
         }
 
-        /// Opens a store whose compaction runs on a thread that takes a while per slice.
-        fn open_with_slow_thread() -> Store {
-            AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(Some(SLOW_SLICE)));
+        /// Opens a store whose compaction runs on a thread the returned gate controls; the thread
+        /// waits before its first slice.
+        fn open_with_gate() -> (Store, Arc<Gate>) {
+            let gate = Arc::new(Gate::default());
+            AUTHORITY_COMPACTION_GATE.with(|slot| *slot.borrow_mut() = Some(gate.clone()));
             let store = open();
-            AUTHORITY_COMPACTION_THREAD.with(|thread| thread.set(None));
+            AUTHORITY_COMPACTION_GATE.with(|slot| *slot.borrow_mut() = None);
             assert!(thread_running(&store));
-            store
+            (store, gate)
+        }
+
+        /// Waits until `gate` has passed `slices`.
+        fn wait_passed(gate: &Gate, slices: usize) {
+            while gate.passed() < slices {
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
 
         /// Ensures the real thread path starts at open, stops on request, and is not restarted.
         #[test]
         fn test_authority_compaction_thread_stops() {
-            let store = open_with_slow_thread();
+            let (store, gate) = open_with_gate();
             let before = running_joins();
             store.stop_background_work();
             assert_eq!(running_joins(), before + 1);
+            assert_eq!(gate.passed(), 0);
             assert!(store.authority_compaction.last.lock().thread.is_none());
             clear_floor(&store);
             assert!(!store.compact_authorities());
-            store.stop_background_work();
         }
 
-        /// Ensures dropping the last store stops and joins a running compaction thread.
+        /// Ensures dropping the last store, while the thread waits between slices, stops and joins
+        /// the thread on the dropping thread.
         #[test]
         fn test_dropping_the_store_stops_the_thread() {
-            let store = open_with_slow_thread();
+            let (store, gate) = open_with_gate();
+            gate.release(1);
+            wait_passed(&gate, 1);
             let clone = store.clone();
             let before = running_joins();
             // A clone remains, so nothing stops yet.
@@ -335,31 +397,33 @@ mod tests {
             assert!(thread_running(&clone));
             drop(clone);
             assert_eq!(running_joins(), before + 1);
+            assert_eq!(gate.passed(), 1);
         }
 
-        /// Ensures a compaction stops at the next slice once its state is stopping or gone.
+        /// Ensures a compaction stops at the next slice once its signal says so or its state is
+        /// gone.
         #[test]
         fn test_authority_compaction_stops_without_a_store() {
             let store = open();
-            let slices = u32::try_from(store.storage.authority_compaction_plan().unwrap().len()).unwrap();
             let state = Arc::new(CompactionState::default());
+            let gate = Arc::new(Gate::default());
+            let worker = {
+                let (storage, signal, weak, gate) =
+                    (store.storage.clone(), state.signal.clone(), Arc::downgrade(&state), gate.clone());
+                std::thread::spawn(move || compact_authority_slices(&storage, &signal, &weak, Some(gate)))
+            };
+            gate.release(2);
+            wait_passed(&gate, 2);
+            state.signal.stop.store(true, Ordering::SeqCst);
+            worker.join().unwrap().unwrap();
+            assert_eq!(gate.passed(), 2);
+
+            // Every store gone: the run ends before its first slice.
             let weak = Arc::downgrade(&state);
-
-            // A live state: every slice is passed.
-            let timer = Instant::now();
-            compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
-            assert!(timer.elapsed() >= SLOW_SLICE * slices);
-
-            // A stopping state, then a dropped one: the loop ends before its first slice.
-            state.stop.store(true, Ordering::SeqCst);
-            let timer = Instant::now();
-            compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
-            assert!(timer.elapsed() < SLOW_SLICE * slices);
-
             drop(state);
-            let timer = Instant::now();
-            compact_authority_slices(&store.storage, &weak, Some(SLOW_SLICE)).unwrap();
-            assert!(timer.elapsed() < SLOW_SLICE * slices);
+            let gate = Arc::new(Gate::default());
+            compact_authority_slices(&store.storage, &Signal::default(), &weak, Some(gate.clone())).unwrap();
+            assert_eq!(gate.passed(), 0);
         }
 
         /// Ensures an open starts exactly one authority compaction.
@@ -418,7 +482,8 @@ mod tests {
             assert_eq!(store.authority_compaction.pruned.load(Ordering::SeqCst), 0);
         }
 
-        /// Ensures a trigger inside the floor after the last start waits for the floor.
+        /// Ensures a trigger inside the floor after the last start waits for the floor, unless the
+        /// last compaction failed.
         #[test]
         fn test_trigger_waits_for_the_floor() {
             check_trigger_waits(
@@ -427,6 +492,10 @@ mod tests {
                     store.authority_compaction.last.lock().started =
                         Instant::now().checked_sub(AUTHORITY_COMPACTION_MIN_INTERVAL)
                 },
+            );
+            check_trigger_waits(
+                |store| store.authority_compaction.last.lock().started = Some(Instant::now()),
+                |store| store.authority_compaction.signal.failed.store(true, Ordering::SeqCst),
             );
         }
 
