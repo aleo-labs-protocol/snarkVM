@@ -23,18 +23,26 @@ impl<E: Environment, const RATE: usize> HashMany for Poseidon<E, RATE> {
     /// and returns the specified number of field elements as output.
     #[inline]
     fn hash_many(&self, input: &[Self::Input], num_outputs: u16) -> Vec<Self::Output> {
-        // Construct the preimage: [ DOMAIN || LENGTH(INPUT) || [0; RATE-2] || INPUT ].
-        let mut preimage = Vec::with_capacity(RATE + input.len());
-        preimage.push(self.domain);
-        preimage.push(Field::<E>::from_u128(input.len() as u128));
-        preimage.resize(RATE, Field::<E>::zero()); // Pad up to RATE.
-        preimage.extend_from_slice(input);
-
-        let mut sponge = match &self.sparse_rounds {
+        // The preimage is [ DOMAIN || LENGTH(INPUT) || [0; RATE-2] || INPUT ]. Its first block depends only on the
+        // domain and the input length, so for lengths below `PREFIX_STATES` the state after it is cached.
+        let new_sponge = || match &self.sparse_rounds {
             Some(sparse_rounds) => PoseidonSponge::<E, RATE, CAPACITY>::with_sparse_rounds(sparse_rounds),
             None => PoseidonSponge::<E, RATE, CAPACITY>::new(&self.parameters),
         };
-        sponge.absorb(&preimage);
+        let first_block_state = || new_sponge().permuted_block(&self.first_block(input.len()));
+        let state = match self.prefix_states.get(input.len()) {
+            Some(cell) => *cell.get_or_init(first_block_state),
+            None => first_block_state(),
+        };
+        // After the first block, an empty input leaves only squeezing, which starts from the permuted state.
+        // Any other input continues absorbing into it.
+        let mode = if input.is_empty() {
+            DuplexSpongeMode::Squeezing { next_squeeze_index: 0 }
+        } else {
+            DuplexSpongeMode::Absorbing { next_absorb_index: 0 }
+        };
+        let mut sponge = new_sponge().with_state(state, mode);
+        sponge.absorb(input);
         sponge.squeeze(num_outputs).into_vec()
     }
 }

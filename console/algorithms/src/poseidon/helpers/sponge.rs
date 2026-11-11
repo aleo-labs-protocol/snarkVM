@@ -112,6 +112,26 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E,
         Self { sparse_rounds: Some(sparse_rounds.clone()), ..Self::new(&sparse_rounds.parameters) }
     }
 
+    /// Returns this sponge with `state` as its state and `mode` as its mode.
+    pub(in crate::poseidon) fn with_state(mut self, state: State<E, RATE, CAPACITY>, mode: DuplexSpongeMode) -> Self {
+        self.state = state;
+        self.mode = mode;
+        self
+    }
+
+    /// Absorbs `block`, a full block of `RATE` elements, into this new sponge, permutes it, and
+    /// returns the state.
+    pub(in crate::poseidon) fn permuted_block(mut self, block: &[Field<E>; RATE]) -> State<E, RATE, CAPACITY> {
+        debug_assert!(
+            matches!(self.mode, DuplexSpongeMode::Absorbing { next_absorb_index: 0 })
+                && self.state.iter().all(|element| element.is_zero()),
+            "the sponge must be new"
+        );
+        self.absorb(block);
+        self.permute();
+        self.state
+    }
+
     #[inline]
     fn apply_ark(&mut self, round_number: usize) {
         for (state_elem, ark_elem) in self.state.iter_mut().zip(&self.parameters.ark[round_number]) {
