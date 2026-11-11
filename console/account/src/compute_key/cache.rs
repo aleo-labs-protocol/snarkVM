@@ -44,6 +44,8 @@ pub struct ComputeKeyCache<N: Network> {
 struct CacheEntry<N: Network> {
     /// The compute key. It holds `sk_prf` once a checked read has needed it.
     compute_key: ComputeKey<N>,
+    /// The address of `compute_key`, normalized, once a verification has been counted.
+    address: Option<Address<N>>,
     /// The number of verifications that have asked for `pk_sig_table`.
     verifications: u32,
     /// The window table of `pk_sig`, built once `PK_SIG_TABLE_MIN_VERIFICATIONS` verifications have asked for it.
@@ -106,12 +108,12 @@ impl<N: Network> ComputeKeyCache<N> {
             tracing::warn!("Clearing the compute-key cache, which is full at {} keys", self.capacity);
             self.keys.clear();
         }
-        self.keys.insert(bytes, CacheEntry { compute_key, verifications: 0, pk_sig_table: None });
+        self.keys.insert(bytes, CacheEntry { compute_key, address: None, verifications: 0, pk_sig_table: None });
         Ok(compute_key)
     }
 
-    /// Counts a successful verification of a signature by `compute_key`, and builds the key's `pk_sig` table
-    /// once enough verifications have been counted.
+    /// Counts a successful verification of a signature by `compute_key`. It derives the key's address on the first
+    /// count, and builds the key's `pk_sig` table once enough verifications have been counted.
     ///
     /// Call it only once the data the signature covers has passed every other check, so that rejected data
     /// builds nothing. A compute key that no read through this cache returned is ignored.
@@ -122,6 +124,9 @@ impl<N: Network> ComputeKeyCache<N> {
         else {
             return;
         };
+        if entry.address.is_none() {
+            entry.address = Some(Address::new(entry.compute_key.public_address().normalized()));
+        }
         if entry.pk_sig_table.is_none() {
             entry.verifications += 1;
             if entry.verifications >= PK_SIG_TABLE_MIN_VERIFICATIONS {
@@ -160,9 +165,11 @@ impl<N: Network> ComputeKeyCache<N> {
     ///
     /// The check uses what `count_verification` has derived for the signer's compute key.
     pub fn verify_and_recover_signer(&self, signature: &Signature<N>, message: &[Field<N>]) -> Option<Address<N>> {
-        let pk_sig_table = self.entry(&signature.compute_key()).and_then(|entry| entry.pk_sig_table.as_deref());
+        let entry = self.entry(&signature.compute_key());
+        let pk_sig_table = entry.and_then(|entry| entry.pk_sig_table.as_deref());
         // A normalized address converts to affine, for hashing and comparison, without an inversion.
-        let address = Address::new(signature.to_address().normalized());
+        let address =
+            entry.and_then(|entry| entry.address).unwrap_or_else(|| Address::new(signature.to_address().normalized()));
         signature.verify_challenge(&address, message, pk_sig_table).then_some(address)
     }
 }
@@ -319,8 +326,51 @@ mod tests {
             assert_eq!(cache.verify_and_recover_signer(&signature, &message), expected);
             assert_eq!(cache.verify_and_recover_signer(&signature, &[Field::rand(rng)]), None);
             assert_eq!(cache.has_pk_sig_table(&compute_key), i >= PK_SIG_TABLE_MIN_VERIFICATIONS);
+            assert_eq!(cache.entry(&compute_key).unwrap().address, (i > 0).then(|| compute_key.to_address()));
             cache.count_verification(&compute_key);
         }
+    }
+
+    #[test]
+    fn test_cached_verification_ignores_an_entry_for_another_point() {
+        let rng = &mut TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let mut cache = ComputeKeyCache::<CurrentNetwork>::default();
+        let compute_key_bytes = ComputeKey::try_from(&private_key).unwrap().to_bytes_le().unwrap();
+        let compute_key = cache.read_compute_key(&compute_key_bytes[..], false).unwrap();
+        for _ in 0..PK_SIG_TABLE_MIN_VERIFICATIONS {
+            cache.count_verification(&compute_key);
+        }
+
+        // `(x, -y)` has the same x-coordinate, so its compute key has the same bytes.
+        let (x, y) = compute_key.pk_sig().to_xy_coordinates();
+        let flipped = Group::from_xy_coordinates_unchecked(x, -y);
+        let flipped_key = ComputeKey::try_from((flipped, compute_key.pr_sig())).unwrap();
+        assert_eq!(flipped_key.to_bytes_le().unwrap(), compute_key_bytes);
+
+        // `(x, -y)` is `-pk_sig` plus a point of order 2, so for an even challenge the key's owner can sign
+        // for it against the honest address.
+        let address = compute_key.to_address();
+        let message = [Field::rand(rng)];
+        let (challenge, nonce) = loop {
+            let nonce = Scalar::<CurrentNetwork>::rand(rng);
+            let g_r = CurrentNetwork::g_scalar_multiply(&nonce);
+            let preimage = [g_r, flipped, compute_key.pr_sig(), *address]
+                .map(|point| point.to_x_coordinate())
+                .into_iter()
+                .chain(message)
+                .collect::<Vec<_>>();
+            let challenge = CurrentNetwork::hash_to_scalar_psd8(&preimage).unwrap();
+            if !challenge.to_bits_le()[0] {
+                break (challenge, nonce);
+            }
+        };
+        let forged = Signature::from((challenge, nonce + challenge * private_key.sk_sig(), flipped_key));
+        assert!(forged.verify_challenge(&address, &message, None), "the forged signature checks out against `address`");
+
+        // The cache must not lend the honest key's address to the flipped key.
+        assert_eq!(forged.verify_and_recover_signer(&message), None);
+        assert_eq!(cache.verify_and_recover_signer(&forged, &message), None);
     }
 
     #[test]
