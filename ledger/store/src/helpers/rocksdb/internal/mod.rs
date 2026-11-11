@@ -159,9 +159,14 @@ impl RocksDB {
     }
 
     /// Compacts the keys of one map now, rather than on RocksDB's own schedule, so the files that
-    /// hold its deleted entries are rewritten without them.
+    /// hold its deleted entries are rewritten without them. Bottom-level files are rewritten too,
+    /// which RocksDB otherwise skips when nothing sits above them, so point deletes interleaved
+    /// with live rows are reclaimed. Automatic flushes and compactions keep running meanwhile.
     pub(crate) fn compact_prefix(&self, prefix: [u8; PREFIX_LEN]) -> Result<()> {
-        self.rocksdb.compact_range(Some(&prefix), Some(&prefix_end(prefix)?));
+        let mut options = rocksdb::CompactOptions::default();
+        options.set_bottommost_level_compaction(rocksdb::BottommostLevelCompaction::ForceOptimized);
+        options.set_exclusive_manual_compaction(false);
+        self.rocksdb.compact_range_opt(Some(&prefix), Some(&prefix_end(prefix)?), &options);
         Ok(())
     }
 }
