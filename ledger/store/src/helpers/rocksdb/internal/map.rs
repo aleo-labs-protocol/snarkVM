@@ -646,9 +646,22 @@ const RETAIN_THREADS: usize = if cfg!(test) { 2 } else { 4 };
 #[cfg(feature = "prune-authority-data")]
 const RETAIN_READAHEAD: usize = 4 << 20;
 
-/// [`DataMap::retain_all`] logs progress about this often.
+/// [`DataMap::retain_all`] and [`DataMap::compact_in_slices`] log progress about this often.
 #[cfg(feature = "prune-authority-data")]
 const RETAIN_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The number of key-range slices [`DataMap::compact_in_slices`] compacts, one at a time, so it can
+/// log progress. Unit tests use a few slices.
+#[cfg(feature = "prune-authority-data")]
+const COMPACT_SLICES: usize = if cfg!(test) { 4 } else { 256 };
+
+/// The first two key bytes at which slice `i` of `slices` starts and ends (`None`: the map's end).
+/// For maps whose keys are uniform in their first bytes, so the slices are even.
+#[cfg(feature = "prune-authority-data")]
+fn slice_bounds(i: usize, slices: usize) -> ([u8; 2], Option<[u8; 2]>) {
+    let start = |i: usize| u16::try_from(i * 65536 / slices).expect("slice below count").to_be_bytes();
+    (start(i), (i + 1 < slices).then(|| start(i + 1)))
+}
 
 impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K, V> {
     /// Compacts this map's keys. See `RocksDB::compact_prefix`.
@@ -656,9 +669,48 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         self.database.compact_prefix(self.prefix()?)
     }
 
+    /// Compacts this map's keys in [`COMPACT_SLICES`] key-range slices, one at a time, rewriting
+    /// bottom-level files too (see `RocksDB::compact_key_range`), and logs progress as "`name`
+    /// slices". Meant for maps whose keys are uniform in their first bytes.
+    #[cfg(feature = "prune-authority-data")]
+    pub(crate) fn compact_in_slices(&self, name: &str) -> Result<()> {
+        let timer = Instant::now();
+        let mut next_report = RETAIN_REPORT_INTERVAL;
+        for i in 0..COMPACT_SLICES {
+            let (start, end) = slice_bounds(i, COMPACT_SLICES);
+            let (lower, upper) = self.key_range(&start, end.as_ref().map(|end| &end[..]))?;
+            self.database.compact_key_range(&lower, &upper);
+            let (done, elapsed) = (i + 1, timer.elapsed());
+            if elapsed >= next_report && done < COMPACT_SLICES {
+                let remaining = elapsed.as_secs_f64() * (COMPACT_SLICES - done) as f64 / done as f64;
+                tracing::info!(
+                    "Compacted {done} of {COMPACT_SLICES} {name} slices in {:.0} s, about {remaining:.0} s left",
+                    elapsed.as_secs_f64()
+                );
+                next_report = elapsed + RETAIN_REPORT_INTERVAL;
+            }
+        }
+        Ok(())
+    }
+
     /// This map's key prefix.
     fn prefix(&self) -> Result<[u8; PREFIX_LEN]> {
         Ok(<[u8; PREFIX_LEN]>::try_from(self.context.as_slice())?)
+    }
+
+    /// The raw key bounds of the rows whose keys, after the map prefix, are in `start..end` (`None`:
+    /// the map's end).
+    #[cfg(feature = "prune-authority-data")]
+    fn key_range(&self, start: &[u8], end: Option<&[u8]>) -> Result<(Vec<u8>, Vec<u8>)> {
+        let prefix = self.prefix()?;
+        let lower = [&prefix[..], start].concat();
+        // Any key under the prefix sorts below the prefix's successor, so the range stays in this map.
+        let upper = match end {
+            Some(end) => [&prefix[..], end].concat(),
+            None => super::prefix_end(prefix)?.to_vec(),
+        };
+        ensure!(lower < upper, "Empty key range {start:?}..{end:?}");
+        Ok((lower, upper))
     }
 
     /// Keeps only the rows whose value `retain` accepts, rewriting the map in [`RETAIN_SLICES`]
@@ -674,11 +726,6 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     {
         use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-        /// The first two key bytes of slice `i`.
-        fn slice_start(i: usize) -> [u8; 2] {
-            u16::try_from(i * 65536 / RETAIN_SLICES).expect("slice below count").to_be_bytes()
-        }
-
         struct Progress {
             done: usize,
             kept: usize,
@@ -692,8 +739,8 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         let pool = rayon::ThreadPoolBuilder::new().num_threads(RETAIN_THREADS).build()?;
         pool.install(|| {
             (0..RETAIN_SLICES).into_par_iter().try_for_each(|i| -> Result<()> {
-                let end = (i + 1 < RETAIN_SLICES).then(|| slice_start(i + 1));
-                let (kept, removed) = self.retain_range(&slice_start(i), end.as_ref().map(|end| &end[..]), &retain)?;
+                let (start, end) = slice_bounds(i, RETAIN_SLICES);
+                let (kept, removed) = self.retain_range(&start, end.as_ref().map(|end| &end[..]), &retain)?;
 
                 let mut progress = progress.lock();
                 progress.done += 1;
@@ -731,14 +778,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         mut retain: impl FnMut(&V) -> bool,
     ) -> Result<(usize, usize)> {
         ensure!(!self.batch_in_progress.load(Ordering::SeqCst), "retain_range bypasses the atomic batch");
-        let prefix = self.prefix()?;
-        let lower = [&prefix[..], start].concat();
-        // Any key under the prefix sorts below the prefix's successor, so the range stays in this map.
-        let upper = match end {
-            Some(end) => [&prefix[..], end].concat(),
-            None => super::prefix_end(prefix)?.to_vec(),
-        };
-        ensure!(lower < upper, "Empty key range {start:?}..{end:?}");
+        let (lower, upper) = self.key_range(start, end)?;
 
         let mut options = rocksdb::ReadOptions::default();
         options.set_total_order_seek(true);
@@ -1859,6 +1899,15 @@ mod tests {
             assert_eq!(rows(&map), after_first);
             // An empty slice is a caller error, not a silent no-op.
             assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
+        }
+
+        /// `compact_in_slices` leaves every row and its neighbours.
+        #[test]
+        fn test_compact_in_slices_keeps_rows() {
+            let (map, neighbours) = setup(&ROWS);
+            map.compact_in_slices("test").unwrap();
+            assert_eq!(rows(&map), ROWS.to_vec());
+            assert_neighbours_intact(&map, &neighbours);
         }
 
         /// `retain_all` covers every slice, including rows at the slice boundaries.

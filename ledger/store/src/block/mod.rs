@@ -211,11 +211,11 @@ const AUTHORITY_PRUNING_CHUNK_HEIGHTS: u32 = if cfg!(test) { 16 } else { 10_000 
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_PRUNING_LOG_INTERVAL: u32 = 10_000;
 
-/// The number of blocks inserted past the retention window, each pruning one authority, between
-/// compactions of the authority map. Pruned authorities are interleaved with retained ones in every
-/// file, so without a compaction their space is reclaimed only when RocksDB happens to rewrite the
-/// file. Each compaction reads the retained window plus the rows pruned since the last one, about
-/// 40 GB per day of blocks on mainnet; 20,000 blocks is about 14 hours. Unit tests use a few blocks.
+/// The number of pruned authorities, at startup or at insert time, between compactions of the
+/// authority map. Pruned authorities are interleaved with retained ones in every file, so without a
+/// compaction their space is reclaimed only when RocksDB happens to rewrite the file. Each compaction
+/// reads the retained window plus the rows pruned since the last one, about 40 GB per day of blocks
+/// on mainnet; 20,000 blocks is about 14 hours. Unit tests use a few blocks.
 #[cfg(feature = "prune-authority-data")]
 const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 20_000 };
 
@@ -322,17 +322,16 @@ fn prune_authority_heights<N: Network, B: BlockStorage<N>>(storage: &B, heights:
 }
 
 /// Prunes, when opening storage, the authorities between the watermark and the retained window,
-/// then the certificate indexes of every pruned block. Returns `true` if it pruned an authority; the
-/// caller then compacts the authority map.
+/// then the certificate indexes of every pruned block. Returns the number of heights it pruned.
 #[cfg(feature = "prune-authority-data")]
-fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest_height: u32) -> Result<bool> {
+fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(storage: &B, latest_height: u32) -> Result<u32> {
     let watermark = storage.authority_pruned_below()?;
     let Some(below) = prune_authority_range(storage, watermark, oldest_retained_authority_height(latest_height))?
     else {
-        return Ok(false);
+        return Ok(0);
     };
     prune_certificate_indexes(storage, below)?;
-    Ok(below > watermark.unwrap_or(1))
+    Ok(below.saturating_sub(watermark.unwrap_or(1)))
 }
 
 /// Prunes the authorities from the `watermark` up to `floor` in chunks, one batch each, logging
@@ -392,10 +391,16 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
     // only live rows.
     #[cfg(test)]
     CERTIFICATE_COMPACTIONS.with(|count| count.set(count.get() + 1));
-    info!("Compacting the certificate map; this can take a while");
+    timed_compaction("certificate map", || storage.compact_certificate_map())
+}
+
+/// Runs `compact`, logging its start and duration.
+#[cfg(feature = "prune-authority-data")]
+fn timed_compaction(map: &str, compact: impl FnOnce() -> Result<()>) -> Result<()> {
+    info!("Compacting the {map}; this can take a while");
     let timer = std::time::Instant::now();
-    storage.compact_certificate_map()?;
-    info!("Compacted the certificate map in {:.1} s", timer.elapsed().as_secs_f64());
+    compact()?;
+    info!("Compacted the {map} in {:.1} s", timer.elapsed().as_secs_f64());
     Ok(())
 }
 
@@ -1456,9 +1461,9 @@ pub struct BlockStore<N: Network, B: BlockStorage<N>> {
     prepared_block_tree: Arc<Mutex<Option<BlockTree<N>>>>,
     /// Cache of the most recent blocks.
     block_cache: Arc<Option<RwLock<BlockCache<N>>>>,
-    /// The number of blocks inserted past the retention window since the authority map was compacted.
+    /// The number of authorities pruned since the authority map was compacted.
     #[cfg(feature = "prune-authority-data")]
-    inserts_since_authority_compaction: Arc<AtomicU32>,
+    pruned_since_authority_compaction: Arc<AtomicU32>,
     /// Whether an authority map compaction is running.
     #[cfg(feature = "prune-authority-data")]
     authority_compaction_running: Arc<AtomicBool>,
@@ -1518,7 +1523,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             // Inserts prune only the height that expires with them, so the watermark must be caught up here.
             prune_expired_authorities(&storage, latest_height).context("Failed to prune expired authority data")?
         } else {
-            false
+            0
         };
 
         let store = Self {
@@ -1527,34 +1532,56 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             prepared_block_tree: Arc::new(Mutex::new(None)),
             block_cache: Arc::new(Some(block_cache)),
             #[cfg(feature = "prune-authority-data")]
-            inserts_since_authority_compaction: Default::default(),
+            pruned_since_authority_compaction: Default::default(),
             #[cfg(feature = "prune-authority-data")]
             authority_compaction_running: Default::default(),
         };
         #[cfg(feature = "prune-authority-data")]
-        if pruned {
-            store.compact_authorities();
-        }
+        store.count_pruned_authorities(pruned);
         Ok(store)
     }
 
-    /// Compacts the authority map on a background thread, unless a compaction is already running.
-    /// A failure is logged and does not stop the node. Tests compact inline, so they can count it.
+    /// Adds `pruned` to the authorities pruned since the last authority map compaction, and starts
+    /// one when they reach [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`].
     #[cfg(feature = "prune-authority-data")]
-    fn compact_authorities(&self) {
-        if self.authority_compaction_running.swap(true, Ordering::SeqCst) {
-            return;
+    fn count_pruned_authorities(&self, pruned: u32) {
+        let total = self.pruned_since_authority_compaction.fetch_add(pruned, Ordering::SeqCst) + pruned;
+        if total >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS && self.compact_authorities() {
+            self.pruned_since_authority_compaction.store(0, Ordering::SeqCst);
         }
-        let storage = self.storage.clone();
-        let running = self.authority_compaction_running.clone();
-        let compact = move || {
-            info!("Compacting the authority map; this can take a while");
-            let timer = std::time::Instant::now();
-            match storage.compact_authority_map() {
-                Ok(()) => info!("Compacted the authority map in {:.1} s", timer.elapsed().as_secs_f64()),
-                Err(error) => error!("Failed to compact the authority map: {error}"),
+    }
+
+    /// Counts the authority pruned by the insert of the block at `height`, if any.
+    #[cfg(feature = "prune-authority-data")]
+    fn count_insert_time_pruning(&self, height: u32) {
+        if height >= AUTHORITY_RETENTION_BLOCKS {
+            self.count_pruned_authorities(1);
+        }
+    }
+
+    /// Compacts the authority map on a background thread, and returns `false` if a compaction is
+    /// already running. RocksDB reports compaction errors only in its LOG. Tests compact inline, so
+    /// they can count it.
+    #[cfg(feature = "prune-authority-data")]
+    fn compact_authorities(&self) -> bool {
+        /// Clears the running flag when the compaction ends, by return or by panic.
+        struct Running(Arc<AtomicBool>);
+        impl Drop for Running {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::SeqCst);
             }
-            running.store(false, Ordering::SeqCst);
+        }
+
+        if self.authority_compaction_running.swap(true, Ordering::SeqCst) {
+            return false;
+        }
+        let running = Running(self.authority_compaction_running.clone());
+        let storage = self.storage.clone();
+        let compact = move || {
+            let _running = running;
+            if let Err(error) = timed_compaction("authority map", || storage.compact_authority_map()) {
+                error!("Failed to compact the authority map: {error}");
+            }
         };
         #[cfg(test)]
         {
@@ -1564,23 +1591,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         #[cfg(not(test))]
         if let Err(error) = std::thread::Builder::new().name("authority-compaction".into()).spawn(compact) {
             error!("Failed to start the authority map compaction: {error}");
-            self.authority_compaction_running.store(false, Ordering::SeqCst);
         }
-    }
-
-    /// Counts a block inserted past the retention window, which pruned one authority, and compacts
-    /// the authority map every [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`] of them.
-    #[cfg(feature = "prune-authority-data")]
-    fn count_insert_time_pruning(&self, height: u32) {
-        if height < AUTHORITY_RETENTION_BLOCKS {
-            return;
-        }
-        let inserts = self.inserts_since_authority_compaction.fetch_add(1, Ordering::SeqCst) + 1;
-        if inserts >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS && !self.authority_compaction_running.load(Ordering::SeqCst)
-        {
-            self.inserts_since_authority_compaction.store(0, Ordering::SeqCst);
-            self.compact_authorities();
-        }
+        true
     }
 
     /// Stores the given block into storage.
@@ -1617,8 +1629,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         };
         // Insert the (state root, block height) pair.
         self.storage.insert(state_root, block)?;
-        #[cfg(feature = "prune-authority-data")]
-        self.count_insert_time_pruning(block.height());
         // Retain the tree until the caller installs or drops it.
         *prepared = Some(updated_tree);
         Ok(())
@@ -1633,6 +1643,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // Hold the live tree exclusive until the batch write returns.
         let mut tree = self.tree.write();
         self.storage.unpause_atomic_writes::<false>()?;
+        #[cfg(feature = "prune-authority-data")]
+        self.count_insert_time_pruning(block.height());
         // Update the block tree, preserving the previous Merkle tree allocation for performance.
         updated_tree.preserve_tree_allocation(&mut tree);
         *tree = updated_tree;
@@ -3005,19 +3017,54 @@ mod tests {
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
         assert!(!block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
-        // The startup walk pruned an authority, so the authority map was compacted.
-        assert_eq!(compactions(), before + 1);
+        // The startup walk pruned two authorities, too few for a compaction.
+        assert_eq!(compactions(), before);
         drop(block_store);
 
-        // Reopening after cleanup is idempotent, and compacts nothing.
+        // Reopening after cleanup is idempotent.
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
+        assert_eq!(compactions(), before);
+    }
+
+    /// Ensures a startup walk that prunes at least the interval compacts the authority map once, and
+    /// one that prunes fewer, as after a short downtime, does not.
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
+    #[test]
+    fn test_startup_pruning_compacts_after_interval_rocksdb() {
+        let rng = &mut TestRng::default();
+        let latest_height = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
+        let blocks = sample_block_chain(latest_height + 1, rng);
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        let storage_mode = StorageMode::new_test(Some(temp_dir));
+        let compactions = || AUTHORITY_COMPACTIONS.with(|count| count.get());
+        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
+        for block in &blocks {
+            block_store.insert(block).unwrap();
+        }
+        let floor = oldest_retained_authority_height(latest_height);
+        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(floor));
+
+        // As before the feature was enabled: no watermark, so the walk prunes `floor - 1` heights.
+        clear_authority_pruned(&block_store.storage);
+        drop(block_store);
+        let before = compactions();
+        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
+        assert!(floor > AUTHORITY_COMPACTION_INTERVAL_BLOCKS);
+        assert_eq!(compactions(), before + 1);
+
+        // After a short downtime: the walk prunes two heights.
+        atomic_batch_scope!(block_store.storage, { block_store.storage.set_authority_pruned_below(floor - 2) })
+            .unwrap();
+        drop(block_store);
+        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
+        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(floor));
         assert_eq!(compactions(), before + 1);
     }
 
     /// Checks that insert-time pruning compacts the authority map once per
-    /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` blocks past the retention window.
+    /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities.
     #[cfg(feature = "prune-authority-data")]
     fn check_insert_time_pruning_compacts_after_interval<B: BlockStorage<CurrentNetwork>>(
         block_store: BlockStore<CurrentNetwork, B>,
