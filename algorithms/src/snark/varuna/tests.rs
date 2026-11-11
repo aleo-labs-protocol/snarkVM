@@ -1495,3 +1495,66 @@ mod proof_vector {
         }
     }
 }
+
+mod mismatched_public_inputs {
+    use crate::{
+        crypto_hash::PoseidonSponge,
+        r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError},
+        snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK, VarunaVersion},
+        traits::{AlgebraicSponge, SNARK},
+    };
+    use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    use snarkvm_fields::Field;
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+    use std::collections::BTreeMap;
+
+    type FS = PoseidonSponge<Fq, 2, 1>;
+    type Inst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
+
+    const NUM_CONSTRAINTS: usize = 64;
+    const NUM_VARIABLES: usize = 64;
+
+    /// A circuit with `num_public` public variables, and the same number of
+    /// constraints and of variables in total for every `num_public`.
+    struct SizedInput<F: Field> {
+        num_public: usize,
+        x: F,
+    }
+
+    impl<F: Field> ConstraintSynthesizer<F> for SizedInput<F> {
+        fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+            for i in 1..self.num_public {
+                cs.alloc_input(|| format!("input {i}"), || Ok(self.x))?;
+            }
+            let a = cs.alloc(|| "a", || Ok(self.x))?;
+            let c = cs.alloc(|| "c", || Ok(self.x * self.x))?;
+            for i in self.num_public + 2..NUM_VARIABLES {
+                cs.alloc(|| format!("padding {i}"), || Ok(self.x))?;
+            }
+            for i in 0..NUM_CONSTRAINTS {
+                cs.enforce(|| format!("row {i}"), |lc| lc + a, |lc| lc + a, |lc| lc + c);
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_batch_with_mismatched_public_inputs_makes_the_prover_return_an_error() {
+        let rng = &mut TestRng::default();
+        let max_degree =
+            AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_CONSTRAINTS)
+                .expect("the test circuit has a max degree");
+        let srs = Inst::universal_setup(max_degree).expect("the SRS for the test circuit");
+        let prover = &srs.to_universal_prover().expect("a prover from the SRS");
+        let fs = FS::sample_parameters();
+        let x = Fr::rand(rng);
+
+        for (num_public, should_prove) in [([4, 4], true), ([4, 2], false), ([2, 4], false)] {
+            let batch = num_public.map(|num_public| SizedInput { num_public, x });
+            let (pk, _) = Inst::circuit_setup(&srs, &batch[0]).expect("the keys for the test circuit");
+            let keys_to_constraints = BTreeMap::from([(&pk, &batch[..])]);
+            let proof = Inst::prove_batch(prover, &fs, VarunaVersion::V2, &keys_to_constraints, rng);
+            assert_eq!(proof.is_ok(), should_prove, "public variables: {num_public:?}");
+        }
+    }
+}
