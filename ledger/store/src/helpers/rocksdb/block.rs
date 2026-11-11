@@ -236,11 +236,9 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.authority_map.compact_slice(i, slices)
     }
 
-    /// Stops RocksDB's background work.
     #[cfg(feature = "prune-authority-data")]
-    fn cancel_background_work(&self) {
-        // Any map can be used to retrieve the common RocksDB instance.
-        self.id_map.cancel_background_work()
+    fn compacts_authority_map(&self) -> bool {
+        true
     }
 
     /// Keeps only the certificate rows whose value `retain` accepts. See `DataMap::retain_all`.

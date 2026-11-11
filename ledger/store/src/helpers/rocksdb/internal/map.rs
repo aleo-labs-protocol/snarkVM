@@ -674,12 +674,6 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         Ok(())
     }
 
-    /// Stops RocksDB's background work and waits for it; see `BlockStorage::cancel_background_work`.
-    #[cfg(feature = "prune-authority-data")]
-    pub(crate) fn cancel_background_work(&self) {
-        self.database.cancel_all_background_work(true);
-    }
-
     /// This map's key prefix.
     fn prefix(&self) -> Result<[u8; PREFIX_LEN]> {
         Ok(<[u8; PREFIX_LEN]>::try_from(self.context.as_slice())?)

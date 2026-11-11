@@ -409,8 +409,7 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
 }
 
 /// Compacts the authority map in [`AUTHORITY_COMPACTION_SLICES`] slices. Stops between slices once
-/// `stop` is set; a slice cut short by `BlockStorage::cancel_background_work` is redone by the next
-/// compaction, which every start runs.
+/// `stop` is set; the next start, which always compacts, redoes the rest.
 #[cfg(feature = "prune-authority-data")]
 fn compact_authority_slices<N: Network, B: BlockStorage<N>>(storage: &B, stop: &AtomicBool) -> Result<()> {
     let total = AUTHORITY_COMPACTION_SLICES;
@@ -455,6 +454,8 @@ thread_local! {
     static AUTHORITY_SLICES_COMPACTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// Stops the authority map compaction once this many slices were compacted on this thread.
     static AUTHORITY_COMPACTION_STOP_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// Whether this thread's stores compact the authority map inline instead of on a thread.
+    static AUTHORITY_COMPACTION_INLINE: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
 /// A trait for block storage.
@@ -555,11 +556,12 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(())
     }
 
-    /// Stops the storage's background work, so a running compaction returns. Only for process
-    /// shutdown: afterwards RocksDB flushes and compacts nothing in this process. Other storage does
-    /// nothing.
+    /// Returns `true` if [`Self::compact_authority_slice`] does anything, so the pass is worth a
+    /// thread.
     #[cfg(feature = "prune-authority-data")]
-    fn cancel_background_work(&self) {}
+    fn compacts_authority_map(&self) -> bool {
+        false
+    }
 
     /// Keeps only the certificate rows whose value `retain` accepts and returns the numbers of kept
     /// and removed rows. Bypasses the atomic batch: only the startup pass calls it, before any insert.
@@ -1522,7 +1524,7 @@ pub struct BlockStore<N: Network, B: BlockStorage<N>> {
     /// Set at shutdown, so the authority map compaction stops between slices.
     #[cfg(feature = "prune-authority-data")]
     authority_compaction_stop: Arc<AtomicBool>,
-    /// The thread of the last authority map compaction, joined at shutdown.
+    /// The thread of the running authority map compaction, joined at shutdown.
     #[cfg(feature = "prune-authority-data")]
     authority_compaction_thread: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
@@ -1573,7 +1575,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         // A secondary instance is read-only: the primary prunes, and the secondary sees the result
         // when it catches up.
-        #[cfg(feature = "prune-authority-data")]
         #[cfg(feature = "prune-authority-data")]
         let primary = aleo_secondary_ledger_dir(N::ID, storage.storage_mode()).is_none();
         #[cfg(feature = "prune-authority-data")]
@@ -1630,8 +1631,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 
     /// Starts an authority map compaction on a background thread, and returns `false` if one is
-    /// already running. RocksDB reports compaction errors only in its LOG. Tests compact inline, so
-    /// they can count it.
+    /// already running or the storage has nothing to compact. RocksDB reports compaction errors
+    /// only in its LOG. Tests compact inline by default, so they can count it.
     #[cfg(feature = "prune-authority-data")]
     fn compact_authorities(&self) -> bool {
         /// Clears the running flag when the compaction ends, by return or by panic.
@@ -1642,7 +1643,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             }
         }
 
-        if self.authority_compaction_running.swap(true, Ordering::SeqCst) {
+        if !self.storage.compacts_authority_map() || self.authority_compaction_running.swap(true, Ordering::SeqCst) {
             return false;
         }
         let running = Running(self.authority_compaction_running.clone());
@@ -1656,27 +1657,36 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         #[cfg(test)]
         {
             AUTHORITY_COMPACTIONS.with(|count| count.set(count.get() + 1));
-            compact();
+            if AUTHORITY_COMPACTION_INLINE.with(|inline| inline.get()) {
+                compact();
+                return true;
+            }
         }
-        #[cfg(not(test))]
+        // Hold the slot while spawning, so a concurrent `stop_background_work` waits for the handle.
+        let mut thread = self.authority_compaction_thread.lock();
         match std::thread::Builder::new().name("authority-compaction".into()).spawn(compact) {
-            Ok(thread) => *self.authority_compaction_thread.lock() = Some(thread),
+            Ok(handle) => *thread = Some(handle),
             Err(error) => error!("Failed to start the authority map compaction: {error}"),
         }
         true
     }
 
-    /// Stops the background authority map compaction, if one runs, and waits for it; the next start
-    /// redoes it. Only for process shutdown: afterwards RocksDB flushes and compacts nothing in this
-    /// process. Idempotent, and a no-op when nothing runs.
+    /// Stops the background authority map compaction, if one runs, and waits for it; the next
+    /// start redoes it. The running slice finishes first: RocksDB's `cancel_all_background_work`
+    /// is process-wide and irreversible, and the Rust bindings do not reach its
+    /// `DisableManualCompaction`, so a slice, one of [`AUTHORITY_COMPACTION_SLICES`], is the unit
+    /// of waiting. Call it once per process at shutdown; a second `BlockStore` on the same path is
+    /// not supported for background compaction, as it is not for pruning. A no-op when nothing runs.
     #[cfg(feature = "prune-authority-data")]
     pub fn stop_background_work(&self) {
         self.authority_compaction_stop.store(true, Ordering::SeqCst);
         let Some(thread) = self.authority_compaction_thread.lock().take() else {
             return;
         };
-        info!("Waiting for the authority map compaction to stop");
-        self.storage.cancel_background_work();
+        if thread.is_finished() {
+            return;
+        }
+        info!("Waiting for the authority map compaction to finish its slice");
         if thread.join().is_err() {
             error!("The authority map compaction thread panicked");
         }
@@ -3111,7 +3121,7 @@ mod tests {
 
     /// Checks that a compaction stopped between slices leaves the rest, that nothing runs while the
     /// stop flag is set, and that the next compaction runs every slice again.
-    #[cfg(feature = "prune-authority-data")]
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
     fn check_authority_compaction_stops<B: BlockStorage<CurrentNetwork>>(store: BlockStore<CurrentNetwork, B>) {
         let slices = || AUTHORITY_SLICES_COMPACTED.with(|count| count.get());
         let total = AUTHORITY_COMPACTION_SLICES;
@@ -3145,13 +3155,26 @@ mod tests {
         );
     }
 
-    /// Ensures the stop flag is handled the same with in-memory storage, whose slices are no-ops.
-    #[cfg(feature = "prune-authority-data")]
+    /// Ensures the real thread path starts, stops on request and leaves consistent state.
+    #[cfg(all(feature = "rocks", feature = "prune-authority-data"))]
     #[test]
-    fn test_authority_compaction_stops_memory() {
-        check_authority_compaction_stops(
-            BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap(),
-        );
+    fn test_authority_compaction_thread_stops_rocksdb() {
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        AUTHORITY_COMPACTION_INLINE.with(|inline| inline.set(false));
+        // The open starts the compaction on a thread.
+        let block_store =
+            BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
+        AUTHORITY_COMPACTION_INLINE.with(|inline| inline.set(true));
+        assert!(block_store.authority_compaction_thread.lock().is_some());
+
+        block_store.stop_background_work();
+        assert!(block_store.authority_compaction_thread.lock().is_none());
+        assert!(!block_store.authority_compaction_running.load(Ordering::SeqCst));
+        assert!(block_store.authority_compaction_stop.load(Ordering::SeqCst));
+        // Stopped: nothing starts, and stopping again is a no-op.
+        assert!(block_store.compact_authorities());
+        block_store.stop_background_work();
+        assert!(!block_store.authority_compaction_running.load(Ordering::SeqCst));
     }
 
     /// Ensures every open starts exactly one authority compaction, and that an open after a stopped
@@ -3177,18 +3200,20 @@ mod tests {
         assert_eq!((compactions(), slices()), (compactions_before + 2, slices_before + 1 + total));
     }
 
-    /// Ensures an open with in-memory storage runs the no-op compaction path once.
+    /// Ensures in-memory storage, which has nothing to compact, starts no compaction.
     #[cfg(feature = "prune-authority-data")]
     #[test]
-    fn test_open_starts_authority_compaction_memory() {
+    fn test_memory_storage_starts_no_authority_compaction() {
         let compactions = || AUTHORITY_COMPACTIONS.with(|count| count.get());
         let before = compactions();
-        let _block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-        assert_eq!(compactions(), before + 1);
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        assert!(!block_store.compact_authorities());
+        assert_eq!(compactions(), before);
+        block_store.stop_background_work();
     }
 
     /// Checks that insert-time pruning compacts the authority map once per
-    /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities.
+    /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities, if the storage compacts at all.
     #[cfg(feature = "prune-authority-data")]
     fn check_insert_time_pruning_compacts_after_interval<B: BlockStorage<CurrentNetwork>>(
         block_store: BlockStore<CurrentNetwork, B>,
@@ -3198,9 +3223,11 @@ mod tests {
         let compactions = || AUTHORITY_COMPACTIONS.with(|count| count.get());
         let before = compactions();
         let trigger = AUTHORITY_RETENTION_BLOCKS + AUTHORITY_COMPACTION_INTERVAL_BLOCKS - 1;
+        let compacts = block_store.storage.compacts_authority_map();
         for block in &blocks {
             block_store.insert(block).unwrap();
-            assert_eq!(compactions(), before + usize::from(block.height() >= trigger), "at block {}", block.height());
+            let expected = before + usize::from(compacts && block.height() >= trigger);
+            assert_eq!(compactions(), expected, "at block {}", block.height());
         }
     }
 
@@ -3214,7 +3241,7 @@ mod tests {
         );
     }
 
-    /// Ensures in-memory storage, whose compaction is a no-op, follows the same schedule.
+    /// Ensures in-memory storage, which has nothing to compact, never starts one.
     #[cfg(feature = "prune-authority-data")]
     #[test]
     fn test_insert_time_pruning_compacts_after_interval_memory() {
