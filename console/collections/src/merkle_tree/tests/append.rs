@@ -649,9 +649,12 @@ fn test_append_fills_a_shallow_tree() -> Result<()> {
 
     let mut tree = new(0)?;
     for n in 1..=32 {
+        let root = tree.append_root(&leaves[n - 1..n])?;
         tree.append(&leaves[n - 1..n])?;
         assert_same(&tree, &new(n)?);
+        assert_eq!(&root, tree.root(), "n={n}");
     }
+    assert!(tree.append_root(&leaves[32..33]).is_err());
     assert!(tree.append(&leaves[32..33]).is_err());
     Ok(())
 }

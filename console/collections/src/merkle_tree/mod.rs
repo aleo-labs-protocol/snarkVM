@@ -426,10 +426,34 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         if new_leaves.is_empty() {
             return Ok(self.root);
         }
-        match self.in_place_append(new_leaves)? {
-            Some((root, ..)) => Ok(root),
-            None => Ok(self.prepare_append(new_leaves)?.root),
+        match (self.in_place_append(new_leaves)?, new_leaves) {
+            (Some((root, ..)), _) => Ok(root),
+            (None, [leaf]) => self.root_adding_a_level(leaf),
+            (None, _) => Ok(self.prepare_append(new_leaves)?.root),
         }
+    }
+
+    /// Returns the root after appending `leaf` to a full tree, without building the larger tree.
+    ///
+    /// The full tree becomes the left subtree of a new top node. The right subtree holds only `leaf`, so each sibling
+    /// on its path is the root of an empty subtree of that height.
+    fn root_adding_a_level(&self, leaf: &LH::Leaf) -> Result<PH::Hash> {
+        let max_leaves =
+            self.number_of_leaves.checked_mul(2).ok_or_else(|| anyhow!("Integer overflow in the Merkle tree size"))?;
+        let tree_depth = tree_depth::<DEPTH>(2 * max_leaves - 1)?;
+        let mut right = self.leaf_hasher.hash_leaf(leaf)?;
+        let mut empty = self.empty_hash;
+        for level in 0..self.number_of_leaves.trailing_zeros() {
+            if level > 0 {
+                empty = self.path_hasher.hash_children(&empty, &empty)?;
+            }
+            right = self.path_hasher.hash_children(&right, &empty)?;
+        }
+        let mut root = self.path_hasher.hash_children(&self.tree[0], &right)?;
+        for _ in tree_depth..DEPTH {
+            root = self.path_hasher.hash_children(&root, &self.empty_hash)?;
+        }
+        Ok(root)
     }
 
     /// Returns the root after appending the non-empty `new_leaves` in place, and every node that changes, without
