@@ -234,7 +234,7 @@ jobs:
   # pull request runs them too.
   test-hosted:
     permissions: { contents: read, actions: write }
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -258,6 +258,14 @@ jobs:
               -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission
               -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-synthesizer-snark
               -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+          # The field and bigint code that x86-64 replaces with intrinsics, on
+          # the architectures that ship it.
+          - name: arithmetic-linux-arm64
+            os: ubuntu-24.04-arm
+            runs: nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+          - name: arithmetic-macos-arm64
+            os: macos-latest
+            runs: nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
     name: test (${{ matrix.name }})
     steps: *test-steps
 
