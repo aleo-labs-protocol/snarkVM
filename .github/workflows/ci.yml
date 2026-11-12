@@ -313,6 +313,36 @@ jobs:
     name: test (${{ matrix.name }})
     steps: *test-steps
 
+  # Optimized builds for the CPUs that phones have. On a release branch and on
+  # demand.
+  test-release-arm:
+    permissions: { contents: read, actions: write }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/heads/release/') ||
+      startsWith(github.base_ref, 'release/')
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The default target CPU is `generic`, as it is for Android.
+          - name: arithmetic-release-linux-arm64
+            os: ubuntu-24.04-arm
+            runs: &arithmetic-release |
+              nextest run --release -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+              nextest run --release -p snarkvm-algorithms
+          # `apple-a7` is the default target CPU of an iOS device build.
+          - name: arithmetic-release-macos-arm64
+            os: macos-15
+            rustflags: -C target-cpu=apple-a7
+            runs: *arithmetic-release
+    name: test (${{ matrix.name }})
+    steps: *test-steps
+
   machete:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
@@ -354,7 +384,7 @@ jobs:
   # meant to run.
   ci-ok:
     if: always()
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, machete, windows]
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -364,4 +394,4 @@ jobs:
             startsWith(github.ref, 'refs/heads/release/') ||
             startsWith(github.base_ref, 'release/') }}
         run: |
-          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
