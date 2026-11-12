@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-algorithms"
-version = "4.12.0"
+version = "4.13.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -78,9 +78,8 @@ workspace = true
 [dependencies.anyhow]
 workspace = true
 
-[dependencies.blake2]
-version = "0.10"
-default-features = true
+[dependencies.blake2s_simd]
+workspace = true
 
 [dependencies.cfg-if]
 workspace = true

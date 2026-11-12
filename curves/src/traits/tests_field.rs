@@ -222,7 +222,24 @@ fn random_string_tests<F: PrimeField>(rng: &mut TestRng) {
     }
 }
 
+/// Checks that `a` has a square root exactly when its Legendre symbol says so.
+fn assert_sqrt_matches_legendre<F: SquareRootField>(a: F) {
+    match a.sqrt() {
+        Some(root) => {
+            assert_eq!(root.square(), a);
+            assert_ne!(a.legendre(), LegendreSymbol::QuadraticNonResidue);
+        }
+        None => assert_eq!(a.legendre(), LegendreSymbol::QuadraticNonResidue),
+    }
+}
+
 fn random_sqrt_tests<F: SquareRootField>(rng: &mut TestRng) {
+    // Small integers include non-residues of a prime subfield, which are squares in an extension field.
+    for k in 1..=ITERATIONS {
+        assert_sqrt_matches_legendre(F::from(k));
+        assert_sqrt_matches_legendre(-F::from(k));
+    }
+
     for _ in 0..ITERATIONS {
         let a = F::rand(rng);
         let b = a.square();
@@ -583,9 +600,7 @@ pub fn sqrt_field_test<F: SquareRootField>(elem: F, rng: &mut TestRng) {
     let square = elem.square();
     let sqrt = square.sqrt().unwrap();
     assert!(sqrt == elem || sqrt == -elem);
-    if let Some(sqrt) = elem.sqrt() {
-        assert!(sqrt.square() == elem);
-    }
+    assert_sqrt_matches_legendre(elem);
     random_sqrt_tests::<F>(rng);
 }
 

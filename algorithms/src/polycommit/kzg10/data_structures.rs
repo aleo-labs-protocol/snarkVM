@@ -44,11 +44,11 @@ use std::{
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
 #[derive(Clone, Debug)]
 pub struct UniversalParams<E: PairingEngine> {
-    /// Group elements of the form `{ \beta^i G }`, where `i` ranges from 0 to
-    /// `degree`, and group elements of the form `{ \beta^i \gamma G }`,
-    /// where `i` ranges from 0 to `degree`. This struct provides an
-    /// abstraction over the powers which are located on-disk
-    /// to reduce memory usage.
+    /// Group elements of the form `{ \beta^i G }`, for a prefix of `i` from 0
+    /// and a suffix of `i` up to `max_degree`, and a sparse set of group
+    /// elements of the form `{ \beta^i \gamma G }`, used for hiding. This
+    /// struct provides an abstraction over the powers which are located
+    /// on-disk to reduce memory usage.
     powers: Arc<PowersOfG<E>>,
     /// The generator of G2.
     pub h: E::G2Affine,

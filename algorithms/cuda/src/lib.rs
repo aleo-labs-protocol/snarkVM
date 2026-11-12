@@ -173,13 +173,12 @@ unsafe extern "C" {
 // Rust functions
 ///////////////////////////////////////////////////////////////////////////////
 
-// The C++ reads `fr_t` as 32 bytes, an affine point as 104 bytes with
-// `infinity` at byte 96, and writes `point_t` as 144 bytes.
+// The C++ reads `fr_t` as 32 bytes, an affine point as 104 bytes, and writes
+// `point_t` as 144 bytes. `snarkvm-curves` asserts the offset of `infinity`.
 const _: () = assert!(
     size_of::<Fr>() == 32
         && size_of::<BigInteger256>() == 32
         && size_of::<G1Affine>() == 104
-        && std::mem::offset_of!(G1Affine, infinity) == 96
         && size_of::<G1Projective>() == 144
 );
 

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer"
-version = "4.12.0"
+version = "4.13.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Synthesizer for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -59,7 +59,11 @@ wasm = [
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
-dev-print = [ "snarkvm-utilities/dev-print", "snarkvm-console/dev-print" ]
+dev-print = [
+  "snarkvm-console/dev-print",
+  "snarkvm-synthesizer-snark/dev-print",
+  "snarkvm-utilities/dev-print"
+]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
 snark-print = [ "snarkvm-algorithms/snark-print" ]
 test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]

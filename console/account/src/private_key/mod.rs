@@ -26,7 +26,7 @@ use snarkvm_console_types::{Field, Scalar};
 
 use zeroize::Zeroize;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Zeroize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Zeroize)]
 pub struct PrivateKey<N: Network> {
     /// The account seed that derives the full private key.
     seed: Field<N>,

@@ -46,6 +46,13 @@ impl<N: Network> fmt::Display for PrivateKey<N> {
     }
 }
 
+impl<N: Network> fmt::Debug for PrivateKey<N> {
+    /// Writes the account private key without revealing its contents.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("PrivateKey").finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,6 +74,29 @@ mod tests {
             let candidate = format!("{expected}");
             assert_eq!(expected, PrivateKey::from_str(&candidate)?);
             assert_eq!("APrivateKey", candidate.split('1').next().unwrap());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_debug_is_redacted() -> Result<()> {
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // Sample a new private key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
+
+            // Check the debug representation reveals no secret.
+            assert_eq!("PrivateKey { .. }", format!("{private_key:?}"));
+            let candidate = format!("{private_key:#?}");
+            for secret in [
+                private_key.to_string(),
+                private_key.seed().to_string(),
+                private_key.sk_sig().to_string(),
+                private_key.r_sig().to_string(),
+            ] {
+                assert!(!candidate.contains(&secret));
+            }
         }
         Ok(())
     }

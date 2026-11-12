@@ -25,7 +25,11 @@ impl<E: Environment> Group<E> {
     }
 
     /// Initializes a new group from the `(x, y)` affine coordinates.
-    /// Note: The resulting point is **not** enforced to be on the curve or in the subgroup.
+    /// Note: This skips the curve and subgroup checks, so the resulting point may be off the curve or
+    /// outside the subgroup. Prefer `from_xy_coordinates` or `Group::try_new`.
+    ///
+    /// This stays public only because `circuit::Group::eject_value` needs it. We expect to deprecate it
+    /// once that changes (see <https://github.com/aleo-labs-protocol/snarkVM/issues/3685>).
     pub fn from_xy_coordinates_unchecked(x: Field<E>, y: Field<E>) -> Self {
         Self { group: E::Affine::from_coordinates_unchecked((*x, *y)).into() }
     }
