@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-algorithms"
-version = "4.12.0"
+version = "4.13.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -44,7 +44,7 @@ workspace = true
 workspace = true
 
 [dependencies.blake2s_simd]
-version = "1.0"
+workspace = true
 
 [dependencies.hex]
 version = "0.4"

@@ -14,10 +14,15 @@
 // limitations under the License.
 
 use crate::{
-    fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, SparsePolynomial},
+    fft::{
+        DensePolynomial,
+        EvaluationDomain,
+        Evaluations as EvaluationsOnDomain,
+        SparsePolynomial,
+        domain::IFFTPrecomputation,
+    },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        Circuit,
         CircuitId,
         SNARKMode,
         ahp::{AHPError, AHPForR1CS},
@@ -68,16 +73,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let batch_size = circuit_state.batch_size;
 
             let private_variables = core::mem::take(&mut circuit_state.private_variables);
-            let x_polys = circuit_state.x_polys.clone();
+            let public_variables = &circuit_state.padded_public_variables;
+            let x_polys = &circuit_state.x_polys;
             assert_eq!(private_variables.len(), batch_size);
+            assert_eq!(public_variables.len(), batch_size);
             assert_eq!(x_polys.len(), batch_size);
 
             let v_domain = circuit_state.variable_domain;
             let i_domain = circuit_state.input_domain;
 
-            for (j, (private_vars, x_poly)) in itertools::izip!(private_variables, x_polys).enumerate() {
+            for (j, (private_vars, public_vars, x_poly)) in
+                itertools::izip!(private_variables, public_variables, x_polys).enumerate()
+            {
                 let w_label = witness_label(circuit.id, "w", j);
-                job_pool.add_job(move || Self::calculate_w(w_label, private_vars, x_poly, v_domain, i_domain, circuit));
+                job_pool.add_job(move || {
+                    Self::calculate_w(
+                        w_label,
+                        private_vars,
+                        public_vars,
+                        x_poly,
+                        v_domain,
+                        i_domain,
+                        &circuit.ifft_precomputation,
+                    )
+                });
             }
         }
         let mut batches =
@@ -128,40 +147,37 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     fn calculate_w(
         label: String,
         private_variables: Vec<F>,
-        x_poly: DensePolynomial<F>,
+        public_variables: &[F],
+        x_poly: &DensePolynomial<F>,
         variable_domain: EvaluationDomain<F>,
         input_domain: EvaluationDomain<F>,
-        circuit: &Circuit<F, SM>,
+        ifft_precomputation: &IFFTPrecomputation<F>,
     ) -> Witness<F> {
         let mut w_extended = private_variables;
         let ratio = variable_domain.size() / input_domain.size();
         // Padding the witness w to the size of C_i
         w_extended.resize(variable_domain.size() - input_domain.size(), F::zero());
 
-        let x_evals = {
-            let mut coeffs = x_poly.coeffs;
-            coeffs.resize(variable_domain.size(), F::zero());
-            variable_domain.in_order_fft_in_place_with_pc(&mut coeffs, &circuit.fft_precomputation);
-            coeffs
-        };
-
-        // Computing the evaluations of \widetilde{z} - \widetilde{x} (which
-        // vanishes at C_i[x], i. e. variable_domain)
         let w_poly_time = start_timer!(|| "Computing w polynomial");
-        let w_poly_evals = cfg_into_iter!(0..variable_domain.size())
+        // Interleaving the padded witness with the instance gives the evaluations of
+        // \widetilde{z}.
+        let z_evals = cfg_into_iter!(0..variable_domain.size())
             .map(|k| match k % ratio {
-                0 => F::zero(),
-                // Interleaving the padded witness with the instance
-                _ => w_extended[k - (k / ratio) - 1] - x_evals[k],
+                0 => public_variables[k / ratio],
+                _ => w_extended[k - (k / ratio) - 1],
             })
             .collect();
 
-        // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
-        // vanishing polynomial over variable_domain.
-        let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
-            .interpolate_with_pc(&circuit.ifft_precomputation);
-        let (w_poly, remainder) = w_poly.divide_by_vanishing_poly(input_domain).unwrap();
-        assert!(remainder.is_zero());
+        // Interpolating \widetilde{z} and dividing by the vanishing polynomial over
+        // input_domain. The remainder is \widetilde{x}.
+        let z_poly =
+            EvaluationsOnDomain::from_vec_and_domain(z_evals, variable_domain).interpolate_with_pc(ifft_precomputation);
+        // The division only fails on an empty domain, and `input_domain` holds the
+        // public variable `one`.
+        let (w_poly, remainder) = z_poly.divide_by_vanishing_poly(input_domain).unwrap();
+        // `assert_eq!` would print the remainder, which holds witness values if the
+        // interleaving is wrong.
+        assert!(remainder == *x_poly);
 
         assert!(w_poly.degree() < variable_domain.size() - input_domain.size());
         end_timer!(w_poly_time);

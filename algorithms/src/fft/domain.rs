@@ -30,9 +30,9 @@ use crate::{
     cfg_into_iter,
     cfg_iter,
     cfg_iter_mut,
-    fft::{DomainCoeff, SparsePolynomial},
+    fft::{DensePolynomial, DomainCoeff, SparsePolynomial},
 };
-use snarkvm_fields::{FftField, FftParameters, Field, batch_inversion};
+use snarkvm_fields::{FftField, FftParameters, Field, PrimeField, batch_inversion};
 #[cfg(not(feature = "serial"))]
 use snarkvm_utilities::max_available_threads;
 use snarkvm_utilities::{execute_with_max_available_threads, serialize::*};
@@ -40,7 +40,7 @@ use snarkvm_utilities::{execute_with_max_available_threads, serialize::*};
 use rand::RngExt;
 use std::{borrow::Cow, fmt};
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
 
 #[cfg(feature = "serial")]
 use itertools::Itertools;
@@ -500,6 +500,103 @@ impl<F: FftField> EvaluationDomain<F> {
         }
 
         self.fft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp)
+    }
+
+    /// Returns `scale * (a * b - c) / (X^n - 1)`, where `n` is the size of this
+    /// domain.
+    ///
+    /// All three operands must have degree below `n`, and `c` must agree with
+    /// the product on this domain. The host path checks only the quotient's top
+    /// coefficient. That catches a disagreement on one point, but not every
+    /// disagreement, and the result is not the quotient without agreement.
+    /// Callers that cannot guarantee agreement must check each point
+    /// themselves.
+    pub(crate) fn divide_product_by_vanishing_poly(
+        &self,
+        a: Cow<'_, DensePolynomial<F>>,
+        b: Cow<'_, DensePolynomial<F>>,
+        c: &DensePolynomial<F>,
+        scale: F,
+        fft_pc: &FFTPrecomputation<F>,
+        ifft_pc: &IFFTPrecomputation<F>,
+    ) -> Result<DensePolynomial<F>>
+    where
+        F: PrimeField,
+    {
+        let n = self.size();
+        ensure!(a.coeffs.len() <= n && b.coeffs.len() <= n && c.coeffs.len() <= n, "An operand exceeds the domain");
+
+        // The host path's out-of-order transforms have no device arm, and the
+        // device multiplies at size `2n` through `polymul`.
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if super::is_cuda_field::<F>() {
+            let mut multiplier = crate::fft::polynomial::PolyMultiplier::new();
+            multiplier.add_polynomial_ref(&a, "a");
+            multiplier.add_polynomial_ref(&b, "b");
+            let mut product =
+                multiplier.multiply().ok_or_else(|| anyhow!("The product exceeds the field's domains"))?;
+            drop((a, b));
+            product -= c;
+            let (mut quotient, remainder) = product.divide_by_vanishing_poly(*self)?;
+            ensure!(remainder.is_zero(), "The product does not agree with `c` on the domain");
+            cfg_iter_mut!(quotient.coeffs).for_each(|x| *x *= scale);
+            return Ok(quotient);
+        }
+
+        self.divide_product_by_vanishing_poly_on_host(a, b, c, scale, fft_pc, ifft_pc)
+    }
+
+    // Computes `scale * Q`, where `Q` is the quotient of `a * b - c` by
+    // `X^n - 1`, assuming that `c` agrees with `a * b` on this domain `D`.
+    //
+    // Suppose `a * b = L + X^n * H` with `deg(L) < n` and `deg(H) < n - 1`. We want
+    // the unique `Q` such that `a * b - c = (X^n - 1) * Q`. Subtracting the two
+    // equations and comparing degrees yields `Q = H` and `c = L + H`.
+    //
+    // It therefore suffices to compute `L - H` and then recover `Q` as
+    // `(c - (L - H)) / 2`.
+    //
+    // Let `omega` be a primitive `2n`-th root of unity. Then `omega^n = -1` and,
+    // for any `n`-th root of unity `r`, with `s = omega * r`, one has
+    // `a(s) * b(s) = L(s) + s^n * H(s) = L(s) - H(s)`. In other words, `a * b`
+    // coincides with `L - H` on the coset `omega * D`.
+    //
+    // We can therefore evaluate `a` and `b` over `omega * D` with two size-`n`
+    // coset FFTs and then interpolate `L - H` with one size-`n` coset inverse FFT.
+    fn divide_product_by_vanishing_poly_on_host(
+        &self,
+        a: Cow<'_, DensePolynomial<F>>,
+        b: Cow<'_, DensePolynomial<F>>,
+        c: &DensePolynomial<F>,
+        scale: F,
+        fft_pc: &FFTPrecomputation<F>,
+        ifft_pc: &IFFTPrecomputation<F>,
+    ) -> Result<DensePolynomial<F>> {
+        let n = self.size();
+        let doubled = Self::new(2 * n).ok_or_else(|| anyhow!("The field has no domain of size {}", 2 * n))?;
+        let twisted_evals = |poly: Cow<'_, DensePolynomial<F>>| {
+            let mut evals = poly.into_owned().coeffs;
+            evals.resize(n, F::zero());
+            Self::distribute_powers(&mut evals, doubled.group_gen);
+            self.out_order_fft_in_place_with_pc(&mut evals, fft_pc);
+            evals
+        };
+        let a_evals = twisted_evals(a);
+        let b_evals = twisted_evals(b);
+        let mut l_minus_h = self.mul_polynomials_in_evaluation_domain(a_evals, &b_evals)?;
+        drop(b_evals);
+        self.ifft_helper_in_place_with_pc(&mut l_minus_h, FFTOrder::OI, ifft_pc);
+
+        // `H = ((L + H) - (L - H)) / 2`, and `c` omits its trailing zeros.
+        let half_scale = F::half() * scale;
+        let mut h = l_minus_h;
+        Self::distribute_powers_and_mul_by_const(&mut h, doubled.group_gen_inv, self.size_inv * half_scale);
+        cfg_iter_mut!(h, 1_000)
+            .enumerate()
+            .for_each(|(i, x)| *x = c.coeffs.get(i).copied().unwrap_or_default() * half_scale - *x);
+        // `a * b` has degree at most `2n - 2`, so `H` has no term of degree `n - 1`.
+        ensure!(h[n - 1].is_zero(), "The product does not agree with `c` on the domain");
+        Ok(DensePolynomial::from_coefficients_vec(h))
     }
 
     pub(crate) fn out_order_fft_in_place_with_pc<T: DomainCoeff<F>>(
@@ -979,6 +1076,58 @@ mod tests {
     use snarkvm_curves::bls12_377::Fr;
     use snarkvm_fields::{FftField, Field, One, Zero};
     use snarkvm_utilities::{TestRng, Uniform};
+
+    #[test]
+    fn test_divide_product_by_vanishing_poly() {
+        use crate::fft::polynomial::PolyMultiplier;
+        use std::borrow::Cow;
+
+        let rng = &mut TestRng::default();
+        for log_n in 0..10 {
+            let domain = EvaluationDomain::<Fr>::new(1 << log_n).unwrap();
+            let n = domain.size();
+            let (fft_pc, ifft_pc) = EvaluationDomain::<Fr>::new(2 * n).unwrap().precompute_serial();
+            // Full degree, a shorter operand, and a zero operand.
+            for (len_a, len_b) in [(n, n), (n / 2 + 1, n), (0, n)] {
+                let a = DensePolynomial::from_coefficients_vec((0..len_a).map(|_| Fr::rand(rng)).collect());
+                let b = DensePolynomial::from_coefficients_vec((0..len_b).map(|_| Fr::rand(rng)).collect());
+
+                let mut multiplier = PolyMultiplier::new();
+                multiplier.add_polynomial_ref(&a, "a");
+                multiplier.add_polynomial_ref(&b, "b");
+                let product = multiplier.multiply_on_host().unwrap();
+                let (quotient, c) = product.divide_by_vanishing_poly(domain).unwrap();
+
+                let scale = Fr::rand(rng);
+                let mut expected = quotient;
+                expected *= scale;
+
+                let (a, b) = (Cow::Borrowed(&a), Cow::Borrowed(&b));
+                let result = domain
+                    .divide_product_by_vanishing_poly(a.clone(), b.clone(), &c, scale, &fft_pc, &ifft_pc)
+                    .unwrap();
+                assert_eq!(result, expected, "n = {n}, operand lengths {len_a} and {len_b}");
+                let result = domain
+                    .divide_product_by_vanishing_poly_on_host(a.clone(), b.clone(), &c, scale, &fft_pc, &ifft_pc)
+                    .unwrap();
+                assert_eq!(result, expected, "host, n = {n}, operand lengths {len_a} and {len_b}");
+
+                // A disagreement on one point of the domain.
+                let mut wrong_c = domain.fft(&c.coeffs);
+                wrong_c.resize(n, Fr::zero());
+                wrong_c[n / 2] += Fr::one();
+                let wrong_c = DensePolynomial::from_coefficients_vec(domain.ifft(&wrong_c));
+                assert!(
+                    domain
+                        .divide_product_by_vanishing_poly(a.clone(), b.clone(), &wrong_c, scale, &fft_pc, &ifft_pc)
+                        .is_err()
+                );
+                assert!(
+                    domain.divide_product_by_vanishing_poly_on_host(a, b, &wrong_c, scale, &fft_pc, &ifft_pc).is_err()
+                );
+            }
+        }
+    }
 
     #[test]
     fn vanishing_polynomial_evaluation() {

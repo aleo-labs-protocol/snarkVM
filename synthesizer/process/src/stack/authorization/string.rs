@@ -25,9 +25,12 @@ impl<N: Network> FromStr for Authorization<N> {
 }
 
 impl<N: Network> Debug for Authorization<N> {
-    /// Prints the authorization as a JSON-string.
+    /// Prints the authorization's requests and transition IDs, without the requests' inputs or secrets.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(self, f)
+        f.debug_struct("Authorization")
+            .field("requests", &*self.requests.read())
+            .field("transition_ids", &self.transitions.read().keys().collect::<Vec<_>>())
+            .finish()
     }
 }
 
@@ -35,5 +38,30 @@ impl<N: Network> Display for Authorization<N> {
     /// Displays the authorization as a JSON-string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", serde_json::to_string(self).map_err::<fmt::Error, _>(ser::Error::custom)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_debug_is_redacted() {
+        let rng = &mut TestRng::default();
+
+        // Sample the authorization.
+        let authorization = crate::stack::authorization::test_helpers::sample_authorization(rng);
+
+        // Check the debug representation reveals no secret.
+        let candidate = format!("{authorization:#?}");
+        for request in authorization.to_vec_deque() {
+            assert!(candidate.contains(&request.signer().to_string()));
+            for secret in [request.sk_tag().to_string(), request.tvk().to_string()] {
+                assert!(!candidate.contains(&secret));
+            }
+            for input in request.inputs() {
+                assert!(!candidate.contains(&input.to_string()));
+            }
+        }
     }
 }
