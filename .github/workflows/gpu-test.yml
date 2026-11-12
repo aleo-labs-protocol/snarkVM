@@ -110,9 +110,6 @@ jobs:
       # sm_86 SASS runs on an A10G and an L4 (sm_89), so either runner takes
       # the job.
       CUDA_ARCH: sm_86
-      # `x86-64-v3` does not include ADX, and both runners have it, so the build
-      # checks that blst and this crate agree on ADX whatever the target says.
-      RUSTFLAGS: -C target-cpu=x86-64-v3
     steps:
       # Checks disk headroom and the GPU, and starts the peak-memory sampler
       # that gpu-runner-report reads.
