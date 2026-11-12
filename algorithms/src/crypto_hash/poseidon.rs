@@ -121,7 +121,7 @@ pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY: usiz
     adjustment_factor_lookup_table: Arc<[F]>,
     /// The partial rounds of `parameters` in sparse form. If `None`, every
     /// round multiplies the state by the MDS matrix.
-    sparse_rounds: Option<Arc<PoseidonSparseRounds<F>>>,
+    sparse_rounds: Option<Arc<PoseidonSparseRounds<F, RATE>>>,
 }
 
 impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSponge<F, RATE, 1> {
@@ -247,7 +247,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     #[inline]
     fn permute(&mut self) {
         match &self.sparse_rounds {
-            Some(sparse_rounds) => permute_sparse(&self.parameters, sparse_rounds, &mut self.state),
+            Some(sparse_rounds) => permute_sparse(sparse_rounds, &mut self.state),
             None => self.permute_dense(),
         }
     }
@@ -522,13 +522,14 @@ const PARTIAL_ROUNDS_CACHE_SIZE: usize = 16;
 
 /// A parameter set and its partial rounds. The entry holds the parameters, so
 /// their address is not reused while the entry is in the cache.
-type CacheEntry<F, const RATE: usize> = (Arc<PoseidonParameters<F, RATE, 1>>, Option<Arc<PoseidonSparseRounds<F>>>);
+type CacheEntry<F, const RATE: usize> =
+    (Arc<PoseidonParameters<F, RATE, 1>>, Option<Arc<PoseidonSparseRounds<F, RATE>>>);
 
 /// Returns the partial rounds of `parameters` from `PARTIAL_ROUNDS_CACHE`,
 /// computing and caching them if they are not there.
 fn cached_sparse_rounds<F: PrimeField, const RATE: usize>(
     parameters: &Arc<PoseidonParameters<F, RATE, 1>>,
-) -> Option<Arc<PoseidonSparseRounds<F>>> {
+) -> Option<Arc<PoseidonSparseRounds<F, RATE>>> {
     let lookup = |entries: &[Arc<dyn Any + Send + Sync>]| {
         entries.iter().rev().find_map(|entry| {
             let (cached_parameters, sparse_rounds) = entry.downcast_ref::<CacheEntry<F, RATE>>()?;
@@ -539,7 +540,7 @@ fn cached_sparse_rounds<F: PrimeField, const RATE: usize>(
     if let Some(sparse_rounds) = lookup(&PARTIAL_ROUNDS_CACHE.read().unwrap_or_else(PoisonError::into_inner)) {
         return sparse_rounds;
     }
-    let sparse_rounds = PoseidonSparseRounds::new(parameters.as_ref()).map(Arc::new);
+    let sparse_rounds = PoseidonSparseRounds::new(parameters).map(Arc::new);
     let mut entries = PARTIAL_ROUNDS_CACHE.write().unwrap_or_else(PoisonError::into_inner);
     if lookup(&entries).is_none() {
         if entries.len() == PARTIAL_ROUNDS_CACHE_SIZE {
@@ -551,14 +552,14 @@ fn cached_sparse_rounds<F: PrimeField, const RATE: usize>(
     sparse_rounds
 }
 
-/// Applies the permutation of `parameters` to `state`, with the partial rounds
-/// in the sparse form `sparse_rounds` of the same parameters.
+/// Applies the permutation of the parameters of `sparse_rounds` to `state`,
+/// with the partial rounds in their sparse form.
 #[inline]
 fn permute_sparse<F: PrimeField, const RATE: usize>(
-    parameters: &PoseidonParameters<F, RATE, 1>,
-    sparse_rounds: &PoseidonSparseRounds<F>,
+    sparse_rounds: &PoseidonSparseRounds<F, RATE>,
     state: &mut State<F, RATE, 1>,
 ) {
+    let parameters = sparse_rounds.parameters();
     let pow_alpha_in_place = pow_alpha_in_place::<F>(parameters.alpha);
     let first_partial_round = parameters.full_rounds / 2;
     let last_partial_round = first_partial_round + parameters.partial_rounds;
@@ -788,9 +789,18 @@ mod tests {
         let mut singular = parameters_with_rounds::<Fq, 2>(8, 31, 17, rng);
         singular.mds[2] = vec![Fq::rand(rng), singular.mds[1][1], singular.mds[1][2]];
         let singular = Arc::new(singular);
+        let cached_none = || {
+            let entries = PARTIAL_ROUNDS_CACHE.read().unwrap();
+            entries
+                .iter()
+                .filter_map(|entry| entry.downcast_ref::<CacheEntry<Fq, 2>>())
+                .filter(|(parameters, sparse_rounds)| Arc::ptr_eq(parameters, &singular) && sparse_rounds.is_none())
+                .count()
+        };
         assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
-        // The second sponge reads the `None` from `PARTIAL_ROUNDS_CACHE`.
+        assert_eq!(cached_none(), 1);
         assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
+        assert_eq!(cached_none(), 1);
     }
 
     #[test]

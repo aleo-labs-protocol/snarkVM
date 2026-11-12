@@ -16,10 +16,11 @@
 use crate::{PoseidonParameters, PrimeField};
 
 use itertools::Itertools;
+use std::sync::Arc;
 
 /// The partial rounds of a Poseidon permutation, rewritten as in the appendix on efficient partial
 /// rounds of [GKRRS19][poseidon], so that each partial round adds one round constant and multiplies
-/// the state by a sparse matrix.
+/// the state by a sparse matrix. It holds the parameters it is derived from.
 ///
 /// The permutation equals the dense one when the last full round before the partial rounds
 /// multiplies by `first_matrix` in place of the MDS matrix, and the first full round after them
@@ -30,7 +31,9 @@ use itertools::Itertools;
 /// [poseidon]: https://eprint.iacr.org/2019/458
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct PoseidonSparseRounds<F: PrimeField> {
+pub struct PoseidonSparseRounds<F: PrimeField, const RATE: usize> {
+    /// The parameters these partial rounds are derived from.
+    parameters: Arc<PoseidonParameters<F, RATE, 1>>,
     /// The matrix of the last full round before the partial rounds.
     first_matrix: Vec<Vec<F>>,
     /// The partial rounds, in order.
@@ -50,16 +53,16 @@ pub struct PoseidonSparseRound<F: PrimeField> {
     column: Vec<F>,
 }
 
-impl<F: PrimeField> PoseidonSparseRounds<F> {
+impl<F: PrimeField, const RATE: usize> PoseidonSparseRounds<F, RATE> {
     /// Returns the partial rounds of `parameters`, or `None` if the parameters have no partial
     /// rounds, no full round before them, a round constant or MDS row whose length is not the state
     /// width, or an MDS matrix whose lower-right block of width `RATE` is singular.
     ///
     /// The matrices and round constants of the result have the state width `RATE + 1`, and it has
     /// `parameters.partial_rounds` rounds.
-    pub fn new<const RATE: usize>(parameters: &PoseidonParameters<F, RATE, 1>) -> Option<Self> {
+    pub fn new(parameters: &Arc<PoseidonParameters<F, RATE, 1>>) -> Option<Self> {
         let width = RATE + 1;
-        let PoseidonParameters { full_rounds, partial_rounds, ark, mds, .. } = parameters;
+        let PoseidonParameters { full_rounds, partial_rounds, ark, mds, .. } = parameters.as_ref();
         let first_partial_round = full_rounds / 2;
         let last_partial_round = first_partial_round + partial_rounds;
         if first_partial_round == 0
@@ -73,7 +76,7 @@ impl<F: PrimeField> PoseidonSparseRounds<F> {
         }
         let dot = |a: &[F], b: &[F]| a.iter().zip_eq(b).map(|(a, b)| *a * b).sum::<F>();
         let mds_hat = mds[1..].iter().map(|row| row[1..].to_vec()).collect::<Vec<_>>();
-        let mds_hat_inverse = invert(&mds_hat)?;
+        let mds_hat_inverse = invert_matrix(&mds_hat)?;
 
         // In a partial round, the round constants of every state element but the first commute
         // with the S-box, so they move through the MDS matrix into the next round's constants.
@@ -119,7 +122,12 @@ impl<F: PrimeField> PoseidonSparseRounds<F> {
             .map(|((constant, row), column)| PoseidonSparseRound { constant, row, column })
             .collect();
 
-        Some(Self { first_matrix, rounds, last_ark })
+        Some(Self { parameters: parameters.clone(), first_matrix, rounds, last_ark })
+    }
+
+    /// Returns the parameters these partial rounds are derived from.
+    pub fn parameters(&self) -> &Arc<PoseidonParameters<F, RATE, 1>> {
+        &self.parameters
     }
 
     /// Returns the matrix of the last full round before the partial rounds.
@@ -156,7 +164,8 @@ impl<F: PrimeField> PoseidonSparseRound<F> {
 }
 
 /// Returns the inverse of the square matrix `matrix`, or `None` if it is singular.
-fn invert<F: PrimeField>(matrix: &[Vec<F>]) -> Option<Vec<Vec<F>>> {
+#[doc(hidden)]
+pub fn invert_matrix<F: PrimeField>(matrix: &[Vec<F>]) -> Option<Vec<Vec<F>>> {
     let n = matrix.len();
     let mut matrix = matrix.to_vec();
     let mut inverse = (0..n)

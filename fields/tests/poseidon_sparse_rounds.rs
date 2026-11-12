@@ -14,18 +14,21 @@
 // limitations under the License.
 
 use snarkvm_curves::bls12_377::Fq;
-use snarkvm_fields::{One, PoseidonDefaultField, PoseidonParameters, PoseidonSparseRounds, Zero};
+use snarkvm_fields::{One, PoseidonDefaultField, PoseidonParameters, PoseidonSparseRounds, Zero, invert_matrix};
 use snarkvm_utilities::{TestRng, Uniform};
 
 use itertools::Itertools;
+use std::sync::Arc;
 
 /// Checks the shapes of the partial rounds of `parameters`, and that the row of the last partial
 /// round below its first element, times the lower-right block of width `RATE` of the MDS matrix,
 /// is the first row of the MDS matrix below its first element.
-fn check_parameters<const RATE: usize>(parameters: &PoseidonParameters<Fq, RATE, 1>) {
+fn check_parameters<const RATE: usize>(parameters: PoseidonParameters<Fq, RATE, 1>) {
     let width = RATE + 1;
+    let parameters = Arc::new(parameters);
     let mds = &parameters.mds;
-    let sparse_rounds = PoseidonSparseRounds::new(parameters).unwrap();
+    let sparse_rounds = PoseidonSparseRounds::new(&parameters).unwrap();
+    assert!(Arc::ptr_eq(sparse_rounds.parameters(), &parameters));
     assert_eq!(sparse_rounds.first_matrix().len(), width);
     assert!(sparse_rounds.first_matrix().iter().all(|row| row.len() == width));
     assert_eq!(sparse_rounds.first_matrix()[0], mds[0]);
@@ -49,14 +52,14 @@ fn check_random_matrix<const RATE: usize>(rng: &mut TestRng) {
     let mut random_matrix = |rows: usize| (0..rows).map(|_| (0..RATE + 1).map(|_| Fq::rand(rng)).collect()).collect();
     let ark = random_matrix(39);
     let mds = random_matrix(RATE + 1);
-    check_parameters(&PoseidonParameters::<Fq, RATE, 1> { full_rounds: 8, partial_rounds: 31, alpha: 17, ark, mds });
+    check_parameters(PoseidonParameters::<Fq, RATE, 1> { full_rounds: 8, partial_rounds: 31, alpha: 17, ark, mds });
 }
 
 #[test]
 fn test_sparse_rounds_default_parameters() {
-    check_parameters(&Fq::default_poseidon_parameters::<2>().unwrap());
-    check_parameters(&Fq::default_poseidon_parameters::<4>().unwrap());
-    check_parameters(&Fq::default_poseidon_parameters::<8>().unwrap());
+    check_parameters(Fq::default_poseidon_parameters::<2>().unwrap());
+    check_parameters(Fq::default_poseidon_parameters::<4>().unwrap());
+    check_parameters(Fq::default_poseidon_parameters::<8>().unwrap());
 }
 
 #[test]
@@ -82,7 +85,7 @@ fn test_sparse_rounds_zero_pivot() {
         vec![Fq::rand(rng), Fq::zero(), Fq::one()],
         vec![Fq::rand(rng), Fq::one(), Fq::one()],
     ];
-    check_parameters(&parameters);
+    check_parameters(parameters);
 }
 
 #[test]
@@ -116,7 +119,30 @@ fn test_sparse_rounds_fallback() {
         extra_mds_row,
     ];
     for parameters in cases {
-        assert!(PoseidonSparseRounds::new(&parameters).is_none(), "{parameters:?}");
+        assert!(PoseidonSparseRounds::new(&Arc::new(parameters.clone())).is_none(), "{parameters:?}");
     }
-    assert!(PoseidonSparseRounds::new(&default).is_some());
+    assert!(PoseidonSparseRounds::new(&Arc::new(default)).is_some());
+}
+
+#[test]
+fn test_invert_matrix() {
+    let rng = &mut TestRng::default();
+    for n in 1..=8 {
+        let matrix = (0..n).map(|_| (0..n).map(|_| Fq::rand(rng)).collect_vec()).collect_vec();
+        let inverse = invert_matrix(&matrix).unwrap();
+        for (i, row) in matrix.iter().enumerate() {
+            for j in 0..n {
+                let product: Fq = row.iter().zip_eq(&inverse).map(|(a, b)| *a * b[j]).sum();
+                assert_eq!(product, if i == j { Fq::one() } else { Fq::zero() });
+            }
+        }
+        let mut singular = matrix.clone();
+        let factor = if n == 1 { Fq::zero() } else { Fq::from(2u8) };
+        singular[n - 1] = singular[0].iter().map(|x| *x * factor).collect();
+        assert!(invert_matrix(&singular).is_none());
+    }
+    // A zero first pivot needs a row swap.
+    let matrix = vec![vec![Fq::zero(), Fq::one()], vec![Fq::one(), Fq::one()]];
+    let inverse = invert_matrix(&matrix).unwrap();
+    assert_eq!(inverse, vec![vec![-Fq::one(), Fq::one()], vec![Fq::one(), Fq::zero()]]);
 }
