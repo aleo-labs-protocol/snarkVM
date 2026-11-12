@@ -107,12 +107,16 @@ impl<E: Environment, I: IntegerType> OutputMode<dyn Shr<Integer<E, I>, Output = 
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrChecked<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
+    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`, passed on to the `ShrWrapped` count.
     type Case = (Mode, Mode, bool, bool);
 
     fn count(case: &Self::Case) -> Count {
         match (case.0, case.1) {
+            // Both constant: the output is a new constant.
             (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
+            // Constant `rhs`: the check on `rhs` and the shift are free.
             (_, Mode::Constant) => Count::is(0, 0, 0, 0),
+            // `shr_wrapped`, plus one constraint that the upper bits of `rhs` are zero.
             (_, _) => {
                 let wrapped_count = count!(Integer<E, I>, ShrWrapped<Integer<E, M>, Output=Integer<E, I>>, case);
                 wrapped_count + Count::is(0, 0, 0, 1)
