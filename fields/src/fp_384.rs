@@ -46,9 +46,7 @@ use std::{
 };
 use zeroize::Zeroize;
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {
     /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
     ///
@@ -205,6 +203,8 @@ impl<P: Fp384Parameters> One for Fp384<P> {
         self.0 == P::R
     }
 }
+
+impl<P: Fp384Parameters> crate::sealed::Sealed for Fp384<P> {}
 
 impl<P: Fp384Parameters> Field for Fp384<P> {
     type BasePrimeField = Self;

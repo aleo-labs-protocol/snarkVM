@@ -87,6 +87,8 @@ impl<P: Parameters> PartialEq<Projective<P>> for Affine<P> {
     }
 }
 
+impl<P: Parameters> crate::sealed::Sealed for Affine<P> {}
+
 impl<P: Parameters> AffineCurve for Affine<P> {
     type BaseField = P::BaseField;
     type Coordinates = (Self::BaseField, Self::BaseField, bool);

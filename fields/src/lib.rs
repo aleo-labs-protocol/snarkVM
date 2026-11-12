@@ -56,6 +56,37 @@ pub use to_field_vec::*;
 pub mod traits;
 pub use traits::*;
 
+/// Seals [`Field`]. Only the field types of this crate implement it.
+///
+/// The parameter traits have their own seal, [`sealed_parameters::Sealed`], which is public
+/// for `snarkvm-curves`. Code outside snarkVM that implements one of them does not compile:
+///
+/// ```compile_fail,E0277
+/// use snarkvm_fields::FftParameters;
+/// use snarkvm_utilities::biginteger::BigInteger256;
+///
+/// struct Parameters;
+///
+/// impl FftParameters for Parameters {
+///     type BigInteger = BigInteger256;
+///
+///     const TWO_ADICITY: u32 = 1;
+///     const TWO_ADIC_ROOT_OF_UNITY: BigInteger256 = BigInteger256([0; 4]);
+///     const POWERS_OF_ROOTS_OF_UNITY: &'static [BigInteger256] = &[];
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Seals [`FftParameters`], [`Fp2Parameters`], [`Fp6Parameters`](fp6_3over2::Fp6Parameters)
+/// and [`Fp12Parameters`]. `snarkvm-curves` implements it for its fields, so it is public, but it
+/// is not part of the API.
+#[doc(hidden)]
+pub mod sealed_parameters {
+    pub trait Sealed {}
+}
+
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,

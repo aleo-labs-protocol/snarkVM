@@ -27,11 +27,10 @@ use serde::{Serialize, de::DeserializeOwned};
 
 /// Projective representation of an elliptic curve point guaranteed to be in the prime order subgroup.
 ///
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait ProjectiveCurve:
-    CanonicalSerialize
+    crate::sealed::Sealed
+    + CanonicalSerialize
     + CanonicalDeserialize
     + Copy
     + Clone
@@ -118,12 +117,11 @@ pub trait ProjectiveCurve:
 /// Affine representation of an elliptic curve point guaranteed to be
 /// in the correct prime order subgroup.
 ///
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 #[allow(clippy::wrong_self_convention)]
 pub trait AffineCurve:
-    CanonicalSerialize
+    crate::sealed::Sealed
+    + CanonicalSerialize
     + CanonicalDeserialize
     + Copy
     + Clone
@@ -245,9 +243,7 @@ pub trait AffineCurve:
     fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField);
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait PairingCurve: AffineCurve {
     type Engine: PairingEngine<Fr = Self::ScalarField>;
     type Prepared: CanonicalSerialize
@@ -274,17 +270,15 @@ pub trait PairingCurve: AffineCurve {
     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult;
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait ModelParameters: 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ModelParameters:
+    crate::sealed::Sealed + 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized
+{
     type BaseField: Field + SquareRootField;
     type ScalarField: PrimeField + SquareRootField + Into<<Self::ScalarField as PrimeField>::BigInteger>;
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait ShortWeierstrassParameters: ModelParameters {
     /// The coefficient `A` of the short Weierstrass curve.
     const WEIERSTRASS_A: Self::BaseField;
@@ -337,9 +331,7 @@ pub trait ShortWeierstrassParameters: ModelParameters {
     ) -> short_weierstrass_jacobian::Projective<Self>;
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait TwistedEdwardsParameters: ModelParameters {
     /// The coefficient `A` of the twisted Edwards curve.
     const EDWARDS_A: Self::BaseField;
@@ -362,9 +354,7 @@ pub trait TwistedEdwardsParameters: ModelParameters {
     }
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait MontgomeryParameters: ModelParameters {
     /// The coefficient `A` of the Montgomery curve.
     const MONTGOMERY_A: Self::BaseField;
