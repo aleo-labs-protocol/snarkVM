@@ -234,13 +234,14 @@ jobs:
   # pull request runs them too.
   test-hosted:
     permissions: { contents: read, actions: write }
-    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: console
+            os: ubuntu-latest
             runs: >-
               nextest run -p snarkvm-console -p snarkvm-console-account -p snarkvm-console-algorithms
               -p snarkvm-console-network -p snarkvm-console-network-environment -p snarkvm-console-program
@@ -248,24 +249,30 @@ jobs:
               -p snarkvm-console-types-field -p snarkvm-console-types-group -p snarkvm-console-types-integers
               -p snarkvm-console-types-scalar -p snarkvm-console-types-string
           - name: circuit
+            os: ubuntu-latest
             runs: |
               nextest run -p snarkvm-circuit -p snarkvm-circuit-account -p snarkvm-circuit-algorithms -p snarkvm-circuit-network -p snarkvm-circuit-types -p snarkvm-circuit-types-address -p snarkvm-circuit-types-boolean -p snarkvm-circuit-types-field -p snarkvm-circuit-types-group -p snarkvm-circuit-types-scalar -p snarkvm-circuit-types-string
               nextest run -p snarkvm-circuit-environment
           - name: narwhal
+            os: ubuntu-latest
             runs: >-
               nextest run -p snarkvm-ledger-authority -p snarkvm-ledger-committee -p snarkvm-ledger-narwhal
               -p snarkvm-ledger-narwhal-batch-certificate -p snarkvm-ledger-narwhal-batch-header
               -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission
               -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-synthesizer-snark
               -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
-          # The field and bigint code that x86-64 replaces with intrinsics, on
-          # the architectures that ship it.
+          # What differs off x86-64: the bigint carry arithmetic, and the
+          # batched MSM's batch size and prefetching.
           - name: arithmetic-linux-arm64
             os: ubuntu-24.04-arm
-            runs: nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+            runs: |
+              nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+              nextest run -p snarkvm-algorithms
           - name: arithmetic-macos-arm64
-            os: macos-latest
-            runs: nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+            os: macos-15
+            runs: |
+              nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+              nextest run -p snarkvm-algorithms
     name: test (${{ matrix.name }})
     steps: *test-steps
 
