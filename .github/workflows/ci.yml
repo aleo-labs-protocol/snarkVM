@@ -169,7 +169,7 @@ jobs:
         if: runner.environment == 'github-hosted'
         with:
           key: ${{ matrix.name }}
-          save-if: ${{ github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/') }}
       # rust-cache mints a key per dependency set and removes none.
       - uses: ./.github/actions/rust-cache-prune
         if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/staging'
@@ -223,7 +223,7 @@ jobs:
           path: ${{ runner.temp }}/junit
           overwrite: true
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/staging'
+        if: runner.environment == 'github-hosted' && (github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/'))
         with: *aleo-resources
 
   # The cheap entries, on hosted runners: they wait for no box, and a fork's
@@ -313,10 +313,9 @@ jobs:
     name: test (${{ matrix.name }})
     steps: *test-steps
 
-  # Optimized builds for the CPUs that phones have. On a release branch and on
-  # demand.
+  # The release profile on arm64: opt-level 3 and thin LTO, with no debug
+  # assertions. On a release branch and on demand.
   test-release-arm:
-    permissions: { contents: read, actions: write }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     if: >-
@@ -329,13 +328,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The default target CPU is `generic`, as it is for Android.
+          # Default flags, so the target CPU is `generic`.
           - name: arithmetic-release-linux-arm64
             os: ubuntu-24.04-arm
             runs: &arithmetic-release |
               nextest run --release -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
               nextest run --release -p snarkvm-algorithms
-          # `apple-a7` is the default target CPU of an iOS device build.
+          # `apple-a7` is the default target CPU of an iOS device build. Only the
+          # code generation changes: the target is still macOS.
           - name: arithmetic-release-macos-arm64
             os: macos-15
             rustflags: -C target-cpu=apple-a7
