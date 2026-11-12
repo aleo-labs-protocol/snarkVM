@@ -38,6 +38,8 @@ impl Fp256Parameters for FrParameters {
     }
 }
 
+impl snarkvm_fields::sealed_parameters::Sealed for FrParameters {}
+
 impl FftParameters for FrParameters {
     type BigInteger = BigInteger;
 

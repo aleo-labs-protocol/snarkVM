@@ -133,6 +133,8 @@ impl<P: Parameters> Distribution<Projective<P>> for StandardUniform {
     }
 }
 
+impl<P: Parameters> crate::sealed::Sealed for Projective<P> {}
+
 impl<P: Parameters> ProjectiveCurve for Projective<P> {
     type Affine = Affine<P>;
     type BaseField = P::BaseField;

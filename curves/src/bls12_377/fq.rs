@@ -38,6 +38,8 @@ impl Fp384Parameters for FqParameters {
     }
 }
 
+impl snarkvm_fields::sealed_parameters::Sealed for FqParameters {}
+
 impl FftParameters for FqParameters {
     type BigInteger = BigInteger;
 
