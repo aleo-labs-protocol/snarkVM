@@ -30,7 +30,9 @@ use core::marker::PhantomData;
 use std::borrow::Cow;
 
 /// A trait for execution storage.
-pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ExecutionStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `([transition ID], has_fee)`.
     type IDMap: for<'a> Map<'a, N::TransactionID, (Vec<N::TransitionID>, bool)>;
     /// The mapping of `transition ID` to `transaction ID`.

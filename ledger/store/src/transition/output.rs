@@ -29,7 +29,9 @@ use anyhow::Result;
 use std::borrow::Cow;
 
 /// A trait for transition output storage.
-pub trait OutputStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait OutputStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transition ID` to `output IDs`.
     type IDMap: for<'a> Map<'a, N::TransitionID, Vec<Field<N>>>;
     /// The mapping of `output ID` to `transition ID`.
