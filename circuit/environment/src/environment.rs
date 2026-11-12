@@ -20,7 +20,19 @@ use snarkvm_fields::traits::*;
 use core::{fmt, hash};
 
 /// Attention: Do not use `Send + Sync` on this trait, as it is not thread-safe.
-pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq + PartialEq + hash::Hash {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait Environment:
+    crate::sealed_circuit_environment::Sealed
+    + 'static
+    + Copy
+    + Clone
+    + fmt::Debug
+    + fmt::Display
+    + Eq
+    + PartialEq
+    + hash::Hash
+{
     type Network: console::Network<Affine = Self::Affine, Field = Self::BaseField, Scalar = Self::ScalarField>;
 
     type Affine: AffineCurve<

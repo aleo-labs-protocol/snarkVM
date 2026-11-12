@@ -393,6 +393,8 @@ impl Aleo for AleoCanaryV0 {
     }
 }
 
+impl snarkvm_circuit_types::environment::sealed_circuit_environment::Sealed for AleoCanaryV0 {}
+
 impl Environment for AleoCanaryV0 {
     type Affine = <E as Environment>::Affine;
     type BaseField = <E as Environment>::BaseField;

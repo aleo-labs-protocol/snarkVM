@@ -393,6 +393,8 @@ impl Aleo for AleoTestnetV0 {
     }
 }
 
+impl snarkvm_circuit_types::environment::sealed_circuit_environment::Sealed for AleoTestnetV0 {}
+
 impl Environment for AleoTestnetV0 {
     type Affine = <E as Environment>::Affine;
     type BaseField = <E as Environment>::BaseField;

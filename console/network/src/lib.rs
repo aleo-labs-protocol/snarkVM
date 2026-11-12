@@ -66,6 +66,11 @@ mod testnet_v0;
 
 pub use testnet_v0::*;
 
+/// Seals [`Network`]. Only the networks of this crate implement it.
+mod sealed {
+    pub trait Sealed {}
+}
+
 pub mod prelude {
     #[cfg(feature = "wasm")]
     pub use crate::get_or_init_consensus_version_heights;
@@ -125,8 +130,10 @@ pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
 static CONSENSUS_VERSION_HEIGHTS: OnceLock<[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]> = OnceLock::new();
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Network:
-    'static
+    crate::sealed::Sealed
+    + 'static
     + Environment
     + Copy
     + Clone
