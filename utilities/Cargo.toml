@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-utilities"
-version = "4.12.0"
+version = "4.13.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Utilities for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -32,10 +32,6 @@ harness = false
 workspace = true
 optional = true
 
-[dependencies.aleo-std]
-workspace = true
-features = [ "cpu" ]
-
 [dependencies.anyhow]
 workspace = true
 
@@ -44,9 +40,6 @@ workspace = true
 
 [dependencies.colored]
 workspace = true
-
-[dependencies.num_cpus]
-version = "1"
 
 [dependencies.num-bigint]
 version = "0.5"

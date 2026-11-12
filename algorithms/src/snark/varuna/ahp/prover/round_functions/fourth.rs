@@ -19,7 +19,6 @@ use crate::{
         EvaluationDomain,
         Evaluations as EvaluationsOnDomain,
         domain::{FFTPrecomputation, IFFTPrecomputation},
-        polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
@@ -27,7 +26,6 @@ use crate::{
         ahp::{AHPError, AHPForR1CS, CircuitId, indexer::CircuitInfo, verifier},
         matrices::MatrixEvals,
         prover,
-        selectors::apply_randomized_selector,
         witness_label,
     },
 };
@@ -38,7 +36,7 @@ use anyhow::Result;
 use core::convert::TryInto;
 use itertools::Itertools;
 use rand::Rng;
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 type Sum<F> = F;
 type Lhs<F> = LabeledPolynomial<F>;
@@ -286,19 +284,21 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         end_timer!(f_poly_time);
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
-        let mut h = &a_poly
-            - &{
-                let mut multiplier = PolyMultiplier::new();
-                multiplier.add_polynomial_ref(&b_poly, "b");
-                multiplier.add_polynomial_ref(&f, "f");
-                multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
-                multiplier.multiply().unwrap()
-            };
-
-        let combiner = F::one(); // We are applying combiners in the fifth round when summing the witnesses
-        let (lhs, remainder) =
-            apply_randomized_selector(&mut h, combiner, &max_non_zero_domain, &non_zero_domain, false)?;
-        assert!(remainder.is_none());
+        let f_at_zero = f.coeffs[0];
+        // `b * f = a` on the domain for any `alpha` and `beta`: where
+        // `(alpha - row) * (beta - col)` is zero, batch inversion leaves `f` zero, and
+        // `v_R_i(alpha) * v_C_i(beta)` is zero, so `a` is zero too. `lhs` is
+        // `(a - b * f) / v_K_i * (K_i.size() / K.size())`. The scale is negated
+        // because the helper returns the quotient of `b * f - a`. The combiners are
+        // applied in the fifth round.
+        let lhs = non_zero_domain.divide_product_by_vanishing_poly(
+            Cow::Borrowed(&b_poly),
+            Cow::Owned(f),
+            &a_poly,
+            -(non_zero_domain.size_as_field_element * max_non_zero_domain.size_inv),
+            fft_precomputation,
+            ifft_precomputation,
+        )?;
 
         let g_label = format!("g_{label}");
         let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
@@ -308,7 +308,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         assert!(lhs.degree() <= non_zero_domain.size() - 2);
         assert!(g.degree() <= non_zero_domain.size() - 2);
-        Ok((f.coeffs[0], lhs, g, a_poly, b_poly))
+        Ok((f_at_zero, lhs, g, a_poly, b_poly))
     }
 }
 

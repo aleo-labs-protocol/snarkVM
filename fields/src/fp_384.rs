@@ -46,8 +46,14 @@ use std::{
 };
 use zeroize::Zeroize;
 
+/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
+/// which breaks such implementations. Code that needs to implement it should define its own
+/// trait instead. Bounds on it and calls through it are unaffected.
 pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {
     /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
+    ///
+    /// The next major release makes this method required and changes its return type to
+    /// `&'static SqrtTables<Fp384<Self>>`, so that `sqrt` always uses tables.
     fn sqrt_tables() -> Option<&'static SqrtTables<Fp384<Self>>> {
         None
     }
@@ -219,62 +225,77 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
         Self::from_bigint(two_inv).unwrap() // Guaranteed to be valid.
     }
 
+    #[inline]
     fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
-        // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
-        // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
-        // the result as a double-width intermediate representation, which is then fully
-        // reduced at the end. Here however we have pairs of multiplications (a_i, b_i),
-        // the results of which are summed.
-        //
-        // The intuition for this algorithm is two-fold:
-        // - We can interleave the operand scanning for each pair, by processing the jth
-        //   limb of each `a_i` together. As these have the same offset within the overall
-        //   operand scanning flow, their results can be summed directly.
-        // - We can interleave the multiplication and reduction steps, resulting in a
-        //   single bitshift by the limb size after each iteration. This means we only
-        //   need to store a single extra limb overall, instead of keeping around all the
-        //   intermediate results and eventually having twice as many limbs.
+        fn inner<P: Fp384Parameters>(a: &[Fp384<P>], b: &[Fp384<P>]) -> Fp384<P> {
+            // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
+            // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
+            // the result as a double-width intermediate representation, which is then fully
+            // reduced at the end. Here however we have pairs of multiplications (a_i, b_i),
+            // the results of which are summed.
+            //
+            // The intuition for this algorithm is two-fold:
+            // - We can interleave the operand scanning for each pair, by processing the jth
+            //   limb of each `a_i` together. As these have the same offset within the overall
+            //   operand scanning flow, their results can be summed directly.
+            // - We can interleave the multiplication and reduction steps, resulting in a
+            //   single bitshift by the limb size after each iteration. This means we only
+            //   need to store a single extra limb overall, instead of keeping around all the
+            //   intermediate results and eventually having twice as many limbs.
 
-        // Algorithm 2, line 2
-        let (u0, u1, u2, u3, u4, u5) = (0..6).fold((0, 0, 0, 0, 0, 0), |(u0, u1, u2, u3, u4, u5), j| {
-            // Algorithm 2, line 3
-            // For each pair in the overall sum of products:
-            let (t0, t1, t2, t3, t4, t5, mut t6) =
-                a.iter().zip(b).fold((u0, u1, u2, u3, u4, u5, 0), |(t0, t1, t2, t3, t4, t5, mut t6), (a, b)| {
-                    // Compute digit_j x row and accumulate into `u`.
-                    let mut carry = 0;
-                    let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);
-                    let t1 = fa::mac_with_carry(t1, a.0.0[j], b.0.0[1], &mut carry);
-                    let t2 = fa::mac_with_carry(t2, a.0.0[j], b.0.0[2], &mut carry);
-                    let t3 = fa::mac_with_carry(t3, a.0.0[j], b.0.0[3], &mut carry);
-                    let t4 = fa::mac_with_carry(t4, a.0.0[j], b.0.0[4], &mut carry);
-                    let t5 = fa::mac_with_carry(t5, a.0.0[j], b.0.0[5], &mut carry);
-                    let _ = fa::adc(&mut t6, 0, carry);
+            // Algorithm 2, line 2
+            let (u0, u1, u2, u3, u4, u5) = (0..6).fold((0, 0, 0, 0, 0, 0), |(u0, u1, u2, u3, u4, u5), j| {
+                // Algorithm 2, line 3
+                // For each pair in the overall sum of products:
+                let (t0, t1, t2, t3, t4, t5, mut t6) =
+                    a.iter().zip(b).fold((u0, u1, u2, u3, u4, u5, 0), |(t0, t1, t2, t3, t4, t5, mut t6), (a, b)| {
+                        // Compute digit_j x row and accumulate into `u`.
+                        let mut carry = 0;
+                        let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);
+                        let t1 = fa::mac_with_carry(t1, a.0.0[j], b.0.0[1], &mut carry);
+                        let t2 = fa::mac_with_carry(t2, a.0.0[j], b.0.0[2], &mut carry);
+                        let t3 = fa::mac_with_carry(t3, a.0.0[j], b.0.0[3], &mut carry);
+                        let t4 = fa::mac_with_carry(t4, a.0.0[j], b.0.0[4], &mut carry);
+                        let t5 = fa::mac_with_carry(t5, a.0.0[j], b.0.0[5], &mut carry);
+                        let _ = fa::adc(&mut t6, 0, carry);
 
-                    (t0, t1, t2, t3, t4, t5, t6)
-                });
+                        (t0, t1, t2, t3, t4, t5, t6)
+                    });
 
-            // Algorithm 2, lines 4-5
-            // This is a single step of the usual Montgomery reduction process.
-            let k = t0.wrapping_mul(P::INV);
-            let mut carry = 0;
-            let _ = fa::mac_with_carry(t0, k, P::MODULUS.0[0], &mut carry);
-            let r1 = fa::mac_with_carry(t1, k, P::MODULUS.0[1], &mut carry);
-            let r2 = fa::mac_with_carry(t2, k, P::MODULUS.0[2], &mut carry);
-            let r3 = fa::mac_with_carry(t3, k, P::MODULUS.0[3], &mut carry);
-            let r4 = fa::mac_with_carry(t4, k, P::MODULUS.0[4], &mut carry);
-            let r5 = fa::mac_with_carry(t5, k, P::MODULUS.0[5], &mut carry);
-            let _ = fa::adc(&mut t6, 0, carry);
-            let r6 = t6;
+                // Algorithm 2, lines 4-5
+                // This is a single step of the usual Montgomery reduction process.
+                let k = t0.wrapping_mul(P::INV);
+                let mut carry = 0;
+                let _ = fa::mac_with_carry(t0, k, P::MODULUS.0[0], &mut carry);
+                let r1 = fa::mac_with_carry(t1, k, P::MODULUS.0[1], &mut carry);
+                let r2 = fa::mac_with_carry(t2, k, P::MODULUS.0[2], &mut carry);
+                let r3 = fa::mac_with_carry(t3, k, P::MODULUS.0[3], &mut carry);
+                let r4 = fa::mac_with_carry(t4, k, P::MODULUS.0[4], &mut carry);
+                let r5 = fa::mac_with_carry(t5, k, P::MODULUS.0[5], &mut carry);
+                let _ = fa::adc(&mut t6, 0, carry);
+                let r6 = t6;
 
-            (r1, r2, r3, r4, r5, r6)
-        });
+                (r1, r2, r3, r4, r5, r6)
+            });
 
-        // Because we represent F_p elements in non-redundant form, we need a final
-        // conditional subtraction to ensure the output is in range.
-        let mut result = Self(BigInteger([u0, u1, u2, u3, u4, u5]), PhantomData);
-        result.reduce();
-        result
+            // Because we represent F_p elements in non-redundant form, we need a final
+            // conditional subtraction to ensure the output is in range.
+            let mut result = Fp384(BigInteger([u0, u1, u2, u3, u4, u5]), PhantomData);
+            result.reduce();
+            result
+        }
+
+        // The running value stays below about `(n + 1) p`, and above `R` it loses its top carry, which
+        // gives a wrong element. This limit keeps `(n + 1) p < R`, from the top limb of `p`.
+        let limit = const {
+            let limit = u64::MAX / (P::MODULUS.0[5] + 1) - 1;
+            // `Fp2` and the point formulas take 2 terms.
+            assert!(limit >= 2);
+            limit
+        };
+        assert!(a.len().min(b.len()) as u64 <= limit, "sum_of_products takes too many terms for this modulus");
+
+        inner(a, b)
     }
 
     #[inline]

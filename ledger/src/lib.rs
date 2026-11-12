@@ -488,9 +488,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
 
         // Collect the addresses of the solutions submitted in the current epoch.
-        let existing_epoch_blocks: Vec<_> = (start..=current_block_height).collect();
-        let solution_addresses = cfg_iter!(existing_epoch_blocks)
-            .flat_map(|height| match self.get_solutions(*height).as_deref() {
+        let solution_addresses = cfg_into_iter!(start..=current_block_height)
+            .flat_map(|height| match self.get_solutions(height).as_deref() {
                 Ok(Some(solutions)) => solutions.iter().map(|(_, s)| s.address()).collect::<Vec<_>>(),
                 _ => vec![],
             })

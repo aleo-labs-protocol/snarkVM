@@ -25,16 +25,13 @@ mod string;
 mod to_id;
 
 use console::{
-    account::{Address, PrivateKey, Signature},
+    account::{Address, ComputeKeyCache, PrivateKey, Signature},
     prelude::*,
     types::Field,
 };
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use indexmap::IndexSet;
-
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct BatchHeader<N: Network> {

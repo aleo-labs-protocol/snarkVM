@@ -289,6 +289,7 @@ mod tests {
     /// An MSM of no points returns zero with every coordinate written.
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     #[test]
+    #[allow(deprecated)]
     fn test_msm_cuda_of_no_points_is_zero() {
         use snarkvm_curves::bls12_377::G1Projective;
         use snarkvm_fields::Zero;
