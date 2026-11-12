@@ -158,6 +158,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
+    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
     type Case = (Mode, Mode, bool, bool);
 
     #[rustfmt::skip]
@@ -168,14 +169,23 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Intege
             None => E::halt(format!("Integer of {num_bits} bits is not supported")),
         };
 
+        // `2 * I::BITS < size_in_data_bits` holds for integers of up to 64 bits.
+        // `shr_wrapped` shifts those inside one field element. At 128 bits, it divides `self` by `2^rhs`.
         match (case.0, case.1, case.2, case.3) {
+            // Both constant: the output is a new constant.
             (Mode::Constant, Mode::Constant, _, _) => Count::is(I::BITS, 0, 0, 0),
+            // Constant `rhs`: the output reuses the bits of `self`.
             (_, Mode::Constant, _, _) => Count::is(0, 0, 0, 0),
+            // Constant zero `self`, up to 64 bits: every field step multiplies or selects constant zeros,
+            // so the output is a constant zero.
             (Mode::Constant, _, true, _) if 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 => match I::is_signed() {
                 true => Count::is((2 * I::BITS) + (2 * index(I::BITS)) + 6, 0, 0, 0),
                 false => Count::is((2 * I::BITS) + index(I::BITS) + 3, 0, 0, 0),
             },
+            // Other constant `self`, or a constant zero `self` at 128 bits.
+            // These are upper bounds, as the count depends on the value of `self`.
             (Mode::Constant, _, _, _) => {
+                // `(signed, up to 64 bits)`.
                 match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
                     (true, true) => Count::less_than((2 * I::BITS) + index(I::BITS) + 6, 0, (2 * I::BITS) + index(I::BITS) + 3, (2 * I::BITS) + index(I::BITS) + 4),
                     (true, false) => Count::less_than(5 * I::BITS, 0, 1622, 1633),
@@ -183,6 +193,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Intege
                     (false, false) => Count::less_than(I::BITS, 0, 849, 857),
                 }
             }
+            // Variable `self` and `rhs`, keyed by `(signed, up to 64 bits)`.
             (_, _, _, _) => match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
                 (true, true) => Count::is(6 + 2 * index(I::BITS), 0, (2 * I::BITS) + index(I::BITS) + 3, (2 * I::BITS) + index(I::BITS) + 4),
                 (true, false) => Count::is(4 * I::BITS, 0, 1622, 1633),
@@ -196,11 +207,13 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrWrapped<Intege
 impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn ShrWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
+    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
     type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
         match (case.0, case.1, case.2, case.3) {
             (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
+            // A constant zero `self` gives a constant output only up to 64 bits, as in `count`.
             (Mode::Constant, _, true, _) if 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 => Mode::Constant,
             (mode_a, Mode::Constant, _, _) => mode_a,
             (_, _, _, _) => Mode::Private,
