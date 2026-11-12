@@ -35,6 +35,8 @@ thread_local! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct CanaryCircuit;
 
+impl crate::sealed_circuit_environment::Sealed for CanaryCircuit {}
+
 impl Environment for CanaryCircuit {
     type Affine = <console::CanaryV0 as console::Environment>::Affine;
     type BaseField = Field;
