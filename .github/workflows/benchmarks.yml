@@ -36,7 +36,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          # Bump the key suffix when RUSTFLAGS change to invalidate poisoned caches.
+          # Bump the key suffix when the flags in .cargo/config.toml change.
           key: ${{ runner.os }}-cargo-bench-v4-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Benchmark algorithms
