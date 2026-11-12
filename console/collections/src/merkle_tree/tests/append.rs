@@ -608,8 +608,11 @@ fn test_append_matches_new() -> Result<()> {
     for old in 0..=17 {
         for k in 0..=17 {
             let mut tree = new(old)?;
+            let root = tree.append_root(&leaves[old..old + k])?;
+            assert_same(&tree, &new(old)?);
             tree.append(&leaves[old..old + k])?;
             assert_same(&tree, &new(old + k)?);
+            assert_eq!(&root, tree.root());
         }
     }
 
@@ -646,9 +649,12 @@ fn test_append_fills_a_shallow_tree() -> Result<()> {
 
     let mut tree = new(0)?;
     for n in 1..=32 {
+        let root = tree.append_root(&leaves[n - 1..n])?;
         tree.append(&leaves[n - 1..n])?;
         assert_same(&tree, &new(n)?);
+        assert_eq!(&root, tree.root(), "n={n}");
     }
+    assert!(tree.append_root(&leaves[32..33]).is_err());
     assert!(tree.append(&leaves[32..33]).is_err());
     Ok(())
 }
@@ -696,6 +702,24 @@ fn test_append_that_fails_leaves_the_tree() -> Result<()> {
         assert_eq!((*tree.root(), tree.tree(), tree.number_of_leaves()), (root, nodes.as_slice(), old));
         budget.store(isize::MAX, Ordering::Relaxed);
     }
+    Ok(())
+}
+
+#[test]
+fn test_append_adding_a_level_hashes_only_the_new_path() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let (lh, ph, _) = poseidon_setup(rng)?;
+    let leaves = (0..1025).map(|_| vec![Uniform::rand(rng)]).collect::<Vec<PoseidonLeaf>>();
+    let budget = Arc::new(AtomicIsize::new(isize::MAX));
+    let ph = FailingPathHasher(ph, budget.clone());
+
+    let mut tree = MerkleTree::<_, _, _, 32>::new(&lh, &ph, &leaves[..1024])?;
+    // Hashing the whole empty right half would take about 1,024 hashes.
+    budget.store(100, Ordering::Relaxed);
+    tree.append(&leaves[1024..])?;
+    budget.store(isize::MAX, Ordering::Relaxed);
+    let expected = MerkleTree::<_, _, _, 32>::new(&lh, &ph, &leaves)?;
+    assert_eq!((tree.tree(), tree.root()), (expected.tree(), expected.root()));
     Ok(())
 }
 

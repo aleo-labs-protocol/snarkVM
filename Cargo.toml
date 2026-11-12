@@ -130,7 +130,6 @@ cuda = [ "snarkvm-algorithms/cuda" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 no-embedded-srs = [ "snarkvm-parameters/no-embedded-srs" ]
 locktick = [
-  "snarkvm-console?/locktick",
   "snarkvm-algorithms?/locktick",
   "snarkvm-ledger?/locktick",
   "snarkvm-parameters?/locktick",

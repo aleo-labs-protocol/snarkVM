@@ -544,13 +544,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
 
         // Next, finalize the transactions.
-        match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
-            Ok(_ratified_finalize_operations) => {
+        let finalize_result =
+            self.finalize(state, block.ratifications(), block.solutions(), block.transactions()).and_then(|_| {
                 // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
                     self.process.lock().update_credits_verifying_keys()?;
                 }
-                // Write the paused batch and install the retained block tree.
+                Ok(())
+            });
+        match finalize_result {
+            Ok(()) => {
+                // Append the block to the live block tree and write the paused batch.
                 #[cfg(feature = "rocks")]
                 self.block_store().commit_paused_writes_and_publish_block_tree(&block)?;
                 // If the block advances to a new consensus version, clear the partial verification cache.
