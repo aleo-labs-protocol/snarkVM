@@ -17,10 +17,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Overrides `target-cpu=native` in .cargo/config.toml. The cpu fleet mixes
-  # Intel and AMD instance types, so native code built on one box is not
-  # portable to the next, nor is its sccache entry.
-  RUSTFLAGS: ""
   RUST_MIN_STACK: 67108864
 
 # Every self-hosted job carries the same guard: a fork's code never runs on

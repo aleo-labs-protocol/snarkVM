@@ -14,10 +14,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-    env:
-      # Override .cargo/config.toml's target-cpu=native. Cached proc-macros and
-      # build scripts compiled for one runner CPU SIGILL on another.
-      RUSTFLAGS: ""
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,7 +37,7 @@ jobs:
             ~/.cargo/git
             target
           # Bump the key suffix when RUSTFLAGS change to invalidate poisoned caches.
-          key: ${{ runner.os }}-cargo-bench-v3-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-bench-v4-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Benchmark algorithms
         run: |
