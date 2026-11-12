@@ -31,6 +31,8 @@ on:
       # versions the kernels resolve to, including `blst` and `sppark`.
       - 'Cargo.toml'
       - 'Cargo.lock'
+      # Sets the target CPU of the host code.
+      - '.cargo/config.toml'
       - '.github/workflows/gpu-test.yml'
       # check-shared-refs runs only when these filters match, and other
       # workflows hold gh-actions refs too.
@@ -47,6 +49,7 @@ on:
       - 'algorithms/Cargo.toml'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - '.cargo/config.toml'
       - '.github/workflows/gpu-test.yml'
       - '.github/workflows/**'
       - '!**/*.md'
