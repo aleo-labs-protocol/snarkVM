@@ -44,6 +44,7 @@ impl<E: Environment, const NUM_BITS: u8> HashUncompressed for Pedersen<E, NUM_BI
 impl<E: Environment, const NUM_BITS: u8> Metrics<dyn HashUncompressed<Input = Boolean<E>, Output = Group<E>>>
     for Pedersen<E, NUM_BITS>
 {
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
     type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]
@@ -75,6 +76,7 @@ impl<E: Environment, const NUM_BITS: u8> Metrics<dyn HashUncompressed<Input = Bo
                     .fold(
                         (start, Count::zero()),
                         |((prev_mode, prev_is_zero), cumulative), (curr_mode, curr_is_zero)| {
+                            // The running sum is a constant zero only while every element so far is one.
                             let case = (prev_mode, curr_mode, prev_is_zero, curr_is_zero);
                             let mode = output_mode!(Group<E>, Add<Group<E>, Output = Group<E>>, &case);
                             let sum_count = count!(Group<E>, Add<Group<E>, Output = Group<E>>, &case);
@@ -93,6 +95,7 @@ impl<E: Environment, const NUM_BITS: u8> Metrics<dyn HashUncompressed<Input = Bo
 impl<E: Environment, const NUM_BITS: u8> OutputMode<dyn HashUncompressed<Input = Boolean<E>, Output = Group<E>>>
     for Pedersen<E, NUM_BITS>
 {
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
     type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]

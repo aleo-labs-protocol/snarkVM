@@ -29,6 +29,7 @@ impl<E: Environment, const NUM_BITS: u8> Hash for Pedersen<E, NUM_BITS> {
 impl<E: Environment, const NUM_BITS: u8> Metrics<dyn Hash<Input = Boolean<E>, Output = Field<E>>>
     for Pedersen<E, NUM_BITS>
 {
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
     type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]
@@ -40,6 +41,7 @@ impl<E: Environment, const NUM_BITS: u8> Metrics<dyn Hash<Input = Boolean<E>, Ou
 impl<E: Environment, const NUM_BITS: u8> OutputMode<dyn Hash<Input = Boolean<E>, Output = Field<E>>>
     for Pedersen<E, NUM_BITS>
 {
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
     type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]

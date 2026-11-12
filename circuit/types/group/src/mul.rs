@@ -270,6 +270,7 @@ mod tests {
             let a = Group::<Circuit>::new(Mode::Constant, base);
             let b = Scalar::<Circuit>::new(Mode::Public, scalar);
 
+            // A constant zero base makes every addition in the double-and-add loop return its other operand.
             let name = format!("Mul: a * b {i}");
             match base.is_zero() {
                 true => check_mul(&name, &expected, &a, &b, 250, 0, 2249, 2251),
@@ -292,6 +293,7 @@ mod tests {
             let a = Group::<Circuit>::new(Mode::Constant, base);
             let b = Scalar::<Circuit>::new(Mode::Private, scalar);
 
+            // A constant zero base makes every addition in the double-and-add loop return its other operand.
             let name = format!("Mul: a * b {i}");
             match base.is_zero() {
                 true => check_mul(&name, &expected, &a, &b, 250, 0, 2249, 2251),

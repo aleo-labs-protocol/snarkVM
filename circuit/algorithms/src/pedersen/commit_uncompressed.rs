@@ -38,6 +38,7 @@ impl<E: Environment, const NUM_BITS: u8>
     Metrics<dyn CommitUncompressed<Input = Boolean<E>, Output = Group<E>, Randomizer = Scalar<E>>>
     for Pedersen<E, NUM_BITS>
 {
+    /// The input bits and the randomizer bits. A constant bit set to `false` selects a constant zero element.
     type Case = (Vec<CircuitType<Boolean<E>>>, Vec<CircuitType<Boolean<E>>>);
 
     fn count(case: &Self::Case) -> Count {
@@ -81,6 +82,7 @@ impl<E: Environment, const NUM_BITS: u8>
         let (_, summation_count) = elements.fold(
             ((uncompressed_mode, uncompressed_is_zero), Count::zero()),
             |((prev_mode, prev_is_zero), cumulative), (curr_mode, curr_is_zero)| {
+                // The running sum is a constant zero only while every element so far is one.
                 let case = (prev_mode, curr_mode, prev_is_zero, curr_is_zero);
                 let mode = output_mode!(Group<E>, Add<Group<E>, Output = Group<E>>, &case);
                 let sum_count = count!(Group<E>, Add<Group<E>, Output = Group<E>>, &case);
@@ -97,6 +99,7 @@ impl<E: Environment, const NUM_BITS: u8>
     OutputMode<dyn CommitUncompressed<Input = Boolean<E>, Output = Group<E>, Randomizer = Scalar<E>>>
     for Pedersen<E, NUM_BITS>
 {
+    /// The input bits and the randomizer bits. A constant bit set to `false` selects a constant zero element.
     type Case = (Vec<CircuitType<Boolean<E>>>, Vec<CircuitType<Boolean<E>>>);
 
     fn output_mode(parameters: &Self::Case) -> Mode {

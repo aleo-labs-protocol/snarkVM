@@ -52,10 +52,13 @@ impl<E: Environment> SubAssign<&Self> for Group<E> {
 }
 
 impl<E: Environment> Metrics<dyn Sub<Group<E>, Output = Group<E>>> for Group<E> {
+    /// `(mode of self, mode of other, self is zero, other is zero)`.
     type Case = (Mode, Mode, bool, bool);
 
     fn count(case: &Self::Case) -> Count {
+        // `sub` adds `-other`, and negation is free, so the cases follow the `Add` count.
         match (case.0, case.1, case.2, case.3) {
+            // A constant zero operand: `sub` returns `self` or `-other`.
             (Mode::Constant, _, true, _) | (_, Mode::Constant, _, true) => Count::is(0, 0, 0, 0),
             (Mode::Constant, Mode::Constant, _, _) => Count::is(4, 0, 0, 0),
             (Mode::Constant, _, _, _) | (_, Mode::Constant, _, _) => Count::is(2, 0, 3, 3),
@@ -65,12 +68,15 @@ impl<E: Environment> Metrics<dyn Sub<Group<E>, Output = Group<E>>> for Group<E> 
 }
 
 impl<E: Environment> OutputMode<dyn Sub<Group<E>, Output = Group<E>>> for Group<E> {
+    /// `(mode of self, mode of other, self is zero, other is zero)`.
     type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
         match (case.0, case.1, case.2, case.3) {
             (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
+            // A constant zero `other`: `sub` returns `self`.
             (mode_a, Mode::Constant, _, true) => mode_a,
+            // This includes a constant zero `self`, as `-other` is private even when `other` is public.
             (_, _, _, _) => Mode::Private,
         }
     }
