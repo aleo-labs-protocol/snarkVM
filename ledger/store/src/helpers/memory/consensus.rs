@@ -32,6 +32,8 @@ pub struct ConsensusMemory<N: Network> {
     block_store: BlockStore<N, BlockMemory<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for ConsensusMemory<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
     type FinalizeStorage = FinalizeMemory<N>;

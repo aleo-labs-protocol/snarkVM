@@ -43,6 +43,8 @@ pub struct TransitionMemory<N: Network> {
     scm_map: MemoryMap<N::TransitionID, Field<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for TransitionMemory<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     type LocatorMap = MemoryMap<N::TransitionID, (ProgramID<N>, Identifier<N>)>;
@@ -137,6 +139,8 @@ pub struct InputMemory<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for InputMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> InputStorage<N> for InputMemory<N> {
@@ -255,6 +259,8 @@ pub struct OutputMemory<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for OutputMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> OutputStorage<N> for OutputMemory<N> {

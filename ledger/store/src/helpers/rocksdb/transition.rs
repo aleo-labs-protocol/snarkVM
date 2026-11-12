@@ -50,6 +50,8 @@ pub struct TransitionDB<N: Network> {
     scm_map: DataMap<N::TransitionID, Field<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for TransitionDB<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     type LocatorMap = DataMap<N::TransitionID, (ProgramID<N>, Identifier<N>)>;
@@ -144,6 +146,8 @@ pub struct InputDB<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for InputDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> InputStorage<N> for InputDB<N> {
@@ -263,6 +267,8 @@ pub struct OutputDB<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for OutputDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> OutputStorage<N> for OutputDB<N> {

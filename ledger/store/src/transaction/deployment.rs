@@ -45,7 +45,9 @@ use std::borrow::Cow;
 /// - **ConsensusVersion::V14**: V3 deployments (amendments) are introduced. Amendments update VKs for an existing
 ///   `(program ID, edition)` without changing the edition. Amendments must target the latest edition
 ///   and require at least one VK to differ from the existing deployment.
-pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait DeploymentStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
     type IDMap: for<'a> Map<'a, N::TransactionID, ProgramID<N>>;
     /// The mapping of `transaction ID` to `edition`.

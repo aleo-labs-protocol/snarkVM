@@ -56,6 +56,8 @@ pub struct TransactionDB<N: Network> {
     fee_store: FeeStore<N, FeeDB<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for TransactionDB<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> TransactionStorage<N> for TransactionDB<N> {
     type IDMap = DataMap<N::TransactionID, TransactionType>;
@@ -134,6 +136,8 @@ pub struct DeploymentDB<N: Network> {
     /// The amendment owner map.
     amendment_owner_map: DataMap<(ProgramID<N>, u16, u64), ProgramOwner<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for DeploymentDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
@@ -273,6 +277,8 @@ pub struct ExecutionDB<N: Network> {
     fee_store: FeeStore<N, FeeDB<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for ExecutionDB<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> ExecutionStorage<N> for ExecutionDB<N> {
     type IDMap = DataMap<N::TransactionID, (Vec<N::TransitionID>, bool)>;
@@ -324,6 +330,8 @@ pub struct FeeDB<N: Network> {
     /// The transition store.
     transition_store: TransitionStore<N, TransitionDB<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for FeeDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> FeeStorage<N> for FeeDB<N> {

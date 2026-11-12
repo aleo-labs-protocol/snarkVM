@@ -74,6 +74,8 @@ pub struct BlockMemory<N: Network> {
     transaction_store: TransactionStore<N, TransactionMemory<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for BlockMemory<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     type StateRootMap = MemoryMap<u32, N::StateRoot>;

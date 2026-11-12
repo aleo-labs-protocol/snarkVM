@@ -76,7 +76,9 @@ fn to_key_id<N: Network>(
 /// // (program_id => (mapping_name => (key => value)))
 /// BTreeMap<ProgramID<N>, BTreeMap<Identifier<N>, BTreeMap<Key, Value>>>
 /// ```
-pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// The committee storage.
     type CommitteeStorage: CommitteeStorage<N>;
     /// The mapping of `program ID` to `[mapping name]`.

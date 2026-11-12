@@ -30,7 +30,9 @@ use anyhow::Result;
 use core::marker::PhantomData;
 
 /// A trait for consensus storage.
-pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ConsensusStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// The finalize storage.
     type FinalizeStorage: FinalizeStorage<N>;
     /// The block storage.

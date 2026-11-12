@@ -83,6 +83,8 @@ pub struct BlockDB<N: Network> {
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for BlockDB<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type StateRootMap = DataMap<u32, N::StateRoot>;
