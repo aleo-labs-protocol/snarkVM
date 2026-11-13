@@ -44,6 +44,7 @@ pub mod shl_checked;
 pub mod shl_wrapped;
 pub mod shr_checked;
 pub mod shr_wrapped;
+pub mod square_root;
 pub mod sub_checked;
 pub mod sub_wrapped;
 pub mod ternary;
