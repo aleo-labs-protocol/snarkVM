@@ -15,19 +15,33 @@
 
 use super::*;
 
-impl<N: Network> ToBits for Entry<N, Plaintext<N>> {
-    /// Returns this entry as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+impl<N: Network> Entry<N, Plaintext<N>> {
+    /// Writes this entry as little-endian bits, or returns an error when a length prefix does not fit.
+    pub fn try_write_bits_le(&self, vec: &mut Vec<bool>) -> Result<()> {
         match self {
             Self::Constant(..) => vec.extend_from_slice(&[false, false]),
             Self::Public(..) => vec.extend_from_slice(&[false, true]),
             Self::Private(..) => vec.extend_from_slice(&[true, false]),
         };
         match self {
-            Self::Constant(plaintext) => plaintext.write_bits_le(vec),
-            Self::Public(plaintext) => plaintext.write_bits_le(vec),
-            Self::Private(plaintext) => plaintext.write_bits_le(vec),
-        };
+            Self::Constant(plaintext) | Self::Public(plaintext) | Self::Private(plaintext) => {
+                plaintext.try_write_bits_le(vec)
+            }
+        }
+    }
+
+    /// Returns this entry as little-endian bits, or an error when a length prefix does not fit.
+    pub fn try_to_bits_le(&self) -> Result<Vec<bool>> {
+        let mut bits = Vec::new();
+        self.try_write_bits_le(&mut bits)?;
+        Ok(bits)
+    }
+}
+
+impl<N: Network> ToBits for Entry<N, Plaintext<N>> {
+    /// Returns this entry as a list of **little-endian** bits.
+    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+        self.try_write_bits_le(vec).unwrap_or_else(|error| N::halt(error.to_string()));
     }
 
     /// Returns this entry as a list of **big-endian** bits.
