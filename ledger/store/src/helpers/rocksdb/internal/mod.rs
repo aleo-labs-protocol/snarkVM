@@ -45,6 +45,7 @@ use std::{
     sync::{
         Arc,
         LazyLock,
+        Weak,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
 };
@@ -57,8 +58,96 @@ pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 // note: this object can't utilize locktick for lock accounting, but it is only ever accessed
 //       when first creating the database(s), so this is acceptable; this will also no longer
 //       be an issue once the above TODO is complete.
-static DATABASES: LazyLock<parking_lot::Mutex<HashMap<PathBuf, RocksDB>>> =
+static DATABASES: LazyLock<parking_lot::Mutex<HashMap<PathBuf, DatabaseEntry>>> =
     LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
+
+/// A database in `DATABASES`.
+enum DatabaseEntry {
+    /// A database that stays open until the process exits.
+    Persistent(RocksDB),
+    /// A test database, held without keeping it open. The database closes, and its temporary
+    /// directory is deleted, when its last handle drops.
+    Test {
+        rocksdb: Weak<rocksdb::DB>,
+        network_id: u16,
+        /// Once no handle holds `atomic_batch`, the database is closed; see `RocksDB::rocksdb`.
+        atomic_batch: Weak<Mutex<rocksdb::WriteBatch>>,
+        atomic_depth: Arc<AtomicUsize>,
+        atomic_writes_paused: Arc<AtomicBool>,
+        #[cfg(feature = "metrics")]
+        options: Arc<rocksdb::Options>,
+    },
+}
+
+impl DatabaseEntry {
+    /// Returns the entry for the given newly opened database.
+    fn new(database: &RocksDB) -> Self {
+        match database.storage_mode {
+            StorageMode::Test(_) => Self::Test {
+                rocksdb: Arc::downgrade(&database.rocksdb),
+                network_id: database.network_id,
+                atomic_batch: Arc::downgrade(&database.atomic_batch),
+                atomic_depth: database.atomic_depth.clone(),
+                atomic_writes_paused: database.atomic_writes_paused.clone(),
+                #[cfg(feature = "metrics")]
+                options: database.options.clone(),
+            },
+            _ => Self::Persistent(database.clone()),
+        }
+    }
+
+    /// Returns `true` if this is a test database that has been closed.
+    fn is_closed(&self) -> bool {
+        matches!(self, Self::Test { atomic_batch, .. } if atomic_batch.strong_count() == 0)
+    }
+
+    /// Returns a new handle to the database, or `None` if it has been closed.
+    ///
+    /// If another thread is closing the database, this waits until it is closed.
+    fn handle(&self, storage: &StorageMode) -> Result<Option<RocksDB>> {
+        match self {
+            Self::Persistent(database) => Ok(Some(database.clone())),
+            Self::Test {
+                rocksdb,
+                network_id,
+                atomic_batch,
+                atomic_depth,
+                atomic_writes_paused,
+                #[cfg(feature = "metrics")]
+                options,
+            } => {
+                ensure!(
+                    matches!(storage, StorageMode::Test(_)),
+                    "Mismatching network ID or storage mode in the database"
+                );
+                loop {
+                    // A handle that holds `rocksdb` also holds `atomic_batch`, so upgrade `atomic_batch` first.
+                    if let Some(atomic_batch) = atomic_batch.upgrade()
+                        && let Some(rocksdb) = rocksdb.upgrade()
+                    {
+                        return Ok(Some(RocksDB {
+                            rocksdb,
+                            network_id: *network_id,
+                            storage_mode: storage.clone(),
+                            atomic_batch,
+                            atomic_depth: atomic_depth.clone(),
+                            atomic_writes_paused: atomic_writes_paused.clone(),
+                            default_readopts: Default::default(),
+                            #[cfg(feature = "metrics")]
+                            options: options.clone(),
+                        }));
+                    }
+                    if self.is_closed() {
+                        return Ok(None);
+                    }
+                    // Another thread is dropping the last handle. RocksDB's lock on the directory
+                    // prevents reopening the database until that handle has closed it.
+                    std::thread::yield_now();
+                }
+            }
+        }
+    }
+}
 
 pub trait Database {
     /// Opens the database.
@@ -90,6 +179,9 @@ pub trait Database {
 /// An instance of a RocksDB database.
 pub struct RocksDB {
     /// The RocksDB instance.
+    ///
+    /// It must stay declared before `atomic_batch`. Fields drop in declaration order, and
+    /// `DATABASES` treats a test database as closed once no handle holds `atomic_batch`.
     rocksdb: Arc<rocksdb::DB>,
     /// The network ID.
     network_id: u16,
@@ -174,20 +266,26 @@ impl Database for RocksDB {
         let db_path = secondary_path.as_ref().unwrap_or(&primary_path);
 
         let mut databases = DATABASES.lock();
-        let database = if let Some(db) = databases.get(db_path) {
-            db.clone()
+        databases.retain(|_, entry| !entry.is_closed());
+        let existing = match databases.get(db_path) {
+            Some(entry) => entry.handle(&storage)?,
+            None => None,
+        };
+        let database = if let Some(db) = existing {
+            db
         } else {
             // Customize database options.
             let mut options = rocksdb::Options::default();
             options.set_compression_type(rocksdb::DBCompressionType::Lz4);
-            // The databases in `DATABASES` are never closed, so a process can exit while RocksDB's
-            // timer thread is dumping stats, which reads C++ statics that exit has already destroyed.
-            // The first dump runs as the database opens, and a test process exits soon after that.
+            // A test process can exit with a database still open, e.g. one held by a static, while
+            // RocksDB's timer thread is dumping stats, which reads C++ statics that exit has already
+            // destroyed. The first dump runs as the database opens, and a test process can exit soon
+            // after that.
             if matches!(storage, StorageMode::Test(_)) {
                 options.set_stats_dump_period_sec(0);
-                // A test database's directory is never deleted, so RocksDB does not reserve disk space
-                // ahead of writes for it. By default, RocksDB reserves 1.1 times the write buffer size
-                // for the write-ahead log, and 4 MiB for the manifest.
+                // A test database that is never closed, e.g. one held by a static, keeps its directory,
+                // so RocksDB does not reserve disk space ahead of writes for it. By default, RocksDB
+                // reserves 1.1 times the write buffer size for the write-ahead log, and 4 MiB for the manifest.
                 // `get_options_from_string` returns a copy of `options` with the given key changed.
                 // The copy does not keep alive the objects that `options` holds for the database,
                 // such as caches and environments, so it must run before any of them is set.
@@ -238,7 +336,7 @@ impl Database for RocksDB {
                 options: Arc::new(options),
             };
 
-            databases.insert(db_path.clone(), db.clone());
+            databases.insert(db_path.clone(), DatabaseEntry::new(&db));
 
             db
         };
@@ -246,7 +344,7 @@ impl Database for RocksDB {
         // Ensure that multiple database instances are possible only when using the test storage
         // mode, and that in such scenarios, all of the instances are only using the test mode.
         if matches!(storage, StorageMode::Test(_)) {
-            ensure!(databases.values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_))));
+            ensure!(databases.values().all(|entry| matches!(entry, DatabaseEntry::Test { .. })));
         } else {
             ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
         }
