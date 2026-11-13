@@ -16,8 +16,12 @@
 use crate::vm::*;
 use console::network::prelude::Network;
 
+#[cfg(feature = "announce-blocks")]
+use std::net::{SocketAddr, TcpStream};
 use std::{fmt, thread};
 use tokio::sync::oneshot;
+#[cfg(feature = "announce-blocks")]
+use tracing::*;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Launches a thread dedicated to the sequential processing of storage-related
@@ -26,6 +30,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         &self,
         request_rx: mpsc::Receiver<SequentialOperationRequest<N>>,
     ) -> thread::JoinHandle<()> {
+        #[cfg(feature = "announce-blocks")]
+        let mut stream = start_block_announcement_stream();
+
         // Spawn a dedicated thread.
         // The worker must not own the sender that keeps its receive loop alive.
         // Only external VM clones own the queue and join it when the last clone drops.
@@ -40,7 +47,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Perform the queued operation.
                 let ret = match op {
                     SequentialOperation::AddNextBlock(block) => {
+                        #[cfg(feature = "announce-blocks")]
+                        let announcement = (block.height(), bincode::serialize(&block));
                         let ret = vm.add_next_block_inner(block);
+                        #[cfg(feature = "announce-blocks")]
+                        if ret.is_ok()
+                            && let Err(e) = announce_block(&mut stream, announcement)
+                        {
+                            error!("Block announcement error: {e}");
+                            // Attempt to restart the stream.
+                            stream = start_block_announcement_stream();
+                        }
                         SequentialOperationResult::AddNextBlock(ret)
                     }
                     SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
@@ -148,6 +165,53 @@ impl<N: Network> Drop for SequentialOperationQueue<N> {
                 error!("Sequential ops thread panicked");
             }
         }
+    }
+}
+
+#[cfg(feature = "announce-blocks")]
+fn start_block_announcement_stream() -> Option<TcpStream> {
+    let addr = std::env::var("BLOCK_ANNOUNCE_ADDR")
+        .map_err(|_| {
+            warn!("BLOCK_ANNOUNCE_ADDR env variable must be set in order to publish blocks via TCP");
+        })
+        .ok()?
+        .parse::<SocketAddr>()
+        .expect("Invalid socket address provided as the BLOCK_ANNOUNCE_ADDR");
+
+    match TcpStream::connect(addr) {
+        Ok(stream) => {
+            // Avoid Nagle-induced delays in delivering announcements.
+            if let Err(e) = stream.set_nodelay(true) {
+                warn!("Couldn't set TCP_NODELAY on the block announcement stream: {e}");
+            }
+            debug!("Successfully (re)started the TCP stream for block announcements");
+            Some(stream)
+        }
+        Err(e) => {
+            warn!("Couldn't (re)start the TCP stream for block announcements: {e}");
+            None
+        }
+    }
+}
+
+#[cfg(feature = "announce-blocks")]
+fn announce_block(
+    stream: &mut Option<TcpStream>,
+    payload: (u32, Result<Vec<u8>, Box<bincode::ErrorKind>>),
+) -> Result<bool> {
+    if let Some(stream) = stream {
+        let (block_height, serialized_block) = payload;
+        let block_bytes = serialized_block?;
+        debug!("Announcing block {block_height} to the TCP stream");
+        let payload_size = u32::try_from(std::mem::size_of::<u32>() + block_bytes.len()).unwrap(); // Safe - blocks are smaller than 4GiB.
+        stream.write_all(&payload_size.to_le_bytes())?;
+        stream.write_all(&block_height.to_le_bytes())?;
+        stream.write_all(&block_bytes)?;
+
+        Ok(true)
+    } else {
+        *stream = start_block_announcement_stream();
+        if stream.is_some() { announce_block(stream, payload) } else { Ok(false) }
     }
 }
 
