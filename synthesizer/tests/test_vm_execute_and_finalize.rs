@@ -493,6 +493,7 @@ fn run_test(test: &ProgramTest, genesis: &OnceLock<Genesis>) -> serde_yaml::Mapp
 // Returns a VM and the first record in the genesis block.
 // If `genesis` is empty, the VM builds the genesis block and stores it in `genesis`.
 // Either way, `rng` ends in the state after the genesis block, and the VM holds the `credits.aleo` keys from it.
+// A stored genesis ignores `private_key` and `rng`, so callers sharing `genesis` must pass the same key and RNG state.
 #[allow(clippy::type_complexity)]
 fn initialize_vm(
     private_key: &PrivateKey<CurrentNetwork>,
