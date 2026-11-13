@@ -16,9 +16,6 @@
 mod assignment;
 pub use assignment::*;
 
-mod constraint_counter;
-pub use constraint_counter::*;
-
 mod constraint_system;
 pub use constraint_system::{ConstraintSynthesizer, ConstraintSystem};
 
