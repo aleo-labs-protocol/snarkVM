@@ -670,6 +670,9 @@ const MAPPING_PER_BYTE_COST: u64 = 10;
 const SET_BASE_COST: u64 = 10_000;
 const SET_PER_BYTE_COST: u64 = 100;
 
+const TERNARY_BASE_COST: u64 = 500;
+const TERNARY_PER_BYTE_COST: u64 = 10;
+
 /// A helper function to determine the plaintext type in bytes.
 fn plaintext_size_in_bytes<N: Network>(stack: &Stack<N>, plaintext_type: &PlaintextType<N>) -> Result<u64> {
     match plaintext_type {
@@ -1139,7 +1142,19 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::SquareRoot(_)) => Ok(2_500),
         Command::Instruction(Instruction::Sub(_)) => Ok(500),
         Command::Instruction(Instruction::SubWrapped(_)) => Ok(500),
-        Command::Instruction(Instruction::Ternary(_)) => Ok(500),
+        Command::Instruction(Instruction::Ternary(ternary)) => {
+            // Type checking requires equivalent branch types.
+            let branches_are_literal = matches!(
+                finalize_types.get_type_from_operand(stack, &ternary.operands()[1])?,
+                FinalizeType::Plaintext(PlaintextType::Literal(_))
+            );
+            if branches_are_literal {
+                Ok(500)
+            } else {
+                // Both branch values are read, so the cost includes both sizes and excludes the condition.
+                cost_in_size(stack, finalize_types, &ternary.operands()[1..3], TERNARY_PER_BYTE_COST, TERNARY_BASE_COST)
+            }
+        }
         Command::Instruction(Instruction::Xor(_)) => Ok(500),
         Command::Await(_) => Ok(500),
         Command::Contains(command) => {
