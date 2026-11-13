@@ -38,18 +38,18 @@ fn test_redeployment() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the storage.
     let store = ConsensusStore::<CurrentNetwork, LedgerType>::open(StorageMode::new_test(None)).unwrap();
 
     // Initialize the VM.
     let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone())?;
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     vm.add_next_block(&genesis)?;
 
     // Get the genesis private key.
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     // Advance the VM to 3 blocks before `ConsensusVersion::V8`.
     advance_vm_to_height(
@@ -205,7 +205,7 @@ fn test_credits_cannot_be_redeployed() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)?, rng);
@@ -231,7 +231,7 @@ fn test_credits_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? - 3, rng);
@@ -352,10 +352,10 @@ fn test_deploy_and_redeploy() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize a second caller.
-    let other_private_key = sample_genesis_private_key(rng);
+    let other_private_key = sample_genesis_private_key();
     let address = Address::try_from(&other_private_key)?;
 
     // Initialize the VM.

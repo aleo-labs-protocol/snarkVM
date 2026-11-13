@@ -19,7 +19,7 @@ use super::*;
 #[test]
 fn test_restricted_keyword_view_function_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -41,7 +41,7 @@ function view:
 #[test]
 fn test_restricted_keyword_view_struct_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -67,7 +67,7 @@ function test:
 #[test]
 fn test_restricted_keyword_view_mapping_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -93,7 +93,7 @@ function test:
 #[test]
 fn test_restricted_keyword_view_record_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -119,7 +119,7 @@ function test:
 #[test]
 fn test_restricted_keyword_view_program_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(

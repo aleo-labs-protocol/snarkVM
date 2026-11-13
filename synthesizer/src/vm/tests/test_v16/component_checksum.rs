@@ -138,7 +138,7 @@ fn test_checksum_resolves_function_closure_and_view() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -182,7 +182,7 @@ fn test_checksum_pin_across_upgrade() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -245,7 +245,7 @@ fn test_checksum_bar_updated_in_stack_on_upgrade() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -308,7 +308,7 @@ fn test_checksum_rejected_pre_v16() {
     let program = simple_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V15 height (pre-V16).
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
@@ -350,7 +350,7 @@ fn test_checksum_in_view_rejected_pre_v16() {
     let program = view_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V15 height (pre-V16, but views are allowed).
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
@@ -370,7 +370,7 @@ fn test_checksum_in_view_accepted_at_v16() {
     let program = view_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -415,7 +415,7 @@ fn test_checksum_dangling_reference_rejected() {
     let program = dangling_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -457,7 +457,7 @@ fn test_checksum_dangling_reference_in_view_output_rejected() {
     let program = dangling_view_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();

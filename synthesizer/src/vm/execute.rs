@@ -314,20 +314,18 @@ mod tests {
     #[cfg(feature = "rocks")]
     type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
-    fn prepare_vm(
-        rng: &mut TestRng,
-    ) -> Result<(
+    fn prepare_vm() -> Result<(
         VM<CurrentNetwork, LedgerType>,
         IndexMap<Field<CurrentNetwork>, Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
     )> {
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
 
         // Fetch the unspent records.
         let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
 
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
@@ -342,12 +340,12 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let withdrawal_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let withdrawal_address = Address::try_from(&withdrawal_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -382,13 +380,13 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let validator_address = Address::try_from(&validator_private_key).unwrap();
         let delegator_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let delegator_address = Address::try_from(&delegator_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -433,7 +431,7 @@ mod tests {
         let inputs = &[recipient_address.to_string(), format!("{transfer_public_amount}_u64")];
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
 
@@ -457,11 +455,11 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -495,10 +493,10 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Deploy a nested program to test the finalize cost cache
         let program = Program::from_str(
@@ -570,7 +568,7 @@ finalize test:
             &[validator_address.to_string(), withdrawal_address.to_string(), format!("{bond_public_amount}_u64")];
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
 
@@ -587,11 +585,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -625,12 +623,12 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent record.
         let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
@@ -664,11 +662,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -698,11 +696,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new signer.
-        let signer = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let signer = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&signer).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -733,11 +731,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent records.
         let mut records = records.values();
@@ -771,11 +769,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent record.
         let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
@@ -852,10 +850,10 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Construct the child program.
         let child_program = Program::from_str(
@@ -1023,10 +1021,10 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Construct the base program.
         let base_program = Program::from_str(

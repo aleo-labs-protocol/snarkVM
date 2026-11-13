@@ -117,7 +117,7 @@ fn test_view_rejects_write_commands_at_parse() {
 #[test]
 fn test_deploy_view_before_and_at_v15() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Start one block before V15 so that after the (rejected) deployment block we are
     // exactly at V15 and the same program is accepted.
@@ -171,7 +171,7 @@ view fixed_value:
 #[test]
 fn test_deploy_view_with_string_type_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -206,7 +206,7 @@ view echo:
 #[test]
 fn test_finalize_calls_same_program_view() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
@@ -280,7 +280,7 @@ fn test_finalize_calls_same_program_view() -> Result<()> {
 #[test]
 fn test_finalize_calls_cross_program_view() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // The "data" program: holds the `balances` mapping and the `lookup` view.
@@ -406,7 +406,7 @@ fn test_finalize_calls_non_view_rejected() {
 #[test]
 fn test_deploy_finalize_call_before_and_at_v15() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
     let vm = sample_vm_at_height(v15_height - 1, rng);
@@ -477,7 +477,7 @@ fn test_deploy_finalize_call_before_and_at_v15() {
 #[test]
 fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
@@ -556,7 +556,7 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
 #[test]
 fn test_finalize_calls_cross_program_non_view_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Imported program: exposes a regular `function` (no view).
     let data_program = Program::from_str(
@@ -782,7 +782,7 @@ fn test_finalize_call_self_locator_rejected() {
 #[test]
 fn test_finalize_call_missing_import_rejected() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Target program with a view (deployed first). Includes a noop function so the program
     // has at least one deployable function alongside the view.
@@ -881,7 +881,7 @@ fn test_finalize_rejects_call_dynamic_at_parse() {
 #[test]
 fn test_finalize_call_multi_output_multi_type() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
@@ -949,7 +949,7 @@ fn test_finalize_call_multi_output_multi_type() -> Result<()> {
 #[test]
 fn test_finalize_call_struct_return_cross_program() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     let data_program = Program::from_str(
@@ -1135,7 +1135,7 @@ fn test_finalize_call_input_type_mismatch_rejected() {
 #[test]
 fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // `strict_lookup` uses a non-`or_use` `get`, so a missing key surfaces an error.
@@ -1198,7 +1198,7 @@ fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
 #[test]
 fn test_finalize_call_as_only_finalize_instruction() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
@@ -1246,7 +1246,7 @@ fn test_finalize_call_as_only_finalize_instruction() -> Result<()> {
 #[test]
 fn test_finalize_calls_zero_input_view() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
@@ -1294,7 +1294,7 @@ fn test_finalize_calls_zero_input_view() -> Result<()> {
 #[test]
 fn test_finalize_call_inside_branch() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // When `r1 == 0u8`, the finalize takes the branch and skips both the call AND the `set`,
@@ -1372,7 +1372,7 @@ fn test_finalize_call_inside_branch() -> Result<()> {
 #[test]
 fn test_finalize_cross_program_multiple_calls() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // Data program: holds the `balances` mapping and the `lookup` view.
@@ -1475,7 +1475,7 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
 #[test]
 fn test_finalize_call_zero_output_guard_view() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // `require_zero` is a guard view: it asserts that its input is `0u64` and returns nothing.

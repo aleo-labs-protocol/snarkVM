@@ -2625,7 +2625,7 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // Sample a private key and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Sample a private key and address for the recipient.
@@ -2633,7 +2633,7 @@ finalize transfer_public:
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =
@@ -2836,7 +2836,7 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // Sample a private key, view key, and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         for finalize_logic in &[
@@ -2849,7 +2849,7 @@ finalize transfer_public:
     div r0 0u128 into r1;",
         ] {
             // Initialize the vm.
-            let vm = test_helpers::sample_vm_with_genesis_block(rng);
+            let vm = test_helpers::sample_vm_with_genesis_block();
 
             // Deploy a new program.
             let genesis =
@@ -2945,11 +2945,11 @@ function ped_hash:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =
@@ -3073,11 +3073,11 @@ finalize compute:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =
@@ -4106,10 +4106,10 @@ finalize compute:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =

@@ -153,7 +153,7 @@ fn forge_and_check(
 #[test]
 fn test_dynamic_id_variant_checks() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let address = Address::try_from(&caller_private_key).unwrap();
 
     // issuer.aleo mints and consumes its own `ticket` record.

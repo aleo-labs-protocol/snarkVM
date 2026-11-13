@@ -39,7 +39,7 @@ fn test_transfer_private_3_flow() {
     let rng = &mut TestRng::default();
 
     // Use the genesis account as the caller, since it holds a public balance to shield.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
     let caller_address = Address::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
 

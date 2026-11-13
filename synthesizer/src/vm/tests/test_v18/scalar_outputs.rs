@@ -27,7 +27,7 @@ const NUM_DEPLOYMENTS: usize = 3;
 fn test_program_with_output_scalar_from_atomic() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     // The three types which can be cast to a Scalar but do not always fit
@@ -138,7 +138,7 @@ fn test_program_with_output_scalar_from_atomic() {
 fn test_program_with_output_scalar_from_record() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {
@@ -247,7 +247,7 @@ fn test_program_with_output_scalar_from_record() {
 fn test_program_with_output_scalar_from_dynamic_record() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     // The read functions materialize the dynamic record with a `call.dynamic` to
@@ -379,7 +379,7 @@ fn test_program_with_output_scalar_from_dynamic_record() {
 fn test_program_with_output_scalar_from_array() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {
@@ -470,7 +470,7 @@ fn test_program_with_output_scalar_from_array() {
 fn test_program_with_output_scalar_from_struct() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {
