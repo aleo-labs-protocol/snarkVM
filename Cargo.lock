@@ -3853,7 +3853,6 @@ name = "snarkvm-synthesizer-program"
 version = "4.13.0"
 dependencies = [
  "bincode",
- "criterion",
  "enum-iterator",
  "indexmap 2.14.0",
  "k256",
