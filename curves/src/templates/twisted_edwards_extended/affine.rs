@@ -36,13 +36,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Affine<P: Parameters> {
+    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
     pub x: P::BaseField,
+    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
     pub y: P::BaseField,
+    #[deprecated(since = "4.13.0", note = "multiply the x and y coordinates")]
     pub t: P::BaseField,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
+    #[deprecated(
+        since = "4.13.0",
+        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
+    )]
     pub fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
         Self { x, y, t }
     }
@@ -177,41 +184,14 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         })
     }
 
-    /// Uses a sliding window of up to `WINDOW` bits over the odd multiples `self, 3 * self, 5 * self, ...`.
-    /// Runs in variable time.
     #[inline]
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Projective<P> {
-        const WINDOW: usize = 4;
-        let mut buffer = Vec::with_capacity(bits.size_hint().0);
-        buffer.extend(bits.skip_while(|bit| !bit));
-        let bits = buffer;
-        let base = self.to_projective();
-        let double = base.double();
-        let mut table = [base; 1 << (WINDOW - 1)];
-        for i in 1..table.len() {
-            table[i] = table[i - 1] + double;
-        }
-
         let mut res = Projective::zero();
-        let mut i = 0;
-        while i < bits.len() {
-            if !bits[i] {
-                res.double_in_place();
-                i += 1;
-                continue;
+        for i in bits {
+            res.double_in_place();
+            if i {
+                res.add_assign_mixed(self)
             }
-            let mut end = bits.len().min(i + WINDOW);
-            while !bits[end - 1] {
-                end -= 1;
-            }
-            let digit = bits[i..end].iter().fold(0, |digit, &bit| (digit << 1) | bit as usize);
-            if i == 0 {
-                res = table[digit >> 1];
-            } else {
-                (i..end).for_each(|_| res.double_in_place());
-                res += &table[digit >> 1];
-            }
-            i = end;
         }
         res
     }

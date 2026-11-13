@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-collections"
-version = "4.12.0"
+version = "4.13.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Collections for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -28,13 +28,6 @@ features = [ "field", "integers" ]
 [dependencies.aleo-std]
 workspace = true
 
-[dependencies.locktick]
-workspace = true
-optional = true
-
-[dependencies.parking_lot]
-workspace = true
-
 [dependencies.rayon]
 workspace = true
 
@@ -56,5 +49,4 @@ workspace = true
 [features]
 serial = [ ]
 test-utils = [ ]
-locktick = [ "dep:locktick" ]
 timer = [ "aleo-std/timer" ]

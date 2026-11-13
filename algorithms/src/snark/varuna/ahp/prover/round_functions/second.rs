@@ -13,10 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
-    fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, polynomial::PolyMultiplier},
+    fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
         Circuit,
@@ -24,15 +24,16 @@ use crate::{
         SNARKMode,
         ahp::{AHPForR1CS, verifier},
         prover,
-        selectors::apply_randomized_selector,
         witness_label,
     },
 };
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use rand::Rng;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_reduce, defer};
+use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter, cfg_reduce, defer};
 
+#[cfg(feature = "serial")]
+use itertools::Itertools;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -96,36 +97,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 itertools::izip!(instance_combiners, z_a, z_b, z_c).enumerate()
             {
                 job_pool.add_job(move || {
+                    // The quotient below assumes that the assignment satisfies every row.
+                    let satisfied = cfg_iter!(z_a).zip_eq(&z_b).zip_eq(&z_c).all(|((a, b), c)| *a * b == *c);
+                    ensure!(satisfied, "The assignment does not satisfy the circuit's constraints");
+
                     let za_label = witness_label(circuit.id, "z_a", j);
                     let zb_label = witness_label(circuit.id, "z_b", j);
                     let zc_label = witness_label(circuit.id, "z_c", j);
                     let z_a = Self::calculate_z_m(za_label, z_a, constraint_domain, circuit);
                     let z_b = Self::calculate_z_m(zb_label, z_b, constraint_domain, circuit);
                     let z_c = Self::calculate_z_m(zc_label, z_c, constraint_domain, circuit);
-                    let mut multiplier_2 = PolyMultiplier::new();
-                    multiplier_2.add_precomputation(fft_precomputation, ifft_precomputation);
-                    multiplier_2.add_polynomial(z_a, "z_a");
-                    multiplier_2.add_polynomial(z_b, "z_b");
-                    let mut rowcheck = multiplier_2.multiply().unwrap();
-                    rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
-
-                    // Initialise `instance_lhs` as `instance_combiner * rowcheck`: one job
-                    // contributes one term, so there is nothing to accumulate onto. The trim is
-                    // necessary because `apply_randomized_selector` below is degree-sensitive,
-                    // and the `AddAssign` this replaced used to do it.
-                    let mut instance_lhs = rowcheck;
-                    instance_lhs.coeffs.iter_mut().for_each(|c| *c *= instance_combiner);
-                    instance_lhs.trim_trailing_zeros();
-
-                    let (h_0_i, remainder) = apply_randomized_selector(
-                        &mut instance_lhs,
-                        circuit_combiner,
-                        &max_constraint_domain,
-                        &constraint_domain,
-                        false,
-                    )?;
-                    assert!(remainder.is_none());
-                    Ok::<_, anyhow::Error>(h_0_i)
+                    // Dividing `(v_H / v_H_i) * (H_i.size() / H.size())` by `v_H` leaves
+                    // `H_i.size() / H.size()` on the quotient over `v_H_i`.
+                    let scale = instance_combiner
+                        * circuit_combiner
+                        * constraint_domain.size_as_field_element
+                        * max_constraint_domain.size_inv;
+                    constraint_domain.divide_product_by_vanishing_poly(
+                        Cow::Owned(z_a),
+                        Cow::Owned(z_b),
+                        &z_c,
+                        scale,
+                        fft_precomputation,
+                        ifft_precomputation,
+                    )
                 });
             }
         }

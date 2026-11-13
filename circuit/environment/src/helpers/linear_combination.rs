@@ -183,13 +183,21 @@ impl<F: PrimeField> LinearCombination<F> {
 
 impl<F: PrimeField> From<Variable<F>> for LinearCombination<F> {
     fn from(variable: Variable<F>) -> Self {
-        Self::from(&variable)
+        let value = variable.value();
+        match variable.is_constant() {
+            true => Self { constant: value, terms: Default::default(), value },
+            false => {
+                let mut terms = SmallVec::new();
+                terms.push((variable, F::one()));
+                Self { constant: F::zero(), terms, value }
+            }
+        }
     }
 }
 
 impl<F: PrimeField> From<&Variable<F>> for LinearCombination<F> {
     fn from(variable: &Variable<F>) -> Self {
-        Self::from(std::slice::from_ref(variable))
+        Self::from(variable.clone())
     }
 }
 
@@ -299,7 +307,12 @@ impl<F: PrimeField> Add<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
-        self + &other
+        let (mut output, shorter) = match self.terms.len() > other.terms.len() {
+            true => (self, other),
+            false => (other, self),
+        };
+        output += shorter;
+        output
     }
 }
 
@@ -307,7 +320,18 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: &Self) -> Self::Output {
-        &self + other
+        match self.terms.len() > other.terms.len() {
+            true => {
+                let mut output = self;
+                output += other;
+                output
+            }
+            false => {
+                let mut output = other.clone();
+                output += self;
+                output
+            }
+        }
     }
 }
 
@@ -315,7 +339,7 @@ impl<F: PrimeField> Add<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: LinearCombination<F>) -> Self::Output {
-        self + &other
+        other + self
     }
 }
 
@@ -341,7 +365,11 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for &LinearCombination<F> {
 
 impl<F: PrimeField> AddAssign<LinearCombination<F>> for LinearCombination<F> {
     fn add_assign(&mut self, other: Self) {
-        *self += &other;
+        match self.constant.is_zero() && self.terms.is_empty() && !(other.constant.is_zero() && other.terms.is_empty())
+        {
+            true => *self = other,
+            false => *self += &other,
+        }
     }
 }
 
@@ -436,7 +464,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        self - &other
+        self + (-other)
     }
 }
 
@@ -444,7 +472,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: &Self) -> Self::Output {
-        &self - other
+        self + (-other)
     }
 }
 
@@ -452,7 +480,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: LinearCombination<F>) -> Self::Output {
-        self - &other
+        self + (-other)
     }
 }
 
@@ -460,7 +488,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: &LinearCombination<F>) -> Self::Output {
-        self + &(-other)
+        self + (-other)
     }
 }
 

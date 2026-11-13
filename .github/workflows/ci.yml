@@ -17,16 +17,16 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Overrides `target-cpu=native` in .cargo/config.toml. The cpu fleet mixes
-  # Intel and AMD instance types, so native code built on one box is not
-  # portable to the next, nor is its sccache entry.
-  RUSTFLAGS: ""
   RUST_MIN_STACK: 67108864
 
 # Every self-hosted job carries the same guard: a fork's code never runs on
 # the fleet, whose target dirs and sccache persist between jobs.
+#
+# A push runs CI only in this repository. A mirror receives this branch by
+# push, with this file, and would otherwise rerun CI on its own runners.
 jobs:
   start-cpu-runners:
+    # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
     uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
     permissions: { id-token: write, contents: read, actions: read }
     secrets:
@@ -39,34 +39,39 @@ jobs:
       jobs-per-box: 2
       runner-app-id: ${{ vars.RUNNER_APP_ID }}
     if: >-
-      github.event.pull_request == null ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event.pull_request == null ||
+       github.event.pull_request.head.repo.full_name == github.repository)
 
   check-shared-refs:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/check-shared-refs@v2
 
   fmt:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     env:
       # `.rustfmt.toml` uses nightly-only options, which stable drops without
       # an error. Bumping this pin may reformat the tree.
       FMT_TOOLCHAIN: nightly-2026-04-02
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - run: rustup toolchain install "$FMT_TOOLCHAIN" --profile minimal --component rustfmt
       - run: cargo "+$FMT_TOOLCHAIN" fmt --all -- --check
 
   deny:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with: { tool: cargo-deny@0.20.2 }
       # Advisories: bump-advisories.yml.
       - run: cargo deny check bans licenses sources
@@ -74,15 +79,16 @@ jobs:
   wasm:
     permissions: { contents: read, actions: write }
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 22 }
       - run: rustup target add wasm32-unknown-unknown
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with: { tool: wasm-pack }
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: wasm
           save-if: ${{ github.ref == 'refs/heads/staging' }}
@@ -100,8 +106,9 @@ jobs:
       github.event.pull_request == null ||
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -162,14 +169,15 @@ jobs:
               nextest run -p snarkvm-circuit-program
     name: test (${{ matrix.name }})
     steps: &test-steps
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: runner.environment == 'github-hosted'
         with:
           key: ${{ matrix.name }}
-          save-if: ${{ github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/') }}
       # rust-cache mints a key per dependency set and removes none.
       - uses: ./.github/actions/rust-cache-prune
         if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/staging'
@@ -177,13 +185,18 @@ jobs:
       # Downloaded parameters. A box keeps its own; a hosted runner starts
       # without, and parallel tests downloading the same file can read it
       # half-written.
-      - uses: actions/cache/restore@v6
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: runner.environment == 'github-hosted'
         with: &aleo-resources
           path: ~/.aleo/resources
           key: aleo-resources-${{ matrix.name }}-${{ hashFiles('parameters/**/*.metadata') }}
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with: { tool: cargo-nextest@0.9.114 }
+      # An env RUSTFLAGS replaces the flags in .cargo/config.toml without an
+      # error. ADX is what `skylake` has and `x86-64-v3` lacks.
+      - name: Check that the build targets skylake
+        if: runner.arch == 'X64'
+        run: cargo rustc -q -p snarkvm-utilities-derives --lib -- --print cfg | grep -q 'target_feature="adx"'
       # Each line of `runs` is one cargo command.
       - name: Test
         env:
@@ -216,27 +229,29 @@ jobs:
           done <<< "$RUNS"
           exit "$rc"
       # Per-test timings, for deciding what to shard or drop.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: junit-${{ matrix.name }}
           path: ${{ runner.temp }}/junit
           overwrite: true
-      - uses: actions/cache/save@v6
-        if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/staging'
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: runner.environment == 'github-hosted' && (github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/'))
         with: *aleo-resources
 
   # The cheap entries, on hosted runners: they wait for no box, and a fork's
   # pull request runs them too.
   test-hosted:
     permissions: { contents: read, actions: write }
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: console
+            os: ubuntu-latest
             runs: >-
               nextest run -p snarkvm-console -p snarkvm-console-account -p snarkvm-console-algorithms
               -p snarkvm-console-network -p snarkvm-console-network-environment -p snarkvm-console-program
@@ -244,16 +259,30 @@ jobs:
               -p snarkvm-console-types-field -p snarkvm-console-types-group -p snarkvm-console-types-integers
               -p snarkvm-console-types-scalar -p snarkvm-console-types-string
           - name: circuit
+            os: ubuntu-latest
             runs: |
               nextest run -p snarkvm-circuit -p snarkvm-circuit-account -p snarkvm-circuit-algorithms -p snarkvm-circuit-network -p snarkvm-circuit-types -p snarkvm-circuit-types-address -p snarkvm-circuit-types-boolean -p snarkvm-circuit-types-field -p snarkvm-circuit-types-group -p snarkvm-circuit-types-scalar -p snarkvm-circuit-types-string
               nextest run -p snarkvm-circuit-environment
           - name: narwhal
+            os: ubuntu-latest
             runs: >-
               nextest run -p snarkvm-ledger-authority -p snarkvm-ledger-committee -p snarkvm-ledger-narwhal
               -p snarkvm-ledger-narwhal-batch-certificate -p snarkvm-ledger-narwhal-batch-header
               -p snarkvm-ledger-narwhal-subdag -p snarkvm-ledger-narwhal-transmission
               -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-synthesizer-snark
               -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+          # What differs off x86-64: the bigint carry arithmetic, and the
+          # batched MSM's batch size and prefetching.
+          - name: arithmetic-linux-arm64
+            os: ubuntu-24.04-arm
+            runs: |
+              nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+              nextest run -p snarkvm-algorithms
+          - name: arithmetic-macos-arm64
+            os: macos-15
+            runs: |
+              nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+              nextest run -p snarkvm-algorithms
     name: test (${{ matrix.name }})
     steps: *test-steps
 
@@ -337,13 +366,45 @@ jobs:
     name: test (${{ matrix.name }})
     steps: *test-steps
 
+  # The release profile on arm64: opt-level 3 and thin LTO, with no debug
+  # assertions. On a release branch and on demand.
+  test-release-arm:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/heads/release/') ||
+      startsWith(github.base_ref, 'release/')
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Default flags, so the target CPU is `generic`.
+          - name: arithmetic-release-linux-arm64
+            os: ubuntu-24.04-arm
+            runs: &arithmetic-release |
+              nextest run --release -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
+              nextest run --release -p snarkvm-algorithms
+          # `apple-a7` is the default target CPU of an iOS device build. Only the
+          # code generation changes: the target is still macOS.
+          - name: arithmetic-release-macos-arm64
+            os: macos-15
+            rustflags: -C target-cpu=apple-a7
+            runs: *arithmetic-release
+    name: test (${{ matrix.name }})
+    steps: *test-steps
+
   machete:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
+    if: >-
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with: { tool: cargo-machete@0.7.0 }
       - run: cargo machete
 
@@ -359,9 +420,9 @@ jobs:
       matrix:
         dir: [algorithms, circuit, console, curves, fields, ledger, parameters, synthesizer, utilities]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ matrix.dir }}
           save-if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
@@ -377,8 +438,8 @@ jobs:
   # merge or release job skipped outside a release branch, where it is not
   # meant to run.
   ci-ok:
-    if: always()
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, machete, windows]
+    if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -388,4 +449,4 @@ jobs:
             startsWith(github.ref, 'refs/heads/release/') ||
             startsWith(github.base_ref, 'release/') }}
         run: |
-          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"

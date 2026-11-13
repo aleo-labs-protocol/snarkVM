@@ -31,6 +31,8 @@ on:
       # versions the kernels resolve to, including `blst` and `sppark`.
       - 'Cargo.toml'
       - 'Cargo.lock'
+      # Sets the target CPU of the host code.
+      - '.cargo/config.toml'
       - '.github/workflows/gpu-test.yml'
       # check-shared-refs runs only when these filters match, and other
       # workflows hold gh-actions refs too.
@@ -47,6 +49,7 @@ on:
       - 'algorithms/Cargo.toml'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - '.cargo/config.toml'
       - '.github/workflows/gpu-test.yml'
       - '.github/workflows/**'
       - '!**/*.md'
@@ -69,15 +72,19 @@ jobs:
   # runs code that holds this repository's OIDC token.
   check-shared-refs:
     runs-on: ubuntu-latest
+    # A push runs only in this repository; see ci.yml. The jobs below need this one.
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/check-shared-refs@v2
   # Moving the @v2 tag changes what runs with this repository's OIDC token.
   # `actions: read` lets it count the queued jobs. Secrets are named, not
   # inherited, because the tag moves.
   start-runners:
     needs: check-shared-refs
+    # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
     uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
     permissions: { id-token: write, contents: read, actions: read }
     secrets:
@@ -108,15 +115,13 @@ jobs:
       # sm_86 SASS runs on an A10G and an L4 (sm_89), so either runner takes
       # the job.
       CUDA_ARCH: sm_86
-      # `x86-64-v3` does not include ADX, and both runners have it, so the build
-      # checks that blst and this crate agree on ADX whatever the target says.
-      RUSTFLAGS: -C target-cpu=x86-64-v3
     steps:
       # Checks disk headroom and the GPU, and starts the peak-memory sampler
       # that gpu-runner-report reads.
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/gpu-runner-preflight@v2
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
 
       # No `rustup update`: rust-toolchain.toml pins the toolchain.
@@ -170,7 +175,7 @@ jobs:
       # wrong-arch build keeps its log too.
       - name: Keep the log when something went wrong
         if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gpu-test-log-${{ job.status }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/gpu-test.log
@@ -179,5 +184,6 @@ jobs:
 
       # Peak GPU memory sampled during the run, plus disk. `always()` because a
       # failed build is when those numbers matter.
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/gpu-runner-report@v2
         if: always()

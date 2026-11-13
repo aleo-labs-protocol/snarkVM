@@ -168,12 +168,10 @@ impl<E: Environment, const N: usize> MulAssign<[Boolean<E>; N]> for Group<E> {
 impl<E: Environment> MulAssign<&[Boolean<E>]> for Group<E> {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &[Boolean<E>]) {
-        let base = self.clone();
-
         let mut output = Group::zero();
         for bit in other.iter() {
             output = output.double();
-            output = Group::ternary(bit, &(&base + &output), &output);
+            output = Group::ternary(bit, &(&*self + &output), &output);
         }
         *self = output;
     }
