@@ -239,9 +239,6 @@ features = [ "test" ]
 [dev-dependencies.snarkvm-ledger-test-helpers]
 workspace = true
 
-[dev-dependencies.aleo-std-storage]
-workspace = true
-
 [dev-dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]

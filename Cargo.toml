@@ -626,9 +626,6 @@ default-features = true
 [dev-dependencies.snarkvm]
 path = "."
 
-[dev-dependencies.bincode]
-workspace = true
-
 [dev-dependencies.rusty-hook]
 version = "0.11.2"
 
