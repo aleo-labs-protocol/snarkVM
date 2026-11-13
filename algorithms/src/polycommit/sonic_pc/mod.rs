@@ -112,6 +112,15 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 bail!("The Lagrange basis size ({size}) is larger than the supported degree ({})", max_degree + 1)
             }
         }
+        // These two bounds keep the index arithmetic below from overflowing.
+        if supported_degree > max_degree {
+            bail!("The supported degree ({supported_degree}) is larger than the maximum degree ({max_degree})")
+        }
+        if supported_hiding_bound > max_degree {
+            return Err(
+                PCError::HidingBoundToolarge { hiding_poly_degree: supported_hiding_bound, num_powers: 0 }.into()
+            );
+        }
         if let Some([.., highest_enforced_degree_bound]) = enforced_degree_bounds.as_deref()
             && *highest_enforced_degree_bound > supported_degree
         {
@@ -1051,6 +1060,22 @@ mod tests {
         assert!(PC_Bls12_377::trim(&pp, grown - 1, [1 << 29], 1, None).is_err());
         let (after, _) = pp.shared_powers_of_beta_g(0, 1).unwrap();
         assert!(std::sync::Arc::ptr_eq(&before, &after), "a rejected trim grew the SRS");
+    }
+
+    /// `trim` rejects a supported degree or a hiding bound that the SRS cannot
+    /// serve, up to the largest `usize`.
+    #[test]
+    fn trim_rejects_a_degree_or_hiding_bound_beyond_the_srs() {
+        let pp = PC_Bls12_377::load_srs((1 << 12) - 1).unwrap();
+        let max_degree = pp.max_degree();
+        for degree in [max_degree + 1, usize::MAX - 1, usize::MAX] {
+            assert!(PC_Bls12_377::trim(&pp, degree, [], 1, None).is_err());
+            assert!(PC_Bls12_377::trim(&pp, degree, [], 1, Some(&[degree])).is_err());
+        }
+        for hiding_bound in [2, max_degree + 1, usize::MAX - 2, usize::MAX - 1, usize::MAX] {
+            assert!(PC_Bls12_377::trim(&pp, 1000, [], hiding_bound, None).is_err());
+            assert!(PC_Bls12_377::trim(&pp, 1000, [], hiding_bound, Some(&[500])).is_err());
+        }
     }
 
     /// `to_mut` turns a shared range into an owned copy, leaving the SRS as it
