@@ -72,6 +72,8 @@ jobs:
   # runs code that holds this repository's OIDC token.
   check-shared-refs:
     runs-on: ubuntu-latest
+    # A push runs only in this repository; see ci.yml. The jobs below need this one.
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }

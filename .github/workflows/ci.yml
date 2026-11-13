@@ -21,6 +21,9 @@ env:
 
 # Every self-hosted job carries the same guard: a fork's code never runs on
 # the fleet, whose target dirs and sccache persist between jobs.
+#
+# A push runs CI only in this repository. A mirror receives this branch by
+# push, with this file, and would otherwise rerun CI on its own runners.
 jobs:
   start-cpu-runners:
     # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
@@ -36,11 +39,13 @@ jobs:
       jobs-per-box: 2
       runner-app-id: ${{ vars.RUNNER_APP_ID }}
     if: >-
-      github.event.pull_request == null ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event.pull_request == null ||
+       github.event.pull_request.head.repo.full_name == github.repository)
 
   check-shared-refs:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -49,6 +54,7 @@ jobs:
 
   fmt:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     env:
       # `.rustfmt.toml` uses nightly-only options, which stable drops without
       # an error. Bumping this pin may reformat the tree.
@@ -61,6 +67,7 @@ jobs:
 
   deny:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -72,6 +79,7 @@ jobs:
   wasm:
     permissions: { contents: read, actions: write }
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -231,6 +239,7 @@ jobs:
   test-hosted:
     permissions: { contents: read, actions: write }
     runs-on: ${{ matrix.os }}
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -345,7 +354,9 @@ jobs:
 
   machete:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
+    if: >-
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -383,7 +394,7 @@ jobs:
   # merge or release job skipped outside a release branch, where it is not
   # meant to run.
   ci-ok:
-    if: always()
+    if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
