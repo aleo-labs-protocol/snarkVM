@@ -55,6 +55,7 @@ impl<T: Uniform> UniformExt for T {}
 /// A fast RNG used **solely** for testing and benchmarking, **not** for any real world purposes.
 ///
 /// Its output for a seed may change between versions. Use [`FixedRng`] where it must not.
+#[derive(Clone)]
 pub struct TestRng {
     seed: u64,
     rng: XorShiftRng,
@@ -313,5 +314,25 @@ mod tests {
         rng.fill_bytes(&mut bytes);
         let expected = FIRST_BLOCK.into_iter().chain([SECOND_BLOCK_START]).flat_map(u32::to_le_bytes);
         assert!(bytes.into_iter().eq(expected));
+    }
+
+    #[test]
+    fn test_test_rng_clone_continues_stream() {
+        let mut rng = TestRng::from_seed(123456789);
+        // Advance the RNG, so that the clone starts mid-stream.
+        for _ in 0..10 {
+            rng.next_u64();
+        }
+        let mut clone = rng.clone();
+        assert_eq!(clone.calls, rng.calls);
+        for _ in 0..100 {
+            assert_eq!(clone.next_u64(), rng.next_u64());
+        }
+        let mut bytes = [0u8; 64];
+        let mut clone_bytes = [0u8; 64];
+        rng.fill_bytes(&mut bytes);
+        clone.fill_bytes(&mut clone_bytes);
+        assert_eq!(clone_bytes, bytes);
+        assert_eq!(clone.calls, rng.calls);
     }
 }
