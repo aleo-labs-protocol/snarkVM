@@ -3760,6 +3760,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "snarkvm-rocksdb-analyser"
+version = "0.1.0"
+dependencies = [
+ "aleo-std-storage",
+ "anyhow",
+ "clap",
+ "rocksdb",
+ "snarkvm-ledger-store",
+ "tempfile",
+]
+
+[[package]]
 name = "snarkvm-synthesizer"
 version = "4.13.0"
 dependencies = [
