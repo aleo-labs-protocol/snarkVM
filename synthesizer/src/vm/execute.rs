@@ -1105,7 +1105,7 @@ constructor:
             .unwrap();
 
         // Construct an unproven execution from the authorized transitions, which determine the finalize cost.
-        // The authorization has fewer than the maximum number of transitions, so the construction does not fail.
+        // The authorization holds at least the root transition, so the list of transitions is not empty and the construction does not fail.
         let execution = Execution::from(
             authorization.transitions().into_values(),
             <CurrentNetwork as Network>::StateRoot::default(),
