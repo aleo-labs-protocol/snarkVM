@@ -48,5 +48,4 @@ workspace = true
 
 [features]
 serial = [ ]
-test-utils = [ ]
 timer = [ "aleo-std/timer" ]

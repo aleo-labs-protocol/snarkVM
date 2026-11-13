@@ -45,7 +45,6 @@ serial = [
   "snarkvm-synthesizer-program/serial",
   "snarkvm-synthesizer-snark/serial"
 ]
-setup = [ ]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
 timer = [ "aleo-std/timer" ]
