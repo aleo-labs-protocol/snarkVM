@@ -28,8 +28,9 @@ impl<E: Environment> DivUnchecked<Field<E>> for Field<E> {
     /// No production circuit reaches the `0 / 0` case. The `Div` implementation
     /// multiplies by the inverse instead of calling this method, which fails closed
     /// on a zero denominator. The only production callers are the two divisions in
-    /// `BHPHasher::hash_uncompressed`, whose denominators cannot be zero while their
-    /// numerators are (see the call sites).
+    /// `BHPHasher::hash_uncompressed_inner`, whose denominators cannot be zero while their
+    /// numerators are (see the call sites). That function also builds the variable-by-variable
+    /// case below itself, from a precomputed quotient, so a change here must be made there too.
     #[doc(hidden)]
     fn div_unchecked(&self, other: &Field<E>) -> Self::Output {
         match (self.is_constant(), other.is_constant()) {
