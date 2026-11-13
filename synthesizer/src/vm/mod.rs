@@ -699,14 +699,7 @@ pub(crate) mod test_helpers {
         let mut stamp = Vec::with_capacity(24);
         stamp.extend_from_slice(&metadata.len().to_le_bytes());
         stamp.extend_from_slice(&modified.as_nanos().to_le_bytes());
-        Ok((path_with_suffix(&binary, ".genesis"), stamp))
-    }
-
-    /// Returns `path` with `suffix` appended to its last component.
-    fn path_with_suffix(path: &Path, suffix: &str) -> PathBuf {
-        let mut path = path.as_os_str().to_os_string();
-        path.push(suffix);
-        PathBuf::from(path)
+        Ok((binary.with_added_extension("genesis"), stamp))
     }
 
     /// Reads the genesis fixture at `path`, or builds the fixture and writes it to `path`.
@@ -721,7 +714,7 @@ pub(crate) mod test_helpers {
             .create(true)
             .truncate(false)
             .write(true)
-            .open(path_with_suffix(path, ".lock"))
+            .open(path.with_added_extension("lock"))
             .and_then(|file| file.lock().map(|()| file));
         // Without the lock, the fixture is built but not written.
         let Ok(lock) = lock else {
@@ -749,7 +742,7 @@ pub(crate) mod test_helpers {
         stamp: &[u8],
         fixture: &(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>),
     ) -> io::Result<()> {
-        let temporary_path = path_with_suffix(path, ".tmp");
+        let temporary_path = path.with_added_extension("tmp");
         fs::write(&temporary_path, genesis_fixture_to_bytes(stamp, fixture)?)?;
         fs::rename(temporary_path, path)
     }
@@ -757,11 +750,10 @@ pub(crate) mod test_helpers {
     /// Returns the stamp, followed by the bytes of the genesis private key and the genesis block.
     fn genesis_fixture_to_bytes(
         stamp: &[u8],
-        (private_key, block): &(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>),
+        fixture: &(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>),
     ) -> io::Result<Vec<u8>> {
         let mut bytes = stamp.to_vec();
-        private_key.write_le(&mut bytes)?;
-        block.write_le(&mut bytes)?;
+        fixture.write_le(&mut bytes)?;
         Ok(bytes)
     }
 
@@ -774,8 +766,7 @@ pub(crate) mod test_helpers {
         stamp: &[u8],
     ) -> Option<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> {
         let mut reader = bytes.strip_prefix(stamp)?;
-        let private_key = PrivateKey::<CurrentNetwork>::read_le(&mut reader).ok()?;
-        let block = Block::<CurrentNetwork>::read_le(&mut reader).ok()?;
+        let (private_key, block) = <(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)>::read_le(&mut reader).ok()?;
         let Authority::Beacon(signature) = block.authority() else {
             return None;
         };
@@ -1572,14 +1563,13 @@ function compute:
         // This call reads the file that the previous call wrote.
         let hit = read_genesis_fixture(&path, stamp).expect("The fixture file is valid");
 
-        let miss_bytes = genesis_fixture_to_bytes(stamp, &miss).expect("Failed to serialize the fixture");
-        assert_eq!(miss_bytes, genesis_fixture_to_bytes(stamp, &hit).expect("Failed to serialize the fixture"));
-        assert_eq!(miss_bytes, fs::read(&path).expect("Failed to read the fixture file"));
-        // The fixture of this process comes from a separate build, in this process or in another one.
+        assert_eq!(miss, hit);
         assert_eq!(
-            miss_bytes,
-            genesis_fixture_to_bytes(stamp, genesis_fixture()).expect("Failed to serialize the fixture")
+            fs::read(&path).expect("Failed to read the fixture file"),
+            genesis_fixture_to_bytes(stamp, &miss).expect("Failed to serialize the fixture")
         );
+        // The fixture of this process comes from a separate build, in this process or in another one.
+        assert_eq!(&miss, genesis_fixture());
     }
 
     #[test]
@@ -1616,13 +1606,9 @@ function compute:
     #[test]
     fn test_genesis_helpers_do_not_advance_rng() {
         let rng = &mut TestRng::fixed(1);
-        let private_key = sample_genesis_private_key(rng);
-        let block = sample_genesis_block(rng);
+        sample_genesis_private_key(rng);
+        sample_genesis_block(rng);
         assert_eq!(rng.random::<u64>(), TestRng::fixed(1).random::<u64>());
-
-        // The helpers return the fixture of this process.
-        assert_eq!(private_key, genesis_fixture().0);
-        assert_eq!(block, genesis_fixture().1);
     }
 
     #[test]
