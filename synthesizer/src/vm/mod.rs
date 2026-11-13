@@ -681,7 +681,7 @@ pub(crate) mod test_helpers {
 
     /// Builds the genesis fixture from an RNG with a fixed seed.
     fn build_genesis_fixture() -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
-        let rng = &mut TestRng::fixed(GENESIS_FIXTURE_SEED);
+        let rng = &mut TestRng::from_seed(GENESIS_FIXTURE_SEED);
         // Initialize a new caller.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).expect("Failed to sample the genesis private key");
         // Initialize the genesis block.
