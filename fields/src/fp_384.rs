@@ -59,7 +59,7 @@ pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {
     }
 }
 
-// The CUDA FFI reads this by bytes.
+// The CUDA FFI reads this by bytes, and `adx::fp384::limbs` casts it to its limbs.
 #[derive(Copy, Clone, Default, PartialEq, Eq, Hash, Zeroize)]
 #[repr(transparent)]
 pub struct Fp384<P: Fp384Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
@@ -227,75 +227,27 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
 
     #[inline]
     fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
-        fn inner<P: Fp384Parameters>(a: &[Fp384<P>], b: &[Fp384<P>]) -> Fp384<P> {
-            // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
-            // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
-            // the result as a double-width intermediate representation, which is then fully
-            // reduced at the end. Here however we have pairs of multiplications (a_i, b_i),
-            // the results of which are summed.
-            //
-            // The intuition for this algorithm is two-fold:
-            // - We can interleave the operand scanning for each pair, by processing the jth
-            //   limb of each `a_i` together. As these have the same offset within the overall
-            //   operand scanning flow, their results can be summed directly.
-            // - We can interleave the multiplication and reduction steps, resulting in a
-            //   single bitshift by the limb size after each iteration. This means we only
-            //   need to store a single extra limb overall, instead of keeping around all the
-            //   intermediate results and eventually having twice as many limbs.
-
-            // Algorithm 2, line 2
-            let (u0, u1, u2, u3, u4, u5) = (0..6).fold((0, 0, 0, 0, 0, 0), |(u0, u1, u2, u3, u4, u5), j| {
-                // Algorithm 2, line 3
-                // For each pair in the overall sum of products:
-                let (t0, t1, t2, t3, t4, t5, mut t6) =
-                    a.iter().zip(b).fold((u0, u1, u2, u3, u4, u5, 0), |(t0, t1, t2, t3, t4, t5, mut t6), (a, b)| {
-                        // Compute digit_j x row and accumulate into `u`.
-                        let mut carry = 0;
-                        let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);
-                        let t1 = fa::mac_with_carry(t1, a.0.0[j], b.0.0[1], &mut carry);
-                        let t2 = fa::mac_with_carry(t2, a.0.0[j], b.0.0[2], &mut carry);
-                        let t3 = fa::mac_with_carry(t3, a.0.0[j], b.0.0[3], &mut carry);
-                        let t4 = fa::mac_with_carry(t4, a.0.0[j], b.0.0[4], &mut carry);
-                        let t5 = fa::mac_with_carry(t5, a.0.0[j], b.0.0[5], &mut carry);
-                        let _ = fa::adc(&mut t6, 0, carry);
-
-                        (t0, t1, t2, t3, t4, t5, t6)
-                    });
-
-                // Algorithm 2, lines 4-5
-                // This is a single step of the usual Montgomery reduction process.
-                let k = t0.wrapping_mul(P::INV);
-                let mut carry = 0;
-                let _ = fa::mac_with_carry(t0, k, P::MODULUS.0[0], &mut carry);
-                let r1 = fa::mac_with_carry(t1, k, P::MODULUS.0[1], &mut carry);
-                let r2 = fa::mac_with_carry(t2, k, P::MODULUS.0[2], &mut carry);
-                let r3 = fa::mac_with_carry(t3, k, P::MODULUS.0[3], &mut carry);
-                let r4 = fa::mac_with_carry(t4, k, P::MODULUS.0[4], &mut carry);
-                let r5 = fa::mac_with_carry(t5, k, P::MODULUS.0[5], &mut carry);
-                let _ = fa::adc(&mut t6, 0, carry);
-                let r6 = t6;
-
-                (r1, r2, r3, r4, r5, r6)
-            });
-
-            // Because we represent F_p elements in non-redundant form, we need a final
-            // conditional subtraction to ensure the output is in range.
-            let mut result = Fp384(BigInteger([u0, u1, u2, u3, u4, u5]), PhantomData);
-            result.reduce();
-            result
-        }
-
-        // The running value stays below about `(n + 1) p`, and above `R` it loses its top carry, which
-        // gives a wrong element. This limit keeps `(n + 1) p < R`, from the top limb of `p`.
-        let limit = const {
-            let limit = u64::MAX / (P::MODULUS.0[5] + 1) - 1;
-            // `Fp2` and the point formulas take 2 terms.
-            assert!(limit >= 2);
-            limit
-        };
-        assert!(a.len().min(b.len()) as u64 <= limit, "sum_of_products takes too many terms for this modulus");
-
-        inner(a, b)
+        adx_or!(
+            {
+                use crate::adx::fp384 as adx;
+                let limbs = if Self::SUM_OF_PRODUCTS_LIMIT >= 3
+                    && let (Ok(a), Ok(b)) = (a.try_into(), b.try_into())
+                {
+                    adx::sum_of_products_3(adx::limbs::<P, 3>(a), adx::limbs(b), &Self::ADX_MODULUS)
+                } else if let ([a0, a1], [b0, b1]) = (a, b) {
+                    const { assert!(Self::SUM_OF_PRODUCTS_LIMIT >= 2) };
+                    // The operands are copied in. Reading them in place, as the three-term arm does,
+                    // measured slower on `check_fee`, and through four pointers about 6% slower.
+                    adx::sum_of_products_2(&[(a0.0).0, (a1.0).0], &[(b0.0).0, (b1.0).0], &Self::ADX_MODULUS)
+                } else {
+                    return Self::sum_of_products_scalar(a, b);
+                };
+                let mut result = Self(BigInteger(limbs), PhantomData);
+                result.reduce();
+                result
+            },
+            Self::sum_of_products_scalar(a, b)
+        )
     }
 
     #[inline]
@@ -327,59 +279,14 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
 
     #[inline]
     fn square_in_place(&mut self) -> &mut Self {
-        let mut carry = 0;
-        let r1 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[1], &mut carry);
-        let r2 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[2], &mut carry);
-        let r3 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[3], &mut carry);
-        let r4 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[4], &mut carry);
-        let r5 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[5], &mut carry);
-        let r6 = carry;
-        let mut carry = 0;
-        let r3 = fa::mac_with_carry(r3, (self.0).0[1], (self.0).0[2], &mut carry);
-        let r4 = fa::mac_with_carry(r4, (self.0).0[1], (self.0).0[3], &mut carry);
-        let r5 = fa::mac_with_carry(r5, (self.0).0[1], (self.0).0[4], &mut carry);
-        let r6 = fa::mac_with_carry(r6, (self.0).0[1], (self.0).0[5], &mut carry);
-        let r7 = carry;
-        let mut carry = 0;
-        let r5 = fa::mac_with_carry(r5, (self.0).0[2], (self.0).0[3], &mut carry);
-        let r6 = fa::mac_with_carry(r6, (self.0).0[2], (self.0).0[4], &mut carry);
-        let r7 = fa::mac_with_carry(r7, (self.0).0[2], (self.0).0[5], &mut carry);
-        let r8 = carry;
-        let mut carry = 0;
-        let r7 = fa::mac_with_carry(r7, (self.0).0[3], (self.0).0[4], &mut carry);
-        let r8 = fa::mac_with_carry(r8, (self.0).0[3], (self.0).0[5], &mut carry);
-        let r9 = carry;
-        let mut carry = 0;
-        let r9 = fa::mac_with_carry(r9, (self.0).0[4], (self.0).0[5], &mut carry);
-        let r10 = carry;
-
-        let mut r11 = r10 >> 63;
-        let r10 = (r10 << 1) | (r9 >> 63);
-        let mut r9 = (r9 << 1) | (r8 >> 63);
-        let r8 = (r8 << 1) | (r7 >> 63);
-        let mut r7 = (r7 << 1) | (r6 >> 63);
-        let r6 = (r6 << 1) | (r5 >> 63);
-        let mut r5 = (r5 << 1) | (r4 >> 63);
-        let r4 = (r4 << 1) | (r3 >> 63);
-        let mut r3 = (r3 << 1) | (r2 >> 63);
-        let r2 = (r2 << 1) | (r1 >> 63);
-        let mut r1 = r1 << 1;
-
-        let mut carry = 0;
-        let r0 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[0], &mut carry);
-        carry = fa::adc(&mut r1, 0, carry);
-        let r2 = fa::mac_with_carry(r2, (self.0).0[1], (self.0).0[1], &mut carry);
-        carry = fa::adc(&mut r3, 0, carry);
-        let r4 = fa::mac_with_carry(r4, (self.0).0[2], (self.0).0[2], &mut carry);
-        carry = fa::adc(&mut r5, 0, carry);
-        let r6 = fa::mac_with_carry(r6, (self.0).0[3], (self.0).0[3], &mut carry);
-        carry = fa::adc(&mut r7, 0, carry);
-        let r8 = fa::mac_with_carry(r8, (self.0).0[4], (self.0).0[4], &mut carry);
-        carry = fa::adc(&mut r9, 0, carry);
-        let r10 = fa::mac_with_carry(r10, (self.0).0[5], (self.0).0[5], &mut carry);
-        fa::adc(&mut r11, 0, carry);
-        self.mont_reduce(r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11);
-        self
+        adx_or!(
+            {
+                (self.0).0 = crate::adx::fp384::square(&(self.0).0, &Self::ADX_MODULUS);
+                self.reduce();
+                self
+            },
+            self.square_in_place_scalar()
+        )
     }
 
     #[inline]
@@ -755,9 +662,23 @@ impl<P: Fp384Parameters> SubAssign<&'_ Self> for Fp384<P> {
     }
 }
 
-impl<P: Fp384Parameters> MulAssign<&'_ Self> for Fp384<P> {
-    #[inline]
-    fn mul_assign(&mut self, other: &Self) {
+impl<P: Fp384Parameters> Fp384<P> {
+    /// The limbs of the modulus, then `P::INV`, for the assembly in `crate::adx`.
+    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64", target_feature = "adx", target_feature = "bmi2"))]
+    const ADX_MODULUS: [u64; 7] = {
+        // Without this bound the assembly drops a carry.
+        assert!(P::MODULUS.0[5] < (1 << 63) - 1);
+        [P::MODULUS.0[0], P::MODULUS.0[1], P::MODULUS.0[2], P::MODULUS.0[3], P::MODULUS.0[4], P::MODULUS.0[5], P::INV]
+    };
+    /// The most terms that `sum_of_products` takes. The running value stays below about `(n + 1) p`,
+    /// and above `R` it loses its top carry, which gives a wrong element. This limit keeps
+    /// `(n + 1) p < R`, from the top limb of `p`.
+    const SUM_OF_PRODUCTS_LIMIT: u64 = u64::MAX / (P::MODULUS.0[5] + 1) - 1;
+
+    /// Sets `self` to `self * other` by the Rust body, which `mul_assign` runs without ADX and BMI2.
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn mul_assign_scalar(&mut self, other: &Self) {
         let mut r = [0u64; 6];
         let mut carry1 = 0u64;
         let mut carry2 = 0u64;
@@ -884,6 +805,150 @@ impl<P: Fp384Parameters> MulAssign<&'_ Self> for Fp384<P> {
 
         (self.0).0 = r;
         self.reduce();
+    }
+
+    /// Returns `sum a_i b_i` by the Rust body, which `sum_of_products` runs for other than 2 or 3 terms,
+    /// or without ADX and BMI2.
+    #[doc(hidden)]
+    pub fn sum_of_products_scalar(a: &[Self], b: &[Self]) -> Self {
+        fn inner<P: Fp384Parameters>(a: &[Fp384<P>], b: &[Fp384<P>]) -> Fp384<P> {
+            // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
+            // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
+            // the result as a double-width intermediate representation, which is then fully
+            // reduced at the end. Here however we have pairs of multiplications (a_i, b_i),
+            // the results of which are summed.
+            //
+            // The intuition for this algorithm is two-fold:
+            // - We can interleave the operand scanning for each pair, by processing the jth
+            //   limb of each `a_i` together. As these have the same offset within the overall
+            //   operand scanning flow, their results can be summed directly.
+            // - We can interleave the multiplication and reduction steps, resulting in a
+            //   single bitshift by the limb size after each iteration. This means we only
+            //   need to store a single extra limb overall, instead of keeping around all the
+            //   intermediate results and eventually having twice as many limbs.
+
+            // Algorithm 2, line 2
+            let (u0, u1, u2, u3, u4, u5) = (0..6).fold((0, 0, 0, 0, 0, 0), |(u0, u1, u2, u3, u4, u5), j| {
+                // Algorithm 2, line 3
+                // For each pair in the overall sum of products:
+                let (t0, t1, t2, t3, t4, t5, mut t6) =
+                    a.iter().zip(b).fold((u0, u1, u2, u3, u4, u5, 0), |(t0, t1, t2, t3, t4, t5, mut t6), (a, b)| {
+                        // Compute digit_j x row and accumulate into `u`.
+                        let mut carry = 0;
+                        let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);
+                        let t1 = fa::mac_with_carry(t1, a.0.0[j], b.0.0[1], &mut carry);
+                        let t2 = fa::mac_with_carry(t2, a.0.0[j], b.0.0[2], &mut carry);
+                        let t3 = fa::mac_with_carry(t3, a.0.0[j], b.0.0[3], &mut carry);
+                        let t4 = fa::mac_with_carry(t4, a.0.0[j], b.0.0[4], &mut carry);
+                        let t5 = fa::mac_with_carry(t5, a.0.0[j], b.0.0[5], &mut carry);
+                        let _ = fa::adc(&mut t6, 0, carry);
+
+                        (t0, t1, t2, t3, t4, t5, t6)
+                    });
+
+                // Algorithm 2, lines 4-5
+                // This is a single step of the usual Montgomery reduction process.
+                let k = t0.wrapping_mul(P::INV);
+                let mut carry = 0;
+                let _ = fa::mac_with_carry(t0, k, P::MODULUS.0[0], &mut carry);
+                let r1 = fa::mac_with_carry(t1, k, P::MODULUS.0[1], &mut carry);
+                let r2 = fa::mac_with_carry(t2, k, P::MODULUS.0[2], &mut carry);
+                let r3 = fa::mac_with_carry(t3, k, P::MODULUS.0[3], &mut carry);
+                let r4 = fa::mac_with_carry(t4, k, P::MODULUS.0[4], &mut carry);
+                let r5 = fa::mac_with_carry(t5, k, P::MODULUS.0[5], &mut carry);
+                let _ = fa::adc(&mut t6, 0, carry);
+                let r6 = t6;
+
+                (r1, r2, r3, r4, r5, r6)
+            });
+
+            // Because we represent F_p elements in non-redundant form, we need a final
+            // conditional subtraction to ensure the output is in range.
+            let mut result = Fp384(BigInteger([u0, u1, u2, u3, u4, u5]), PhantomData);
+            result.reduce();
+            result
+        }
+
+        // `Fp2` and the point formulas take 2 terms.
+        const { assert!(Self::SUM_OF_PRODUCTS_LIMIT >= 2) };
+        assert!(
+            a.len().min(b.len()) as u64 <= Self::SUM_OF_PRODUCTS_LIMIT,
+            "sum_of_products takes too many terms for this modulus"
+        );
+
+        inner(a, b)
+    }
+
+    /// Sets `self` to `self^2` by the Rust body, which `square_in_place` runs without ADX and BMI2.
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn square_in_place_scalar(&mut self) -> &mut Self {
+        let mut carry = 0;
+        let r1 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[1], &mut carry);
+        let r2 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[2], &mut carry);
+        let r3 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[3], &mut carry);
+        let r4 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[4], &mut carry);
+        let r5 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[5], &mut carry);
+        let r6 = carry;
+        let mut carry = 0;
+        let r3 = fa::mac_with_carry(r3, (self.0).0[1], (self.0).0[2], &mut carry);
+        let r4 = fa::mac_with_carry(r4, (self.0).0[1], (self.0).0[3], &mut carry);
+        let r5 = fa::mac_with_carry(r5, (self.0).0[1], (self.0).0[4], &mut carry);
+        let r6 = fa::mac_with_carry(r6, (self.0).0[1], (self.0).0[5], &mut carry);
+        let r7 = carry;
+        let mut carry = 0;
+        let r5 = fa::mac_with_carry(r5, (self.0).0[2], (self.0).0[3], &mut carry);
+        let r6 = fa::mac_with_carry(r6, (self.0).0[2], (self.0).0[4], &mut carry);
+        let r7 = fa::mac_with_carry(r7, (self.0).0[2], (self.0).0[5], &mut carry);
+        let r8 = carry;
+        let mut carry = 0;
+        let r7 = fa::mac_with_carry(r7, (self.0).0[3], (self.0).0[4], &mut carry);
+        let r8 = fa::mac_with_carry(r8, (self.0).0[3], (self.0).0[5], &mut carry);
+        let r9 = carry;
+        let mut carry = 0;
+        let r9 = fa::mac_with_carry(r9, (self.0).0[4], (self.0).0[5], &mut carry);
+        let r10 = carry;
+
+        let mut r11 = r10 >> 63;
+        let r10 = (r10 << 1) | (r9 >> 63);
+        let mut r9 = (r9 << 1) | (r8 >> 63);
+        let r8 = (r8 << 1) | (r7 >> 63);
+        let mut r7 = (r7 << 1) | (r6 >> 63);
+        let r6 = (r6 << 1) | (r5 >> 63);
+        let mut r5 = (r5 << 1) | (r4 >> 63);
+        let r4 = (r4 << 1) | (r3 >> 63);
+        let mut r3 = (r3 << 1) | (r2 >> 63);
+        let r2 = (r2 << 1) | (r1 >> 63);
+        let mut r1 = r1 << 1;
+
+        let mut carry = 0;
+        let r0 = fa::mac_with_carry(0, (self.0).0[0], (self.0).0[0], &mut carry);
+        carry = fa::adc(&mut r1, 0, carry);
+        let r2 = fa::mac_with_carry(r2, (self.0).0[1], (self.0).0[1], &mut carry);
+        carry = fa::adc(&mut r3, 0, carry);
+        let r4 = fa::mac_with_carry(r4, (self.0).0[2], (self.0).0[2], &mut carry);
+        carry = fa::adc(&mut r5, 0, carry);
+        let r6 = fa::mac_with_carry(r6, (self.0).0[3], (self.0).0[3], &mut carry);
+        carry = fa::adc(&mut r7, 0, carry);
+        let r8 = fa::mac_with_carry(r8, (self.0).0[4], (self.0).0[4], &mut carry);
+        carry = fa::adc(&mut r9, 0, carry);
+        let r10 = fa::mac_with_carry(r10, (self.0).0[5], (self.0).0[5], &mut carry);
+        fa::adc(&mut r11, 0, carry);
+        self.mont_reduce(r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11);
+        self
+    }
+}
+
+impl<P: Fp384Parameters> MulAssign<&'_ Self> for Fp384<P> {
+    #[inline]
+    fn mul_assign(&mut self, other: &Self) {
+        adx_or!(
+            {
+                (self.0).0 = crate::adx::fp384::mul(&(self.0).0, &(other.0).0, &Self::ADX_MODULUS);
+                self.reduce();
+            },
+            self.mul_assign_scalar(other)
+        )
     }
 }
 
