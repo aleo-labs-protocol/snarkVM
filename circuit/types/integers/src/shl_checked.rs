@@ -176,8 +176,10 @@ impl<E: Environment, I: IntegerType> OutputMode<dyn Shl<Integer<E, I>, Output = 
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlChecked<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
+    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
     type Case = (Mode, Mode, bool, bool);
 
+    #[rustfmt::skip]
     fn count(case: &Self::Case) -> Count {
         // A quick hack that matches `(u8 -> 0, u16 -> 1, u32 -> 2, u64 -> 3, u128 -> 4)`.
         let index = |num_bits: u64| match [8, 16, 32, 64, 128].iter().position(|&bits| bits == num_bits) {
@@ -185,13 +187,51 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlChecked<Intege
             None => E::halt(format!("Integer of {num_bits} bits is not supported")),
         };
 
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (_, Mode::Constant) => Count::is(0, 0, 0, 0),
-            (Mode::Constant, _) | (_, _) => {
-                let wrapped_count = count!(Integer<E, I>, ShlWrapped<Integer<E, M>, Output=Integer<E, I>>, case);
-                wrapped_count + Count::is(0, 0, M::BITS - 4 - index(I::BITS), M::BITS - 3 - index(I::BITS))
-            }
+        // `shl_checked` shifts inside one field element when `3 * I::BITS < size_in_data_bits` for signed integers,
+        // and when `2 * I::BITS < size_in_data_bits` for unsigned integers. Both hold for integers of up to 64 bits.
+        // At 128 bits, `shl_checked` computes `2^rhs` with `pow_checked` and calls `mul_checked`.
+        //
+        // Each block below matches `(mode of self, mode of rhs, self is zero)` in this order:
+        //  - Both constant: the output is constant.
+        //  - Constant zero `self`: up to 64 bits, the output is constant,
+        //    and the only constraint checks that `rhs < I::BITS`.
+        //  - Other constant `self`.
+        //  - Constant `rhs`.
+        //  - Variable `self` and `rhs`.
+        // `Count::less_than` is an upper bound for a count that depends on the values.
+        match (I::is_signed(), 3 * I::BITS < E::BaseField::size_in_data_bits() as u64, 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
+            // Signed, up to 64 bits.
+            (true, true, _) => match (case.0, case.1, case.2) {
+                (Mode::Constant, Mode::Constant, _) => Count::is((6 * I::BITS) + index(I::BITS) + 3, 0, 0, 0),
+                (Mode::Constant, _, true) => Count::is((6 * I::BITS) + index(I::BITS) + 3, 0, 0, 1),
+                (Mode::Constant, _, false) => Count::is((3 * I::BITS) + index(I::BITS) + 3, 0, (3 * I::BITS) + index(I::BITS) + 2, (4 * I::BITS) + index(I::BITS) + 4),
+                (_, Mode::Constant, _) => Count::is((3 * I::BITS) + index(I::BITS) + 3, 0, 3 * I::BITS, (4 * I::BITS) + 1),
+                (_, _, _) => Count::is((3 * I::BITS) + index(I::BITS) + 3, 0, (3 * I::BITS) + index(I::BITS) + 3, (4 * I::BITS) + index(I::BITS) + 5),
+            },
+            // Signed, 128 bits.
+            (true, false, _) => match (case.0, case.1, case.2) {
+                (Mode::Constant, Mode::Constant, _) => Count::is(8 * I::BITS, 0, 0, 0),
+                (Mode::Constant, _, true) => Count::is(2051, 0, (520 * M::BITS) - 262, (525 * M::BITS) - 267),
+                (Mode::Constant, _, false) => Count::less_than(1730, 0, (520 * M::BITS) + 579, (525 * M::BITS) + 581),
+                (_, Mode::Constant, _) => Count::less_than(1280, 0, 966, 974),
+                (_, _, _) => Count::is(1474, 0, (520 * M::BITS) + 836, (525 * M::BITS) + 839),
+            },
+            // Unsigned, up to 64 bits.
+            (false, _, true) => match (case.0, case.1, case.2) {
+                (Mode::Constant, Mode::Constant, _) => Count::is((5 * I::BITS) + index(I::BITS) + 3, 0, 0, 0),
+                (Mode::Constant, _, true) => Count::is((5 * I::BITS) + index(I::BITS) + 3, 0, 0, 1),
+                (Mode::Constant, _, false) => Count::is((3 * I::BITS) + index(I::BITS) + 3, 0, (2 * I::BITS) + index(I::BITS) + 2, (2 * I::BITS) + index(I::BITS) + 5),
+                (_, Mode::Constant, _) => Count::is((3 * I::BITS) + index(I::BITS) + 3, 0, 2 * I::BITS, (2 * I::BITS) + 2),
+                (_, _, _) => Count::is((3 * I::BITS) + index(I::BITS) + 3, 0, (2 * I::BITS) + index(I::BITS) + 3, (2 * I::BITS) + index(I::BITS) + 6),
+            },
+            // Unsigned, 128 bits.
+            (false, _, false) => match (case.0, case.1, case.2) {
+                (Mode::Constant, Mode::Constant, _) => Count::is(5 * I::BITS, 0, 0, 0),
+                (Mode::Constant, _, true) => Count::is(1027, 0, (520 * M::BITS) - 521, (525 * M::BITS) - 527),
+                (Mode::Constant, _, false) => Count::less_than(834, 0, (520 * M::BITS) - 328, (525 * M::BITS) - 331),
+                (_, Mode::Constant, _) => Count::less_than(512, 0, 193, 196),
+                (_, _, _) => Count::is(834, 0, (520 * M::BITS) - 325, (525 * M::BITS) - 328),
+            },
         }
     }
 }
@@ -230,13 +270,15 @@ mod tests {
     ) {
         let a = Integer::<Circuit, I>::new(mode_a, first);
         let b = Integer::<Circuit, M>::new(mode_b, second);
+        let a_is_zero = a.is_zero().eject_value();
+        let b_is_zero = b.is_zero().eject_value();
 
         match first.checked_shl(&second.to_u32().unwrap()) {
             Some(expected) => Circuit::scope(name, || {
                 let candidate = a.shl_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                // assert_count!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
+                assert_count!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
                 // assert_output_mode!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b), candidate);
                 assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
             }),
