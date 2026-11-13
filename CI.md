@@ -33,8 +33,9 @@ on every event.
 
 | Job | Runner | Trigger | Timeout (min) | What it runs | CircleCI job |
 |---|---|---|---|---|---|
+| `changes` | hosted | all | | finds whether a pull request changes only documentation | |
 | `start-cpu-runners` | hosted | all | | starts fleet boxes | |
-| `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; the check to require | |
+| `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; on a documentation-only pull request, accepts the skipped build and test jobs; the check to require | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
 | `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
@@ -69,6 +70,22 @@ filter matched no test.
 A job with no timeout gets the GitHub default of six hours. Only hosted jobs
 have none, and a hosted job holds no fleet box.
 
+## Documentation-only pull requests
+
+A pull request that changes only documentation runs `changes`,
+`check-shared-refs`, `fmt`, `deny` and `ci-ok`, plus `machete` when it targets
+a release branch. `wasm`, `lint`, every `test` entry and `windows` are
+skipped, and no fleet box starts. `ci-ok` passes with those jobs skipped.
+
+Documentation is any `*.md` file outside `curves/documentation`, which
+`snarkvm-curves` compiles in as its crate docs. A renamed file counts under
+both of its paths. `changes` reads the file list from the GitHub API; if that
+fails, the pull request runs everything. A push or a manual dispatch always
+runs everything, so `staging` still gets a full run after the merge.
+
+Before a crate includes another Markdown file with `include_str!`, or a test
+reads one, exclude that file in `changes`.
+
 ## Test groups
 
 Each line of a `test`, `test-merge` or `test-release` entry's `runs` is one
@@ -89,6 +106,7 @@ Each entry uploads nextest's JUnit reports, one for each line, as the artifact
 A fork's pull request runs nothing on the fleet. Every self-hosted job checks
 that the head repository is this one. The hosted jobs, including the hosted
 `test` entries, still run, but `ci-ok` fails, so a fork's change merges only
-after it is pushed to a branch here. The fleet's `target/` and sccache
+after it is pushed to a branch here. The exception is a documentation-only
+pull request, which needs no fleet job. The fleet's `target/` and sccache
 persist between jobs, so anyone who can push a branch here can affect later
 builds there. That is the same trust as push access; do not widen the guard.

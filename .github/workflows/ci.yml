@@ -25,7 +25,41 @@ env:
 # A push runs CI only in this repository. A mirror receives this branch by
 # push, with this file, and would otherwise rerun CI on its own runners.
 jobs:
+  # Whether a pull request changes only documentation. Then nothing is built
+  # or tested, and no fleet box starts. Every other event runs everything, and
+  # so does a pull request whose files cannot be listed.
+  #
+  # Documentation is any `*.md` file outside `curves/documentation`, which
+  # `snarkvm-curves` compiles in as its crate docs. Exclude a Markdown file
+  # here before a crate includes it.
+  changes:
+    runs-on: ubuntu-latest
+    permissions: { pull-requests: read }
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    outputs:
+      docs-only: ${{ steps.files.outputs.docs-only }}
+    steps:
+      - id: files
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+          # A renamed file counts under both of its paths.
+          IS_DOCS: >-
+            .[] | [.filename, .previous_filename // empty] |
+            all(endswith(".md") and (startswith("curves/documentation/") | not))
+        run: |
+          # One line for each file. The API lists at most 3000, so the count
+          # is checked against the pull request's own.
+          docs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq "$IS_DOCS") || docs=
+          echo "$docs" | sort | uniq -c
+          if [ "$(grep -c . <<< "$docs")" = "$CHANGED_FILES" ] && ! grep -qvx true <<< "$docs"; then
+            echo "docs-only=true" >> "$GITHUB_OUTPUT"
+          fi
+
   start-cpu-runners:
+    needs: changes
     # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
     uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
     permissions: { id-token: write, contents: read, actions: read }
@@ -39,6 +73,7 @@ jobs:
       jobs-per-box: 2
       runner-app-id: ${{ vars.RUNNER_APP_ID }}
     if: >-
+      needs.changes.outputs.docs-only != 'true' &&
       (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
       (github.event.pull_request == null ||
        github.event.pull_request.head.repo.full_name == github.repository)
@@ -77,9 +112,12 @@ jobs:
       - run: cargo deny check bans licenses sources
 
   wasm:
+    needs: changes
     permissions: { contents: read, actions: write }
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    if: >-
+      needs.changes.outputs.docs-only != 'true' &&
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -242,9 +280,12 @@ jobs:
   # The cheap entries, on hosted runners: they wait for no box, and a fork's
   # pull request runs them too.
   test-hosted:
+    needs: changes
     permissions: { contents: read, actions: write }
     runs-on: ${{ matrix.os }}
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    if: >-
+      needs.changes.outputs.docs-only != 'true' &&
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -369,12 +410,14 @@ jobs:
   # The release profile on arm64: opt-level 3 and thin LTO, with no debug
   # assertions. On a release branch and on demand.
   test-release-arm:
+    needs: changes
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.ref, 'refs/heads/release/') ||
-      startsWith(github.base_ref, 'release/')
+      needs.changes.outputs.docs-only != 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/heads/release/') ||
+       startsWith(github.base_ref, 'release/'))
     env:
       RUSTFLAGS: ${{ matrix.rustflags }}
     strategy:
@@ -409,12 +452,14 @@ jobs:
       - run: cargo machete
 
   windows:
+    needs: changes
     runs-on: windows-latest
     permissions: { contents: read, actions: write }
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.ref, 'refs/heads/release/') ||
-      startsWith(github.base_ref, 'release/')
+      needs.changes.outputs.docs-only != 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/heads/release/') ||
+       startsWith(github.base_ref, 'release/'))
     strategy:
       fail-fast: false
       matrix:
@@ -434,12 +479,13 @@ jobs:
 
   # The one check to require. A skipped job counts as passing a required check,
   # and a fleet job is skipped when the boxes fail to start or the pull request
-  # comes from a fork; here anything but success fails. The exception is a
+  # comes from a fork; here anything but success fails. The exceptions are a
   # merge or release job skipped outside a release branch, where it is not
-  # meant to run.
+  # meant to run, and a build or test job skipped on a documentation-only
+  # pull request.
   ci-ok:
     if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, test-release-arm, machete, windows]
+    needs: [changes, check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -448,5 +494,11 @@ jobs:
             ${{ github.event_name == 'workflow_dispatch' ||
             startsWith(github.ref, 'refs/heads/release/') ||
             startsWith(github.base_ref, 'release/') }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs-only == 'true' }}
         run: |
-          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" --argjson docs "$DOCS_ONLY" '
+            (if $release then [] else ["test-merge", "test-release", "test-release-arm", "machete", "windows"] end
+              + if $docs then ["wasm", "lint", "test", "test-hosted", "test-merge", "test-release", "test-release-arm", "windows"] else [] end) as $may_skip
+            | to_entries
+            | map(select(.value.result != "success" and (.value.result != "skipped" or (.key | IN($may_skip[]) | not))))
+            | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
