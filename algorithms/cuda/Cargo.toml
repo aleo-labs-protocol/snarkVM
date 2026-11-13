@@ -28,6 +28,9 @@ default = [ ]
 portable = [ "blst/portable" ]
 quiet = [ ]
 
+[dependencies.anyhow]
+workspace = true
+
 [dependencies.blst]
 version = "0.3.11"
 features = [ "portable" ]
