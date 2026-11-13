@@ -16,6 +16,7 @@
 use crate::helpers::{
     Map,
     MapRead,
+    NestedMap,
     rocksdb::{Database, MapID, RocksDB, TestMap as TestMapID},
 };
 use console::{
@@ -65,6 +66,76 @@ fn test_open_allocates_little_disk_space() {
         .map(|metadata| metadata.blocks() * 512)
         .sum();
     assert!(allocated < MAX_ALLOCATED_BYTES, "The database allocates {allocated} bytes on disk");
+}
+
+#[test]
+fn test_dropping_last_handle_deletes_test_directory() {
+    let storage = StorageMode::new_test(None);
+    let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
+    let map = RocksDB::open_map(0, storage.clone(), MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let nested_map =
+        RocksDB::open_nested_map(0, storage, MapID::Test(TestMapID::Test2)).expect("Failed to open nested data map");
+    map.insert(0u32, "0".to_string()).expect("Failed to insert");
+    nested_map.insert(0u32, 1u32, "1".to_string()).expect("Failed to insert");
+
+    drop(map);
+    assert!(path.exists(), "The directory was deleted while a handle was open");
+    drop(nested_map);
+    assert!(!path.exists(), "The directory outlived the last handle");
+}
+
+#[test]
+fn test_reopen_after_dropping_every_handle() {
+    // The caller's `StorageMode` keeps the directory alive after the database closes.
+    let storage = StorageMode::new_test(None);
+    let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
+
+    let map = RocksDB::open_map(0, storage.clone(), MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    map.insert(123456789u32, "123456789".to_string()).expect("Failed to insert");
+    drop(map);
+    assert!(path.exists(), "The directory was deleted while the storage mode was held");
+
+    let map = RocksDB::open_map::<_, u32, String, _>(0, storage, MapID::Test(TestMapID::Test))
+        .expect("Failed to reopen data map");
+    assert_eq!(map.get_confirmed(&123456789).expect("Failed to get").map(|v| v.into_owned()), Some("123456789".into()));
+    drop(map);
+    assert!(!path.exists(), "The directory outlived the last handle");
+}
+
+#[test]
+fn test_maps_on_one_test_storage_share_one_database() {
+    let storage = StorageMode::new_test(None);
+    let first = RocksDB::open_map::<_, u32, String, _>(0, storage.clone(), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
+    let second = RocksDB::open_nested_map::<_, u32, u32, String, _>(0, storage, MapID::Test(TestMapID::Test2))
+        .expect("Failed to open nested data map");
+    assert!(std::sync::Arc::ptr_eq(&first.0.database.rocksdb, &second.database.rocksdb));
+    assert!(std::sync::Arc::ptr_eq(&first.0.database.atomic_batch, &second.database.atomic_batch));
+}
+
+#[test]
+fn test_concurrent_reopen_of_test_storage() {
+    const THREADS: u32 = 4;
+    const ITERATIONS: u32 = 25;
+
+    let storage = StorageMode::new_test(None);
+    std::thread::scope(|scope| {
+        for thread in 0..THREADS {
+            let storage = storage.clone();
+            scope.spawn(move || {
+                for i in 0..ITERATIONS {
+                    // Other threads drop their last handle while this one opens the database.
+                    let map = RocksDB::open_map(0, storage.clone(), MapID::Test(TestMapID::Test))
+                        .expect("Failed to open data map");
+                    map.insert(thread * ITERATIONS + i, i.to_string()).expect("Failed to insert");
+                }
+            });
+        }
+    });
+
+    let map = RocksDB::open_map::<_, u32, String, _>(0, storage, MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
+    assert_eq!(map.iter_confirmed().count(), (THREADS * ITERATIONS) as usize);
 }
 
 #[test]
