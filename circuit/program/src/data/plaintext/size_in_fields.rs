@@ -23,10 +23,10 @@ impl<A: Aleo> Visibility<A> for Plaintext<A> {
         // Compute the ceiling division of the number of bits by the number of bits in a field element.
         let num_fields = num_bits.div_ceil(A::BaseField::size_in_data_bits());
         // Ensure the number of field elements does not exceed the maximum allowed size.
-        match num_fields <= A::MAX_DATA_SIZE_IN_FIELDS as usize {
+        match u16::try_from(num_fields) {
             // Return the number of field elements.
-            true => num_fields as u16,
-            false => A::halt("Plaintext is too large to encode in field elements."),
+            Ok(num_fields) if u32::from(num_fields) <= A::MAX_DATA_SIZE_IN_FIELDS => num_fields,
+            _ => A::halt("Plaintext is too large to encode in field elements."),
         }
     }
 }

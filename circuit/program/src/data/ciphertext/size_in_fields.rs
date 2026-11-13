@@ -21,10 +21,10 @@ impl<A: Aleo> Visibility<A> for Ciphertext<A> {
         // Retrieve the number of field elements.
         let num_fields = self.0.len();
         // Ensure the number of field elements does not exceed the maximum allowed size.
-        match num_fields <= A::MAX_DATA_SIZE_IN_FIELDS as usize {
+        match u16::try_from(num_fields) {
             // Return the number of field elements.
-            true => num_fields as u16,
-            false => A::halt("Ciphertext is too large to encode in field elements."),
+            Ok(num_fields) if u32::from(num_fields) <= A::MAX_DATA_SIZE_IN_FIELDS => num_fields,
+            _ => A::halt("Ciphertext is too large to encode in field elements."),
         }
     }
 }

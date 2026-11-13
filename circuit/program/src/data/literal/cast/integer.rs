@@ -66,6 +66,8 @@ impl<E: Environment, I: IntegerType> Cast<Group<E>> for Integer<E, I> {
 
 impl<E: Environment, I0: IntegerType, I1: IntegerType> Cast<Integer<E, I1>> for Integer<E, I0> {
     /// Casts an `Integer` to another `Integer`, if the conversion is lossless.
+    // Note: `IntegerType::BITS` is at most 128, so the casts to `usize` are lossless.
+    #[allow(clippy::cast_possible_truncation)]
     #[inline]
     fn cast(&self) -> Integer<E, I1> {
         let mut bits_le = self.to_bits_le();
