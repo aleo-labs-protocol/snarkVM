@@ -50,9 +50,8 @@ use console::{
     },
     types::U64,
 };
-use snarkvm_utilities::ensure_equals;
+use snarkvm_utilities::{ensure_equals, timing_event, timing_span};
 
-use aleo_std::prelude::*;
 use anyhow::Context;
 use core::num::NonZeroUsize;
 use indexmap::IndexMap;
@@ -310,7 +309,7 @@ impl<N: Network> Puzzle<N> {
         expected_epoch_hash: N::BlockHash,
         expected_proof_target: u64,
     ) -> Result<()> {
-        let timer = timer!("Puzzle::verify");
+        let timer = timing_span!("Puzzle::verify").entered();
 
         // Ensure the solutions are not empty.
         ensure!(!solutions.is_empty(), "The solutions are empty");
@@ -322,7 +321,7 @@ impl<N: Network> Puzzle<N> {
         if has_duplicates(solutions.solution_ids()) {
             bail!("The solutions contain duplicate solution IDs");
         }
-        lap!(timer, "Perform initial checks");
+        timing_event!("Perform initial checks");
 
         // Ensure the epoch hash matches.
         cfg_iter!(solutions).try_for_each(|(solution_id, solution)| {
@@ -333,7 +332,7 @@ impl<N: Network> Puzzle<N> {
             );
             Ok(())
         })?;
-        lap!(timer, "Verify each epoch hash matches");
+        timing_event!("Verify each epoch hash matches");
 
         // Ensure the solutions meet the proof target requirement.
         cfg_into_iter!(self.get_proof_targets(solutions)?).enumerate().try_for_each(|(i, proof_target)| {
@@ -345,7 +344,8 @@ impl<N: Network> Puzzle<N> {
             }
             Ok(())
         })?;
-        finish!(timer, "Verify each solution");
+        timing_event!("Verify each solution");
+        drop(timer);
         Ok(())
     }
 

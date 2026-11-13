@@ -35,7 +35,6 @@ cuda = [ "snarkvm-algorithms/cuda" ]
 locktick = [ "dep:locktick", "snarkvm-algorithms/locktick" ]
 serial = [ "snarkvm-console/serial", "snarkvm-algorithms/serial" ]
 setup = [ ]
-timer = [ "aleo-std/timer" ]
 wasm = [ "snarkvm-console/wasm" ]
 
 [dependencies.snarkvm-console]
@@ -46,9 +45,6 @@ features = [ "account", "network", "types" ]
 workspace = true
 
 [dependencies.snarkvm-utilities]
-workspace = true
-
-[dependencies.aleo-std]
 workspace = true
 
 [dependencies.anyhow]

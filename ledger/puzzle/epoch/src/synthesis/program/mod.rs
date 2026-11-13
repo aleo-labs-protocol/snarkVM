@@ -27,8 +27,8 @@ use console::{
 };
 use snarkvm_synthesizer_process::{CallStack, Process, Registers, Stack};
 use snarkvm_synthesizer_program::{Instruction, Program, RegistersCircuit as _, StackTrait};
+use snarkvm_utilities::{timing_event, timing_span};
 
-use aleo_std::prelude::{finish, lap, timer};
 use anyhow::{Result, anyhow, bail, ensure};
 use rand::RngExt;
 use rand_chacha::ChaChaRng;

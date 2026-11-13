@@ -95,9 +95,8 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_utilities::try_vm_runtime;
+use snarkvm_utilities::{timing_event, timing_span, try_vm_runtime};
 
-use aleo_std::prelude::{finish, lap, timer};
 use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;

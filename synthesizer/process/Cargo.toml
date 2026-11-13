@@ -44,7 +44,6 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 test = [ "snarkvm-console/test", "snarkvm-circuit/test" ]
-timer = [ "aleo-std/timer" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ ]
 test_consensus_heights = [ ]

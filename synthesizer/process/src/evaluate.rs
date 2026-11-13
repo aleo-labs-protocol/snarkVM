@@ -23,7 +23,7 @@ impl<N: Network> Process<N> {
         &self,
         authorization: Authorization<N>,
     ) -> Result<Response<N>, ProcessEvalError> {
-        let timer = timer!("Process::evaluate");
+        let timer = timing_span!("Process::evaluate").entered();
 
         // Retrieve the top-level request (without popping it).
         let request = authorization.peek_next()?;
@@ -36,9 +36,9 @@ impl<N: Network> Process<N> {
         let rng = &mut rand::rng();
         // Evaluate the function.
         let response = stack.evaluate_function::<A, _>(CallStack::evaluate(authorization)?, None, None, rng)?;
-        lap!(timer, "Evaluate the function");
+        timing_event!("Evaluate the function");
 
-        finish!(timer);
+        drop(timer);
 
         Ok(response)
     }

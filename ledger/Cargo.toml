@@ -130,7 +130,6 @@ test_targets = [
 dev-committee = []
 dev_genesis_state_root = [ "snarkvm-ledger-store/dev_genesis_state_root" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
-timer = [ "aleo-std/timer" ]
 
 [dependencies.snarkvm-console]
 workspace = true

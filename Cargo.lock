@@ -86,9 +86,6 @@ name = "aleo-std-timer"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9fbc20b310af70d896f74cdccc2f12b5d6d9cd7edea5abfd823038279703b30"
-dependencies = [
- "colored 2.2.0",
-]
 
 [[package]]
 name = "alloca"
@@ -543,16 +540,6 @@ name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
-
-[[package]]
-name = "colored"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
-dependencies = [
- "lazy_static",
- "windows-sys 0.59.0",
-]
 
 [[package]]
 name = "colored"
@@ -3216,7 +3203,6 @@ dependencies = [
 name = "snarkvm-console-collections"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "bincode",
  "criterion",
  "indexmap 2.14.0",
@@ -3225,6 +3211,8 @@ dependencies = [
  "snarkvm-console-algorithms",
  "snarkvm-console-network",
  "snarkvm-console-types",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3609,7 +3597,6 @@ dependencies = [
 name = "snarkvm-ledger-puzzle"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "bincode",
  "criterion",
@@ -3631,9 +3618,8 @@ dependencies = [
 name = "snarkvm-ledger-puzzle-epoch"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
- "colored 3.1.1",
+ "colored",
  "hex",
  "indexmap 2.14.0",
  "locktick",
@@ -3731,7 +3717,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "cfg-if",
- "colored 3.1.1",
+ "colored",
  "encoding",
  "hex",
  "js-sys",
@@ -3820,7 +3806,7 @@ version = "4.13.0"
 dependencies = [
  "aleo-std",
  "bincode",
- "colored 3.1.1",
+ "colored",
  "criterion",
  "indexmap 2.14.0",
  "itertools 0.15.0",
@@ -3900,7 +3886,7 @@ version = "4.13.0"
 dependencies = [
  "anyhow",
  "bincode",
- "colored 3.1.1",
+ "colored",
  "criterion",
  "num-bigint",
  "rand",

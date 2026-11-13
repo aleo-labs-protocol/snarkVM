@@ -24,7 +24,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<(), CallEvalError> {
-        let timer = timer!("CallDynamic::evaluate");
+        let timer = timing_span!("CallDynamic::evaluate").entered();
 
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
@@ -73,7 +73,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let program_id = target.program_id();
         let function_name = target.function_name();
         let substack = target.substack();
-        lap!(timer, "Retrieved the substack");
+        timing_event!("Retrieved the substack");
 
         // If the target is a closure, reject it — closures cannot be dynamically called.
         let outputs = if substack.program().get_closure(function_name).is_ok() {
@@ -212,7 +212,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         else {
             return Err(anyhow!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.").into());
         };
-        lap!(timer, "Computed outputs");
+        timing_event!("Computed outputs");
 
         // Assign the outputs to the destination registers.
         if outputs.len() != self.destinations().len() {
@@ -227,7 +227,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
         }
-        finish!(timer);
+        drop(timer);
 
         Ok(())
     }
@@ -242,7 +242,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
     ) -> Result<(), CallExecError> {
         use circuit::{Eject, environment::ToField as _};
 
-        let timer = timer!("CallDynamic::execute");
+        let timer = timing_span!("CallDynamic::execute").entered();
 
         // Load the operands values.
         let inputs: Vec<_> =
@@ -282,7 +282,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
         // Execute the function.
         let outputs = {
-            lap!(timer, "Execute the function");
+            timing_event!("Execute the function");
 
             // Retrieve the number of public variables in the circuit.
             let num_public = A::num_public();
@@ -714,7 +714,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     }
                 }
             };
-            lap!(timer, "Computed the request and response");
+            timing_event!("Computed the request and response");
 
             // Restore the caller's circuit, which was saved before the callee was synthesized.
             A::inject_r1cs(r1cs);
@@ -780,7 +780,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 Some(function_id.clone()),
             );
             A::assert(check_input_ids)?;
-            lap!(timer, "Checked the input ids");
+            timing_event!("Checked the input ids");
 
             // Checking that none of the outputs in the caller's context are records or futures.
             for output in caller_response_outputs.iter() {
@@ -807,7 +807,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 &output_registers,
                 Some(function_id),
             );
-            lap!(timer, "Checked the outputs");
+            timing_event!("Checked the outputs");
 
             // Return the circuit outputs.
             outputs
@@ -826,9 +826,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
         }
-        lap!(timer, "Assigned the outputs to registers");
+        timing_event!("Assigned the outputs to registers");
 
-        finish!(timer);
+        drop(timer);
 
         Ok(())
     }
