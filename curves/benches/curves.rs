@@ -59,6 +59,8 @@ criterion_group!(
     bls12_377::fq12::bench_fq12_double,
     bls12_377::fq12::bench_fq12_square,
     bls12_377::fq12::bench_fq12_inverse,
+    bls12_377::fq12::bench_fq12_cyclotomic_square,
+    bls12_377::fq12::bench_fq12_cyclotomic_exp_x,
 );
 
 criterion_group!(
@@ -96,6 +98,7 @@ criterion_group!(
     bls12_377::pairing::bench_pairing_miller_loop,
     bls12_377::pairing::bench_pairing_final_exponentiation,
     bls12_377::pairing::bench_pairing_full,
+    bls12_377::pairing::bench_pairing_miller_loop_6,
 );
 
 criterion_main!(bls12_377_ec, bls12_377_fq, bls12_377_fq12, bls12_377_fq2, bls12_377_fr, bls12_377_pairing,);
