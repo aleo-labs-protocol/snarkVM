@@ -20,3 +20,4 @@ extern crate snarkvm_console_collections as console;
 
 pub mod kary_merkle_tree;
 pub mod merkle_tree;
+pub mod sparse_kary_merkle_tree;

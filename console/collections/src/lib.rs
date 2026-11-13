@@ -23,3 +23,4 @@ pub use snarkvm_console_types::prelude::*;
 
 pub mod kary_merkle_tree;
 pub mod merkle_tree;
+pub mod sparse_kary_merkle_tree;
