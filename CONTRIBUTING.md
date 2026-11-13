@@ -46,3 +46,5 @@ snarkVM is a big project, so (non-)adherence to best practices related to perfor
 - if a lot of computational power is needed, consider parallelizing that workload with [`rayon`](https://crates.io/crates/rayon) - it's not always a viable solution, but can yield great performance improvements when used in the right context; the [`cfg_*` macros](https://github.com/ProvableHQ/snarkVM/blob/staging/utilities/src/parallel.rs) should be used in crates which also have a `serial` feature, so that `rayon` can be applied conditionally
 - for `struct`s that can be compared/discerned based on some specific field(s), consider hand-written implementations of `PartialEq` **and** `Hash` ([they must match](https://doc.rust-lang.org/std/hash/trait.Hash.html#hash-and-eq)) for faster comparison and hashing
 - if possible, ensure that the results of your changes are not detrimental to performance using [`criterion`](https://crates.io/crates/criterion) (for smaller, fine-grained adjustments) and [`valgrind --tool={cachegrind | massif}`](https://valgrind.org/info/tools.html) (for larger-scale changes)
+
+<!-- probe -->
