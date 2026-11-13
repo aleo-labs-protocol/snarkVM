@@ -613,7 +613,13 @@ pub(crate) mod test_helpers {
     use indexmap::IndexMap;
     use serde_json::json;
     use snarkvm_synthesizer_snark::{Proof, VerifyingKey};
-    use std::sync::OnceLock;
+    use std::{
+        fs,
+        io,
+        path::{Path, PathBuf},
+        sync::OnceLock,
+        time::UNIX_EPOCH,
+    };
 
     pub(crate) type CurrentNetwork = MainnetV0;
     pub(crate) type CurrentAleo = AleoV0;
@@ -659,26 +665,136 @@ pub(crate) mod test_helpers {
         }
     }
 
-    pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
-        static INSTANCE: OnceLock<PrivateKey<CurrentNetwork>> = OnceLock::new();
-        *INSTANCE.get_or_init(|| {
-            // Initialize a new caller.
-            PrivateKey::<CurrentNetwork>::new(rng).unwrap()
+    /// The seed of the RNG that builds the genesis fixture.
+    const GENESIS_FIXTURE_SEED: u64 = 1_779_036_211;
+
+    /// Returns the genesis private key and the genesis block that it signs.
+    ///
+    /// The test processes of one binary share the fixture through a file beside the binary.
+    fn genesis_fixture() -> &'static (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
+        static INSTANCE: OnceLock<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> = OnceLock::new();
+        INSTANCE.get_or_init(|| match genesis_fixture_path_and_stamp() {
+            Ok((path, stamp)) => load_or_build_genesis_fixture(&path, &stamp),
+            Err(_) => build_genesis_fixture(),
         })
     }
 
-    pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
-        static INSTANCE: OnceLock<Block<CurrentNetwork>> = OnceLock::new();
-        INSTANCE
-            .get_or_init(|| {
-                // Initialize the VM.
-                let vm = crate::vm::test_helpers::sample_vm();
-                // Initialize a new caller.
-                let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-                // Return the block.
-                vm.genesis_beacon(&caller_private_key, rng).unwrap()
-            })
-            .clone()
+    /// Builds the genesis fixture from an RNG with a fixed seed.
+    fn build_genesis_fixture() -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
+        let rng = &mut TestRng::fixed(GENESIS_FIXTURE_SEED);
+        // Initialize a new caller.
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).expect("Failed to sample the genesis private key");
+        // Initialize the genesis block.
+        let block = sample_vm().genesis_beacon(&private_key, rng).expect("Failed to build the genesis block");
+        (private_key, block)
+    }
+
+    /// Returns the path of the genesis fixture file of the running test binary, and the stamp of that binary.
+    ///
+    /// The stamp holds the size and the modification time of the binary.
+    fn genesis_fixture_path_and_stamp() -> io::Result<(PathBuf, Vec<u8>)> {
+        let binary = std::env::current_exe()?;
+        let metadata = fs::metadata(&binary)?;
+        let modified = metadata.modified()?.duration_since(UNIX_EPOCH).map_err(io::Error::other)?;
+        let mut stamp = Vec::with_capacity(24);
+        stamp.extend_from_slice(&metadata.len().to_le_bytes());
+        stamp.extend_from_slice(&modified.as_nanos().to_le_bytes());
+        Ok((path_with_suffix(&binary, ".genesis"), stamp))
+    }
+
+    /// Returns `path` with `suffix` appended to its last component.
+    fn path_with_suffix(path: &Path, suffix: &str) -> PathBuf {
+        let mut path = path.as_os_str().to_os_string();
+        path.push(suffix);
+        PathBuf::from(path)
+    }
+
+    /// Reads the genesis fixture at `path`, or builds the fixture and writes it to `path`.
+    ///
+    /// An exclusive lock on the sibling `.lock` file lets one process build the fixture while the others wait.
+    /// A file that cannot be read or parsed, or that holds a different stamp, is rebuilt and overwritten.
+    fn load_or_build_genesis_fixture(path: &Path, stamp: &[u8]) -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
+        if let Some(fixture) = read_genesis_fixture(path, stamp) {
+            return fixture;
+        }
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(path_with_suffix(path, ".lock"))
+            .and_then(|file| file.lock().map(|()| file));
+        // Without the lock, the fixture is built but not written.
+        let Ok(lock) = lock else {
+            return build_genesis_fixture();
+        };
+        // Another process may have written the fixture while this process waited for the lock.
+        if let Some(fixture) = read_genesis_fixture(path, stamp) {
+            return fixture;
+        }
+        let fixture = build_genesis_fixture();
+        // A failed write leaves the file for a later process to rebuild.
+        let _ = write_genesis_fixture(path, stamp, &fixture);
+        drop(lock);
+        fixture
+    }
+
+    /// Reads the genesis fixture at `path`, if the file holds a valid fixture with the given stamp.
+    fn read_genesis_fixture(path: &Path, stamp: &[u8]) -> Option<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> {
+        genesis_fixture_from_bytes(&fs::read(path).ok()?, stamp)
+    }
+
+    /// Writes the genesis fixture to `path` through a temporary file and a rename.
+    fn write_genesis_fixture(
+        path: &Path,
+        stamp: &[u8],
+        fixture: &(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>),
+    ) -> io::Result<()> {
+        let temporary_path = path_with_suffix(path, ".tmp");
+        fs::write(&temporary_path, genesis_fixture_to_bytes(stamp, fixture)?)?;
+        fs::rename(temporary_path, path)
+    }
+
+    /// Returns the stamp, followed by the bytes of the genesis private key and the genesis block.
+    fn genesis_fixture_to_bytes(
+        stamp: &[u8],
+        (private_key, block): &(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>),
+    ) -> io::Result<Vec<u8>> {
+        let mut bytes = stamp.to_vec();
+        private_key.write_le(&mut bytes)?;
+        block.write_le(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// Parses the output of `genesis_fixture_to_bytes`.
+    ///
+    /// Returns `None` if the bytes hold a different stamp, fail to parse, have trailing bytes,
+    /// or hold a block that the private key did not sign.
+    fn genesis_fixture_from_bytes(
+        bytes: &[u8],
+        stamp: &[u8],
+    ) -> Option<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> {
+        let mut reader = bytes.strip_prefix(stamp)?;
+        let private_key = PrivateKey::<CurrentNetwork>::read_le(&mut reader).ok()?;
+        let block = Block::<CurrentNetwork>::read_le(&mut reader).ok()?;
+        let Authority::Beacon(signature) = block.authority() else {
+            return None;
+        };
+        let is_signer = Address::try_from(&private_key).ok()? == signature.to_address();
+        (reader.is_empty() && is_signer).then_some((private_key, block))
+    }
+
+    /// Returns the genesis private key, which signs the block of `sample_genesis_block`.
+    ///
+    /// The key does not depend on `_rng`, and `_rng` is not advanced.
+    pub(crate) fn sample_genesis_private_key(_rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
+        genesis_fixture().0
+    }
+
+    /// Returns the genesis block, which the key of `sample_genesis_private_key` signs.
+    ///
+    /// The block does not depend on `_rng`, and `_rng` is not advanced.
+    pub(crate) fn sample_genesis_block(_rng: &mut TestRng) -> Block<CurrentNetwork> {
+        genesis_fixture().1.clone()
     }
 
     pub(crate) fn sample_vm_with_genesis_block(rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
@@ -1443,6 +1559,70 @@ function compute:
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_genesis_fixture_cache_hit_matches_miss() {
+        let directory = tempfile::tempdir().expect("Failed to create a temporary directory");
+        let path = directory.path().join("genesis");
+        let stamp = b"stamp";
+
+        // The file does not exist yet, so this call builds the fixture and writes the file.
+        let miss = load_or_build_genesis_fixture(&path, stamp);
+        // This call reads the file that the previous call wrote.
+        let hit = read_genesis_fixture(&path, stamp).expect("The fixture file is valid");
+
+        let miss_bytes = genesis_fixture_to_bytes(stamp, &miss).expect("Failed to serialize the fixture");
+        assert_eq!(miss_bytes, genesis_fixture_to_bytes(stamp, &hit).expect("Failed to serialize the fixture"));
+        assert_eq!(miss_bytes, fs::read(&path).expect("Failed to read the fixture file"));
+        // The fixture of this process comes from a separate build, in this process or in another one.
+        assert_eq!(
+            miss_bytes,
+            genesis_fixture_to_bytes(stamp, genesis_fixture()).expect("Failed to serialize the fixture")
+        );
+    }
+
+    #[test]
+    fn test_genesis_fixture_rejects_invalid_bytes() {
+        let stamp = b"stamp";
+        let fixture = genesis_fixture();
+        let (private_key, block) = fixture;
+        let bytes = genesis_fixture_to_bytes(stamp, fixture).expect("Failed to serialize the fixture");
+        assert!(genesis_fixture_from_bytes(&bytes, stamp).is_some());
+
+        // A different stamp.
+        assert!(genesis_fixture_from_bytes(&bytes, b"stamq").is_none());
+        // Missing bytes.
+        assert!(genesis_fixture_from_bytes(&[], stamp).is_none());
+        assert!(genesis_fixture_from_bytes(stamp, stamp).is_none());
+        assert!(genesis_fixture_from_bytes(&bytes[..bytes.len() - 1], stamp).is_none());
+        // Trailing bytes.
+        let mut extended = bytes.clone();
+        extended.push(0);
+        assert!(genesis_fixture_from_bytes(&extended, stamp).is_none());
+        // Bytes that do not encode a fixture.
+        let mut garbage = stamp.to_vec();
+        garbage.resize(bytes.len(), 0xff);
+        assert!(genesis_fixture_from_bytes(&garbage, stamp).is_none());
+        // A private key that did not sign the block.
+        let other_private_key =
+            PrivateKey::<CurrentNetwork>::new(&mut TestRng::default()).expect("Failed to sample a private key");
+        assert_ne!(other_private_key, *private_key);
+        let other_bytes = genesis_fixture_to_bytes(stamp, &(other_private_key, block.clone()))
+            .expect("Failed to serialize the fixture");
+        assert!(genesis_fixture_from_bytes(&other_bytes, stamp).is_none());
+    }
+
+    #[test]
+    fn test_genesis_helpers_do_not_advance_rng() {
+        let rng = &mut TestRng::fixed(1);
+        let private_key = sample_genesis_private_key(rng);
+        let block = sample_genesis_block(rng);
+        assert_eq!(rng.random::<u64>(), TestRng::fixed(1).random::<u64>());
+
+        // The helpers return the fixture of this process.
+        assert_eq!(private_key, genesis_fixture().0);
+        assert_eq!(block, genesis_fixture().1);
     }
 
     #[test]
