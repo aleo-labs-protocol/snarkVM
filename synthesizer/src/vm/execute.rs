@@ -1107,7 +1107,7 @@ constructor:
         // Construct an unproven execution from the authorized transitions, which determine the finalize cost.
         // The authorization has fewer than the maximum number of transitions, so the construction does not fail.
         let execution = Execution::from(
-            authorization.transitions().values().cloned(),
+            authorization.transitions().into_values(),
             <CurrentNetwork as Network>::StateRoot::default(),
             None,
         )
