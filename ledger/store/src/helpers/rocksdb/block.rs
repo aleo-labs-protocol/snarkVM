@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use crate::{
+    BlockMetadataKey,
     BlockStorage,
     ConfirmedTxType,
     TransactionStore,
@@ -79,6 +80,8 @@ pub struct BlockDB<N: Network> {
         DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>,
     /// The rejected deployment or execution map.
     rejected_deployment_or_execution_map: DataMap<Field<N>, Rejected<N>>,
+    /// The block metadata map.
+    block_metadata_map: DataMap<BlockMetadataKey, Vec<u8>>,
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
@@ -102,6 +105,7 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type RejectedOrAbortedTransactionIDMap = DataMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     type RejectedDeploymentOrExecutionMap = DataMap<Field<N>, Rejected<N>>;
+    type BlockMetadataMap = DataMap<BlockMetadataKey, Vec<u8>>;
     type TransactionStorage = TransactionDB<N>;
     type TransitionStorage = TransitionDB<N>;
 
@@ -130,7 +134,8 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             aborted_transaction_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedTransactionIDs))?,
             rejected_or_aborted_transaction_id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedOrAbortedTransactionID))?,
             confirmed_transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ConfirmedTransactions))?,
-            rejected_deployment_or_execution_map: internal::RocksDB::open_map(N::ID, storage, MapID::Block(BlockMap::RejectedDeploymentOrExecution))?,
+            rejected_deployment_or_execution_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedDeploymentOrExecution))?,
+            block_metadata_map: internal::RocksDB::open_map(N::ID, storage, MapID::Block(BlockMap::Metadata))?,
             transaction_store,
         })
     }
@@ -218,6 +223,16 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     /// Returns the rejected deployment or execution map.
     fn rejected_deployment_or_execution_map(&self) -> &Self::RejectedDeploymentOrExecutionMap {
         &self.rejected_deployment_or_execution_map
+    }
+
+    /// Compacts the certificate map.
+    fn compact_certificate_map(&self) -> Result<()> {
+        self.certificate_map.compact()
+    }
+
+    /// Returns the block metadata map.
+    fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
+        &self.block_metadata_map
     }
 
     /// Returns the transaction store.
