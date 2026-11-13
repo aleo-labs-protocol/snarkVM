@@ -185,11 +185,13 @@ impl Database for RocksDB {
             // The first dump runs as the database opens, and a test process exits soon after that.
             if matches!(storage, StorageMode::Test(_)) {
                 options.set_stats_dump_period_sec(0);
-                // A test database's directory is never deleted, and keeps the space that RocksDB
-                // reserves ahead of writes: 1.1 times the write buffer size for the write-ahead log,
-                // and the manifest preallocation size for the manifest.
-                options.set_write_buffer_size(4 * 1024 * 1024);
-                options.set_manifest_preallocation_size(64 * 1024);
+                // A test database's directory is never deleted, so RocksDB does not reserve disk space
+                // ahead of writes for it. By default, RocksDB reserves 1.1 times the write buffer size
+                // for the write-ahead log, and 4 MiB for the manifest.
+                // `get_options_from_string` returns a copy of `options` with the given key changed.
+                // The copy does not keep alive the objects that `options` holds for the database,
+                // such as caches and environments, so it must run before any of them is set.
+                options = options.get_options_from_string("allow_fallocate=false")?;
             }
 
             // Register the prefix length.

@@ -41,13 +41,14 @@ fn test_open_map() {
         .expect("Failed to open data map");
 }
 
-#[cfg(unix)]
+// RocksDB reserves disk space with `fallocate`, which it uses only on Linux.
+#[cfg(target_os = "linux")]
 #[test]
 fn test_open_allocates_little_disk_space() {
     use std::os::unix::fs::MetadataExt;
 
-    // RocksDB reserves space for its write-ahead log and manifest ahead of the data written to them.
-    const MAX_ALLOCATED_BYTES: u64 = 16 * 1024 * 1024;
+    // RocksDB can reserve space for its write-ahead log and manifest ahead of the data written to them.
+    const MAX_ALLOCATED_BYTES: u64 = 1024 * 1024;
 
     let storage = StorageMode::new_test(None);
     let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
