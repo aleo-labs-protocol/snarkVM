@@ -36,8 +36,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          # Bump the key suffix when the flags in .cargo/config.toml change.
-          key: ${{ runner.os }}-cargo-bench-v4-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-bench-v4-${{ hashFiles('**/Cargo.lock', '.cargo/config.toml') }}
 
       - name: Benchmark algorithms
         run: |
