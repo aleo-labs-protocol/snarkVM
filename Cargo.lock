@@ -3402,7 +3402,6 @@ dependencies = [
 name = "snarkvm-fields"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "criterion",
  "itertools 0.15.0",

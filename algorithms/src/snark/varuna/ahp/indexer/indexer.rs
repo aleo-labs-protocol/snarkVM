@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_into_iter, defer, dev_println};
+use snarkvm_utilities::{cfg_into_iter, defer, dev_println, timing_span};
 
 use anyhow::{Result, anyhow, ensure};
 use core::marker::PhantomData;
@@ -124,20 +124,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// Generate the indexed circuit evaluations for this constraint system.
     /// Used by both the Prover and Verifier
     pub(crate) fn index_helper<C: ConstraintSynthesizer<F>>(c: &C) -> Result<IndexerState<F>> {
-        let index_time = start_timer!(|| "AHP::Index");
-        defer! { end_timer!(index_time); }
+        let _index_time = timing_span!("AHP::Index").entered();
 
         let mut ics = {
-            let constraint_time = start_timer!(|| "Generating constraints");
-            defer! { end_timer!(constraint_time); }
+            let _constraint_time = timing_span!("Generating constraints").entered();
             let mut ics = IndexerConstraintSystem::new();
             c.generate_constraints(&mut ics)?;
             ics
         };
 
         let (a, b, c, num_public_variables, num_private_variables, num_constraints) = {
-            let padding_time = start_timer!(|| "Padding matrices");
-            defer! { end_timer!(padding_time); }
+            let _padding_time = timing_span!("Padding matrices").entered();
             // Given that we only use the matrix for indexing, the values we choose for
             // assignments don't matter
             let random_assignments = None;

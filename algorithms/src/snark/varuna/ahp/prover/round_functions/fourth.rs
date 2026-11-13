@@ -30,7 +30,7 @@ use crate::{
     },
 };
 use snarkvm_fields::{PrimeField, batch_inversion_and_mul};
-use snarkvm_utilities::{ExecutionPool, defer};
+use snarkvm_utilities::{ExecutionPool, timing_span};
 
 use anyhow::Result;
 use core::convert::TryInto;
@@ -77,8 +77,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
     ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, SM>), AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::FourthRound");
-        defer! { end_timer!(round_time); }
+        let _round_time = timing_span!("AHP::Prover::FourthRound").entered();
 
         let verifier::SecondMessage { alpha, .. } = second_message;
         let verifier::ThirdMessage { beta } = third_message;

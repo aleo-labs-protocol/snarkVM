@@ -28,7 +28,7 @@ use itertools::Itertools;
 use rand::{CryptoRng, Rng};
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::{defer, dev_println};
+use snarkvm_utilities::{defer, dev_println, timing_span};
 
 mod fifth;
 mod first;
@@ -43,8 +43,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         circuits_to_constraints: &BTreeMap<&'a Circuit<F, SM>, &[C]>,
         rng: &mut R,
     ) -> Result<prover::State<'a, F, SM>, AHPError> {
-        let init_time = start_timer!(|| "AHP::Prover::Init");
-        defer! { end_timer!(init_time); }
+        let _init_time = timing_span!("AHP::Prover::Init").entered();
 
         let mut randomizing_assignments = Vec::with_capacity(circuits_to_constraints.len());
         for constraints in circuits_to_constraints.values() {

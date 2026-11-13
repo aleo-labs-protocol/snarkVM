@@ -28,7 +28,7 @@ use crate::{
 };
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, defer, rand::Uniform};
+use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, defer, rand::Uniform, timing_span};
 
 use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
@@ -117,9 +117,9 @@ impl<E: PairingEngine> KZG10<E> {
 
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
-                let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
+                let msm_time = timing_span!("MSM to compute commitment to plaintext poly").entered();
                 let commitment = VariableBase::msm(bases, &plain_coeffs);
-                end_timer!(msm_time);
+                drop(msm_time);
 
                 commitment
             }
@@ -146,10 +146,10 @@ impl<E: PairingEngine> KZG10<E> {
         }
 
         let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
-        let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
+        let msm_time = timing_span!("MSM to compute commitment to random poly").entered();
         let random_commitment =
             VariableBase::msm(&powers.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
-        end_timer!(msm_time);
+        drop(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
 
@@ -177,9 +177,9 @@ impl<E: PairingEngine> KZG10<E> {
         defer! { end_timer!(commit_time); }
 
         let evaluations = evaluations.iter().map(|e| e.to_bigint()).collect::<Vec<_>>();
-        let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
+        let msm_time = timing_span!("MSM to compute commitment to plaintext poly").entered();
         let mut commitment = VariableBase::msm(&lagrange_basis.lagrange_basis_at_beta_g, &evaluations);
-        end_timer!(msm_time);
+        drop(msm_time);
 
         let mut randomness = KZGRandomness::empty();
         if let Some(hiding_degree) = hiding_bound {
@@ -196,10 +196,10 @@ impl<E: PairingEngine> KZG10<E> {
         }
 
         let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
-        let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
+        let msm_time = timing_span!("MSM to compute commitment to random poly").entered();
         let random_commitment =
             VariableBase::msm(&lagrange_basis.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
-        end_timer!(msm_time);
+        drop(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
 
@@ -217,16 +217,16 @@ impl<E: PairingEngine> KZG10<E> {
         point: E::Fr,
         randomness: &KZGRandomness<E>,
     ) -> Result<(DensePolynomial<E::Fr>, Option<DensePolynomial<E::Fr>>), PCError> {
-        let witness_time = start_timer!(|| "Computing witness polynomial");
+        let witness_time = timing_span!("Computing witness polynomial").entered();
         let (witness_polynomial, _) = polynomial.divide_by_monic_linear(point);
-        end_timer!(witness_time);
+        drop(witness_time);
 
         let random_witness_polynomial = if randomness.is_hiding() {
             let random_p = &randomness.blinding_polynomial;
 
-            let witness_time = start_timer!(|| "Computing random witness polynomial");
+            let witness_time = timing_span!("Computing random witness polynomial").entered();
             let (random_witness_polynomial, _) = random_p.divide_by_monic_linear(point);
-            end_timer!(witness_time);
+            drop(witness_time);
             Some(random_witness_polynomial)
         } else {
             None
@@ -247,20 +247,20 @@ impl<E: PairingEngine> KZG10<E> {
 
         let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + witness_coeffs.len())];
 
-        let witness_comm_time = start_timer!(|| "Computing commitment to witness polynomial");
+        let witness_comm_time = timing_span!("Computing commitment to witness polynomial").entered();
         let mut w = VariableBase::msm(bases, &witness_coeffs);
-        end_timer!(witness_comm_time);
+        drop(witness_comm_time);
 
         let random_v = if let Some(hiding_witness_polynomial) = hiding_witness_polynomial {
             let blinding_p = &randomness.blinding_polynomial;
-            let blinding_eval_time = start_timer!(|| "Evaluating random polynomial");
+            let blinding_eval_time = timing_span!("Evaluating random polynomial").entered();
             let blinding_evaluation = blinding_p.evaluate(point);
-            end_timer!(blinding_eval_time);
+            drop(blinding_eval_time);
 
             let random_witness_coeffs = convert_to_bigints(&hiding_witness_polynomial.coeffs);
-            let witness_comm_time = start_timer!(|| "Computing commitment to random witness polynomial");
+            let witness_comm_time = timing_span!("Computing commitment to random witness polynomial").entered();
             w += &VariableBase::msm(&powers.powers_of_beta_times_gamma_g, &random_witness_coeffs);
-            end_timer!(witness_comm_time);
+            drop(witness_comm_time);
             Some(blinding_evaluation)
         } else {
             None
@@ -313,8 +313,7 @@ impl<E: PairingEngine> KZG10<E> {
         defer! { end_timer!(open_time); }
 
         let (witness_poly, hiding_witness_poly) = {
-            let witness_time = start_timer!(|| "Computing witness polynomials");
-            defer! { end_timer!(witness_time); }
+            let _witness_time = timing_span!("Computing witness polynomials").entered();
             Self::compute_witness_polynomial(polynomial, point, rand)?
         };
 
@@ -330,7 +329,7 @@ impl<E: PairingEngine> KZG10<E> {
         value: E::Fr,
         proof: &KZGProof<E>,
     ) -> Result<bool, PCError> {
-        let check_time = start_timer!(|| "Checking evaluation");
+        let check_time = timing_span!("Checking evaluation").entered();
         let mut inner = commitment.0.to_projective() - vk.g.to_projective().mul(value);
         if let Some(random_v) = proof.random_v {
             inner -= &vk.gamma_g.mul(random_v);
@@ -364,7 +363,7 @@ impl<E: PairingEngine> KZG10<E> {
         let mut total_c = <E::G1Projective>::zero();
         let mut total_w = <E::G1Projective>::zero();
 
-        let combination_time = start_timer!(|| "Combining commitments and proofs");
+        let combination_time = timing_span!("Combining commitments and proofs").entered();
         let mut randomizer = E::Fr::one();
         // Instead of multiplying g and gamma_g in each turn, we simply accumulate
         // their coefficients and perform a final multiplication at the end.
@@ -387,19 +386,19 @@ impl<E: PairingEngine> KZG10<E> {
         }
         total_c -= &g.mul(g_multiplier);
         total_c -= &gamma_g.mul(gamma_g_multiplier);
-        end_timer!(combination_time);
+        drop(combination_time);
 
-        let to_affine_time = start_timer!(|| "Converting results to affine for pairing");
+        let to_affine_time = timing_span!("Converting results to affine for pairing").entered();
         let affine_points = E::G1Projective::batch_normalization_into_affine(vec![-total_w, total_c]);
         let (total_w, total_c) = (affine_points[0], affine_points[1]);
-        end_timer!(to_affine_time);
+        drop(to_affine_time);
 
-        let pairing_time = start_timer!(|| "Performing product of pairings");
+        let pairing_time = timing_span!("Performing product of pairings").entered();
         let result = E::product_of_pairings(
             [(&total_w.prepare(), &vk.prepared_beta_h), (&total_c.prepare(), &vk.prepared_h)].iter().copied(),
         )
         .is_one();
-        end_timer!(pairing_time);
+        drop(pairing_time);
         end_timer!(check_time, || format!("Result: {result}"));
         Ok(result)
     }
@@ -467,9 +466,9 @@ fn skip_leading_zeros_and_convert_to_bigints<F: PrimeField>(p: &DensePolynomial<
 }
 
 fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInteger> {
-    let to_bigint_time = start_timer!(|| "Converting polynomial coeffs to bigints");
+    let to_bigint_time = timing_span!("Converting polynomial coeffs to bigints").entered();
     let coeffs = p.iter().map(|s| s.to_bigint()).collect::<Vec<_>>();
-    end_timer!(to_bigint_time);
+    drop(to_bigint_time);
     coeffs
 }
 

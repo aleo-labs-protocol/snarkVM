@@ -42,7 +42,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use smallvec::SmallVec;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::defer;
+use snarkvm_utilities::{defer, timing_span};
 use std::collections::BTreeMap;
 
 impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
@@ -184,8 +184,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         };
 
         {
-            let check_vanish_poly_time = start_timer!(|| "Evaluating vanishing polynomial");
-            defer! { end_timer!(check_vanish_poly_time); }
+            let _check_vanish_poly_time = timing_span!("Evaluating vanishing polynomial").entered();
             ensure!(!state.max_constraint_domain.evaluate_vanishing_polynomial(alpha).is_zero());
         }
 

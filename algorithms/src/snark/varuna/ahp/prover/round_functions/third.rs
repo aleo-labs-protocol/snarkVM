@@ -35,7 +35,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, defer};
+use snarkvm_utilities::{ExecutionPool, timing_span};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -74,8 +74,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         _r: &mut R,
         varuna_version: VarunaVersion,
     ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
-        defer! { end_timer!(round_time); }
+        let _round_time = timing_span!("AHP::Prover::ThirdRound").entered();
 
         let zk_bound = Self::zk_bound();
 
@@ -281,7 +280,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     pub(in crate::snark::varuna) fn calculate_assignments(
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, Vec<DensePolynomial<F>>>> {
-        let assignments_time = start_timer!(|| "Calculate assignments");
+        let assignments_time = timing_span!("Calculate assignments").entered();
         let assignments: BTreeMap<_, _> = state
             .circuit_specific_states
             .iter()
@@ -311,15 +310,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 (circuit.id, assignments_i)
             })
             .collect();
-        end_timer!(assignments_time);
+        drop(assignments_time);
         Ok(assignments)
     }
 
     pub(in crate::snark::varuna) fn calculate_matrix_transpose(
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>> {
-        let transpose_time = start_timer!(|| "Transpose of matrices");
-        defer! { end_timer!(transpose_time); }
+        let _transpose_time = timing_span!("Transpose of matrices").entered();
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len() * 3);
         state.circuit_specific_states.iter().for_each(|(circuit, circuit_specific_state)| {
             let variable_domain = &circuit_specific_state.variable_domain;

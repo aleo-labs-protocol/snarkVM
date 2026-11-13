@@ -16,7 +16,7 @@
 use super::verifier::QueryPoints;
 use crate::fft::{DensePolynomial, EvaluationDomain};
 use snarkvm_fields::{PrimeField, batch_inversion};
-use snarkvm_utilities::{cfg_into_iter, defer};
+use snarkvm_utilities::{cfg_into_iter, timing_span};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -91,8 +91,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
     if !remainder_witness {
         // Substituting in s_i, we get that poly_i * s_i / v_H = poly_i / v_H_i *
         // (H_i.size() / H.size());
-        let selector_time = start_timer!(|| "Compute selector without remainder witness");
-        defer! { end_timer!(selector_time); }
+        let _selector_time = timing_span!("Compute selector without remainder witness").entered();
 
         let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
         ensure!(
@@ -114,8 +113,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // (\sum_i{c_i*s_i*poly_i})/v_H = \sum{h_i*v_H} + \sum{c_i*s_i*x_g_i}
         // (\sum_i{c_i*s_i*poly_i})/v_H = h_1*v_H + x_g_1
         // That's what we're computing here.
-        let selector_time = start_timer!(|| "Compute selector with remainder witness");
-        defer! { end_timer!(selector_time); }
+        let _selector_time = timing_span!("Compute selector with remainder witness").entered();
 
         let multiplier = if src_domain.size == target_domain.size {
             combiner
