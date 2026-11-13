@@ -67,6 +67,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
 
     #[inline]
     fn shl_checked(&self, rhs: &Integer<E, M>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Retrieve the index for the first upper bit from the RHS that we mask.
         let first_upper_bit_index = I::BITS.trailing_zeros() as usize;
         // Initialize a constant `two`.
@@ -79,7 +82,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
 
                     // Sign-extend `self` to 2 * I::BITS.
                     let mut bits_le = self.to_bits_le();
-                    bits_le.resize(2 * I::BITS as usize, self.msb().clone());
+                    bits_le.resize(2 * i_bits, self.msb().clone());
 
                     // Calculate the result directly in the field.
                     // Since 2^{rhs} < Integer::MAX and 3 * I::BITS is less than E::BaseField::size in data bits,
@@ -93,13 +96,13 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
                         result = Field::ternary(bit, &product, &result);
                     }
                     // Extract the bits of the result, including the carry bits.
-                    let bits_le = result.to_lower_bits_le(3 * I::BITS as usize);
+                    let bits_le = result.to_lower_bits_le(3 * i_bits);
                     // Split the bits into the lower and upper bits.
-                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(I::BITS as usize);
+                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(i_bits);
                     // Initialize the integer from the lower bits.
                     let result = Self { bits_le: lower_bits_le.to_vec(), phantom: Default::default() };
                     // Ensure that the sign of the first I::BITS upper bits match the sign of the result.
-                    for bit in &upper_bits_le[..(I::BITS as usize)] {
+                    for bit in &upper_bits_le[..i_bits] {
                         E::assert_eq(bit, result.msb()).expect("Signed shift left overflow check failed");
                     }
                     // Return the result.
@@ -141,9 +144,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
                         result = Field::ternary(bit, &product, &result);
                     }
                     // Extract the bits of the result, including the carry bits.
-                    let bits_le = result.to_lower_bits_le(2 * I::BITS as usize);
+                    let bits_le = result.to_lower_bits_le(2 * i_bits);
                     // Split the bits into the lower and upper bits.
-                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(I::BITS as usize);
+                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(i_bits);
                     // Ensure that the carry bits are all zero.
                     Boolean::assert_bits_are_zero(upper_bits_le);
                     // Initialize the integer from the lower bits

@@ -491,7 +491,8 @@ mod test {
             Self {
                 // `UpdatableCount::file` is `&'static str`, which a path built at runtime is not.
                 path: path.into_os_string().into_string().unwrap().leak(),
-                column: (prefix.len() + 1) as u32,
+                // Note: `unwrap()` is safe as `prefix` is a short literal.
+                column: u32::try_from(prefix.len() + 1).unwrap(),
             }
         }
 

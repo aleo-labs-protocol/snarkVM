@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
+#![warn(clippy::cast_possible_truncation)]
 
 extern crate snarkvm_console_types_integers as console;
 
@@ -93,7 +94,8 @@ impl<E: Environment, I: IntegerType> IntegerCore<I> for Integer<E, I> {}
 impl<E: Environment, I: IntegerType> Integer<E, I> {
     /// Returns the size of the integer in bits.
     pub fn size_in_bits() -> u16 {
-        I::BITS as u16
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        u16::try_from(I::BITS).unwrap()
     }
 
     /// Casts the integer to its dual type, i.e., from signed to unsigned or vice versa.
@@ -107,7 +109,8 @@ impl<E: Environment, I: IntegerType> Inject for Integer<E, I> {
 
     /// Initializes a new integer.
     fn new(mode: Mode, value: Self::Primitive) -> Self {
-        let mut bits_le = Vec::with_capacity(I::BITS as usize);
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let mut bits_le = Vec::with_capacity(usize::try_from(I::BITS).unwrap());
         let mut value = *value;
         for _ in 0..I::BITS {
             bits_le.push(Boolean::new(mode, value & I::one() == I::one()));

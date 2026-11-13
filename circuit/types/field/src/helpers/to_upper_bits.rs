@@ -86,6 +86,8 @@ impl<E: Environment> Metrics<dyn ToUpperBits<Boolean = Boolean<E>>> for Field<E>
     fn count(case: &Self::Case) -> Count {
         match case {
             (Mode::Constant, k) => Count::is(*k, 0, 0, 0),
+            // `to_upper_bits_be` returns at most `E::BaseField::size_in_bits()` bits, which bounds `k`.
+            #[allow(clippy::cast_possible_truncation)]
             (_, k) => {
                 // The range check is free up to and including the first zero bit of its constant. Each later bit
                 // costs one private variable and one constraint, and the final assertion costs one constraint.
@@ -159,7 +161,8 @@ mod tests {
 
             Circuit::scope(format!("{mode} {i}"), || {
                 let num_bits_with_capacity = I::BITS + 1;
-                let candidate = candidate.to_upper_bits_be(num_bits_with_capacity as usize);
+                // Note: `unwrap()` is safe as the integer is at most 128 bits, plus one.
+                let candidate = candidate.to_upper_bits_be(usize::try_from(num_bits_with_capacity).unwrap());
                 assert_eq!(num_bits_with_capacity, candidate.len() as u64);
                 for (i, (expected_bit, candidate_bit)) in expected.iter().zip_eq(candidate.iter().skip(1)).enumerate() {
                     assert_eq!(*expected_bit, candidate_bit.eject_value(), "MSB-{i}");

@@ -75,6 +75,8 @@ impl<F: PrimeField> R1CS<F> {
         // NOTE: we skip the first public `One` variable because we already allocated it in the `ConstraintSystem` constructor.
         for (i, public) in self.to_public_variables().iter().skip(1).enumerate() {
             match public {
+                // The first assertion makes `index` equal to `i + 1`, which is a `usize`.
+                #[allow(clippy::cast_possible_truncation)]
                 Variable::Public(index_value) => {
                     let (index, value) = index_value.as_ref();
 
@@ -143,6 +145,9 @@ impl<F: PrimeField> R1CS<F> {
                                     "Failed during constraint translation. The first system by definition cannot have constant variables in the terms"
                                 )
                             }
+                            // Every key of `converter.public` is the position of a public variable in a `Vec`,
+                            // so `index + 1` fits in a `usize`.
+                            #[allow(clippy::cast_possible_truncation)]
                             Variable::Public(index_value) => {
                                 let (index, _value) = index_value.as_ref();
                                 let gadget = converter.public.get(index).unwrap();
@@ -153,6 +158,8 @@ impl<F: PrimeField> R1CS<F> {
                                 );
                                 linear_combination += (*coefficient, *gadget);
                             }
+                            // Every key of `converter.private` is the position of a private variable in a `Vec`.
+                            #[allow(clippy::cast_possible_truncation)]
                             Variable::Private(index_value) => {
                                 let (index, _value) = index_value.as_ref();
                                 let gadget = converter.private.get(index).unwrap();

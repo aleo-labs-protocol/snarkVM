@@ -67,6 +67,9 @@ impl<E: Environment, I: IntegerType> SubChecked<Self> for Integer<E, I> {
 
     #[inline]
     fn sub_checked(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the difference and return the new constant.
@@ -81,9 +84,9 @@ impl<E: Environment, I: IntegerType> SubChecked<Self> for Integer<E, I> {
             let difference = self.to_field() + (!other).to_field() + Field::one();
 
             // Extract the integer bits from the field element, with a carry bit.
-            let (difference, carry) = match difference.to_lower_bits_le(I::BITS as usize + 1).split_last() {
+            let (difference, carry) = match difference.to_lower_bits_le(i_bits + 1).split_last() {
                 Some((carry, bits_le)) => (Integer::from_bits_le(bits_le), carry.clone()),
-                // Note: `E::halt` should never be invoked as `I::BITS as usize + 1` is greater than zero.
+                // Note: `E::halt` should never be invoked as `i_bits + 1` is greater than zero.
                 None => E::halt("Malformed difference detected during integer subtraction"),
             };
 

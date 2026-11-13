@@ -153,10 +153,14 @@ impl<F: PrimeField> R1CS<F> {
             [a, b, c].into_iter().all(|lc| {
                 lc.to_terms().iter().all(|(variable, _)| match variable {
                     Variable::Constant(_value) => false, // terms should not contain Constants
+                    // `new_private` sets the index to a length of `self.private`, which is a `usize`.
+                    #[allow(clippy::cast_possible_truncation)]
                     Variable::Private(private) => {
                         let (index, value) = private.as_ref();
                         self.private.get(*index as usize).map_or_else(|| false, |v| v.value() == *value)
                     }
+                    // `new_public` sets the index to a length of `self.public`, which is a `usize`.
+                    #[allow(clippy::cast_possible_truncation)]
                     Variable::Public(public) => {
                         let (index, value) = public.as_ref();
                         self.public.get(*index as usize).map_or_else(|| false, |v| v.value() == *value)

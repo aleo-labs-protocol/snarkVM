@@ -120,7 +120,8 @@ mod tests {
             let candidate = Field::<Circuit>::new(mode, console::Field::from_bits_le(&expected).unwrap());
 
             Circuit::scope(format!("{mode} {i}"), || {
-                let candidate = candidate.to_lower_bits_le(I::BITS as usize);
+                // Note: `unwrap()` is safe as the integer is at most 128 bits.
+                let candidate = candidate.to_lower_bits_le(usize::try_from(I::BITS).unwrap());
                 assert_eq!(I::BITS, candidate.len() as u64);
                 for (i, (expected_bit, candidate_bit)) in expected.iter().zip_eq(candidate.iter()).enumerate() {
                     assert_eq!(*expected_bit, candidate_bit.eject_value(), "LSB+{i}");

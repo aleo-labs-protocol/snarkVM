@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
 
     #[inline]
     fn shl_wrapped(&self, rhs: &Integer<E, M>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && rhs.is_constant() {
             // Note: Casting `rhs` to a `u32` is safe since `Magnitude`s can only be `u8`, `u16`, or `u32`.
@@ -45,7 +48,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
                 let mut bits_le = vec![Boolean::constant(false); *shift_amount as usize];
 
                 bits_le.extend_from_slice(&self.bits_le);
-                bits_le.truncate(I::BITS as usize);
+                bits_le.truncate(i_bits);
 
                 Self { bits_le, phantom: Default::default() }
             } else if 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
@@ -61,9 +64,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
                     result = Field::ternary(bit, &product, &result);
                 }
                 // Extract the bits of the result, including the carry bits.
-                let bits_le = result.to_lower_bits_le(2 * I::BITS as usize);
+                let bits_le = result.to_lower_bits_le(2 * i_bits);
                 // Initialize the integer, ignoring the carry bits.
-                Self { bits_le: bits_le[..I::BITS as usize].to_vec(), phantom: Default::default() }
+                Self { bits_le: bits_le[..i_bits].to_vec(), phantom: Default::default() }
             } else {
                 // Calculate the value of the shift directly in the field.
                 // Since 2^{rhs} < Integer::MAX, we know that the operation will not overflow Integer::MAX or the field modulus.
@@ -74,7 +77,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
                     shift_in_field = Field::ternary(bit, &(&shift_in_field * &two), &shift_in_field);
                 }
                 let shift_as_multiplicand =
-                    Self { bits_le: shift_in_field.to_lower_bits_le(I::BITS as usize), phantom: Default::default() };
+                    Self { bits_le: shift_in_field.to_lower_bits_le(i_bits), phantom: Default::default() };
                 self.mul_wrapped(&shift_as_multiplicand)
             }
         }

@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> AddWrapped<Self> for Integer<E, I> {
 
     #[inline]
     fn add_wrapped(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the sum and return the new constant.
@@ -31,7 +34,7 @@ impl<E: Environment, I: IntegerType> AddWrapped<Self> for Integer<E, I> {
             let sum = self.to_field() + other.to_field();
 
             // Extract the integer bits from the field element, with a carry bit.
-            let mut bits_le = sum.to_lower_bits_le(I::BITS as usize + 1);
+            let mut bits_le = sum.to_lower_bits_le(i_bits + 1);
             // Drop the carry bit as the operation is wrapped addition.
             bits_le.pop();
 

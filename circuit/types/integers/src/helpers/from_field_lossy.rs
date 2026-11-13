@@ -21,11 +21,14 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
     /// This method is commonly used by hash-to-integer algorithms,
     /// where the hash output does not need to preserve the full base field.
     pub fn from_field_lossy(field: &Field<E>) -> Self {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         debug_assert!(I::BITS < E::BaseField::size_in_bits() as u64);
 
         // Truncate the field to the size in bits of the integer.
         // Slicing here is safe as the base field is larger than the integer domain.
-        Self { bits_le: field.to_bits_le()[..I::BITS as usize].to_vec(), phantom: Default::default() }
+        Self { bits_le: field.to_bits_le()[..i_bits].to_vec(), phantom: Default::default() }
     }
 }
 

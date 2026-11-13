@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> Compare<Self> for Integer<E, I> {
 
     /// Returns `true` if `self` is less than `other`.
     fn is_less_than(&self, other: &Self) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the comparison and return the new constant.
@@ -33,9 +36,9 @@ impl<E: Environment, I: IntegerType> Compare<Self> for Integer<E, I> {
             let negative_one_plus_difference_plus_one =
                 Integer::<E, I>::constant(-console::Integer::one()).to_field() + self.to_field() - other.to_field()
                     + Field::one();
-            match negative_one_plus_difference_plus_one.to_lower_bits_le(I::BITS as usize + 1).last() {
+            match negative_one_plus_difference_plus_one.to_lower_bits_le(i_bits + 1).last() {
                 Some(bit) => Self::Output::ternary(&same_sign, &!bit, &self_is_negative_and_other_is_positive),
-                // Note: `E::halt` should never be invoked as `I::BITS as usize + 1` is greater than zero.
+                // Note: `E::halt` should never be invoked as `i_bits + 1` is greater than zero.
                 None => E::halt("Malformed expression detected during signed integer comparison."),
             }
         } else {
@@ -44,9 +47,9 @@ impl<E: Environment, I: IntegerType> Compare<Self> for Integer<E, I> {
             let max_plus_difference_plus_one =
                 Integer::<E, I>::constant(console::Integer::MAX).to_field() + self.to_field() - other.to_field()
                     + Field::one();
-            match max_plus_difference_plus_one.to_lower_bits_le(I::BITS as usize + 1).last() {
+            match max_plus_difference_plus_one.to_lower_bits_le(i_bits + 1).last() {
                 Some(bit) => !bit,
-                // Note: `E::halt` should never be invoked as `I::BITS as usize + 1` is greater than zero.
+                // Note: `E::halt` should never be invoked as `i_bits + 1` is greater than zero.
                 None => E::halt("Malformed expression detected during unsigned integer comparison."),
             }
         }
