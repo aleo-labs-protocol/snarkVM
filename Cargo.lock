@@ -3916,6 +3916,7 @@ dependencies = [
  "snarkvm-utilities-derives",
  "thiserror 2.0.21",
  "tracing",
+ "tracing-subscriber",
  "tracing-test",
  "zeroize",
 ]

@@ -95,6 +95,8 @@ pub mod prelude {
         has_duplicates,
         into_io_error,
         io_error,
+        timing_event,
+        timing_span,
     };
 
     pub use std::io::{Read, Result as IoResult, Write};

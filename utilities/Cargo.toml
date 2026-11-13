@@ -80,6 +80,10 @@ features = [ "derive" ]
 [dev-dependencies.criterion]
 workspace = true
 
+[dev-dependencies.tracing-subscriber]
+version = "0.3"
+features = [ "env-filter" ]
+
 [dev-dependencies.tracing-test]
 workspace = true
 
