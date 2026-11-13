@@ -38,11 +38,6 @@ mod test_constraint_system;
 #[cfg(feature = "test")]
 pub use test_constraint_system::{Fr, TestConstraintSystem};
 
-#[cfg(feature = "test")]
-mod test_constraint_checker;
-#[cfg(feature = "test")]
-pub use test_constraint_checker::TestConstraintChecker;
-
 use snarkvm_utilities::serialize::*;
 
 use core::cmp::Ordering;
