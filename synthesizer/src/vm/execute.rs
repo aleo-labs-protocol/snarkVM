@@ -1018,7 +1018,6 @@ finalize test:
     }
 
     #[test]
-    #[ignore = "memory-intensive"]
     fn test_deep_nested_execution_cost() {
         // Initialize an RNG.
         let rng = &mut TestRng::default();
@@ -1028,13 +1027,6 @@ finalize test:
 
         // Prepare the VM.
         let (vm, _) = prepare_vm(rng).unwrap();
-
-        // Forward the chain to block 13:
-        for _i in 1..13 {
-            let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
-
-            vm.add_next_block(&next_block).unwrap();
-        }
 
         // Construct the base program.
         let base_program = Program::from_str(
@@ -1059,14 +1051,9 @@ constructor:
         )
         .unwrap();
 
-        // Deploy the program.
-        let transaction = vm.deploy(&caller_private_key, &base_program, None, 0, None, rng).unwrap();
-
-        // Construct the next block.
-        let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
+        // Add the program to the process.
+        // The program is well-formed and has no imports, so adding it does not fail.
+        vm.process().lock().add_program(&base_program).unwrap();
 
         // Initialize programs up to the maximum depth.
         for i in 2..=Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1 {
@@ -1100,32 +1087,31 @@ constructor:
             ))
             .unwrap();
 
-            // Deploy the program.
-            let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-
-            // Construct the next block.
-            let next_block =
-                crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-            // Add the next block to the VM.
-            vm.add_next_block(&next_block).unwrap();
+            // Add the program to the process.
+            // The program is well-formed and its imports are in the process, so adding it does not fail.
+            vm.process().lock().add_program(&program).unwrap();
         }
 
-        // Execute the program.
-        let Transaction::Execute(_, _, execution, _) = vm
-            .execute(
+        // Authorize the program.
+        // The program is in the process and the inputs match its signature, so authorizing it does not fail.
+        let authorization = vm
+            .authorize(
                 &caller_private_key,
-                (format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1), "test"),
+                format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1),
+                "test",
                 [Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
-                None,
-                0,
-                None,
                 rng,
             )
-            .unwrap()
-        else {
-            unreachable!("VM::execute always produces an `Execution`")
-        };
+            .unwrap();
+
+        // Construct an unproven execution from the authorized transitions, which determine the finalize cost.
+        // The authorization holds at least the root transition, so the list of transitions is not empty and the construction does not fail.
+        let execution = Execution::from(
+            authorization.transitions().into_values(),
+            <CurrentNetwork as Network>::StateRoot::default(),
+            None,
+        )
+        .unwrap();
 
         // Check that the number of transitions is correct.
         assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
@@ -1147,23 +1133,13 @@ constructor:
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
                 Some(finalize_logic) => {
-                    // We derive the consensus version, as it may have changed due to the short
-                    // block span of test consensus versions
-                    let consensus_version =
-                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
-
-                    // Aggregate the cost of all commands in the program.
+                    // Aggregate the cost of all commands in the program, priced as `execution_cost` prices
+                    // them for `ConsensusVersion::V2`: with fee version V2 and no consensus version.
                     finalize_logic
                         .commands()
                         .iter()
                         .map(|command| {
-                            cost_per_command(
-                                &stack,
-                                &finalize_types,
-                                command,
-                                ConsensusFeeVersion::V2,
-                                Some(consensus_version),
-                            )
+                            cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2, None)
                         })
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))

@@ -3206,14 +3206,26 @@ finalize compute:
             rng,
         );
 
-        // Construct the delegators, greater than the maximum delegator size.
-        let delegators = (0..MAX_DELEGATORS + 1)
-            .map(|_| {
-                let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-                let validator = Address::try_from(validators.keys().next().unwrap()).unwrap();
-                let amount = MIN_DELEGATOR_STAKE;
-                (private_key, (validator, amount))
+        // Retrieve the validator that every delegator bonds to.
+        // The validator set is non-empty, and an address derivation from a private key does not fail.
+        let validator = Address::try_from(validators.keys().next().unwrap()).unwrap();
+
+        // Sample the delegator account seeds, greater than the maximum delegator size.
+        let seeds = (0..MAX_DELEGATORS + 1).map(|_| Uniform::rand(rng)).collect::<Vec<Field<CurrentNetwork>>>();
+        // Derive the delegator private keys and addresses in parallel.
+        // Neither a private key derivation from a seed nor an address derivation from a private key fails.
+        let delegator_accounts = cfg_into_iter!(seeds)
+            .map(|seed| {
+                let private_key = PrivateKey::<CurrentNetwork>::try_from(seed).unwrap();
+                let address = Address::try_from(&private_key).unwrap();
+                (private_key, address)
             })
+            .collect::<Vec<_>>();
+
+        // Construct the delegators, greater than the maximum delegator size.
+        let delegators = delegator_accounts
+            .iter()
+            .map(|(private_key, _)| (*private_key, (validator, MIN_DELEGATOR_STAKE)))
             .collect::<IndexMap<_, _>>();
 
         // Construct the committee.
@@ -3226,12 +3238,16 @@ finalize compute:
             <CurrentNetwork as Network>::STARTING_SUPPLY - allocated_amount,
         );
         public_balances.extend(sample_public_balances(
-            &delegators.keys().map(|private_key| Address::try_from(private_key).unwrap()).collect::<Vec<_>>(),
+            &delegator_accounts.iter().map(|(_, address)| *address).collect::<Vec<_>>(),
             0,
         ));
 
         // Construct the bonded balances.
-        let bonded_balances = sample_bonded_balances(&validators, &delegators);
+        // Each delegator is its own withdrawal address, as in `sample_bonded_balances`.
+        let mut bonded_balances = sample_bonded_balances(&validators, &IndexMap::new());
+        bonded_balances.extend(
+            delegator_accounts.iter().map(|(_, address)| (*address, (validator, *address, MIN_DELEGATOR_STAKE))),
+        );
 
         // Construct the genesis block, which should fail.
         let result = vm.genesis_quorum(
