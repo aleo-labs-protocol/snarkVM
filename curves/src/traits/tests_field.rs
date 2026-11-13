@@ -23,13 +23,14 @@ use snarkvm_fields::{
     Fp384,
     Fp384Parameters,
     LegendreSymbol,
+    One,
     PrimeField,
     SquareRootField,
     batch_inversion,
     traits::{FftParameters, FieldParameters},
 };
 use snarkvm_utilities::{
-    biginteger::BigInteger,
+    biginteger::{BigInteger, BigInteger256, BigInteger384},
     rand::{TestRng, Uniform},
     serialize::{CanonicalDeserialize, Flags, SWFlags},
 };
@@ -712,6 +713,94 @@ pub fn field_serialization_test<F: Field>(rng: &mut TestRng) {
 pub fn fp256_inverse_test<P: Fp256Parameters>(rng: &mut TestRng) {
     inverse_test(rng, |x| Fp256::<P>(x, PhantomData), |a| a.0);
 }
+
+/// Defines `$edges`, which returns values of `$fp` at the edges of the Montgomery limbs, and `$test`,
+/// which checks that `mul_assign` and `square_in_place` match `mul_assign_scalar` and
+/// `square_in_place_scalar` limb for limb, on every pair of those values and on 100,000 random pairs.
+/// Each limb of a first group of edges comes from `$choices`, a function of that limb of the modulus.
+macro_rules! scalar_path_test {
+    ($test:ident, $edges:ident, $fp:ident, $parameters:ident, $bigint:ident, $limbs:literal, $choices:expr) => {
+        pub fn $edges<P: $parameters>() -> Vec<$fp<P>> {
+            let modulus = P::MODULUS.0;
+            let mut limbs = vec![[0u64; $limbs]];
+            for j in 0..$limbs {
+                let choices: Vec<u64> = $choices(modulus[j]);
+                limbs = limbs.iter().flat_map(|e| choices.iter().map(move |l| with_limb(*e, j, *l))).collect();
+            }
+            let mut edges: Vec<$bigint> = limbs.into_iter().map($bigint).collect();
+            let one = $bigint::from(1);
+            for k in 0..64 * $limbs {
+                let mut power = one;
+                power.muln(k);
+                let (mut below, mut above) = (power, power);
+                below.sub_noborrow(&one);
+                above.add_nocarry(&one);
+                edges.extend([power, below, above]);
+            }
+            for i in 1..=64 {
+                let mut near_p = P::MODULUS;
+                near_p.sub_noborrow(&$bigint::from(i));
+                edges.push(near_p);
+            }
+            edges.push($bigint(with_limb([u64::MAX; $limbs], $limbs - 1, modulus[$limbs - 1] - 1)));
+            edges.retain(|e| *e < P::MODULUS);
+
+            let mut values: Vec<$fp<P>> = edges.into_iter().map(|e| $fp::<P>(e, PhantomData)).collect();
+            values.extend((0..=16u64).map($fp::<P>::from));
+            values.extend([-$fp::<P>::one(), $fp::<P>(P::R2, PhantomData)]);
+            values
+        }
+
+        pub fn $test<P: $parameters>(rng: &mut TestRng) {
+            let check_mul = |a: &$fp<P>, b: &$fp<P>| {
+                let mut expected = *a;
+                expected.mul_assign_scalar(b);
+                let mut actual = *a;
+                actual *= b;
+                assert_eq!(actual.0, expected.0, "{:?} * {:?}", a.0, b.0);
+            };
+            let check_square = |a: &$fp<P>| {
+                let mut expected = *a;
+                expected.square_in_place_scalar();
+                let mut actual = *a;
+                actual.square_in_place();
+                assert_eq!(actual.0, expected.0, "{:?}^2", a.0);
+            };
+            let values = $edges::<P>();
+            for a in &values {
+                check_square(a);
+                for b in &values {
+                    check_mul(a, b);
+                }
+            }
+            for _ in 0..100_000 {
+                let a = $fp::rand(rng);
+                check_mul(&a, &$fp::rand(rng));
+                check_square(&a);
+            }
+        }
+    };
+}
+
+/// Returns `limbs` with limb `j` set to `limb`.
+fn with_limb<const N: usize>(mut limbs: [u64; N], j: usize, limb: u64) -> [u64; N] {
+    limbs[j] = limb;
+    limbs
+}
+
+scalar_path_test!(fp256_scalar_path_test, fp256_edge_values, Fp256, Fp256Parameters, BigInteger256, 4, |p: u64| vec![
+    0,
+    1,
+    u64::MAX,
+    p.wrapping_sub(1),
+    p
+]);
+// Fewer choices per limb than `Fp256`, which keeps the number of pairs near it.
+scalar_path_test!(fp384_scalar_path_test, fp384_edge_values, Fp384, Fp384Parameters, BigInteger384, 6, |p: u64| vec![
+    0,
+    u64::MAX,
+    p
+]);
 
 pub fn fp384_inverse_test<P: Fp384Parameters>(rng: &mut TestRng) {
     inverse_test(rng, |x| Fp384::<P>(x, PhantomData), |a| a.0);
