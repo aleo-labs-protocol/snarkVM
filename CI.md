@@ -71,18 +71,18 @@ have none, and a hosted job holds no fleet box.
 
 ## Test groups
 
-Each `test`, `test-merge` and `test-release` entry is one cargo build.
-`cargo test -p a -p b` unifies the features of `a` and `b`, and several crates
-enable `test`, `rocks` or `test_consensus_heights` on their dependencies, which
-changes what those dependencies compute. So crates share an entry only where that
-unification enables none of those features, nor `wasm` or `large_params`, on
-any snarkvm crate. Helper features such as `test-helpers` can still be
-unified, so a test may compile in its entry that would not under
-`cargo test -p <crate>` alone. Check this before moving a crate between
-entries.
+Each line of a `test`, `test-merge` or `test-release` entry's `runs` is one
+cargo build, and the entry runs its lines in order. `cargo test -p a -p b`
+unifies the features of `a` and `b`, and several crates enable `test`, `rocks`
+or `test_consensus_heights` on their dependencies, which changes what those
+dependencies compute. So crates share a line only where that unification
+enables none of those features, nor `wasm` or `large_params`, on any snarkvm
+crate. Helper features such as `test-helpers` can still be unified, so a test
+may compile in its line that would not under `cargo test -p <crate>` alone.
+Check this before moving a crate between lines.
 
-Each entry uploads nextest's JUnit report as the artifact `junit-<entry>`,
-with the time of each test.
+Each entry uploads nextest's JUnit reports, one for each line, as the artifact
+`junit-<entry>`, with the time of each test.
 
 ## Forks
 
