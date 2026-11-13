@@ -15,6 +15,12 @@
 
 mod utilities;
 
+use std::{
+    ffi::OsStr,
+    panic::AssertUnwindSafe,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
 use aleo_std::StorageMode;
 use snarkvm_console::{
     account::{PrivateKey, ViewKey},
@@ -47,21 +53,75 @@ type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<Current
 #[cfg(feature = "rocks")]
 type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
+// The names of the slowest test files, slowest first. The workers start them before the other test files.
+const SLOWEST_TESTS: &[&str] = &["many_input_and_output", "interleave_async_and_non_async", "read_external_mapping"];
+
 #[test_log::test]
 fn test_vm_execute_and_finalize() {
     // Load the tests.
-    let tests =
+    let mut tests =
         load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", "./expectations/vm/execute_and_finalize");
+    // Move the slowest tests to the front. The sort is stable, so the other tests keep their order.
+    tests.sort_by_key(|test| {
+        let name = test.path().file_stem();
+        SLOWEST_TESTS.iter().position(|slowest| name == Some(OsStr::new(slowest))).unwrap_or(SLOWEST_TESTS.len())
+    });
 
-    // Run each test and compare it against its corresponding expectation.
-    tests.iter().for_each(|test| {
+    // The index of the next test to run.
+    let next = AtomicUsize::new(0);
+    // Run the tests on scoped workers. Each worker takes the next test until none are left.
+    let failures = std::thread::scope(|scope| {
+        let workers = (0..num_workers(tests.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut failures = Vec::new();
+                    while let Some(test) = tests.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        if let Err(error) = run_and_check(test) {
+                            failures.push(format!("{}: {error}", test.path().display()));
+                        }
+                    }
+                    failures
+                })
+            })
+            .collect::<Vec<_>>();
+        workers
+            .into_iter()
+            // The `expect` cannot panic, because `run_and_check` catches the panic of each test.
+            .flat_map(|worker| worker.join().expect("a test worker panicked"))
+            .collect::<Vec<_>>()
+    });
+    assert!(failures.is_empty(), "{} test file(s) failed:\n\n{}", failures.len(), failures.join("\n\n"));
+}
+
+// Returns the number of test files to run at once.
+// The `TEST_WORKERS` environment variable sets it. Otherwise, it is a quarter of the available cores, from 1 to 8.
+fn num_workers(num_tests: usize) -> usize {
+    let workers = match std::env::var("TEST_WORKERS") {
+        Ok(workers) => workers.parse().expect("`TEST_WORKERS` must be a number"),
+        Err(_) => std::thread::available_parallelism().map_or(1, |cores| cores.get() / 4).clamp(1, 8),
+    };
+    workers.clamp(1, num_tests.max(1))
+}
+
+// Runs the test, checks its output against the expectation, and saves the output.
+// Returns the error if the test fails or panics.
+fn run_and_check(test: &ProgramTest) -> Result<(), String> {
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| -> Result<()> {
         // Run the test.
         let output = run_test(test);
         // Check against the expected output.
-        test.check(&output).unwrap();
+        test.check(&output)?;
         // Save the output.
-        test.save(&output).unwrap();
-    });
+        test.save(&output)
+    }));
+    match result {
+        Ok(result) => result.map_err(|error| format!("{error:#}")),
+        Err(panic) => {
+            let message =
+                panic.downcast_ref::<&str>().copied().or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+            Err(format!("panicked: {}", message.unwrap_or("<unknown>")))
+        }
+    }
 }
 
 // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
