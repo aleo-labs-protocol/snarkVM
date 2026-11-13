@@ -15,6 +15,16 @@
 
 mod utilities;
 
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    panic::AssertUnwindSafe,
+    sync::{
+        OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
+
 use aleo_std::StorageMode;
 use snarkvm_console::{
     account::{PrivateKey, ViewKey},
@@ -33,7 +43,12 @@ use snarkvm_ledger_block::{
     Transition,
 };
 use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
-use snarkvm_synthesizer::{Authorization, VM, program::FinalizeOperation};
+use snarkvm_synthesizer::{
+    Authorization,
+    VM,
+    program::FinalizeOperation,
+    snark::{ProvingKey, VerifyingKey},
+};
 use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization, execution_cost_for_call};
 use snarkvm_synthesizer_program::FinalizeGlobalState;
 
@@ -47,30 +62,97 @@ type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<Current
 #[cfg(feature = "rocks")]
 type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
+// The genesis block for a seed, the RNG after the genesis block, and the `credits.aleo` keys of the VM that built it.
+type Genesis = (
+    Block<CurrentNetwork>,
+    TestRng,
+    Vec<(Identifier<CurrentNetwork>, ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>)>,
+);
+
+// The names of the slowest test files, slowest first. The workers start them before the other test files.
+const SLOWEST_TESTS: &[&str] = &["many_input_and_output", "interleave_async_and_non_async", "read_external_mapping"];
+
 #[test_log::test]
 fn test_vm_execute_and_finalize() {
     // Load the tests.
-    let tests =
+    let mut tests =
         load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", "./expectations/vm/execute_and_finalize");
-
-    // Run each test and compare it against its corresponding expectation.
-    tests.iter().for_each(|test| {
-        // Run the test.
-        let output = run_test(test);
-        // Check against the expected output.
-        test.check(&output).unwrap();
-        // Save the output.
-        test.save(&output).unwrap();
+    // Move the slowest tests to the front. The sort is stable, so the other tests keep their order.
+    tests.sort_by_key(|test| {
+        let name = test.path().file_stem();
+        SLOWEST_TESTS.iter().position(|slowest| name == Some(OsStr::new(slowest))).unwrap_or(SLOWEST_TESTS.len())
     });
+
+    // The genesis for each seed. The first test with a seed builds it, and the other tests with that seed reuse it.
+    let genesis = tests.iter().map(|test| (seed(test), OnceLock::new())).collect::<HashMap<_, _>>();
+    // The index of the next test to run.
+    let next = AtomicUsize::new(0);
+    // Run the tests on scoped workers. Each worker takes the next test until none are left.
+    let failures = std::thread::scope(|scope| {
+        let workers = (0..num_workers(tests.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut failures = Vec::new();
+                    while let Some(test) = tests.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        // The `expect` cannot panic, because the map holds the seed of every test.
+                        let genesis = genesis.get(&seed(test)).expect("the seed of a test has no genesis");
+                        if let Err(error) = run_and_check(test, genesis) {
+                            failures.push(format!("{}: {error}", test.path().display()));
+                        }
+                    }
+                    failures
+                })
+            })
+            .collect::<Vec<_>>();
+        workers
+            .into_iter()
+            // The `expect` cannot panic, because `run_and_check` catches the panic of each test.
+            .flat_map(|worker| worker.join().expect("a test worker panicked"))
+            .collect::<Vec<_>>()
+    });
+    assert!(failures.is_empty(), "{} test file(s) failed:\n\n{}", failures.len(), failures.join("\n\n"));
+}
+
+// Returns the number of test files to run at once.
+// The `TEST_WORKERS` environment variable sets it. Otherwise, it is a quarter of the available cores, from 1 to 8.
+fn num_workers(num_tests: usize) -> usize {
+    let workers = match std::env::var("TEST_WORKERS") {
+        Ok(workers) => workers.parse().expect("`TEST_WORKERS` must be a number"),
+        Err(_) => std::thread::available_parallelism().map_or(1, |cores| cores.get() / 4).clamp(1, 8),
+    };
+    workers.clamp(1, num_tests.max(1))
+}
+
+// Runs the test, checks its output against the expectation, and saves the output.
+// Returns the error if the test fails or panics.
+fn run_and_check(test: &ProgramTest, genesis: &OnceLock<Genesis>) -> Result<(), String> {
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| -> Result<()> {
+        // Run the test.
+        let output = run_test(test, genesis);
+        // Check against the expected output.
+        test.check(&output)?;
+        // Save the output.
+        test.save(&output)
+    }));
+    match result {
+        Ok(result) => result.map_err(|error| format!("{error:#}")),
+        Err(panic) => {
+            let message =
+                panic.downcast_ref::<&str>().copied().or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+            Err(format!("panicked: {}", message.unwrap_or("<unknown>")))
+        }
+    }
+}
+
+// Returns the seed of the RNG of the test.
+fn seed(test: &ProgramTest) -> u64 {
+    test.randomness().unwrap_or(123456789)
 }
 
 // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
-fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
+fn run_test(test: &ProgramTest, genesis: &OnceLock<Genesis>) -> serde_yaml::Mapping {
     // Initialize the RNG.
-    let rng = &mut match test.randomness() {
-        None => TestRng::fixed(123456789),
-        Some(randomness) => TestRng::fixed(randomness),
-    };
+    let rng = &mut TestRng::fixed(seed(test));
 
     // RNG used only in `execution_cost_for_call`
     let cost_rng = &mut TestRng::default();
@@ -79,7 +161,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
     let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
     // Initialize the VM.
-    let (vm, _) = initialize_vm(&genesis_private_key, test.start_height(), rng);
+    let (vm, _) = initialize_vm(&genesis_private_key, test.start_height(), genesis, rng);
 
     // Fund the additional keys.
     for key in test.keys() {
@@ -409,18 +491,43 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
 
 // A helper function to initialize the VM.
 // Returns a VM and the first record in the genesis block.
+// If `genesis` is empty, the VM builds the genesis block and stores it in `genesis`.
+// Either way, `rng` ends in the state after the genesis block, and the VM holds the `credits.aleo` keys from it.
+// A stored genesis ignores `private_key` and `rng`, so callers sharing `genesis` must pass the same key and RNG state.
 #[allow(clippy::type_complexity)]
-fn initialize_vm<R: Rng + CryptoRng>(
+fn initialize_vm(
     private_key: &PrivateKey<CurrentNetwork>,
     height: u32,
-    rng: &mut R,
+    genesis: &OnceLock<Genesis>,
+    rng: &mut TestRng,
 ) -> (VM<CurrentNetwork, LedgerType>, Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>) {
     // Initialize a VM.
     let vm: VM<CurrentNetwork, LedgerType> =
         VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
 
-    // Initialize the genesis block.
-    let genesis = vm.genesis_beacon(private_key, rng).unwrap();
+    // The `unwrap`s on `credits.aleo` cannot fail, because every VM holds `credits.aleo`, with a verifying key
+    // for each of its proving keys.
+    let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+    // Initialize the genesis block, or reuse the one built from the same seed.
+    let (genesis, genesis_rng, credits_keys) = genesis.get_or_init(|| {
+        let genesis = vm.genesis_beacon(private_key, rng).unwrap();
+        let credits_keys = vm
+            .process()
+            .get_stack(credits)
+            .unwrap()
+            .proving_keys()
+            .into_iter()
+            .map(|(name, proving_key)| (name, proving_key, vm.process().get_verifying_key(credits, name).unwrap()))
+            .collect();
+        (genesis, rng.clone(), credits_keys)
+    });
+    // Continue the RNG from where the genesis block left it.
+    *rng = genesis_rng.clone();
+    // Insert the `credits.aleo` keys that the VM synthesized while it built the genesis block.
+    for (name, proving_key, verifying_key) in credits_keys {
+        vm.process().insert_proving_key(&credits, name, proving_key.clone()).unwrap();
+        vm.process().insert_verifying_key(&credits, name, verifying_key.clone()).unwrap();
+    }
 
     // Select a record to spend.
     let view_key = ViewKey::try_from(private_key).unwrap();
@@ -428,7 +535,7 @@ fn initialize_vm<R: Rng + CryptoRng>(
     let records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
 
     // Add the genesis block to the VM.
-    vm.add_next_block(&genesis).unwrap();
+    vm.add_next_block(genesis).unwrap();
 
     // If the desired height is greater than zero, add additional blocks to the VM.
     for _ in 0..height {
