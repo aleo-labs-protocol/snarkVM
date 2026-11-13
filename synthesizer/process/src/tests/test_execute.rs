@@ -38,12 +38,12 @@ use snarkvm_ledger_store::{
     BlockStore,
     FinalizeStorage,
     FinalizeStore,
+    StorageMode,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};
 use snarkvm_synthesizer_snark::UniversalSRS;
 
-use aleo_std::StorageMode;
 use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;

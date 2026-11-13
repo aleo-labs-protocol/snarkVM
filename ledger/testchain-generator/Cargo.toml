@@ -22,9 +22,6 @@ default = [ ]
 test_targets = [ "snarkvm-ledger/test_targets"]
 test = [ "snarkvm-ledger/test" ]
 
-[dependencies.aleo-std]
-workspace = true
-
 [dependencies.snarkvm-console]
 workspace = true
 features = [ "test_consensus_heights" ]

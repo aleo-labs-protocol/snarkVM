@@ -149,7 +149,7 @@ invoked concurrently. In order to avoid this, the `VM` object spawns a persisten
 ### Storage modes
 
 One of the fundamental parameters associated with the storage is the `StorageMode`, defined in
-[`aleo-std`](https://github.com/ProvableHQ/aleo-std). It is primarily used to determine where the
+`snarkvm-utilities` and re-exported by this crate. It is primarily used to determine where the
 persistent storage is stored on the disk (via `aleo_ledger_dir`).
 
 The `StorageMode::Test`, dedicated to testing, should be created via `StorageMode::new_test`,

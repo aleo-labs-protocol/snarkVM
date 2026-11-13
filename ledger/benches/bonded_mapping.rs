@@ -26,12 +26,12 @@ use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE};
 use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer::VM;
 
+use snarkvm_ledger_store::StorageMode;
 #[cfg(not(feature = "rocks"))]
 use snarkvm_ledger_store::helpers::memory::ConsensusMemory;
 #[cfg(feature = "rocks")]
 use snarkvm_ledger_store::helpers::rocksdb::ConsensusDB;
 
-use aleo_std::StorageMode;
 use criterion::Criterion;
 use indexmap::indexmap;
 use std::{str::FromStr, time::Duration};

@@ -54,6 +54,12 @@ pub use self::rand::*;
 pub mod serialize;
 pub use serialize::*;
 
+/// The storage mode of a node, and the directories that it resolves to.
+#[cfg(feature = "storage")]
+pub mod storage;
+#[cfg(feature = "storage")]
+pub use storage::*;
+
 /// Helpers for error handling.
 pub mod errors;
 pub use errors::*;

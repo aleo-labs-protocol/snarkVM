@@ -736,10 +736,9 @@ pub mod test_helpers {
     use console::{account::PrivateKey, network::MainnetV0, program::Identifier};
     use snarkvm_ledger_block::Transition;
     use snarkvm_ledger_query::Query;
-    use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
+    use snarkvm_ledger_store::{BlockStore, StorageMode, helpers::memory::BlockMemory};
     use snarkvm_synthesizer_program::Program;
 
-    use aleo_std::StorageMode;
     use std::sync::OnceLock;
 
     type CurrentNetwork = MainnetV0;

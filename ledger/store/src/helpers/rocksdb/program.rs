@@ -29,8 +29,8 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
 
 /// A RocksDB finalize storage.

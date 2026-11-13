@@ -72,9 +72,7 @@ workspace = true
 
 [dependencies.snarkvm-utilities]
 workspace = true
-
-[dependencies.aleo-std-storage]
-workspace = true
+features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -116,9 +114,6 @@ features = [ "write" ]
 optional = true
 
 [dependencies.tracing]
-workspace = true
-
-[dev-dependencies.aleo-std]
 workspace = true
 
 [dev-dependencies.snarkvm-ledger-block]

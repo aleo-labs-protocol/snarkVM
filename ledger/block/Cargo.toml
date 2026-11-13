@@ -90,10 +90,6 @@ workspace = true
 workspace = true
 features = [ "preserve_order" ]
 
-[dev-dependencies.aleo-std]
-workspace = true
-features = [ "storage" ]
-
 [dev-dependencies.bincode]
 workspace = true
 

@@ -52,7 +52,7 @@ pub fn cached_file_bytes(file: &PowersFile) -> Vec<u8> {
     return snarkvm_parameters::mainnet::default_load_powers_file_sync(file).unwrap();
     #[cfg(not(feature = "filesystem"))]
     {
-        let path = aleo_std::aleo_dir().join("resources").join(file.name());
+        let path = snarkvm_utilities::aleo_dir().join("resources").join(file.name());
         std::fs::read(&path).unwrap_or_else(|error| panic!("Run the tests with `filesystem` first: {path:?}: {error}"))
     }
 }

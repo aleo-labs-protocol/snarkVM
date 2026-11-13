@@ -46,10 +46,10 @@ use snarkvm_ledger_block::{
 use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 use snarkvm_ledger_puzzle::{Solution, SolutionID};
 use snarkvm_synthesizer_program::{FinalizeOperation, Program};
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 #[cfg(feature = "rocks")]
-use aleo_std_storage::{aleo_ledger_dir, aleo_secondary_ledger_dir};
+use snarkvm_utilities::{aleo_ledger_dir, aleo_secondary_ledger_dir};
+
 use anyhow::{Context, Result};
 #[cfg(feature = "locktick")]
 use locktick::{

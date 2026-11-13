@@ -17,8 +17,8 @@ mod helpers;
 use helpers::{BlockOptions, CurrentNetwork, LedgerType, TestChainBuilder};
 
 use snarkvm_ledger::{CheckBlockError, Ledger};
+use snarkvm_ledger_store::StorageMode;
 
-use aleo_std::StorageMode;
 use snarkvm_utilities::TestRng;
 
 #[test]

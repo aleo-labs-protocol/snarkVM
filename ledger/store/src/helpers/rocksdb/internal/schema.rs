@@ -130,8 +130,7 @@ pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result
 mod tests {
     use super::*;
     use crate::helpers::rocksdb::{Database, ProgramMap, RocksDB};
-
-    use aleo_std::StorageMode;
+    use snarkvm_utilities::StorageMode;
 
     const NETWORK_ID: u16 = 0;
 

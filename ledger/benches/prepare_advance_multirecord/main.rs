@@ -28,7 +28,6 @@ a number of instances of the large one_to_many_records transaction.
 
 use std::{env, fs, io::Write, path::Path, time::Instant};
 
-use aleo_std::StorageMode;
 use snarkvm_console::{
     account::{Address, PrivateKey, ViewKey},
     network::{
@@ -45,6 +44,7 @@ use snarkvm_ledger::{
     store::{ConsensusStore, helpers::memory::ConsensusMemory},
     test_helpers::chain_builder::{GenerateBlockOptions, GenerateBlocksOptions, TestChainBuilder},
 };
+use snarkvm_ledger_store::StorageMode;
 use snarkvm_synthesizer::{program::Program, vm::VM};
 
 type CurrentNetwork = MainnetV0;

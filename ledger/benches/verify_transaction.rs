@@ -34,10 +34,9 @@ use snarkvm_console::{
 };
 use snarkvm_ledger::Ledger;
 use snarkvm_ledger_block::{Transaction, Transition};
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer::VM;
 
-use aleo_std::StorageMode;
 use criterion::{Criterion, Throughput};
 use rayon::prelude::*;
 
