@@ -3190,7 +3190,6 @@ finalize compute:
         vm.add_next_block(&block).unwrap();
     }
 
-    // Note that the maximum delegator size is large enough that the ratification ID cannot be computed.
     #[test]
     fn test_ratify_genesis_greater_than_max_delegator_size() {
         // Initialize an RNG.
@@ -3222,42 +3221,60 @@ finalize compute:
             })
             .collect::<Vec<_>>();
 
-        // Construct the delegators, greater than the maximum delegator size.
-        let delegators = delegator_accounts
-            .iter()
-            .map(|(private_key, _)| (*private_key, (validator, MIN_DELEGATOR_STAKE)))
-            .collect::<IndexMap<_, _>>();
+        // Constructs a genesis block in which each of the given accounts delegates the minimum stake to `validator`.
+        let mut genesis_with_delegators =
+            |delegator_accounts: &[(PrivateKey<CurrentNetwork>, Address<CurrentNetwork>)]| {
+                // Construct the delegators.
+                let delegators = delegator_accounts
+                    .iter()
+                    .map(|(private_key, _)| (*private_key, (validator, MIN_DELEGATOR_STAKE)))
+                    .collect::<IndexMap<_, _>>();
 
-        // Construct the committee.
-        // Track the allocated amount.
-        let (committee_map, allocated_amount) = sample_committee_map_and_allocated_amount(&validators, &delegators);
+                // Construct the committee.
+                // Track the allocated amount.
+                let (committee_map, allocated_amount) =
+                    sample_committee_map_and_allocated_amount(&validators, &delegators);
 
-        // Construct the public balances, allocating the remaining supply to the validators and zero to the delegators.
-        let mut public_balances = sample_public_balances(
-            &validators.keys().map(|private_key| Address::try_from(private_key).unwrap()).collect::<Vec<_>>(),
-            <CurrentNetwork as Network>::STARTING_SUPPLY - allocated_amount,
-        );
-        public_balances.extend(sample_public_balances(
-            &delegator_accounts.iter().map(|(_, address)| *address).collect::<Vec<_>>(),
-            0,
-        ));
+                // Construct the public balances, allocating the remaining supply to the validators and zero to the delegators.
+                let mut public_balances = sample_public_balances(
+                    &validators.keys().map(|private_key| Address::try_from(private_key).unwrap()).collect::<Vec<_>>(),
+                    <CurrentNetwork as Network>::STARTING_SUPPLY - allocated_amount,
+                );
+                public_balances.extend(sample_public_balances(
+                    &delegator_accounts.iter().map(|(_, address)| *address).collect::<Vec<_>>(),
+                    0,
+                ));
 
-        // Construct the bonded balances.
-        // Each delegator is its own withdrawal address, as in `sample_bonded_balances`.
-        let mut bonded_balances = sample_bonded_balances(&validators, &IndexMap::new());
-        bonded_balances.extend(
-            delegator_accounts.iter().map(|(_, address)| (*address, (validator, *address, MIN_DELEGATOR_STAKE))),
-        );
+                // Construct the bonded balances.
+                // Each delegator is its own withdrawal address, as in `sample_bonded_balances`.
+                let mut bonded_balances = sample_bonded_balances(&validators, &IndexMap::new());
+                bonded_balances.extend(
+                    delegator_accounts
+                        .iter()
+                        .map(|(_, address)| (*address, (validator, *address, MIN_DELEGATOR_STAKE))),
+                );
 
-        // Construct the genesis block, which should fail.
-        let result = vm.genesis_quorum(
-            validators.keys().next().unwrap(),
-            Committee::new_genesis(committee_map).unwrap(),
-            public_balances,
-            bonded_balances,
-            rng,
-        );
-        assert!(result.is_err());
+                // Construct the genesis block.
+                // The validator set is non-empty, and the committee is within the maximum size and stakes.
+                vm.genesis_quorum(
+                    validators.keys().next().unwrap(),
+                    Committee::new_genesis(committee_map).unwrap(),
+                    public_balances,
+                    bonded_balances,
+                    rng,
+                )
+            };
+
+        // Construct a genesis block with exactly the maximum number of delegators, which should pass the delegator limit.
+        // The genesis block still fails after pre-ratify: the genesis ratification writes its number of public and
+        // bonded balances as a `u16`, so its ratification ID cannot be computed for more than `u16::MAX` balances.
+        let error = genesis_with_delegators(&delegator_accounts[..MAX_DELEGATORS as usize]).unwrap_err().to_string();
+        assert!(!error.contains("exceeds the maximum number of delegators"), "{error}");
+        assert!(error.contains("Failed to construct the ratifications after speculation"), "{error}");
+
+        // Construct a genesis block with more than the maximum number of delegators, which should fail the delegator limit.
+        let error = genesis_with_delegators(&delegator_accounts).unwrap_err().to_string();
+        assert!(error.contains("Ratify::Genesis(..) exceeds the maximum number of delegators"), "{error}");
     }
 
     #[test]
