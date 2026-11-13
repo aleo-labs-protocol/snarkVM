@@ -27,23 +27,15 @@ use snarkvm_ledger_block::Output;
 use snarkvm_synthesizer_process::execution_cost_for_authorization;
 use snarkvm_synthesizer_program::Program;
 
-// This helper function performs the following flow:
+// This test performs the following flow:
 //   1. Sample a VM at the V16 height.
 //   2. Deploy ldgbatcher_p28.aleo (which imports credits.aleo).
-//   3. Shield funds into three private `credits.aleo` records via
+//   3. Shield funds into six private `credits.aleo` records via
 //      transfer_public_to_private.
-//   4.
-//    - If `use_construct_authorization` is true:
-//       - Manually construct the authorization from the root-call information using
-//        `sample_authorization_with_record_tracking`, populating the requests and calling
-//        `authorize_requests`.
-//       - Estimate the fee and construct the fee transaction.
-//       - Manually construct an execution transaction by proving the authorization.
-//       - Post the transaction to the ledger and check it is accepted.
-//    - If `use_construct_authorization` is false:
-//       - Call ldgbatcher_p28.aleo/transfer_private_3 on the VM, executing the
-//         transaction as usual.
-fn transfer_private_3_flow(use_construct_authorization: bool) {
+//   4. Call `transfer_private_3_flow` with `use_construct_authorization` set to true
+//      on the first three records, then set to false on the last three records.
+#[test]
+fn test_transfer_private_3_flow() {
     let rng = &mut TestRng::default();
 
     // Use the genesis account as the caller, since it holds a public balance to shield.
@@ -67,11 +59,14 @@ fn transfer_private_3_flow(use_construct_authorization: bool) {
 
     println!("Minting credits.aleo records...");
 
+    // Each of the two flows spends three records.
+    let num_records = 6;
+
     let transfer_public_to_private = Identifier::<CurrentNetwork>::from_str("transfer_public_to_private").unwrap();
     let shield_amount = 1_000_000u64;
-    let mut shield_transactions = Vec::with_capacity(3);
-    let mut records = Vec::with_capacity(3);
-    for _ in 0..3 {
+    let mut shield_transactions = Vec::with_capacity(num_records);
+    let mut records = Vec::with_capacity(num_records);
+    for _ in 0..num_records {
         let inputs = [
             Value::<CurrentNetwork>::from_str(&caller_address.to_string()).unwrap(),
             Value::<CurrentNetwork>::from_str(&format!("{shield_amount}u64")).unwrap(),
@@ -108,10 +103,34 @@ fn transfer_private_3_flow(use_construct_authorization: bool) {
     }
 
     let block = sample_next_block(&vm, &caller_private_key, &shield_transactions, rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 3);
+    assert_eq!(block.transactions().num_accepted(), num_records);
     assert_eq!(block.transactions().num_rejected(), 0);
     vm.add_next_block(&block).unwrap();
 
+    for (use_construct_authorization, records) in [true, false].into_iter().zip_eq(records.chunks_exact(3)) {
+        transfer_private_3_flow(&vm, caller_private_key, records, use_construct_authorization, rng);
+    }
+}
+
+// This helper function calls ldgbatcher_p28.aleo/transfer_private_3 on the given VM,
+// spending the given three private `credits.aleo` records:
+//    - If `use_construct_authorization` is true:
+//       - Manually construct the authorization from the root-call information using
+//        `sample_authorization_with_record_tracking`, populating the requests and calling
+//        `authorize_requests`.
+//       - Estimate the fee and construct the fee transaction.
+//       - Manually construct an execution transaction by proving the authorization.
+//       - Post the transaction to the ledger and check it is accepted.
+//    - If `use_construct_authorization` is false:
+//       - Call ldgbatcher_p28.aleo/transfer_private_3 on the VM, executing the
+//         transaction as usual.
+fn transfer_private_3_flow(
+    vm: &VM<CurrentNetwork, LedgerType>,
+    caller_private_key: PrivateKey<CurrentNetwork>,
+    records: &[Record<CurrentNetwork, Plaintext<CurrentNetwork>>],
+    use_construct_authorization: bool,
+    rng: &mut TestRng,
+) {
     // Create a recipient for the private transfer.
     let recipient_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let recipient_address = Address::<CurrentNetwork>::try_from(&recipient_private_key).unwrap();
@@ -132,7 +151,7 @@ fn transfer_private_3_flow(use_construct_authorization: bool) {
         println!("Constructing authorization for {program_id}/{function_name} manually...");
 
         // Manually construct the authorization
-        let authorization = construct_authorization(&vm, caller_private_key, program_id, function_name, &inputs, rng);
+        let authorization = construct_authorization(vm, caller_private_key, program_id, function_name, &inputs, rng);
         let execution_id = authorization.to_execution_id().unwrap();
 
         println!("Constructing the transaction by proving the authorization and incorporating a fee...");
@@ -149,7 +168,7 @@ fn transfer_private_3_flow(use_construct_authorization: bool) {
         // The transaction must verify.
         vm.check_transaction(&transaction, None, rng).unwrap();
 
-        sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap()
+        sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap()
     } else {
         println!("Executing transaction for {program_id}/{function_name} with vm.execute()...");
 
@@ -169,7 +188,7 @@ fn transfer_private_3_flow(use_construct_authorization: bool) {
         vm.check_transaction(&transaction, None, rng).unwrap();
 
         // The transaction must be accepted when included in a block.
-        sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap()
+        sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap()
     };
 
     println!("Checking transaction is accepted and posting it to the ledger");
@@ -178,10 +197,4 @@ fn transfer_private_3_flow(use_construct_authorization: bool) {
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block).unwrap();
-}
-
-#[test]
-fn test_transfer_private_3_flow() {
-    transfer_private_3_flow(true);
-    transfer_private_3_flow(false);
 }
