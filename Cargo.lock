@@ -48,9 +48,6 @@ name = "aleo-std-profiler"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64476704cd7d71c43623839197bea87e477cfa03006853328fd5c9e07d8f48cc"
-dependencies = [
- "colored 2.2.0",
-]
 
 [[package]]
 name = "aleo-std-storage"
@@ -2955,6 +2952,7 @@ dependencies = [
  "snarkvm-parameters",
  "snarkvm-utilities",
  "thiserror 2.0.21",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_into_iter, defer, dev_println, timing_span};
+use snarkvm_utilities::{cfg_into_iter, dev_println, timing_span};
 
 use anyhow::{Result, anyhow, ensure};
 use core::marker::PhantomData;
@@ -64,8 +64,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         } = Self::index_helper(c).map_err(|e| anyhow!("{e:?}"))?;
 
         let (fft_precomputation, ifft_precomputation) = {
-            let fft_precomp_time = start_timer!(|| format!("Precomputing roots of unity {id}"));
-            defer! { end_timer!(fft_precomp_time); }
+            let _fft_precomp_time = timing_span!("Precomputing roots of unity", circuit = %id).entered();
             Self::fft_precomputation(
                 constraint_domain.size(),
                 variable_domain.size(),

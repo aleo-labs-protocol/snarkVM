@@ -18,9 +18,6 @@
 #![allow(clippy::type_complexity)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
-#[allow(unused_imports)]
-#[macro_use]
-extern crate aleo_std;
 #[macro_use]
 extern crate thiserror;
 

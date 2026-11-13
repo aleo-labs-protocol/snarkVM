@@ -72,9 +72,6 @@ version = "0.8"
 default-features = false
 features = [ "std", "no-rng" ]
 
-[dependencies.aleo-std]
-workspace = true
-
 [dependencies.anyhow]
 workspace = true
 
@@ -139,11 +136,14 @@ features = [ "preserve_order" ]
 [dev-dependencies.serial_test]
 workspace = true
 
+[dev-dependencies.tracing-subscriber]
+version = "0.3"
+features = [ "env-filter" ]
+
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
 filesystem = [ "snarkvm-parameters/filesystem" ]
 locktick = [ "snarkvm-parameters/locktick" ]
-profiler = [ "aleo-std/profiler" ]
 test = [ ]
 serial = [
   "snarkvm-curves/serial",

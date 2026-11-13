@@ -28,7 +28,7 @@ use itertools::Itertools;
 use rand::{CryptoRng, Rng};
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::{defer, dev_println, timing_span};
+use snarkvm_utilities::{dev_println, timing_span};
 
 mod fifth;
 mod first;
@@ -78,11 +78,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     .enumerate()
                     .map(|(i, (instance, rand_assignments))| {
                         let mut pcs = {
-                            let constraint_time = start_timer!(|| format!(
-                                "Generating constraints and witnesses for {:?} and index {i}",
-                                circuit.id
-                            ));
-                            defer! { end_timer!(constraint_time); }
+                            let _constraint_time =
+                                timing_span!("Generating constraints and witnesses", circuit = %circuit.id, index = i)
+                                    .entered();
 
                             // i may not be used if the timer feature is disabled.
                             #[allow(unused_variables)]
@@ -94,9 +92,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         };
 
                         {
-                            let padding_time =
-                                start_timer!(|| format!("Padding matrices for {:?} and index {i}", circuit.id));
-                            defer! { end_timer!(padding_time); }
+                            let _padding_time =
+                                timing_span!("Padding matrices", circuit = %circuit.id, index = i).entered();
 
                             SM::ZK.then(|| {
                                 crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(
@@ -137,7 +134,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
                         Self::formatted_public_input_is_admissible(&padded_public_variables)?;
 
-                        let eval_z_a_time = start_timer!(|| format!("For {:?}, evaluating z_A_{i}", circuit.id));
+                        let eval_z_a_time = timing_span!("Evaluating z_A", circuit = %circuit.id, index = i).entered();
                         let z_a = circuit
                             .a
                             .iter()
@@ -145,9 +142,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
-                        end_timer!(eval_z_a_time);
+                        drop(eval_z_a_time);
 
-                        let eval_z_b_time = start_timer!(|| format!("For {:?}, evaluating z_B_{i}", circuit.id));
+                        let eval_z_b_time = timing_span!("Evaluating z_B", circuit = %circuit.id, index = i).entered();
                         let z_b = circuit
                             .b
                             .iter()
@@ -155,9 +152,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
-                        end_timer!(eval_z_b_time);
+                        drop(eval_z_b_time);
 
-                        let eval_z_c_time = start_timer!(|| format!("For {:?}, evaluating z_C_{i}", circuit.id));
+                        let eval_z_c_time = timing_span!("Evaluating z_C", circuit = %circuit.id, index = i).entered();
                         let z_c = circuit
                             .c
                             .iter()
@@ -165,7 +162,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
-                        end_timer!(eval_z_c_time);
+                        drop(eval_z_c_time);
 
                         Ok(prover::Assignments::<F>(padded_public_variables, private_variables, z_a, z_b, z_c))
                     })

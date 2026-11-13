@@ -175,29 +175,29 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(2);
         job_pool.add_job(|| {
-            let a_poly_time = start_timer!(|| format!("Computing a poly for {label}"));
+            let a_poly_time = timing_span!("Computing a poly", %label).entered();
             let a_poly = {
                 let evals = row_col_val.evaluations.iter().map(|v| v_R_i_alpha_v_C_i_beta * v).collect();
                 EvaluationsOnDomain::from_vec_and_domain(evals, non_zero_domain)
                     .interpolate_with_pc(ifft_precomputation)
             };
-            end_timer!(a_poly_time);
+            drop(a_poly_time);
             a_poly
         });
 
         job_pool.add_job(|| {
-            let b_poly_time = start_timer!(|| format!("Computing b poly for {label}"));
+            let b_poly_time = timing_span!("Computing b poly", %label).entered();
             let b_poly = {
                 let evals: Vec<F> = cross_products.iter().map(|&cp| R_size_C_size * cp).collect();
                 EvaluationsOnDomain::from_vec_and_domain(evals, non_zero_domain)
                     .interpolate_with_pc(ifft_precomputation)
             };
-            end_timer!(b_poly_time);
+            drop(b_poly_time);
             b_poly
         });
         let [a_poly, b_poly]: [_; 2] = job_pool.execute_all().try_into().unwrap();
 
-        let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
+        let f_evals_time = timing_span!("Computing f evals on K", %label).entered();
         // Move cross_products directly into inverses - no second pass over row/col
         // needed.
         let mut inverses = cross_products;
@@ -208,15 +208,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         inverses.iter_mut().zip_eq(&row_col_val.evaluations).for_each(|(inv, v)| *inv *= v);
         let f_evals_on_K = inverses;
 
-        end_timer!(f_evals_time);
+        drop(f_evals_time);
 
-        let f_poly_time = start_timer!(|| format!("Computing f poly for {label}"));
+        let f_poly_time = timing_span!("Computing f poly", %label).entered();
         // we define f as the rational equation for which we're running the sumcheck
         // protocol
         let f = EvaluationsOnDomain::from_vec_and_domain(f_evals_on_K, non_zero_domain)
             .interpolate_with_pc(ifft_precomputation);
 
-        end_timer!(f_poly_time);
+        drop(f_poly_time);
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
         let f_at_zero = f.coeffs[0];
         // `b * f = a` on the domain for any `alpha` and `beta`: where

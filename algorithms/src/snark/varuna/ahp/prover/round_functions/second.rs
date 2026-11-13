@@ -144,7 +144,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         circuit: &Circuit<F, SM>,
     ) -> DensePolynomial<F> {
         let label = label.to_string();
-        let poly_time = start_timer!(|| format!("Computing {label}"));
+        let poly_time = timing_span!("Computing polynomial", %label).entered();
 
         let evals = EvaluationsOnDomain::from_vec_and_domain(evaluations, constraint_domain);
         let poly = evals.interpolate_with_pc_by_ref(&circuit.ifft_precomputation);
@@ -160,7 +160,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             &evals.evaluations,
         );
 
-        end_timer!(poly_time);
+        drop(poly_time);
 
         poly
     }

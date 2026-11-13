@@ -45,7 +45,7 @@ use crate::{
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
-use snarkvm_utilities::{ToBytes, defer, dev_eprintln, dev_println, timing_span, to_bytes_le};
+use snarkvm_utilities::{ToBytes, dev_eprintln, dev_println, timing_span, to_bytes_le};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
@@ -98,8 +98,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let ck = CommitterUnionKey::union(std::iter::once(&committer_key));
 
             let mut circuit_commitments = {
-                let commit_time = start_timer!(|| format!("Commit to index polynomials for {}", indexed_circuit.id));
-                defer! { end_timer!(commit_time); }
+                let _commit_time = timing_span!("Commit to index polynomials", circuit = %indexed_circuit.id).entered();
                 let setup_rng = None::<&mut dyn Rng>; // We do not randomize the commitments
 
                 let (circuit_commitments, commitment_randomnesses): (_, _) = SonicKZG10::<E, FS>::commit(
@@ -223,9 +222,9 @@ where
     type VerifyingKey = CircuitVerifyingKey<E>;
 
     fn universal_setup(max_degree: usize) -> Result<Self::UniversalSRS> {
-        let setup_time = start_timer!(|| { format!("Varuna::UniversalSetup with max_degree {max_degree}",) });
+        let setup_time = timing_span!("Varuna::UniversalSetup", max_degree).entered();
         let srs = SonicKZG10::<E, FS>::load_srs(max_degree).map_err(Into::into);
-        end_timer!(setup_time);
+        drop(setup_time);
         srs
     }
 
@@ -880,8 +879,7 @@ where
             return Ok(false);
         }
 
-        let verifier_time = start_timer!(|| format!("Varuna::Verify with batch sizes: {batch_sizes:?}"));
-        defer! { end_timer!(verifier_time); }
+        let _verifier_time = timing_span!("Varuna::Verify", ?batch_sizes).entered();
 
         let first_round_info = AHPForR1CS::<E::Fr, SM>::first_round_polynomial_info(batch_sizes.iter());
 

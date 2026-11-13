@@ -28,7 +28,7 @@ use crate::{
 };
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, defer, rand::Uniform, timing_span};
+use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform, timing_event, timing_span};
 
 use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
@@ -104,12 +104,8 @@ impl<E: PairingEngine> KZG10<E> {
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
 
-        let commit_time = start_timer!(|| format!(
-            "Committing to polynomial of degree {} with hiding_bound: {:?}",
-            polynomial.degree(),
-            hiding_bound,
-        ));
-        defer! { end_timer!(commit_time); }
+        let _commit_time =
+            timing_span!("Committing to polynomial", degree = polynomial.degree(), ?hiding_bound).entered();
 
         let mut commitment = match polynomial {
             Polynomial::Dense(polynomial) => {
@@ -134,9 +130,8 @@ impl<E: PairingEngine> KZG10<E> {
         let mut randomness = KZGRandomness::empty();
         if let Some(hiding_degree) = hiding_bound {
             let mut rng = rng.ok_or(PCError::MissingRng)?;
-            let sample_random_poly_time =
-                start_timer!(|| format!("Sampling a random polynomial of degree {hiding_degree}"));
-            defer! { end_timer!(sample_random_poly_time); }
+            let _sample_random_poly_time =
+                timing_span!("Sampling a random polynomial", degree = hiding_degree).entered();
 
             randomness = KZGRandomness::rand(hiding_degree, false, &mut rng);
             Self::check_hiding_bound(
@@ -169,12 +164,8 @@ impl<E: PairingEngine> KZG10<E> {
             lagrange_basis.size()
         );
 
-        let commit_time = start_timer!(|| format!(
-            "Committing to polynomial of degree {} with hiding_bound: {:?}",
-            evaluations.len() - 1,
-            hiding_bound,
-        ));
-        defer! { end_timer!(commit_time); }
+        let _commit_time =
+            timing_span!("Committing to polynomial", degree = evaluations.len() - 1, ?hiding_bound).entered();
 
         let evaluations = evaluations.iter().map(|e| e.to_bigint()).collect::<Vec<_>>();
         let msm_time = timing_span!("MSM to compute commitment to plaintext poly").entered();
@@ -184,9 +175,8 @@ impl<E: PairingEngine> KZG10<E> {
         let mut randomness = KZGRandomness::empty();
         if let Some(hiding_degree) = hiding_bound {
             let mut rng = rng.ok_or(PCError::MissingRng)?;
-            let sample_random_poly_time =
-                start_timer!(|| format!("Sampling a random polynomial of degree {hiding_degree}"));
-            defer! { end_timer!(sample_random_poly_time); }
+            let _sample_random_poly_time =
+                timing_span!("Sampling a random polynomial", degree = hiding_degree).entered();
 
             randomness = KZGRandomness::rand(hiding_degree, false, &mut rng);
             Self::check_hiding_bound(
@@ -309,8 +299,7 @@ impl<E: PairingEngine> KZG10<E> {
         rand: &KZGRandomness<E>,
     ) -> Result<KZGProof<E>, PCError> {
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
-        let open_time = start_timer!(|| format!("Opening polynomial of degree {}", polynomial.degree()));
-        defer! { end_timer!(open_time); }
+        let _open_time = timing_span!("Opening polynomial", degree = polynomial.degree()).entered();
 
         let (witness_poly, hiding_witness_poly) = {
             let _witness_time = timing_span!("Computing witness polynomials").entered();
@@ -339,7 +328,8 @@ impl<E: PairingEngine> KZG10<E> {
         let inner = vk.beta_h.to_projective() - vk.h.mul(point);
         let rhs = E::pairing(proof.w, inner);
 
-        end_timer!(check_time, || format!("Result: {}", lhs == rhs));
+        timing_event!("Result: {}", lhs == rhs);
+        drop(check_time);
         Ok(lhs == rhs)
     }
 
@@ -356,7 +346,7 @@ impl<E: PairingEngine> KZG10<E> {
         ensure!(commitments.len() == points.len());
         ensure!(commitments.len() == values.len());
         ensure!(commitments.len() == proofs.len());
-        let check_time = start_timer!(|| format!("Checking {} evaluation proofs", commitments.len()));
+        let check_time = timing_span!("Checking evaluation proofs", count = commitments.len()).entered();
         let g = vk.g.to_projective();
         let gamma_g = vk.gamma_g.to_projective();
 
@@ -399,7 +389,8 @@ impl<E: PairingEngine> KZG10<E> {
         )
         .is_one();
         drop(pairing_time);
-        end_timer!(check_time, || format!("Result: {result}"));
+        timing_event!("Result: {result}");
+        drop(check_time);
         Ok(result)
     }
 
@@ -481,9 +472,59 @@ mod tests {
     use snarkvm_utilities::rand::TestRng;
 
     use rand::RngExt;
-    use std::borrow::Cow;
+    use std::{
+        borrow::Cow,
+        io,
+        sync::{Arc, Mutex},
+    };
+    use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan, util::SubscriberInitExt};
 
     type KZG_Bls12_377 = KZG10<Bls12_377>;
+
+    /// A writer that appends to a shared buffer.
+    #[derive(Clone, Default)]
+    struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for Buffer {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            // The lock is only poisoned if another writer panicked, which fails the test
+            // regardless.
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Runs `f` and returns the output of a subscriber that accepts `filter`
+    /// and logs when a span closes.
+    fn capture(filter: &str, f: impl Fn()) -> String {
+        let buffer = Buffer::default();
+        let writer = buffer.clone();
+        let guard = tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::new(filter))
+            .with_span_events(FmtSpan::CLOSE)
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .set_default();
+        // `tracing` caches whether a callsite is enabled, and a callsite that another
+        // thread registered stays disabled. The first run registers each
+        // callsite of `f`. The rebuild then asks this subscriber about each callsite.
+        f();
+        snarkvm_utilities::tracing::callsite::rebuild_interest_cache();
+        // The lock is only poisoned if a writer panicked, which fails the test
+        // regardless.
+        buffer.0.lock().unwrap().clear();
+        f();
+        drop(guard);
+        // The lock is only poisoned if a writer panicked, which fails the test
+        // regardless.
+        let bytes = buffer.0.lock().unwrap().clone();
+        // The formatter only writes UTF-8.
+        String::from_utf8(bytes).unwrap()
+    }
 
     impl<E: PairingEngine> KZG10<E> {
         /// Specializes the public parameters for a given maximum degree `d` for
@@ -628,6 +669,26 @@ mod tests {
     #[test]
     fn test_batch_check() {
         batch_check_test_template::<Bls12_377>().expect("test failed for bls12-377");
+    }
+
+    #[test]
+    fn test_commit_emits_timing_spans() {
+        let rng = &mut TestRng::default();
+        let degree = 8;
+        let pp = KZG_Bls12_377::load_srs(degree).unwrap();
+        let (ck, _) = KZG_Bls12_377::trim(&pp, degree, None);
+        let p = DensePolynomial::<Fr>::rand(degree, rng);
+
+        let filter = "timing::snarkvm_algorithms::polycommit=trace";
+        let output = capture(filter, || drop(KZG_Bls12_377::commit(&ck, &(&p).into(), None, None).unwrap()));
+
+        // A span reports its duration when it closes, and an inner span names its
+        // parent.
+        let target = "timing::snarkvm_algorithms::polycommit::kzg10";
+        let outer = "Committing to polynomial{degree=8 hiding_bound=None}";
+        let inner = "MSM to compute commitment to plaintext poly";
+        assert!(output.contains(&format!("TRACE {outer}:{inner}: {target}: close time.busy=")), "{output}");
+        assert!(output.contains(&format!("TRACE {outer}: {target}: close time.busy=")), "{output}");
     }
 
     #[test]
