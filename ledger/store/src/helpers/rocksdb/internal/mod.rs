@@ -53,8 +53,8 @@ pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 
 /// The maximum number of files RocksDB keeps open for a ledger, outside of a secondary instance.
 ///
-/// The node's open-files limit must stay well above this value, since its sockets and other files share that limit.
-/// snarkOS bases its minimum open-files limit on this value.
+/// A process that opens the ledger needs an open-files limit well above this value, since its sockets and other
+/// files share that limit.
 pub const MAX_OPEN_FILES: u16 = 8192;
 
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
