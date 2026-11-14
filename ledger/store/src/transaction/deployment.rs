@@ -27,8 +27,8 @@ use console::{
 use snarkvm_ledger_block::{Deployment, DeploymentVersion, Fee, Transaction};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::{Certificate, VerifyingKey};
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;

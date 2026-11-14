@@ -25,11 +25,10 @@ use snarkvm_console::prelude::{
 use snarkvm_ledger::{
     Ledger,
     Transaction,
-    store::helpers::rocksdb::ConsensusDB,
+    store::{StorageMode, aleo_ledger_dir, helpers::rocksdb::ConsensusDB},
     test_helpers::{TestChainBuilder, chain_builder::GenerateBlocksOptions},
 };
 
-use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, builder::PossibleValuesParser};
 use std::{fs, path::Path, str::FromStr};
@@ -69,7 +68,7 @@ struct Args {
 
 /// Removes an existing ledger (if any) from the filesystem.
 fn remove_ledger(network: u16, storage_mode: &StorageMode, force: bool) -> Result<()> {
-    let path = aleo_std::aleo_ledger_dir(network, storage_mode);
+    let path = aleo_ledger_dir(network, storage_mode);
 
     if path.exists() && force {
         std::fs::remove_dir_all(&path).with_context(|| "Failed to remove existing ledger")?;

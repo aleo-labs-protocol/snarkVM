@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use aleo_std::{StorageMode, aleo_ledger_dir};
+use snarkvm_ledger_store::{StorageMode, aleo_ledger_dir};
 
 use anyhow::Result;
 use std::{

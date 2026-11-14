@@ -254,7 +254,7 @@ macro_rules! impl_load_bytes_logic_remote {
         cfg_if::cfg_if! {
             if #[cfg(all(feature = "filesystem", not(feature="wasm")))] {
                 // Compose the correct file path for the parameter file.
-                let mut file_path = aleo_std::aleo_dir();
+                let mut file_path = snarkvm_utilities::aleo_dir();
                 file_path.push($local_dir);
                 file_path.push($filename);
 

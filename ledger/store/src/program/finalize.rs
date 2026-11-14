@@ -26,8 +26,8 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
@@ -833,8 +833,7 @@ mod tests {
     use super::*;
     use crate::helpers::memory::FinalizeMemory;
     use console::network::MainnetV0;
-
-    use aleo_std::StorageMode;
+    use snarkvm_utilities::StorageMode;
 
     use console::{program::Literal, types::U64};
 

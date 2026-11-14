@@ -605,11 +605,11 @@ pub(crate) mod test_helpers {
         types::{Field, Scalar, U16},
     };
     use snarkvm_ledger_block::{Block, Header, Input, Metadata, Transition};
+    use snarkvm_ledger_store::StorageMode;
     use snarkvm_ledger_test_helpers::{large_transaction_program, small_transaction_program};
     use snarkvm_synthesizer_process::{execution_cost_for_authorization, execution_cost_for_call};
     use snarkvm_synthesizer_program::Program;
 
-    use aleo_std::StorageMode;
     use indexmap::IndexMap;
     use serde_json::json;
     use snarkvm_synthesizer_snark::{Proof, VerifyingKey};

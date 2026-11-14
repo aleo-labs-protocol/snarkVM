@@ -17,12 +17,11 @@
 
 use std::sync::{Arc, Barrier};
 
-use aleo_std::StorageMode;
 use snarkvm_console::{
     network::{CanaryV0, MainnetV0, Network, TestnetV0},
     program::ProgramID,
 };
-use snarkvm_ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use snarkvm_ledger_store::{ConsensusStore, StorageMode, helpers::memory::ConsensusMemory};
 use snarkvm_synthesizer::VM;
 
 fn new_vm<N: Network>() -> VM<N, ConsensusMemory<N>> {

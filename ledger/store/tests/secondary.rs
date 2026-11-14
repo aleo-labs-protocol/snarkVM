@@ -16,9 +16,8 @@
 #![cfg(feature = "rocks")]
 
 use snarkvm_console::{network::MainnetV0, prelude::TestRng};
-use snarkvm_ledger_store::{BlockStore, helpers::rocksdb::BlockDB};
+use snarkvm_ledger_store::{BlockStore, StorageMode, helpers::rocksdb::BlockDB};
 
-use aleo_std::StorageMode;
 use std::{env, path::PathBuf, process::Command};
 
 type CurrentNetwork = MainnetV0;

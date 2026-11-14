@@ -42,7 +42,7 @@ required-features = ["filesystem"]
 [features]
 # On native builds, `filesystem` controls the whole default loader: the cache in
 # `~/.aleo/resources` and the remote fetch. Without it, the crate does no I/O.
-filesystem = ["aleo-std/storage", "dep:ureq"]
+filesystem = ["snarkvm-utilities/storage", "dep:ureq"]
 large_params = []
 locktick = ["dep:locktick"]
 no_std_out = []
@@ -55,9 +55,6 @@ dev-print = ["snarkvm-utilities/dev-print"]
 workspace = true
 
 [dependencies.snarkvm-utilities]
-workspace = true
-
-[dependencies.aleo-std]
 workspace = true
 
 [dependencies.anyhow]
@@ -122,7 +119,7 @@ workspace = true
 features = ["rustls"]
 optional = true
 
-[dev-dependencies.aleo-std]
+[dev-dependencies.snarkvm-utilities]
 workspace = true
 features = ["storage"]
 

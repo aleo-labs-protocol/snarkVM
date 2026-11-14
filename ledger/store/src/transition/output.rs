@@ -23,8 +23,8 @@ use console::{
     types::{Field, Group},
 };
 use snarkvm_ledger_block::Output;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use std::borrow::Cow;
 

@@ -36,7 +36,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c26e03c99bac238b3454ec6c654bc066a0e4e7eae00608ec76c2279bc8f2cf"
 dependencies = [
  "aleo-std-profiler",
- "aleo-std-storage",
  "aleo-std-time",
  "aleo-std-timed",
  "aleo-std-timer",
@@ -50,16 +49,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64476704cd7d71c43623839197bea87e477cfa03006853328fd5c9e07d8f48cc"
 dependencies = [
  "colored 2.2.0",
-]
-
-[[package]]
-name = "aleo-std-storage"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67efc024835a2e9c648b300c2fac67856d3f99897e4cb02a710cdf2842ed72e9"
-dependencies = [
- "dirs",
- "tempfile",
 ]
 
 [[package]]
@@ -3399,7 +3388,6 @@ name = "snarkvm-ledger"
 version = "4.13.0"
 dependencies = [
  "aleo-std",
- "aleo-std-storage",
  "anyhow",
  "bincode",
  "cfg-if",
@@ -3449,7 +3437,6 @@ dependencies = [
 name = "snarkvm-ledger-block"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "bincode",
  "indexmap 2.14.0",
@@ -3653,8 +3640,6 @@ dependencies = [
 name = "snarkvm-ledger-store"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
- "aleo-std-storage",
  "anyhow",
  "bincode",
  "indexmap 2.14.0",
@@ -3685,7 +3670,6 @@ dependencies = [
 name = "snarkvm-ledger-test-helpers"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "snarkvm-algorithms",
  "snarkvm-circuit",
@@ -3709,7 +3693,6 @@ dependencies = [
 name = "snarkvm-parameters"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "cfg-if",
  "colored 3.1.1",
@@ -3865,7 +3848,6 @@ dependencies = [
 name = "snarkvm-testchain-generator"
 version = "0.1.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "clap",
  "snarkvm-console",
@@ -3882,6 +3864,7 @@ dependencies = [
  "bincode",
  "colored 3.1.1",
  "criterion",
+ "dirs",
  "num-bigint",
  "rand",
  "rand_chacha",
@@ -3890,7 +3873,9 @@ dependencies = [
  "serde",
  "serde_json",
  "smol_str",
+ "snarkvm-utilities",
  "snarkvm-utilities-derives",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
  "tracing-test",

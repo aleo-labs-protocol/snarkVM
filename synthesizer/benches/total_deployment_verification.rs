@@ -24,11 +24,9 @@ use snarkvm_console::{
     types::Field,
 };
 use snarkvm_ledger_block::{Block, Header, Metadata, Transaction};
-use snarkvm_ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use snarkvm_ledger_store::{ConsensusStore, StorageMode, helpers::memory::ConsensusMemory};
 use snarkvm_synthesizer::VM;
 use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
-
-use aleo_std::StorageMode;
 
 type CurrentNetwork = MainnetV0;
 type CurrentLedger = ConsensusMemory<CurrentNetwork>;

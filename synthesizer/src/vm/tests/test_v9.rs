@@ -19,14 +19,13 @@ use console::{account::ViewKey, program::Value};
 use snarkvm_synthesizer_program::{Program, StackTrait};
 
 use crate::vm::test_helpers::{advance_vm_to_height, sample_vm_at_height};
-use aleo_std::StorageMode;
 use console::{
     account::{Address, Field, PrivateKey},
     network::ConsensusVersion,
     program::{Identifier, Literal, Plaintext, ProgramID, ProgramOwner},
 };
 use snarkvm_ledger_block::Transaction;
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer_process::Process;
 use snarkvm_utilities::TestRng;
 use std::panic::AssertUnwindSafe;

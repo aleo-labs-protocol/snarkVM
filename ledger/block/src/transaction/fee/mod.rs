@@ -204,10 +204,9 @@ pub mod test_helpers {
     use console::types::Field;
     use snarkvm_algorithms::snark::varuna::VarunaVersion;
     use snarkvm_ledger_query::Query;
-    use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
+    use snarkvm_ledger_store::{BlockStore, StorageMode, helpers::memory::BlockMemory};
     use snarkvm_synthesizer_process::Process;
 
-    use aleo_std::StorageMode;
     use std::sync::OnceLock;
 
     type CurrentNetwork = console::network::MainnetV0;

@@ -28,7 +28,8 @@ pub use schema::{STORAGE_VERSION, StorageVersion};
 #[cfg(test)]
 mod tests;
 
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
+
 use anyhow::{Result, bail, ensure};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
@@ -167,9 +168,9 @@ impl Database for RocksDB {
         let storage = storage.into();
 
         // Obtain the path to the primary instance.
-        let primary_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        let primary_path = snarkvm_utilities::aleo_ledger_dir(network_id, &storage);
         // Obtain the path to the secondary instance, if applicable.
-        let secondary_path = aleo_std_storage::aleo_secondary_ledger_dir(network_id, &storage);
+        let secondary_path = snarkvm_utilities::aleo_secondary_ledger_dir(network_id, &storage);
         // A secondary instance is registered under its own path.
         let db_path = secondary_path.as_ref().unwrap_or(&primary_path);
 
