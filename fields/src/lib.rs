@@ -84,11 +84,15 @@ pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
 // Given a vector of field elements {v_i}, compute the vector {coeff * v_i^(-1)}
 pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
     use rayon::prelude::*;
-    // Divide the vector v evenly between all available cores
-    let min_elements_per_thread = 1;
     let num_cpus_available = snarkvm_utilities::parallel::max_available_threads();
     let num_elems = v.len();
-    let num_elem_per_thread = min_elements_per_thread.max(num_elems / num_cpus_available);
+    // Below 4 elements per thread, waking the pool costs more than one serial pass.
+    if num_elems < 4 * num_cpus_available {
+        serial_batch_inversion_and_mul(v, coeff);
+        return;
+    }
+    // Divide the vector v evenly between all available cores
+    let num_elem_per_thread = num_elems / num_cpus_available;
 
     // Batch invert in parallel, without copying the vector
     v.par_chunks_mut(num_elem_per_thread).for_each(|chunk| {
