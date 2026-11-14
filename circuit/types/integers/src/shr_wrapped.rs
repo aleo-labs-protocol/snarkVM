@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
 
     #[inline]
     fn shr_wrapped(&self, rhs: &Integer<E, M>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && rhs.is_constant() {
             // Note: Casting `rhs` to `u32` is safe since `Magnitude`s can only be `u8`, `u16`, or `u32`.
@@ -42,7 +45,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
                 // If the shift amount is a constant, then we can manually shift in bits and truncate the result.
                 let shift_amount = *rhs_as_u8.eject_value() as usize;
 
-                let mut bits_le = Vec::with_capacity(I::BITS as usize + shift_amount);
+                let mut bits_le = Vec::with_capacity(i_bits + shift_amount);
                 bits_le.extend_from_slice(&self.bits_le);
 
                 match I::is_signed() {
@@ -53,7 +56,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
                 };
 
                 bits_le.reverse();
-                bits_le.truncate(I::BITS as usize);
+                bits_le.truncate(i_bits);
                 bits_le.reverse();
 
                 Self { bits_le, phantom: Default::default() }
@@ -84,7 +87,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
                         result = Field::ternary(bit, &masked, &result);
                     }
                     // Extract the bits of the result, including the carry bits.
-                    let mut bits_le = result.to_lower_bits_le(2 * I::BITS as usize)[..I::BITS as usize].to_vec();
+                    let mut bits_le = result.to_lower_bits_le(2 * i_bits)[..i_bits].to_vec();
                     // Reverse the bits.
                     bits_le.reverse();
                     // Initialize the integer, ignoring the carry bits.
@@ -104,7 +107,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
                         result = Field::ternary(bit, &product, &result);
                     }
                     // Extract the bits of the result, including the carry bits.
-                    let mut bits_le = result.to_lower_bits_le(2 * I::BITS as usize)[..I::BITS as usize].to_vec();
+                    let mut bits_le = result.to_lower_bits_le(2 * i_bits)[..i_bits].to_vec();
                     // Reverse the bits.
                     bits_le.reverse();
                     // Initialize the integer, ignoring the carry bits.
@@ -122,7 +125,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
                 }
 
                 let shift_as_divisor =
-                    Self { bits_le: shift_in_field.to_lower_bits_le(I::BITS as usize), phantom: Default::default() };
+                    Self { bits_le: shift_in_field.to_lower_bits_le(i_bits), phantom: Default::default() };
 
                 if I::is_signed() {
                     // Divide the absolute value of `self` and `shift` (as a divisor) in the base field.

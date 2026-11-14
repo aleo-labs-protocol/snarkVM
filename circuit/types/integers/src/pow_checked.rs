@@ -41,6 +41,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
     /// Returns the `power` of `self` to the power of `other`.
     #[inline]
     fn pow_checked(&self, other: &Integer<E, M>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the result and return the new constant.
@@ -66,9 +69,8 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
 
                     // If the product should be negative, then it cannot exceed the absolute value of the signed minimum.
                     let negative_product_underflows = {
-                        let lower_product_bits_nonzero = product.bits_le[..(I::BITS as usize - 1)]
-                            .iter()
-                            .fold(Boolean::constant(false), |a, b| a | b);
+                        let lower_product_bits_nonzero =
+                            product.bits_le[..(i_bits - 1)].iter().fold(Boolean::constant(false), |a, b| a | b);
                         let negative_product_lt_or_eq_signed_min =
                             !product.msb() | (product.msb() & !lower_product_bits_nonzero);
                         !operands_same_sign & !negative_product_lt_or_eq_signed_min

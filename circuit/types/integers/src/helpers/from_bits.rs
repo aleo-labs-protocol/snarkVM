@@ -20,16 +20,19 @@ impl<E: Environment, I: IntegerType> FromBits for Integer<E, I> {
 
     /// Initializes a new integer from a list of little-endian bits *with* trailing zeros.
     fn from_bits_le(bits_le: &[Self::Boolean]) -> Self {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Ensure the list of booleans is within the allowed size in bits.
         let num_bits = bits_le.len() as u64;
         if num_bits > I::BITS {
             // Check that all excess bits are zero.
-            Boolean::assert_bits_are_zero(&bits_le[I::BITS as usize..])
+            Boolean::assert_bits_are_zero(&bits_le[i_bits..])
         }
 
         // Construct the sanitized list of bits, resizing up if necessary.
-        let mut bits_le = bits_le.iter().take(I::BITS as usize).cloned().collect::<Vec<_>>();
-        bits_le.resize(I::BITS as usize, Boolean::constant(false));
+        let mut bits_le = bits_le.iter().take(i_bits).cloned().collect::<Vec<_>>();
+        bits_le.resize(i_bits, Boolean::constant(false));
 
         Self { bits_le, phantom: Default::default() }
     }
@@ -75,7 +78,9 @@ mod tests {
             });
 
             // Add excess zero bits.
-            let candidate = [given_bits, vec![Boolean::new(mode, false); i as usize]].concat();
+            // Note: `unwrap()` is safe as `i` is less than `ITERATIONS`.
+            let num_excess_bits = usize::try_from(i).unwrap();
+            let candidate = [given_bits, vec![Boolean::new(mode, false); num_excess_bits]].concat();
 
             Circuit::scope(format!("Excess {mode} {i}"), || {
                 let candidate = Integer::<Circuit, I>::from_bits_le(&candidate);
@@ -115,7 +120,9 @@ mod tests {
             });
 
             // Add excess zero bits.
-            let candidate = [vec![Boolean::new(mode, false); i as usize], given_bits].concat();
+            // Note: `unwrap()` is safe as `i` is less than `ITERATIONS`.
+            let num_excess_bits = usize::try_from(i).unwrap();
+            let candidate = [vec![Boolean::new(mode, false); num_excess_bits], given_bits].concat();
 
             Circuit::scope(format!("Excess {mode} {i}"), || {
                 let candidate = Integer::<Circuit, I>::from_bits_be(&candidate);

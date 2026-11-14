@@ -48,15 +48,15 @@ mod tests {
                 assert_eq!(<Circuit as Environment>::BaseField::size_in_bits(), candidate_bits_le.len());
 
                 // Ensure all integer bits match with the expected result.
+                // Note: `unwrap()` is safe as the integer is at most 128 bits.
+                let i_bits = usize::try_from(I::BITS).unwrap();
                 let expected_bits = expected.to_bits_le();
-                for (expected_bit, candidate_bit) in
-                    expected_bits.iter().zip_eq(&candidate_bits_le[0..I::BITS as usize])
-                {
+                for (expected_bit, candidate_bit) in expected_bits.iter().zip_eq(&candidate_bits_le[0..i_bits]) {
                     assert_eq!(expected_bit, candidate_bit);
                 }
 
                 // Ensure all remaining bits are 0.
-                for candidate_bit in &candidate_bits_le[I::BITS as usize..] {
+                for candidate_bit in &candidate_bits_le[i_bits..] {
                     assert!(!candidate_bit);
                 }
             });
