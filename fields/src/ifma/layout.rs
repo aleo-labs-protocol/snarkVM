@@ -264,3 +264,69 @@ pub(super) fn permute_z(e: &[__m512i; 8], index: [u64; 8], f: &[__m512i; 8]) -> 
     }
     v
 }
+
+/// Returns `5 x`, limb by limb.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(super) fn times_5(x: &[__m512i; 8]) -> [__m512i; 8] {
+    let mut v = [_mm512_setzero_si512(); 8];
+    for k in 0..8 {
+        v[k] = _mm512_add_epi64(x[k], _mm512_slli_epi64::<2>(x[k]));
+    }
+    v
+}
+
+/// Returns `x 2^S`, limb by limb.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(super) fn shift_left_limbs<const S: u32>(x: &[__m512i; 8]) -> [__m512i; 8] {
+    let mut v = [_mm512_setzero_si512(); 8];
+    for k in 0..8 {
+        v[k] = _mm512_slli_epi64::<S>(x[k]);
+    }
+    v
+}
+
+/// Returns `x - y` in the lanes of `m` and zero in the others, limb by limb.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(super) fn maskz_sub(m: __mmask8, x: &[__m512i; 8], y: &[__m512i; 8]) -> [__m512i; 8] {
+    let mut v = [_mm512_setzero_si512(); 8];
+    for k in 0..8 {
+        v[k] = _mm512_maskz_sub_epi64(m, x[k], y[k]);
+    }
+    v
+}
+
+/// Returns `x - y` in the lanes of `m` and `src` in the others, limb by limb.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(super) fn mask_sub(src: &[__m512i; 8], m: __mmask8, x: &[__m512i; 8], y: &[__m512i; 8]) -> [__m512i; 8] {
+    let mut v = [_mm512_setzero_si512(); 8];
+    for k in 0..8 {
+        v[k] = _mm512_mask_sub_epi64(src[k], m, x[k], y[k]);
+    }
+    v
+}
+
+/// Returns `x + y` in the lanes of `m` and `src` in the others, limb by limb.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(super) fn mask_add(src: &[__m512i; 8], m: __mmask8, x: &[__m512i; 8], y: &[__m512i; 8]) -> [__m512i; 8] {
+    let mut v = [_mm512_setzero_si512(); 8];
+    for k in 0..8 {
+        v[k] = _mm512_mask_add_epi64(src[k], m, x[k], y[k]);
+    }
+    v
+}
+
+/// Returns `x` in the lanes of `m` and `src` in the others.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(super) fn mask_mov(src: &[__m512i; 8], m: __mmask8, x: &[__m512i; 8]) -> [__m512i; 8] {
+    let mut v = [_mm512_setzero_si512(); 8];
+    for k in 0..8 {
+        v[k] = _mm512_mask_mov_epi64(src[k], m, x[k]);
+    }
+    v
+}

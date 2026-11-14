@@ -79,3 +79,26 @@ pub fn bench_pairing_full(c: &mut Criterion) {
         })
     });
 }
+
+pub fn bench_pairing_miller_loop_6(c: &mut Criterion) {
+    const SAMPLES: usize = 100;
+
+    let mut rng = TestRng::default();
+
+    let v: Vec<Vec<(G1Prepared<Bls12_377Parameters>, G2Prepared<Bls12_377Parameters>)>> = (0..SAMPLES)
+        .map(|_| {
+            (0..6)
+                .map(|_| (G1Affine::from(G1::rand(&mut rng)).prepare(), G2Affine::from(G2::rand(&mut rng)).prepare()))
+                .collect()
+        })
+        .collect();
+
+    let mut count = 0;
+    c.bench_function("bls12_377: pairing_miller_loop_6", |c| {
+        c.iter(|| {
+            let tmp = Bls12_377::miller_loop(v[count].iter().map(|(p, q)| (p, q)));
+            count = (count + 1) % SAMPLES;
+            tmp
+        })
+    });
+}
