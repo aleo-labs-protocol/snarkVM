@@ -163,3 +163,4 @@ This project follows the [all-contributors](https://github.com/all-contributors/
 ## 4. License
 
 [![License: GPL v3](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE.md)
+
