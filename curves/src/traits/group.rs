@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{PairingEngine, templates::short_weierstrass_jacobian};
-use snarkvm_fields::{Field, PrimeField, SquareRootField, Zero};
+use snarkvm_fields::{ExponentSchedule, Field, PrimeField, SquareRootField, Zero};
 use snarkvm_utilities::{FromBytes, ToBytes, rand::Uniform, serialize::*};
 
 use core::{
@@ -363,6 +363,9 @@ pub trait TwistedEdwardsParameters: ModelParameters {
     const SQRT_MINUS_ONE: Self::BaseField;
     /// `(q - 1) / 4` for the base field modulus `q`, as little-endian limbs.
     const MODULUS_MINUS_ONE_DIV_FOUR: &'static [u64];
+
+    /// Returns the sliding-window schedule for the exponent `MODULUS_MINUS_ONE_DIV_FOUR`.
+    fn modulus_minus_one_div_four_schedule() -> &'static ExponentSchedule;
 
     type MontgomeryParameters: MontgomeryParameters<BaseField = Self::BaseField>;
 
