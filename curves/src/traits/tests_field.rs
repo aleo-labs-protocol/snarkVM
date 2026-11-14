@@ -26,6 +26,7 @@ use snarkvm_fields::{
     PrimeField,
     SquareRootField,
     batch_inversion,
+    batch_inversion_and_mul,
     traits::{FftParameters, FieldParameters},
 };
 use snarkvm_utilities::{
@@ -767,10 +768,18 @@ fn inverse_test<F: PrimeField>(
         check(F::rand(rng));
     }
 
-    let mut values: Vec<F> = (0..1000).map(|i| if i % 97 == 0 { F::zero() } else { F::rand(rng) }).collect();
-    let originals = values.clone();
-    batch_inversion(&mut values);
-    for (original, inverse) in originals.iter().zip(&values) {
-        assert_eq!(*original * inverse, if original.is_zero() { F::zero() } else { F::one() });
+    // Lengths on both sides of the serial cutoff of `batch_inversion_and_mul`, for any thread count up to 250.
+    let coeff = F::rand(rng);
+    for len in [0, 1, 2, 3, 7, 8, 9, 31, 32, 33, 63, 64, 65, 287, 288, 289, 1000] {
+        let originals: Vec<F> = (0..len).map(|i| if i % 97 == 0 { F::zero() } else { F::rand(rng) }).collect();
+        let mut values = originals.clone();
+        batch_inversion(&mut values);
+        let mut scaled = originals.clone();
+        batch_inversion_and_mul(&mut scaled, &coeff);
+        for ((original, inverse), scaled) in originals.iter().zip(&values).zip(&scaled) {
+            let expected = if original.is_zero() { F::zero() } else { F::one() };
+            assert_eq!(*original * inverse, expected, "len {len}");
+            assert_eq!(*original * scaled, expected * coeff, "len {len}");
+        }
     }
 }
