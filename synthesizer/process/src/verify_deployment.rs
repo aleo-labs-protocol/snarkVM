@@ -283,9 +283,9 @@ function foo:
         let over_v1_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
         let over_v2_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
         let over_v1_constraints =
-            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1) as usize);
+            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1)?);
         let over_v2_constraints =
-            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1) as usize);
+            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1)?);
 
         // V16 enforces the original per-transaction limits.
         assert!(

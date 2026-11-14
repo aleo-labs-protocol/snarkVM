@@ -122,7 +122,8 @@ impl Operation {
             private_key: *validator.private_key(),
             withdrawal_address: *random_with_default(state.stakers(), Some(validator), rng).withdrawal_address(),
             amount: random_below_with_blowup(account_balance, rng),
-            commission: random_below_with_blowup(100, rng) as u8,
+            // The blowup of 100 is at most 105, which fits in a `u8`.
+            commission: u8::try_from(random_below_with_blowup(100, rng)).unwrap(),
         }
     }
 

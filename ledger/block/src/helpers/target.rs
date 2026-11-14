@@ -884,6 +884,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn test_block_reward_v1_vs_v2() {
         let mut rng = TestRng::default();
 

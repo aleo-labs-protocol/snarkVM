@@ -39,11 +39,14 @@ impl<A: Aleo> Response<A> {
             .zip_eq(output_registers)
             .enumerate()
             .map(|(index, ((output, output_type), output_register))| {
+                // Note: The sum is less than `MAX_INPUTS + MAX_OUTPUTS`, so the cast is lossless.
+                #[allow(clippy::cast_possible_truncation)]
+                let index_u16 = (num_inputs + index) as u16;
                 match output_type {
                     // For a constant output, compute the hash (using `tcm`) of the output.
                     console::ValueType::Constant(..) => {
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -69,7 +72,7 @@ impl<A: Aleo> Response<A> {
                     // For a public output, compute the hash (using `tcm`) of the output.
                     console::ValueType::Public(..) => {
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -95,7 +98,7 @@ impl<A: Aleo> Response<A> {
                     // For a private output, compute the ciphertext (using `tvk`) and hash the ciphertext.
                     console::ValueType::Private(..) => {
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Compute the output view key as `Hash(function ID || tvk || index)`.
                         let output_view_key = A::hash_psd4(&[function_id.clone(), tvk.clone(), output_index]);
                         // Compute the ciphertext.
@@ -162,7 +165,7 @@ impl<A: Aleo> Response<A> {
                     // For an external record output, compute the hash (using `tvk`) of the output.
                     console::ValueType::ExternalRecord(..) => {
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -187,7 +190,7 @@ impl<A: Aleo> Response<A> {
                     // For a future output, compute the hash (using `tcm`) of the output.
                     console::ValueType::Future(..) => {
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -213,7 +216,7 @@ impl<A: Aleo> Response<A> {
                     // For a dynamic record output, compute the hash (using `tvk`) of the output.
                     console::ValueType::DynamicRecord => {
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -238,7 +241,7 @@ impl<A: Aleo> Response<A> {
                     // For a dynamic future output, compute the hash (using `tcm`) of the output.
                     console::ValueType::DynamicFuture => {
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());

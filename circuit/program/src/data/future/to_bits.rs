@@ -24,25 +24,33 @@ impl<A: Aleo> ToBits for Future<A> {
     fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
         // Write the bits for the program ID.
         let program_id_bits = self.program_id.to_bits_le();
-        U16::constant(console::U16::new(program_id_bits.len() as u16)).write_bits_le(vec);
+        let program_id_size =
+            u16::try_from(program_id_bits.len()).unwrap_or_else(|_| A::halt("Program ID exceeds u16::MAX bits"));
+        U16::constant(console::U16::new(program_id_size)).write_bits_le(vec);
         vec.extend_from_slice(&program_id_bits);
 
         // Write the bits for the function name.
         let function_name_bits = self.function_name.to_bits_le();
-        U16::constant(console::U16::new(function_name_bits.len() as u16)).write_bits_le(vec);
+        let function_name_size =
+            u16::try_from(function_name_bits.len()).unwrap_or_else(|_| A::halt("Function name exceeds u16::MAX bits"));
+        U16::constant(console::U16::new(function_name_size)).write_bits_le(vec);
         vec.extend_from_slice(&function_name_bits);
 
         // Write the number of arguments.
-        U8::constant(console::U8::new(self.arguments.len() as u8)).write_bits_le(vec);
+        let num_arguments = u8::try_from(self.arguments.len()).unwrap_or_else(|_| A::halt("arguments exceed u8::MAX"));
+        U8::constant(console::U8::new(num_arguments)).write_bits_le(vec);
 
         // Write the arguments.
         for argument in &self.arguments {
             let argument_bits = argument.to_bits_le();
             // Write the size of the argument.
             let argument_length = argument_bits.len();
-            match argument_length <= u16::MAX as usize {
-                true => U16::constant(console::U16::new(argument_length as u16)).write_bits_le(vec),
-                false => U32::constant(console::U32::new(argument_length as u32)).write_bits_le(vec),
+            match u16::try_from(argument_length) {
+                Ok(argument_length) => U16::constant(console::U16::new(argument_length)).write_bits_le(vec),
+                Err(_) => match u32::try_from(argument_length) {
+                    Ok(argument_length) => U32::constant(console::U32::new(argument_length)).write_bits_le(vec),
+                    Err(_) => A::halt("argument exceeds u32::MAX bits"),
+                },
             }
             // Write the argument.
             vec.extend_from_slice(&argument_bits);
@@ -54,25 +62,33 @@ impl<A: Aleo> ToBits for Future<A> {
     fn write_bits_be(&self, vec: &mut Vec<Boolean<A>>) {
         // Write the bits for the program ID.
         let program_id_bits = self.program_id.to_bits_be();
-        U16::constant(console::U16::new(program_id_bits.len() as u16)).write_bits_be(vec);
+        let program_id_size =
+            u16::try_from(program_id_bits.len()).unwrap_or_else(|_| A::halt("Program ID exceeds u16::MAX bits"));
+        U16::constant(console::U16::new(program_id_size)).write_bits_be(vec);
         vec.extend_from_slice(&program_id_bits);
 
         // Write the bits for the function name.
         let function_name_bits = self.function_name.to_bits_be();
-        U16::constant(console::U16::new(function_name_bits.len() as u16)).write_bits_be(vec);
+        let function_name_size =
+            u16::try_from(function_name_bits.len()).unwrap_or_else(|_| A::halt("Function name exceeds u16::MAX bits"));
+        U16::constant(console::U16::new(function_name_size)).write_bits_be(vec);
         vec.extend_from_slice(&function_name_bits);
 
         // Write the number of arguments.
-        U8::constant(console::U8::new(self.arguments.len() as u8)).write_bits_be(vec);
+        let num_arguments = u8::try_from(self.arguments.len()).unwrap_or_else(|_| A::halt("arguments exceed u8::MAX"));
+        U8::constant(console::U8::new(num_arguments)).write_bits_be(vec);
 
         // Write the arguments.
         for argument in &self.arguments {
             let argument_bits = argument.to_bits_be();
             // Write the size of the argument.
             let argument_length = argument_bits.len();
-            match argument_length <= u16::MAX as usize {
-                true => U16::constant(console::U16::new(argument_length as u16)).write_bits_be(vec),
-                false => U32::constant(console::U32::new(argument_length as u32)).write_bits_be(vec),
+            match u16::try_from(argument_length) {
+                Ok(argument_length) => U16::constant(console::U16::new(argument_length)).write_bits_be(vec),
+                Err(_) => match u32::try_from(argument_length) {
+                    Ok(argument_length) => U32::constant(console::U32::new(argument_length)).write_bits_be(vec),
+                    Err(_) => A::halt("argument exceeds u32::MAX bits"),
+                },
             }
             // Write the argument.
             vec.extend_from_slice(&argument_bits);
