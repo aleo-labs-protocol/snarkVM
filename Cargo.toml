@@ -135,8 +135,6 @@ locktick = [
   "snarkvm-parameters?/locktick",
   "snarkvm-synthesizer?/locktick"
 ]
-# No-op: Cargo features are not evaluated in `[target.<cfg>]` selectors.
-noconfig = [ ]
 prop-tests = [ "snarkvm-ledger?/prop-tests" ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
 test = [ "snarkvm-ledger/test" ]
@@ -627,9 +625,6 @@ default-features = true
 
 [dev-dependencies.snarkvm]
 path = "."
-
-[dev-dependencies.bincode]
-workspace = true
 
 [dev-dependencies.rusty-hook]
 version = "0.11.2"

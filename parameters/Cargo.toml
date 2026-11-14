@@ -138,9 +138,6 @@ path = "../console"
 default-features = false
 features = ["account", "algorithms", "collections", "network", "program", "types"]
 
-[dev-dependencies.snarkvm-ledger-block]
-path = "../ledger/block"
-
 [dev-dependencies.snarkvm-ledger-store]
 path = "../ledger/store"
 

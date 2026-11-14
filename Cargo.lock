@@ -2903,7 +2903,6 @@ name = "snarkvm"
 version = "4.13.0"
 dependencies = [
  "anyhow",
- "bincode",
  "dotenvy",
  "rand",
  "rusty-hook",
@@ -3421,7 +3420,6 @@ name = "snarkvm-ledger"
 version = "4.13.0"
 dependencies = [
  "aleo-std",
- "aleo-std-storage",
  "anyhow",
  "bincode",
  "cfg-if",
@@ -3749,7 +3747,6 @@ dependencies = [
  "snarkvm-circuit",
  "snarkvm-console",
  "snarkvm-curves",
- "snarkvm-ledger-block",
  "snarkvm-ledger-store",
  "snarkvm-synthesizer",
  "snarkvm-utilities",
@@ -3785,7 +3782,6 @@ dependencies = [
  "snarkvm-ledger-authority",
  "snarkvm-ledger-block",
  "snarkvm-ledger-committee",
- "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-narwhal-data",
  "snarkvm-ledger-narwhal-subdag",
  "snarkvm-ledger-puzzle",
@@ -3853,7 +3849,6 @@ name = "snarkvm-synthesizer-program"
 version = "4.13.0"
 dependencies = [
  "bincode",
- "criterion",
  "enum-iterator",
  "indexmap 2.14.0",
  "k256",
@@ -3916,7 +3911,6 @@ dependencies = [
  "snarkvm-utilities-derives",
  "thiserror 2.0.21",
  "tracing",
- "tracing-test",
  "zeroize",
 ]
 

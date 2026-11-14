@@ -84,9 +84,6 @@ workspace = true
 workspace = true
 features = [ "test" ]
 
-[dev-dependencies.criterion]
-workspace = true
-
 [dev-dependencies.snarkvm-synthesizer-process]
 path = "../process"
 features = [ "test" ]
