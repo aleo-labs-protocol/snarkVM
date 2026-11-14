@@ -13,7 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_curves::bls12_377::Fq12;
+use snarkvm_curves::{
+    bls12_377::{Bls12_377Parameters, Fq12},
+    templates::bls12::Bls12Parameters,
+};
 use snarkvm_fields::Field;
 use snarkvm_utilities::rand::{TestRng, Uniform};
 
@@ -121,6 +124,40 @@ pub(crate) fn bench_fq12_inverse(c: &mut Criterion) {
     c.bench_function("bls12_377: fq12_inverse", |c| {
         c.iter(|| {
             let tmp = v[count].inverse();
+            count = (count + 1) % SAMPLES;
+            tmp
+        })
+    });
+}
+
+pub(crate) fn bench_fq12_cyclotomic_square(c: &mut Criterion) {
+    const SAMPLES: usize = 1000;
+
+    let mut rng = TestRng::default();
+
+    let v: Vec<Fq12> = (0..SAMPLES).map(|_| Fq12::rand(&mut rng)).collect();
+
+    let mut count = 0;
+    c.bench_function("bls12_377: fq12_cyclotomic_square", |c| {
+        c.iter(|| {
+            let tmp = v[count].cyclotomic_square();
+            count = (count + 1) % SAMPLES;
+            tmp
+        })
+    });
+}
+
+pub(crate) fn bench_fq12_cyclotomic_exp_x(c: &mut Criterion) {
+    const SAMPLES: usize = 100;
+
+    let mut rng = TestRng::default();
+
+    let v: Vec<Fq12> = (0..SAMPLES).map(|_| Fq12::rand(&mut rng)).collect();
+
+    let mut count = 0;
+    c.bench_function("bls12_377: fq12_cyclotomic_exp_x", |c| {
+        c.iter(|| {
+            let tmp = v[count].cyclotomic_exp(Bls12_377Parameters::X);
             count = (count + 1) % SAMPLES;
             tmp
         })

@@ -138,7 +138,7 @@ pub(super) unsafe fn mul_assign_fp12_avx512<P: Fp384Parameters>(mut a: [&mut Fp3
 /// The CPU supports AVX-512F and AVX-512 IFMA. This function has no `target_feature`, so that it
 /// can be `inline(always)`: as an `inline` hint, LLVM stops inlining it once it has two callers.
 #[inline(always)]
-unsafe fn fp12_product(
+pub(super) unsafe fn fp12_product(
     x: &[[__m512i; 8]; 6],
     y: &[[__m512i; 8]; 6],
     p: &[__m512i; 8],
@@ -172,7 +172,7 @@ const FP12_RHS: [[u64; 8]; 3] = [[0, 1, 1, 0, 8, 9, 9, 8], [2, 3, 3, 2, 10, 11, 
 /// 7 are zero.
 #[inline]
 #[target_feature(enable = "avx512f")]
-fn fp12_operand(x0: &[__m512i; 8], x1: &[__m512i; 8]) -> [[__m512i; 8]; 6] {
+pub(super) fn fp12_operand(x0: &[__m512i; 8], x1: &[__m512i; 8]) -> [[__m512i; 8]; 6] {
     let x2 = normalize(&add(x0, x1));
     let rotate = |x: &[__m512i; 8]| {
         let (r1, r2) = (vector([2, 3, 4, 5, 0, 1, 6, 7]), vector([4, 5, 0, 1, 2, 3, 6, 7]));

@@ -39,6 +39,8 @@
 #![allow(unsafe_code)]
 
 #[cfg(target_arch = "x86_64")]
+mod cyclotomic;
+#[cfg(target_arch = "x86_64")]
 mod fp12;
 #[cfg(target_arch = "x86_64")]
 mod kernel;
@@ -112,4 +114,25 @@ where
         return;
     }
     a.mul_assign_scalar(b)
+}
+
+/// Returns `a^exp` by the chain of `Fp12::cyclotomic_exp`, in lanes if `is_supported_tower::<P, Q>()`
+/// and `exp` has a set bit. `exp` lists the words of the exponent, the least significant first.
+pub fn cyclotomic_exp_fp12<P, Q>(a: &Fp12<P>, exp: &[u64]) -> Fp12<P>
+where
+    P: Fp12Parameters,
+    Fp2Params<P>: Fp2Parameters<Fp = Fp384<Q>>,
+    Q: Fp384Parameters,
+{
+    #[cfg(target_arch = "x86_64")]
+    if is_supported_tower::<P, Q>()
+        && let Some(i) = exp.iter().rposition(|w| *w != 0)
+    {
+        let top = 64 * i + 63 - exp[i].leading_zeros() as usize;
+        let mut result = *a;
+        // SAFETY: `is_supported` detected both target features that `cyclotomic_exp_avx512` enables.
+        unsafe { cyclotomic::cyclotomic_exp_avx512(fp12::coefficients_mut(&mut result), exp, top) };
+        return result;
+    }
+    a.cyclotomic_exp_scalar(exp)
 }
