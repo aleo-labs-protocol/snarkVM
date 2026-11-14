@@ -118,6 +118,8 @@ impl TestnetV0 {
     }
 }
 
+impl snarkvm_console_network_environment::sealed_console_environment::Sealed for TestnetV0 {}
+
 impl Environment for TestnetV0 {
     type Affine = <Console as Environment>::Affine;
     type BigInteger = <Console as Environment>::BigInteger;
@@ -138,6 +140,8 @@ impl Environment for TestnetV0 {
 
 /// The inclusion proving key, read from the shipped bytes or loaded against an SRS.
 static INCLUSION_PROVING_KEY: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+
+impl crate::sealed::Sealed for TestnetV0 {}
 
 impl Network for TestnetV0 {
     /// The block hash type.

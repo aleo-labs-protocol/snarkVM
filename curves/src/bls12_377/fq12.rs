@@ -23,6 +23,8 @@ pub type Fq12 = Fp12<Fq12Parameters>;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Fq12Parameters;
 
+impl snarkvm_fields::sealed_parameters::Sealed for Fq12Parameters {}
+
 impl Fp12Parameters for Fq12Parameters {
     type Fp6Params = Fq6Parameters;
 

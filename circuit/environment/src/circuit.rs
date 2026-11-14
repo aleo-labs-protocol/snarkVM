@@ -35,6 +35,8 @@ thread_local! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Circuit;
 
+impl crate::sealed_circuit_environment::Sealed for Circuit {}
+
 impl Environment for Circuit {
     type Affine = <console::MainnetV0 as console::Environment>::Affine;
     type BaseField = Field;

@@ -25,6 +25,13 @@ pub use helpers::*;
 pub mod traits;
 pub use traits::*;
 
+/// Seals [`Environment`]. `snarkvm-console-network` implements it for its networks, so it is
+/// public, but it is not part of the API.
+#[doc(hidden)]
+pub mod sealed_console_environment {
+    pub trait Sealed {}
+}
+
 pub mod prelude {
     pub use crate::{
         environment::*,

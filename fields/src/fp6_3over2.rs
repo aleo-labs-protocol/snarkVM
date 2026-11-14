@@ -35,10 +35,10 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait Fp6Parameters: 'static + Copy + Clone + Default + Debug + PartialEq + Eq + Hash + Send + Sync {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait Fp6Parameters:
+    crate::sealed_parameters::Sealed + 'static + Copy + Clone + Default + Debug + PartialEq + Eq + Hash + Send + Sync
+{
     type Fp2Params: Fp2Parameters;
 
     /// Coefficients for the Frobenius automorphism.
@@ -170,6 +170,8 @@ impl<P: Fp6Parameters> One for Fp6<P> {
         self.c0.is_one() && self.c1.is_zero() && self.c2.is_zero()
     }
 }
+
+impl<P: Fp6Parameters> crate::sealed::Sealed for Fp6<P> {}
 
 impl<P: Fp6Parameters> Field for Fp6<P> {
     type BasePrimeField = <Fp2<P::Fp2Params> as Field>::BasePrimeField;

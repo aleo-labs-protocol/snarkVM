@@ -30,6 +30,8 @@ pub type EdwardsProjective = Projective<EdwardsParameters>;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EdwardsParameters;
 
+impl crate::sealed::Sealed for EdwardsParameters {}
+
 impl ModelParameters for EdwardsParameters {
     type BaseField = Fq;
     type ScalarField = Fr;

@@ -25,6 +25,8 @@ pub type Fq2 = Fp2<Fq2Parameters>;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Fq2Parameters;
 
+impl snarkvm_fields::sealed_parameters::Sealed for Fq2Parameters {}
+
 impl Fp2Parameters for Fq2Parameters {
     type Fp = Fq;
 
