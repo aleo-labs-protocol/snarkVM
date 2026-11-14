@@ -132,7 +132,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
         rng: &mut R,
     ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
-        let timer = timer!("VM::speculate");
+        let timer = timing_span!("VM::speculate").entered();
 
         // Collect the candidate transactions into a vector.
         let candidate_transactions: Vec<_> = candidate_transactions.collect::<Vec<_>>();
@@ -178,7 +178,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             })
             .collect();
 
-        finish!(timer, "Finished dry-run of the transactions");
+        timing_event!("Finished dry-run of the transactions");
+        drop(timer);
 
         // Return the ratifications, confirmed transactions, aborted transaction IDs, and ratified finalize operations.
         Ok((
@@ -206,7 +207,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transactions: &Transactions<N>,
         rng: &mut R,
     ) -> Result<Vec<FinalizeOperation<N>>> {
-        let timer = timer!("VM::check_speculate");
+        let timer = timing_span!("VM::check_speculate").entered();
 
         // Retrieve the transactions and their rejected IDs.
         let transactions_and_rejected_ids = cfg_iter!(transactions)
@@ -253,7 +254,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // where any aborted transactions should be in the aborted transaction ID list, not in transactions.
         ensure!(aborted_transactions.is_empty(), "Aborted transactions found in the block (from speculation)");
 
-        finish!(timer, "Finished dry-run of the transactions");
+        timing_event!("Finished dry-run of the transactions");
+        drop(timer);
 
         // Return the ratified finalize operations.
         Ok(ratified_finalize_operations)
@@ -438,12 +440,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
-        let timer = timer!("VM::finalize");
+        let timer = timing_span!("VM::finalize").entered();
 
         // Performs a **real-run** of finalize over the list of ratifications, solutions, and transactions.
         let ratified_finalize_operations = self.atomic_finalize(state, ratifications, solutions, transactions)?;
 
-        finish!(timer, "Finished real-run of finalize");
+        timing_event!("Finished real-run of finalize");
+        drop(timer);
         Ok(ratified_finalize_operations)
     }
 }
@@ -523,7 +526,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     )> {
         self.ensure_sequential_processing();
 
-        let timer = timer!("VM::atomic_speculate");
+        let timer = timing_span!("VM::atomic_speculate").entered();
 
         // Retrieve the number of solutions.
         let num_solutions = solutions.len();
@@ -834,7 +837,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Note: This will abort the entire atomic batch.
                     Transaction::Fee(..) => Err("Cannot speculate on a fee transaction".to_string()),
                 };
-                lap!(timer, "Speculated on transaction '{}'", transaction.id());
+                timing_event!("Speculated on transaction '{}'", transaction.id());
 
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
@@ -916,7 +919,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 return Err("Failed to construct the ratifications after speculation".to_string());
             };
 
-            finish!(timer);
+            drop(timer);
 
             // On return, 'atomic_finalize!' will abort the batch, and return the ratifications,
             // confirmed & aborted transactions, and finalize operations from pre-ratify and post-ratify.
@@ -939,7 +942,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(not(test))]
         self.ensure_sequential_processing();
 
-        let timer = timer!("VM::atomic_finalize");
+        let timer = timing_span!("VM::atomic_finalize").entered();
 
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
@@ -1145,7 +1148,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Note: This will abort the entire atomic batch.
                     _ => return Err("Invalid confirmed transaction type".to_string()),
                 };
-                lap!(timer, "Finalizing transaction {}", transaction.id());
+                timing_event!("Finalizing transaction {}", transaction.id());
 
                 match outcome {
                     // If the transaction succeeded to finalize, continue to the next transaction.
@@ -1181,7 +1184,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Commit all the stacks to the process.
             process.commit_stacks();
 
-            finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
+            drop(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
             Ok(ratified_finalize_operations)
         });

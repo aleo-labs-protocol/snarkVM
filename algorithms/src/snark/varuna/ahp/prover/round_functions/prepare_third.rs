@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, defer};
+use snarkvm_utilities::{ExecutionPool, timing_span};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -45,8 +45,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
     ) -> Result<(prover::ThirdMessage<F>, prover::State<'a, F, SM>), AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::PrepareThirdRound");
-        defer! { end_timer!(round_time); }
+        let _round_time = timing_span!("AHP::Prover::PrepareThirdRound").entered();
 
         let verifier::FirstMessage { first_round_batch_combiners } = verifier_message;
         let verifier::SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
@@ -123,10 +122,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             // One Lagrange vector per circuit rather than one per matrix: it depends only
             // on the constraint domain and alpha, both of which are fixed
             // across the jobs below.
-            let lagrange_time = start_timer!(|| "Lagrange coefficients at alpha");
+            let lagrange_time = timing_span!("Lagrange coefficients at alpha").entered();
             let l_at_alpha =
                 Arc::new(circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
-            end_timer!(lagrange_time);
+            drop(lagrange_time);
 
             // Iterate for each instance in the batch.
             for assignment in assignments_i {

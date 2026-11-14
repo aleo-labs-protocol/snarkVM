@@ -64,7 +64,7 @@ From `ConsensusVersion::V8`, validators run this check on each function's key in
 
 ## Profiling
 
-This library is instrumented with profiling infrastructure that prints detailed traces of execution time. To enable this, compile with `cargo build --features profiler`.
+This library marks the regions of code that it times with `tracing` spans. A subscriber with the filter `timing::snarkvm_algorithms::snark::varuna=trace` receives them. See [Timing](../../../../utilities/README.md#timing) for how to print the duration of each span.
 
 ## Benchmarks
 

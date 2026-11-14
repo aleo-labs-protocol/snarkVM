@@ -32,7 +32,7 @@ impl<N: Network> Stack<N> {
         caller: Address<N>,
         tvk: Field<N>,
     ) -> Result<Vec<Value<N>>, StackEvalError> {
-        let timer = timer!("Stack::evaluate_closure");
+        let timer = timing_span!("Stack::evaluate_closure").entered();
 
         // Ensure the number of inputs matches the number of input statements.
         if closure.inputs().len() != inputs.len() {
@@ -48,14 +48,14 @@ impl<N: Network> Stack<N> {
         registers.set_caller(caller);
         // Set the transition view key.
         registers.set_tvk(tvk);
-        lap!(timer, "Initialize the registers");
+        timing_event!("Initialize the registers");
 
         // Store the inputs.
         closure.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
             // Assign the input value to the register.
             registers.store(self, register, input.clone())
         })?;
-        lap!(timer, "Store the inputs");
+        timing_event!("Store the inputs");
 
         // Evaluate the instructions.
         for (ix, instruction) in closure.instructions().iter().enumerate() {
@@ -64,7 +64,7 @@ impl<N: Network> Stack<N> {
                 return Err(IndexedInstructionError::new(ix, format!("{instruction}"), error.into()).into());
             }
         }
-        lap!(timer, "Evaluate the instructions");
+        timing_event!("Evaluate the instructions");
 
         // Load the outputs.
         let outputs = closure
@@ -120,9 +120,9 @@ impl<N: Network> Stack<N> {
             })
             .map(|res| res.map_err(StackEvalError::from))
             .collect();
-        lap!(timer, "Load the outputs");
+        timing_event!("Load the outputs");
 
-        finish!(timer);
+        drop(timer);
         outputs
     }
 
@@ -137,7 +137,7 @@ impl<N: Network> Stack<N> {
         root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>, StackEvalError> {
-        let timer = timer!("Stack::evaluate_function");
+        let timer = timing_span!("Stack::evaluate_function").entered();
 
         // Retrieve the next request, based on the call stack mode.
         let (request, call_stack) =
@@ -164,7 +164,7 @@ impl<N: Network> Stack<N> {
                 )
                 .into()),
             };
-        lap!(timer, "Retrieve the next request");
+        timing_event!("Retrieve the next request");
 
         // Ensure the network ID matches.
         if **request.network_id() != N::ID {
@@ -199,7 +199,7 @@ impl<N: Network> Stack<N> {
             )
             .into());
         }
-        lap!(timer, "Perform input checks");
+        timing_event!("Perform input checks");
 
         // Ensure the request is well-formed (unless it has been mocked).
         if !matches!(call_stack, CallStack::AuthorizeMocked(..))
@@ -207,7 +207,7 @@ impl<N: Network> Stack<N> {
         {
             return Err(anyhow!("[Evaluate] Request is invalid").into());
         }
-        lap!(timer, "Verify the request");
+        timing_event!("Verify the request");
 
         // In AuthorizeMocked mode, capture the index of the request currently being evaluated,
         // which is necessary to populate the record-tracking machinery. Note the same value is
@@ -255,14 +255,14 @@ impl<N: Network> Stack<N> {
         } else {
             registers.set_root_tvk(tvk);
         }
-        lap!(timer, "Initialize the registers");
+        timing_event!("Initialize the registers");
 
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
             // Assign the input value to the register.
             registers.store(self, register, input.clone())
         })?;
-        lap!(timer, "Store the inputs");
+        timing_event!("Store the inputs");
 
         // Evaluate the instructions.
         // Note: We handle the `call` instruction separately, as it requires special handling.
@@ -283,11 +283,11 @@ impl<N: Network> Stack<N> {
                 return Err(IndexedInstructionError::new(ix, format!("{instruction}"), error).into());
             }
         }
-        lap!(timer, "Evaluate the instructions");
+        timing_event!("Evaluate the instructions");
 
         // Retrieve the output operands.
         let output_operands = &function.outputs().iter().map(|output| output.operand()).collect::<Vec<_>>();
-        lap!(timer, "Retrieve the output operands");
+        timing_event!("Retrieve the output operands");
 
         // Load the outputs.
         let outputs = output_operands
@@ -341,7 +341,7 @@ impl<N: Network> Stack<N> {
                 }
             })
             .collect::<Result<Vec<_>>>()?;
-        lap!(timer, "Load the outputs");
+        timing_event!("Load the outputs");
 
         // In AuthorizeMocked mode, track the minting of static records.
         if let CallStack::AuthorizeMocked(_, _, _, minted_static_records, _) = &mut registers.call_stack_ref() {
@@ -374,7 +374,7 @@ impl<N: Network> Stack<N> {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        lap!(timer, "Loaded the output registers");
+        timing_event!("Loaded the output registers");
 
         // Compute the response.
         let response = Response::new(
@@ -389,7 +389,7 @@ impl<N: Network> Stack<N> {
             &function.output_types(),
             &output_registers,
         )?;
-        finish!(timer);
+        drop(timer);
 
         // If the circuit is in `Authorize`, `AuthorizeMocked` or `AuthorizeRequests` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) | CallStack::AuthorizeRequests(_, _, authorization) =
@@ -399,7 +399,7 @@ impl<N: Network> Stack<N> {
             let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
-            lap!(timer, "Save the transition");
+            timing_event!("Save the transition");
         }
         if let CallStack::AuthorizeMocked(_, _, authorization, _, _) = registers.call_stack_ref() {
             // Construct the transition without checking correctness of input IDs.
@@ -407,7 +407,7 @@ impl<N: Network> Stack<N> {
                 Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
-            lap!(timer, "Save the mocked transition");
+            timing_event!("Save the mocked transition");
         }
 
         Ok(response)

@@ -31,7 +31,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow, ensure};
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::defer;
+use snarkvm_utilities::timing_span;
 
 use core::{borrow::Borrow, marker::PhantomData};
 use itertools::Itertools;
@@ -236,12 +236,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         // We're now going to calculate the rowcheck_zerocheck
         {
-            let rowcheck_time = start_timer!(|| "Rowcheck");
-            defer! { end_timer!(rowcheck_time); }
+            let _rowcheck_time = timing_span!("Rowcheck").entered();
 
-            let v_R_at_alpha_time = start_timer!(|| "v_R_at_alpha");
+            let v_R_at_alpha_time = timing_span!("v_R_at_alpha").entered();
             let v_R_at_alpha = max_constraint_domain.evaluate_vanishing_polynomial(alpha);
-            end_timer!(v_R_at_alpha_time);
+            drop(v_R_at_alpha_time);
 
             let rowcheck_zerocheck = {
                 let mut rowcheck_zerocheck = LinearCombination::empty("rowcheck_zerocheck");
@@ -277,14 +276,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         // Lineval sumcheck:
         {
-            let lineval_time = start_timer!(|| "Lineval");
-            defer! { end_timer!(lineval_time); }
+            let _lineval_time = timing_span!("Lineval").entered();
 
             let g_1 = LinearCombination::new("g_1", [(F::one(), "g_1")]);
 
             let v_C_at_beta = max_variable_domain.evaluate_vanishing_polynomial(beta);
 
-            let v_X_at_beta_time = start_timer!(|| "v_X_at_beta");
+            let v_X_at_beta_time = timing_span!("v_X_at_beta").entered();
             let v_X_at_beta = state
                 .circuit_specific_states
                 .iter()
@@ -293,7 +291,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     (circuit_id, v_X_i_at_beta)
                 })
                 .collect::<BTreeMap<_, _>>();
-            end_timer!(v_X_at_beta_time);
+            drop(v_X_at_beta_time);
 
             let x_at_betas = state
                 .circuit_specific_states
@@ -362,8 +360,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         //  Matrix sumcheck:
         {
-            let matrix_sumcheck_time = start_timer!(|| "Matrix sumcheck");
-            defer! { end_timer!(matrix_sumcheck_time); }
+            let _matrix_sumcheck_time = timing_span!("Matrix sumcheck").entered();
             let v_K_at_gamma = max_non_zero_domain.evaluate_vanishing_polynomial(gamma);
             let mut matrix_sumcheck = LinearCombination::empty("matrix_sumcheck");
 

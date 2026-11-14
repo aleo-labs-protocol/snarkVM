@@ -33,14 +33,12 @@ locktick = [
 ]
 merkle = [ ]
 synthesis = [
-  "aleo-std",
   "snarkvm-circuit",
   "lru",
   "parking_lot",
   "snarkvm-synthesizer-process",
   "snarkvm-synthesizer-program"
 ]
-timer = [ "aleo-std/timer" ]
 wasm = [ "snarkvm-console/wasm" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 
@@ -64,10 +62,6 @@ optional = true
 
 [dependencies.snarkvm-utilities]
 workspace = true
-
-[dependencies.aleo-std]
-workspace = true
-optional = true
 
 [dependencies.anyhow]
 workspace = true

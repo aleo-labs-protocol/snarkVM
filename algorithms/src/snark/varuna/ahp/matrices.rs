@@ -25,7 +25,7 @@ use crate::{
     },
 };
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{cfg_into_iter, defer, serialize::*};
+use snarkvm_utilities::{cfg_into_iter, serialize::*, timing_span};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -157,7 +157,7 @@ pub(crate) fn matrix_evals<F: PrimeField>(
     constraint_domain_elems: &[F],
     variable_domain_elems: &[F],
 ) -> Result<MatrixEvals<F>> {
-    let lde_evals_time = start_timer!(|| "Computing row, col and val evals");
+    let lde_evals_time = timing_span!("Computing row, col and val evals").entered();
 
     // We are computing the arithmetization of `matrix`, that is, row, col, val,
     // rowcol and rowcolval as documented in `MatrixArithmetization`. They
@@ -200,7 +200,7 @@ pub(crate) fn matrix_evals<F: PrimeField>(
         row_col_vals.push(F::zero());
     }
 
-    end_timer!(lde_evals_time);
+    drop(lde_evals_time);
 
     let row_evals_on_K = EvaluationsOnDomain::from_vec_and_domain(row_indices, *non_zero_domain);
     let col_evals_on_K = EvaluationsOnDomain::from_vec_and_domain(col_indices, *non_zero_domain);
@@ -241,8 +241,7 @@ impl<F: PrimeField> MatrixArithmetization<F> {
         matrix_evals: &MatrixEvals<F>,
     ) -> Result<MatrixArithmetization<F>> {
         let (row, col, row_col, row_col_val) = {
-            let interpolate_time = start_timer!(|| "Interpolating on K");
-            defer! { end_timer!(interpolate_time); }
+            let _interpolate_time = timing_span!("Interpolating on K").entered();
             let non_zero_domain = matrix_evals.domain()?;
             let row = matrix_evals.row.clone().interpolate();
             let col = matrix_evals.col.clone().interpolate();

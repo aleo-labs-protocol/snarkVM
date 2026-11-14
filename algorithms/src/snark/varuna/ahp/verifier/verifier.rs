@@ -42,7 +42,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use smallvec::SmallVec;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::defer;
+use snarkvm_utilities::timing_span;
 use std::collections::BTreeMap;
 
 impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
@@ -60,9 +60,9 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         for ((batch_size, circuit_id), num_c_combiner) in
             batch_sizes.values().zip(circuit_infos.keys()).zip(num_circuit_combiners)
         {
-            let squeeze_time = start_timer!(|| format!("Squeezing challenges for {circuit_id}"));
+            let squeeze_time = timing_span!("Squeezing challenges", circuit = %circuit_id).entered();
             let elems = fs_rng.squeeze_nonnative_field_elements(*batch_size - 1 + num_c_combiner);
-            end_timer!(squeeze_time);
+            drop(squeeze_time);
 
             let (instance_combiners, circuit_combiner) = elems.split_at(*batch_size - 1);
             ensure!(circuit_combiner.len() == num_c_combiner);
@@ -94,39 +94,34 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         // Compute the domains and batch sizes.
         for (batch_size, (circuit_id, circuit_info)) in batch_sizes.values().zip(circuit_infos) {
             let constraint_domain = {
-                let constraint_domain_time =
-                    start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
-                defer! { end_timer!(constraint_domain_time); }
+                let _constraint_domain_time =
+                    timing_span!("Constructing constraint domain", circuit = %circuit_id).entered();
                 EvaluationDomain::new(circuit_info.num_constraints).ok_or(AHPError::PolyTooLarge)?
             };
 
             let variable_domain = {
-                let variable_domain_time = start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
-                defer! { end_timer!(variable_domain_time); }
+                let _variable_domain_time =
+                    timing_span!("Constructing variable domain", circuit = %circuit_id).entered();
                 EvaluationDomain::new(circuit_info.num_public_and_private_variables).ok_or(AHPError::PolyTooLarge)?
             };
 
             let non_zero_a_domain = {
-                let non_zero_a_time = start_timer!(|| format!("Constructing non-zero-a domain for {circuit_id}"));
-                defer! { end_timer!(non_zero_a_time); }
+                let _non_zero_a_time = timing_span!("Constructing non-zero-a domain", circuit = %circuit_id).entered();
                 EvaluationDomain::new(circuit_info.num_non_zero_a).ok_or(AHPError::PolyTooLarge)?
             };
 
             let non_zero_b_domain = {
-                let non_zero_b_time = start_timer!(|| format!("Constructing non-zero-b domain {circuit_id}"));
-                defer! { end_timer!(non_zero_b_time); }
+                let _non_zero_b_time = timing_span!("Constructing non-zero-b domain", circuit = %circuit_id).entered();
                 EvaluationDomain::new(circuit_info.num_non_zero_b).ok_or(AHPError::PolyTooLarge)?
             };
 
             let non_zero_c_domain = {
-                let non_zero_c_time = start_timer!(|| format!("Constructing non-zero-c domain for {circuit_id}"));
-                defer! { end_timer!(non_zero_c_time); }
+                let _non_zero_c_time = timing_span!("Constructing non-zero-c domain", circuit = %circuit_id).entered();
                 EvaluationDomain::new(circuit_info.num_non_zero_c).ok_or(AHPError::PolyTooLarge)?
             };
 
             let input_domain = {
-                let input_domain_time = start_timer!(|| format!("Constructing input domain {circuit_id}"));
-                defer! { end_timer!(input_domain_time); }
+                let _input_domain_time = timing_span!("Constructing input domain", circuit = %circuit_id).entered();
                 EvaluationDomain::new(circuit_info.num_public_inputs).ok_or(AHPError::PolyTooLarge)?
             };
 
@@ -184,8 +179,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         };
 
         {
-            let check_vanish_poly_time = start_timer!(|| "Evaluating vanishing polynomial");
-            defer! { end_timer!(check_vanish_poly_time); }
+            let _check_vanish_poly_time = timing_span!("Evaluating vanishing polynomial").entered();
             ensure!(!state.max_constraint_domain.evaluate_vanishing_polynomial(alpha).is_zero());
         }
 

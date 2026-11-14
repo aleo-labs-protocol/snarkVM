@@ -24,7 +24,7 @@ use hashbrown::HashMap;
 use itertools::Itertools;
 use snarkvm_curves::traits::{PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, Zero};
-use snarkvm_utilities::defer;
+use snarkvm_utilities::{timing_event, timing_span};
 
 use anyhow::{Result, bail, ensure};
 use rand::{Rng, SeedableRng};
@@ -90,8 +90,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         supported_hiding_bound: usize,
         enforced_degree_bounds: Option<&[usize]>,
     ) -> Result<(CommitterKey<E>, UniversalVerifier<E>)> {
-        let trim_time = start_timer!(|| "Trimming public parameters");
-        defer! { end_timer!(trim_time); }
+        let _trim_time = timing_span!("Trimming public parameters").entered();
         let max_degree = pp.max_degree();
 
         let enforced_degree_bounds = enforced_degree_bounds.map(|bounds| {
@@ -132,11 +131,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             Some(enforced_degree_bounds @ [.., highest_enforced_degree_bound]) => {
                 let lowest_shift_degree = max_degree - highest_enforced_degree_bound;
 
-                let shifted_ck_time = start_timer!(|| format!(
-                    "Constructing `shifted_powers_of_beta_g` of size {}",
-                    max_degree - lowest_shift_degree + 1
-                ));
-                defer! { end_timer!(shifted_ck_time); }
+                let _shifted_ck_time = timing_span!(
+                    "Constructing `shifted_powers_of_beta_g`",
+                    size = max_degree - lowest_shift_degree + 1
+                )
+                .entered();
 
                 let (store, range) = pp.shared_powers_of_beta_g(lowest_shift_degree, pp.max_degree() + 1)?;
                 let shifted_powers_of_beta_g = Bases::shared(store, range);
@@ -174,8 +173,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
         for size in supported_lagrange_sizes {
-            let lagrange_time = start_timer!(|| format!("Constructing `lagrange_bases` of size {size}"));
-            defer! { end_timer!(lagrange_time); }
+            let _lagrange_time = timing_span!("Constructing `lagrange_bases`", size).entered();
             // Validated above: the size is a power of two no larger than the SRS.
             let domain = crate::fft::EvaluationDomain::new(size).unwrap();
             let lagrange_basis_at_beta_g = pp.lagrange_basis(domain)?;
@@ -217,8 +215,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         polynomials: impl IntoIterator<Item = LabeledPolynomialWithBasis<'b, E::Fr>>,
         mut rng: Option<&mut dyn Rng>,
     ) -> Result<(Vec<LabeledCommitment<Commitment<E>>>, Vec<Randomness<E>>), PCError> {
-        let commit_time = start_timer!(|| "Committing to polynomials");
-        defer! { end_timer!(commit_time); }
+        let _commit_time = timing_span!("Committing to polynomials").entered();
 
         let mut pool = snarkvm_utilities::ExecutionPool::<Result<_, _>>::new();
         for p in polynomials {
@@ -239,13 +236,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
             pool.add_job(move || {
                 let mut rng = seed.map(rand::rngs::StdRng::from_seed);
-                add_to_trace!(|| "PC::Commit", || format!(
-                    "Polynomial {} of degree {}, degree bound {:?}, and hiding bound {:?}",
-                    label,
-                    p.degree(),
-                    degree_bound,
-                    hiding_bound,
-                ));
+                timing_event!(polynomial = %label, degree = p.degree(), ?degree_bound, ?hiding_bound, "PC::Commit");
 
                 let (comm, rand) = {
                     let rng_ref = rng.as_mut().map(|s| s as _);
@@ -345,12 +336,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         query_set: &QuerySet<E::Fr>,
         fs_rng: &mut S,
     ) -> Result<BatchProof<E>> {
-        let open_time = start_timer!(|| format!(
-            "Opening {} combinations at query set of size {}",
-            combinations.len(),
-            query_set.len(),
-        ));
-        defer! { end_timer!(open_time); }
+        let _open_time =
+            timing_span!("Opening combinations", combinations = combinations.len(), queries = query_set.len())
+                .entered();
 
         let by_label: BTreeMap<&str, &LazyCombination<'_, E>> =
             combinations.iter().map(|c| (c.label.as_str(), c)).collect();
@@ -401,7 +389,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 challenges.push(fs_rng.squeeze_short_nonnative_field_element::<E::Fr>());
             }
 
-            let combine_time = start_timer!(|| format!("Combining {} combinations for the opening", group.len()));
+            let combine_time = timing_span!("Combining combinations for the opening", count = group.len()).entered();
             let mut polynomial = DensePolynomial::zero();
             let mut rand = Randomness::empty();
             for (c, challenge) in group.iter().zip_eq(challenges.iter()) {
@@ -415,11 +403,10 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                     }
                 }
             }
-            end_timer!(combine_time);
+            drop(combine_time);
 
             let proof = {
-                let proof_time = start_timer!(|| "Creating proof");
-                defer! { end_timer!(proof_time); }
+                let _proof_time = timing_span!("Creating proof").entered();
                 kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?
             };
             proofs.push(proof);
@@ -449,12 +436,8 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let poly_rand: HashMap<_, _> =
             labeled_polynomials.into_iter().zip_eq(rands).map(|(poly, r)| (poly.label(), (poly, r))).collect();
 
-        let open_time = start_timer!(|| format!(
-            "Opening {} polynomials at query set of size {}",
-            poly_rand.len(),
-            query_set.len(),
-        ));
-        defer! { end_timer!(open_time); }
+        let _open_time =
+            timing_span!("Opening polynomials", polynomials = poly_rand.len(), queries = query_set.len()).entered();
 
         let mut query_to_labels_map = BTreeMap::new();
 
@@ -479,8 +462,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 Self::combine_for_open(universal_prover, ck, query_polys.into_iter(), query_rands.into_iter(), fs_rng)?;
 
             let proof = {
-                let proof_time = start_timer!(|| "Creating proof");
-                defer! { end_timer!(proof_time); }
+                let _proof_time = timing_span!("Creating proof").entered();
                 kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?
             };
             proofs.push(proof);
@@ -503,12 +485,8 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Commitment<E>: 'a,
     {
         let commitments: BTreeMap<_, _> = commitments.into_iter().map(|c| (c.label().to_owned(), c)).collect();
-        let batch_check_time = start_timer!(|| format!(
-            "Checking {} commitments at query set of size {}",
-            commitments.len(),
-            query_set.len(),
-        ));
-        defer! { end_timer!(batch_check_time); }
+        let _batch_check_time =
+            timing_span!("Checking commitments", commitments = commitments.len(), queries = query_set.len()).entered();
         let mut query_to_labels_map = BTreeMap::new();
 
         for (label, (point_name, point)) in query_set.iter() {
@@ -585,8 +563,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         // polynomials rather than holding them. Forming the polynomial here is
         // exactly what `open_lazy_combinations` avoids.
         let combinations = {
-            let resolve_time = start_timer!(|| "Resolving combination terms");
-            defer! { end_timer!(resolve_time); }
+            let _resolve_time = timing_span!("Resolving combination terms").entered();
             let mut combinations = Vec::new();
             for lc in linear_combinations {
                 let lc_label = lc.label().to_string();
@@ -655,8 +632,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut evaluations = evaluations.clone();
 
         {
-            let lc_processing_time = start_timer!(|| "Combining commitments");
-            defer! { end_timer!(lc_processing_time); }
+            let _lc_processing_time = timing_span!("Combining commitments").entered();
             for lc in linear_combinations {
                 let lc_label = lc.label().to_string();
                 let num_polys = lc.len();
@@ -686,16 +662,17 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                         coeffs_and_comms.push((*coeff, cur_comm.commitment()));
                     }
                 }
-                let lc_time = start_timer!(|| format!("Combining {num_polys} commitments for {lc_label}"));
+                let lc_time =
+                    timing_span!("Combining commitments for linear combination", count = num_polys, label = %lc_label)
+                        .entered();
                 lc_commitments.push(Self::combine_commitments(coeffs_and_comms));
-                end_timer!(lc_time);
+                drop(lc_time);
                 lc_info.push((lc_label, degree_bound));
             }
         }
 
         let lc_commitments = {
-            let combined_comms_norm_time = start_timer!(|| "Normalizing commitments");
-            defer! { end_timer!(combined_comms_norm_time); }
+            let _combined_comms_norm_time = timing_span!("Normalizing commitments").entered();
             let comms = Self::normalize_commitments(lc_commitments);
             ensure!(lc_info.len() == comms.len());
             lc_info
@@ -766,8 +743,7 @@ impl<E: PairingEngine> WitnessTerms<E> {
     ///
     /// `Σ r_p w_p` and `(Σ r_p v_p) g + (Σ r_p ρ_p) gamma_g - Σ r_p z_p w_p`.
     fn combine(self, vk: &UniversalVerifier<E>) -> (E::G1Projective, E::G1Projective) {
-        let combine_time = start_timer!(|| "Combining witnesses");
-        defer! { end_timer!(combine_time); }
+        let _combine_time = timing_span!("Combining witnesses").entered();
         let Self { g, gamma_g, passes } = self;
 
         let mut bases = Vec::with_capacity(passes.len());
@@ -805,8 +781,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         randomizer: E::Fr,
         fs_rng: &mut S,
     ) -> Result<()> {
-        let acc_time = start_timer!(|| "Accumulating elements");
-        defer! { end_timer!(acc_time); }
+        let _acc_time = timing_span!("Accumulating elements").entered();
         // Keeps track of running combination of values
         let mut combined_values = E::Fr::zero();
 
@@ -814,7 +789,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         // elements in a BTreeMap
         ensure!(commitments.len() == values.len());
         for (labeled_comm, value) in commitments.into_iter().zip_eq(values) {
-            let acc_timer = start_timer!(|| format!("Accumulating {}", labeled_comm.label()));
+            let acc_timer = timing_span!("Accumulating", label = %labeled_comm.label()).entered();
             let curr_challenge = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
 
             combined_values += &(value * curr_challenge);
@@ -828,7 +803,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
             // Accumulate values in the BTreeMap
             *combined_comms.entry(degree_bound).or_insert_with(E::G1Projective::zero) += &comm_with_challenge;
-            end_timer!(acc_timer);
+            drop(acc_timer);
         }
 
         witnesses.g += randomizer * combined_values;
@@ -845,8 +820,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         combined_witness: E::G1Projective,
         combined_adjusted_witness: E::G1Projective,
     ) -> Result<bool> {
-        let check_time = start_timer!(|| "Checking elems");
-        defer! { end_timer!(check_time); }
+        let _check_time = timing_span!("Checking elems").entered();
         let mut g1_projective_elems = Vec::with_capacity(combined_comms.len() + 2);
         let mut g2_prepared_elems = Vec::with_capacity(combined_comms.len() + 2);
 

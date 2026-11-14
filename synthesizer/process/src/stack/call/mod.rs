@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::{CallStack, Registers, Stack, compute_function_id, stack::Address, trace::TranslationAssignment};
-use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
     network::prelude::*,
@@ -33,7 +32,7 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::ProvingKey;
-use snarkvm_utilities::dev_eprintln;
+use snarkvm_utilities::{dev_eprintln, timing_event, timing_span};
 
 use std::sync::Arc;
 

@@ -98,7 +98,6 @@ metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 # not even call `prover_prepare_third_round`. The test heights put V4 at height
 # 7, which a benchmark can actually reach.
 bench-prove = [ "test_consensus_heights" ]
-profiler = [ "snarkvm-synthesizer/profiler" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
@@ -131,7 +130,6 @@ test_targets = [
 dev-committee = []
 dev_genesis_state_root = [ "snarkvm-ledger-store/dev_genesis_state_root" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
-timer = [ "aleo-std/timer" ]
 
 [dependencies.snarkvm-console]
 workspace = true

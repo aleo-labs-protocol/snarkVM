@@ -31,7 +31,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::cfg_into_iter;
+use snarkvm_utilities::{cfg_into_iter, timing_span};
 
 use itertools::Itertools;
 use rand::Rng;
@@ -67,7 +67,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         rng: &mut R,
     ) -> Result<prover::State<'a, F, SM>, AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::FirstRound");
+        let round_time = timing_span!("AHP::Prover::FirstRound").entered();
         let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(state.total_instances);
         for (circuit, circuit_state) in state.circuit_specific_states.iter_mut() {
             let batch_size = circuit_state.batch_size;
@@ -114,13 +114,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             state.circuit_specific_states.iter().map(|(c, s)| (&c.id, &s.batch_size))
         )));
         state.first_round_oracles = Some(oracles);
-        end_timer!(round_time);
+        drop(round_time);
         Ok(state)
     }
 
     fn calculate_mask_poly<R: Rng>(variable_domain: EvaluationDomain<F>, rng: &mut R) -> LabeledPolynomial<F> {
         assert!(SM::ZK);
-        let mask_poly_time = start_timer!(|| "Computing mask polynomial");
+        let mask_poly_time = timing_span!("Computing mask polynomial").entered();
         // We'll use the masking technique from Lunar (https://eprint.iacr.org/2020/1069.pdf, pgs 20-22).
         let h_1_mask = DensePolynomial::rand(3, rng).coeffs; // selected arbitrarily.
         let h_1_mask = SparsePolynomial::from_coefficients(h_1_mask.into_iter().enumerate())
@@ -139,7 +139,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert_eq!(mask_poly.degree(), variable_domain.size() + 3);
         assert!(mask_poly.degree() <= 2 * variable_domain.size() + 2 * Self::zk_bound().unwrap() - 3);
 
-        end_timer!(mask_poly_time);
+        drop(mask_poly_time);
         LabeledPolynomial::new("mask_poly".to_string(), mask_poly, None, None)
     }
 
@@ -158,7 +158,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Padding the witness w to the size of C_i
         w_extended.resize(variable_domain.size() - input_domain.size(), F::zero());
 
-        let w_poly_time = start_timer!(|| "Computing w polynomial");
+        let w_poly_time = timing_span!("Computing w polynomial").entered();
         // Interleaving the padded witness with the instance gives the evaluations of
         // \widetilde{z}.
         let z_evals = cfg_into_iter!(0..variable_domain.size())
@@ -180,7 +180,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(remainder == *x_poly);
 
         assert!(w_poly.degree() < variable_domain.size() - input_domain.size());
-        end_timer!(w_poly_time);
+        drop(w_poly_time);
         LabeledPolynomial::new(label, w_poly, None, Self::zk_bound())
     }
 }

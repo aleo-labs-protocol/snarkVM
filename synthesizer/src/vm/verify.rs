@@ -102,7 +102,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rejected_id: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("VM::check_transaction");
+        let timer = timing_span!("VM::check_transaction").entered();
 
         // Get the current block height for consensus version checks.
         let current_block_height = self.block_store().current_block_height();
@@ -135,7 +135,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 bail!("Failed to compute the Merkle root of the transaction: {error}\n{transaction}");
             }
         };
-        lap!(timer, "Verify the transaction ID");
+        timing_event!("Verify the transaction ID");
 
         /* Transition */
 
@@ -167,7 +167,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure the transition commitments are unique.
         ensure_is_unique!("transition commitment", self, contains_tcm, transaction.transition_commitments());
 
-        lap!(timer, "Check for duplicate elements");
+        timing_event!("Check for duplicate elements");
 
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
@@ -717,7 +717,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             self.partially_verified_transactions.write().push(cache_key, checksum);
         }
 
-        finish!(timer, "Verify the transaction");
+        timing_event!("Verify the transaction");
+        drop(timer);
         Ok(())
     }
 
@@ -835,9 +836,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Process the logic.
-        let timer = timer!("VM::check_deployment");
+        let timer = timing_span!("VM::check_deployment").entered();
         let result = process!(self, logic).map_err(|error| anyhow!("Deployment verification failed - {error}"));
-        finish!(timer);
+        drop(timer);
         result
     }
 
@@ -852,7 +853,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
         is_partially_verified: bool,
     ) -> Result<()> {
-        let timer = timer!("VM::check_execution");
+        let timer = timing_span!("VM::check_execution").entered();
 
         // Retrieve the block height.
         let block_height = self.block_store().current_block_height();
@@ -899,7 +900,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 execution_stacks,
             ),
         };
-        lap!(timer, "Verify the execution");
+        timing_event!("Verify the execution");
 
         // Ensure the global state root exists in the block store.
         let result = match verification {
@@ -911,7 +912,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             },
             Err(error) => bail!("Execution verification failed - {error}"),
         };
-        finish!(timer, "Check the global state root");
+        timing_event!("Check the global state root");
+        drop(timer);
         result
     }
 
@@ -926,7 +928,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         deployment_or_execution_id: Field<N>,
         is_partially_verified: bool,
     ) -> Result<()> {
-        let timer = timer!("VM::check_fee");
+        let timer = timing_span!("VM::check_fee").entered();
 
         // Ensure the fee does not exceed the limit.
         let fee_amount = fee.amount()?;
@@ -963,7 +965,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(_) => bail!("VM safely halted during fee verification"),
             },
         };
-        lap!(timer, "Verify the fee");
+        timing_event!("Verify the fee");
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
         //  to the speculation layer.
@@ -996,7 +998,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             },
             Err(error) => bail!("Fee verification failed - {error}"),
         };
-        finish!(timer, "Check the global state root");
+        timing_event!("Check the global state root");
+        drop(timer);
         result
     }
 }

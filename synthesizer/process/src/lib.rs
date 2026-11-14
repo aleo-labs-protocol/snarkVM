@@ -82,9 +82,8 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
-use snarkvm_utilities::{defer, dev_println};
+use snarkvm_utilities::{defer, dev_println, timing_event, timing_span};
 
-use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};
 
 #[cfg(feature = "locktick")]
@@ -306,7 +305,7 @@ impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
     pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(rng: &mut R) -> Result<Self> {
-        let timer = timer!("Process:setup");
+        let timer = timing_span!("Process:setup").entered();
 
         // Initialize the process.
         let process = Self {
@@ -315,30 +314,30 @@ impl<N: Network> Process<N> {
             old_stacks: Default::default(),
             lock: Default::default(),
         };
-        lap!(timer, "Initialize process");
+        timing_event!("Initialize process");
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
-        lap!(timer, "Load credits program");
+        timing_event!("Load credits program");
 
         // Compute the 'credits.aleo' program stack.
         let stack = Stack::new(&process, &program)?;
-        lap!(timer, "Initialize stack");
+        timing_event!("Initialize stack");
 
         // Synthesize the 'credits.aleo' circuit keys.
         for function_name in program.functions().keys() {
             stack.synthesize_key::<A, _>(function_name, rng)?;
-            lap!(timer, "Synthesize circuit keys for {function_name}");
+            timing_event!("Synthesize circuit keys for {function_name}");
         }
         let rng = &mut rand::rng();
         let credits_record_name = Identifier::<N>::from_str("credits").unwrap(); // Safe: "credits" is always a valid identifier.
         stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
-        lap!(timer, "Synthesize credits program keys");
+        timing_event!("Synthesize credits program keys");
 
         // Add the 'credits.aleo' stack to the process.
         process.lock().add_stack(stack);
 
-        finish!(timer);
+        drop(timer);
         // Return the process.
         Ok(process)
     }
@@ -389,7 +388,7 @@ impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
     pub fn load() -> Result<Self> {
-        let timer = timer!("Process::load");
+        let timer = timing_span!("Process::load").entered();
 
         // Initialize the process.
         let process = Self {
@@ -398,15 +397,15 @@ impl<N: Network> Process<N> {
             old_stacks: Default::default(),
             lock: Default::default(),
         };
-        lap!(timer, "Initialize process");
+        timing_event!("Initialize process");
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
-        lap!(timer, "Load credits program");
+        timing_event!("Load credits program");
 
         // Compute the 'credits.aleo' program stack.
         let stack = Stack::new(&process, &program)?;
-        lap!(timer, "Initialize stack");
+        timing_event!("Initialize stack");
 
         // Synthesize the 'credits.aleo' verifying keys.
         for function_name in program.functions().keys() {
@@ -418,7 +417,7 @@ impl<N: Network> Process<N> {
             let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the verifying key.
             stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
-            lap!(timer, "Load verifying key for {function_name}");
+            timing_event!("Load verifying key for {function_name}");
         }
 
         // Load the verifying key for translating the native credits record.
@@ -426,12 +425,13 @@ impl<N: Network> Process<N> {
         let verifying_key = N::translation_credits_verifying_key();
         let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
         stack.insert_verifying_key(&record_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
-        lap!(timer, "Load circuit keys");
+        timing_event!("Load circuit keys");
 
         // Add the stack to the process.
         process.lock().add_stack(stack);
 
-        finish!(timer, "Process::load");
+        timing_event!("Process::load");
+        drop(timer);
         // Return the process.
         Ok(process)
     }
@@ -439,7 +439,7 @@ impl<N: Network> Process<N> {
     /// Initializes a new process with the V0 credits.aleo verifiying keys.
     #[inline]
     pub fn load_v0() -> Result<Self> {
-        let timer = timer!("Process::load_v0");
+        let timer = timing_span!("Process::load_v0").entered();
 
         // Initialize the process.
         let process = Self {
@@ -448,15 +448,15 @@ impl<N: Network> Process<N> {
             old_stacks: Default::default(),
             lock: Default::default(),
         };
-        lap!(timer, "Initialize process");
+        timing_event!("Initialize process");
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
-        lap!(timer, "Load credits program");
+        timing_event!("Load credits program");
 
         // Compute the 'credits.aleo' program stack.
         let stack = Stack::new(&process, &program)?;
-        lap!(timer, "Initialize stack");
+        timing_event!("Initialize stack");
 
         // Synthesize the 'credits.aleo' verifying keys.
         for function_name in program.functions().keys() {
@@ -468,14 +468,15 @@ impl<N: Network> Process<N> {
             let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the verifying key.
             stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
-            lap!(timer, "Load verifying key for {function_name}");
+            timing_event!("Load verifying key for {function_name}");
         }
-        lap!(timer, "Load circuit keys");
+        timing_event!("Load circuit keys");
 
         // Add the stack to the process.
         process.lock().add_stack(stack);
 
-        finish!(timer, "Process::load_v0");
+        timing_event!("Process::load_v0");
+        drop(timer);
         // Return the process.
         Ok(process)
     }

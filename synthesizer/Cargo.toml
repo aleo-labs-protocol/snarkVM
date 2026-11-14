@@ -33,7 +33,6 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-profiler = [ "snarkvm-algorithms/profiler" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -48,7 +47,6 @@ serial = [
 setup = [ ]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
-timer = [ "aleo-std/timer" ]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-block/wasm",

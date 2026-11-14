@@ -31,9 +31,6 @@ harness = false
 [dependencies.snarkvm-utilities]
 workspace = true
 
-[dependencies.aleo-std]
-workspace = true
-
 [dependencies.anyhow]
 workspace = true
 
@@ -68,6 +65,5 @@ path = "../curves"
 default-features = false
 
 [features]
-profiler = [ "aleo-std/profiler" ]
 serial = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]

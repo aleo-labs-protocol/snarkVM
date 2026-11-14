@@ -54,9 +54,16 @@ pub use self::rand::*;
 pub mod serialize;
 pub use serialize::*;
 
+#[macro_use]
+mod timing;
+
 /// Helpers for error handling.
 pub mod errors;
 pub use errors::*;
 
 /// Use old name for backward-compatibility.
 pub use errors::io_error as error;
+
+/// The `tracing` crate, for the expansion of `timing_span!` and `timing_event!`.
+#[doc(hidden)]
+pub use tracing;
