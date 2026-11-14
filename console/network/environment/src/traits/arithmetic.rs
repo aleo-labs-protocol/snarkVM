@@ -22,13 +22,6 @@ pub trait AddChecked<Rhs: ?Sized = Self> {
     fn add_checked(&self, rhs: &Rhs) -> Self::Output;
 }
 
-/// Binary operator for adding two values, bounding the sum to `MAX` if an overflow occurs.
-pub trait AddSaturating<Rhs: ?Sized = Self> {
-    type Output;
-
-    fn add_saturating(&self, rhs: &Rhs) -> Self::Output;
-}
-
 /// Binary operator for adding two values, wrapping the sum if an overflow occurs.
 pub trait AddWrapped<Rhs: ?Sized = Self> {
     type Output;
@@ -50,13 +43,6 @@ pub trait DivChecked<Rhs: ?Sized = Self> {
     fn div_checked(&self, rhs: &Rhs) -> Self::Output;
 }
 
-/// Binary operator for dividing two values, bounding the quotient to `MAX` or `MIN` if an overflow occurs.
-pub trait DivSaturating<Rhs: ?Sized = Self> {
-    type Output;
-
-    fn div_saturating(&self, rhs: &Rhs) -> Self::Output;
-}
-
 /// Binary operator for dividing two values, wrapping the quotient if an overflow occurs.
 pub trait DivWrapped<Rhs: ?Sized = Self> {
     type Output;
@@ -76,13 +62,6 @@ pub trait MulChecked<Rhs: ?Sized = Self> {
     type Output;
 
     fn mul_checked(&self, rhs: &Rhs) -> Self::Output;
-}
-
-/// Binary operator for multiplying two values, bounding the product to `MAX` if an overflow occurs.
-pub trait MulSaturating<Rhs: ?Sized = Self> {
-    type Output;
-
-    fn mul_saturating(&self, rhs: &Rhs) -> Self::Output;
 }
 
 /// Binary operator for multiplying two values, wrapping the product if an overflow occurs.
@@ -111,13 +90,6 @@ pub trait RemChecked<Rhs: ?Sized = Self> {
     type Output;
 
     fn rem_checked(&self, rhs: &Rhs) -> Self::Output;
-}
-
-/// Binary operator for dividing two values, bounding the remainder to `MAX` or `MIN` if an overflow occurs.
-pub trait RemSaturating<Rhs: ?Sized = Self> {
-    type Output;
-
-    fn rem_saturating(&self, rhs: &Rhs) -> Self::Output;
 }
 
 /// Binary operator for dividing two values, wrapping the remainder if an overflow occurs.
@@ -164,13 +136,6 @@ pub trait SubChecked<Rhs: ?Sized = Self> {
     fn sub_checked(&self, rhs: &Rhs) -> Self::Output;
 }
 
-/// Binary operator for subtracting two values, bounding the difference to `MIN` if an underflow occurs.
-pub trait SubSaturating<Rhs: ?Sized = Self> {
-    type Output;
-
-    fn sub_saturating(&self, rhs: &Rhs) -> Self::Output;
-}
-
 /// Binary operator for subtracting two values, wrapping the difference if an underflow occurs.
 pub trait SubWrapped<Rhs: ?Sized = Self> {
     type Output;
@@ -183,13 +148,6 @@ pub trait AbsChecked {
     type Output;
 
     fn abs_checked(self) -> Self::Output;
-}
-
-/// Unary operator for retrieving the absolute value, bounding the difference to `MAX` if an overflow occurs.
-pub trait AbsSaturating {
-    type Output;
-
-    fn abs_saturating(self) -> Self::Output;
 }
 
 /// Unary operator for retrieving the absolute value, wrapping the result if an overflow occurs.
