@@ -234,9 +234,5 @@ version = "0.9"
 [dev-dependencies.tempfile]
 workspace = true
 
-[dev-dependencies.test-log]
-version = "0.2"
-features = [ "trace" ]
-
 [dev-dependencies.walkdir]
 version = "2"
