@@ -13,14 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{LabeledPolynomial, PolynomialInfo};
+use super::PolynomialInfo;
 use crate::{crypto_hash::sha256::Sha256Writer, fft::EvaluationDomain, polycommit::kzg10};
 use snarkvm_curves::{AffineCurve, PairingEngine};
-use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
+use snarkvm_fields::{ConstraintFieldError, Field, ToConstraintField};
 use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
 use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
 
-use hashbrown::HashMap;
 use std::{
     borrow::{Borrow, Cow},
     collections::{BTreeMap, BTreeSet},
@@ -793,21 +792,6 @@ pub type QuerySet<T> = BTreeSet<(String, (String, T))>;
 /// then `evaluation.get((label, query))` should equal
 /// `p[label].evaluate(query)`.
 pub type Evaluations<F> = BTreeMap<(String, F), F>;
-
-/// Evaluate the given polynomials at `query_set`.
-pub fn evaluate_query_set<'a, F: PrimeField>(
-    polys: impl IntoIterator<Item = &'a LabeledPolynomial<F>>,
-    query_set: &QuerySet<F>,
-) -> Evaluations<F> {
-    let polys: HashMap<_, _> = polys.into_iter().map(|p| (p.label(), p)).collect();
-    let mut evaluations = Evaluations::new();
-    for (label, (_point_name, point)) in query_set {
-        let poly = polys.get(label as &str).expect("polynomial in evaluated lc is not found");
-        let eval = poly.evaluate(*point);
-        evaluations.insert((label.clone(), *point), eval);
-    }
-    evaluations
-}
 
 /// A proof of satisfaction of linear combinations.
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]

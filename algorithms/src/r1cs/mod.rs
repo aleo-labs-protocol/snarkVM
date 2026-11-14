@@ -16,9 +16,6 @@
 mod assignment;
 pub use assignment::*;
 
-mod constraint_counter;
-pub use constraint_counter::*;
-
 mod constraint_system;
 pub use constraint_system::{ConstraintSynthesizer, ConstraintSystem};
 
@@ -40,11 +37,6 @@ pub use optional_vec::*;
 mod test_constraint_system;
 #[cfg(feature = "test")]
 pub use test_constraint_system::{Fr, TestConstraintSystem};
-
-#[cfg(feature = "test")]
-mod test_constraint_checker;
-#[cfg(feature = "test")]
-pub use test_constraint_checker::TestConstraintChecker;
 
 use snarkvm_utilities::serialize::*;
 

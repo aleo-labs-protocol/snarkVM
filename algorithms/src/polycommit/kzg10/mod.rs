@@ -28,56 +28,17 @@ use crate::{
 };
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, defer, rand::Uniform};
+use snarkvm_utilities::{BitIteratorBE, defer, rand::Uniform};
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Result, ensure};
 use core::{marker::PhantomData, ops::Mul};
 use itertools::Itertools;
 use rand::Rng;
-
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
 
 mod data_structures;
 pub use data_structures::*;
 
 use super::sonic_pc::LabeledPolynomialWithBasis;
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum KZGDegreeBounds {
-    All,
-    Varuna,
-    List(Vec<usize>),
-    None,
-}
-
-impl KZGDegreeBounds {
-    pub fn get_list<F: PrimeField>(&self, max_degree: usize) -> Vec<usize> {
-        match self {
-            KZGDegreeBounds::All => (0..max_degree).collect(),
-            KZGDegreeBounds::Varuna => {
-                // In Varuna, the degree bounds are all of the forms `domain_size - 2`.
-                // Consider that we are using radix-2 FFT,
-                // there are only a few possible domain sizes and therefore degree bounds.
-                //
-                // We do not consider mixed-radix FFT for simplicity, as the curves that we
-                // are using have very high two-arity.
-
-                let mut radix_2_possible_domain_sizes = vec![];
-
-                let mut cur = 2usize;
-                while cur - 2 <= max_degree {
-                    radix_2_possible_domain_sizes.push(cur - 2);
-                    cur *= 2;
-                }
-
-                radix_2_possible_domain_sizes
-            }
-            KZGDegreeBounds::List(v) => v.clone(),
-            KZGDegreeBounds::None => vec![],
-        }
-    }
-}
 
 /// `KZG10` is an implementation of the polynomial commitment scheme of
 /// [Kate, Zaverucha and Goldbgerg][kzg10]
@@ -267,37 +228,6 @@ impl<E: PairingEngine> KZG10<E> {
         };
 
         Ok(KZGProof { w: w.to_affine(), random_v })
-    }
-
-    /// On input a polynomial `p` in Lagrange basis, and a point `point`,
-    /// outputs an evaluation proof for the same.
-    pub fn open_lagrange(
-        lagrange_basis: &LagrangeBasis<E>,
-        domain_elements: &[E::Fr],
-        evaluations: &[E::Fr],
-        point: E::Fr,
-        evaluation_at_point: E::Fr,
-    ) -> Result<KZGProof<E>> {
-        Self::check_degree_is_too_large(evaluations.len() - 1, lagrange_basis.size())?;
-        // Ensure that the point is not in the domain
-        if lagrange_basis.domain.evaluate_vanishing_polynomial(point).is_zero() {
-            Err(anyhow!("Point cannot be in the domain"))?;
-        }
-        if evaluations.len().checked_next_power_of_two().ok_or_else(|| anyhow!("Evaluations length is too large"))?
-            != lagrange_basis.size()
-        {
-            Err(anyhow!("`evaluations.len()` must equal `domain.size()`"))?;
-        }
-
-        let mut divisor_evals = cfg_iter!(domain_elements).map(|&e| e - point).collect::<Vec<_>>();
-        snarkvm_fields::batch_inversion(&mut divisor_evals);
-        ensure!(divisor_evals.len() == evaluations.len());
-        cfg_iter_mut!(divisor_evals).zip_eq(evaluations).for_each(|(divisor_eval, &eval)| {
-            *divisor_eval *= eval - evaluation_at_point;
-        });
-        let (witness_comm, _) = Self::commit_lagrange(lagrange_basis, &divisor_evals, None, None)?;
-
-        Ok(KZGProof { w: witness_comm.0, random_v: None })
     }
 
     /// On input a polynomial `p` and a point `point`, outputs a proof for the

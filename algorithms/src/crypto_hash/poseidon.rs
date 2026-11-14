@@ -66,43 +66,6 @@ impl<F: PrimeField, const RATE: usize, const CAPACITY: usize> IndexMut<usize> fo
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Poseidon<F: PrimeField, const RATE: usize> {
-    parameters: Arc<PoseidonParameters<F, RATE, 1>>,
-}
-
-impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
-    /// Initializes a new instance of the cryptographic hash function.
-    pub fn setup() -> Self {
-        Self { parameters: Arc::new(F::default_poseidon_parameters::<RATE>().unwrap()) }
-    }
-
-    /// Evaluate the cryptographic hash function over a list of field elements
-    /// as input.
-    pub fn evaluate(&self, input: &[F]) -> F {
-        self.evaluate_many(input, 1)[0]
-    }
-
-    /// Evaluate the cryptographic hash function over a list of field elements
-    /// as input, and returns the specified number of field elements as
-    /// output.
-    pub fn evaluate_many(&self, input: &[F], num_outputs: usize) -> Vec<F> {
-        let mut sponge = PoseidonSponge::<F, RATE, 1>::new_with_parameters(&self.parameters);
-        sponge.absorb_native_field_elements(input);
-        sponge.squeeze_native_field_elements(num_outputs).to_vec()
-    }
-
-    /// Evaluate the cryptographic hash function over a non-fixed-length vector,
-    /// in which the length also needs to be hashed.
-    pub fn evaluate_with_len(&self, input: &[F]) -> F {
-        self.evaluate(&[vec![F::from(input.len() as u128)], input.to_vec()].concat())
-    }
-
-    pub fn parameters(&self) -> &Arc<PoseidonParameters<F, RATE, 1>> {
-        &self.parameters
-    }
-}
-
 /// A duplex sponge based using the Poseidon permutation.
 ///
 /// This implementation of Poseidon is entirely from Fractal's implementation in
