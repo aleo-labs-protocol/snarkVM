@@ -19,13 +19,110 @@ impl<E: Environment> Group<E> {
     /// Attempts to recover an affine group element from a given x-coordinate field element.
     /// For safety, the resulting point is always enforced to be on the curve and in the correct subgroup.
     pub fn from_x_coordinate(x_coordinate: Field<E>) -> Result<Self> {
-        if let Some((p1, p2)) = E::Affine::pair_from_x_coordinate(*x_coordinate) {
-            for point in [p2, p1] {
-                if point.is_in_correct_subgroup_assuming_on_curve() {
-                    return Ok(Self::new_unchecked(point));
-                }
-            }
+        if let Some(point) = E::Affine::subgroup_point_from_x_coordinate(*x_coordinate) {
+            return Ok(Self::new_unchecked(point));
         }
         bail!("Failed to recover an affine group from an x-coordinate of {x_coordinate}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network_environment::Console;
+
+    type CurrentEnvironment = Console;
+    type Affine = <CurrentEnvironment as Environment>::Affine;
+    type Projective = <CurrentEnvironment as Environment>::Projective;
+    type BaseField = <CurrentEnvironment as Environment>::Field;
+
+    const ITERATIONS: usize = 1000;
+
+    /// Tries `p2`, then `p1`, each with a plain double-and-add subgroup check.
+    fn reference_from_x_coordinate(x: Field<CurrentEnvironment>) -> Option<Group<CurrentEnvironment>> {
+        let (p1, p2) = Affine::pair_from_x_coordinate(*x)?;
+        [p2, p1]
+            .into_iter()
+            .find(|point| {
+                let mut acc = Projective::zero();
+                for bit in <CurrentEnvironment as Environment>::Scalar::modulus().to_bits_be() {
+                    acc.double_in_place();
+                    if bit {
+                        acc.add_assign_mixed(point);
+                    }
+                }
+                acc.is_zero()
+            })
+            .map(Group::new_unchecked)
+    }
+
+    /// Asserts that the decoders agree on `x`, and counts the outcome as
+    /// `[no y, no point in the subgroup, returned p2, returned p1]`.
+    fn check(x: BaseField, outcomes: &mut [usize; 4]) {
+        let x = Field::new(x);
+        let expected = reference_from_x_coordinate(x);
+        assert_eq!(Group::from_x_coordinate(x).ok(), expected, "x = {x}");
+        let outcome = match (Affine::pair_from_x_coordinate(*x), expected) {
+            (None, _) => 0,
+            (Some(_), None) => 1,
+            (Some((_, p2)), Some(group)) if (*group).to_affine() == p2 => 2,
+            (Some(_), Some(_)) => 3,
+        };
+        outcomes[outcome] += 1;
+    }
+
+    #[test]
+    fn test_from_x_coordinate_matches_reference() {
+        let mut rng = TestRng::default();
+        let mut outcomes = [0; 4];
+
+        // `-1` is a square in the base field, so `(i, 0)` exists. It has order four, and its double is `(0, -1)`.
+        // The unwrap cannot fail for the same reason.
+        let t4 = Affine::from_y_coordinate(BaseField::zero(), false).unwrap().to_projective();
+        let t2 = t4.double();
+        assert_eq!(t2, Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one())));
+
+        for x in [
+            BaseField::zero(),
+            BaseField::one(),
+            -BaseField::one(),
+            t4.to_affine().to_x_coordinate(),
+            -t4.to_affine().to_x_coordinate(),
+        ] {
+            check(x, &mut outcomes);
+        }
+        for _ in 0..ITERATIONS {
+            check(Uniform::rand(&mut rng), &mut outcomes);
+            let point = *Group::<CurrentEnvironment>::rand(&mut rng);
+            for torsion in [Projective::zero(), t2, t4, -t4] {
+                check((point + torsion).to_affine().to_x_coordinate(), &mut outcomes);
+            }
+        }
+        assert!(outcomes.iter().all(|count| *count > 0), "outcomes: {outcomes:?}");
+    }
+
+    /// Checks the decode against gnark-crypto's `IsInSubGroup`, on the vectors of
+    /// `test_subgroup_point_from_x_coordinate_matches_gnark` in `snarkvm-curves`. That test describes the format.
+    #[test]
+    fn test_from_x_coordinate_matches_gnark() {
+        let vectors = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../curves/src/edwards_bls12/resources/gnark_subgroup_vectors.txt"
+        ));
+        let mut accepted = 0;
+        for line in vectors.lines() {
+            let fields: Vec<&str> = line.split(' ').collect();
+            let x = Field::<CurrentEnvironment>::new(BaseField::from_str(fields[0]).unwrap());
+            let expected = match fields[1..] {
+                [y, "1", "0"] => Some(BaseField::from_str(y).unwrap()),
+                [y, "0", "1"] => Some(-BaseField::from_str(y).unwrap()),
+                [_, "0", "0"] | ["-"] => None,
+                _ => panic!("unexpected line {line:?}"),
+            };
+            let expected = expected.map(|y| Group::new_unchecked(Affine::from_coordinates_unchecked((*x, y))));
+            accepted += expected.is_some() as usize;
+            assert_eq!(Group::from_x_coordinate(x).ok(), expected, "x = {x}");
+        }
+        assert!(accepted > 0);
     }
 }
