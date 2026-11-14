@@ -22,7 +22,7 @@ use crate::{
 
 use aleo_std::StorageMode;
 use console::{
-    account::{Address, PrivateKey},
+    account::{Address, PrivateKey, ViewKey},
     network::{MainnetV0, prelude::*},
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Value},
     types::U16,
@@ -202,7 +202,7 @@ fn test_state_path() {
     let rng = &mut TestRng::default();
 
     // Initialize the ledger.
-    let ledger = crate::test_helpers::sample_ledger(PrivateKey::<CurrentNetwork>::new(rng).unwrap(), rng);
+    let ledger = crate::test_helpers::sample_test_env(rng).ledger;
     // Retrieve the genesis block.
     let block = ledger.get_block(0).unwrap();
 
@@ -218,7 +218,7 @@ fn test_state_paths() {
     let rng = &mut TestRng::default();
 
     // Initialize the ledger.
-    let ledger = crate::test_helpers::sample_ledger(PrivateKey::<CurrentNetwork>::new(rng).unwrap(), rng);
+    let ledger = crate::test_helpers::sample_test_env(rng).ledger;
     // Retrieve the genesis block.
     let block = ledger.get_block(0).unwrap();
 
@@ -3967,9 +3967,8 @@ fn test_find_records_filters_by_ownership() {
     // Ensure that we successfully fetched at least one record that is owned by the view key.
     assert!(!owned_records.is_empty(), "Expected at least one record owned by the view key");
 
-    // Generate a new test environment to simulate an unrelated view key.
-    let other_env = crate::test_helpers::sample_test_env(rng);
-    let unrelated_view_key = other_env.view_key;
+    // Sample an unrelated view key.
+    let unrelated_view_key = ViewKey::try_from(PrivateKey::<CurrentNetwork>::new(rng).unwrap()).unwrap();
 
     // Attempt to fetch records using the unrelated view key.
     let unrelated_records = ledger.find_records(&unrelated_view_key, RecordsFilter::All).unwrap().collect::<Vec<_>>();
