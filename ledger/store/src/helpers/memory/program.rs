@@ -49,6 +49,8 @@ pub struct FinalizeMemory<N: Network> {
     storage_mode: StorageMode,
 }
 
+impl<N: Network> crate::sealed::Sealed for FinalizeMemory<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type CommitteeStorage = CommitteeMemory<N>;
@@ -112,6 +114,8 @@ pub struct CommitteeMemory<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for CommitteeMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> CommitteeStorage<N> for CommitteeMemory<N> {

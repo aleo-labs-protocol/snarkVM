@@ -32,6 +32,8 @@ pub struct ConsensusDB<N: Network> {
     block_store: BlockStore<N, BlockDB<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for ConsensusDB<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
     type FinalizeStorage = FinalizeDB<N>;

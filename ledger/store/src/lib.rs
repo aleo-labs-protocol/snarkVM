@@ -35,6 +35,44 @@ pub use transaction::*;
 mod transition;
 pub use transition::*;
 
+/// Seals the storage traits. Only the storage backends of this crate implement them.
+///
+/// ```compile_fail,E0277
+/// use aleo_std_storage::StorageMode;
+/// use snarkvm_console::network::MainnetV0;
+/// use snarkvm_ledger_store::{
+///     BlockStore,
+///     ConsensusStorage,
+///     FinalizeStore,
+///     helpers::memory::{BlockMemory, ConsensusMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
+/// };
+///
+/// #[derive(Clone)]
+/// struct Wrapper(ConsensusMemory<MainnetV0>);
+///
+/// impl ConsensusStorage<MainnetV0> for Wrapper {
+///     type FinalizeStorage = FinalizeMemory<MainnetV0>;
+///     type BlockStorage = BlockMemory<MainnetV0>;
+///     type TransactionStorage = TransactionMemory<MainnetV0>;
+///     type TransitionStorage = TransitionMemory<MainnetV0>;
+///
+///     fn open<S: Into<StorageMode>>(storage: S) -> anyhow::Result<Self> {
+///         ConsensusMemory::open(storage).map(Self)
+///     }
+///
+///     fn finalize_store(&self) -> &FinalizeStore<MainnetV0, Self::FinalizeStorage> {
+///         self.0.finalize_store()
+///     }
+///
+///     fn block_store(&self) -> &BlockStore<MainnetV0, Self::BlockStorage> {
+///         self.0.block_store()
+///     }
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
 use console::prelude::{Result, bail};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

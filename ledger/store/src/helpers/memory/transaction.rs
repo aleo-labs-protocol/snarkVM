@@ -46,6 +46,8 @@ pub struct TransactionMemory<N: Network> {
     fee_store: FeeStore<N, FeeMemory<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for TransactionMemory<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> TransactionStorage<N> for TransactionMemory<N> {
     type IDMap = MemoryMap<N::TransactionID, TransactionType>;
@@ -124,6 +126,8 @@ pub struct DeploymentMemory<N: Network> {
     /// The amendment owner map.
     amendment_owner_map: MemoryMap<(ProgramID<N>, u16, u64), ProgramOwner<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for DeploymentMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
@@ -261,6 +265,8 @@ pub struct ExecutionMemory<N: Network> {
     fee_store: FeeStore<N, FeeMemory<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for ExecutionMemory<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> ExecutionStorage<N> for ExecutionMemory<N> {
     type IDMap = MemoryMap<N::TransactionID, (Vec<N::TransitionID>, bool)>;
@@ -310,6 +316,8 @@ pub struct FeeMemory<N: Network> {
     /// The transition store.
     transition_store: TransitionStore<N, TransitionMemory<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for FeeMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> FeeStorage<N> for FeeMemory<N> {
