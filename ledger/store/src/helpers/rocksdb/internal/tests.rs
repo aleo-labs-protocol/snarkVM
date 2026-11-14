@@ -41,6 +41,32 @@ fn test_open_map() {
         .expect("Failed to open data map");
 }
 
+// RocksDB reserves disk space with `fallocate`, which it uses only on Linux.
+#[cfg(target_os = "linux")]
+#[test]
+fn test_open_allocates_little_disk_space() {
+    use std::os::unix::fs::MetadataExt;
+
+    // RocksDB can reserve space for its write-ahead log and manifest ahead of the data written to them.
+    const MAX_ALLOCATED_BYTES: u64 = 1024 * 1024;
+
+    let storage = StorageMode::new_test(None);
+    let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
+    let map = RocksDB::open_map(0, storage, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+
+    for i in 0..100u32 {
+        map.insert(i, i.to_string()).expect("Failed to insert");
+    }
+
+    // `blocks` counts 512-byte units, including the ones reserved by `fallocate`.
+    let allocated: u64 = std::fs::read_dir(&path)
+        .expect("Failed to read the database directory")
+        .map(|entry| entry.expect("Failed to read a directory entry").metadata().expect("Failed to read metadata"))
+        .map(|metadata| metadata.blocks() * 512)
+        .sum();
+    assert!(allocated < MAX_ALLOCATED_BYTES, "The database allocates {allocated} bytes on disk");
+}
+
 #[test]
 fn test_insert_and_contains_key() {
     let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
