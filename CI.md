@@ -69,6 +69,12 @@ filter matched no test.
 A job with no timeout gets the GitHub default of six hours. Only hosted jobs
 have none, and a hosted job holds no fleet box.
 
+A pull request that changes only Markdown files starts no run, so it gets no
+`ci-ok` check. The files under `curves/documentation` do not count: they are
+compiled into `snarkvm-curves`. A push runs everything. If a branch rule ever
+requires `ci-ok`, such a pull request cannot merge until a workflow reports
+that check for it.
+
 ## Test groups
 
 Each line of a `test`, `test-merge` or `test-release` entry's `runs` is one
