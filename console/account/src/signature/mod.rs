@@ -34,7 +34,7 @@ use crate::{ComputeKey, ComputeKeyCache};
 
 use crate::address::Address;
 use snarkvm_console_network::prelude::*;
-use snarkvm_console_types::{Boolean, Field, Scalar};
+use snarkvm_console_types::{Boolean, Field, GroupWindowTable, Scalar};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Signature<N: Network> {
@@ -78,7 +78,7 @@ impl<N: Network> Signature<N> {
 
     /// Returns the signer address.
     pub fn to_address(&self) -> Address<N> {
-        self.compute_key.to_address()
+        self.compute_key.public_address()
     }
 }
 

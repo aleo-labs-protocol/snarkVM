@@ -37,6 +37,8 @@ use snarkvm_console_algorithms::{
 lazy_static! {
     /// The group bases for the Aleo signature and encryption schemes.
     static ref GENERATOR_G: Vec<Group<TestnetV0 >> = TestnetV0::new_bases("AleoAccountEncryptionAndSignatureScheme0");
+    /// The 6-bit window table of `G`, for scalar multiplication by public scalars.
+    static ref GENERATOR_G_TABLE: GroupWindowTable<TestnetV0, 6> = GroupWindowTable::new(&GENERATOR_G[0]);
 
     /// The Varuna sponge parameters.
     static ref VARUNA_FS_PARAMETERS: FiatShamirParameters<TestnetV0> = FiatShamir::<TestnetV0>::sample_parameters();
@@ -418,6 +420,11 @@ impl Network for TestnetV0 {
             .sum()
     }
 
+    /// Returns the scalar multiplication on the generator `G`, for a public `scalar`.
+    fn g_scalar_multiply_public(scalar: &Scalar<Self>) -> Group<Self> {
+        GENERATOR_G_TABLE.mul(scalar)
+    }
+
     /// Returns the Varuna universal prover.
     fn varuna_universal_prover() -> &'static UniversalProver<Self::PairingCurve> {
         MainnetV0::varuna_universal_prover()
@@ -722,5 +729,16 @@ mod tests {
         let scalar = Scalar::rand(&mut TestRng::default());
         let group = CurrentNetwork::g_scalar_multiply(&scalar);
         assert_eq!(group, CurrentNetwork::g_powers()[0] * scalar);
+    }
+
+    #[test]
+    fn test_g_scalar_multiply_public() {
+        let rng = &mut TestRng::default();
+
+        for scalar in
+            [Scalar::zero(), Scalar::one(), -Scalar::one()].into_iter().chain((0..100).map(|_| Scalar::rand(rng)))
+        {
+            assert_eq!(CurrentNetwork::g_scalar_multiply_public(&scalar), CurrentNetwork::g_scalar_multiply(&scalar));
+        }
     }
 }

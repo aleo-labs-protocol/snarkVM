@@ -40,14 +40,20 @@ impl<N: Network> BatchCertificate<N> {
             Some(cache) => BatchHeader::read_le_with_cache(&mut reader, unchecked, cache)?,
             None => BatchHeader::read_le_with_unchecked(&mut reader, unchecked)?,
         };
-        let signatures = Self::read_signatures(reader, unchecked, cache)?;
+        let signatures = Self::read_signatures(&mut reader, unchecked, cache.as_deref_mut())?;
 
         // Return the batch certificate, performing the additional checks only if `unchecked` is false.
         if unchecked {
-            Self::from_unchecked(batch_header, signatures).map_err(error)
-        } else {
-            Self::from(batch_header, signatures).map_err(error)
+            return Self::from_unchecked(batch_header, signatures).map_err(error);
         }
+        let certificate = Self::from_internal(batch_header, signatures, cache.as_deref()).map_err(error)?;
+        // Count the verified signatures in the cache.
+        if let Some(cache) = cache {
+            for signature in certificate.signatures() {
+                cache.count_verification(&signature.compute_key());
+            }
+        }
+        Ok(certificate)
     }
 
     /// Reads the signatures of a batch certificate, through `cache` if there is one.
@@ -184,6 +190,11 @@ mod tests {
         }
         // One entry per committee member.
         assert_eq!(cache.len(), committee.len());
+        // Each member signed enough checked reads for the cache to build its `pk_sig` table.
+        for private_key in &committee {
+            let compute_key = console::account::ComputeKey::try_from(private_key).unwrap();
+            assert!(cache.has_pk_sig_table(&compute_key));
+        }
 
         // A warm cache still rejects a wrong signature on the checked path and a bad compute key on both paths.
         let exact = certificates[0].to_bytes_le().unwrap();
@@ -197,6 +208,28 @@ mod tests {
         assert!(BatchCertificate::read_le_with_cache(&bad_compute_key[..], false, &mut cache).is_err());
         assert!(BatchCertificate::read_le_with_cache(&bad_compute_key[..], true, &mut cache).is_err());
         assert_eq!(cache.len(), committee.len());
+    }
+
+    #[test]
+    fn test_rejected_certificates_build_no_tables() {
+        let rng = &mut TestRng::default();
+        let certificate = crate::test_helpers::sample_batch_certificate(rng);
+        let mut bad_response = certificate.to_bytes_le().unwrap();
+        let signatures_at = signatures_offset(&certificate);
+        // The last signature's response, so every other signature verifies.
+        let last_at = bad_response.len() - Signature::<CurrentNetwork>::size_in_bytes();
+        assert!(last_at > signatures_at, "a sampled certificate carries several signatures");
+        bad_response[last_at + 32] ^= 1;
+
+        let mut cache = ComputeKeyCache::default();
+        for _ in 0..8 {
+            assert!(
+                BatchCertificate::<CurrentNetwork>::read_le_with_cache(&bad_response[..], false, &mut cache).is_err()
+            );
+        }
+        for signature in certificate.signatures() {
+            assert!(!cache.has_pk_sig_table(&signature.compute_key()));
+        }
     }
 
     #[test]
