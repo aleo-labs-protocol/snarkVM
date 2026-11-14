@@ -29,6 +29,9 @@ use std::sync::{Arc, OnceLock};
 
 const CAPACITY: usize = 1;
 
+/// The number of input lengths, from 0, whose sponge state after the first block of `hash_many`'s preimage is cached.
+const PREFIX_STATES: usize = 17;
+
 /// Poseidon2 is a cryptographic hash function of input rate 2.
 pub type Poseidon2<E> = Poseidon<E, 2>;
 /// Poseidon4 is a cryptographic hash function of input rate 4.
@@ -36,7 +39,8 @@ pub type Poseidon4<E> = Poseidon<E, 4>;
 /// Poseidon8 is a cryptographic hash function of input rate 8.
 pub type Poseidon8<E> = Poseidon<E, 8>;
 
-#[derive(Clone, Debug)]
+/// A Poseidon hash function of input rate `RATE`, which must be at least 2.
+#[derive(Clone)]
 pub struct Poseidon<E: Environment, const RATE: usize> {
     /// The domain separator for the Poseidon hash function.
     domain: Field<E>,
@@ -47,14 +51,26 @@ pub struct Poseidon<E: Environment, const RATE: usize> {
     sparse_rounds: Option<Arc<PartialRounds<E::Field, RATE, CAPACITY>>>,
     /// The Merkle empty hash of this instance, once something has asked for it.
     empty_hash: OnceLock<Field<E>>,
+    /// For each input length below `PREFIX_STATES`, the sponge state after the first block of
+    /// `hash_many`'s preimage, once something has hashed an input of that length. Clones share it.
+    prefix_states: Arc<[OnceLock<State<E, RATE, CAPACITY>>; PREFIX_STATES]>,
+}
+
+impl<E: Environment, const RATE: usize> Debug for Poseidon<E, RATE> {
+    /// Shows the domain and parameters, and omits what is derived from them.
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        // Destructured so that a new field must be considered here.
+        let Self { domain, parameters, sparse_rounds: _, empty_hash: _, prefix_states: _ } = self;
+        f.debug_struct("Poseidon").field("domain", domain).field("parameters", parameters).finish_non_exhaustive()
+    }
 }
 
 impl<E: Environment, const RATE: usize> PartialEq for Poseidon<E, RATE> {
-    /// Ignores the partial rounds in sparse form and the cached empty hash, which are derived from
-    /// the domain and parameters.
+    /// Ignores the partial rounds in sparse form, the cached empty hash and the cached first-block
+    /// states, which are derived from the domain and parameters.
     fn eq(&self, other: &Self) -> bool {
         // Destructured so that a new field must be considered here.
-        let Self { domain, parameters, sparse_rounds: _, empty_hash: _ } = self;
+        let Self { domain, parameters, sparse_rounds: _, empty_hash: _, prefix_states: _ } = self;
         *domain == other.domain && *parameters == other.parameters
     }
 }
@@ -74,7 +90,18 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
             parameters,
             sparse_rounds,
             empty_hash: OnceLock::new(),
+            prefix_states: Arc::new(std::array::from_fn(|_| OnceLock::new())),
         })
+    }
+
+    /// Returns the first block of `hash_many`'s preimage for an input of `len` elements:
+    /// [ DOMAIN || LENGTH(INPUT) || [0; RATE-2] ].
+    fn first_block(&self, len: usize) -> [Field<E>; RATE] {
+        const { assert!(RATE >= 2, "the first block holds the domain and the input length") };
+        let mut block = [Field::<E>::zero(); RATE];
+        block[0] = self.domain;
+        block[1] = Field::<E>::from_u128(len as u128);
+        block
     }
 
     /// Returns the domain separator for the hash function.
@@ -153,6 +180,59 @@ mod tests {
 
         // Assert the test file is equal to the expected value.
         expect_test::expect_file![path].assert_eq(&format!("{candidate:?}"));
+    }
+
+    /// Returns `hash_many` computed without the cached first-block states, with the dense sponge.
+    fn reference_hash_many<const RATE: usize>(
+        poseidon: &Poseidon<CurrentEnvironment, RATE>,
+        input: &[Field<CurrentEnvironment>],
+        num_outputs: u16,
+    ) -> Vec<Field<CurrentEnvironment>> {
+        let mut preimage = Vec::with_capacity(RATE + input.len());
+        preimage.push(poseidon.domain);
+        preimage.push(Field::<CurrentEnvironment>::from_u128(input.len() as u128));
+        preimage.resize(RATE, Field::<CurrentEnvironment>::zero());
+        preimage.extend_from_slice(input);
+        let mut sponge = PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY>::new(&poseidon.parameters);
+        sponge.absorb(&preimage);
+        sponge.squeeze(num_outputs).into_vec()
+    }
+
+    fn check_prefix_states<const RATE: usize>(rng: &mut TestRng) {
+        type F = Field<CurrentEnvironment>;
+        let a = Poseidon::<CurrentEnvironment, RATE>::setup("PrefixA").unwrap();
+        let b = Poseidon::<CurrentEnvironment, RATE>::setup("PrefixB").unwrap();
+        let edges = [F::zero(), F::one(), -F::one()];
+        // Rates are at most 8, so the conversion cannot fail.
+        let rate = u16::try_from(RATE).unwrap();
+        // The first hash of each length fills its cached state, and the rest read it.
+        for len in 0..=(PREFIX_STATES + 2 * RATE + 1) {
+            let random = (0..len).map(|_| F::rand(rng)).collect_vec();
+            for input in std::iter::once(random).chain(edges.iter().map(|e| vec![*e; len])) {
+                for num_outputs in [0u16, 1, 2, rate - 1, rate, rate + 1, 2 * rate + 1] {
+                    for poseidon in [&a, &b] {
+                        assert_eq!(
+                            poseidon.hash_many(&input, num_outputs),
+                            reference_hash_many(poseidon, &input, num_outputs),
+                            "len {len} outputs {num_outputs}"
+                        );
+                    }
+                }
+            }
+        }
+        // Every length below `PREFIX_STATES` now has a cached state, and clones share the cache.
+        for poseidon in [&a, &b] {
+            assert!(poseidon.prefix_states.iter().all(|cell| cell.get().is_some()));
+            assert!(Arc::ptr_eq(&poseidon.prefix_states, &poseidon.clone().prefix_states));
+        }
+    }
+
+    #[test]
+    fn test_prefix_states() {
+        let rng = &mut TestRng::default();
+        check_prefix_states::<2>(rng);
+        check_prefix_states::<4>(rng);
+        check_prefix_states::<8>(rng);
     }
 
     #[test]
