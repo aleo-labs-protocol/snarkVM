@@ -55,6 +55,9 @@ impl<T: Uniform> UniformExt for T {}
 /// A fast RNG used **solely** for testing and benchmarking, **not** for any real world purposes.
 ///
 /// Its output for a seed may change between versions. Use [`FixedRng`] where it must not.
+///
+/// Every `TestRng::default()` takes its seed from the `TEST_SEED` environment variable if it is set.
+/// To replay a failure, run `TEST_SEED=<seed> cargo test -p <crate> -- <test> --exact`.
 pub struct TestRng {
     seed: u64,
     rng: XorShiftRng,
@@ -63,8 +66,14 @@ pub struct TestRng {
 
 impl Default for TestRng {
     fn default() -> Self {
-        // Obtain the initial seed using entropy provided by the OS.
-        let seed: u64 = rand::random();
+        // Obtain the initial seed from `TEST_SEED`, or else using entropy provided by the OS.
+        let seed: u64 = match std::env::var_os("TEST_SEED") {
+            Some(value) => value
+                .to_str()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| panic!("TEST_SEED must be a u64, found {value:?}")),
+            None => rand::random(),
+        };
 
         // Use it as the basis for the underlying Rng.
         Self::fixed(seed)
@@ -74,7 +83,7 @@ impl Default for TestRng {
 impl TestRng {
     pub fn fixed(seed: u64) -> Self {
         // Print the seed, so it's displayed if any of the tests using `test_rng` fails.
-        println!("\nInitializing 'TestRng' with seed '{seed}'\n");
+        println!("\nInitializing 'TestRng' with TEST_SEED={seed}\n");
 
         // Use the seed to initialize a fast, non-cryptographic Rng.
         Self::from_seed(seed)
