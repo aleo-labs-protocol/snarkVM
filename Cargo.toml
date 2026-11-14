@@ -121,8 +121,7 @@ package = [
   "file",
   "ledger",
   "snarkvm-console/filesystem",
-  "dep:ureq",
-  "dep:dotenvy"
+  "dep:ureq"
 ]
 
 async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
@@ -465,9 +464,6 @@ version = "0.8"
 [workspace.dependencies.colored]
 version = "3"
 
-[workspace.dependencies.dotenvy]
-version = "0.15"
-
 [workspace.dependencies.enum-iterator]
 version = "2.1"
 
@@ -606,10 +602,6 @@ optional = true
 
 [dependencies.anyhow]
 workspace = true
-
-[dependencies.dotenvy]
-version = "0.15"
-optional = true
 
 [dependencies.rand]
 workspace = true
