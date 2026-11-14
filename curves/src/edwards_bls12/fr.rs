@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::OnceLock;
+
 use snarkvm_fields::{
     FftParameters,
     FieldParameters,
@@ -20,6 +22,7 @@ use snarkvm_fields::{
     Fp256Parameters,
     PoseidonDefaultParameters,
     PoseidonDefaultParametersEntry,
+    SqrtTables,
 };
 use snarkvm_utilities::biginteger::BigInteger256 as BigInteger;
 
@@ -28,14 +31,16 @@ pub type Fr = Fp256<FrParameters>;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct FrParameters;
 
-impl Fp256Parameters for FrParameters {}
+impl Fp256Parameters for FrParameters {
+    fn sqrt_tables() -> &'static SqrtTables<Fr> {
+        static TABLES: OnceLock<SqrtTables<Fr>> = OnceLock::new();
+        TABLES.get_or_init(SqrtTables::<Fr>::new)
+    }
+}
 
 impl FftParameters for FrParameters {
     type BigInteger = BigInteger;
 
-    // `cargo doc` will fail without this attribute
-    #[doc(hidden)]
-    const POWERS_OF_ROOTS_OF_UNITY: &'static [BigInteger] = unimplemented!();
     const TWO_ADICITY: u32 = 1;
     #[rustfmt::skip]
     const TWO_ADIC_ROOT_OF_UNITY: BigInteger = BigInteger([
