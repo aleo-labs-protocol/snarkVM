@@ -23,7 +23,7 @@ mod prf;
 
 use crate::{Elligator2, poseidon::helpers::*};
 use snarkvm_console_types::prelude::*;
-use snarkvm_fields::{PoseidonDefaultField, PoseidonParameters};
+use snarkvm_fields::{PoseidonDefaultField, PoseidonParameters, PoseidonSparseRounds};
 
 use std::sync::{Arc, OnceLock};
 
@@ -44,7 +44,7 @@ pub struct Poseidon<E: Environment, const RATE: usize> {
     parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
     /// The partial rounds of `parameters` in sparse form. If `None`, every round multiplies the
     /// state by the MDS matrix.
-    sparse_rounds: Option<Arc<PartialRounds<E::Field, RATE, CAPACITY>>>,
+    sparse_rounds: Option<Arc<PoseidonSparseRounds<E::Field, RATE>>>,
     /// The Merkle empty hash of this instance, once something has asked for it.
     empty_hash: OnceLock<Field<E>>,
 }
@@ -68,7 +68,7 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
         ensure!(num_bits <= max_bits, "Domain cannot exceed {max_bits} bits, found {num_bits} bits");
 
         let parameters = Arc::new(E::Field::default_poseidon_parameters::<RATE>()?);
-        let sparse_rounds = PartialRounds::new(&parameters).map(Arc::new);
+        let sparse_rounds = PoseidonSparseRounds::new(&parameters).map(Arc::new);
         Ok(Self {
             domain: Field::<E>::new_domain_separator(domain),
             parameters,
@@ -167,7 +167,7 @@ mod tests {
     fn test_sponge() {
         const RATE: usize = 2;
         let parameters = Arc::new(Fq::default_poseidon_parameters::<RATE>().unwrap());
-        let sparse_rounds = Arc::new(PartialRounds::new(&parameters).unwrap());
+        let sparse_rounds = Arc::new(PoseidonSparseRounds::new(&parameters).unwrap());
 
         for absorb in 0..10 {
             for squeeze in 0..10 {

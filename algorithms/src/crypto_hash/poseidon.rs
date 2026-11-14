@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{AlgebraicSponge, DuplexSpongeMode, nonnative_params::*};
-use snarkvm_fields::{FieldParameters, PoseidonParameters, PrimeField, ToConstraintField};
+use snarkvm_fields::{FieldParameters, PoseidonParameters, PoseidonSparseRounds, PrimeField, ToConstraintField};
 use snarkvm_utilities::{BigInteger, FromBits, ToBits};
 
 use itertools::Itertools;
@@ -119,9 +119,9 @@ pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY: usiz
     pub mode: DuplexSpongeMode,
     /// A persistent lookup table used when compressing elements.
     adjustment_factor_lookup_table: Arc<[F]>,
-    /// The partial rounds of `parameters` in sparse form, or `None` if they
-    /// have none.
-    sparse_rounds: Option<Arc<PartialRounds<F>>>,
+    /// The partial rounds of `parameters` in sparse form. If `None`, every
+    /// round multiplies the state by the MDS matrix.
+    sparse_rounds: Option<Arc<PoseidonSparseRounds<F, RATE>>>,
 }
 
 impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSponge<F, RATE, 1> {
@@ -148,7 +148,7 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
 
                 table.into()
             },
-            sparse_rounds: PartialRounds::cached(parameters),
+            sparse_rounds: cached_sparse_rounds(parameters),
         }
     }
 
@@ -247,7 +247,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     #[inline]
     fn permute(&mut self) {
         match &self.sparse_rounds {
-            Some(sparse_rounds) => permute_sparse(&self.parameters, sparse_rounds, &mut self.state),
+            Some(sparse_rounds) => permute_sparse(sparse_rounds, &mut self.state),
             None => self.permute_dense(),
         }
     }
@@ -512,37 +512,6 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     }
 }
 
-/// The partial rounds of a Poseidon permutation, rewritten as in the appendix
-/// on efficient partial rounds of [GKRRS19][poseidon], so that each partial
-/// round adds one round constant and multiplies the state by a sparse matrix.
-///
-/// The permutation equals the dense one when the last full round before the
-/// partial rounds multiplies by `first_matrix` in place of the MDS matrix, and
-/// the first full round after them adds `last_ark` in place of its round
-/// constants.
-///
-/// [poseidon]: https://eprint.iacr.org/2019/458
-#[derive(Debug)]
-struct PartialRounds<F: PrimeField> {
-    /// The matrix of the last full round before the partial rounds.
-    first_matrix: Vec<Vec<F>>,
-    /// The partial rounds, in order.
-    rounds: Vec<PartialRound<F>>,
-    /// The round constants of the first full round after the partial rounds.
-    last_ark: Vec<F>,
-}
-
-/// A partial round: add `constant` to the first state element, apply the S-box
-/// to it, and multiply the state by the matrix whose first row is `row`, whose
-/// first column below the first row is `column`, and which is the identity
-/// elsewhere.
-#[derive(Debug)]
-struct PartialRound<F: PrimeField> {
-    constant: F,
-    row: Vec<F>,
-    column: Vec<F>,
-}
-
 /// The partial rounds of the most recent parameter sets that sponges were
 /// created with, oldest first. Each entry is a `CacheEntry` of its field and
 /// rate.
@@ -553,143 +522,44 @@ const PARTIAL_ROUNDS_CACHE_SIZE: usize = 16;
 
 /// A parameter set and its partial rounds. The entry holds the parameters, so
 /// their address is not reused while the entry is in the cache.
-type CacheEntry<F, const RATE: usize> = (Arc<PoseidonParameters<F, RATE, 1>>, Option<Arc<PartialRounds<F>>>);
+type CacheEntry<F, const RATE: usize> =
+    (Arc<PoseidonParameters<F, RATE, 1>>, Option<Arc<PoseidonSparseRounds<F, RATE>>>);
 
-impl<F: PrimeField> PartialRounds<F> {
-    /// Returns the partial rounds of `parameters` from `PARTIAL_ROUNDS_CACHE`,
-    /// computing and caching them if they are not there.
-    fn cached<const RATE: usize>(parameters: &Arc<PoseidonParameters<F, RATE, 1>>) -> Option<Arc<Self>> {
-        let lookup = |entries: &[Arc<dyn Any + Send + Sync>]| {
-            entries.iter().rev().find_map(|entry| {
-                let (cached_parameters, sparse_rounds) = entry.downcast_ref::<CacheEntry<F, RATE>>()?;
-                (Arc::ptr_eq(cached_parameters, parameters) || cached_parameters == parameters)
-                    .then(|| sparse_rounds.clone())
-            })
-        };
-        if let Some(sparse_rounds) = lookup(&PARTIAL_ROUNDS_CACHE.read().unwrap_or_else(PoisonError::into_inner)) {
-            return sparse_rounds;
-        }
-        let sparse_rounds = Self::new(parameters).map(Arc::new);
-        let mut entries = PARTIAL_ROUNDS_CACHE.write().unwrap_or_else(PoisonError::into_inner);
-        if lookup(&entries).is_none() {
-            if entries.len() == PARTIAL_ROUNDS_CACHE_SIZE {
-                entries.remove(0);
-            }
-            let entry: CacheEntry<F, RATE> = (parameters.clone(), sparse_rounds.clone());
-            entries.push(Arc::new(entry));
-        }
-        sparse_rounds
+/// Returns the partial rounds of `parameters` from `PARTIAL_ROUNDS_CACHE`,
+/// computing and caching them if they are not there.
+fn cached_sparse_rounds<F: PrimeField, const RATE: usize>(
+    parameters: &Arc<PoseidonParameters<F, RATE, 1>>,
+) -> Option<Arc<PoseidonSparseRounds<F, RATE>>> {
+    let lookup = |entries: &[Arc<dyn Any + Send + Sync>]| {
+        entries.iter().rev().find_map(|entry| {
+            let (cached_parameters, sparse_rounds) = entry.downcast_ref::<CacheEntry<F, RATE>>()?;
+            (Arc::ptr_eq(cached_parameters, parameters) || cached_parameters == parameters)
+                .then(|| sparse_rounds.clone())
+        })
+    };
+    if let Some(sparse_rounds) = lookup(&PARTIAL_ROUNDS_CACHE.read().unwrap_or_else(PoisonError::into_inner)) {
+        return sparse_rounds;
     }
-
-    /// Returns the partial rounds of `parameters`, or `None` if the parameters
-    /// have no partial rounds, no full round before them, a round
-    /// constant or MDS row whose length is not the state width, or an MDS
-    /// matrix whose lower-right block of width `RATE` is singular.
-    fn new<const RATE: usize>(parameters: &PoseidonParameters<F, RATE, 1>) -> Option<Self> {
-        let width = RATE + 1;
-        let PoseidonParameters { full_rounds, partial_rounds, ark, mds, .. } = parameters;
-        let first_partial_round = full_rounds / 2;
-        let last_partial_round = first_partial_round + partial_rounds;
-        if first_partial_round == 0
-            || *partial_rounds == 0
-            || ark.len() < full_rounds + partial_rounds
-            || ark.iter().take(full_rounds + partial_rounds).any(|row| row.len() != width)
-            || mds.len() != width
-            || mds.iter().any(|row| row.len() != width)
-        {
-            return None;
+    let sparse_rounds = PoseidonSparseRounds::new(parameters).map(Arc::new);
+    let mut entries = PARTIAL_ROUNDS_CACHE.write().unwrap_or_else(PoisonError::into_inner);
+    if lookup(&entries).is_none() {
+        if entries.len() == PARTIAL_ROUNDS_CACHE_SIZE {
+            entries.remove(0);
         }
-        let dot = |a: &[F], b: &[F]| a.iter().zip_eq(b).map(|(a, b)| *a * b).sum::<F>();
-        let mds_hat = mds[1..].iter().map(|row| row[1..].to_vec()).collect::<Vec<_>>();
-        let mds_hat_inverse = invert(&mds_hat)?;
-
-        // In a partial round, the round constants of every state element but the
-        // first commute with the S-box, so they move through the MDS matrix into
-        // the next round's constants.
-        let mut constants = Vec::with_capacity(*partial_rounds);
-        let mut carry = vec![F::zero(); width];
-        for round_constants in &ark[first_partial_round..last_partial_round] {
-            let mut sum = round_constants.iter().zip_eq(&carry).map(|(a, b)| *a + b).collect::<Vec<_>>();
-            constants.push(sum[0]);
-            sum[0] = F::zero();
-            carry = mds.iter().map(|row| dot(row, &sum)).collect();
-        }
-        let last_ark = ark[last_partial_round].iter().zip_eq(&carry).map(|(a, b)| *a + b).collect();
-
-        // From the last partial round to the first, diag(1, X) times the MDS
-        // matrix is the round's sparse matrix times diag(1, X * mds_hat), with
-        // X = I in the last round. Each diag(1, X * mds_hat) commutes with the
-        // constant and the S-box of its round, so it moves into the round before,
-        // and diag(1, mds_hat^partial_rounds) multiplies the MDS matrix of the last
-        // full round. In the iteration for the k-th partial round from the end,
-        // `row` is mds[0][1..] times mds_hat^-k, `column` is mds_hat^(k-1) times
-        // the first column of mds below its first row, and `lower_rows` is
-        // mds_hat^k times mds[1..].
-        let mut rows = Vec::with_capacity(*partial_rounds);
-        let mut columns = Vec::with_capacity(*partial_rounds);
-        let mut row = mds[0][1..].to_vec();
-        let mut column = mds[1..].iter().map(|row| row[0]).collect::<Vec<_>>();
-        let mut lower_rows = mds[1..].to_vec();
-        for _ in 0..*partial_rounds {
-            row = (0..RATE).map(|j| row.iter().zip_eq(&mds_hat_inverse).map(|(a, b)| *a * b[j]).sum()).collect();
-            rows.push(std::iter::once(mds[0][0]).chain(row.iter().copied()).collect::<Vec<_>>());
-            let next_column = mds_hat.iter().map(|mds_hat_row| dot(mds_hat_row, &column)).collect();
-            columns.push(std::mem::replace(&mut column, next_column));
-            lower_rows = mds_hat
-                .iter()
-                .map(|mds_hat_row| {
-                    (0..width).map(|j| mds_hat_row.iter().zip_eq(&lower_rows).map(|(a, b)| *a * b[j]).sum()).collect()
-                })
-                .collect();
-        }
-        let first_matrix = std::iter::once(mds[0].clone()).chain(lower_rows).collect();
-        let rounds = constants
-            .into_iter()
-            .zip_eq(rows.into_iter().rev())
-            .zip_eq(columns.into_iter().rev())
-            .map(|((constant, row), column)| PartialRound { constant, row, column })
-            .collect();
-
-        Some(Self { first_matrix, rounds, last_ark })
+        let entry: CacheEntry<F, RATE> = (parameters.clone(), sparse_rounds.clone());
+        entries.push(Arc::new(entry));
     }
+    sparse_rounds
 }
 
-/// Returns the inverse of the square matrix `matrix`, or `None` if it is
-/// singular.
-fn invert<F: PrimeField>(matrix: &[Vec<F>]) -> Option<Vec<Vec<F>>> {
-    let n = matrix.len();
-    let mut matrix = matrix.to_vec();
-    let mut inverse = (0..n)
-        .map(|i| (0..n).map(|j| if i == j { F::one() } else { F::zero() }).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    for column in 0..n {
-        let pivot = (column..n).find(|&row| !matrix[row][column].is_zero())?;
-        matrix.swap(column, pivot);
-        inverse.swap(column, pivot);
-        let scale = matrix[column][column].inverse()?;
-        matrix[column].iter_mut().chain(inverse[column].iter_mut()).for_each(|x| *x *= scale);
-        let (pivot_row, pivot_inverse_row) = (matrix[column].clone(), inverse[column].clone());
-        for row in (0..n).filter(|&row| row != column) {
-            let factor = matrix[row][column];
-            for (x, y) in matrix[row].iter_mut().zip_eq(&pivot_row) {
-                *x -= factor * y;
-            }
-            for (x, y) in inverse[row].iter_mut().zip_eq(&pivot_inverse_row) {
-                *x -= factor * y;
-            }
-        }
-    }
-    Some(inverse)
-}
-
-/// Applies the permutation of `parameters` to `state`, with the partial rounds
-/// in the sparse form `sparse_rounds` of the same parameters.
+/// Applies the permutation of the parameters of `sparse_rounds` to `state`,
+/// with the partial rounds in their sparse form.
 #[inline]
 fn permute_sparse<F: PrimeField, const RATE: usize>(
-    parameters: &PoseidonParameters<F, RATE, 1>,
-    sparse_rounds: &PartialRounds<F>,
+    sparse_rounds: &PoseidonSparseRounds<F, RATE>,
     state: &mut State<F, RATE, 1>,
 ) {
+    let parameters = sparse_rounds.parameters();
     let pow_alpha_in_place = pow_alpha_in_place::<F>(parameters.alpha);
     let first_partial_round = parameters.full_rounds / 2;
     let last_partial_round = first_partial_round + parameters.partial_rounds;
@@ -709,22 +579,22 @@ fn permute_sparse<F: PrimeField, const RATE: usize>(
     };
 
     for round in 0..first_partial_round {
-        let matrix = if round + 1 == first_partial_round { &sparse_rounds.first_matrix } else { &parameters.mds };
+        let matrix = if round + 1 == first_partial_round { sparse_rounds.first_matrix() } else { &parameters.mds };
         full_round(&mut current, &parameters.ark[round], matrix);
     }
-    for round in &sparse_rounds.rounds {
-        current[0] += round.constant;
+    for round in sparse_rounds.rounds() {
+        current[0] += round.constant();
         pow_alpha_in_place(&mut current[0]);
-        let first = F::sum_of_products(&current, &round.row);
+        let first = F::sum_of_products(&current, round.row());
         // The state has RATE + 1 elements, so it is not empty.
         let (head, tail) = current.split_first_mut().unwrap();
-        for (x, c) in tail.iter_mut().zip_eq(&round.column) {
+        for (x, c) in tail.iter_mut().zip_eq(round.column()) {
             *x += *c * *head;
         }
         *head = first;
     }
     for round in last_partial_round..num_rounds {
-        let ark = if round == last_partial_round { &sparse_rounds.last_ark } else { &parameters.ark[round] };
+        let ark = if round == last_partial_round { sparse_rounds.last_ark() } else { &parameters.ark[round] };
         full_round(&mut current, ark, &parameters.mds);
     }
 
@@ -779,7 +649,7 @@ fn pow_17_in_place<F: PrimeField>(val: &mut F) {
 mod tests {
     use super::*;
     use snarkvm_curves::bls12_377::{Fq, Fr};
-    use snarkvm_fields::{One, PoseidonDefaultField, Zero};
+    use snarkvm_fields::{One, PoseidonDefaultField};
     use snarkvm_utilities::{TestRng, Uniform};
 
     use serial_test::serial;
@@ -916,32 +786,21 @@ mod tests {
     #[serial]
     fn test_sparse_permutation_fallback() {
         let rng = &mut TestRng::default();
-        let default = parameters_with_rounds::<Fq, 2>(8, 31, 17, rng);
-        let mut singular = default.clone();
+        let mut singular = parameters_with_rounds::<Fq, 2>(8, 31, 17, rng);
         singular.mds[2] = vec![Fq::rand(rng), singular.mds[1][1], singular.mds[1][2]];
-        let mut short_ark = default.clone();
-        short_ark.ark.pop();
-        let mut long_ark_row = default.clone();
-        long_ark_row.ark[38].push(Fq::one());
-        let mut short_mds_row = default.clone();
-        short_mds_row.mds[1].pop();
-        let mut extra_mds_row = default.clone();
-        extra_mds_row.mds.push(vec![Fq::one(); 3]);
-        let cases = [
-            parameters_with_rounds::<Fq, 2>(0, 31, 17, rng),
-            parameters_with_rounds::<Fq, 2>(1, 31, 17, rng),
-            parameters_with_rounds::<Fq, 2>(8, 0, 17, rng),
-            singular,
-            short_ark,
-            long_ark_row,
-            short_mds_row,
-            extra_mds_row,
-        ];
-        for parameters in cases {
-            assert!(PartialRounds::new(&parameters).is_none(), "{parameters:?}");
-            assert!(PoseidonSponge::new_with_parameters(&Arc::new(parameters)).sparse_rounds.is_none());
-        }
-        assert!(PartialRounds::new(&default).is_some());
+        let singular = Arc::new(singular);
+        let cached_none = || {
+            let entries = PARTIAL_ROUNDS_CACHE.read().unwrap();
+            entries
+                .iter()
+                .filter_map(|entry| entry.downcast_ref::<CacheEntry<Fq, 2>>())
+                .filter(|(parameters, sparse_rounds)| Arc::ptr_eq(parameters, &singular) && sparse_rounds.is_none())
+                .count()
+        };
+        assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
+        assert_eq!(cached_none(), 1);
+        assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
+        assert_eq!(cached_none(), 1);
     }
 
     #[test]
@@ -980,28 +839,5 @@ mod tests {
         let e = PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.unwrap();
         assert!(!Arc::ptr_eq(&a, &e));
         check_state(&parameters, &state, 1);
-    }
-
-    #[test]
-    fn test_invert() {
-        let rng = &mut TestRng::default();
-        for n in 1..=8 {
-            let matrix = (0..n).map(|_| (0..n).map(|_| Fq::rand(rng)).collect_vec()).collect_vec();
-            let inverse = invert(&matrix).unwrap();
-            for (i, row) in matrix.iter().enumerate() {
-                for j in 0..n {
-                    let product: Fq = row.iter().zip_eq(&inverse).map(|(a, b)| *a * b[j]).sum();
-                    assert_eq!(product, if i == j { Fq::one() } else { Fq::zero() });
-                }
-            }
-            let mut singular = matrix.clone();
-            let factor = if n == 1 { Fq::zero() } else { Fq::from(2u8) };
-            singular[n - 1] = singular[0].iter().map(|x| *x * factor).collect();
-            assert!(invert(&singular).is_none());
-        }
-        // A zero first pivot needs a row swap.
-        let matrix = vec![vec![Fq::zero(), Fq::one()], vec![Fq::one(), Fq::one()]];
-        let inverse = invert(&matrix).unwrap();
-        assert_eq!(inverse, vec![vec![-Fq::one(), Fq::one()], vec![Fq::one(), Fq::zero()]]);
     }
 }
