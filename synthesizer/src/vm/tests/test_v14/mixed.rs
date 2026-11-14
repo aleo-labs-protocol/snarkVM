@@ -28,7 +28,7 @@ use super::*;
 fn test_execution_cost_for_authorization_and_call() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
     let caller_address_str = caller_address.to_string();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
@@ -271,7 +271,7 @@ fn test_execution_cost_for_authorization_and_call() {
 fn test_translation_get_dynamic_cast_to_dynamic() {
     let rng = &mut TestRng::default();
 
-    let factory_private_key = sample_genesis_private_key(rng);
+    let factory_private_key = sample_genesis_private_key();
 
     let client_1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let client_1_address = Address::try_from(&client_1_private_key).unwrap();

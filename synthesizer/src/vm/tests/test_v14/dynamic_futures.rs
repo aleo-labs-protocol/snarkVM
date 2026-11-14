@@ -20,7 +20,7 @@ use super::*;
 fn test_await_in_order() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program with two dynamic calls, awaited in creation order
@@ -124,7 +124,7 @@ fn test_await_in_order() {
 fn test_await_reverse_order() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Program that tracks order of execution via a mapping
     let tracker_program = Program::<CurrentNetwork>::from_str(
@@ -231,7 +231,7 @@ fn test_await_reverse_order() {
 fn test_nested_dynamic_futures() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Leaf program (C) - just sets a value
     let leaf_program = Program::<CurrentNetwork>::from_str(
@@ -383,7 +383,7 @@ fn test_nested_dynamic_futures() {
 fn test_dynamic_future_finalize_failure() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Program with a finalize that can fail
     let failing_program = Program::<CurrentNetwork>::from_str(
@@ -476,7 +476,7 @@ fn test_dynamic_future_finalize_failure() {
 fn test_multiple_futures_same_function() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let accumulator_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -579,7 +579,7 @@ fn test_multiple_futures_same_function() {
 fn test_read_state_after_dynamic_await() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let writer_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -695,7 +695,7 @@ fn test_read_state_after_dynamic_await() {
 fn test_dynamic_future_with_dynamic_record() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let token_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -803,7 +803,7 @@ fn test_dynamic_future_with_dynamic_record() {
 fn test_interleaved_awaits_different_programs() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // First program
     let program_alpha = Program::<CurrentNetwork>::from_str(
@@ -946,7 +946,7 @@ fn test_interleaved_awaits_different_programs() {
 fn test_dynamic_future_complex_finalize() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let complex_program = Program::<CurrentNetwork>::from_str(
@@ -1075,7 +1075,7 @@ fn test_dynamic_future_complex_finalize() {
 fn test_conditional_future_via_branch() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Program with two different functions that write different values
     let worker_program = Program::<CurrentNetwork>::from_str(
@@ -1198,7 +1198,7 @@ fn test_conditional_future_via_branch() {
 fn test_interface_mismatch_wrong_input_type() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Program expecting u64 input
     let u64_program = Program::<CurrentNetwork>::from_str(
@@ -1281,7 +1281,7 @@ fn test_interface_mismatch_wrong_input_type() {
 fn test_double_await_fails() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let simple_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -1373,7 +1373,7 @@ fn test_double_await_fails() {
 fn test_deep_nested_futures() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Level 4 (deepest) - just sets a value
     let level4_program = Program::<CurrentNetwork>::from_str(
@@ -1571,7 +1571,7 @@ fn test_deep_nested_futures() {
 fn test_interface_mismatch_public_to_private() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Program expecting private input
     let private_program = Program::<CurrentNetwork>::from_str(
@@ -1654,7 +1654,7 @@ fn test_interface_mismatch_public_to_private() {
 fn test_interface_mismatch_private_to_public() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Program expecting public input
     let public_program = Program::<CurrentNetwork>::from_str(
@@ -1737,7 +1737,7 @@ fn test_interface_mismatch_private_to_public() {
 fn test_conditional_future_execution_with_branches() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Two worker programs that write to different mappings
     let worker_a = Program::<CurrentNetwork>::from_str(
@@ -1929,7 +1929,7 @@ fn test_conditional_future_execution_with_branches() {
 fn test_skipped_future_await_is_caught() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Worker program
     let worker = Program::<CurrentNetwork>::from_str(
@@ -2036,7 +2036,7 @@ fn test_skipped_future_await_is_caught() {
 fn test_finalize_partial_failure_rollback() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // First program - always succeeds
     let success_program = Program::<CurrentNetwork>::from_str(
@@ -2217,7 +2217,7 @@ fn test_finalize_partial_failure_rollback() {
 fn test_future_isolation_sequential_calls() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Worker program that increments a counter
     let worker_program = Program::<CurrentNetwork>::from_str(
@@ -2334,7 +2334,7 @@ fn test_future_isolation_sequential_calls() {
 fn test_many_futures_in_single_transaction() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Worker program
     let worker_program = Program::<CurrentNetwork>::from_str(
@@ -2460,7 +2460,7 @@ fn test_many_futures_in_single_transaction() {
 fn test_dynamic_future_max_arguments() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let program_field = Identifier::<CurrentNetwork>::from_str("max_args").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -2590,7 +2590,7 @@ fn test_dynamic_future_max_arguments() {
 fn test_multiple_dynamic_transactions_same_mapping_key() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let counter_field = Identifier::<CurrentNetwork>::from_str("counter").unwrap().to_field().unwrap();
@@ -2727,7 +2727,7 @@ fn test_multiple_dynamic_transactions_same_mapping_key() {
 fn test_multiple_dynamic_transactions_one_fails() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let conditional_field = Identifier::<CurrentNetwork>::from_str("conditional").unwrap().to_field().unwrap();

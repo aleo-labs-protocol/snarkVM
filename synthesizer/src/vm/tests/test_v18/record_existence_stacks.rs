@@ -23,7 +23,7 @@ use super::*;
 fn test_external_closure_stack_fetching() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let lib_program = Program::from_str(
         r"

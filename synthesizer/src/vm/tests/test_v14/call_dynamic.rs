@@ -23,7 +23,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
     let caller_address = Address::try_from(&caller_private_key)?;
 
@@ -327,7 +327,7 @@ fn test_universal_swap() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     // Initialize the VM at the V14 height.
@@ -546,7 +546,7 @@ fn test_conditional_execution() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -839,7 +839,7 @@ fn test_complex_dynamic_graph_construction_internal(
     let rng = &mut TestRng::default();
 
     // Initialize caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
@@ -937,7 +937,7 @@ fn test_complex_dynamic_graph_construction() {
 fn test_call_nonexistent_program() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Use a program name that doesn't exist
     let nonexistent_program_field =
@@ -986,7 +986,7 @@ fn test_call_nonexistent_program() {
 fn test_call_nonexistent_function() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // First deploy a target program with a known function
     let target_program = Program::<CurrentNetwork>::from_str(
@@ -1052,7 +1052,7 @@ fn test_call_nonexistent_function() {
 fn test_circular_dynamic_calls() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let program_a_field = Identifier::<CurrentNetwork>::from_str("circular_a").unwrap().to_field().unwrap();
     let program_b_field = Identifier::<CurrentNetwork>::from_str("circular_b").unwrap().to_field().unwrap();
@@ -1132,7 +1132,7 @@ fn test_circular_dynamic_calls() {
 fn test_deep_call_hierarchy() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
 
@@ -1239,7 +1239,7 @@ fn test_deep_call_hierarchy() {
 fn test_dynamic_call_credits_fee_functions_forbidden() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let credits_field = Identifier::<CurrentNetwork>::from_str("credits").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1317,7 +1317,7 @@ fn test_dynamic_call_credits_fee_functions_forbidden() {
 fn test_dynamic_call_closure_forbidden() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // First create a program with a closure
     let target_program = Program::<CurrentNetwork>::from_str(
@@ -1388,7 +1388,7 @@ fn test_dynamic_call_closure_forbidden() {
 fn test_self_referential_dynamic_call() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let self_ref_field = Identifier::<CurrentNetwork>::from_str("self_referential").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1447,7 +1447,7 @@ fn test_self_referential_dynamic_call() {
 fn test_malformed_identifier_in_call_dynamic() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Use a field value that cannot be decoded to a valid identifier
     // Field::from(u128::MAX) is unlikely to decode to a valid identifier string
@@ -1527,7 +1527,7 @@ fn test_call_dynamic_in_finalize_forbidden() {
 #[test]
 fn test_dynamic_future_direct_output_forbidden() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let target_field = Identifier::<CurrentNetwork>::from_str("some_program").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1562,7 +1562,7 @@ fn test_dynamic_future_direct_output_forbidden() {
 fn test_dynamic_call_with_local_struct_parameters() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let program_field = Identifier::<CurrentNetwork>::from_str("struct_ops").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1672,7 +1672,7 @@ fn test_dynamic_call_with_local_struct_parameters() {
 fn test_dynamic_call_with_external_struct_parameters() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let provider_field = Identifier::<CurrentNetwork>::from_str("struct_provider").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1795,7 +1795,7 @@ fn test_dynamic_call_with_external_struct_parameters() {
 fn test_dynamic_call_with_array_parameters() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let program_field = Identifier::<CurrentNetwork>::from_str("array_ops").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1906,7 +1906,7 @@ fn test_dynamic_call_with_array_parameters() {
 fn test_dynamic_record_double_spend_detection() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
@@ -2076,7 +2076,7 @@ fn test_dynamic_record_double_spend_detection() {
 fn test_dynamic_call_to_pre_v14_program() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
@@ -2332,7 +2332,7 @@ fn test_dynamic_call_to_pre_v14_program() {
 fn test_replay_attack_prevention_across_blocks() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -2452,7 +2452,7 @@ fn test_replay_attack_prevention_across_blocks() {
 fn test_nested_caller_authorization() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -2633,7 +2633,7 @@ fn test_nested_caller_authorization() {
 #[test]
 fn test_v2_deployment_transaction_rejected_at_v14() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Create a VM at V13 to construct a V2 deployment.
     let vm_v13 = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap(), rng);
@@ -2700,7 +2700,7 @@ constructor:
 fn test_batch_proof_instance_limit_exceeded() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // Compute field operands for the dynamic calls.

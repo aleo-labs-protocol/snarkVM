@@ -64,7 +64,7 @@ constructor:
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at one less than the V11 height.
     let v11_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V11).unwrap();
@@ -246,7 +246,7 @@ constructor:
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V11 height.
     let v11_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V11).unwrap();

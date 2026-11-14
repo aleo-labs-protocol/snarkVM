@@ -45,7 +45,7 @@ fn deploy_mapping_with_missing_struct_program(consensus_version: ConsensusVersio
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the correct height.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(consensus_version).unwrap();
@@ -88,7 +88,7 @@ fn deploy_mapping_with_missing_external_struct_programs(consensus_version: Conse
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the correct height.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(consensus_version).unwrap();
@@ -150,7 +150,7 @@ fn test_external_struct_with_local_nested_struct() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V13 height.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap();
@@ -218,7 +218,7 @@ fn test_external_record_with_local_struct_entry() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V13 height.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap();
@@ -285,7 +285,7 @@ fn test_external_struct_with_array_of_local_structs() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V13 height.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap();
@@ -354,7 +354,7 @@ fn test_external_future_with_local_struct_finalize_param() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V13 height.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap();
@@ -479,7 +479,7 @@ fn deploy_two_programs_and_execute_v13(
 ) {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     let height = CurrentNetwork::CONSENSUS_HEIGHT(consensus_version).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(height, rng);
@@ -989,7 +989,7 @@ constructor:
 fn test_external_mapping_external_struct_v13() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(height, rng);
@@ -1100,7 +1100,7 @@ constructor:
 #[test]
 fn test_external_mapping_external_struct_runtime_pre_post_v13() {
     let rng = &mut TestRng::default();
-    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key();
     // Start the VM at consensus version V9 to ensure we're not at V13 by the time we get to the
     // execution transaction that calls the second program.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap();
@@ -1226,7 +1226,7 @@ constructor:
 #[test]
 fn test_external_mapping_external_struct_in_array_runtime_pre_post_v13() {
     let rng = &mut TestRng::default();
-    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key();
     // Start the VM at consensus version V9 to ensure we're not at V13 by the time we get to the
     // execution transaction that calls the second program.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap();
@@ -1354,7 +1354,7 @@ fn test_external_mapping_external_struct_copied_locally_pre_post_v13() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V9 height. This ensures we're still on pre-V13 by the time we get to
     // the execution transaction we want to test.

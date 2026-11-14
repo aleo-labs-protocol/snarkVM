@@ -19,7 +19,7 @@ use super::*;
 #[test]
 fn test_restricted_keyword_dynamic_struct_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let program = Program::from_str(
@@ -47,7 +47,7 @@ function test:
 #[test]
 fn test_restricted_keyword_dynamic_function_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let program = Program::from_str(
@@ -75,7 +75,7 @@ function dynamic:
 #[test]
 fn test_restricted_keyword_dynamic_record_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let program = Program::from_str(
@@ -103,7 +103,7 @@ function test:
 #[test]
 fn test_restricted_keyword_dynamic_mapping_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let program = Program::from_str(
@@ -136,7 +136,7 @@ finalize test:
 #[test]
 fn test_restricted_keyword_dynamic_record_entry_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let program = Program::from_str(
@@ -166,7 +166,7 @@ function mint:
 #[test]
 fn test_restricted_keyword_dynamic_struct_member_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let program = Program::from_str(

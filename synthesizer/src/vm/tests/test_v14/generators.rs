@@ -23,12 +23,12 @@ fn test_aleo_generators_migration() {
     // Initialize the VM.
     let vm = sample_vm();
     // Initialize the genesis block.
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
 
     // Fetch the private key.
-    let private_key = sample_genesis_private_key(rng);
+    let private_key = sample_genesis_private_key();
     let view_key = ViewKey::try_from(&private_key).unwrap();
     let address = Address::try_from(&view_key).unwrap();
 

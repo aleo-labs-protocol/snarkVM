@@ -71,7 +71,7 @@ fn test_v3_deployment_requires_v14() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Get the V9 and V14 heights.
     let v9_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?;
@@ -171,7 +171,7 @@ fn test_amendment_updates_vks() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Get the V9 and V14 heights.
     let v9_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?;
@@ -295,7 +295,7 @@ fn test_amendment_validation() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Get the V9 and V14 heights.
     let v9_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?;
@@ -419,7 +419,7 @@ fn test_amendment_permissionless() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize the original deployer.
-    let original_owner = sample_genesis_private_key(rng);
+    let original_owner = sample_genesis_private_key();
 
     // Initialize a different user.
     let other_user = PrivateKey::new(rng)?;
@@ -539,7 +539,7 @@ fn test_credits_cannot_be_amended() -> Result<()> {
 fn test_dynamic_call_after_amendment() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 

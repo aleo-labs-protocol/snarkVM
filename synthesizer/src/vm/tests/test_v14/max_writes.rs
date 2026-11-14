@@ -25,12 +25,12 @@ fn test_max_writes_migration() {
     // Initialize the VM.
     let vm = sample_vm();
     // Initialize the genesis block.
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
 
     // Fetch the private key.
-    let private_key = sample_genesis_private_key(rng);
+    let private_key = sample_genesis_private_key();
 
     // Create a program that hits the max writes limit.
     let mut program_string = String::from(
@@ -136,12 +136,12 @@ fn test_max_writes_exceeds_finalize_amount() {
     // Initialize the VM.
     let vm = sample_vm();
     // Initialize the genesis block.
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
 
     // Fetch the private key.
-    let private_key = sample_genesis_private_key(rng);
+    let private_key = sample_genesis_private_key();
 
     // Advance the ledger past ConsensusV14 where the increase to max writes starts.
     let transactions: [Transaction<CurrentNetwork>; 0] = [];
