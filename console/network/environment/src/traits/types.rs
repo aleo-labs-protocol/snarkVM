@@ -330,6 +330,8 @@ pub mod integer_type {
     };
 
     /// Trait bound for integer values. Common to both signed and unsigned integers.
+    ///
+    /// This trait is sealed. Only snarkVM implements it.
     pub trait IntegerType:
         'static
         + CheckedAbs
@@ -539,7 +541,9 @@ pub mod integer_type {
     unary_impl!(WrappingAbs, i128, wrapping_abs, self, i128, i128::wrapping_abs(*self));
 
     /// Properties common to all integer types.
-    pub trait IntegerProperties: PrimInt + Debug + Display {
+    ///
+    /// This trait is sealed. Only snarkVM implements it.
+    pub trait IntegerProperties: crate::sealed::Sealed + PrimInt + Debug + Display {
         type Dual: IntegerType;
         /// Returns the number of bits required to represent this integer.
         const BITS: u64;
@@ -560,6 +564,8 @@ pub mod integer_type {
 
     macro_rules! integer_properties_impl {
         ($t:ty, $dual:ty, $is_signed:expr) => {
+            impl crate::sealed::Sealed for $t {}
+
             impl IntegerProperties for $t {
                 type Dual = $dual;
 
@@ -605,6 +611,8 @@ pub mod integer_magnitude {
     /// Trait for integers that can be used as an unsigned magnitude.
     /// `Magnitude`s are either used to represent an integer exponent
     /// or the right operand in integer shift operations.
+    ///
+    /// This trait is sealed. Only snarkVM implements it.
     pub trait Magnitude: IntegerType + ToPrimitive + Unsigned {}
     impl Magnitude for u8 {}
     impl Magnitude for u16 {}
