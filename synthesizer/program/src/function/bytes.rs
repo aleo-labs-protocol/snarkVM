@@ -67,7 +67,9 @@ impl<N: Network> FromBytes for FunctionCore<N> {
         inputs.into_iter().try_for_each(|input| function.add_input(input)).map_err(error)?;
         instructions.into_iter().try_for_each(|instruction| function.add_instruction(instruction)).map_err(error)?;
         outputs.into_iter().try_for_each(|output| function.add_output(output)).map_err(error)?;
-        finalize.map(|finalize| function.add_finalize(finalize));
+        if let Some(finalize) = finalize {
+            function.add_finalize(finalize).map_err(error)?;
+        }
 
         Ok(function)
     }
@@ -191,5 +193,40 @@ function main:
             "a function declaring {} instructions and carrying none must be rejected",
             CurrentNetwork::MAX_INSTRUCTIONS
         );
+    }
+
+    /// A finalize scope whose name differs from its function's must be rejected, as the
+    /// text parser rejects it, rather than dropped.
+    ///
+    /// Dropping it gave one function many encodings: its own, and its own followed by
+    /// any finalize scope with a different name.
+    #[test]
+    fn test_finalize_with_another_name_is_rejected() -> Result<()> {
+        let function = Function::<CurrentNetwork>::from_str(
+            r"
+function foo:
+    input r0 as u64.public;
+    async foo r0 into r1;
+    output r1 as test.aleo/foo.future;
+
+finalize foo:
+    input r0 as u64.public;
+    add r0 r0 into r1;",
+        )?;
+        let bytes = function.to_bytes_le()?;
+        assert_eq!(Function::<CurrentNetwork>::from_bytes_le(&bytes)?, function);
+
+        // The function name comes first, `03 'foo'`. The finalize scope's name is the
+        // only other `03 'foo'`, as the `async` and the output type are not identifiers
+        // of length three followed by these bytes.
+        let finalize_name = bytes.windows(4).rposition(|window| window == [3, b'f', b'o', b'o']).unwrap();
+        assert_ne!(finalize_name, 0, "the finalize scope's name follows the function's");
+        let mut renamed = bytes.clone();
+        renamed[finalize_name + 1..finalize_name + 4].copy_from_slice(b"bar");
+        assert!(
+            Function::<CurrentNetwork>::from_bytes_le(&renamed).is_err(),
+            "a finalize scope named 'bar' in function 'foo' must be rejected"
+        );
+        Ok(())
     }
 }
