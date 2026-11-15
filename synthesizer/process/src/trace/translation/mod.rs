@@ -73,8 +73,8 @@ impl<N: Network> Translation<N> {
         Self::prepare_verifier_inputs_internal(transitions, transition_map, get_verifying_key)
     }
 
-    /// Returns the verifier public inputs for the given call graph and transitions.
-    /// The transition map may hold owned or borrowed functions.
+    /// Returns the translation verifier inputs for the given transitions, batched by record.
+    /// The transition map gives the function of each transition, owned or borrowed.
     pub(crate) fn prepare_verifier_inputs_internal<'a, F>(
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
         // Used to retrieve record names

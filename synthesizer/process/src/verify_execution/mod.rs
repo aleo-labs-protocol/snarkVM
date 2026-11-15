@@ -422,7 +422,7 @@ impl<N: Network> Process<N> {
                 for instruction in function.instructions() {
                     match instruction {
                         // Dynamic calls (`call.dynamic`) are always function calls and contribute to the call graph.
-                        Instruction::CallDynamic(..) => calls.push(instruction.clone()),
+                        Instruction::CallDynamic(..) => calls.push(instruction),
                         // Static calls (`call`) are included only if they invoke a function (not a closure).
                         // Closures are inlined and do not produce separate transitions.
                         Instruction::Call(call) => {
@@ -432,7 +432,7 @@ impl<N: Network> Process<N> {
                                 .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
                             // Check if this call invokes a function (as opposed to a closure).
                             match call.is_function_call(stack.as_ref()) {
-                                Ok(true) => calls.push(instruction.clone()),
+                                Ok(true) => calls.push(instruction),
                                 Ok(false) => { /* Closure call - skip */ }
                                 Err(e) => bail!("Failed to determine if call is a function call: {e}"),
                             }
@@ -468,7 +468,7 @@ impl<N: Network> Process<N> {
             )?;
 
             // Extract the `CallDynamic` instruction data, if this is a dynamic call.
-            let call_dynamic = match &call_instruction {
+            let call_dynamic = match call_instruction {
                 Instruction::CallDynamic(cd) => Some(cd),
                 Instruction::Call(..) => None,
                 // This should never occur, since `parent_function_calls` only contains `Call` and `CallDynamic`.
@@ -809,10 +809,10 @@ impl<N: Network> Process<N> {
                     .get(caller_pid)
                     .ok_or_else(|| anyhow!("Missing stack for program '{caller_pid}'"))?;
                 // Retrieve the function from the stack.
-                let caller_fname = stack.get_function_ref(caller_fname)?;
+                let caller_function = stack.get_function_ref(caller_fname)?;
                 // Collect the children of the current transition.
                 let mut children = Vec::new();
-                for instruction in caller_fname.instructions() {
+                for instruction in caller_function.instructions() {
                     if let Instruction::Call(call) = instruction {
                         let (pid, fname) = match call.operator() {
                             snarkvm_synthesizer_program::CallOperator::Locator(locator) => {
