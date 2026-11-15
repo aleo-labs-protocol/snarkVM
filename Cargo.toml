@@ -642,6 +642,7 @@ version = "2"
 
 [profile.release]
 lto = "thin"
+codegen-units = 1
 
 [profile.dev]
 debug = "line-tables-only"
