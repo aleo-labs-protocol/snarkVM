@@ -90,8 +90,10 @@ impl<E: PairingEngine> KZG10<E> {
     /// Constructs public parameters when given as input the maximum degree
     /// `degree` for the polynomial commitment scheme.
     pub fn load_srs(max_degree: usize) -> Result<UniversalParams<E>, PCError> {
+        let num_powers =
+            max_degree.checked_add(1).ok_or_else(|| anyhow!("The maximum degree ({max_degree}) is too large"))?;
         let params = UniversalParams::load()?;
-        params.download_powers_for(0..(max_degree + 1))?;
+        params.download_powers_for(0..num_powers)?;
         Ok(params)
     }
 
@@ -642,5 +644,14 @@ mod tests {
         let p = DensePolynomial::<Fr>::rand(max_degree + 1, rng);
         assert!(p.degree() > max_degree);
         assert!(KZG_Bls12_377::check_degree_is_too_large(p.degree(), powers.size()).is_err());
+    }
+
+    /// `load_srs` rejects a maximum degree that the SRS cannot serve, up to
+    /// the largest `usize`.
+    #[test]
+    fn load_srs_rejects_a_degree_beyond_the_srs() {
+        for max_degree in [usize::MAX - 1, usize::MAX] {
+            assert!(KZG_Bls12_377::load_srs(max_degree).is_err());
+        }
     }
 }
