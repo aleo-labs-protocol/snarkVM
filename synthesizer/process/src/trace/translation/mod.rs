@@ -34,7 +34,7 @@ use snarkvm_ledger_block::{Input, Output, Transition};
 use snarkvm_synthesizer_program::Function;
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 
-use std::collections::HashMap;
+use std::{borrow::Borrow, collections::HashMap};
 
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> {
@@ -70,6 +70,20 @@ impl<N: Network> Translation<N> {
     where
         F: Fn(&(ProgramID<N>, Identifier<N>)) -> Result<VerifyingKey<N>>,
     {
+        Self::prepare_verifier_inputs_internal(transitions, transition_map, get_verifying_key)
+    }
+
+    /// Returns the verifier public inputs for the given call graph and transitions.
+    /// The transition map may hold owned or borrowed functions.
+    pub(crate) fn prepare_verifier_inputs_internal<'a, F>(
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
+        // Used to retrieve record names
+        transition_map: &HashMap<N::TransitionID, (&Transition<N>, impl Borrow<Function<N>>)>,
+        get_verifying_key: &F,
+    ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>
+    where
+        F: Fn(&(ProgramID<N>, Identifier<N>)) -> Result<VerifyingKey<N>>,
+    {
         let mut batch_verifier_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<Vec<N::Field>>> = HashMap::new();
 
         let mut translation_index = 0;
@@ -80,6 +94,7 @@ impl<N: Network> Translation<N> {
             let (_, callee_function_core) = transition_map
                 .get(transition.id())
                 .ok_or_else(|| anyhow!("Transition {} from execution not found transition map", transition.id()))?;
+            let callee_function_core: &Function<N> = callee_function_core.borrow();
             let callee_function_id =
                 compute_function_id(&U16::<N>::new(N::ID), transition.program_id(), transition.function_name())?;
 

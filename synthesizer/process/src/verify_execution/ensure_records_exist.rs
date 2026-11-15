@@ -450,7 +450,7 @@ fn process_transition<N: Network>(
                 // New programs are blocked at deployment time; this covers legacy programs.
                 let has_forbidden_output = match call.operator() {
                     CallOperator::Resource(resource) => {
-                        stack.program().get_closure(resource)?.outputs().iter().any(|output| {
+                        stack.program().get_closure_ref(resource)?.outputs().iter().any(|output| {
                             matches!(
                                 output.register_type(),
                                 RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
@@ -461,7 +461,7 @@ fn process_transition<N: Network>(
                         .get(locator.program_id())
                         .ok_or_else(|| anyhow!("Missing stack for program '{}'", locator.program_id()))?
                         .program()
-                        .get_closure(locator.resource())?
+                        .get_closure_ref(locator.resource())?
                         .outputs()
                         .iter()
                         .any(|output| {
