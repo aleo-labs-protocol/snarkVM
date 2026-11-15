@@ -38,7 +38,6 @@ pub trait ProjectiveCurve:
     + Debug
     + Display
     + Default
-    + FromBytes
     + Send
     + Sync
     + 'static
@@ -59,7 +58,6 @@ pub trait ProjectiveCurve:
     + for<'a> SubAssign<&'a Self>
     + PartialEq<Self::Affine>
     + Sized
-    + ToBytes
     + iter::Sum
     + From<<Self as ProjectiveCurve>::Affine>
 {
