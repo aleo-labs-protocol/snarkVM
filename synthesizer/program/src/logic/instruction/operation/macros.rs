@@ -35,6 +35,7 @@
 ///     }
 /// );
 /// ```
+#[doc(hidden)]
 #[macro_export]
 macro_rules! operation {
     // Unary operation.
@@ -184,6 +185,7 @@ macro_rules! operation {
 ///     }
 /// )
 /// ```
+#[doc(hidden)]
 #[macro_export]
 macro_rules! evaluate {
     // Unary operation.
@@ -247,6 +249,7 @@ macro_rules! evaluate {
 ///     }
 /// )
 /// ```
+#[doc(hidden)]
 #[macro_export]
 macro_rules! execute {
     // Unary operation.
@@ -300,6 +303,7 @@ macro_rules! execute {
 ///     }
 /// )
 /// ```
+#[doc(hidden)]
 #[macro_export]
 macro_rules! output_type {
     // Unary operation.

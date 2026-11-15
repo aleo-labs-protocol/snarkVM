@@ -13,6 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Aleo programs and their components, with their text and byte encodings.
+//!
+//! # Stability
+//!
+//! The instruction and command types (`Instruction`, `Command`, `Operand`, `Opcode`, and the type of each
+//! instruction and command), and the component methods that return or accept them, are internal to snarkVM.
+//! They are public only for other snarkVM crates. They are hidden from the documentation and are not covered by
+//! semantic versioning: their layout and API may change in any release. The text and byte encodings of a program
+//! do not change with them.
+
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
