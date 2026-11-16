@@ -34,7 +34,7 @@ fn test_upgrade_cycle_with_records() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V10 height.

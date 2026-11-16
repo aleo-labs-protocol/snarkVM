@@ -45,7 +45,7 @@ fn test_cost_for_call_depending_on_signer() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     let zero_field = Identifier::<CurrentNetwork>::from_str("zero").unwrap().to_field().unwrap();
     let one_field = Identifier::<CurrentNetwork>::from_str("one").unwrap().to_field().unwrap();

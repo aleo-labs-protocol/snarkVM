@@ -39,12 +39,11 @@ use snarkvm_ledger_block::{
     Transition,
 };
 use snarkvm_ledger_query::Query;
-use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
+use snarkvm_ledger_store::{BlockStore, StorageMode, helpers::memory::BlockMemory};
 use snarkvm_synthesizer_process::Process;
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::PrettyUnwrap;
 
-use aleo_std::StorageMode;
 use anyhow::Context;
 use std::sync::OnceLock;
 

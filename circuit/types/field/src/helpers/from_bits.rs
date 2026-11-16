@@ -127,7 +127,9 @@ mod tests {
             });
 
             // Add excess zero bits.
-            let candidate = [given_bits, vec![Boolean::new(mode, false); i as usize]].concat();
+            // Note: `unwrap()` is safe as `i` is less than `ITERATIONS`.
+            let num_excess_bits = usize::try_from(i).unwrap();
+            let candidate = [given_bits, vec![Boolean::new(mode, false); num_excess_bits]].concat();
 
             Circuit::scope(format!("Excess {mode} {i}"), || {
                 let candidate = Field::<Circuit>::from_bits_le(&candidate);
@@ -172,7 +174,9 @@ mod tests {
             });
 
             // Add excess zero bits.
-            let candidate = [vec![Boolean::new(mode, false); i as usize], given_bits].concat();
+            // Note: `unwrap()` is safe as `i` is less than `ITERATIONS`.
+            let num_excess_bits = usize::try_from(i).unwrap();
+            let candidate = [vec![Boolean::new(mode, false); num_excess_bits], given_bits].concat();
 
             Circuit::scope(format!("Excess {mode} {i}"), || {
                 let candidate = Field::<Circuit>::from_bits_be(&candidate);
