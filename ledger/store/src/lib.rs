@@ -35,6 +35,8 @@ pub use transaction::*;
 mod transition;
 pub use transition::*;
 
+pub use snarkvm_utilities::storage::{StorageMode, aleo_dir, aleo_ledger_dir, aleo_secondary_ledger_dir};
+
 use console::prelude::{Result, bail};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

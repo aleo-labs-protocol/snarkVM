@@ -17,12 +17,12 @@ pub mod chain_builder;
 pub use chain_builder::TestChainBuilder;
 
 use crate::Ledger;
-use aleo_std::StorageMode;
 use console::{
     account::{Address, PrivateKey, ViewKey},
     network::MainnetV0,
     prelude::*,
 };
+use snarkvm_ledger_store::StorageMode;
 
 use snarkvm_circuit::AleoV0;
 use snarkvm_ledger_store::ConsensusStore;

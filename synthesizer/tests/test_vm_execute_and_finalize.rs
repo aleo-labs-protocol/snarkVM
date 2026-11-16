@@ -25,7 +25,6 @@ use std::{
     },
 };
 
-use aleo_std::StorageMode;
 use snarkvm_console::{
     account::{PrivateKey, ViewKey},
     network::prelude::*,
@@ -42,7 +41,7 @@ use snarkvm_ledger_block::{
     Transactions,
     Transition,
 };
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
+use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore, StorageMode};
 use snarkvm_synthesizer::{
     Authorization,
     VM,
@@ -72,7 +71,7 @@ type Genesis = (
 // The names of the slowest test files, slowest first. The workers start them before the other test files.
 const SLOWEST_TESTS: &[&str] = &["many_input_and_output", "interleave_async_and_non_async", "read_external_mapping"];
 
-#[test_log::test]
+#[test]
 fn test_vm_execute_and_finalize() {
     // Load the tests.
     let mut tests =
