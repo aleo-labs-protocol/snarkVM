@@ -51,6 +51,12 @@ use std::{
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 
+/// The maximum number of table files RocksDB keeps open for a ledger. A secondary instance keeps all of them open.
+///
+/// RocksDB also keeps its log, manifest and compaction files open. So a process that opens the ledger needs an
+/// open-files limit well above this value, which its sockets and other files share.
+pub const MAX_OPEN_FILES: u16 = 8192;
+
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
 // TODO: remove the static in favor of improved `open` methods.
@@ -201,7 +207,7 @@ impl Database for RocksDB {
                 options.increase_parallelism(2);
                 options.set_max_background_jobs(4);
                 options.create_if_missing(true);
-                options.set_max_open_files(8192);
+                options.set_max_open_files(i32::from(MAX_OPEN_FILES));
                 // Ticker statistics, without histograms or timers.
                 #[cfg(feature = "metrics")]
                 {
