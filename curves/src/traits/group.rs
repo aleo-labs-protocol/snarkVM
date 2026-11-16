@@ -95,11 +95,6 @@ pub trait ProjectiveCurve:
         copy
     }
 
-    /// Adds an affine element to this element.
-    fn sub_assign_mixed(&mut self, other: &Self::Affine) {
-        self.add_assign_mixed(&-*other);
-    }
-
     /// Returns `self + self`.
     #[must_use]
     fn double(&self) -> Self;
