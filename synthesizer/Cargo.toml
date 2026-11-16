@@ -132,9 +132,6 @@ workspace = true
 [dependencies.snarkvm-utilities]
 workspace = true
 
-[dependencies.aleo-std]
-workspace = true
-
 [dependencies.anyhow]
 workspace = true
 

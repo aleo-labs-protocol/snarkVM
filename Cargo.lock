@@ -30,53 +30,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aleo-std"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7c26e03c99bac238b3454ec6c654bc066a0e4e7eae00608ec76c2279bc8f2cf"
-dependencies = [
- "aleo-std-profiler",
- "aleo-std-time",
- "aleo-std-timed",
- "aleo-std-timer",
- "walkdir",
-]
-
-[[package]]
-name = "aleo-std-profiler"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64476704cd7d71c43623839197bea87e477cfa03006853328fd5c9e07d8f48cc"
-
-[[package]]
-name = "aleo-std-time"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61a095fa7b4400ec1de315603c16c1084ece0b7926cbb0333a1ba115732fc35b"
-dependencies = [
- "proc-macro2",
- "quote 1.0.47",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "aleo-std-timed"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a77792a0cf06cc8efdabf5cb355a2f1e9172ae3ab5d30147ff440e1c9e8a03d0"
-dependencies = [
- "proc-macro2",
- "quote 1.0.47",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "aleo-std-timer"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9fbc20b310af70d896f74cdccc2f12b5d6d9cd7edea5abfd823038279703b30"
-
-[[package]]
 name = "alloca"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3371,7 +3324,6 @@ dependencies = [
 name = "snarkvm-ledger"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "bincode",
  "cfg-if",
@@ -3706,7 +3658,6 @@ dependencies = [
 name = "snarkvm-synthesizer"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "bincode",
  "criterion",
@@ -3763,7 +3714,6 @@ dependencies = [
 name = "snarkvm-synthesizer-process"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "bincode",
  "colored",
  "criterion",
@@ -3960,17 +3910,6 @@ dependencies = [
  "quote 0.3.15",
  "synom",
  "unicode-xid",
-]
-
-[[package]]
-name = "syn"
-version = "1.0.109"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
-dependencies = [
- "proc-macro2",
- "quote 1.0.47",
- "unicode-ident",
 ]
 
 [[package]]
