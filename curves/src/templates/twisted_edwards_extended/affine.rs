@@ -32,9 +32,8 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Affine<P: Parameters> {
     pub(crate) x: P::BaseField,
     pub(crate) y: P::BaseField,

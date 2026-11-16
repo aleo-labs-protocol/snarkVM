@@ -26,7 +26,6 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     io::{Error, ErrorKind, Read, Result as IoResult, Write},
@@ -34,7 +33,7 @@ use std::{
 };
 
 // The CUDA FFI reads this by bytes.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Affine<P: Parameters> {
     pub(crate) x: P::BaseField,

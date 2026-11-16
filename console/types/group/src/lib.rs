@@ -80,7 +80,7 @@ impl<E: Environment> Group<E> {
 
     /// Initializes a new group, if `group` is on the curve and in the prime-order subgroup.
     pub fn try_new(group: E::Affine) -> Result<Self> {
-        // The subgroup check reads the Edwards `t` coordinate, which a caller can set to any value.
+        // The subgroup check reads the Edwards `t` coordinate. This rebuilds it from x and y.
         let group = E::Affine::from_coordinates_unchecked((group.to_x_coordinate(), group.to_y_coordinate()));
         ensure!(group.is_on_curve(), "Group element is not on the curve");
         ensure!(group.is_in_correct_subgroup_assuming_on_curve(), "Group element is not in the prime-order subgroup");
@@ -192,33 +192,6 @@ mod tests {
             assert!(point.is_on_curve());
             assert!(Group::<CurrentEnvironment>::try_new(point).is_err());
         }
-    }
-
-    /// Returns `point` with its Edwards `t` coordinate replaced by a random value.
-    fn forge_t(point: Affine, rng: &mut TestRng) -> Result<Affine> {
-        let (x, y) = (point.to_x_coordinate(), point.to_y_coordinate());
-        // `Affine` serializes as the tuple of its coordinates `(x, y, t)`.
-        assert_eq!(bincode::serialize(&point)?, bincode::serialize(&(x, y, x * y))?);
-        let forged: Affine = bincode::deserialize(&bincode::serialize(&(x, y, BaseField::rand(rng)))?)?;
-        assert_eq!((x, y), (forged.to_x_coordinate(), forged.to_y_coordinate()));
-        assert_ne!(point, forged);
-        Ok(forged)
-    }
-
-    #[test]
-    fn test_try_new_ignores_a_forged_t() -> Result<()> {
-        let mut rng = TestRng::default();
-
-        let order_two = Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one()));
-        for _ in 0..ITERATIONS {
-            let element = Group::<CurrentEnvironment>::rand(&mut rng);
-            let forged = forge_t(element.to_affine(), &mut rng)?;
-            assert_eq!(element, Group::try_new(forged)?);
-
-            let forged = forge_t(element.add_mixed(&order_two).to_affine(), &mut rng)?;
-            assert!(Group::<CurrentEnvironment>::try_new(forged).is_err());
-        }
-        Ok(())
     }
 
     #[test]
