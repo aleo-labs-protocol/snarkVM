@@ -20,8 +20,7 @@ use crate::{
     helpers::memory::{BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
 };
 use console::prelude::*;
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 /// An in-memory consensus storage.
 #[derive(Clone)]

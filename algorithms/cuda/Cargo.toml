@@ -26,7 +26,6 @@ edition = "2021"
 [features]
 default = [ ]
 portable = [ "blst/portable" ]
-quiet = [ ]
 
 [dependencies.anyhow]
 workspace = true

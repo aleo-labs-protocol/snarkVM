@@ -15,6 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
+#![warn(clippy::cast_possible_truncation)]
 
 mod environment;
 pub use environment::*;
@@ -95,6 +96,8 @@ pub mod prelude {
         has_duplicates,
         into_io_error,
         io_error,
+        timing_event,
+        timing_span,
     };
 
     pub use std::io::{Read, Result as IoResult, Write};

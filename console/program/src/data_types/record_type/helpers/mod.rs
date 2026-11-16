@@ -37,10 +37,12 @@ impl PublicOrPrivate {
 impl FromBytes for PublicOrPrivate {
     /// Reads the visibility from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the indicator for the visibility.
-        match u8::read_le(&mut reader)? == 1 {
-            true => Ok(PublicOrPrivate::Private),
-            false => Ok(PublicOrPrivate::Public),
+        // Read the indicator for the visibility. Only the two bytes `write_le` produces are
+        // accepted, so that each record type has exactly one encoding.
+        match u8::read_le(&mut reader)? {
+            0 => Ok(PublicOrPrivate::Public),
+            1 => Ok(PublicOrPrivate::Private),
+            indicator => Err(error(format!("Invalid visibility indicator '{indicator}'"))),
         }
     }
 }

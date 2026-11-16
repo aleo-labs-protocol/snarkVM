@@ -31,7 +31,7 @@ impl<N: Network> Process<N> {
         execution: &Execution<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     ) -> Result<()> {
-        let timer = timer!("Process::verify_execution");
+        let timer = timing_span!("Process::verify_execution").entered();
 
         // Ensure the execution contains transitions.
         ensure!(!execution.is_empty(), "There are no transitions in the execution");
@@ -71,7 +71,7 @@ impl<N: Network> Process<N> {
             // Output the locator of the main function.
             Locator::new(*transition.program_id(), *transition.function_name()).to_string()
         };
-        lap!(timer, "Verify the number of transitions");
+        timing_event!("Verify the number of transitions");
 
         // Construct the call graph of the execution.
         let call_graph = Self::construct_call_graph(execution.transitions(), execution_stacks)?;
@@ -137,7 +137,7 @@ impl<N: Network> Process<N> {
             {
                 bail!("Failed to verify a transition input")
             }
-            lap!(timer, "Verify the inputs");
+            timing_event!("Verify the inputs");
 
             // Ensure each output is valid.
             let num_inputs = transition.inputs().len();
@@ -165,7 +165,7 @@ impl<N: Network> Process<N> {
                 }
                 Ok(())
             })?;
-            lap!(timer, "Verify the outputs");
+            timing_event!("Verify the outputs");
 
             // Retrieve the stack.
             let stack = execution_stacks
@@ -243,7 +243,7 @@ impl<N: Network> Process<N> {
                 execution_stacks,
                 consensus_version,
             )?;
-            lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
+            timing_event!("Constructed the verifier inputs for a transition of {}", function.name());
 
             // Save the verifying key and its inputs.
             verifier_inputs
@@ -252,7 +252,7 @@ impl<N: Network> Process<N> {
                 .or_insert((stack.get_verifying_key(function.name())?, vec![]))
                 .1
                 .push(inputs);
-            lap!(timer, "Stored the verifier inputs for a transition of {}", function.name());
+            timing_event!("Stored the verifier inputs for a transition of {}", function.name());
         }
 
         // Sanity check: each transition must produce exactly one verifier instance.
@@ -351,9 +351,9 @@ impl<N: Network> Process<N> {
         // Verify the execution proof.
         Trace::verify_execution_proof(&locator, varuna_version, inclusion_version, verifier_inputs, execution)?;
 
-        lap!(timer, "Verify the proof");
+        timing_event!("Verify the proof");
 
-        finish!(timer);
+        drop(timer);
         Ok(())
     }
 }
