@@ -19,10 +19,8 @@ use crate::prelude::deployment_cost_v1;
 
 use console::{account::ViewKey, network::ConsensusVersion, program::ProgramOwner};
 use snarkvm_ledger_block::{Deployment, Transaction};
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer_program::{Program, StackTrait as _};
-
-use aleo_std::StorageMode;
 
 // This test checks that:
 //  - an existing program cannot be redeployed before `ConsensusVersion::V8`

@@ -36,7 +36,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c26e03c99bac238b3454ec6c654bc066a0e4e7eae00608ec76c2279bc8f2cf"
 dependencies = [
  "aleo-std-profiler",
- "aleo-std-storage",
  "aleo-std-time",
  "aleo-std-timed",
  "aleo-std-timer",
@@ -50,16 +49,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64476704cd7d71c43623839197bea87e477cfa03006853328fd5c9e07d8f48cc"
 dependencies = [
  "colored 2.2.0",
-]
-
-[[package]]
-name = "aleo-std-storage"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67efc024835a2e9c648b300c2fac67856d3f99897e4cb02a710cdf2842ed72e9"
-dependencies = [
- "dirs",
- "tempfile",
 ]
 
 [[package]]
@@ -1000,28 +989,6 @@ checksum = "8ab22c8085548bf06190113dca556e149ecdbb05ae5b972a2b9899f26b944ee4"
 dependencies = [
  "quote 0.3.15",
  "syn 0.11.11",
-]
-
-[[package]]
-name = "env_filter"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "900d271a03799a1ee8d1ca9b19893b48ca674a9284fefcfb85f05e74ed314217"
-dependencies = [
- "log",
- "regex",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de671bd27a75a797dc9ae289ba1e77276e75e2026408aab65185384e2d5cd3f6"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "log",
 ]
 
 [[package]]
@@ -2903,7 +2870,6 @@ name = "snarkvm"
 version = "4.13.0"
 dependencies = [
  "anyhow",
- "bincode",
  "dotenvy",
  "rand",
  "rusty-hook",
@@ -3421,7 +3387,6 @@ name = "snarkvm-ledger"
 version = "4.13.0"
 dependencies = [
  "aleo-std",
- "aleo-std-storage",
  "anyhow",
  "bincode",
  "cfg-if",
@@ -3471,7 +3436,6 @@ dependencies = [
 name = "snarkvm-ledger-block"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "bincode",
  "indexmap 2.14.0",
@@ -3675,8 +3639,6 @@ dependencies = [
 name = "snarkvm-ledger-store"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
- "aleo-std-storage",
  "anyhow",
  "bincode",
  "indexmap 2.14.0",
@@ -3707,7 +3669,6 @@ dependencies = [
 name = "snarkvm-ledger-test-helpers"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "snarkvm-algorithms",
  "snarkvm-circuit",
@@ -3731,7 +3692,6 @@ dependencies = [
 name = "snarkvm-parameters"
 version = "4.13.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "cfg-if",
  "colored 3.1.1",
@@ -3749,7 +3709,6 @@ dependencies = [
  "snarkvm-circuit",
  "snarkvm-console",
  "snarkvm-curves",
- "snarkvm-ledger-block",
  "snarkvm-ledger-store",
  "snarkvm-synthesizer",
  "snarkvm-utilities",
@@ -3785,7 +3744,6 @@ dependencies = [
  "snarkvm-ledger-authority",
  "snarkvm-ledger-block",
  "snarkvm-ledger-committee",
- "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-narwhal-data",
  "snarkvm-ledger-narwhal-subdag",
  "snarkvm-ledger-puzzle",
@@ -3799,7 +3757,6 @@ dependencies = [
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",
  "tempfile",
- "test-log",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3853,7 +3810,6 @@ name = "snarkvm-synthesizer-program"
 version = "4.13.0"
 dependencies = [
  "bincode",
- "criterion",
  "enum-iterator",
  "indexmap 2.14.0",
  "k256",
@@ -3888,7 +3844,6 @@ dependencies = [
 name = "snarkvm-testchain-generator"
 version = "0.1.0"
 dependencies = [
- "aleo-std",
  "anyhow",
  "clap",
  "snarkvm-console",
@@ -3905,6 +3860,7 @@ dependencies = [
  "bincode",
  "colored 3.1.1",
  "criterion",
+ "dirs",
  "num-bigint",
  "rand",
  "rand_chacha",
@@ -3913,10 +3869,11 @@ dependencies = [
  "serde",
  "serde_json",
  "smol_str",
+ "snarkvm-utilities",
  "snarkvm-utilities-derives",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
- "tracing-test",
  "zeroize",
 ]
 
@@ -4090,38 +4047,6 @@ dependencies = [
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "test-log"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b9c218384242b5c89b68303ab6f6fc53a312d923f0c14dc6bb860c6aeee40f1"
-dependencies = [
- "env_logger",
- "test-log-macros",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "test-log-core"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c26ef8b00e4d382e59f6a8ddb3cd790b3a5bb29f21a358a9a69ea2f29f13f27b"
-dependencies = [
- "proc-macro2",
- "quote 1.0.47",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "test-log-macros"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "944ad38adcbb71eaa682c56bceeb079e4ca82b4b3edc2a0fde5cb297b77dac8d"
-dependencies = [
- "syn 2.0.119",
- "test-log-core",
 ]
 
 [[package]]

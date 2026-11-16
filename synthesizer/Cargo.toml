@@ -45,7 +45,6 @@ serial = [
   "snarkvm-synthesizer-program/serial",
   "snarkvm-synthesizer-snark/serial"
 ]
-setup = [ ]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
 timer = [ "aleo-std/timer" ]
@@ -136,7 +135,6 @@ workspace = true
 
 [dependencies.aleo-std]
 workspace = true
-features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -206,10 +204,6 @@ features = [ "filesystem" ]
 workspace = true
 features = [ "test-helpers" ]
 
-[dev-dependencies.snarkvm-ledger-narwhal-batch-header]
-workspace = true
-features = [ "test-helpers" ]
-
 [dev-dependencies.snarkvm-ledger-narwhal-subdag]
 workspace = true
 features = [ "test-helpers" ]
@@ -233,10 +227,6 @@ version = "0.9"
 
 [dev-dependencies.tempfile]
 workspace = true
-
-[dev-dependencies.test-log]
-version = "0.2"
-features = [ "trace" ]
 
 [dev-dependencies.walkdir]
 version = "2"

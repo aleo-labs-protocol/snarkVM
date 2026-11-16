@@ -943,10 +943,9 @@ mod tests {
     use console::prelude::TestRng;
     use snarkvm_ledger_store::{
         BlockStore,
+        StorageMode,
         helpers::memory::{BlockMemory, FinalizeMemory},
     };
-
-    use aleo_std::StorageMode;
 
     type CurrentNetwork = console::network::MainnetV0;
     type CurrentAleo = circuit::network::AleoV0;
