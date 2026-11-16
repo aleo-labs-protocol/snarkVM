@@ -19,11 +19,11 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, TwistedEdwardsParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, PrimeField, SquareRootField, Zero};
-use snarkvm_utilities::{FromBytes, ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
+use snarkvm_utilities::{ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
 
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
-    io::{Read, Result as IoResult, Write},
+    io::{Result as IoResult, Write},
     ops::{Mul, Neg},
 };
 
@@ -291,15 +291,6 @@ impl<P: Parameters> ToBytes for Affine<P> {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.x.write_le(&mut writer)?;
         self.y.write_le(&mut writer)
-    }
-}
-
-impl<P: Parameters> FromBytes for Affine<P> {
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read_le(&mut reader)?;
-        let y = P::BaseField::read_le(&mut reader)?;
-        Ok(Self::new(x, y, x * y))
     }
 }
 
