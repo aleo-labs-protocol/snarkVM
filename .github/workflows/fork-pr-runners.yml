@@ -3,11 +3,10 @@ name: fork-pr-runners
 # Starts the self-hosted boxes for a pull request from a fork, once a
 # maintainer has approved its run.
 #
-# A fork's `pull_request` run gets no secrets and no OIDC token, so its own
-# start-runner job is skipped and its fleet jobs would queue with no box. GitHub
-# runs this workflow from the default branch, with this repository's secrets.
-# A fork's run fires `requested` when it is created, before approval, and
-# `in_progress` when a maintainer approves it, so only `in_progress` is used.
+# A fork's `pull_request` run gets no secrets, so its own start-runner job is
+# skipped. GitHub runs this workflow from the default branch, with this
+# repository's secrets. A fork's run fires `requested` before approval and
+# `in_progress` after it.
 #
 # SECURITY: this workflow holds the runner role, which can change a box's user
 # data. It must never check out or run the pull request's code. It must never
