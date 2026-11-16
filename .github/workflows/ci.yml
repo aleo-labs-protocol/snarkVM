@@ -19,9 +19,11 @@ env:
   CARGO_TERM_COLOR: always
   RUST_MIN_STACK: 67108864
 
-# A pull request from a fork runs only once a maintainer approves it. Its run
-# gets no secrets, so start-cpu-runners is skipped and fork-pr-runners.yml
-# starts the boxes. The fleet jobs therefore accept a skipped start-cpu-runners.
+# GitHub holds an outside contributor's pull request run until a maintainer
+# approves it. A fork's run gets no secrets, so start-cpu-runners is skipped and
+# fork-pr-runners.yml starts the boxes. The fleet jobs therefore accept a
+# skipped start-cpu-runners, and run only in this repository, which alone may
+# use the fleet.
 #
 # A push runs CI only in this repository. A mirror receives this branch by
 # push, with this file, and would otherwise rerun CI on its own runners.
@@ -106,7 +108,7 @@ jobs:
     timeout-minutes: 90
     if: &fleet-if >-
       !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
-      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
+      github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -293,7 +295,7 @@ jobs:
     timeout-minutes: 90
     if: >-
       !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
-      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      github.repository == 'aleo-labs-protocol/snarkVM' &&
       (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     strategy:
       fail-fast: false
@@ -334,7 +336,7 @@ jobs:
     timeout-minutes: 120
     if: >-
       !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
-      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      github.repository == 'aleo-labs-protocol/snarkVM' &&
       (github.event_name == 'workflow_dispatch' ||
        startsWith(github.ref, 'refs/heads/release/') ||
        startsWith(github.base_ref, 'release/'))

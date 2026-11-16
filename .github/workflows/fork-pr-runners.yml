@@ -1,7 +1,8 @@
 name: fork-pr-runners
 
-# Starts the self-hosted boxes for a pull request from a fork, once a
-# maintainer has approved its run.
+# Starts the self-hosted boxes for a pull request from a fork when its run
+# starts. GitHub holds an outside contributor's run until a maintainer approves
+# it.
 #
 # A fork's `pull_request` run gets no secrets, so its own start-runner job is
 # skipped. GitHub runs this workflow from the default branch, with this

@@ -100,7 +100,7 @@ jobs:
       (github.event.pull_request == null ||
        github.event.pull_request.head.repo.full_name == github.repository)
 
-  # start-runners is skipped for an approved fork pull request, whose box
+  # start-runners is skipped for a fork pull request, whose box
   # fork-pr-runners.yml starts (see ci.yml), and when check-shared-refs fails.
   gpu-test:
     needs: [check-shared-refs, start-runners]
@@ -109,6 +109,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, gpu]
     if: >-
       !cancelled() && github.event_name != 'pull_request_target' &&
+      github.repository == 'aleo-labs-protocol/snarkVM' &&
       needs.check-shared-refs.result == 'success' &&
       contains(fromJSON('["success", "skipped"]'), needs.start-runners.result)
 
