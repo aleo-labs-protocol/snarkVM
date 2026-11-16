@@ -28,12 +28,25 @@ Trusted Publishing is a one-time crates.io setup for each published crate. Confi
 1. Open the crate on crates.io.
 2. Go to Settings, then Trusted Publishing.
 3. Select Add.
-4. Set Owner to `ProvableHQ`.
+4. Set Owner to `aleo-labs-protocol`.
 5. Set Repository to `snarkVM`.
 6. Set Workflow filename to `publish-crates.yml`.
 7. Leave Environment blank.
 
+The Owner must be the repository's current GitHub owner, because the workflow requests its publishing token under the `aleo-labs-protocol/snarkVM` identity. A crate enrolled under a previous owner does not match that identity.
+
 This setup is inherently per crate and should be scripted across the crate set. It does not mean release-plz creates per-crate tags at release time; `release-plz.toml` keeps GitHub tags and releases on the umbrella `snarkvm` crate only.
+
+## Before Enabling
+
+The push trigger matches any `Cargo.toml`, `release-plz.toml` or workflow edit on `staging`, including the commit that introduces this workflow. It does not check that the push is a workspace version bump. With release-plz's default `release_always = true`, every run publishes all eligible crate versions that are not yet on crates.io.
+
+Before this workflow first runs on `staging`, the crates.io owner should:
+
+1. Confirm the workspace version currently on `staging` is one that is intended to publish.
+2. Enroll Trusted Publishing for every published crate as described above.
+3. Resolve the tag collision and new crate bootstrap cases below.
+4. Run the dry run and confirm it lists the intended package and version set and a single `v{version}` tag.
 
 ## Tag Collisions
 
