@@ -2,6 +2,12 @@ name: CI
 
 on:
   pull_request:
+    # A pull request that changes only Markdown starts no run. The files under
+    # curves/documentation are compiled into snarkvm-curves, so they count as code.
+    paths:
+      - '**'
+      - '!**.md'
+      - 'curves/documentation/**'
   push:
     branches: [staging, 'release/**']
   workflow_dispatch:
