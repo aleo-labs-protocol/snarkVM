@@ -50,7 +50,7 @@ fn test_open_allocates_little_disk_space() {
     const MAX_ALLOCATED_BYTES: u64 = 1024 * 1024;
 
     let storage = StorageMode::new_test(None);
-    let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
+    let path = snarkvm_utilities::aleo_ledger_dir(0, &storage);
     let map = RocksDB::open_map(0, storage, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
 
     for i in 0..100u32 {
