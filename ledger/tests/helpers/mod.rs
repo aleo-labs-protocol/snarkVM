@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use aleo_std::StorageMode;
 use snarkvm_console::{
     account::{Address, PrivateKey},
     network::MainnetV0,
@@ -21,7 +20,7 @@ use snarkvm_console::{
 };
 use snarkvm_ledger::{Block, Ledger};
 use snarkvm_ledger_narwhal::{BatchCertificate, BatchHeader, Subdag};
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer::vm::VM;
 
 use indexmap::{IndexMap, IndexSet};

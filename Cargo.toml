@@ -439,10 +439,6 @@ version = "=4.13.0"
 [workspace.dependencies.aleo-std]
 version = "1.0.4"
 
-[workspace.dependencies.aleo-std-storage]
-default-features=false
-version = "1.0.4"
-
 [workspace.dependencies.anyhow]
 version = "1.0.73"
 features = ["backtrace"]

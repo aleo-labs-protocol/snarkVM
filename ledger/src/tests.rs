@@ -19,8 +19,8 @@ use crate::{
     advance::split_candidate_solutions,
     test_helpers::{CurrentAleo, CurrentLedger, CurrentNetwork, chain_builder::GenerateBlockOptions},
 };
+use snarkvm_ledger_store::StorageMode;
 
-use aleo_std::StorageMode;
 use console::{
     account::{Address, PrivateKey},
     network::{MainnetV0, prelude::*},

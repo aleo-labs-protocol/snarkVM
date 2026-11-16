@@ -23,8 +23,7 @@ use console::{
     prelude::{TestRng, Uniform},
     types::Scalar,
 };
-
-use aleo_std::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 // pub(crate) fn temp_file() -> std::path::PathBuf {
 //     tempfile::NamedTempFile::new().expect("Failed to open temporary file").path().to_owned()
