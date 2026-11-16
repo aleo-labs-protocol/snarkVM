@@ -92,9 +92,6 @@ features = [ "storage" ]
 [dev-dependencies.criterion]
 workspace = true
 
-[dev-dependencies.tracing-test]
-workspace = true
-
 [features]
 default = [ "derive" ]
 derive = [ "snarkvm-utilities-derives" ]
