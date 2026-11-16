@@ -61,7 +61,7 @@ fn test_dynamic_contains() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -328,7 +328,7 @@ fn test_dynamic_get() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -810,7 +810,7 @@ fn test_dynamic_get_or_use() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -1242,7 +1242,7 @@ constructor:
 fn test_get_dynamic_empty_mapping() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     let vm = crate::vm::test_helpers::sample_vm_at_height(
         CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(),
@@ -1361,7 +1361,7 @@ fn test_get_dynamic_empty_mapping() {
 fn test_contains_dynamic_with_array_keys() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     let vm = crate::vm::test_helpers::sample_vm_at_height(
         CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(),
@@ -1604,7 +1604,7 @@ fn test_dynamic_get_rejects_invalid_program_ids() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();

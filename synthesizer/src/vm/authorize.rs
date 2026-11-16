@@ -28,7 +28,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         inputs: impl IntoIterator<IntoIter = impl ExactSizeIterator<Item = impl TryInto<Value<N>>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, VmAuthError> {
-        let timer = timer!("VM::authorize");
+        let timer = timing_span!("VM::authorize").entered();
 
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
@@ -44,11 +44,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .map_err(|_| anyhow!("Failed to parse input #{index} for '{program_id}/{function_name}'"))
             })
             .collect::<Result<Vec<_>>>()?;
-        lap!(timer, "Prepare inputs");
+        timing_event!("Prepare inputs");
 
         // Authorize the call.
         let result = self.authorize_raw(private_key, program_id, function_name, inputs, rng);
-        finish!(timer, "Authorize the call");
+        timing_event!("Authorize the call");
+        drop(timer);
         result
     }
 
@@ -81,9 +82,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Compute the authorization.
-        let timer = timer!("VM::authorize_fee_private");
+        let timer = timing_span!("VM::authorize_fee_private").entered();
         let result = process!(self, logic);
-        finish!(timer, "Compute the authorization");
+        timing_event!("Compute the authorization");
+        drop(timer);
         result
     }
 
@@ -113,9 +115,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Compute the authorization.
-        let timer = timer!("VM::authorize_fee_public");
+        let timer = timing_span!("VM::authorize_fee_public").entered();
         let result = process!(self, logic);
-        finish!(timer, "Compute the authorization");
+        timing_event!("Compute the authorization");
+        drop(timer);
         result
     }
 }
@@ -147,9 +150,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Compute the authorization.
-        let timer = timer!("VM::authorize_raw");
+        let timer = timing_span!("VM::authorize_raw").entered();
         let result = process!(self, logic);
-        finish!(timer, "Compute the authorization");
+        timing_event!("Compute the authorization");
+        drop(timer);
         result
     }
 }

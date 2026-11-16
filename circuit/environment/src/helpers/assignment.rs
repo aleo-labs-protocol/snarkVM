@@ -110,6 +110,8 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
 
         // Allocate the public variables.
         // NOTE: we skip the first public `One` variable because we already allocated it in the `ConstraintSystem` constructor.
+        // The first assertion in the loop makes `index` equal to `i + 1`, which is a `usize`.
+        #[allow(clippy::cast_possible_truncation)]
         for (i, variable) in self.public.iter().skip(1).enumerate() {
             let (index, value) = variable.index_value();
             assert_eq!((i + 1) as u64, index, "Public vars in first system must be processed in lexicographic order");
@@ -155,6 +157,8 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
                                     "Failed during constraint translation. The first system by definition cannot have constant variables in the terms"
                                 )
                             }
+                            // The assertion bounds `index` by the length of `self.public`.
+                            #[allow(clippy::cast_possible_truncation)]
                             Variable::Public(index_value) => {
                                 let (index, _) = index_value.as_ref();
                                 assert!(
@@ -163,6 +167,8 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
                                 );
                                 snarkvm_algorithms::r1cs::Index::Public(*index as usize)
                             }
+                            // The assertion bounds `index` by the length of `self.private`.
+                            #[allow(clippy::cast_possible_truncation)]
                             Variable::Private(index_value) => {
                                 let (index, _) = index_value.as_ref();
                                 assert!(
@@ -540,7 +546,8 @@ mod tests {
             let public: Vec<_> = assignment.public_inputs().iter().map(Variable::value).collect();
             let mut private: Vec<_> = assignment.private_inputs().iter().map(Variable::value).collect();
             for (index, value) in private_values {
-                private[index as usize] = value;
+                // Note: `unwrap()` is safe as the index is in bounds for `private`.
+                private[usize::try_from(index).unwrap()] = value;
             }
             if cs.is_satisfied(&public, &private) {
                 satisfied.push(claim);

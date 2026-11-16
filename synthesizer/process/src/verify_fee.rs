@@ -27,7 +27,7 @@ impl<N: Network> Process<N> {
         fee: &Fee<N>,
         deployment_or_execution_id: Field<N>,
     ) -> Result<()> {
-        let timer = timer!("Process::verify_fee");
+        let timer = timing_span!("Process::verify_fee").entered();
 
         // Retrieve the stack.
         let stack = self.get_stack(fee.program_id())?;
@@ -92,14 +92,15 @@ impl<N: Network> Process<N> {
         if candidate_id != deployment_or_execution_id {
             bail!("Incorrect deployment or execution ID in the fee transition")
         }
-        lap!(timer, "Verify the deployment or execution ID");
+        timing_event!("Verify the deployment or execution ID");
 
         // Verify the fee transition is well-formed.
         match is_fee_private {
             true => self.verify_fee_private(consensus_version, varuna_version, inclusion_version, &fee)?,
             false => self.verify_fee_public(varuna_version, inclusion_version, &fee)?,
         }
-        finish!(timer, "Verify the fee transition");
+        timing_event!("Verify the fee transition");
+        drop(timer);
         Ok(())
     }
 }
@@ -113,7 +114,7 @@ impl<N: Network> Process<N> {
         inclusion_version: InclusionVersion,
         fee: &&Fee<N>,
     ) -> Result<()> {
-        let timer = timer!("Process::verify_fee_private");
+        let timer = timing_span!("Process::verify_fee_private").entered();
 
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
@@ -132,7 +133,7 @@ impl<N: Network> Process<N> {
         if fee.inputs().iter().enumerate().any(|(index, input)| !input.verify(function_id, fee.tcm(), index)) {
             bail!("Failed to verify a fee input")
         }
-        lap!(timer, "Verify the inputs");
+        timing_event!("Verify the inputs");
 
         // Ensure the number of outputs is correct.
         ensure!(
@@ -162,7 +163,7 @@ impl<N: Network> Process<N> {
                 bail!("Failed to verify a fee output")
             }
         }
-        lap!(timer, "Verify the outputs");
+        timing_event!("Verify the outputs");
 
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
@@ -182,7 +183,7 @@ impl<N: Network> Process<N> {
         inputs.extend([*Field::<N>::one(), *parent_x, *parent_y]);
         // Extend the inputs with the output IDs.
         inputs.extend(fee.outputs().iter().flat_map(|output| output.verifier_inputs()));
-        lap!(timer, "Construct the verifier inputs");
+        timing_event!("Construct the verifier inputs");
 
         dev_println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
@@ -191,7 +192,8 @@ impl<N: Network> Process<N> {
 
         // Ensure the fee proof is valid.
         Trace::verify_fee_proof(varuna_version, inclusion_version, (verifying_key, vec![inputs]), fee)?;
-        finish!(timer, "Verify the fee proof");
+        timing_event!("Verify the fee proof");
+        drop(timer);
         Ok(())
     }
 
@@ -203,7 +205,7 @@ impl<N: Network> Process<N> {
         inclusion_version: InclusionVersion,
         fee: &&Fee<N>,
     ) -> Result<()> {
-        let timer = timer!("Process::verify_fee_public");
+        let timer = timing_span!("Process::verify_fee_public").entered();
 
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
@@ -222,7 +224,7 @@ impl<N: Network> Process<N> {
         if fee.inputs().iter().enumerate().any(|(index, input)| !input.verify(function_id, fee.tcm(), index)) {
             bail!("Failed to verify a fee input")
         }
-        lap!(timer, "Verify the inputs");
+        timing_event!("Verify the inputs");
 
         // Ensure there is one output.
         ensure!(
@@ -239,7 +241,7 @@ impl<N: Network> Process<N> {
         {
             bail!("Failed to verify a fee output")
         }
-        lap!(timer, "Verify the outputs");
+        timing_event!("Verify the outputs");
 
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
@@ -259,7 +261,7 @@ impl<N: Network> Process<N> {
         inputs.extend([*Field::<N>::one(), *parent_x, *parent_y]);
         // Extend the inputs with the output IDs.
         inputs.extend(fee.outputs().iter().flat_map(|output| output.verifier_inputs()));
-        lap!(timer, "Construct the verifier inputs");
+        timing_event!("Construct the verifier inputs");
 
         dev_println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
@@ -268,7 +270,8 @@ impl<N: Network> Process<N> {
 
         // Ensure the fee proof is valid.
         Trace::verify_fee_proof(varuna_version, inclusion_version, (verifying_key, vec![inputs]), fee)?;
-        finish!(timer, "Verify the fee proof");
+        timing_event!("Verify the fee proof");
+        drop(timer);
         Ok(())
     }
 }
