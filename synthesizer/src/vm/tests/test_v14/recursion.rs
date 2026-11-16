@@ -80,7 +80,7 @@ fn test_fibonacci() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -158,7 +158,7 @@ fn test_recursive_dynamic_record_calls() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
@@ -575,7 +575,7 @@ constructor:
 fn test_same_program_dynamic_record_security() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 

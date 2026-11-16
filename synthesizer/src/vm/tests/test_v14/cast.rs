@@ -103,7 +103,7 @@ fn test_circuit_dynamic_record_from_record() {
 fn test_cast_simple() {
     let mut rng = TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(&mut rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 

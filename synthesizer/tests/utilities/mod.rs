@@ -20,6 +20,7 @@
 //! Tests should also be separated into different directories depending on the type of test.
 //!
 //! When the `TEST_FILTER` environment variable is set, then only the tests whose filenames match the filter are run.
+//! When the `TEST_WORKERS` environment variable is set, then `test_vm_execute_and_finalize` runs that many test files at once.
 //! When the `REWRITE_EXPECTATIONS` environment variable is set, then the expectation files are rewritten.
 //! Otherwise, the output is compared against the expectation files.
 

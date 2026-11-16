@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> MulWrapped<Self> for Integer<E, I> {
 
     #[inline]
     fn mul_wrapped(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the product and return the new constant.
@@ -33,24 +36,24 @@ impl<E: Environment, I: IntegerType> MulWrapped<Self> for Integer<E, I> {
             // Babbage involves three multiplication, same as Karatsuba.
             // For integers with size less than 128, this algorithm saves approximately 0.5 * I::BITS
             // constraints compared to a field multiplication.
-            let x_1 = Field::from_bits_le(&self.bits_le[(I::BITS as usize / 2)..]);
-            let x_0 = Field::from_bits_le(&self.bits_le[..(I::BITS as usize / 2)]);
-            let y_1 = Field::from_bits_le(&other.bits_le[(I::BITS as usize / 2)..]);
-            let y_0 = Field::from_bits_le(&other.bits_le[..(I::BITS as usize / 2)]);
+            let x_1 = Field::from_bits_le(&self.bits_le[(i_bits / 2)..]);
+            let x_0 = Field::from_bits_le(&self.bits_le[..(i_bits / 2)]);
+            let y_1 = Field::from_bits_le(&other.bits_le[(i_bits / 2)..]);
+            let y_0 = Field::from_bits_le(&other.bits_le[..(i_bits / 2)]);
 
             let z_0 = &x_0 * &y_0;
             let z_1 = (&x_1 * &y_0) + (&x_0 * &y_1);
 
-            let mut b_m_bits = vec![Boolean::constant(false); I::BITS as usize / 2];
+            let mut b_m_bits = vec![Boolean::constant(false); i_bits / 2];
             b_m_bits.push(Boolean::constant(true));
 
             let b_m = Field::from_bits_le(&b_m_bits);
             let z_0_plus_scaled_z_1 = &z_0 + (&z_1 * &b_m);
 
-            let mut bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(I::BITS as usize + I::BITS as usize / 2 + 1);
+            let mut bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(i_bits + i_bits / 2 + 1);
 
             // Remove any carry bits.
-            bits_le.truncate(I::BITS as usize);
+            bits_le.truncate(i_bits);
 
             // Return the product of `self` and `other`, without the carry bits.
             Integer { bits_le, phantom: Default::default() }
