@@ -25,7 +25,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_par_bridge, cfg_reduce};
+use snarkvm_utilities::{cfg_par_bridge, cfg_reduce, timing_span};
 
 use itertools::Itertools;
 use rand::Rng;
@@ -45,13 +45,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         state: prover::State<'_, F, SM>,
         _r: &mut R,
     ) -> Result<prover::FifthOracles<F>, AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::FifthRound");
+        let round_time = timing_span!("AHP::Prover::FifthRound").entered();
 
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         if let Some(h_2) = Self::h_2_on_device(&verifier_message, &state) {
             let oracles = prover::FifthOracles { h_2 };
             assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
-            end_timer!(round_time);
+            drop(round_time);
             return Ok(oracles);
         }
 
@@ -74,7 +74,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let oracles = prover::FifthOracles { h_2 };
         assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
 
-        end_timer!(round_time);
+        drop(round_time);
         Ok(oracles)
     }
 

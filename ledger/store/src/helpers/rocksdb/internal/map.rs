@@ -677,8 +677,8 @@ mod tests {
         account::{Address, FromStr},
         network::MainnetV0,
     };
+    use snarkvm_utilities::StorageMode;
 
-    use aleo_std::StorageMode;
     use anyhow::{anyhow, bail};
     use tracing_test::traced_test;
 

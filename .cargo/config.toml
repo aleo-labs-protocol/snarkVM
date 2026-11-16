@@ -1,3 +1,4 @@
-# Note: override by setting RUSTFLAGS
-[target.'cfg(not(target_family = "wasm"))']
-rustflags = ["-C", "target-cpu=native"]
+# x86-64 builds need a Skylake or Zen CPU, or newer; on an older one they fail
+# with SIGILL. RUSTFLAGS overrides this, e.g. RUSTFLAGS="-C target-cpu=native".
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "target-cpu=skylake"]

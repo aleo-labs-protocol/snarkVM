@@ -86,8 +86,8 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
+use snarkvm_utilities::{timing_event, timing_span};
 
-use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
