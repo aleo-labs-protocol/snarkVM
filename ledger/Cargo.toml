@@ -252,5 +252,5 @@ workspace = true
 features = [ "test" ]
 
 [dev-dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter", "std" ]

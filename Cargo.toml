@@ -548,6 +548,9 @@ version = "0.3"
 [workspace.dependencies.tracing]
 version = "0.1"
 
+[workspace.dependencies.tracing-subscriber]
+version = "0.3"
+
 [workspace.dependencies.tracing-test]
 version = "0.2.5"
 

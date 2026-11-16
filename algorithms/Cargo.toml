@@ -137,7 +137,7 @@ features = [ "preserve_order" ]
 workspace = true
 
 [dev-dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 features = [ "env-filter" ]
 
 [features]

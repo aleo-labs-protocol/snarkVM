@@ -179,7 +179,7 @@ features = [ "sync" ]
 workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 
 [dev-dependencies.anyhow]
 workspace = true
