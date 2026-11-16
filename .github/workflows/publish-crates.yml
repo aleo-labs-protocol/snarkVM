@@ -54,6 +54,7 @@ jobs:
     name: Publish
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
     runs-on: ubuntu-latest
+    environment: crates-io
     permissions:
       contents: write
       pull-requests: read
@@ -69,7 +70,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          if [ "${{ github.ref_name }}" != "staging" ]; then
+          if [ "$GITHUB_REF" != "refs/heads/staging" ]; then
             echo "::error::Manual crate publishing must run from staging."
             exit 1
           fi

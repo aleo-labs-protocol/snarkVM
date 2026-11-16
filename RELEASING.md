@@ -31,7 +31,9 @@ Trusted Publishing is a one-time crates.io setup for each published crate. Confi
 4. Set Owner to `aleo-labs-protocol`.
 5. Set Repository to `snarkVM`.
 6. Set Workflow filename to `publish-crates.yml`.
-7. Leave Environment blank.
+7. Set Environment to `crates-io`.
+
+The `publish` job runs in the `crates-io` GitHub environment. In the repository's Settings, then Environments, restrict `crates-io` deployment branches to `staging`. With the environment set on crates.io, a copy of the workflow run from another branch cannot obtain a publishing token.
 
 The Owner must be the repository's current GitHub owner, because the workflow requests its publishing token under the `aleo-labs-protocol/snarkVM` identity. A crate enrolled under a previous owner does not match that identity.
 
@@ -44,7 +46,7 @@ The push trigger matches any `Cargo.toml`, `release-plz.toml` or workflow edit o
 Before this workflow first runs on `staging`, the crates.io owner should:
 
 1. Confirm the workspace version currently on `staging` is one that is intended to publish.
-2. Enroll Trusted Publishing for every published crate as described above.
+2. Enroll Trusted Publishing for every published crate and restrict the `crates-io` environment to `staging` as described above.
 3. Resolve the tag collision and new crate bootstrap cases below.
 4. Run the dry run and confirm it lists the intended package and version set and a single `v{version}` tag.
 
