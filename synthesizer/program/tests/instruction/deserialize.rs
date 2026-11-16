@@ -262,3 +262,69 @@ macro_rules! test_deserialize {
 
 test_deserialize!(deserialize_bits, DeserializeBits, FromBits, ITERATIONS);
 test_deserialize!(deserialize_bits_raw, DeserializeBitsRaw, FromBitsRaw, ITERATIONS);
+
+#[test]
+fn test_deserialize_rejects_wrong_operand_length() {
+    // Struct definitions are not supported.
+    let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
+    let fail_get_external_struct = |_: &Locator<CurrentNetwork>| bail!("structs are not supported");
+
+    // Returns a program that deserializes `function_bits` bits into `type_` in the function scope
+    // and `finalize_bits` bits into `type_` in the finalize scope.
+    let program =
+        |opcode: Opcode, type_: &PlaintextType<CurrentNetwork>, function_bits: usize, finalize_bits: usize| {
+            Program::<CurrentNetwork>::from_str(&format!(
+                "program testing.aleo;
+            function run:
+                input r0 as [boolean; {function_bits}u32].public;
+                input r1 as [boolean; {finalize_bits}u32].public;
+                {opcode} r0 ([boolean; {function_bits}u32]) into r2 ({type_});
+                async run r1 into r3;
+                output r3 as testing.aleo/run.future;
+            finalize run:
+                input r0 as [boolean; {finalize_bits}u32].public;
+                {opcode} r0 ([boolean; {finalize_bits}u32]) into r1 ({type_});
+            "
+            ))
+            .unwrap()
+        };
+
+    for (variant, opcode) in [
+        (DeserializeVariant::FromBits, DeserializeBits::<CurrentNetwork>::opcode()),
+        (DeserializeVariant::FromBitsRaw, DeserializeBitsRaw::<CurrentNetwork>::opcode()),
+    ] {
+        for type_ in test_types(variant.clone()) {
+            // Get the size in bits.
+            let size_in_bits = match variant {
+                DeserializeVariant::FromBits => {
+                    type_.size_in_bits(&fail_get_struct, &fail_get_external_struct).unwrap()
+                }
+                DeserializeVariant::FromBitsRaw => {
+                    type_.size_in_bits_raw(&fail_get_struct, &fail_get_external_struct).unwrap()
+                }
+            };
+
+            // Check that the correct length is accepted.
+            let correct = program(opcode, &type_, size_in_bits, size_in_bits);
+            assert!(
+                Stack::new(shared_process(), &correct).is_ok(),
+                "'{opcode}' should accept {size_in_bits} bits as '{type_}'"
+            );
+
+            // Check that a wrong length is rejected in either scope.
+            let wrong_lengths = [size_in_bits - 1, size_in_bits + 1].into_iter().filter(|length| *length > 0);
+            for wrong_bits in wrong_lengths {
+                for (function_bits, finalize_bits) in [(wrong_bits, size_in_bits), (size_in_bits, wrong_bits)] {
+                    let wrong = program(opcode, &type_, function_bits, finalize_bits);
+                    let error = Stack::new(shared_process(), &wrong)
+                        .err()
+                        .unwrap_or_else(|| panic!("'{opcode}' should reject {wrong_bits} bits as '{type_}'"));
+                    assert!(
+                        format!("{error:?}").contains("does not match the destination"),
+                        "'{opcode}' rejected {wrong_bits} bits as '{type_}' for an unexpected reason: {error:?}"
+                    );
+                }
+            }
+        }
+    }
+}
