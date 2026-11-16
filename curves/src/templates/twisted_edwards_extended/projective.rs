@@ -33,20 +33,15 @@ use rand::{
 
 #[derive(Copy, Clone, Debug)]
 pub struct Projective<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
-    pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
-    pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
-    pub t: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "convert with `to_affine`")]
-    pub z: P::BaseField,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) t: P::BaseField,
+    pub(crate) z: P::BaseField,
 }
 
 impl<P: Parameters> Projective<P> {
     #[inline]
-    #[deprecated(since = "4.13.0", note = "convert from `Affine`")]
-    pub const fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField, z: P::BaseField) -> Self {
+    pub(crate) const fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField, z: P::BaseField) -> Self {
         Self { x, y, t, z }
     }
 }

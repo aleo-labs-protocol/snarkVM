@@ -194,22 +194,31 @@ mod tests {
         }
     }
 
+    /// Returns `point` with its Edwards `t` coordinate replaced by a random value.
+    fn forge_t(point: Affine, rng: &mut TestRng) -> Result<Affine> {
+        let (x, y) = (point.to_x_coordinate(), point.to_y_coordinate());
+        // `Affine` serializes as the tuple of its coordinates `(x, y, t)`.
+        assert_eq!(bincode::serialize(&point)?, bincode::serialize(&(x, y, x * y))?);
+        let forged: Affine = bincode::deserialize(&bincode::serialize(&(x, y, BaseField::rand(rng)))?)?;
+        assert_eq!((x, y), (forged.to_x_coordinate(), forged.to_y_coordinate()));
+        assert_ne!(point, forged);
+        Ok(forged)
+    }
+
     #[test]
-    #[allow(deprecated)]
-    fn test_try_new_ignores_a_forged_t() {
+    fn test_try_new_ignores_a_forged_t() -> Result<()> {
         let mut rng = TestRng::default();
 
         let order_two = Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one()));
         for _ in 0..ITERATIONS {
             let element = Group::<CurrentEnvironment>::rand(&mut rng);
-            let point = element.to_affine();
-            let forged = Affine::new(point.to_x_coordinate(), point.to_y_coordinate(), BaseField::rand(&mut rng));
-            assert_eq!(element, Group::try_new(forged).unwrap());
+            let forged = forge_t(element.to_affine(), &mut rng)?;
+            assert_eq!(element, Group::try_new(forged)?);
 
-            let point = element.add_mixed(&order_two).to_affine();
-            let forged = Affine::new(point.to_x_coordinate(), point.to_y_coordinate(), BaseField::rand(&mut rng));
+            let forged = forge_t(element.add_mixed(&order_two).to_affine(), &mut rng)?;
             assert!(Group::<CurrentEnvironment>::try_new(forged).is_err());
         }
+        Ok(())
     }
 
     #[test]
