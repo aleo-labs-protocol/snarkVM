@@ -19,8 +19,10 @@ env:
   CARGO_TERM_COLOR: always
   RUST_MIN_STACK: 67108864
 
-# Every self-hosted job carries the same guard: a fork's code never runs on
-# the fleet, whose target dirs and sccache persist between jobs.
+# A pull request from a fork runs only once a maintainer approves it, and then
+# runs on the fleet like any other. Its run gets no secrets, so
+# start-cpu-runners is skipped and fork-pr-runners.yml starts the boxes. The
+# fleet jobs therefore run when start-cpu-runners succeeded or was skipped.
 #
 # A push runs CI only in this repository. A mirror receives this branch by
 # push, with this file, and would otherwise rerun CI on its own runners.
@@ -103,8 +105,8 @@ jobs:
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: >-
-      github.event.pull_request == null ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -133,8 +135,8 @@ jobs:
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: >-
-      github.event.pull_request == null ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     strategy:
       fail-fast: false
       matrix:
@@ -239,8 +241,7 @@ jobs:
         if: runner.environment == 'github-hosted' && (github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/'))
         with: *aleo-resources
 
-  # The cheap entries, on hosted runners: they wait for no box, and a fork's
-  # pull request runs them too.
+  # The cheap entries, on hosted runners: they wait for no box.
   test-hosted:
     permissions: { contents: read, actions: write }
     runs-on: ${{ matrix.os }}
@@ -293,9 +294,9 @@ jobs:
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: >-
-      github.event_name != 'pull_request' ||
-      (startsWith(github.base_ref, 'release/') &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     strategy:
       fail-fast: false
       matrix:
@@ -334,10 +335,11 @@ jobs:
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 120
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.ref, 'refs/heads/release/') ||
-      (startsWith(github.base_ref, 'release/') &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/heads/release/') ||
+       startsWith(github.base_ref, 'release/'))
     strategy:
       fail-fast: false
       matrix:
@@ -433,10 +435,9 @@ jobs:
         working-directory: ${{ matrix.dir }}
 
   # The one check to require. A skipped job counts as passing a required check,
-  # and a fleet job is skipped when the boxes fail to start or the pull request
-  # comes from a fork; here anything but success fails. The exception is a
-  # merge or release job skipped outside a release branch, where it is not
-  # meant to run.
+  # and a fleet job is skipped when the boxes fail to start; here anything but
+  # success fails. The exception is a merge or release job skipped outside a
+  # release branch, where it is not meant to run.
   ci-ok:
     if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, test-release-arm, machete, windows]

@@ -100,15 +100,19 @@ jobs:
       (github.event.pull_request == null ||
        github.event.pull_request.head.repo.full_name == github.repository)
 
+  # A pull request from a fork runs only once a maintainer approves it. Its run
+  # gets no secrets, so start-runners is skipped and fork-pr-runners.yml starts
+  # the box. check-shared-refs is named here because start-runners is also
+  # skipped when that job fails.
   gpu-test:
-    needs: start-runners
+    needs: [check-shared-refs, start-runners]
     # The runner stays registered while stopped, so the job queues rather than
     # fails.
     runs-on: [self-hosted, linux, x64, gpu]
     if: >-
-      github.event_name != 'pull_request_target' &&
-      (github.event.pull_request == null ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+      !cancelled() && github.event_name != 'pull_request_target' &&
+      needs.check-shared-refs.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.start-runners.result)
 
     timeout-minutes: 120
     env:
