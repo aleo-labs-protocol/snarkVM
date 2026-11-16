@@ -186,12 +186,13 @@ impl<P: Parameters> AffineCurve for Affine<P> {
 
     /// Uses a sliding window of up to `WINDOW` bits over the odd multiples `self, 3 * self, 5 * self, ...`.
     /// Runs in variable time.
+    ///
+    /// On off-curve points, the operation sequence decides which casts panic in deployment synthesis, which is
+    /// consensus behavior. See `PANICKING_X` in the tests of the circuit `Group::from_x_coordinate`.
     #[inline]
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Projective<P> {
         const WINDOW: usize = 4;
-        let mut buffer = Vec::with_capacity(bits.size_hint().0);
-        buffer.extend(bits.skip_while(|bit| !bit));
-        let bits = buffer;
+        let bits: Vec<bool> = bits.skip_while(|bit| !bit).collect();
         let base = self.to_projective();
         let double = base.double();
         let mut table = [base; 1 << (WINDOW - 1)];
