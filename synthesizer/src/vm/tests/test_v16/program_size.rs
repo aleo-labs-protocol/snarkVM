@@ -60,7 +60,7 @@ fn test_deploy_large_program_v16() {
     println!("Generated large program size: {} bytes", large_program_str.len());
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V15 height.
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
@@ -101,7 +101,7 @@ fn test_deploy_large_program_v16_serialization() {
     println!("Generated large program size: {} bytes", large_program_str.len());
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V15 height.
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();

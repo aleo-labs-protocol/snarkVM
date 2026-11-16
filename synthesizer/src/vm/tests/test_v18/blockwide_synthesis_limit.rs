@@ -138,7 +138,7 @@ fn test_blockwide_synthesis_limit() {
     }
 
     let vm = sample_vm_at_height(v19_height.saturating_sub(1).max(v18_height.saturating_sub(1)), rng);
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     // Set to true to print the combined density of each individual deployment.
     let verbose = false;
@@ -289,7 +289,7 @@ fn test_vk_num_non_zero_detected() {
 
     let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
     let vm = sample_vm_at_height(v18_height, rng);
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     let cases = vec![("function", 1), ("function", 2), ("function", 4), ("function", 8), ("record", 1)];
     for (i, (program_type, multiplier)) in cases.into_iter().enumerate() {

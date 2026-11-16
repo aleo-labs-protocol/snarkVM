@@ -41,7 +41,7 @@ fn test_constructor_requires_v9() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)? - 2, rng);
@@ -137,7 +137,7 @@ fn test_simple_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -283,7 +283,7 @@ fn test_editions_are_sequential() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize two VMs at V9 (required for constructor support).
     let off_chain_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -409,7 +409,7 @@ fn test_upgrade_with_records() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
     // Initialize the VM.
@@ -592,7 +592,7 @@ fn test_upgrade_with_mappings() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -806,7 +806,7 @@ fn test_upgrade_with_dependents() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -1098,7 +1098,7 @@ fn test_failing_init_block() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -1156,7 +1156,7 @@ fn test_anyone_can_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize unrelated callers.
     let unrelated_caller_private_key_0 = PrivateKey::new(rng)?;
@@ -1259,7 +1259,7 @@ fn test_non_upgradable_programs() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -1308,7 +1308,7 @@ fn test_downgrade_upgradable_program() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -1422,7 +1422,7 @@ fn test_lock_upgrade_to_checksum() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the VM.
@@ -1638,7 +1638,7 @@ fn test_upgrade_without_changing_contents_passes() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
@@ -1703,7 +1703,7 @@ fn test_credits_is_not_upgradable() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(), rng);
@@ -1723,7 +1723,7 @@ fn test_existing_programs_cannot_be_upgraded() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)? - 2, rng);
@@ -1833,7 +1833,7 @@ fn test_simple_admin_upgrade() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM.
@@ -1927,7 +1927,7 @@ fn test_verification_cache() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).unwrap(), rng);
@@ -2010,7 +2010,7 @@ fn test_program_deployed_before_v9_do_not_have_owner() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM.
@@ -2076,7 +2076,7 @@ fn test_old_execution_is_aborted_after_upgrade() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(), rng);
@@ -2159,7 +2159,7 @@ fn test_credits_executions() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM.
@@ -2228,11 +2228,11 @@ fn test_cyclic_imports_and_call_graphs() {
 
     // Initialize the VM.
     let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone()).unwrap();
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     vm.add_next_block(&genesis).unwrap();
 
     // Get the genesis private key.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Advance the VM to `ConsensusVersion::V9`.
     advance_vm_to_height(
@@ -2471,7 +2471,7 @@ fn test_upgrade_after_block_height() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM at the V9 height.
     let vm: crate::VM<CurrentNetwork, LedgerType> =
@@ -2544,7 +2544,7 @@ fn test_upgrade_and_execute_in_same_block() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V9 height.
     let v9_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap();
@@ -2772,7 +2772,7 @@ fn test_upgrade_and_upgrade_in_same_block() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V9 height.
     let v9_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap();
@@ -3004,7 +3004,7 @@ fn test_upgradable_program_with_pre_v9_dependency() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM one block before the V9 height.
     let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap() - 1;
@@ -3132,11 +3132,11 @@ fn test_upgrade_beyond_max_transition_depth() {
 
     // Initialize the VM.
     let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone()).unwrap();
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     vm.add_next_block(&genesis).unwrap();
 
     // Get the genesis private key.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Advance the VM to `ConsensusVersion::V9`.
     advance_vm_to_height(
@@ -3368,11 +3368,11 @@ fn test_upgrade_child_program_beyond_transaction_spend_limit() {
 
     // Initialize the VM.
     let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone()).unwrap();
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     vm.add_next_block(&genesis).unwrap();
 
     // Get the genesis private key.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Advance the VM to `ConsensusVersion::V9`.
     advance_vm_to_height(

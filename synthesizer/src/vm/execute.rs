@@ -316,20 +316,18 @@ mod tests {
     #[cfg(feature = "rocks")]
     type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
-    fn prepare_vm(
-        rng: &mut TestRng,
-    ) -> Result<(
+    fn prepare_vm() -> Result<(
         VM<CurrentNetwork, LedgerType>,
         IndexMap<Field<CurrentNetwork>, Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
     )> {
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
 
         // Fetch the unspent records.
         let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
 
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
@@ -344,12 +342,12 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let withdrawal_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let withdrawal_address = Address::try_from(&withdrawal_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -384,13 +382,13 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let validator_address = Address::try_from(&validator_private_key).unwrap();
         let delegator_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let delegator_address = Address::try_from(&delegator_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -435,7 +433,7 @@ mod tests {
         let inputs = &[recipient_address.to_string(), format!("{transfer_public_amount}_u64")];
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
 
@@ -459,11 +457,11 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -497,10 +495,10 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Deploy a nested program to test the finalize cost cache
         let program = Program::from_str(
@@ -572,7 +570,7 @@ finalize test:
             &[validator_address.to_string(), withdrawal_address.to_string(), format!("{bond_public_amount}_u64")];
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
 
@@ -589,11 +587,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -627,12 +625,12 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent record.
         let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
@@ -666,11 +664,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -700,11 +698,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new signer.
-        let signer = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let signer = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&signer).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -735,11 +733,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent records.
         let mut records = records.values();
@@ -773,11 +771,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent record.
         let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
@@ -854,10 +852,10 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Construct the child program.
         let child_program = Program::from_str(
@@ -1020,23 +1018,15 @@ finalize test:
     }
 
     #[test]
-    #[ignore = "memory-intensive"]
     fn test_deep_nested_execution_cost() {
         // Initialize an RNG.
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM.
-        let (vm, _) = prepare_vm(rng).unwrap();
-
-        // Forward the chain to block 13:
-        for _i in 1..13 {
-            let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
-
-            vm.add_next_block(&next_block).unwrap();
-        }
+        let (vm, _) = prepare_vm().unwrap();
 
         // Construct the base program.
         let base_program = Program::from_str(
@@ -1061,14 +1051,9 @@ constructor:
         )
         .unwrap();
 
-        // Deploy the program.
-        let transaction = vm.deploy(&caller_private_key, &base_program, None, 0, None, rng).unwrap();
-
-        // Construct the next block.
-        let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
+        // Add the program to the process.
+        // The program is well-formed and has no imports, so adding it does not fail.
+        vm.process().lock().add_program(&base_program).unwrap();
 
         // Initialize programs up to the maximum depth.
         for i in 2..=Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1 {
@@ -1102,32 +1087,31 @@ constructor:
             ))
             .unwrap();
 
-            // Deploy the program.
-            let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-
-            // Construct the next block.
-            let next_block =
-                crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-            // Add the next block to the VM.
-            vm.add_next_block(&next_block).unwrap();
+            // Add the program to the process.
+            // The program is well-formed and its imports are in the process, so adding it does not fail.
+            vm.process().lock().add_program(&program).unwrap();
         }
 
-        // Execute the program.
-        let Transaction::Execute(_, _, execution, _) = vm
-            .execute(
+        // Authorize the program.
+        // The program is in the process and the inputs match its signature, so authorizing it does not fail.
+        let authorization = vm
+            .authorize(
                 &caller_private_key,
-                (format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1), "test"),
+                format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1),
+                "test",
                 [Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
-                None,
-                0,
-                None,
                 rng,
             )
-            .unwrap()
-        else {
-            unreachable!("VM::execute always produces an `Execution`")
-        };
+            .unwrap();
+
+        // Construct an unproven execution from the authorized transitions, which determine the finalize cost.
+        // The authorization holds at least the root transition, so the list of transitions is not empty and the construction does not fail.
+        let execution = Execution::from(
+            authorization.transitions().into_values(),
+            <CurrentNetwork as Network>::StateRoot::default(),
+            None,
+        )
+        .unwrap();
 
         // Check that the number of transitions is correct.
         assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
@@ -1149,23 +1133,13 @@ constructor:
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
                 Some(finalize_logic) => {
-                    // We derive the consensus version, as it may have changed due to the short
-                    // block span of test consensus versions
-                    let consensus_version =
-                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
-
-                    // Aggregate the cost of all commands in the program.
+                    // Aggregate the cost of all commands in the program, priced as `execution_cost` prices
+                    // them for `ConsensusVersion::V2`: with fee version V2 and no consensus version.
                     finalize_logic
                         .commands()
                         .iter()
                         .map(|command| {
-                            cost_per_command(
-                                &stack,
-                                &finalize_types,
-                                command,
-                                ConsensusFeeVersion::V2,
-                                Some(consensus_version),
-                            )
+                            cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2, None)
                         })
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
