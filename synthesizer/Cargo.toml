@@ -134,7 +134,6 @@ workspace = true
 
 [dependencies.aleo-std]
 workspace = true
-features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -231,10 +230,6 @@ version = "0.9"
 
 [dev-dependencies.tempfile]
 workspace = true
-
-[dev-dependencies.test-log]
-version = "0.2"
-features = [ "trace" ]
 
 [dev-dependencies.walkdir]
 version = "2"

@@ -175,7 +175,6 @@ workspace = true
 
 [dependencies.aleo-std]
 workspace = true
-features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -235,9 +234,6 @@ workspace = true
 features = [ "test" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
-workspace = true
-
-[dev-dependencies.aleo-std-storage]
 workspace = true
 
 [dev-dependencies.serde_json]

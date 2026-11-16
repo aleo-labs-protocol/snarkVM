@@ -15,7 +15,6 @@
 
 mod utilities;
 
-use aleo_std::StorageMode;
 use snarkvm_console::{
     account::{PrivateKey, ViewKey},
     network::prelude::*,
@@ -32,7 +31,7 @@ use snarkvm_ledger_block::{
     Transactions,
     Transition,
 };
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
+use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore, StorageMode};
 use snarkvm_synthesizer::{Authorization, VM, program::FinalizeOperation};
 use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization, execution_cost_for_call};
 use snarkvm_synthesizer_program::FinalizeGlobalState;
@@ -47,7 +46,7 @@ type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<Current
 #[cfg(feature = "rocks")]
 type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
-#[test_log::test]
+#[test]
 fn test_vm_execute_and_finalize() {
     // Load the tests.
     let tests =

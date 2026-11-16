@@ -15,6 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::type_complexity)]
+#![warn(clippy::cast_possible_truncation)]
 
 extern crate snarkvm_console_network as console;
 

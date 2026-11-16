@@ -65,14 +65,13 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
+use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore, StorageMode};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
 };
 use snarkvm_utilities::{timing_event, timing_span};
 
-use aleo_std::StorageMode;
 use anyhow::{Context, Result};
 use cfg_if::cfg_if;
 use core::ops::Range;
