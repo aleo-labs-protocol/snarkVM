@@ -33,7 +33,6 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-profiler = [ "snarkvm-algorithms/profiler" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -47,7 +46,6 @@ serial = [
 ]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
-timer = [ "aleo-std/timer" ]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-block/wasm",
@@ -133,9 +131,6 @@ workspace = true
 [dependencies.snarkvm-utilities]
 workspace = true
 
-[dependencies.aleo-std]
-workspace = true
-
 [dependencies.anyhow]
 workspace = true
 
@@ -179,7 +174,7 @@ features = [ "sync" ]
 workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 
 [dev-dependencies.anyhow]
 workspace = true

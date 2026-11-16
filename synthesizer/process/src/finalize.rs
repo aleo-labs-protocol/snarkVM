@@ -35,7 +35,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         deployment: &Deployment<N>,
         fee: &Fee<N>,
     ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>), IndexedFinalizeError<N, Command<N>>> {
-        let timer = timer!("Process::finalize_deployment");
+        let timer = timing_span!("Process::finalize_deployment").entered();
 
         // Fetch the program ID.
         let deploy_program_id = deployment.program().id();
@@ -52,7 +52,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                     None,
                     None::<(usize, Command<N>)>,
                 )?;
-                lap!(timer, "Compute the stack");
+                timing_event!("Compute the stack");
 
                 // Set the program owner.
                 stack.set_program_owner(deployment.program_owner());
@@ -65,7 +65,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                         None::<(usize, Command<N>)>,
                     )?;
                 }
-                lap!(timer, "Insert the verifying keys");
+                timing_event!("Insert the verifying keys");
 
                 // Determine which mappings must be initialized.
                 let mappings = match deployment.edition().is_zero() {
@@ -89,7 +89,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                         new_mappings
                     }
                 };
-                lap!(timer, "Retrieve the mappings to initialize");
+                timing_event!("Retrieve the mappings to initialize");
 
                 // Initialize the mappings, and store their finalize operations.
                 atomic_batch_scope!(store, IndexedFinalizeError::<N, Command<N>>, {
@@ -106,7 +106,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                     )?;
                     // Finalize the fee transition.
                     finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
-                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+                    timing_event!("Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
 
                     /* Finalize the deployment. */
 
@@ -121,17 +121,18 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                             None::<(usize, Command<N>)>,
                         )?);
                     }
-                    lap!(timer, "Initialize the program mappings");
+                    timing_event!("Initialize the program mappings");
 
                     // If the program has a constructor, execute it and extend the finalize operations.
                     // This must happen after the mappings are initialized as the constructor may depend on them.
                     if deployment.program().contains_constructor() {
                         let operations = finalize_constructor(state, store, &stack, N::TransitionID::default())?;
                         finalize_operations.extend(operations);
-                        lap!(timer, "Execute the constructor");
+                        timing_event!("Execute the constructor");
                     }
 
-                    finish!(timer, "Finished finalizing the deployment");
+                    timing_event!("Finished finalizing the deployment");
+                    drop(timer);
                     // Return the stack and finalize operations.
                     Ok((stack, finalize_operations))
                 })
@@ -157,7 +158,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
                 let mut stack = Stack::new_raw(self.process, deployment.program(), *existing_stack.program_edition())?;
                 stack.initialize_and_check(self.process)?;
-                lap!(timer, "Compute the stack");
+                timing_event!("Compute the stack");
 
                 // Set the amendment count for this edition.
                 stack.set_program_amendment_count(amendment_count);
@@ -168,7 +169,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 for (name, (verifying_key, _)) in deployment.verifying_keys() {
                     stack.insert_verifying_key(name, verifying_key.clone())?;
                 }
-                lap!(timer, "Insert the verifying keys");
+                timing_event!("Insert the verifying keys");
 
                 // Finalize the fee (amendments don't initialize mappings or run constructors).
                 atomic_batch_scope!(store, IndexedFinalizeError::<N, Command<N>>, {
@@ -178,9 +179,10 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                     let fee_stack = self.process.get_stack(fee.program_id())?;
                     // Finalize the fee transition.
                     finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
-                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+                    timing_event!("Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
 
-                    finish!(timer, "Finished finalizing the V3 deployment");
+                    timing_event!("Finished finalizing the V3 deployment");
+                    drop(timer);
                     Ok((stack, finalize_operations))
                 })
             }
@@ -198,7 +200,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         execution: &Execution<N>,
         fee: Option<&Fee<N>>,
     ) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError<N, Command<N>>> {
-        let timer = timer!("Program::finalize_execution");
+        let timer = timing_span!("Program::finalize_execution").entered();
 
         // Ensure the execution contains transitions.
         if execution.is_empty() {
@@ -245,7 +247,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 execution.len()
             );
         }
-        lap!(timer, "Verify the number of transitions");
+        timing_event!("Verify the number of transitions");
 
         // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future keys.
         // The key is (program_name, program_network, function_name, checksum). Futures with identical program,
@@ -325,10 +327,10 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 )?;
                 // Finalize the fee transition.
                 finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
-                lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+                timing_event!("Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
             }
 
-            finish!(timer);
+            drop(timer);
             // Return the finalize operations.
             Ok(finalize_operations)
         })
@@ -344,7 +346,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         store: &FinalizeStore<N, P>,
         fee: &Fee<N>,
     ) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError<N, Command<N>>> {
-        let timer = timer!("Program::finalize_fee");
+        let timer = timing_span!("Program::finalize_fee").entered();
 
         atomic_batch_scope!(store, IndexedFinalizeError::<N, Command<N>>, {
             // Retrieve the stack.
@@ -355,7 +357,8 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             )?;
             // Finalize the fee transition.
             let result = finalize_fee_transition(state, store, &stack, fee);
-            finish!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+            timing_event!("Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+            drop(timer);
             // Return the result.
             result
         })

@@ -37,7 +37,7 @@ workspace = true
 workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 
 [dependencies.clap]
 version = "4"

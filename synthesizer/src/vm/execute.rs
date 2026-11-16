@@ -180,7 +180,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: &dyn QueryTrait<N>,
         rng: &mut R,
     ) -> Result<(Execution<N>, Response<N>), VmExecError> {
-        let timer = timer!("VM::execute_authorization_raw");
+        let timer = timing_span!("VM::execute_authorization_raw").entered();
 
         // Construct the locator of the main function.
         let locator = {
@@ -202,11 +202,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let authorization = cast_ref!(authorization as Authorization<$network>);
                 // Execute the call.
                 let (response, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
-                lap!(timer, "Execute the call");
+                timing_event!("Execute the call");
 
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
-                lap!(timer, "Prepare the assignments");
+                timing_event!("Prepare the assignments");
 
                 // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
                 // function in the execution, all DynamicRecords and ExternalRecords
@@ -216,12 +216,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     let include_direct_imports = consensus_version >= ConsensusVersion::V18;
                     let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
                     Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
-                    lap!(timer, "Check record existence");
+                    timing_event!("Check record existence");
                 }
 
                 // Compute the proof and construct the execution.
                 let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
-                lap!(timer, "Compute the proof");
+                timing_event!("Compute the proof");
 
                 // Return the execution.
                 Ok((cast_ref!(execution as Execution<N>).clone(), cast_ref!(response as Response<N>).clone()))
@@ -230,7 +230,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Execute the authorization.
         let result = process!(self, logic);
-        finish!(timer, "Execute the authorization");
+        timing_event!("Execute the authorization");
+        drop(timer);
         result
     }
 
@@ -243,7 +244,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: &dyn QueryTrait<N>,
         rng: &mut R,
     ) -> Result<Fee<N>, VmExecError> {
-        let timer = timer!("VM::execute_fee_authorization_raw");
+        let timer = timing_span!("VM::execute_fee_authorization_raw").entered();
 
         // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
@@ -259,11 +260,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let authorization = cast_ref!(authorization as Authorization<$network>);
                 // Execute the call.
                 let (_, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
-                lap!(timer, "Execute the call");
+                timing_event!("Execute the call");
 
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
-                lap!(timer, "Prepare the assignments");
+                timing_event!("Prepare the assignments");
 
                 // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
                 // function in the execution, all DynamicRecords and ExternalRecords
@@ -273,12 +274,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     let include_direct_imports = consensus_version >= ConsensusVersion::V18;
                     let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
                     Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
-                    lap!(timer, "Check record existence");
+                    timing_event!("Check record existence");
                 }
 
                 // Compute the proof and construct the fee.
                 let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;
-                lap!(timer, "Compute the proof");
+                timing_event!("Compute the proof");
 
                 // Return the fee.
                 Ok(cast_ref!(fee as Fee<N>).clone())
@@ -287,7 +288,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Execute the authorization.
         let result = process!(self, logic);
-        finish!(timer, "Execute the authorization");
+        timing_event!("Execute the authorization");
+        drop(timer);
         result
     }
 }

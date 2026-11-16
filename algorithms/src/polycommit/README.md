@@ -70,7 +70,7 @@ The verifier key, `UniversalVerifier`, depends only on the SRS. It is the same f
 
 ## Profiling
 
-This library is instrumented with profiling infrastructure that prints detailed traces of execution time. To enable this, compile with `cargo build --features profiler`.
+This library marks the regions of code that it times with `tracing` spans. A subscriber with the filter `timing::snarkvm_algorithms::polycommit=trace` receives them. See [Timing](../../../utilities/README.md#timing) for how to print the duration of each span.
 
 [marlin]: https://ia.cr/2019/1047
 [sonic]: https://ia.cr/2019/099

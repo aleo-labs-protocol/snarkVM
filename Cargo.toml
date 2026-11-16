@@ -139,7 +139,6 @@ prop-tests = [ "snarkvm-ledger?/prop-tests" ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
 test = [ "snarkvm-ledger/test" ]
 test-helpers = [ "snarkvm-ledger/test-helpers" ]
-timer = [ "snarkvm-ledger/timer" ]
 algorithms = [ "snarkvm-algorithms" ]
 circuit = [ "snarkvm-circuit" ]
 console = [ "snarkvm-console" ]
@@ -434,9 +433,6 @@ version = "=4.13.0"
 path = "wasm"
 version = "=4.13.0"
 
-[workspace.dependencies.aleo-std]
-version = "1.0.4"
-
 [workspace.dependencies.anyhow]
 version = "1.0.73"
 features = ["backtrace"]
@@ -542,6 +538,9 @@ version = "0.3"
 
 [workspace.dependencies.tracing]
 version = "0.1"
+
+[workspace.dependencies.tracing-subscriber]
+version = "0.3"
 
 [workspace.dependencies.tracing-test]
 version = "0.2.5"
