@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
 
     #[inline]
     fn shl_wrapped(&self, rhs: &Integer<E, M>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && rhs.is_constant() {
             // Note: Casting `rhs` to a `u32` is safe since `Magnitude`s can only be `u8`, `u16`, or `u32`.
@@ -45,7 +48,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
                 let mut bits_le = vec![Boolean::constant(false); *shift_amount as usize];
 
                 bits_le.extend_from_slice(&self.bits_le);
-                bits_le.truncate(I::BITS as usize);
+                bits_le.truncate(i_bits);
 
                 Self { bits_le, phantom: Default::default() }
             } else if 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
@@ -61,9 +64,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
                     result = Field::ternary(bit, &product, &result);
                 }
                 // Extract the bits of the result, including the carry bits.
-                let bits_le = result.to_lower_bits_le(2 * I::BITS as usize);
+                let bits_le = result.to_lower_bits_le(2 * i_bits);
                 // Initialize the integer, ignoring the carry bits.
-                Self { bits_le: bits_le[..I::BITS as usize].to_vec(), phantom: Default::default() }
+                Self { bits_le: bits_le[..i_bits].to_vec(), phantom: Default::default() }
             } else {
                 // Calculate the value of the shift directly in the field.
                 // Since 2^{rhs} < Integer::MAX, we know that the operation will not overflow Integer::MAX or the field modulus.
@@ -74,7 +77,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
                     shift_in_field = Field::ternary(bit, &(&shift_in_field * &two), &shift_in_field);
                 }
                 let shift_as_multiplicand =
-                    Self { bits_le: shift_in_field.to_lower_bits_le(I::BITS as usize), phantom: Default::default() };
+                    Self { bits_le: shift_in_field.to_lower_bits_le(i_bits), phantom: Default::default() };
                 self.mul_wrapped(&shift_as_multiplicand)
             }
         }
@@ -84,6 +87,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
+    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
     type Case = (Mode, Mode, bool, bool);
 
     fn count(case: &Self::Case) -> Count {
@@ -93,10 +97,26 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlWrapped<Intege
             None => E::halt(format!("Integer of {num_bits} bits is not supported")),
         };
 
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (_, Mode::Constant) => Count::less_than(2 * I::BITS + 3, 0, 0, 0),
-            (Mode::Constant, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
+        // `2 * I::BITS < size_in_data_bits` holds for integers of up to 64 bits.
+        // `shl_wrapped` shifts those inside one field element. At 128 bits, it multiplies `self` by `2^rhs`.
+        match (case.0, case.1, case.2, case.3) {
+            // Both constant: the output is a new constant.
+            (Mode::Constant, Mode::Constant, _, _) => Count::is(I::BITS, 0, 0, 0),
+            // Constant `rhs`: the output is the bits of `self` behind constant zero bits.
+            (_, Mode::Constant, _, _) => Count::less_than(2 * I::BITS + 3, 0, 0, 0),
+            // Constant zero `self`: the output is a constant zero.
+            // At 128 bits, computing `2^rhs` still allocates variables.
+            (Mode::Constant, _, true, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
+                true => Count::is((2 * I::BITS) + index(I::BITS) + 3, 0, 0, 0),
+                false => Count::is(
+                    I::BITS + (I::BITS / 2) + 1,
+                    0,
+                    I::BITS + (2 * index(I::BITS)) + 4,
+                    I::BITS + (2 * index(I::BITS)) + 5,
+                ),
+            },
+            // Other constant `self`: up to 64 bits, the count depends on the value of `self`.
+            (Mode::Constant, _, false, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
                 true => Count::less_than(
                     (2 * I::BITS) + index(I::BITS) + 3,
                     0,
@@ -110,7 +130,8 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlWrapped<Intege
                     (2 * I::BITS) + (I::BITS / 2) + (2 * index(I::BITS)) + 7,
                 ),
             },
-            (_, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
+            // Variable `self` and `rhs`.
+            (_, _, _, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
                 true => Count::is(
                     3 + index(I::BITS),
                     0,
@@ -131,6 +152,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlWrapped<Intege
 impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn ShlWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
+    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
     type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
@@ -191,6 +213,10 @@ mod tests {
             // Check that shift left by two is computed correctly.
             let name = format!("Quadruple: {mode_a} << {mode_b} {i}");
             check_shl::<I, M>(&name, first, console::Integer::one() + console::Integer::one(), mode_a, mode_b);
+
+            // Check that zero shifted left by `second` is computed correctly.
+            let name = format!("Zero: {mode_a} << {mode_b} {i}");
+            check_shl::<I, M>(&name, console::Integer::zero(), second, mode_a, mode_b);
         }
     }
 

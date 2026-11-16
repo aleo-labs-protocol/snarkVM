@@ -15,6 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
+#![warn(clippy::cast_possible_truncation)]
 
 extern crate snarkvm_console_types_address as console;
 
