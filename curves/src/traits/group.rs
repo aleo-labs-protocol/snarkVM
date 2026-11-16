@@ -130,7 +130,6 @@ pub trait AffineCurve:
     + Debug
     + Display
     + Default
-    + FromBytes
     + Send
     + Sync
     + 'static
@@ -253,7 +252,6 @@ pub trait PairingCurve: AffineCurve {
     type Prepared: CanonicalSerialize
         + CanonicalDeserialize
         + ToBytes
-        + FromBytes
         + PartialEq
         + Eq
         + Default

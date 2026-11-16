@@ -113,6 +113,7 @@ where
             BaseField = <P::G1Parameters as ModelParameters>::BaseField,
             ScalarField = <P::G1Parameters as ModelParameters>::ScalarField,
             Projective = G1Projective<P>,
+            Coordinates = (P::Fp, P::Fp, bool),
             PairWith = G2Affine<P>,
             Prepared = G1Prepared<P>,
             PairingResult = Fp12<P::Fp12Params>,

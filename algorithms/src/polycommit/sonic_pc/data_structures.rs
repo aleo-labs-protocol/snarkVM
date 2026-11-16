@@ -16,7 +16,7 @@
 use super::{LabeledPolynomial, PolynomialInfo};
 use crate::{crypto_hash::sha256::Sha256Writer, fft::EvaluationDomain, polycommit::kzg10};
 use snarkvm_curves::{AffineCurve, PairingEngine};
-use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
+use snarkvm_fields::{ConstraintFieldError, Field, One, PrimeField, ToConstraintField, Zero};
 use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
 use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
 
@@ -179,21 +179,26 @@ impl<E: PairingEngine> CommitterKey<E> {
                     .ok_or_else(|| error(format!("The SRS does not hold the committer key's {powers_len} powers")))
             })
             .transpose()?;
-        let powers_of_beta_g = read_bases(&mut reader, powers_len as usize, held)?;
+        let powers_of_beta_g = read_bases::<E, _>(&mut reader, powers_len as usize, held)?;
 
         // Deserialize `lagrange_basis_at_beta`.
         let lagrange_bases_at_beta_len: u32 = FromBytes::read_le(&mut reader)?;
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
         for _ in 0..lagrange_bases_at_beta_len {
             let size: u32 = FromBytes::read_le(&mut reader)?;
-            let basis = read_bounded(&mut reader, size as usize, "Lagrange basis points")?;
+            let basis =
+                read_bounded(&mut reader, size as usize, "Lagrange basis points", read_point_unchecked::<E, _>)?;
             lagrange_bases_at_beta_g.insert(size as usize, basis);
         }
 
         // Deserialize `powers_of_beta_times_gamma_g`.
         let powers_of_beta_times_gamma_g_len: u32 = FromBytes::read_le(&mut reader)?;
-        let powers_of_beta_times_gamma_g =
-            read_bounded(&mut reader, powers_of_beta_times_gamma_g_len as usize, "hiding points")?;
+        let powers_of_beta_times_gamma_g = read_bounded(
+            &mut reader,
+            powers_of_beta_times_gamma_g_len as usize,
+            "hiding points",
+            read_point_unchecked::<E, _>,
+        )?;
 
         // Deserialize `shifted_powers_of_beta_g`.
         let has_shifted_powers_of_beta_g: bool = FromBytes::read_le(&mut reader)?;
@@ -219,7 +224,7 @@ impl<E: PairingEngine> CommitterKey<E> {
                             })
                     })
                     .transpose()?;
-                Some(read_bases(&mut reader, shifted_powers_len as usize, held)?)
+                Some(read_bases::<E, _>(&mut reader, shifted_powers_len as usize, held)?)
             }
             false => None,
         };
@@ -234,7 +239,12 @@ impl<E: PairingEngine> CommitterKey<E> {
                     let key: u32 = FromBytes::read_le(&mut reader)?;
 
                     let value_len: u32 = FromBytes::read_le(&mut reader)?;
-                    let value = read_bounded(&mut reader, value_len as usize, "shifted hiding points")?;
+                    let value = read_bounded(
+                        &mut reader,
+                        value_len as usize,
+                        "shifted hiding points",
+                        read_point_unchecked::<E, _>,
+                    )?;
 
                     shifted_powers_of_beta_times_gamma_g.insert(key as usize, value);
                 }
@@ -250,7 +260,9 @@ impl<E: PairingEngine> CommitterKey<E> {
             true => {
                 let enforced_degree_bounds_len: u32 = FromBytes::read_le(&mut reader)?;
                 let enforced_degree_bounds =
-                    read_bounded::<u32, _>(&mut reader, enforced_degree_bounds_len as usize, "degree bounds")?;
+                    read_bounded(&mut reader, enforced_degree_bounds_len as usize, "degree bounds", |reader| {
+                        u32::read_le(reader)
+                    })?;
                 let enforced_degree_bounds = enforced_degree_bounds.into_iter().map(|bound| bound as usize).collect();
 
                 Some(enforced_degree_bounds)
@@ -345,35 +357,53 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
 
 /// Reads `len` points, or, given the SRS range that holds them, skips them in
 /// `reader` and shares that range.
-fn read_bases<G: AffineCurve, R: Read>(
+fn read_bases<E: PairingEngine, R: Read>(
     mut reader: R,
     len: usize,
-    held: Option<(Arc<Vec<G>>, Range<usize>)>,
-) -> io::Result<Bases<G>> {
+    held: Option<(Arc<Vec<E::G1Affine>>, Range<usize>)>,
+) -> io::Result<Bases<E::G1Affine>> {
     match held {
         Some((store, range)) => {
-            let point_size = G::zero().to_bytes_le().map_err(into_io_error)?.len() as u64;
+            let point_size = E::G1Affine::zero().to_bytes_le().map_err(into_io_error)?.len() as u64;
             let skip = point_size * len as u64;
             if io::copy(&mut (&mut reader).take(skip), &mut io::sink())? != skip {
                 return Err(io::ErrorKind::UnexpectedEof.into());
             }
             Ok(Bases::shared(store, range))
         }
-        None => read_bounded(&mut reader, len, "points").map(Bases::Owned),
+        None => read_bounded(&mut reader, len, "points", read_point_unchecked::<E, _>).map(Bases::Owned),
     }
 }
 
 /// Reads `len` values, failing before it allocates if `len` exceeds
 /// `MAX_NUM_POWERS`.
-fn read_bounded<T: FromBytes, R: Read>(mut reader: R, len: usize, what: &str) -> io::Result<Vec<T>> {
+fn read_bounded<T, R: Read>(
+    mut reader: R,
+    len: usize,
+    what: &str,
+    read: impl Fn(&mut R) -> io::Result<T>,
+) -> io::Result<Vec<T>> {
     if len > MAX_NUM_POWERS {
         return Err(error(format!("CommitterKey (from 'read_le') has too many {what} ({len} > {MAX_NUM_POWERS})")));
     }
     let mut values = Vec::with_capacity(len);
     for _ in 0..len {
-        values.push(T::read_le(&mut reader)?);
+        values.push(read(&mut reader)?);
     }
     Ok(values)
+}
+
+/// Reads a point as `ToBytes` writes it. It does not check that the point is
+/// on the curve or in the prime-order subgroup.
+fn read_point_unchecked<E: PairingEngine, R: Read>(reader: &mut R) -> io::Result<E::G1Affine> {
+    let x = E::Fq::read_le(&mut *reader)?;
+    let y = E::Fq::read_le(&mut *reader)?;
+    let infinity = bool::read_le(&mut *reader)?;
+
+    if (infinity != x.is_zero()) && y.is_one() {
+        return Err(error("Infinity flag is not valid"));
+    }
+    Ok(E::G1Affine::from_coordinates_unchecked((x, y, infinity)))
 }
 
 impl<E: PairingEngine> CommitterKey<E> {
