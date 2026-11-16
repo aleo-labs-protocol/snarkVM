@@ -699,12 +699,14 @@ const GENESIS_FIXTURE_SEED: u64 = 1_779_135_982;
 /// The test processes of one binary share the fixture through a file beside the binary.
 fn genesis_fixture() -> &'static (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
     static INSTANCE: OnceLock<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> = OnceLock::new();
-    INSTANCE.get_or_init(|| load_or_build_genesis_fixture("test-helpers-genesis", build_genesis_fixture))
+    INSTANCE.get_or_init(|| {
+        load_or_build_genesis_fixture("test-helpers-genesis", GENESIS_FIXTURE_SEED, build_genesis_fixture)
+    })
 }
 
-/// Builds the genesis fixture from an RNG with a fixed seed.
-fn build_genesis_fixture() -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
-    let rng = &mut TestRng::from_seed(GENESIS_FIXTURE_SEED);
+/// Builds the genesis fixture from an RNG with the given seed.
+fn build_genesis_fixture(seed: u64) -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
+    let rng = &mut TestRng::from_seed(seed);
     // Sample the genesis private key.
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).expect("Failed to sample the genesis private key");
     // Construct the genesis block.

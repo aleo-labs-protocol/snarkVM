@@ -31,29 +31,36 @@ use std::{
 /// A genesis private key and the genesis block that it signs.
 type GenesisFixture = (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>);
 
-/// Returns the genesis fixture of the running binary, which `build` builds.
+/// Returns the genesis fixture of the running binary, which `build` builds from `seed`.
 ///
 /// The processes of one binary share the fixture through the file `<binary>.<extension>`.
-/// The file holds the size and the modification time of the binary, so a rebuilt binary builds a new fixture.
+/// The file holds the size and the modification time of the binary and the seed,
+/// so a rebuilt binary or another seed builds a new fixture.
 /// If the file cannot be used, every process builds its own fixture.
-/// `build` must return the same fixture in every process, and its genesis block must be a beacon block.
-pub fn load_or_build_genesis_fixture(extension: &str, build: impl FnOnce() -> GenesisFixture) -> GenesisFixture {
-    match genesis_fixture_path_and_stamp(extension) {
-        Ok((path, stamp)) => load_or_build(&path, &stamp, build),
-        Err(_) => build(),
+/// `build` must return the same fixture for the same seed in every process,
+/// and its genesis block must be a beacon block.
+pub fn load_or_build_genesis_fixture(
+    extension: &str,
+    seed: u64,
+    build: impl FnOnce(u64) -> GenesisFixture,
+) -> GenesisFixture {
+    match genesis_fixture_path_and_stamp(extension, seed) {
+        Ok((path, stamp)) => load_or_build(&path, &stamp, || build(seed)),
+        Err(_) => build(seed),
     }
 }
 
-/// Returns the path of the genesis fixture file of the running binary, and the stamp of that binary.
+/// Returns the path of the genesis fixture file of the running binary, and the stamp of the fixture.
 ///
-/// The stamp holds the size and the modification time of the binary.
-fn genesis_fixture_path_and_stamp(extension: &str) -> io::Result<(PathBuf, Vec<u8>)> {
+/// The stamp holds the size and the modification time of the binary, and the seed of the fixture.
+fn genesis_fixture_path_and_stamp(extension: &str, seed: u64) -> io::Result<(PathBuf, Vec<u8>)> {
     let binary = std::env::current_exe()?;
     let metadata = fs::metadata(&binary)?;
     let modified = metadata.modified()?.duration_since(UNIX_EPOCH).map_err(io::Error::other)?;
-    let mut stamp = Vec::with_capacity(24);
+    let mut stamp = Vec::with_capacity(32);
     stamp.extend_from_slice(&metadata.len().to_le_bytes());
     stamp.extend_from_slice(&modified.as_nanos().to_le_bytes());
+    stamp.extend_from_slice(&seed.to_le_bytes());
     Ok((binary.with_added_extension(extension), stamp))
 }
 
@@ -143,6 +150,15 @@ mod tests {
     fn remove_files(path: &Path) {
         let _ = fs::remove_file(path);
         let _ = fs::remove_file(path.with_added_extension("lock"));
+    }
+
+    #[test]
+    fn test_stamp_holds_seed() {
+        let (path, stamp) = genesis_fixture_path_and_stamp("genesis", 1).expect("Failed to stamp the fixture");
+        let (other_path, other_stamp) =
+            genesis_fixture_path_and_stamp("genesis", 2).expect("Failed to stamp the fixture");
+        assert_eq!(path, other_path);
+        assert_ne!(stamp, other_stamp);
     }
 
     #[test]
