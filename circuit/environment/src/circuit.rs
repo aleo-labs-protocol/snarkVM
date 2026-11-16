@@ -409,6 +409,17 @@ impl Environment for Circuit {
             assert_eq!(0, circuit.borrow().num_constraints());
         });
     }
+
+    /// Replaces this thread's circuit state with the given state, and returns the previous one.
+    fn swap_circuit_state(state: CircuitState<Self::BaseField>) -> CircuitState<Self::BaseField> {
+        CircuitState {
+            r1cs: CIRCUIT.with(|circuit| circuit.replace(state.r1cs)),
+            variable_limit: VARIABLE_LIMIT.with(|limit| limit.replace(state.variable_limit)),
+            constraint_limit: CONSTRAINT_LIMIT.with(|limit| limit.replace(state.constraint_limit)),
+            non_zero_limit: NON_ZERO_LIMIT.with(|limit| limit.replace(state.non_zero_limit)),
+            in_witness: IN_WITNESS.with(|in_witness| in_witness.replace(state.in_witness)),
+        }
+    }
 }
 
 impl fmt::Display for Circuit {
@@ -450,6 +461,24 @@ mod tests {
         let _candidate = create_example_circuit::<Circuit>();
         let output = format!("{Circuit}");
         println!("{output}");
+    }
+
+    #[test]
+    fn test_fresh_circuit_restores_after_nested_scope() {
+        crate::environment::fresh_circuit_tests::check_nested::<super::Circuit>(in_witness, set_in_witness);
+    }
+
+    #[test]
+    fn test_fresh_circuit_restores_after_unwind() {
+        crate::environment::fresh_circuit_tests::check_unwind::<super::Circuit>(in_witness, set_in_witness);
+    }
+
+    fn in_witness() -> bool {
+        super::IN_WITNESS.with(|in_witness| in_witness.get())
+    }
+
+    fn set_in_witness(value: bool) {
+        super::IN_WITNESS.with(|in_witness| in_witness.set(value))
     }
 
     #[test]

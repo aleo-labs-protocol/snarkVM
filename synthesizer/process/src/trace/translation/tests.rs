@@ -816,3 +816,46 @@ fn test_prepare_verifier_inputs_infers_the_transition_map_value_type() {
     .unwrap();
     assert!(batches.is_empty());
 }
+
+#[test]
+fn test_to_circuit_assignment_leaves_the_callers_circuit() {
+    use circuit::Environment;
+
+    let mut rng = TestRng::default();
+    let record_static_str = r#"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        codename: 1989u64.public,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }"#;
+    let (translation_assignment, translation_index) =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
+
+    // A caller part way through its own synthesis on this thread.
+    CurrentAleo::reset();
+    let a = circuit::Field::<CurrentAleo>::new(circuit::Mode::Private, Field::from_u64(3));
+    CurrentAleo::assert_eq(&a, &a).unwrap();
+    CurrentAleo::set_variable_limit(Some(1 << 30));
+    CurrentAleo::set_constraint_limit(Some(1 << 31));
+    CurrentAleo::set_non_zero_limit(Some((1 << 32, 1 << 33, 1 << 34)));
+    let state = || {
+        (
+            CurrentAleo::count(),
+            CurrentAleo::get_variable_limit(),
+            CurrentAleo::get_constraint_limit(),
+            CurrentAleo::get_non_zero_limit(),
+        )
+    };
+    let callers = state();
+
+    translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, None, None).unwrap();
+    assert_eq!(state(), callers);
+
+    let halted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, Some(1), None)
+    }));
+    assert!(halted.is_err(), "the constraint limit must halt synthesis");
+    assert_eq!(state(), callers);
+
+    CurrentAleo::reset();
+}

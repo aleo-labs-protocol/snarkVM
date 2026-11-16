@@ -204,9 +204,10 @@ impl<N: Network> Stack<N> {
     ) -> Result<Option<Response<N>>, StackExecError> {
         let timer = timing_span!("Stack::execute_function").entered();
 
+        let _circuit = A::fresh_circuit();
         // Ensure the global constants for the Aleo environment are initialized.
         A::initialize_global_constants();
-        // Ensure the circuit environment is clean.
+        // Discard the constants that the first initialization on a thread adds to the circuit.
         A::reset();
 
         // If in 'CheckDeployment' mode, set the constraint limit and variable limit.

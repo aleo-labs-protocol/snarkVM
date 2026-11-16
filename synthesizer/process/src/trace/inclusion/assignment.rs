@@ -70,9 +70,7 @@ impl<N: Network> InclusionAssignment<N> {
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
         use circuit::Inject;
 
-        // Ensure the circuit environment is clean.
-        assert_eq!(A::count(), (0, 1, 0, 0, (0, 0, 0)));
-        A::reset();
+        let _circuit = A::fresh_circuit();
 
         // Inject the state path as `Mode::Private` (with a global state root as `Mode::Public`).
         let state_path = circuit::StatePath::<A>::new(circuit::Mode::Private, self.state_path.clone());

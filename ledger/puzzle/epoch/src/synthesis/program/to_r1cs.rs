@@ -37,8 +37,7 @@ impl<N: Network> EpochProgram<N> {
         let mut registers = Registers::<N, A>::new(call_stack, register_types);
         timing_event!("Initialize the registers");
 
-        // Ensure the circuit environment is clean.
-        A::reset();
+        let _circuit = A::fresh_circuit();
 
         // Inject the circuit inputs.
         let mut circuit_inputs = Vec::with_capacity(console_inputs.len());

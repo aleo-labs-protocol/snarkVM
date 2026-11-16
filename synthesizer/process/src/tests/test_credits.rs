@@ -2895,6 +2895,69 @@ mod sanity_checks {
     }
 
     #[test]
+    fn test_execute_function_leaves_the_callers_circuit() {
+        use circuit::{Environment, Inject};
+
+        let rng = &mut TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let caller = Address::try_from(&private_key).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let function_name = Identifier::from_str("transfer_public").unwrap();
+        let inputs =
+            [Value::<CurrentNetwork>::from_str(&format!("{caller}")).unwrap(), Value::from_str("1u64").unwrap()];
+        let input_types = stack.program().get_function(&function_name).unwrap().input_types();
+        let request = Request::sign(
+            &private_key,
+            *stack.program_id(),
+            function_name,
+            inputs.iter(),
+            &input_types,
+            None,
+            true,
+            None,
+            false,
+            rng,
+        )
+        .unwrap();
+        let call_stack = |constraint_limit| {
+            CallStack::CheckDeployment(
+                vec![request.clone()],
+                private_key,
+                Assignments::default(),
+                constraint_limit,
+                None,
+                None,
+            )
+        };
+
+        // A caller part way through its own synthesis on this thread.
+        CurrentAleo::reset();
+        let a = circuit::Field::<CurrentAleo>::new(circuit::Mode::Private, Field::from_u64(3));
+        CurrentAleo::assert_eq(&a, &a).unwrap();
+        CurrentAleo::set_constraint_limit(Some(1 << 31));
+        let state = || {
+            (
+                CurrentAleo::count(),
+                CurrentAleo::get_variable_limit(),
+                CurrentAleo::get_constraint_limit(),
+                CurrentAleo::get_non_zero_limit(),
+            )
+        };
+        let callers = state();
+
+        stack.execute_function::<CurrentAleo, _>(call_stack(None), None, None, rng).unwrap();
+        assert_eq!(state(), callers);
+
+        let halted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            stack.execute_function::<CurrentAleo, _>(call_stack(Some(1)), None, None, rng)
+        }));
+        assert!(halted.is_err(), "the constraint limit must halt synthesis");
+        assert_eq!(state(), callers);
+
+        CurrentAleo::reset();
+    }
+
+    #[test]
     fn test_sanity_check_transfer_private() {
         let rng = &mut TestRng::default();
 
