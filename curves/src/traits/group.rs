@@ -23,7 +23,6 @@ use core::{
     iter,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use serde::{Serialize, de::DeserializeOwned};
 
 /// Projective representation of an elliptic curve point guaranteed to be in the prime order subgroup.
 ///
@@ -31,14 +30,11 @@ use serde::{Serialize, de::DeserializeOwned};
 /// which breaks such implementations. Code that needs to implement it should define its own
 /// trait instead. Bounds on it and calls through it are unaffected.
 pub trait ProjectiveCurve:
-    CanonicalSerialize
-    + CanonicalDeserialize
-    + Copy
+    Copy
     + Clone
     + Debug
     + Display
     + Default
-    + FromBytes
     + Send
     + Sync
     + 'static
@@ -59,7 +55,6 @@ pub trait ProjectiveCurve:
     + for<'a> SubAssign<&'a Self>
     + PartialEq<Self::Affine>
     + Sized
-    + ToBytes
     + iter::Sum
     + From<<Self as ProjectiveCurve>::Affine>
 {
@@ -95,11 +90,6 @@ pub trait ProjectiveCurve:
         let mut copy = *self;
         copy.add_assign_mixed(other);
         copy
-    }
-
-    /// Adds an affine element to this element.
-    fn sub_assign_mixed(&mut self, other: &Self::Affine) {
-        self.add_assign_mixed(&-*other);
     }
 
     /// Returns `self + self`.
@@ -141,8 +131,6 @@ pub trait AffineCurve:
     + PartialEq<Self::Projective>
     + Mul<Self::ScalarField, Output = Self::Projective>
     + Sized
-    + Serialize
-    + DeserializeOwned
     + ToBytes
     + From<<Self as AffineCurve>::Projective>
     + Zero
