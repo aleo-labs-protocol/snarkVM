@@ -105,6 +105,38 @@ fn test_table_files_have_partitioned_filters() {
 }
 
 #[test]
+fn test_table_config_parse() {
+    use super::{FilterPolicy, TableConfig};
+
+    const MIB: usize = 1024 * 1024;
+
+    let default = TableConfig::parse(None, None, None).expect("Failed to parse the defaults");
+    assert_eq!(default, TableConfig {
+        filter_policy: FilterPolicy::Bloom,
+        filter_bits_per_key: 10.0,
+        block_cache_size: 2048 * MIB
+    });
+    assert_eq!(TableConfig::parse(Some("bloom"), Some("10"), Some("2048")).expect("Failed to parse"), default);
+
+    for (value, expected) in
+        [("ribbon", FilterPolicy::Ribbon), ("hybrid", FilterPolicy::Hybrid), ("none", FilterPolicy::None)]
+    {
+        let config = TableConfig::parse(Some(value), Some("9.9"), Some("1")).expect("Failed to parse");
+        assert_eq!(config, TableConfig { filter_policy: expected, filter_bits_per_key: 9.9, block_cache_size: MIB });
+    }
+
+    for value in ["", "Bloom", "bloom ", "0", "1"] {
+        assert!(TableConfig::parse(Some(value), None, None).is_err(), "Accepted the filter policy '{value}'");
+    }
+    for value in ["", "0", "0.5", "-10", "nan", "inf", "ten"] {
+        assert!(TableConfig::parse(None, Some(value), None).is_err(), "Accepted '{value}' bits per key");
+    }
+    for value in ["", "0", "-1", "1.5", "2048MiB", "18446744073709551615"] {
+        assert!(TableConfig::parse(None, None, Some(value)).is_err(), "Accepted a block cache of '{value}' MiB");
+    }
+}
+
+#[test]
 fn test_insert_and_contains_key() {
     let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
         .expect("Failed to open data map");
