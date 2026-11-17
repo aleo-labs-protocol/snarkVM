@@ -105,6 +105,40 @@ fn test_table_files_have_partitioned_filters() {
 }
 
 #[test]
+fn test_seeks_stay_in_the_map_with_filters() {
+    let storage = StorageMode::new_test(None);
+    let open = |map_id| {
+        RocksDB::open_map::<_, u32, u32, _>(0, storage.clone(), MapID::Test(map_id)).expect("Failed to open data map")
+    };
+    let (first, second, empty) = (open(TestMapID::Test), open(TestMapID::Test2), open(TestMapID::Test3));
+
+    // Each map is in a table file of its own, so that the filter of a file holds the prefix of one map.
+    // The keys are below 256, so that the order of their serialized bytes is their numeric order.
+    for map in [&first, &second] {
+        for key in [10u32, 20, 30] {
+            map.insert(key, key).expect("Failed to insert");
+        }
+        map.database.flush().expect("Failed to flush");
+    }
+    assert!(table_property(&first.database, "filter block size") > 0);
+
+    let floor = |map: &crate::helpers::rocksdb::DataMap<u32, u32>, key: u32| {
+        map.get_floor_confirmed(&key).expect("Failed to get the floor").map(|(key, _)| key.into_owned())
+    };
+    for map in [&first, &second] {
+        assert_eq!(floor(map, 5), None);
+        assert_eq!(floor(map, 10), Some(10));
+        assert_eq!(floor(map, 25), Some(20));
+        assert_eq!(floor(map, 200), Some(30));
+        assert_eq!(map.len_confirmed(), 3);
+        assert_eq!(map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>(), vec![10, 20, 30]);
+    }
+    assert_eq!(floor(&empty, 25), None);
+    assert_eq!(empty.len_confirmed(), 0);
+    assert_eq!(empty.keys_confirmed().count(), 0);
+}
+
+#[test]
 fn test_table_config_parse() {
     use super::{FilterPolicy, TableConfig};
 
