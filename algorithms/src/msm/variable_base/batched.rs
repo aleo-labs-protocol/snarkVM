@@ -487,11 +487,31 @@ pub fn straus<G: AffineCurve, const WINDOW: usize>(
     sum
 }
 
+/// The fewest bases that `msm` sums by the bucket method. Below it, each window
+/// holds too few points to amortize its batched inversions, and the curve's
+/// lanes and Straus's method are several times faster.
+pub(super) const BUCKET_MIN_BASES: usize = 32;
+
+/// Returns the sum of `base * scalar` through `AffineCurve::msm_lanes`, over
+/// the shorter of `bases` and `scalars`, or `None` if the curve has no lane
+/// path for them or a scalar is not below the modulus.
+fn msm_in_lanes<G: AffineCurve>(
+    bases: &[G],
+    scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+) -> Option<G::Projective> {
+    let terms = bases
+        .iter()
+        .zip(scalars)
+        .map(|(base, scalar)| Some((*base, G::ScalarField::from_bigint(*scalar)?)))
+        .collect::<Option<Vec<_>>>()?;
+    G::msm_lanes(&[&terms])?.into_iter().next()
+}
+
+/// Returns the sum of `base * scalar`. Every base must be in the prime-order
+/// subgroup: outside it, the sum of the curve's lanes differs from Straus's, so
+/// it would depend on the CPU.
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    // Below 32 bases, each window of the bucket method holds too few points to
-    // amortize its batched inversions, and Straus's method is several times
-    // faster.
-    if bases.len() < 32 {
+    if bases.len() < BUCKET_MIN_BASES {
         debug_assert!(scalars.len() <= bases.len());
         // A zero scalar adds nothing and a unit scalar adds its base, so
         // neither needs a table or a scalar multiplication.
@@ -520,6 +540,9 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
             // GLV is correct only on the prime-order subgroup.
             debug_assert!(base.is_in_correct_subgroup_assuming_on_curve());
             return sum + base.to_projective() * scalar;
+        }
+        if let Some(in_lanes) = msm_in_lanes(&bases, &scalars) {
+            return sum + in_lanes;
         }
         sum + straus::<G, STRAUS_WINDOW>(&bases, &scalars)
     } else {

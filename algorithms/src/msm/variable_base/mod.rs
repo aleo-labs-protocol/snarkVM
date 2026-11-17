@@ -27,6 +27,8 @@ use core::any::TypeId;
 pub struct VariableBase;
 
 impl VariableBase {
+    /// Returns the sum of `base * scalar`. Every base must be in the
+    /// prime-order subgroup, as `batched::msm` requires.
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         // TODO SNP: where to set the threshold
@@ -58,8 +60,12 @@ impl VariableBase {
     /// Multi-scalar multiplications over field elements, several at once.
     ///
     /// Returns the sum of `base * scalar` over each of `msms`, in their
-    /// order. Each MSM runs on the CPU, also in a `cuda` build, by the method
-    /// that [`Self::msm`] picks for its size on the CPU.
+    /// order. Every MSM runs on the CPU, also in a `cuda` build. The MSMs
+    /// below the bucket method's cutoff go together through
+    /// `AffineCurve::msm_lanes` where the curve has lanes. Every other MSM
+    /// takes the method that [`Self::msm`] picks for its size on the CPU.
+    /// Every base must be in the prime-order subgroup, as `msm_lanes`
+    /// requires.
     ///
     /// Hazard: do not send these MSMs to a CUDA device. Proof verification
     /// calls this function, both in `VM::check_transaction` and in finalize's
@@ -68,11 +74,18 @@ impl VariableBase {
     /// or reject a valid transaction and commit a block that differs from its
     /// peers' blocks.
     pub fn msm_many<G: AffineCurve>(msms: &[&[(G, G::ScalarField)]]) -> Vec<G::Projective> {
+        let msm = |terms: &[(G, G::ScalarField)]| {
+            let (bases, scalars): (Vec<_>, Vec<_>) =
+                terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+            Self::msm_on_cpu(&bases, &scalars)
+        };
+        let is_small = |terms: &[(G, G::ScalarField)]| terms.len() < batched::BUCKET_MIN_BASES;
+        let small: Vec<_> = msms.iter().copied().filter(|terms| is_small(terms)).collect();
+        let mut small_sums = G::msm_lanes(&small).map(Vec::into_iter);
         msms.iter()
             .map(|terms| {
-                let (bases, scalars): (Vec<_>, Vec<_>) =
-                    terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
-                Self::msm_on_cpu(&bases, &scalars)
+                let sum = small_sums.as_mut().filter(|_| is_small(terms)).and_then(Iterator::next);
+                sum.unwrap_or_else(|| msm(terms))
             })
             .collect()
     }
@@ -143,7 +156,8 @@ mod tests {
     #[test]
     fn test_msm_small_edge_cases() {
         use snarkvm_curves::ProjectiveCurve;
-        use snarkvm_fields::{Field, One, Zero};
+        use snarkvm_fields::{Field, FieldParameters, One, Zero};
+        use snarkvm_utilities::BigInteger;
 
         let two = Fr::from(2u64);
         let special = [
@@ -183,6 +197,15 @@ mod tests {
             let naive = VariableBase::msm_naive(bases.as_slice(), all_special.as_slice()).to_affine();
             let candidate = batched::msm(bases.as_slice(), all_special.as_slice()).to_affine();
             assert_eq!(naive, candidate, "MSM size: {msm_size}, special scalars");
+
+            // A scalar at or above the modulus, below 2^253.
+            let mut above = scalars.clone();
+            let mut big = <Fr as PrimeField>::Parameters::MODULUS;
+            big.add_nocarry(&(msm_size as u64).into());
+            above[msm_size / 2] = big;
+            let naive = VariableBase::msm_naive(bases.as_slice(), above.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), above.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}, a scalar above the modulus");
         }
     }
 
