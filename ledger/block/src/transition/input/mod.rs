@@ -165,7 +165,7 @@ impl<N: Network> Input<N> {
                 match input.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) input index as a field element.
-                        let index = Field::from_u16(index as u16);
+                        let index = Field::from_u16(u16::try_from(index)?);
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id);
@@ -185,7 +185,7 @@ impl<N: Network> Input<N> {
                 match input.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) input index as a field element.
-                        let index = Field::from_u16(index as u16);
+                        let index = Field::from_u16(u16::try_from(index)?);
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id);

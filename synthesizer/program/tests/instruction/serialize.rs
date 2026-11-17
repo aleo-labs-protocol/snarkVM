@@ -152,11 +152,15 @@ fn check_serialize<const VARIANT: u8>(
         let result_c = operation.finalize(&stack, None, &mut finalize_registers);
 
         // Check that either all operations failed, or all operations succeeded.
-        let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();
-        let all_succeeded = result_a.is_ok() && result_b.is_ok() && result_c.is_ok();
+        // Execution only succeeds if its circuit is also satisfied.
+        let eval_is_ok = result_a.is_ok();
+        let exec_is_ok = result_b.is_ok() && <CurrentAleo as circuit::Environment>::is_satisfied();
+        let finalize_is_ok = result_c.is_ok();
+        let all_failed = !eval_is_ok && !exec_is_ok && !finalize_is_ok;
+        let all_succeeded = eval_is_ok && exec_is_ok && finalize_is_ok;
         assert!(
             all_failed || all_succeeded,
-            "The results of the evaluation, execution, and finalization should either all succeed or all fail"
+            "The results of the evaluation ({eval_is_ok}), execution ({exec_is_ok}), and finalization ({finalize_is_ok}) should either all succeed or all fail"
         );
 
         // If all operations succeeded, check that the outputs are consistent.
@@ -263,3 +267,66 @@ macro_rules! test_serialize {
 
 test_serialize!(serialize_bits, SerializeBits, ToBits, ITERATIONS);
 test_serialize!(serialize_bits_raw, SerializeBitsRaw, ToBitsRaw, ITERATIONS);
+
+#[test]
+fn test_serialize_rejects_wrong_destination_length() {
+    // Struct definitions are not supported.
+    let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
+    let fail_get_external_struct = |_: &Locator<CurrentNetwork>| bail!("structs are not supported");
+
+    // Returns a program that serializes `type_` into `function_bits` bits in the function scope
+    // and into `finalize_bits` bits in the finalize scope.
+    let program =
+        |opcode: Opcode, type_: &PlaintextType<CurrentNetwork>, function_bits: usize, finalize_bits: usize| {
+            Program::<CurrentNetwork>::from_str(&format!(
+                "program testing.aleo;
+            function run:
+                input r0 as {type_}.public;
+                {opcode} r0 ({type_}) into r1 ([boolean; {function_bits}u32]);
+                async run r0 into r2;
+                output r2 as testing.aleo/run.future;
+            finalize run:
+                input r0 as {type_}.public;
+                {opcode} r0 ({type_}) into r1 ([boolean; {finalize_bits}u32]);
+            "
+            ))
+            .unwrap()
+        };
+
+    for (variant, opcode) in [
+        (SerializeVariant::ToBits, SerializeBits::<CurrentNetwork>::opcode()),
+        (SerializeVariant::ToBitsRaw, SerializeBitsRaw::<CurrentNetwork>::opcode()),
+    ] {
+        for type_ in test_types(variant.clone()) {
+            // Get the size in bits.
+            let size_in_bits = match variant {
+                SerializeVariant::ToBits => type_.size_in_bits(&fail_get_struct, &fail_get_external_struct).unwrap(),
+                SerializeVariant::ToBitsRaw => {
+                    type_.size_in_bits_raw(&fail_get_struct, &fail_get_external_struct).unwrap()
+                }
+            };
+
+            // Check that the correct length is accepted.
+            let correct = program(opcode, &type_, size_in_bits, size_in_bits);
+            assert!(
+                Stack::new(shared_process(), &correct).is_ok(),
+                "'{opcode}' should accept '{type_}' as {size_in_bits} bits"
+            );
+
+            // Check that a wrong length is rejected in either scope.
+            let wrong_lengths = [size_in_bits - 1, size_in_bits + 1].into_iter().filter(|length| *length > 0);
+            for wrong_bits in wrong_lengths {
+                for (function_bits, finalize_bits) in [(wrong_bits, size_in_bits), (size_in_bits, wrong_bits)] {
+                    let wrong = program(opcode, &type_, function_bits, finalize_bits);
+                    let error = Stack::new(shared_process(), &wrong)
+                        .err()
+                        .unwrap_or_else(|| panic!("'{opcode}' should reject '{type_}' as {wrong_bits} bits"));
+                    assert!(
+                        format!("{error:?}").contains("does not match the destination"),
+                        "'{opcode}' rejected '{type_}' as {wrong_bits} bits for an unexpected reason: {error:?}"
+                    );
+                }
+            }
+        }
+    }
+}

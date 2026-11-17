@@ -129,7 +129,7 @@ impl<N: Network> FinalizeTypes<N> {
             Operand::AleoGeneratorPowers(index) => match index {
                 None => FinalizeType::Plaintext(PlaintextType::Array(ArrayType::new(
                     PlaintextType::Literal(LiteralType::Group),
-                    vec![U32::new(N::Scalar::SIZE_IN_BITS as u32)],
+                    vec![U32::new(u32::try_from(N::Scalar::SIZE_IN_BITS)?)],
                 )?)),
                 Some(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
             },

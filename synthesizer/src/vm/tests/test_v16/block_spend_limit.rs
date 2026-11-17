@@ -30,7 +30,7 @@ fn test_quorum_block_spend_limit_aborts_excess_transactions() {
 
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
     let vm = sample_vm_at_height(v16_height, rng);
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
 
     let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();

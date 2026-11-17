@@ -157,6 +157,9 @@ impl<A: Aleo> Request<A> {
             .zip_eq(input_types)
             .enumerate()
             .map(|(index, ((input_id, input), input_type))| {
+                // Note: The number of inputs is at most `MAX_INPUTS`, so the cast is lossless.
+                #[allow(clippy::cast_possible_truncation)]
+                let index_u16 = index as u16;
                 match input_id {
                     // A constant input is hashed (using `tcm`) to a field element.
                     InputID::Constant(input_hash) => {
@@ -166,7 +169,7 @@ impl<A: Aleo> Request<A> {
                         }
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -196,7 +199,7 @@ impl<A: Aleo> Request<A> {
                         }
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -226,7 +229,7 @@ impl<A: Aleo> Request<A> {
                         }
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Compute the input view key as `Hash(function ID || tvk || index)`.
                         let input_view_key = A::hash_psd4(&[function_id.clone(), tvk.clone(), input_index]);
                         // Compute the ciphertext.
@@ -330,7 +333,7 @@ impl<A: Aleo> Request<A> {
                         };
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -361,7 +364,7 @@ impl<A: Aleo> Request<A> {
                         };
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());

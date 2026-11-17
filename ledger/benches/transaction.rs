@@ -25,10 +25,9 @@ use snarkvm_console::{
 };
 use snarkvm_ledger::Ledger;
 use snarkvm_ledger_block::Transition;
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer::{VM, program::Program};
 
-use aleo_std::StorageMode;
 use criterion::Criterion;
 #[cfg(feature = "bench-prove")]
 use std::time::Duration;

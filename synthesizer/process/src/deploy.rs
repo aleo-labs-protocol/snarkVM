@@ -24,17 +24,17 @@ impl<N: Network> Process<N> {
         program: &Program<N>,
         rng: &mut R,
     ) -> Result<Deployment<N>, ProcessDeployError> {
-        let timer = timer!("Process::deploy");
+        let timer = timing_span!("Process::deploy").entered();
 
         // Compute the stack.
         let stack = Stack::new(self, program)?;
-        lap!(timer, "Compute the stack");
+        timing_event!("Compute the stack");
 
         // Return the deployment.
         let deployment = stack.deploy::<A, R>(rng)?;
-        lap!(timer, "Construct the deployment");
+        timing_event!("Construct the deployment");
 
-        finish!(timer);
+        drop(timer);
 
         Ok(deployment)
     }
@@ -43,7 +43,7 @@ impl<N: Network> Process<N> {
     /// This method assumes the given deployment **is valid**.
     #[inline]
     pub fn load_deployment(&self, deployment: &Deployment<N>) -> Result<()> {
-        let timer = timer!("Process::load_deployment");
+        let timer = timing_span!("Process::load_deployment").entered();
 
         // Get the deployment version.
         let version = deployment.version()?;
@@ -53,7 +53,7 @@ impl<N: Network> Process<N> {
             DeploymentVersion::V1 | DeploymentVersion::V2 => {
                 // Compute the program stack.
                 let mut stack = Stack::new(self, deployment.program())?;
-                lap!(timer, "Compute the stack");
+                timing_event!("Compute the stack");
 
                 // Set the program owner.
                 stack.set_program_owner(deployment.program_owner());
@@ -74,7 +74,7 @@ impl<N: Network> Process<N> {
                 // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
                 let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
                 stack.initialize_and_check(self)?;
-                lap!(timer, "Compute the stack");
+                timing_event!("Compute the stack");
 
                 // Set the amendment count for this edition.
                 stack.set_program_amendment_count(amendment_count);
@@ -89,12 +89,12 @@ impl<N: Network> Process<N> {
         for (name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(name, verifying_key.clone())?;
         }
-        lap!(timer, "Insert the verifying keys");
+        timing_event!("Insert the verifying keys");
 
         // Add the stack to the process.
         self.lock().add_stack(stack);
 
-        finish!(timer);
+        drop(timer);
 
         Ok(())
     }

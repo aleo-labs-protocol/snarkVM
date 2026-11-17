@@ -15,7 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
-// #![warn(clippy::cast_possible_truncation)]
+#![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::single_element_loop))]
 
 extern crate snarkvm_console as console;
@@ -621,11 +621,10 @@ pub mod test_helpers {
     use snarkvm_algorithms::snark::varuna::VarunaVersion;
     use snarkvm_console::account::{Address, PrivateKey};
     use snarkvm_ledger_query::Query;
-    use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
+    use snarkvm_ledger_store::{BlockStore, StorageMode, helpers::memory::BlockMemory};
     use snarkvm_synthesizer_process::Process;
     use snarkvm_utilities::PrettyUnwrap;
 
-    use aleo_std::StorageMode;
     use std::sync::OnceLock;
 
     type CurrentNetwork = console::network::MainnetV0;

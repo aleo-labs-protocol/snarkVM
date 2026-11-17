@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> SubWrapped<Self> for Integer<E, I> {
 
     #[inline]
     fn sub_wrapped(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the difference and return the new constant.
@@ -31,7 +34,7 @@ impl<E: Environment, I: IntegerType> SubWrapped<Self> for Integer<E, I> {
             let difference = self.to_field() + (!other).to_field() + Field::one();
 
             // Extract the integer bits from the field element, with a carry bit.
-            let mut bits_le = difference.to_lower_bits_le(I::BITS as usize + 1);
+            let mut bits_le = difference.to_lower_bits_le(i_bits + 1);
             // Drop the carry bit as the operation is wrapped subtraction.
             bits_le.pop();
 
