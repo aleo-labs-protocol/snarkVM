@@ -58,11 +58,104 @@ pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 /// open-files limit well above this value, which its sockets and other files share.
 pub const MAX_OPEN_FILES: u16 = 8192;
 
-/// The number of bits per key in the Bloom filter of each table file, which gives a false positive rate of about 1%.
-const BLOOM_FILTER_BITS_PER_KEY: f64 = 10.0;
+/// The environment variable that selects the filter of the table files: `bloom`, `ribbon`, `hybrid` or `none`.
+pub const FILTER_POLICY_ENV: &str = "SNARKVM_ROCKSDB_FILTER_POLICY";
 
-/// The capacity of the block cache in bytes. It holds uncompressed data blocks, and the index and filter blocks.
-const BLOCK_CACHE_SIZE: usize = 2 * 1024 * 1024 * 1024;
+/// The environment variable that sets the number of bits per key of the filter of the table files.
+pub const FILTER_BITS_PER_KEY_ENV: &str = "SNARKVM_ROCKSDB_FILTER_BITS_PER_KEY";
+
+/// The environment variable that sets the capacity of the block cache in MiB.
+pub const BLOCK_CACHE_SIZE_MIB_ENV: &str = "SNARKVM_ROCKSDB_BLOCK_CACHE_SIZE_MIB";
+
+/// The default number of bits per key of a filter, which gives a false positive rate of about 1%.
+const DEFAULT_FILTER_BITS_PER_KEY: f64 = 10.0;
+
+/// The default capacity of the block cache in MiB.
+const DEFAULT_BLOCK_CACHE_SIZE_MIB: usize = 2048;
+
+/// The first level at which a `hybrid` filter is a Ribbon filter. The levels before it are rewritten most often.
+const HYBRID_BLOOM_BEFORE_LEVEL: i32 = 2;
+
+/// The filter that RocksDB writes into a table file.
+/// It tells that a key is not in the file without a read of a data block.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum FilterPolicy {
+    /// A Bloom filter.
+    Bloom,
+    /// A Ribbon filter, which is smaller than a Bloom filter with the same false positive rate, and slower to write.
+    Ribbon,
+    /// A Bloom filter in the levels before `HYBRID_BLOOM_BEFORE_LEVEL`, and a Ribbon filter in the other levels.
+    Hybrid,
+    /// No filter.
+    None,
+}
+
+/// The table options that the environment can change.
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct TableConfig {
+    /// The filter of the table files.
+    filter_policy: FilterPolicy,
+    /// The number of bits per key of the filter. For a Ribbon filter, this is the number of bits per key of a
+    /// Bloom filter with the same false positive rate.
+    filter_bits_per_key: f64,
+    /// The capacity of the block cache in bytes.
+    /// The cache holds uncompressed data blocks, and the index and filter blocks.
+    block_cache_size: usize,
+}
+
+impl TableConfig {
+    /// Returns the table options that the environment selects.
+    fn from_env() -> Result<Self> {
+        // Returns the value of the variable, or `None` if it is not set.
+        fn read(name: &str) -> Result<Option<String>> {
+            match std::env::var(name) {
+                Ok(value) => Ok(Some(value)),
+                Err(std::env::VarError::NotPresent) => Ok(None),
+                Err(std::env::VarError::NotUnicode(_)) => bail!("The value of '{name}' is not valid Unicode"),
+            }
+        }
+        Self::parse(
+            read(FILTER_POLICY_ENV)?.as_deref(),
+            read(FILTER_BITS_PER_KEY_ENV)?.as_deref(),
+            read(BLOCK_CACHE_SIZE_MIB_ENV)?.as_deref(),
+        )
+    }
+
+    /// Returns the table options for the given values of the environment variables, where `None` selects the default.
+    fn parse(
+        filter_policy: Option<&str>,
+        filter_bits_per_key: Option<&str>,
+        block_cache_size_mib: Option<&str>,
+    ) -> Result<Self> {
+        let filter_policy = match filter_policy {
+            None | Some("bloom") => FilterPolicy::Bloom,
+            Some("ribbon") => FilterPolicy::Ribbon,
+            Some("hybrid") => FilterPolicy::Hybrid,
+            Some("none") => FilterPolicy::None,
+            Some(value) => {
+                bail!("'{FILTER_POLICY_ENV}' must be 'bloom', 'ribbon', 'hybrid' or 'none', and not '{value}'")
+            }
+        };
+        let filter_bits_per_key = match filter_bits_per_key {
+            None => DEFAULT_FILTER_BITS_PER_KEY,
+            Some(value) => match value.parse::<f64>() {
+                Ok(bits) if bits.is_finite() && bits >= 1.0 => bits,
+                _ => bail!("'{FILTER_BITS_PER_KEY_ENV}' must be a number of at least 1, and not '{value}'"),
+            },
+        };
+        let block_cache_size_mib = match block_cache_size_mib {
+            None => DEFAULT_BLOCK_CACHE_SIZE_MIB,
+            Some(value) => match value.parse::<usize>() {
+                Ok(size) if size >= 1 => size,
+                _ => bail!("'{BLOCK_CACHE_SIZE_MIB_ENV}' must be a whole number of at least 1, and not '{value}'"),
+            },
+        };
+        let Some(block_cache_size) = block_cache_size_mib.checked_mul(1024 * 1024) else {
+            bail!("'{BLOCK_CACHE_SIZE_MIB_ENV}' is too large: '{block_cache_size_mib}'");
+        };
+        Ok(Self { filter_policy, filter_bits_per_key, block_cache_size })
+    }
+}
 
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
@@ -211,14 +304,21 @@ impl Database for RocksDB {
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
             options.set_prefix_extractor(prefix_extractor);
 
-            // A lookup of a key that is in no table file reads no data block, except for a false positive of a filter.
-            // Table files written without these options have no filter, and keep none until a compaction rewrites them.
+            // With a filter, a lookup of a key that is in no table file reads no data block, except for a false
+            // positive. A table file keeps the filter it was written with, or none, until a compaction rewrites it.
+            let table_config = TableConfig::from_env()?;
             let mut table_options = rocksdb::BlockBasedOptions::default();
-            table_options.set_bloom_filter(BLOOM_FILTER_BITS_PER_KEY, false);
+            let bits_per_key = table_config.filter_bits_per_key;
+            match table_config.filter_policy {
+                FilterPolicy::Bloom => table_options.set_bloom_filter(bits_per_key, false),
+                FilterPolicy::Ribbon => table_options.set_ribbon_filter(bits_per_key),
+                FilterPolicy::Hybrid => table_options.set_hybrid_ribbon_filter(bits_per_key, HYBRID_BLOOM_BEFORE_LEVEL),
+                FilterPolicy::None => {}
+            }
             // The index and filter blocks count towards the capacity of the block cache. They are partitioned, so
             // that a lookup loads one partition of each, and a cache that is too small for all of them costs a
             // lookup at most one read per partition.
-            table_options.set_block_cache(&rocksdb::Cache::new_lru_cache(BLOCK_CACHE_SIZE));
+            table_options.set_block_cache(&rocksdb::Cache::new_lru_cache(table_config.block_cache_size));
             table_options.set_cache_index_and_filter_blocks(true);
             table_options.set_index_type(rocksdb::BlockBasedIndexType::TwoLevelIndexSearch);
             table_options.set_partition_filters(true);
