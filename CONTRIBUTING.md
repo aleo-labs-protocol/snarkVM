@@ -6,8 +6,8 @@ Thank you for your interest in contributing to snarkVM! Below you can find some 
 
 Please follow the instructions below when filing a pull request:
 
-- Ensure that your branch is forked from the current [staging](https://github.com/ProvableHQ/snarkVM/tree/staging) branch.
-- Use the git commit hook, which ensures `cargo fmt` and `cargo clippy` are run with appropriate parameters. [`.rustfmt.toml`](https://github.com/ProvableHQ/snarkVM/blob/staging/.rustfmt.toml) specifies some of the formatting conventions.
+- Ensure that your branch is forked from the current [staging](https://github.com/aleo-labs-protocol/snarkVM/tree/staging) branch.
+- Use the git commit hook, which ensures `cargo fmt` and `cargo clippy` are run with appropriate parameters. [`.rustfmt.toml`](https://github.com/aleo-labs-protocol/snarkVM/blob/staging/.rustfmt.toml) specifies some of the formatting conventions.
 - The pre-commit hook reads `rusty-hook.toml`. To change it locally, copy it to `.rusty-hook.toml`, which git ignores and rusty-hook prefers.
 - Do not rebase your PR after substantial reviews have taken place. The only exception is when there has been a substantial architectural overhaul which requires new reviews.
 - When you fix someone's comment, reply with the relevant commit hash.
@@ -75,6 +75,6 @@ snarkVM is a big project, so (non-)adherence to best practices related to perfor
   * `&[T]` instead of `&Vec<T>`
   * `&str` instead of `&String`
   * `&Path` instead of `&PathBuf`
-- if a lot of computational power is needed, consider parallelizing that workload with [`rayon`](https://crates.io/crates/rayon) - it's not always a viable solution, but can yield great performance improvements when used in the right context; the [`cfg_*` macros](https://github.com/ProvableHQ/snarkVM/blob/staging/utilities/src/parallel.rs) should be used in crates which also have a `serial` feature, so that `rayon` can be applied conditionally
+- if a lot of computational power is needed, consider parallelizing that workload with [`rayon`](https://crates.io/crates/rayon) - it's not always a viable solution, but can yield great performance improvements when used in the right context; the [`cfg_*` macros](https://github.com/aleo-labs-protocol/snarkVM/blob/staging/utilities/src/parallel.rs) should be used in crates which also have a `serial` feature, so that `rayon` can be applied conditionally
 - for `struct`s that can be compared/discerned based on some specific field(s), consider hand-written implementations of `PartialEq` **and** `Hash` ([they must match](https://doc.rust-lang.org/std/hash/trait.Hash.html#hash-and-eq)) for faster comparison and hashing
 - if possible, ensure that the results of your changes are not detrimental to performance using [`criterion`](https://crates.io/crates/criterion) (for smaller, fine-grained adjustments) and [`valgrind --tool={cachegrind | massif}`](https://valgrind.org/info/tools.html) (for larger-scale changes); to claim a speedup, follow [Performance pull requests](#performance-pull-requests)
