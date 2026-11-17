@@ -76,16 +76,20 @@ public:
     //
     // `d_in0` and `d_in1` are consumed: both are left transformed rather than as
     // the caller passed them. `d_out` may alias neither.
+    //
+    // With `NTT::Type::coset` and `a * b = L + X^n H`, the output is
+    // `L + g^n H`, where `n` is the domain size and `g` the coset's shift.
     static void MulDev(stream_t& stream,
                        fr_t* d_out, fr_t* d_in0, fr_t* d_in1,
-                       uint32_t lg_domain_size)
+                       uint32_t lg_domain_size,
+                       NTT::Type type = NTT::Type::standard)
     {
         size_t domain_size = (size_t)1 << lg_domain_size;
 
         NTT::Base_dev_ptr(stream, d_in0, lg_domain_size, NTT::InputOutputOrder::NR,
-                          NTT::Direction::forward, NTT::Type::standard);
+                          NTT::Direction::forward, type);
         NTT::Base_dev_ptr(stream, d_in1, lg_domain_size, NTT::InputOutputOrder::NR,
-                          NTT::Direction::forward, NTT::Type::standard);
+                          NTT::Direction::forward, type);
 
         // Full coverage, not the `sm_count * 8` cap the launchers in
         // batchinv.cu use: `polynomial_inner_multiply` is **not** grid-stride --
@@ -98,7 +102,7 @@ public:
         CUDA_OK(cudaGetLastError());
 
         NTT::Base_dev_ptr(stream, d_out, lg_domain_size, NTT::InputOutputOrder::RN,
-                          NTT::Direction::inverse, NTT::Type::standard);
+                          NTT::Direction::inverse, type);
     }
 
     // `hmem0` receives `1 << lg_domain_size` coefficients.

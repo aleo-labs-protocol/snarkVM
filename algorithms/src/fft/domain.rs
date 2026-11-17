@@ -330,11 +330,19 @@ impl<F: FftField> EvaluationDomain<F> {
         Elements { cur_elem: F::one(), cur_pow: 0, domain: *self }
     }
 
+    /// Returns `1 / (g^n - 1)`, the inverse of the vanishing polynomial at the
+    /// shift `g` of the host's and the device's coset transforms.
+    pub(crate) fn coset_vanishing_inv(&self) -> F {
+        // `g` generates the multiplicative group, whose order does not divide `n`, so
+        // `g^n != 1`.
+        self.evaluate_vanishing_polynomial(F::multiplicative_generator()).inverse().unwrap()
+    }
+
     /// The target polynomial is the zero polynomial in our
     /// evaluation domain, so we must perform division over
     /// a coset.
     pub fn divide_by_vanishing_poly_on_coset_in_place(&self, evals: &mut [F]) {
-        let i = self.evaluate_vanishing_polynomial(F::multiplicative_generator()).inverse().unwrap();
+        let i = self.coset_vanishing_inv();
 
         cfg_iter_mut!(evals).for_each(|eval| *eval *= &i);
     }

@@ -311,16 +311,19 @@ pub fn lineval_interpolate_mul<T: 'static>(
 /// without the polynomials leaving the device.
 ///
 /// Where [`fourth_round_polys`] returns `a`, `b` and `f`, this continues
-/// through the shift into `g`, the `b*f` multiply, the subtraction and the
-/// vanishing divide with its scaling.
+/// through the shift into `g`, the `b*f` multiply, the subtraction, and the
+/// vanishing divide or, with `lg_mul_domain == lg_domain_size`, the coset's
+/// constant, with the selector's scaling.
 ///
 /// # Contracts
 ///
 /// - `selector_mult` is `combiner * src_domain.size_as_field_element *
-///   target_domain.size_inv`, not the combiner. A wrong value is not detected.
+///   target_domain.size_inv`, not the combiner, and with `lg_mul_domain ==
+///   lg_domain_size` also `1 / (g^n - 1)`. A wrong value is not detected.
 /// - `q_len` is an upper bound on the quotient's length for `h = a_poly - b*f`.
 ///   Pass `domain - 1`, which always holds since `deg(b*f) <= 2 * domain - 2`.
-///   A bound that is too small is refused with `cudaErrorAssert`.
+///   With `lg_mul_domain == lg_domain_size` it must be below `domain`. A bound
+///   that is too small is refused with `cudaErrorAssert`.
 ///
 /// On one GPU, if the resident pool can hold them, the device keeps `a`, `b`,
 /// `g` and `lhs`, returned as `Ok([a, b, g, lhs])` at their trimmed lengths.
@@ -331,7 +334,10 @@ pub fn lineval_interpolate_mul<T: 'static>(
 /// # Errors
 ///
 /// `cudaErrorAssert` means the vanishing polynomial did not divide `h` exactly:
-/// a non-zero remainder, or a quotient with terms above `q_len`.
+/// a non-zero remainder, or a quotient with terms above `q_len`. With
+/// `lg_mul_domain == lg_domain_size` the chain multiplies on the device's coset
+/// and does not divide, so `selector_mult` must also carry `1 / (g^n - 1)`, and
+/// only the terms above `q_len` are checked.
 /// `cudaErrorInvalidValue` means a shape was invalid.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn fourth_round_chain<T: 'static>(
@@ -356,9 +362,11 @@ pub fn fourth_round_chain<T: 'static>(
     let domain = 1usize << lg_domain_size;
     let mul_domain = 1usize << lg_mul_domain;
     assert!(len <= domain, "evaluations do not fit the domain they interpolate over");
-    assert!(mul_domain >= 2 * domain, "the product does not fit its domain");
+    let half = mul_domain == domain;
+    assert!(half || mul_domain >= 2 * domain, "the product does not fit its domain");
     assert!(q_len <= domain, "the single-step branch needs q_len <= domain");
-    assert!(q_len + domain <= mul_domain);
+    assert!(!half || q_len < domain, "the half-size check needs a term above q_len");
+    assert!(half || q_len + domain <= mul_domain);
     let sizes = [domain, domain, domain - 1, q_len];
     let host = || sizes.map(Vec::<T>::with_capacity);
     if len == 0 {
