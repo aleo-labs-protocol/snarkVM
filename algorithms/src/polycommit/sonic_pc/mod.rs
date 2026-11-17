@@ -582,10 +582,6 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut msms: Vec<&[_]> = Vec::with_capacity(groups.len() + 2);
         msms.extend(groups.values().map(Vec::as_slice));
         msms.extend([witness_terms.as_slice(), adjusted_terms.as_slice()]);
-        // Hazard: in a `cuda` build, an MSM above `VariableBase::msm`'s threshold runs
-        // on the device and panics on a device error. Under Varuna, the MSM with no
-        // degree bound holds one term per instance and 12 per circuit, so an execution
-        // with enough distinct circuits reaches the threshold.
         let msm_time =
             start_timer!(|| format!("{} MSMs of {} terms", msms.len(), msms.iter().map(|m| m.len()).sum::<usize>()));
         let mut sums = VariableBase::msm_many(&msms);
