@@ -44,6 +44,8 @@ pub mod g2;
 pub use g2::*;
 
 mod msm_lanes;
+#[doc(hidden)]
+pub use msm_lanes::msm_lane_outputs;
 
 pub mod parameters;
 #[doc(inline)]
