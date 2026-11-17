@@ -4194,4 +4194,122 @@ finalize compute:
         let rejection_reason = vm.finalize_store().get_rejected_reason(&tx_id).unwrap();
         assert!(rejection_reason.is_some(), "Rejection reason should be stored");
     }
+
+    /// Returns the confirmed entries of every mapping of the given programs.
+    fn snapshot_program_mappings(
+        vm: &VM<CurrentNetwork, LedgerType>,
+        programs: &[ProgramID<CurrentNetwork>],
+    ) -> HashMap<
+        (ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>),
+        Vec<(Plaintext<CurrentNetwork>, Value<CurrentNetwork>)>,
+    > {
+        let store = vm.finalize_store();
+        let mut snapshot = HashMap::new();
+        for program_id in programs {
+            for mapping in store.get_mapping_names_confirmed(program_id).unwrap().unwrap_or_default() {
+                snapshot.insert((*program_id, mapping), store.get_mapping_confirmed(*program_id, mapping).unwrap());
+            }
+        }
+        snapshot
+    }
+
+    #[test]
+    fn test_finalize_records_program_history() {
+        let rng = &mut TestRng::default();
+
+        let caller_private_key = test_helpers::sample_genesis_private_key();
+        let caller_address = Address::try_from(&caller_private_key).unwrap();
+        let recipient_address = Address::try_from(&PrivateKey::<CurrentNetwork>::new(rng).unwrap()).unwrap();
+
+        // Archival history is enabled before the genesis block, so it covers every height.
+        let vm = sample_vm();
+        vm.finalize_store().set_archival(true);
+        let genesis = test_helpers::sample_genesis_block();
+        vm.add_next_block(&genesis).unwrap();
+
+        let mut unspent_records = genesis
+            .transitions()
+            .cloned()
+            .flat_map(Transition::into_records)
+            .map(|(_, record)| record)
+            .collect::<Vec<_>>();
+
+        let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+        let mut snapshots = vec![snapshot_program_mappings(&vm, &[credits])];
+
+        // Height 1 deploys a program. Heights 2 and 3 execute it. Height 4 only pays staking rewards.
+        let (program_name, deployment_block) =
+            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
+        let program_id = ProgramID::<CurrentNetwork>::from_str(&program_name).unwrap();
+        vm.add_next_block(&deployment_block).unwrap();
+        snapshots.push(snapshot_program_mappings(&vm, &[credits, program_id]));
+
+        let mint =
+            sample_mint_public(&vm, caller_private_key, &program_name, caller_address, 20, &mut unspent_records, rng);
+        let mint_block =
+            sample_next_block(&vm, &caller_private_key, &[mint], &deployment_block, &mut unspent_records, rng).unwrap();
+        vm.add_next_block(&mint_block).unwrap();
+        snapshots.push(snapshot_program_mappings(&vm, &[credits, program_id]));
+
+        let transfer = sample_transfer_public(
+            &vm,
+            caller_private_key,
+            &program_name,
+            recipient_address,
+            5,
+            &mut unspent_records,
+            rng,
+        );
+        let transfer_block =
+            sample_next_block(&vm, &caller_private_key, &[transfer], &mint_block, &mut unspent_records, rng).unwrap();
+        vm.add_next_block(&transfer_block).unwrap();
+        snapshots.push(snapshot_program_mappings(&vm, &[credits, program_id]));
+
+        let empty_block =
+            sample_next_block(&vm, &caller_private_key, &[], &transfer_block, &mut unspent_records, rng).unwrap();
+        vm.add_next_block(&empty_block).unwrap();
+        snapshots.push(snapshot_program_mappings(&vm, &[credits, program_id]));
+
+        let store = vm.finalize_store();
+        let last = vm.block_store().current_block_height();
+        assert_eq!(last, 4);
+        assert_eq!(store.get_program_history_range(&credits, 0).unwrap(), Some((0, last)));
+        assert_eq!(store.get_program_history_range(&program_id, 0).unwrap(), None);
+        assert_eq!(store.get_program_history_range(&program_id, 1).unwrap(), Some((1, last)));
+
+        // Every key that any snapshot holds is checked at every covered height, so that a key
+        // removed by a mapping replacement is checked as well.
+        let mut keys: HashMap<_, IndexSet<_>> = HashMap::new();
+        for snapshot in &snapshots {
+            for (mapping, entries) in snapshot {
+                keys.entry(*mapping).or_default().extend(entries.iter().map(|(key, _)| key.clone()));
+            }
+        }
+        for (height, snapshot) in (0..=last).zip_eq(&snapshots) {
+            for ((program, mapping), keys) in &keys {
+                if store.get_program_history_range(program, height).unwrap().is_none() {
+                    continue;
+                }
+                let entries = snapshot.get(&(*program, *mapping));
+                let exists = store.contains_mapping_at_height(*program, *mapping, height).unwrap();
+                assert_eq!(exists, entries.is_some(), "'{program}/{mapping}' existence at height {height}");
+                for key in keys {
+                    let expected = entries
+                        .and_then(|entries| entries.iter().find(|(entry_key, _)| entry_key == key))
+                        .map(|(_, value)| value.clone());
+                    let found = store.get_value_at_height(*program, *mapping, key, height).unwrap();
+                    assert_eq!(found, expected, "'{program}/{mapping}[{key}]' at height {height}");
+                }
+            }
+        }
+
+        // The minted and transferred amounts are visible at the heights that wrote them.
+        let account = Identifier::from_str("account").unwrap();
+        let caller = Plaintext::from(Literal::Address(caller_address));
+        let value_at = |height| store.get_value_at_height(program_id, account, &caller, height).unwrap();
+        assert_eq!(value_at(1), None);
+        assert_eq!(value_at(2), Some(Value::from_str("20u64").unwrap()));
+        assert_eq!(value_at(3), Some(Value::from_str("15u64").unwrap()));
+        assert_eq!(value_at(4), Some(Value::from_str("15u64").unwrap()));
+    }
 }
