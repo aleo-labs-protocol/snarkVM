@@ -25,7 +25,6 @@ edition = "2021"
 
 [features]
 default = [ ]
-portable = [ "blst/portable" ]
 
 [dependencies.blst]
 version = "0.3.11"
