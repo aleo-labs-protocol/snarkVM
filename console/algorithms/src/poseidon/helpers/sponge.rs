@@ -112,7 +112,9 @@ impl<E: Environment, const RATE: usize> PoseidonSponge<E, RATE, 1> {
 }
 
 impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E, RATE, CAPACITY> {
-    /// Returns this sponge with `state` as its state and `mode` as its mode.
+    /// Returns this sponge resumed at `state` in `mode`. The caller must pass the mode the sponge
+    /// was in when it reached `state`: after a permutation with nothing left to absorb, that is
+    /// squeezing at index 0, not absorbing.
     pub(in crate::poseidon) fn with_state(mut self, state: State<E, RATE, CAPACITY>, mode: DuplexSpongeMode) -> Self {
         self.state = state;
         self.mode = mode;

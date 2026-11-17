@@ -202,6 +202,13 @@ mod tests {
         type F = Field<CurrentEnvironment>;
         let a = Poseidon::<CurrentEnvironment, RATE>::setup("PrefixA").unwrap();
         let b = Poseidon::<CurrentEnvironment, RATE>::setup("PrefixB").unwrap();
+        // `a` with the dense permutation and its own cache, for parameters without a sparse form.
+        let dense = Poseidon {
+            sparse_rounds: None,
+            empty_hash: OnceLock::new(),
+            prefix_states: Arc::new(std::array::from_fn(|_| OnceLock::new())),
+            ..a.clone()
+        };
         let edges = [F::zero(), F::one(), -F::one()];
         // Rates are at most 8, so the conversion cannot fail.
         let rate = u16::try_from(RATE).unwrap();
@@ -210,7 +217,7 @@ mod tests {
             let random = (0..len).map(|_| F::rand(rng)).collect_vec();
             for input in std::iter::once(random).chain(edges.iter().map(|e| vec![*e; len])) {
                 for num_outputs in [0u16, 1, 2, rate - 1, rate, rate + 1, 2 * rate + 1] {
-                    for poseidon in [&a, &b] {
+                    for poseidon in [&a, &b, &dense] {
                         assert_eq!(
                             poseidon.hash_many(&input, num_outputs),
                             reference_hash_many(poseidon, &input, num_outputs),
@@ -221,7 +228,7 @@ mod tests {
             }
         }
         // Every length below `PREFIX_STATES` now has a cached state, and clones share the cache.
-        for poseidon in [&a, &b] {
+        for poseidon in [&a, &b, &dense] {
             assert!(poseidon.prefix_states.iter().all(|cell| cell.get().is_some()));
             assert!(Arc::ptr_eq(&poseidon.prefix_states, &poseidon.clone().prefix_states));
         }
