@@ -58,47 +58,6 @@ impl<N: Network> FromStr for AleoFile<N> {
 }
 
 impl<N: Network> AleoFile<N> {
-    /// Creates a new Aleo program file with the given directory path, program ID, and `is_main` indicator.
-    pub fn create(directory: &Path, program_id: &ProgramID<N>, is_main: bool) -> Result<Self> {
-        // Ensure the directory path exists.
-        ensure!(directory.exists(), "The program directory does not exist: '{}'", directory.display());
-        // Ensure the program name is valid.
-        ensure!(!Program::is_reserved_keyword(program_id.name()), "Program name is invalid (reserved): '{program_id}'");
-
-        // Construct the initial program string.
-        let program_string = format!(
-            r#"// The '{program_id}' program.
-program {program_id};
-
-function hello:
-    input r0 as u32.public;
-    input r1 as u32.private;
-    add r0 r1 into r2;
-    output r2 as u32.private;
-"#
-        );
-
-        // Create the file.
-        let file_name = if is_main {
-            Self::main_file_name()
-        } else {
-            match program_id.is_aleo() {
-                true => program_id.to_string(),
-                false => format!("{program_id}.{ALEO_FILE_EXTENSION}"),
-            }
-        };
-        // Construct the file path.
-        let path = directory.join(file_name);
-        // Ensure the file path does not already exist.
-        ensure!(!path.exists(), "The Aleo file already exists: {}", path.display());
-
-        // Write the file.
-        File::create(&path)?.write_all(program_string.as_bytes())?;
-
-        // Return the Aleo file.
-        Self::from_filepath(&path)
-    }
-
     /// Opens the Aleo program file, given the directory path, program ID, and `is_main` indicator.
     pub fn open(directory: &Path, program_id: &ProgramID<N>, is_main: bool) -> Result<Self> {
         // Ensure the directory path exists.
