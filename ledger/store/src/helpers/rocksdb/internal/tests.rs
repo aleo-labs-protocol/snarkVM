@@ -66,6 +66,44 @@ fn test_open_allocates_little_disk_space() {
     assert!(allocated < MAX_ALLOCATED_BYTES, "The database allocates {allocated} bytes on disk");
 }
 
+/// Returns the value of `name` in the aggregated table properties of `database`.
+fn table_property(database: &RocksDB, name: &str) -> u64 {
+    let properties = database
+        .property_value("rocksdb.aggregated-table-properties")
+        .expect("Failed to read the table properties")
+        .expect("The table properties are missing");
+    properties
+        .split(';')
+        .filter_map(|property| property.trim().split_once('='))
+        .find(|(key, _)| *key == name)
+        .unwrap_or_else(|| panic!("The table properties have no '{name}': {properties}"))
+        .1
+        .parse()
+        .expect("The table property is not a number")
+}
+
+#[test]
+fn test_table_files_have_partitioned_filters() {
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
+
+    for i in 0..1000u32 {
+        map.insert(i, i.to_string()).expect("Failed to insert");
+    }
+    map.database.flush().expect("Failed to flush");
+
+    assert!(table_property(&map.database, "filter block size") > 0);
+    assert!(table_property(&map.database, "# index partitions") > 0);
+
+    // Lookups read the table file, as the flush emptied the memtable.
+    for i in 0..1000u32 {
+        assert_eq!(map.get_confirmed(&i).expect("Failed to get").map(|value| value.into_owned()), Some(i.to_string()));
+    }
+    for i in 1000..2000u32 {
+        assert!(!map.contains_key_confirmed(&i).expect("Failed to check"));
+    }
+}
+
 #[test]
 fn test_insert_and_contains_key() {
     let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
