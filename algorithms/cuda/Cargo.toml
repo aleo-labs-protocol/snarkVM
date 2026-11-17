@@ -19,7 +19,7 @@ categories = [
   "wasm",
   "web-programming"
 ]
-include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
+include = [ "Cargo.toml", "build.rs", "cuda", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2021"
 
