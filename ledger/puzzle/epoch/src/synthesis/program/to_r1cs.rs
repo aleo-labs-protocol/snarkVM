@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> EpochProgram<N> {
     /// Synthesizes the R1CS for a program function on the given inputs.
     pub fn to_r1cs<A: circuit::Aleo<Network = N>>(&self, console_inputs: Vec<Value<N>>) -> Result<R1CS<A::BaseField>> {
-        let timer = timer!("synthesize_r1cs");
+        let timer = timing_span!("synthesize_r1cs").entered();
 
         // Declare the function name.
         let function_name = Identifier::from_str("synthesize")?;
@@ -35,7 +35,7 @@ impl<N: Network> EpochProgram<N> {
         // Initialize the registers.
         let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::rng())?, Default::default());
         let mut registers = Registers::<N, A>::new(call_stack, register_types);
-        lap!(timer, "Initialize the registers");
+        timing_event!("Initialize the registers");
 
         // Ensure the circuit environment is clean.
         A::reset();
@@ -49,14 +49,14 @@ impl<N: Network> EpochProgram<N> {
             // Store the input.
             circuit_inputs.push(input);
         }
-        lap!(timer, "Inject the inputs");
+        timing_event!("Inject the inputs");
 
         // Store the inputs into the registers.
         function.inputs().iter().map(|i| i.register()).zip_eq(&circuit_inputs).try_for_each(|(register, input)| {
             // Assign the circuit input to the register.
             registers.store_circuit(&self.stack, register, input.clone())
         })?;
-        lap!(timer, "Store the inputs");
+        timing_event!("Store the inputs");
 
         // Execute the instructions.
         for instruction in function.instructions() {
@@ -82,7 +82,7 @@ impl<N: Network> EpochProgram<N> {
                 }
             }
         }
-        lap!(timer, "Execute the instructions");
+        timing_event!("Execute the instructions");
 
         log_circuit::<N, A>(function_name);
 
@@ -92,11 +92,12 @@ impl<N: Network> EpochProgram<N> {
             "'{}/{function_name}' is not satisfied on the given inputs.",
             self.stack.program_id(),
         );
-        lap!(timer, "Ensure the circuit is satisfied");
+        timing_event!("Ensure the circuit is satisfied");
 
         // Eject the R1CS and reset the circuit.
         let r1cs = A::eject_r1cs_and_reset();
-        finish!(timer, "Eject the circuit assignment and reset the circuit");
+        timing_event!("Eject the circuit assignment and reset the circuit");
+        drop(timer);
 
         Ok(r1cs)
     }

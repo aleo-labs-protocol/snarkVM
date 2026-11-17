@@ -24,7 +24,7 @@ impl<N: Network> Process<N> {
         deployment: &Deployment<N>,
         rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("Process::verify_deployment");
+        let timer = timing_span!("Process::verify_deployment").entered();
 
         // Retrieve the program ID.
         let program_id = deployment.program().id();
@@ -74,13 +74,13 @@ impl<N: Network> Process<N> {
         } else {
             Stack::new(self, deployment.program())?
         };
-        lap!(timer, "Compute the stack");
+        timing_event!("Compute the stack");
 
         // Ensure the verifying keys are well-formed and the certificates are valid.
         let verification = stack.verify_deployment::<A, R>(consensus_version, deployment, rng);
-        lap!(timer, "Verify the deployment");
+        timing_event!("Verify the deployment");
 
-        finish!(timer);
+        drop(timer);
         verification
     }
 }
@@ -283,9 +283,9 @@ function foo:
         let over_v1_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
         let over_v2_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
         let over_v1_constraints =
-            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1) as usize);
+            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1)?);
         let over_v2_constraints =
-            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1) as usize);
+            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1)?);
 
         // V16 enforces the original per-transaction limits.
         assert!(

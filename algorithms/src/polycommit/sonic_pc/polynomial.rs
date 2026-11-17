@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::PolynomialLabel;
-use crate::fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, Polynomial, SparsePolynomial};
+use crate::fft::{EvaluationDomain, Evaluations as EvaluationsOnDomain, Polynomial};
 use snarkvm_fields::{Field, PrimeField};
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, cfg_iter, cfg_iter_mut};
 
@@ -144,18 +144,6 @@ pub struct LabeledPolynomialWithBasis<'a, F: PrimeField> {
 }
 
 impl<'a, F: PrimeField> LabeledPolynomialWithBasis<'a, F> {
-    /// Construct a new labeled polynomial by consuming `polynomial`.
-    pub fn new_monomial_basis(
-        label: PolynomialLabel,
-        polynomial: &'a Polynomial<F>,
-        degree_bound: Option<usize>,
-        hiding_bound: Option<usize>,
-    ) -> Self {
-        let polynomial = PolynomialWithBasis::new_monomial_basis_ref(polynomial, degree_bound);
-        let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
-        Self { info, polynomial }
-    }
-
     pub fn new_lagrange_basis(
         label: PolynomialLabel,
         polynomial: EvaluationsOnDomain<F>,
@@ -250,31 +238,7 @@ pub enum PolynomialWithBasis<'a, F: PrimeField> {
 }
 
 impl<'a, F: PrimeField> PolynomialWithBasis<'a, F> {
-    pub fn new_monomial_basis_ref(polynomial: &'a Polynomial<F>, degree_bound: Option<usize>) -> Self {
-        Self::Monomial { polynomial: Cow::Borrowed(polynomial), degree_bound }
-    }
-
     pub fn new_monomial_basis(polynomial: Polynomial<'a, F>, degree_bound: Option<usize>) -> Self {
-        Self::Monomial { polynomial: Cow::Owned(polynomial), degree_bound }
-    }
-
-    pub fn new_dense_monomial_basis_ref(polynomial: &'a DensePolynomial<F>, degree_bound: Option<usize>) -> Self {
-        let polynomial = Polynomial::Dense(Cow::Borrowed(polynomial));
-        Self::Monomial { polynomial: Cow::Owned(polynomial), degree_bound }
-    }
-
-    pub fn new_dense_monomial_basis(polynomial: DensePolynomial<F>, degree_bound: Option<usize>) -> Self {
-        let polynomial = Polynomial::from(polynomial);
-        Self::Monomial { polynomial: Cow::Owned(polynomial), degree_bound }
-    }
-
-    pub fn new_sparse_monomial_basis_ref(polynomial: &'a SparsePolynomial<F>, degree_bound: Option<usize>) -> Self {
-        let polynomial = Polynomial::Sparse(Cow::Borrowed(polynomial));
-        Self::Monomial { polynomial: Cow::Owned(polynomial), degree_bound }
-    }
-
-    pub fn new_sparse_monomial_basis(polynomial: SparsePolynomial<F>, degree_bound: Option<usize>) -> Self {
-        let polynomial = Polynomial::from(polynomial);
         Self::Monomial { polynomial: Cow::Owned(polynomial), degree_bound }
     }
 
@@ -286,28 +250,12 @@ impl<'a, F: PrimeField> PolynomialWithBasis<'a, F> {
         Self::Lagrange { evaluations: Cow::Borrowed(evaluations) }
     }
 
-    pub fn is_in_monomial_basis(&self) -> bool {
-        matches!(self, Self::Monomial { .. })
-    }
-
     /// Retrieve the degree bound in `self`.
     pub fn degree_bound(&self) -> Option<usize> {
         match self {
             Self::Monomial { degree_bound, .. } => *degree_bound,
             _ => None,
         }
-    }
-
-    /// Retrieve the degree bound in `self`.
-    pub fn is_sparse(&self) -> bool {
-        match self {
-            Self::Monomial { polynomial, .. } => matches!(polynomial.as_ref(), Polynomial::Sparse(_)),
-            _ => false,
-        }
-    }
-
-    pub fn is_in_lagrange_basis(&self) -> bool {
-        matches!(self, Self::Lagrange { .. })
     }
 
     pub fn domain(&self) -> Option<EvaluationDomain<F>> {

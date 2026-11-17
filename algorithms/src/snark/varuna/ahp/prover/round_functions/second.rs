@@ -30,7 +30,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use rand::Rng;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter, cfg_reduce, defer};
+use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter, cfg_reduce, timing_span};
 
 #[cfg(feature = "serial")]
 use itertools::Itertools;
@@ -54,8 +54,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
     ) -> Result<(prover::SecondOracles<F>, prover::State<'a, F, SM>)> {
-        let round_time = start_timer!(|| "AHP::Prover::SecondRound");
-        defer! { end_timer!(round_time); }
+        let _round_time = timing_span!("AHP::Prover::SecondRound").entered();
 
         let zk_bound = Self::zk_bound();
 
@@ -125,8 +124,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             }
         }
 
-        let h_sum_time = start_timer!(|| "AHP::Prover::SecondRound h_sum");
-        defer! { end_timer!(h_sum_time); }
+        let _h_sum_time = timing_span!("AHP::Prover::SecondRound h_sum").entered();
         let h_sum: DensePolynomial<F> =
             cfg_reduce!(cfg_into_iter!(job_pool.execute_all()), || Ok(DensePolynomial::zero()), |a, b| {
                 a.and_then(|a| {
@@ -146,7 +144,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         circuit: &Circuit<F, SM>,
     ) -> DensePolynomial<F> {
         let label = label.to_string();
-        let poly_time = start_timer!(|| format!("Computing {label}"));
+        let poly_time = timing_span!("Computing polynomial", %label).entered();
 
         let evals = EvaluationsOnDomain::from_vec_and_domain(evaluations, constraint_domain);
         let poly = evals.interpolate_with_pc_by_ref(&circuit.ifft_precomputation);
@@ -162,7 +160,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             &evals.evaluations,
         );
 
-        end_timer!(poly_time);
+        drop(poly_time);
 
         poly
     }
