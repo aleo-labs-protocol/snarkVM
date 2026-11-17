@@ -58,6 +58,12 @@ pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 /// open-files limit well above this value, which its sockets and other files share.
 pub const MAX_OPEN_FILES: u16 = 8192;
 
+/// The number of bits per key in the Bloom filter of each table file, which gives a false positive rate of about 1%.
+const BLOOM_FILTER_BITS_PER_KEY: f64 = 10.0;
+
+/// The capacity of the block cache in bytes. It holds uncompressed data blocks, and the index and filter blocks.
+const BLOCK_CACHE_SIZE: usize = 2 * 1024 * 1024 * 1024;
+
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
 // TODO: remove the static in favor of improved `open` methods.
@@ -204,6 +210,21 @@ impl Database for RocksDB {
             // Register the prefix length.
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
             options.set_prefix_extractor(prefix_extractor);
+
+            // A lookup of a key that is in no table file reads no data block, except for a false positive of a filter.
+            // Table files written without these options have no filter, and keep none until a compaction rewrites them.
+            let mut table_options = rocksdb::BlockBasedOptions::default();
+            table_options.set_bloom_filter(BLOOM_FILTER_BITS_PER_KEY, false);
+            // The index and filter blocks count towards the capacity of the block cache. They are partitioned, so
+            // that a lookup loads one partition of each, and a cache that is too small for all of them costs a
+            // lookup at most one read per partition.
+            table_options.set_block_cache(&rocksdb::Cache::new_lru_cache(BLOCK_CACHE_SIZE));
+            table_options.set_cache_index_and_filter_blocks(true);
+            table_options.set_index_type(rocksdb::BlockBasedIndexType::TwoLevelIndexSearch);
+            table_options.set_partition_filters(true);
+            table_options.set_pin_top_level_index_and_filter(true);
+            table_options.set_pin_l0_filter_and_index_blocks_in_cache(true);
+            options.set_block_based_table_factory(&table_options);
 
             let rocksdb = if let Some(secondary_path) = &secondary_path {
                 // Keep all the files open, so that the ones removed by the primary's compactions
