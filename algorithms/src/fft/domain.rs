@@ -344,6 +344,7 @@ impl<F: FftField> EvaluationDomain<F> {
     /// first elements
     pub fn reindex_by_subdomain(&self, other: &Self, index: usize) -> Result<usize> {
         ensure!(self.size() > other.size(), "other.size() must be smaller than self.size()");
+        ensure!(index < self.size(), "index ({index}) must be smaller than self.size()");
 
         // Let this subgroup be G, and the subgroup we're re-indexing by be S.
         // Since its a subgroup, the 0th element of S is at index 0 in G, the first
@@ -1582,6 +1583,19 @@ mod tests {
             }
             image.sort_unstable();
             assert_eq!(image, (0..g.size()).collect::<Vec<_>>(), "big={big} small={small} not a permutation");
+        }
+    }
+
+    /// `reindex_by_subdomain` rejects an index outside the domain, up to the
+    /// largest `usize`.
+    #[test]
+    fn reindex_by_subdomain_rejects_an_index_outside_the_domain() {
+        for (big, small) in [(2usize, 1usize), (8, 2)] {
+            let g = EvaluationDomain::<Fr>::new(big).unwrap();
+            let s = EvaluationDomain::<Fr>::new(small).unwrap();
+            for index in [g.size(), usize::MAX / 2 + 2, usize::MAX] {
+                assert!(g.reindex_by_subdomain(&s, index).is_err(), "big={big} small={small} index={index}");
+            }
         }
     }
 }
