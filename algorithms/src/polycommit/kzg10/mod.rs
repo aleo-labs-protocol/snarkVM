@@ -30,7 +30,7 @@ use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, Projectiv
 use snarkvm_fields::{One, PrimeField, Zero};
 use snarkvm_utilities::{BitIteratorBE, rand::Uniform, timing_event, timing_span};
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
 use itertools::Itertools;
 use rand::Rng;
