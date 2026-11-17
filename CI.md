@@ -35,7 +35,7 @@ on every event.
 |---|---|---|---|---|---|
 | `start-cpu-runners` | hosted | all | | starts fleet boxes | |
 | `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; the check to require | |
-| `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag | |
+| `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag, and that each matrix `name` axis lists the same names as its `include` | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
 | `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
 | `wasm` | hosted | all | | `wasm-pack test --node` in `wasm` | `wasm` |
@@ -48,17 +48,17 @@ on every event.
 | `test (ledger-store)` | `cpu` | all | 90 | `snarkvm-ledger-store` with `rocks`; then its genesis commitment test with `dev_genesis_state_root,test`; then `-ledger-narwhal-data` and `-ledger-test-helpers`; then `-ledger-puzzle` and `-ledger-puzzle-epoch` | `ledger-store`, `ledger-narwhal-data`, `ledger-test-helpers`, `ledger-puzzle`, `ledger-puzzle-epoch` |
 | `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins | `synthesizer` |
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`; then `-synthesizer-program` lib and bins; then `-circuit-program` | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
-| `test (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
-| `test (ledger-merge)` | `cpu` | merge | 90 | the ignored `valid_solutions` tests of `snarkvm-ledger`; the ignored tests of `-ledger-store`; `-ledger-block` | `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
-| `test (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
-| `test (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
-| `test (synthesizer-release)` | `cpu` | merge | 90 | `snarkvm-synthesizer` lib and bins with `test`, release | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
-| `test (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
-| `test (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests with `test,dev-print` | `synthesizer-integration` |
-| `test (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
-| `test (old-consensus-versions-1)` to `-3` | `cpu` | release | 120 | one third each of the V8 to V14 tests of `snarkvm-synthesizer`, ignored ones included, with `test-old-consensus-versions`, release | |
-| `test (integers-exhaustive)` | `cpu` | release | 120 | the ignored tests of `snarkvm-circuit-types-integers`, which check every 8-bit input | |
-| `test (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks`, release; again with `test,rocks`, then the ignored tests; then `test_vm_execute_and_finalize` with `test,rocks` | |
+| `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
+| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the ignored `valid_solutions` tests of `snarkvm-ledger`; the ignored tests of `-ledger-store`; `-ledger-block` | `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
+| `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
+| `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
+| `test-merge (synthesizer-release)` | `cpu` | merge | 90 | `snarkvm-synthesizer` lib and bins with `test`, release | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
+| `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
+| `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests with `test,dev-print` | `synthesizer-integration` |
+| `test-merge (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
+| `test-release (old-consensus-versions-1)` to `-3` | `cpu` | release | 120 | one third each of the V8 to V14 tests of `snarkvm-synthesizer`, ignored ones included, with `test-old-consensus-versions`, release | |
+| `test-release (integers-exhaustive)` | `cpu` | release | 120 | the ignored tests of `snarkvm-circuit-types-integers`, which check every 8-bit input | |
+| `test-release (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks`, release; again with `test,rocks`, then the ignored tests; then `test_vm_execute_and_finalize` with `test,rocks` | |
 | `machete` | hosted | merge | | `cargo machete` | `check-unused-dependencies` |
 | `windows` | hosted (Windows) | release | | `cargo check --examples --benches --tests` in `algorithms`, `circuit`, `console`, `curves`, `fields`, `ledger`, `parameters`, `synthesizer`, `utilities` | `verify-windows` |
 
