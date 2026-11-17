@@ -28,7 +28,10 @@ use itertools::Itertools;
 use rand::{CryptoRng, Rng};
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::{dev_println, timing_span};
+use snarkvm_utilities::{cfg_into_iter, cfg_iter, dev_println, timing_span};
+
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 mod fifth;
 mod first;
@@ -68,23 +71,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 randomizing_assignments.len()
             )));
         }
-        let indices_and_assignments = circuits_to_constraints
-            .iter()
-            .zip_eq(randomizing_assignments)
+        let circuits = circuits_to_constraints.iter().zip_eq(randomizing_assignments).collect::<Vec<_>>();
+        let indices_and_assignments = cfg_into_iter!(circuits)
             .map(|((circuit, constraints), circuit_rand_assignments)| {
-                let assignments = constraints
-                    .iter()
-                    .zip(circuit_rand_assignments)
+                let assignments = cfg_iter!(constraints)
+                    .zip_eq(circuit_rand_assignments)
                     .enumerate()
                     .map(|(i, (instance, rand_assignments))| {
                         let mut pcs = {
                             let _constraint_time =
                                 timing_span!("Generating constraints and witnesses", circuit = %circuit.id, index = i)
                                     .entered();
-
-                            // i may not be used if the timer feature is disabled.
-                            #[allow(unused_variables)]
-                            let _ = i;
 
                             let mut pcs = prover::ConstraintSystem::new();
                             instance.generate_constraints(&mut pcs)?;
