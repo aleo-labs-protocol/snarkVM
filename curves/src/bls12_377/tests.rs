@@ -34,6 +34,7 @@ use crate::{
         G2Projective,
         g1::Bls12_377G1Parameters,
         g2::Bls12_377G2Parameters,
+        msm_lane_outputs,
     },
     templates::{
         bls12::{Bls12Parameters, G1Prepared, G2Prepared},
@@ -1728,11 +1729,16 @@ fn test_g1_msm_lanes() {
     check(&[vec![term, (-term.0, term.1)]]);
 
     // The lanes return other projective coordinates than the scalar path, so this checks that
-    // `msm_lanes` runs them exactly where the lanes are supported.
+    // `msm_lanes` runs them exactly where the lanes are supported, and that no lane of these
+    // random terms has `Z = 0`.
     for n in [2, 5, 13, 25] {
         let msm = random_msm(&mut rng, n);
         match G1Affine::msm_lanes(&[&msm]) {
-            Some(sums) => assert!(lanes_supported() && sums[0].z != reference(&msm).z, "{n} terms"),
+            Some(sums) => {
+                assert!(lanes_supported() && sums[0].z != reference(&msm).z, "{n} terms");
+                let outputs = msm_lane_outputs(&[&msm]).unwrap();
+                assert!(outputs.iter().flatten().all(|(sum, [.., z])| sum.is_none() || !z.is_zero()), "{n} terms");
+            }
             None => assert!(!lanes_supported(), "{n} terms"),
         }
     }
