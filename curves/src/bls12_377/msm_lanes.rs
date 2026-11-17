@@ -21,7 +21,7 @@ use snarkvm_utilities::{BitIteratorBE, biginteger::BigInteger256};
 use crate::{
     AffineCurve,
     ProjectiveCurve,
-    bls12_377::{FqParameters, Fr, G1Affine, G1Projective, g1::Bls12_377G1Parameters},
+    bls12_377::{Fq, FqParameters, Fr, G1Affine, G1Projective, g1::Bls12_377G1Parameters},
     traits::ShortWeierstrassParameters,
 };
 
@@ -30,6 +30,24 @@ type Parameters = Bls12_377G1Parameters;
 /// Runs `ShortWeierstrassParameters::msm_lanes` for G1: drops the zero terms, adds the bases of unit
 /// scalars, splits the other terms into calls of `ifma::glv_mul_8`, and sums each lane.
 pub(super) fn msm_lanes(msms: &[&[(G1Affine, Fr)]]) -> Option<Vec<G1Projective>> {
+    msm_lanes_with(msms, |_| {})
+}
+
+/// Runs `msm_lanes` on `msms` and returns the raw output of each of its calls of
+/// `ifma::glv_mul_8`.
+#[doc(hidden)]
+pub fn msm_lane_outputs(msms: &[&[(G1Affine, Fr)]]) -> Option<Vec<LaneOutputs>> {
+    let mut outputs = vec![];
+    msm_lanes_with(msms, |call| outputs.push(call))?;
+    Some(outputs)
+}
+
+/// The lanes of one call of `ifma::glv_mul_8`: the index of the MSM each holds, if any, and its
+/// `[X, Y, Z]`.
+type LaneOutputs = [(Option<usize>, [Fq; 3]); 8];
+
+/// `msm_lanes`, passing the lanes of each call of `ifma::glv_mul_8` to `on_call`.
+fn msm_lanes_with(msms: &[&[(G1Affine, Fr)]], mut on_call: impl FnMut(LaneOutputs)) -> Option<Vec<G1Projective>> {
     debug_assert!(
         msms.iter().flat_map(|msm| msm.iter()).all(|(base, _)| base.is_in_correct_subgroup_assuming_on_curve()),
         "a base is outside the prime-order subgroup"
@@ -57,7 +75,7 @@ pub(super) fn msm_lanes(msms: &[&[(G1Affine, Fr)]]) -> Option<Vec<G1Projective>>
         });
     }
     for call in lane_calls(&msms) {
-        run_lane_call(&call, &mut sums)?;
+        run_lane_call(&call, &mut sums, &mut on_call)?;
     }
     Some(sums)
 }
@@ -122,7 +140,7 @@ enum LaneTerm {
 ///
 /// For a base outside G1 the sum is that of `mul_projective`, `k_1 P + k_2 phi(P)`, which is not
 /// `k P`.
-fn run_lane_call(call: &[LaneMsm<'_>], sums: &mut [G1Projective]) -> Option<()> {
+fn run_lane_call(call: &[LaneMsm<'_>], sums: &mut [G1Projective], on_call: &mut impl FnMut(LaneOutputs)) -> Option<()> {
     let streams = lane_streams(call);
     let (pairs, parts) = (streams / 2, streams % 2);
     let slots = pairs + parts;
@@ -161,6 +179,7 @@ fn run_lane_call(call: &[LaneMsm<'_>], sums: &mut [G1Projective]) -> Option<()> 
     }
     let digits: Vec<_> = windows.iter().map(|slot| &slot[..len]).collect();
     let out = ifma::glv_mul_8(&points, &Parameters::PHI, &digits)?;
+    on_call(std::array::from_fn(|lane| (lane_sums[lane], out[lane])));
     for ((sum, terms), [x, y, z]) in lane_sums.into_iter().zip(lane_terms).zip(out) {
         let Some(sum) = sum else { continue };
         sums[sum] += &if z.is_zero() {
