@@ -637,6 +637,68 @@ public:
         return ret;
     }
 
+    // The product of two polynomials on the coset with the NTT's shift `g`: for
+    // `a * b = L + X^n H`, `out` receives the `n` coefficients of `L + g^n H`.
+    RustError MulCoset(fr_t* out, const fr_t* a, size_t a_len,
+                       const fr_t* b, size_t b_len, uint32_t lg_domain_size)
+    {
+        // `Base_dev_ptr` does not special-case a one-element domain, and a
+        // release build compiles out sppark's `MAX_LG_DOMAIN_SIZE` assert.
+        if (lg_domain_size == 0 || lg_domain_size > MAX_LG_DOMAIN_SIZE)
+            return RustError{cudaErrorInvalidValue};
+        size_t domain_size = (size_t)1 << lg_domain_size;
+        if (a_len > domain_size || b_len > domain_size)
+            return RustError{cudaErrorInvalidValue};
+
+        slot_t slot(resources);
+        RustError ret = RustError{cudaSuccess};
+        try {
+            auto& gpu = select_gpu(slot.dev());
+            stream_t& stream = gpu[slot.stream()];
+            try {
+                dev_ptr_t<fr_t> d_a{domain_size, stream}, d_b{domain_size, stream},
+                                d_prod{domain_size, stream};
+
+                stream.HtoD(&d_a[0], a, a_len);
+                CUDA_OK(cudaMemsetAsync(&d_a[a_len], 0,
+                                        (domain_size - a_len) * sizeof(fr_t), stream));
+                stream.HtoD(&d_b[0], b, b_len);
+                CUDA_OK(cudaMemsetAsync(&d_b[b_len], 0,
+                                        (domain_size - b_len) * sizeof(fr_t), stream));
+
+                Polynomial::MulDev(stream, &d_prod[0], &d_a[0], &d_b[0],
+                                   lg_domain_size, NTT::Type::coset);
+
+                stream.DtoH(out, &d_prod[0], domain_size);
+                stream.sync();
+            } catch (...) {
+                // After a fault the drain fails too, and its error must not
+                // replace the cause.
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
+        } catch (const cuda_error& e) {
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+            ret = RustError{e.code(), e.what()};
+#else
+            ret = RustError{e.code()};
+#endif
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+        } catch (const std::exception& e) {
+            // Ahead of the catch-all, so a `std::bad_alloc` keeps its message.
+            ret = RustError{cudaErrorUnknown, e.what()};
+#endif
+        } catch (...) {
+            // Nothing may cross `extern "C"`: the wrappers in `snarkvm_api.cu`
+            // have no handler.
+            ret = RustError{cudaErrorUnknown};
+        }
+        return ret;
+    }
+
     // The f/b/a evaluations and the three interpolations that consume them,
     // with each array crossing the bus once.
     RustError FourthRoundPolys(fr_t* a_out, fr_t* b_out, fr_t* f_out,
