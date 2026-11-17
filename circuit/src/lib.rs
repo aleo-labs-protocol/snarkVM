@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![warn(clippy::cast_possible_truncation)]
 
 pub use modules::*;
 

@@ -28,17 +28,25 @@ pub struct VariableBase;
 
 impl VariableBase {
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        // TODO SNP: where to set the threshold
+        if TypeId::of::<G>() == TypeId::of::<G1Affine>() && scalars.len() > 1024 {
+            let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, <G::ScalarField as PrimeField>::BigInteger>(
+                bases, scalars,
+            );
+            return crate::cuda_must_succeed!(result, "MSM");
+        }
+        Self::msm_on_cpu(bases, scalars)
+    }
+
+    /// Variable base MSM on the CPU, in every build.
+    fn msm_on_cpu<G: AffineCurve>(
+        bases: &[G],
+        scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+    ) -> G::Projective {
         // For BLS12-377, we perform variable base MSM using a batched addition
         // technique.
         if TypeId::of::<G>() == TypeId::of::<G1Affine>() {
-            #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-            // TODO SNP: where to set the threshold
-            if scalars.len() > 1024 {
-                let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, <G::ScalarField as PrimeField>::BigInteger>(
-                    bases, scalars,
-                );
-                return crate::cuda_must_succeed!(result, "MSM");
-            }
             batched::msm(bases, scalars)
         }
         // For all other curves, we perform variable base MSM using Pippenger's algorithm.
@@ -50,14 +58,21 @@ impl VariableBase {
     /// Multi-scalar multiplications over field elements, several at once.
     ///
     /// Returns the sum of `base * scalar` over each of `msms`, in their
-    /// order. Each MSM goes through [`Self::msm`], which picks its method by
-    /// the MSM's size.
+    /// order. Each MSM runs on the CPU, also in a `cuda` build, by the method
+    /// that [`Self::msm`] picks for its size on the CPU.
+    ///
+    /// Hazard: do not send these MSMs to a CUDA device. Proof verification
+    /// calls this function, both in `VM::check_transaction` and in finalize's
+    /// `snark.verify`, and the VM catches a panic there as a failed check. A
+    /// device error panics, so a validator with a failing device would abort
+    /// or reject a valid transaction and commit a block that differs from its
+    /// peers' blocks.
     pub fn msm_many<G: AffineCurve>(msms: &[&[(G, G::ScalarField)]]) -> Vec<G::Projective> {
         msms.iter()
             .map(|terms| {
                 let (bases, scalars): (Vec<_>, Vec<_>) =
                     terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
-                Self::msm(&bases, &scalars)
+                Self::msm_on_cpu(&bases, &scalars)
             })
             .collect()
     }

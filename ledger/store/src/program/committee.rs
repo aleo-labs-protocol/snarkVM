@@ -19,8 +19,8 @@ use crate::{
 };
 use console::network::prelude::*;
 use snarkvm_ledger_committee::Committee;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 

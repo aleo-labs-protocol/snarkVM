@@ -79,7 +79,7 @@ impl<N: Network> Process<N> {
         deployment_or_execution_id: Field<N>,
         rng: &mut R,
     ) -> Result<Authorization<N>, ProcessAuthError> {
-        let timer = timer!("Process::authorize_fee_private");
+        let timer = timing_span!("Process::authorize_fee_private").entered();
 
         // Ensure the fee has the correct program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
@@ -100,11 +100,12 @@ impl<N: Network> Process<N> {
             Value::from(Literal::Field(deployment_or_execution_id)),
         ]
         .into_iter();
-        lap!(timer, "Construct the inputs");
+        timing_event!("Construct the inputs");
 
         // Authorize the call.
         let authorization = self.get_stack(program_id)?.authorize::<A, R>(private_key, function_name, inputs, rng)?;
-        finish!(timer, "Compute the authorization");
+        timing_event!("Compute the authorization");
+        drop(timer);
 
         // Return the authorization.
         Ok(authorization)
@@ -120,7 +121,7 @@ impl<N: Network> Process<N> {
         deployment_or_execution_id: Field<N>,
         rng: &mut R,
     ) -> Result<Authorization<N>, ProcessAuthError> {
-        let timer = timer!("Process::authorize_fee_public");
+        let timer = timing_span!("Process::authorize_fee_public").entered();
 
         // Ensure the fee has the correct program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
@@ -134,11 +135,12 @@ impl<N: Network> Process<N> {
             Value::from(Literal::Field(deployment_or_execution_id)),
         ]
         .into_iter();
-        lap!(timer, "Construct the inputs");
+        timing_event!("Construct the inputs");
 
         // Authorize the call.
         let authorization = self.get_stack(program_id)?.authorize::<A, R>(private_key, function_name, inputs, rng)?;
-        finish!(timer, "Compute the authorization");
+        timing_event!("Compute the authorization");
+        drop(timer);
 
         // Return the authorization.
         Ok(authorization)

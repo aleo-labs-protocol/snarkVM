@@ -2,6 +2,12 @@ name: CI
 
 on:
   pull_request:
+    # A pull request that changes only Markdown starts no run. The files under
+    # curves/documentation are compiled into snarkvm-curves, so they count as code.
+    paths:
+      - '**'
+      - '!**.md'
+      - 'curves/documentation/**'
   push:
     branches: [staging, 'release/**']
   workflow_dispatch:
@@ -19,8 +25,20 @@ env:
   CARGO_TERM_COLOR: always
   RUST_MIN_STACK: 67108864
 
-# Every self-hosted job carries the same guard: a fork's code never runs on
-# the fleet, whose target dirs and sccache persist between jobs.
+# GitHub holds an outside contributor's pull request run until a maintainer
+# approves it. A fork's run gets no secrets, so start-cpu-runners is skipped and
+# fork-pr-runners.yml starts the boxes. The fleet jobs therefore accept a
+# skipped start-cpu-runners, and run only in this repository, which alone may
+# use the fleet.
+#
+# The fleet jobs also wait for check-shared-refs, a hosted job. GitHub reports
+# a run as `in_progress`, and fires the `workflow_run` event that starts the
+# boxes, only once none of its ready jobs is waiting for a runner. With no
+# hosted job ahead of them, a fork's fleet jobs would wait for boxes that only
+# that event starts.
+#
+# A push runs CI only in this repository. A mirror receives this branch by
+# push, with this file, and would otherwise rerun CI on its own runners.
 jobs:
   start-cpu-runners:
     # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
@@ -32,15 +50,18 @@ jobs:
       role-to-assume: ${{ vars.RUNNER_ROLE_ARN }}
       label: cpu
       # Below the default of 3: snarkVM's jobs run ten minutes or more, so a
-      # box absorbs fewer of them within the critical path.
+      # box absorbs fewer of them within the critical path. fork-pr-runners.yml
+      # repeats this.
       jobs-per-box: 2
       runner-app-id: ${{ vars.RUNNER_APP_ID }}
     if: >-
-      github.event.pull_request == null ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event.pull_request == null ||
+       github.event.pull_request.head.repo.full_name == github.repository)
 
   check-shared-refs:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -49,6 +70,7 @@ jobs:
 
   fmt:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     env:
       # `.rustfmt.toml` uses nightly-only options, which stable drops without
       # an error. Bumping this pin may reformat the tree.
@@ -61,10 +83,11 @@ jobs:
 
   deny:
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: cargo-deny@0.20.2 }
       # Advisories: bump-advisories.yml.
       - run: cargo deny check bans licenses sources
@@ -72,13 +95,14 @@ jobs:
   wasm:
     permissions: { contents: read, actions: write }
     runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 22 }
       - run: rustup target add wasm32-unknown-unknown
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: wasm-pack }
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -91,12 +115,13 @@ jobs:
         working-directory: wasm
 
   lint:
-    needs: start-cpu-runners
+    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
-    if: >-
-      github.event.pull_request == null ||
-      github.event.pull_request.head.repo.full_name == github.repository
+    if: &fleet-if >-
+      !cancelled() && needs.check-shared-refs.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -121,12 +146,10 @@ jobs:
   #
   # Cheap entries run on free hosted runners, the rest on the fleet.
   test:
-    needs: start-cpu-runners
+    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
-    if: >-
-      github.event.pull_request == null ||
-      github.event.pull_request.head.repo.full_name == github.repository
+    if: *fleet-if
     strategy:
       fail-fast: false
       matrix:
@@ -182,8 +205,13 @@ jobs:
         with: &aleo-resources
           path: ~/.aleo/resources
           key: aleo-resources-${{ matrix.name }}-${{ hashFiles('parameters/**/*.metadata') }}
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: cargo-nextest@0.9.114 }
+      # An env RUSTFLAGS replaces the flags in .cargo/config.toml without an
+      # error. ADX is what `skylake` has and `x86-64-v3` lacks.
+      - name: Check that the build targets skylake
+        if: runner.arch == 'X64'
+        run: cargo rustc -q -p snarkvm-utilities-derives --lib -- --print cfg | grep -q 'target_feature="adx"'
       # Each line of `runs` is one cargo command.
       - name: Test
         env:
@@ -226,11 +254,11 @@ jobs:
         if: runner.environment == 'github-hosted' && (github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/'))
         with: *aleo-resources
 
-  # The cheap entries, on hosted runners: they wait for no box, and a fork's
-  # pull request runs them too.
+  # The cheap entries, on hosted runners: they wait for no box.
   test-hosted:
     permissions: { contents: read, actions: write }
     runs-on: ${{ matrix.os }}
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -275,13 +303,14 @@ jobs:
   # Slower suites that rarely fail where the PR set passed. On every push, on
   # pull requests to a release branch, and on demand.
   test-merge:
-    needs: start-cpu-runners
+    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: >-
-      github.event_name != 'pull_request' ||
-      (startsWith(github.base_ref, 'release/') &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      !cancelled() && needs.check-shared-refs.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      github.repository == 'aleo-labs-protocol/snarkVM' &&
+      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     strategy:
       fail-fast: false
       matrix:
@@ -310,6 +339,47 @@ jobs:
               nextest run -p snarkvm-synthesizer-program --test lib -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)
               nextest run -p snarkvm-synthesizer-program --test lib -j 4 -E test(/keccak|sha/)
               nextest run -p snarkvm-synthesizer-program --test lib -E test(/psd|instruction::is|instruction::commit/)
+    name: test (${{ matrix.name }})
+    steps: *test-steps
+
+  # Suites that take too long for every push. On a release branch, on pull
+  # requests to one, and on demand.
+  test-release:
+    needs: [check-shared-refs, start-cpu-runners]
+    runs-on: [self-hosted, linux, x64, cpu]
+    timeout-minutes: 120
+    if: >-
+      !cancelled() && needs.check-shared-refs.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      github.repository == 'aleo-labs-protocol/snarkVM' &&
+      (github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/heads/release/') ||
+       startsWith(github.base_ref, 'release/'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Three shards, each on its own box. `count:` deals the tests out in
+          # name order, so each slow `test_v14` module spreads across shards.
+          - name: old-consensus-versions-1
+            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:1/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+          - name: old-consensus-versions-2
+            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:2/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+          - name: old-consensus-versions-3
+            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:3/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+          # Not `--release`: that compiles out the check in `is_satisfied` that
+          # each constraint uses only declared variables.
+          - name: integers-exhaustive
+            runs: nextest run -p snarkvm-circuit-types-integers --run-ignored ignored-only
+          # `rocks` alone is the feature set nodes ship. `test` changes network
+          # constants and adds tests, so each set runs. Of the integration targets,
+          # only test_vm_execute_and_finalize opens a RocksDB store.
+          - name: synthesizer-rocks
+            runs: |
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 2 --run-ignored ignored-only
+              nextest run -p snarkvm-synthesizer --release --features test,rocks --test test_vm_execute_and_finalize
     name: test (${{ matrix.name }})
     steps: *test-steps
 
@@ -345,11 +415,13 @@ jobs:
 
   machete:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
+    if: >-
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
+      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: cargo-machete@0.7.0 }
       - run: cargo machete
 
@@ -378,13 +450,12 @@ jobs:
         working-directory: ${{ matrix.dir }}
 
   # The one check to require. A skipped job counts as passing a required check,
-  # and a fleet job is skipped when the boxes fail to start or the pull request
-  # comes from a fork; here anything but success fails. The exception is a
-  # merge or release job skipped outside a release branch, where it is not
-  # meant to run.
+  # and a fleet job is skipped when the boxes fail to start; here anything but
+  # success fails. The exception is a merge or release job skipped outside a
+  # release branch, where it is not meant to run.
   ci-ok:
-    if: always()
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release-arm, machete, windows]
+    if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -394,4 +465,4 @@ jobs:
             startsWith(github.ref, 'refs/heads/release/') ||
             startsWith(github.base_ref, 'release/') }}
         run: |
-          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"

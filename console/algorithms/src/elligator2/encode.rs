@@ -163,4 +163,99 @@ mod tests {
         }
         Ok(())
     }
+
+    /// Known-answer vectors for the current implementation, as
+    /// `(input, sign_high, encode_without_cofactor_clear (x, y), encode (x, y))`.
+    /// An input and its negation map to the same point with opposite signs.
+    const KNOWN_ANSWERS: [(&str, bool, [&str; 2], [&str; 2]); 7] = [
+        ("1field", false, ONE_UNCLEARED, ONE_ENCODED),
+        ("-1field", true, ONE_UNCLEARED, ONE_ENCODED),
+        ("2field", false, TWO_UNCLEARED, TWO_ENCODED),
+        // (p - 1) / 2, the largest input with a low sign.
+        (
+            "4222230874714185212124412469390773265687949667577031913967616727958704619520field",
+            false,
+            HALF_UNCLEARED,
+            HALF_ENCODED,
+        ),
+        // (p + 1) / 2, the smallest input with a high sign.
+        (
+            "4222230874714185212124412469390773265687949667577031913967616727958704619521field",
+            true,
+            HALF_UNCLEARED,
+            HALF_ENCODED,
+        ),
+        (
+            "6199665387880421202190719500997492414281196623741980396576895215768716409050field",
+            true,
+            [
+                "2614656381146069564219764429971987907629874147823420053131295746410190545291field",
+                "7770605923201681931637256908510996790852808217987890251274564360905975556332field",
+            ],
+            [
+                "3481047323577070684909128288224709053596657151800730176128843267935908192189field",
+                "374601353785978431174931485624478630806528088315095281942952052952780495867field",
+            ],
+        ),
+        (
+            "2503564330031745204948172878790002415920311580108564962928368377509658926647field",
+            false,
+            [
+                "6570261678491278854666453741435763484082095000778606497506952200210355333710field",
+                "8124137036267510859997284721576153533252229269990320535488096509221368397185field",
+            ],
+            [
+                "430827258705824611081272160018411483419662419846871805922474265604649548598field",
+                "5688599815372504533458016184878089537281734929562852759700403120511758342527field",
+            ],
+        ),
+    ];
+
+    const ONE_UNCLEARED: [&str; 2] = [
+        "2804851425443654006319077719552675391162276496000525756282536066043948582878field",
+        "5907342307010590383418942072403487908244666986928808241779432283417674045606field",
+    ];
+    const ONE_ENCODED: [&str; 2] = [
+        "7627221839140354733956343745544226351748105647935800185264148075630363284948field",
+        "129010033160355624196925663517867534105180443592116012424056376324585759811field",
+    ];
+    const TWO_UNCLEARED: [&str; 2] = [
+        "3118606935849571841293119423457642928890269780253953541739413204165823116116field",
+        "1117988272719432079481377839234226730006617733442683457378417030671512003428field",
+    ];
+    const TWO_ENCODED: [&str; 2] = [
+        "7941703434189617095327902898199692901996971718138767769717344327865357644837field",
+        "1360981434976799445256741457662742411568125607377400233769317125193242706753field",
+    ];
+    const HALF_UNCLEARED: [&str; 2] = [
+        "3898284817480620139186733529485919578789049445523947846188507270303856979826field",
+        "1882812514825141955545054011422780071953700387537634041051121832240191146008field",
+    ];
+    const HALF_ENCODED: [&str; 2] = [
+        "6743116691783509059218107409963086050985250456455135191871845538377218801915field",
+        "3511438699925827998003518730983124782728528917560381607885514489836416377854field",
+    ];
+
+    #[test]
+    fn test_known_answers() -> Result<()> {
+        let point = |[x, y]: [&str; 2]| -> Result<_> {
+            Ok((Field::<CurrentEnvironment>::from_str(x)?, Field::<CurrentEnvironment>::from_str(y)?))
+        };
+
+        for (input, expected_sign_high, expected_uncleared, expected_encoded) in KNOWN_ANSWERS {
+            let input = Field::<CurrentEnvironment>::from_str(input)?;
+
+            let (uncleared, sign_high) = Elligator2::<CurrentEnvironment>::encode_without_cofactor_clear(&input)?;
+            assert_eq!(sign_high, expected_sign_high);
+            assert_eq!(uncleared.to_xy_coordinates(), point(expected_uncleared)?);
+
+            let (encoded, sign_high) = Elligator2::<CurrentEnvironment>::encode(&input)?;
+            assert_eq!(sign_high, expected_sign_high);
+            assert_eq!(encoded.to_xy_coordinates(), point(expected_encoded)?);
+
+            assert_eq!(Elligator2::<CurrentEnvironment>::decode(&uncleared, sign_high)?, input);
+            assert_eq!(Elligator2::<CurrentEnvironment>::decode(&uncleared, !sign_high)?, -input);
+        }
+        Ok(())
+    }
 }
