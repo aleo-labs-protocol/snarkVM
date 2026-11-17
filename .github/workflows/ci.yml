@@ -67,6 +67,12 @@ jobs:
         with: { persist-credentials: false }
       # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/check-shared-refs@v2
+      # An `include` name missing from its `name` axis adds a leg instead of failing.
+      - name: Check that each matrix name axis matches its include names
+        run: |
+          bad=$(yq '.jobs[].strategy.matrix | select(.name != null) | (.name - [.include[].name]) + ([.include[].name] - .name) | .[]' .github/workflows/ci.yml)
+          echo "$bad"
+          [ -z "$bad" ]
 
   fmt:
     runs-on: ubuntu-latest
@@ -314,6 +320,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        name: [ledger-rocks, ledger-merge, parameters, parameters-uncached, synthesizer-release, synthesizer-prerelease, synthesizer-integration, synthesizer-program]
         include:
           - name: ledger-rocks
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
@@ -339,7 +346,8 @@ jobs:
               nextest run -p snarkvm-synthesizer-program --test lib -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)
               nextest run -p snarkvm-synthesizer-program --test lib -j 4 -E test(/keccak|sha/)
               nextest run -p snarkvm-synthesizer-program --test lib -E test(/psd|instruction::is|instruction::commit/)
-    name: test (${{ matrix.name }})
+    # No expression: GitHub shows a skipped job's `name` unevaluated.
+    name: test-merge
     steps: *test-steps
 
   # Suites that take too long for every push. On a release branch, on pull
@@ -358,6 +366,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        name: [old-consensus-versions-1, old-consensus-versions-2, old-consensus-versions-3, integers-exhaustive, synthesizer-rocks]
         include:
           # Three shards, each on its own box. `count:` deals the tests out in
           # name order, so each slow `test_v14` module spreads across shards.
@@ -380,7 +389,7 @@ jobs:
               nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 8
               nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 2 --run-ignored ignored-only
               nextest run -p snarkvm-synthesizer --release --features test,rocks --test test_vm_execute_and_finalize
-    name: test (${{ matrix.name }})
+    name: test-release
     steps: *test-steps
 
   # The release profile on arm64: opt-level 3 and thin LTO, with no debug
@@ -397,6 +406,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        name: [arithmetic-release-linux-arm64, arithmetic-release-macos-arm64]
         include:
           # Default flags, so the target CPU is `generic`.
           - name: arithmetic-release-linux-arm64
@@ -410,7 +420,7 @@ jobs:
             os: macos-15
             rustflags: -C target-cpu=apple-a7
             runs: *arithmetic-release
-    name: test (${{ matrix.name }})
+    name: test-release-arm
     steps: *test-steps
 
   machete:
