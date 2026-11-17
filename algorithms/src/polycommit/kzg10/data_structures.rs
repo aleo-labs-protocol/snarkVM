@@ -301,10 +301,6 @@ impl<E: PairingEngine> KZGCommitment<E> {
         KZGCommitment(E::G1Affine::zero())
     }
 
-    pub fn has_degree_bound(&self) -> bool {
-        false
-    }
-
     pub fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
         self.0.is_in_correct_subgroup_assuming_on_curve()
     }

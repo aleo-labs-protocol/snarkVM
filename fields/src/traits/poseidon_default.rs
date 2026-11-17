@@ -14,9 +14,8 @@
 // limitations under the License.
 
 use crate::{PoseidonGrainLFSR, PrimeField, serial_batch_inversion_and_mul};
-use aleo_std::{end_timer, start_timer};
 use itertools::Itertools;
-use snarkvm_utilities::defer;
+use snarkvm_utilities::timing_span;
 
 use anyhow::{Result, bail};
 
@@ -51,14 +50,13 @@ pub trait PoseidonDefaultField {
             partial_rounds: u64,
             skip_matrices: u64,
         ) -> Result<(Vec<Vec<F>>, Vec<Vec<F>>)> {
-            let lfsr_time = start_timer!(|| "LFSR Init");
+            let lfsr_time = timing_span!("LFSR Init").entered();
             let mut lfsr =
                 PoseidonGrainLFSR::new(false, F::size_in_bits() as u64, (RATE + 1) as u64, full_rounds, partial_rounds);
-            end_timer!(lfsr_time);
+            drop(lfsr_time);
 
             let ark = {
-                let ark_time = start_timer!(|| "Constructing ARK");
-                defer! { end_timer!(ark_time); }
+                let _ark_time = timing_span!("Constructing ARK").entered();
                 let mut ark = Vec::with_capacity((full_rounds + partial_rounds) as usize);
                 for _ in 0..(full_rounds + partial_rounds) {
                     ark.push(lfsr.get_field_elements_rejection_sampling(RATE + 1)?);
@@ -67,8 +65,7 @@ pub trait PoseidonDefaultField {
             };
 
             {
-                let skip_time = start_timer!(|| "Skipping matrices");
-                defer! { end_timer!(skip_time); }
+                let _skip_time = timing_span!("Skipping matrices").entered();
                 for _ in 0..skip_matrices {
                     let _ = lfsr.get_field_elements_mod_p::<F>(2 * (RATE + 1))?;
                 }
@@ -82,7 +79,7 @@ pub trait PoseidonDefaultField {
             let xs = lfsr.get_field_elements_mod_p::<F>(RATE + 1)?;
             let ys = lfsr.get_field_elements_mod_p::<F>(RATE + 1)?;
 
-            let mds_time = start_timer!(|| "Construct MDS");
+            let mds_time = timing_span!("Construct MDS").entered();
             let mut mds_flattened = vec![F::zero(); (RATE + 1) * (RATE + 1)];
             for (x, mds_row_i) in xs.iter().take(RATE + 1).zip_eq(mds_flattened.chunks_mut(RATE + 1)) {
                 for (y, e) in ys.iter().take(RATE + 1).zip_eq(mds_row_i) {
@@ -91,7 +88,7 @@ pub trait PoseidonDefaultField {
             }
             serial_batch_inversion_and_mul(&mut mds_flattened, &F::one());
             let mds = mds_flattened.chunks(RATE + 1).map(|row| row.to_vec()).collect();
-            end_timer!(mds_time);
+            drop(mds_time);
 
             Ok((ark, mds))
         }

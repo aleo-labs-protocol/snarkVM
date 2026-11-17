@@ -35,8 +35,8 @@ use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use std::fs;
 use tracing::debug;
 

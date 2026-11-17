@@ -28,7 +28,8 @@ pub use schema::{STORAGE_VERSION, StorageVersion};
 #[cfg(test)]
 mod tests;
 
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
+
 use anyhow::{Result, bail, ensure};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
@@ -50,6 +51,12 @@ use std::{
 };
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
+
+/// The maximum number of table files RocksDB keeps open for a ledger. A secondary instance keeps all of them open.
+///
+/// RocksDB also keeps its log, manifest and compaction files open. So a process that opens the ledger needs an
+/// open-files limit well above this value, which its sockets and other files share.
+pub const MAX_OPEN_FILES: u16 = 8192;
 
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
@@ -167,9 +174,9 @@ impl Database for RocksDB {
         let storage = storage.into();
 
         // Obtain the path to the primary instance.
-        let primary_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        let primary_path = snarkvm_utilities::aleo_ledger_dir(network_id, &storage);
         // Obtain the path to the secondary instance, if applicable.
-        let secondary_path = aleo_std_storage::aleo_secondary_ledger_dir(network_id, &storage);
+        let secondary_path = snarkvm_utilities::aleo_secondary_ledger_dir(network_id, &storage);
         // A secondary instance is registered under its own path.
         let db_path = secondary_path.as_ref().unwrap_or(&primary_path);
 
@@ -185,6 +192,13 @@ impl Database for RocksDB {
             // The first dump runs as the database opens, and a test process exits soon after that.
             if matches!(storage, StorageMode::Test(_)) {
                 options.set_stats_dump_period_sec(0);
+                // A test database's directory is never deleted, so RocksDB does not reserve disk space
+                // ahead of writes for it. By default, RocksDB reserves 1.1 times the write buffer size
+                // for the write-ahead log, and 4 MiB for the manifest.
+                // `get_options_from_string` returns a copy of `options` with the given key changed.
+                // The copy does not keep alive the objects that `options` holds for the database,
+                // such as caches and environments, so it must run before any of them is set.
+                options = options.get_options_from_string("allow_fallocate=false")?;
             }
 
             // Register the prefix length.
@@ -201,7 +215,7 @@ impl Database for RocksDB {
                 options.increase_parallelism(2);
                 options.set_max_background_jobs(4);
                 options.create_if_missing(true);
-                options.set_max_open_files(8192);
+                options.set_max_open_files(i32::from(MAX_OPEN_FILES));
                 // Ticker statistics, without histograms or timers.
                 #[cfg(feature = "metrics")]
                 {
