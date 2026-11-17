@@ -13,16 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The kernel edge cases, the reductions on every multiple of `p` they accept, and `mul_8`, 8
-//! independent products through `mont`, as the oracle for the kernel against the scalar product.
+//! The kernel edge cases, the reductions on every multiple of `p` they accept, `mul_8`, 8
+//! independent products through `mont`, as the oracle for the kernel against the scalar product,
+//! and the GLV ladder's refusals and its single-digit sums.
 
 use super::{
+    glv_mul_8,
     is_supported,
     kernel::{below_2p, canonical, canonical_vectors, mont, quotient_estimate, shift_left},
     layout::{MASK, element_words, limbs, limbs_shifted_32, modulus, radix_52, to_array, vector, words},
 };
 use crate::{
     FftParameters,
+    Field,
     FieldParameters,
     Fp384,
     Fp384Parameters,
@@ -346,6 +349,82 @@ fn test_shift_left() {
     for p in &MODULI {
         for s in [1, 6] {
             assert_eq!(BigInteger384(shift_left(p, s)).to_biguint(), BigInteger384(*p).to_biguint() << s);
+        }
+    }
+}
+
+/// Whether `(x, y, z)` in Jacobian coordinates is the affine point `(ax, ay)`: `z` is nonzero,
+/// `x = ax z^2` and `y = ay z^3`.
+fn is_jacobian_of(coordinates: &[Fq; 3], ax: &Fq, ay: &Fq) -> bool {
+    let [x, y, z] = coordinates;
+    let z2 = z.square();
+    !z.is_zero() && *x == *ax * z2 && *y == *ay * z2 * z
+}
+
+/// Returns 8 random pairs of coordinates, which need not be points of a curve.
+fn random_glv_slot(rng: &mut TestRng) -> [[Fq; 2]; 8] {
+    std::array::from_fn(|_| [Fq::rand(rng), Fq::rand(rng)])
+}
+
+#[test]
+fn test_glv_mul_8_refusals() {
+    let mut rng = TestRng::default();
+    let slot = random_glv_slot(&mut rng);
+    let beta = Fq::rand(&mut rng);
+
+    // No slots; a slice of digits too many or too few; slices of two lengths; a digit outside
+    // `[-8, 8]`.
+    let windows = [[[1i8; 8]; 2]; 2];
+    assert!(glv_mul_8::<FqParameters>(&[], &beta, &[]).is_none());
+    assert!(glv_mul_8(&[slot], &beta, &[&windows, &windows]).is_none());
+    assert!(glv_mul_8(&[slot, slot], &beta, &[&windows]).is_none());
+    assert!(glv_mul_8(&[slot, slot], &beta, &[&windows, &windows[1..]]).is_none());
+    let mut digits = windows;
+    digits[1][1][5] = 9;
+    assert!(glv_mul_8(&[slot], &beta, &[&digits]).is_none());
+    digits[1][1][5] = -9;
+    assert!(glv_mul_8(&[slot], &beta, &[&digits]).is_none());
+
+    // Without the lanes, every call declines.
+    assert_eq!(glv_mul_8(&[slot], &beta, &[&windows]).is_some(), is_supported::<FqParameters>());
+}
+
+/// `glv_mul_8` with one nonzero digit per lane, in the last window, returns that table entry: `P`,
+/// `-P`, `phi(P)` or `-phi(P)` with digits of 1 or -1, in whichever slot the digit is and after any
+/// number of all-zero windows, and `Z = 0` for a lane with no digit. Any `(x, y)` is a point of
+/// `y^2 = x^3 + b` for some `b`, which the formulas do not read, so the points are random pairs.
+#[test]
+fn test_glv_mul_8_single_digits() {
+    if !is_supported::<FqParameters>() {
+        return;
+    }
+    let mut rng = TestRng::default();
+    let beta = Fq::rand(&mut rng);
+    for slots in 1..=3 {
+        for windows in 1..=3 {
+            let points: Vec<_> = (0..slots).map(|_| random_glv_slot(&mut rng)).collect();
+            // Lane `l` takes the digit `which[l]` in slot `slot[l]`, half `half[l]`, at the least
+            // significant window; lane 7 has no digit.
+            let which: [i8; 8] = [1, -1, 1, -1, 1, -1, 1, 0];
+            let slot: [usize; 8] = std::array::from_fn(|l| l % slots);
+            let half: [usize; 8] = std::array::from_fn(|l| (l / 2) % 2);
+            let mut digits = vec![vec![[[0i8; 8]; 2]; windows]; slots];
+            for l in 0..7 {
+                digits[slot[l]][0][half[l]][l] = which[l];
+            }
+            let digits: Vec<_> = digits.iter().map(Vec::as_slice).collect();
+            let out = glv_mul_8(&points, &beta, &digits).expect("the lanes run");
+            for (l, coordinates) in out.iter().enumerate() {
+                assert!(coordinates.iter().all(Fq::is_valid), "{slots} slots, {windows} windows, lane {l}");
+                if which[l] == 0 {
+                    assert!(coordinates[2].is_zero(), "{slots} slots, {windows} windows, lane {l}");
+                    continue;
+                }
+                let [x, y] = points[slot[l]][l];
+                let ax = if half[l] == 0 { x } else { beta * x };
+                let ay = if which[l] > 0 { y } else { -y };
+                assert!(is_jacobian_of(coordinates, &ax, &ay), "{slots} slots, {windows} windows, lane {l}");
+            }
         }
     }
 }

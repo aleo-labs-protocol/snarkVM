@@ -41,6 +41,8 @@
 #[cfg(target_arch = "x86_64")]
 mod fp12;
 #[cfg(target_arch = "x86_64")]
+mod glv;
+#[cfg(target_arch = "x86_64")]
 mod kernel;
 #[cfg(target_arch = "x86_64")]
 mod layout;
@@ -112,4 +114,49 @@ where
         return;
     }
     a.mul_assign_scalar(b)
+}
+
+/// The relative cost of the doublings of one `glv_mul_8` call, which every call runs: the
+/// instruction count of `glv_double`, in thousands, times 128.
+pub const GLV_CALL_COST: usize = 420;
+
+/// The relative cost per digit stream of a lane in one `glv_mul_8` call, its additions and its half
+/// of a table: the instruction count of `glv_add`, in thousands, times 33.
+pub const GLV_STREAM_COST: usize = 180;
+
+/// Returns, at index `l`, Jacobian coordinates `[X, Y, Z]` of
+/// `sum_w 16^w sum_k (digits[k][w][0][l] P_kl + digits[k][w][1][l] phi(P_kl))` for each lane `l`; or
+/// `None` if `is_supported::<P>()` is false, `points` is empty, `digits` does not hold one slice per
+/// entry of `points`, the slices differ in length, or a digit is outside `[-8, 8]`.
+///
+/// `digits[k]` lists the windows of slot `k`, the least significant first. `P_kl` is the affine
+/// point `points[k][l]` of a curve `y^2 = x^3 + b`, and `phi(x, y) = (beta x, y)`. `Z` is zero
+/// exactly where the sum is the point at infinity or an addition met one of the cases the formulas
+/// exclude: a point at infinity, or two points with the same `x`. `X` and `Y` are then unspecified.
+pub fn glv_mul_8<P: Fp384Parameters>(
+    points: &[[[Fp384<P>; 2]; 8]],
+    beta: &Fp384<P>,
+    digits: &[&[[[i8; 8]; 2]]],
+) -> Option<[[Fp384<P>; 3]; 8]> {
+    if !is_supported::<P>() || points.is_empty() || digits.len() != points.len() {
+        return None;
+    }
+    if digits.iter().any(|slot| slot.len() != digits[0].len()) {
+        return None;
+    }
+    if digits.iter().copied().flatten().flatten().flatten().any(|d| d.unsigned_abs() > 8) {
+        return None;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut out = [[Fp384::zero(); 3]; 8];
+        // SAFETY: `is_supported` detected both target features that `glv_mul_8_avx512` enables.
+        unsafe { glv::glv_mul_8_avx512(points, beta, digits, &mut out) };
+        Some(out)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = beta;
+        None
+    }
 }
