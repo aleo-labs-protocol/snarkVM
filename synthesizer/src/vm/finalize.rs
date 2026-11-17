@@ -1181,6 +1181,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Start the commit process. */
 
+            if let Err(error) = store.record_program_history(state.block_height()) {
+                return Err(format!("Failed to record program history - {error}"));
+            }
+
             // Commit all the stacks to the process.
             process.commit_stacks();
 

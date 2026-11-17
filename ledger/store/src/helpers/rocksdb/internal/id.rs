@@ -218,6 +218,9 @@ pub enum ProgramMap {
     MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
     StakingRewards = DataID::StakingRewardsMap as u16,
     RejectedReason = DataID::RejectedReasonMap as u16,
+    ProgramHistory = DataID::ProgramHistoryRangeMap as u16,
+    MappingHistory = DataID::ProgramMappingHistoryMap as u16,
+    KeyHistory = DataID::ProgramKeyHistoryMap as u16,
 }
 
 /// The RocksDB map prefix for storage metadata.
@@ -358,6 +361,10 @@ enum DataID {
 
     // Storage metadata: the schema version and the history sync cursor.
     StorageMetadataMap,
+
+    ProgramHistoryRangeMap,
+    ProgramMappingHistoryMap,
+    ProgramKeyHistoryMap,
 
     // Testing
     #[cfg(test)]

@@ -31,10 +31,17 @@ use snarkvm_utilities::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
 };
 
 /// TODO (howardwu): Remove this.
@@ -83,6 +90,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    /// Indexed ranges `(program, start_height_be) -> end_height`.
+    type ProgramHistoryMap: for<'a> Map<'a, (ProgramID<N>, [u8; 4]), u32>;
+    /// Mapping creation, reset and removal events keyed by big-endian range start and height.
+    type MappingHistoryMap: for<'a> Map<'a, (ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>;
+    /// Key versions keyed by big-endian range start and height. `None` is a deletion marker.
+    type KeyHistoryMap: for<'a> Map<'a, (ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>;
     /// The mapping of `transaction ID` to `rejection reason`.
     type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
 
@@ -95,6 +108,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn program_id_map(&self) -> &Self::ProgramIDMap;
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap;
+    /// Returns the program history map.
+    fn program_history_map(&self) -> &Self::ProgramHistoryMap;
+    /// Returns the mapping history map.
+    fn mapping_history_map(&self) -> &Self::MappingHistoryMap;
+    /// Returns the key history map.
+    fn key_history_map(&self) -> &Self::KeyHistoryMap;
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap;
 
@@ -106,6 +125,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().start_atomic();
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
+        self.program_history_map().start_atomic();
+        self.mapping_history_map().start_atomic();
+        self.key_history_map().start_atomic();
         self.rejected_reason_map().start_atomic();
     }
 
@@ -114,6 +136,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
             || self.key_value_map().is_atomic_in_progress()
+            || self.program_history_map().is_atomic_in_progress()
+            || self.mapping_history_map().is_atomic_in_progress()
+            || self.key_history_map().is_atomic_in_progress()
             || self.rejected_reason_map().is_atomic_in_progress()
     }
 
@@ -122,6 +147,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_checkpoint();
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
+        self.program_history_map().atomic_checkpoint();
+        self.mapping_history_map().atomic_checkpoint();
+        self.key_history_map().atomic_checkpoint();
         self.rejected_reason_map().atomic_checkpoint();
     }
 
@@ -130,6 +158,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().clear_latest_checkpoint();
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
+        self.program_history_map().clear_latest_checkpoint();
+        self.mapping_history_map().clear_latest_checkpoint();
+        self.key_history_map().clear_latest_checkpoint();
         self.rejected_reason_map().clear_latest_checkpoint();
     }
 
@@ -138,6 +169,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_rewind();
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
+        self.program_history_map().atomic_rewind();
+        self.mapping_history_map().atomic_rewind();
+        self.key_history_map().atomic_rewind();
         self.rejected_reason_map().atomic_rewind();
     }
 
@@ -146,6 +180,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().abort_atomic();
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
+        self.program_history_map().abort_atomic();
+        self.mapping_history_map().abort_atomic();
+        self.key_history_map().abort_atomic();
         self.rejected_reason_map().abort_atomic();
     }
 
@@ -154,6 +191,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().finish_atomic()?;
         self.program_id_map().finish_atomic()?;
         self.key_value_map().finish_atomic()?;
+        self.program_history_map().finish_atomic()?;
+        self.mapping_history_map().finish_atomic()?;
+        self.key_history_map().finish_atomic()?;
         self.rejected_reason_map().finish_atomic()?;
 
         Ok(())
@@ -540,6 +580,10 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     block_height: Arc<AtomicU32>,
     /// When set, canonical finalize writes credits.aleo history as JSON.
     record_history_json: Arc<AtomicBool>,
+    /// Programs whose mapping writes are retained in the canonical finalize batch.
+    history_programs: Arc<RwLock<Vec<ProgramID<N>>>>,
+    /// Whether canonical finalize retains mapping history for every program.
+    archival: Arc<AtomicBool>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -556,6 +600,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             _phantom: PhantomData,
             block_height: Arc::new(AtomicU32::new(0)),
             record_history_json: Arc::new(AtomicBool::new(false)),
+            history_programs: Arc::new(RwLock::new(Vec::new())),
+            archival: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -567,6 +613,191 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns whether canonical finalize writes JSON history.
     pub fn record_history_json(&self) -> bool {
         self.record_history_json.load(Ordering::SeqCst)
+    }
+
+    /// Selects the programs whose mapping writes are retained as versioned history.
+    pub fn set_history_programs(&self, programs: Vec<ProgramID<N>>) {
+        *self.history_programs.write() = programs;
+    }
+
+    /// Returns the programs selected for mapping history.
+    pub fn history_programs(&self) -> Vec<ProgramID<N>> {
+        self.history_programs.read().clone()
+    }
+
+    /// Enables or disables mapping history for every program, including new deployments.
+    pub fn set_archival(&self, enabled: bool) {
+        self.archival.store(enabled, Ordering::SeqCst);
+    }
+
+    /// Queues program history in the current canonical finalize batch.
+    pub fn record_program_history(&self, height: u32) -> Result<()> {
+        let programs: IndexSet<_> = if self.archival.load(Ordering::SeqCst) {
+            self.storage
+                .program_id_map()
+                .keys_confirmed()
+                .map(|program| program.into_owned())
+                .chain(self.storage.program_id_map().iter_pending().map(|(program, _)| program.into_owned()))
+                .collect()
+        } else {
+            self.history_programs().into_iter().collect()
+        };
+        if programs.is_empty() {
+            return Ok(());
+        }
+        ensure!(self.is_atomic_in_progress(), "Program history requires an atomic finalize batch");
+
+        let version = height.to_be_bytes();
+        let operations: Vec<_> = self
+            .storage
+            .key_value_map()
+            .iter_pending()
+            .filter(|(map, _, _)| programs.contains(&map.0))
+            .map(|(map, key, value)| (*map, key.map(|key| key.into_owned()), value.map(|value| value.into_owned())))
+            .collect();
+        let mut resets = HashMap::new();
+        for (index, (map, key, _)) in operations.iter().enumerate() {
+            if key.is_none() {
+                resets.insert(*map, index);
+            }
+        }
+
+        let mut ranges = HashMap::with_capacity(programs.len());
+        for program in programs {
+            let previous = match height.checked_sub(1) {
+                Some(previous) => self.get_program_history_range(&program, previous)?,
+                None => None,
+            };
+            let (start, baseline) = match previous {
+                Some((start, end)) => {
+                    ensure!(end.checked_add(1) == Some(height), "Program history must advance in block order");
+                    (start.to_be_bytes(), false)
+                }
+                None => (version, true),
+            };
+            ranges.insert(program, (start, baseline));
+
+            if baseline {
+                if let Some(names) = self.storage.get_mapping_names_speculative(&program)? {
+                    for mapping in names {
+                        self.storage.mapping_history_map().insert((program, start, mapping, version), true)?;
+                        for (key, value) in self.get_mapping_speculative(program, mapping)? {
+                            self.storage
+                                .key_history_map()
+                                .insert((program, start, mapping, key, version), Some(value))?;
+                        }
+                    }
+                }
+            } else if self.storage.program_id_map().get_pending(&program).is_some()
+                || resets.keys().any(|(id, _)| *id == program)
+            {
+                let before = self.storage.get_mapping_names_confirmed(&program)?.unwrap_or_default();
+                let after = self.storage.get_mapping_names_speculative(&program)?.unwrap_or_default();
+                for mapping in &before {
+                    if !after.contains(mapping) {
+                        self.storage.mapping_history_map().insert((program, start, *mapping, version), false)?;
+                    }
+                }
+                for mapping in after {
+                    if !before.contains(&mapping) || resets.contains_key(&(program, mapping)) {
+                        self.storage.mapping_history_map().insert((program, start, mapping, version), true)?;
+                    }
+                }
+            }
+            self.storage.program_history_map().insert((program, start), height)?;
+        }
+
+        for (index, ((program, mapping), key, value)) in operations.into_iter().enumerate() {
+            let (start, baseline) = ranges[&program];
+            if baseline || resets.get(&(program, mapping)).is_some_and(|reset| index < *reset) {
+                continue;
+            }
+            if let Some(key) = key {
+                self.storage.key_history_map().insert((program, start, mapping, key, version), value)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns the contiguous indexed range containing `height`, if one exists.
+    pub fn get_program_history_range(&self, program: &ProgramID<N>, height: u32) -> Result<Option<(u32, u32)>> {
+        let Some((key, end)) =
+            self.storage.program_history_map().get_floor_confirmed(&(*program, height.to_be_bytes()))?
+        else {
+            return Ok(None);
+        };
+        let (found, start) = key.into_owned();
+        Ok((found == *program && height <= *end).then_some((u32::from_be_bytes(start), *end)))
+    }
+
+    /// Returns the most recent mapping creation, reset or removal within an indexed range.
+    fn mapping_history_at_height(
+        &self,
+        program: ProgramID<N>,
+        start: [u8; 4],
+        mapping: Identifier<N>,
+        height: u32,
+    ) -> Result<Option<(u32, bool)>> {
+        let Some((key, exists)) =
+            self.storage.mapping_history_map().get_floor_confirmed(&(program, start, mapping, height.to_be_bytes()))?
+        else {
+            return Ok(None);
+        };
+        let (found_program, found_start, found_mapping, version) = key.into_owned();
+        Ok((found_program == program && found_start == start && found_mapping == mapping)
+            .then_some((u32::from_be_bytes(version), *exists)))
+    }
+
+    /// Returns whether a mapping exists at a covered historical height.
+    pub fn contains_mapping_at_height(
+        &self,
+        program: ProgramID<N>,
+        mapping: Identifier<N>,
+        height: u32,
+    ) -> Result<bool> {
+        let Some((start, _)) = self.get_program_history_range(&program, height)? else {
+            return Ok(false);
+        };
+        Ok(self
+            .mapping_history_at_height(program, start.to_be_bytes(), mapping, height)?
+            .is_some_and(|(_, exists)| exists))
+    }
+
+    /// Reads the last key version at or before a covered height, including deletion markers.
+    pub fn get_value_at_height(
+        &self,
+        program: ProgramID<N>,
+        mapping: Identifier<N>,
+        key: &Plaintext<N>,
+        height: u32,
+    ) -> Result<Option<Value<N>>> {
+        let (start, _) = self
+            .get_program_history_range(&program, height)?
+            .ok_or_else(|| anyhow!("Program history for '{program}' is unavailable at block {height}"))?;
+        let start = start.to_be_bytes();
+        let Some((created, true)) = self.mapping_history_at_height(program, start, mapping, height)? else {
+            return Ok(None);
+        };
+        let Some((stored_key, value)) = self.storage.key_history_map().get_floor_confirmed(&(
+            program,
+            start,
+            mapping,
+            key.clone(),
+            height.to_be_bytes(),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let (found_program, found_start, found_mapping, found_key, version) = stored_key.into_owned();
+        if found_program != program
+            || found_start != start
+            || found_mapping != mapping
+            || found_key != *key
+            || u32::from_be_bytes(version) < created
+        {
+            return Ok(None);
+        }
+        Ok(value.into_owned())
     }
 
     /// Starts an atomic batch write operation.

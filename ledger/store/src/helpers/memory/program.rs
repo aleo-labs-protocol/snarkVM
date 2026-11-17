@@ -42,6 +42,9 @@ pub struct FinalizeMemory<N: Network> {
     program_id_map: MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    program_history_map: MemoryMap<(ProgramID<N>, [u8; 4]), u32>,
+    mapping_history_map: MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>,
+    key_history_map: MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>,
     /// The rejection reason map.
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
 
@@ -54,6 +57,9 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type CommitteeStorage = CommitteeMemory<N>;
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    type ProgramHistoryMap = MemoryMap<(ProgramID<N>, [u8; 4]), u32>;
+    type MappingHistoryMap = MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>;
+    type KeyHistoryMap = MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>;
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
 
     /// Initializes the finalize storage.
@@ -67,6 +73,9 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
+            program_history_map: MemoryMap::default(),
+            mapping_history_map: MemoryMap::default(),
+            key_history_map: MemoryMap::default(),
             rejected_reason_map: MemoryMap::default(),
 
             storage_mode: storage,
@@ -87,6 +96,10 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     fn key_value_map(&self) -> &Self::KeyValueMap {
         &self.key_value_map
     }
+
+    fn program_history_map(&self) -> &Self::ProgramHistoryMap { &self.program_history_map }
+    fn mapping_history_map(&self) -> &Self::MappingHistoryMap { &self.mapping_history_map }
+    fn key_history_map(&self) -> &Self::KeyHistoryMap { &self.key_history_map }
 
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap {
