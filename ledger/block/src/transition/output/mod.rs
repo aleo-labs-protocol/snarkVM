@@ -284,7 +284,7 @@ impl<N: Network> Output<N> {
                 match output.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) output index as a field element.
-                        let index = Field::from_u16(index as u16);
+                        let index = Field::from_u16(u16::try_from(index)?);
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id);
@@ -304,7 +304,7 @@ impl<N: Network> Output<N> {
                 match output.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) output index as a field element.
-                        let index = Field::from_u16(index as u16);
+                        let index = Field::from_u16(u16::try_from(index)?);
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id);
@@ -362,7 +362,7 @@ impl<N: Network> Output<N> {
                 match output.to_fields() {
                     Ok(fields) => {
                         // Construct the (future) output index as a field element.
-                        let index = Field::from_u16(index as u16);
+                        let index = Field::from_u16(u16::try_from(index)?);
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id);

@@ -15,7 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
-// #![warn(clippy::cast_possible_truncation)]
+#![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::single_element_loop))]
 
 extern crate snarkvm_console as console;
