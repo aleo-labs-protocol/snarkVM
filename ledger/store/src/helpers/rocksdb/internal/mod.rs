@@ -99,7 +99,7 @@ struct TableConfig {
     /// Bloom filter with the same false positive rate.
     filter_bits_per_key: f64,
     /// The capacity of the block cache in bytes.
-    /// The cache holds uncompressed data blocks, and the index and filter blocks.
+    /// The cache holds uncompressed data blocks, and the partitions of the indexes and filters.
     block_cache_size: usize,
 }
 
@@ -315,14 +315,15 @@ impl Database for RocksDB {
                 FilterPolicy::Hybrid => table_options.set_hybrid_ribbon_filter(bits_per_key, HYBRID_BLOOM_BEFORE_LEVEL),
                 FilterPolicy::None => {}
             }
-            // The index and filter blocks count towards the capacity of the block cache. They are partitioned, so
-            // that a lookup loads one partition of each, and a cache that is too small for all of them costs a
-            // lookup at most one read per partition.
-            table_options.set_block_cache(&rocksdb::Cache::new_lru_cache(table_config.block_cache_size));
-            table_options.set_cache_index_and_filter_blocks(true);
+            // The index and the filter of a table file are partitioned. The partitions are in the block cache, and a
+            // lookup loads one partition of each. The keys of most maps are hashes, so a lookup can need any file.
+            //
+            // `cache_index_and_filter_blocks` stays off. A table file that has an index in one block keeps it in
+            // memory while the file is open. In the block cache, such a block competes with the data blocks, and
+            // each load of it reads the whole index of the file.
+            table_options.set_block_cache(&rocksdb::Cache::new_hyper_clock_cache(table_config.block_cache_size, 0));
             table_options.set_index_type(rocksdb::BlockBasedIndexType::TwoLevelIndexSearch);
             table_options.set_partition_filters(true);
-            table_options.set_pin_top_level_index_and_filter(true);
             table_options.set_pin_l0_filter_and_index_blocks_in_cache(true);
             options.set_block_based_table_factory(&table_options);
 
