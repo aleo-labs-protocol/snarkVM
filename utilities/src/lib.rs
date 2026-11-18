@@ -54,6 +54,12 @@ pub use self::rand::*;
 pub mod serialize;
 pub use serialize::*;
 
+/// A cache of test fixtures that the test processes of one binary share.
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod fixture;
+#[cfg(any(test, feature = "test-helpers"))]
+pub use fixture::*;
+
 /// The storage mode of a node, and the directories that it resolves to.
 #[cfg(feature = "storage")]
 pub mod storage;

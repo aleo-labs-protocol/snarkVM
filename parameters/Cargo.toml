@@ -154,3 +154,6 @@ workspace = true
 ignored = [
   "js-sys", # needed for wasm feature
 ]
+
+[dev-dependencies.tempfile]
+workspace = true

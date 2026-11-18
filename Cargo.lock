@@ -2935,6 +2935,7 @@ dependencies = [
  "snarkvm-curves",
  "snarkvm-fields",
  "snarkvm-utilities",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -3606,7 +3607,6 @@ dependencies = [
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-utilities",
- "tempfile",
 ]
 
 [[package]]
@@ -3640,6 +3640,7 @@ dependencies = [
  "snarkvm-ledger-store",
  "snarkvm-synthesizer",
  "snarkvm-utilities",
+ "tempfile",
  "thiserror 2.0.21",
  "ureq",
  "wasm-bindgen-test",

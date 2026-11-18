@@ -496,7 +496,29 @@ pub mod test_helpers {
     }
 
     /// Samples a random deployment transaction with a private or public fee.
+    ///
+    /// For version 1, the n-th call on a thread for an edition and a fee kind returns the n-th such transaction,
+    /// which is the same in every test process of the binary. It does not depend on `rng`, and `rng` is not advanced.
+    /// A version 1 deployment has edition 0 or 1, so the test processes can share these transactions.
     pub fn sample_deployment_transaction(
+        version: u8,
+        edition: u16,
+        has_translation_keys: bool,
+        is_fee_private: bool,
+        rng: &mut TestRng,
+    ) -> Transaction<CurrentNetwork> {
+        if version != 1 || has_translation_keys {
+            return build_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng);
+        }
+        let edition = edition % 2;
+        let name = format!("deploy-v1-edition-{edition}-private-fee-{is_fee_private}");
+        crate::test_helpers::sample_nth_fixture(&name, &crate::test_helpers::genesis_fixture_key(), |rng| {
+            build_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng)
+        })
+    }
+
+    /// Builds a deployment transaction with a private or public fee.
+    fn build_deployment_transaction(
         version: u8,
         edition: u16,
         has_translation_keys: bool,
@@ -521,8 +543,23 @@ pub mod test_helpers {
         Transaction::from_deployment(owner, deployment, fee).unwrap()
     }
 
-    /// Samples a random execution transaction with a private or public fee.
+    /// Returns an execution transaction with a private or public fee.
+    ///
+    /// The n-th call on a thread for a fee kind returns the n-th such transaction,
+    /// which is the same in every test process of the binary. It does not depend on `_rng`, and `_rng` is not advanced.
     pub fn sample_execution_transaction_with_fee(
+        is_fee_private: bool,
+        _rng: &mut TestRng,
+        index: usize,
+    ) -> Transaction<CurrentNetwork> {
+        let name = format!("execute-{index}-private-fee-{is_fee_private}");
+        crate::test_helpers::sample_nth_fixture(&name, &crate::test_helpers::genesis_fixture_key(), |rng| {
+            build_execution_transaction_with_fee(is_fee_private, rng, index)
+        })
+    }
+
+    /// Builds an execution transaction with a private or public fee.
+    pub(crate) fn build_execution_transaction_with_fee(
         is_fee_private: bool,
         rng: &mut TestRng,
         index: usize,
@@ -542,7 +579,7 @@ pub mod test_helpers {
         Transaction::from_execution(execution, Some(fee)).unwrap()
     }
 
-    /// Samples a random fee transaction.
+    /// Returns the fee transaction of `sample_fee_private_hardcoded`.
     pub fn sample_private_fee_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
         // Sample a fee.
         let fee = crate::transaction::fee::test_helpers::sample_fee_private_hardcoded(rng);
@@ -550,7 +587,7 @@ pub mod test_helpers {
         Transaction::from_fee(fee).unwrap()
     }
 
-    /// Samples a random fee transaction.
+    /// Returns the fee transaction of `sample_fee_public_hardcoded`.
     pub fn sample_fee_public_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
         // Sample a fee.
         let fee = crate::transaction::fee::test_helpers::sample_fee_public_hardcoded(rng);
@@ -562,6 +599,40 @@ pub mod test_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type CurrentNetwork = console::network::MainnetV0;
+
+    #[test]
+    fn test_shared_samples_do_not_advance_rng() {
+        let rng = &mut TestRng::fixed(1);
+        crate::test_helpers::sample_genesis_block_and_components(rng);
+        test_helpers::sample_fee_public_transaction(rng);
+        test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
+        test_helpers::sample_deployment_transaction(1, 0, false, false, rng);
+        assert_eq!(u64::rand(rng), u64::rand(&mut TestRng::fixed(1)));
+    }
+
+    #[test]
+    fn test_shared_samples_follow_the_call_order_of_a_thread() {
+        // Samples the first two public-fee transactions of a thread, for an execution and for a version 1 deployment.
+        fn sample() -> [Transaction<CurrentNetwork>; 4] {
+            let rng = &mut TestRng::default();
+            [
+                test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
+                test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
+                test_helpers::sample_deployment_transaction(1, 1, false, false, rng),
+                test_helpers::sample_deployment_transaction(1, 1, false, false, rng),
+            ]
+        }
+
+        // Two samples of one kind on one thread are different transactions.
+        let samples = std::thread::spawn(sample).join().expect("The sampling thread panicked");
+        assert_ne!(samples[0].id(), samples[1].id());
+        assert_ne!(samples[2].id(), samples[3].id());
+        // Another new thread gets the same transactions in the same order.
+        let other_samples = std::thread::spawn(sample).join().expect("The sampling thread panicked");
+        assert_eq!(samples, other_samples);
+    }
 
     #[test]
     fn test_transaction_id() -> Result<()> {

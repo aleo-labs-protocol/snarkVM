@@ -403,6 +403,7 @@ pub mod test_helpers {
     /// Samples an accepted execute transaction at the given index.
     ///
     /// With a private fee, every call wraps the same transaction, so a `Transactions` holds at most one such sample.
+    /// That transaction has its own fixture, so `sample_execution_transaction_with_fee` never returns it.
     pub(crate) fn sample_accepted_execute(
         index: u32,
         is_fee_private: bool,
@@ -412,7 +413,12 @@ pub mod test_helpers {
         // Sample an execute transaction.
         let tx = match is_fee_private {
             true => INSTANCE
-                .get_or_init(|| crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0))
+                .get_or_init(|| {
+                    let key = crate::test_helpers::genesis_fixture_key();
+                    crate::test_helpers::sample_fixture("accepted-execute-private-fee", &key, |rng| {
+                        crate::transaction::test_helpers::build_execution_transaction_with_fee(true, rng, 0)
+                    })
+                })
                 .clone(),
             false => crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         };

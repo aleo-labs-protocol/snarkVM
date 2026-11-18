@@ -119,3 +119,7 @@ path = "../store"
 
 [dev-dependencies.snarkvm-synthesizer-process]
 path = "../../synthesizer/process"
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "test-helpers" ]
