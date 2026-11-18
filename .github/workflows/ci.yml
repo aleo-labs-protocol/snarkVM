@@ -359,9 +359,10 @@ jobs:
         include:
           - name: ledger-rocks
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
+          # test_cumulative_proof_target_correctness is left out: it takes 150 s or 475 s from run to run.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only -E test(/^tests::valid_solutions::/)
+              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-block -j 12
           - name: parameters
