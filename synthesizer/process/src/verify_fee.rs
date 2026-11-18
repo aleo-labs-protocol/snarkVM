@@ -372,4 +372,37 @@ mod tests {
         assert_eq!(error.to_string(), "Function 'credits.aleo/fee_missing' is not defined.");
         Ok(())
     }
+
+    /// A `fee_public` transition whose input or output variants differ from the function is rejected.
+    #[test]
+    fn test_verify_fee_rejects_mismatched_types() -> Result<()> {
+        let public = || Input::Public(Field::zero(), None);
+        let future = || Output::Future(Field::zero(), None);
+        let cases = [
+            (
+                vec![public(), public(), Input::Private(Field::zero(), None)],
+                vec![future()],
+                "The fee input variants do not match",
+            ),
+            (
+                vec![public(), public(), public()],
+                vec![Output::Public(Field::zero(), None)],
+                "The fee output variants do not match",
+            ),
+        ];
+
+        // Construct a new process.
+        let process = Process::load()?;
+
+        for (inputs, outputs, expected) in cases {
+            let fee = sample_proofless_fee("fee_public", inputs, outputs)?;
+            let Err(error) =
+                process.verify_fee(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &fee, Field::zero())
+            else {
+                bail!("Expected `verify_fee` to reject the fee with '{expected}'")
+            };
+            assert_eq!(error.to_string(), expected);
+        }
+        Ok(())
+    }
 }
