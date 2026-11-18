@@ -37,8 +37,7 @@ pub use transition::*;
 
 use console::prelude::{Result, bail};
 
-/// An error for a store that this build refuses to open but another build can: a pruned store
-/// without `prune-authority-data`, or a newer storage schema. Deleting the store is the wrong fix.
+/// A store whose schema is newer than this build. A newer build can open it, so do not delete it.
 #[derive(Debug)]
 pub struct IncompatibleStore(pub String);
 

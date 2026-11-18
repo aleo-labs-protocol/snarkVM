@@ -76,7 +76,6 @@ use aleo_std::{
     prelude::{finish, lap, timer},
 };
 use anyhow::{Context, Result};
-use cfg_if::cfg_if;
 use core::ops::Range;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -121,6 +120,17 @@ pub struct DevCommitteeOptions {
     /// committees won't match. Callers can pass a project-wide constant such
     /// as `snarkos_utilities::DEVELOPMENT_MODE_RNG_SEED`.
     pub seed: u64,
+}
+
+/// Options for [`Ledger::load_with_options`]. The default loads like [`Ledger::load`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LoadOptions {
+    /// Prunes the authority data older than this many blocks. See
+    /// [`BlockStore::open_with_authority_retention`](snarkvm_ledger_store::BlockStore::open_with_authority_retention).
+    pub authority_retention: Option<u32>,
+    /// Installs a dev committee override. See [`Ledger::load_with_dev_committee`].
+    #[cfg(feature = "dev-committee")]
+    pub dev_committee: Option<DevCommitteeOptions>,
 }
 
 /// Deterministically builds the dev committee from the given parameters.
@@ -241,12 +251,17 @@ fn store_open_error(error: anyhow::Error) -> anyhow::Error {
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Loads the ledger from storage.
     pub fn load(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
+        Self::load_with_options(genesis_block, storage_mode, LoadOptions::default())
+    }
+
+    /// Like [`Self::load`], with the given options.
+    pub fn load_with_options(genesis_block: Block<N>, storage_mode: StorageMode, options: LoadOptions) -> Result<Self> {
         let timer = timer!("Ledger::load");
 
         // Retrieve the genesis hash.
         let genesis_hash = genesis_block.hash();
         // Initialize the ledger.
-        let ledger = Self::load_unchecked(genesis_block, storage_mode)?;
+        let ledger = Self::load_unchecked_inner(genesis_block, storage_mode, options)?;
 
         // Ensure the ledger contains the correct genesis block.
         if !ledger.contains_block_hash(&genesis_hash)? {
@@ -284,13 +299,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Loads the ledger from storage, without performing integrity checks.
     pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
-        cfg_if! {
-            if #[cfg(feature="dev-committee")] {
-                Self::load_unchecked_inner(genesis_block, storage_mode, None)
-            } else {
-                Self::load_unchecked_inner(genesis_block, storage_mode)
-            }
-        }
+        Self::load_unchecked_inner(genesis_block, storage_mode, LoadOptions::default())
     }
 
     /// Like [`Self::load`], but installs a dev committee override that is
@@ -303,24 +312,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        let timer = timer!("Ledger::load_with_dev_committee");
-
-        // Retrieve the genesis hash.
-        let genesis_hash = genesis_block.hash();
-        // Initialize the ledger.
-        let ledger = Self::load_unchecked_with_dev_committee(genesis_block, storage_mode, dev_committee_opts)?;
-
-        // Ensure the ledger contains the correct genesis block.
-        if !ledger.contains_block_hash(&genesis_hash)? {
-            bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
-        }
-
-        // Spot check the integrity of random blocks upon bootup.
-        ledger.check_random_blocks()?;
-        lap!(timer, "Check existence of random blocks");
-
-        finish!(timer);
-        Ok(ledger)
+        let options = LoadOptions { dev_committee: Some(dev_committee_opts), ..Default::default() };
+        Self::load_with_options(genesis_block, storage_mode, options)
     }
 
     /// Like [`Self::load_unchecked`], but installs a dev committee override.
@@ -330,22 +323,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts))
+        let options = LoadOptions { dev_committee: Some(dev_committee_opts), ..Default::default() };
+        Self::load_unchecked_inner(genesis_block, storage_mode, options)
     }
 
-    fn load_unchecked_inner(
-        genesis_block: Block<N>,
-        storage_mode: StorageMode,
-        #[cfg(feature = "dev-committee")] dev_committee_opts: Option<DevCommitteeOptions>,
-    ) -> Result<Self> {
+    fn load_unchecked_inner(genesis_block: Block<N>, storage_mode: StorageMode, options: LoadOptions) -> Result<Self> {
         let timer = timer!("Ledger::load_unchecked");
 
         info!("Loading the ledger from storage...");
         // Initialize the consensus store.
-        let store = match ConsensusStore::<N, C>::open(storage_mode) {
-            Ok(store) => store,
-            Err(e) => return Err(store_open_error(e)),
-        };
+        let store =
+            match ConsensusStore::<N, C>::open_with_authority_retention(storage_mode, options.authority_retention) {
+                Ok(store) => store,
+                Err(e) => return Err(store_open_error(e)),
+            };
         lap!(timer, "Load consensus store");
 
         // Initialize a new VM.
@@ -362,7 +353,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // genesis round when storage is empty) and build the committee now,
         // before the `InnerLedger` is constructed.
         #[cfg(feature = "dev-committee")]
-        let dev_committee = match dev_committee_opts {
+        let dev_committee = match options.dev_committee {
             Some(opts) => {
                 let start_round = if let Some(round) = opts.start_round {
                     round

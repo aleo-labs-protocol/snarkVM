@@ -41,11 +41,16 @@ impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
 
     /// Initializes the consensus storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        Self::open_with_authority_retention(storage, None)
+    }
+
+    /// Initializes the consensus storage, pruning authority data older than `authority_retention` blocks if it is set.
+    fn open_with_authority_retention<S: Into<StorageMode>>(storage: S, authority_retention: Option<u32>) -> Result<Self> {
         let storage = storage.into();
         // Initialize the finalize store.
         let finalize_store = FinalizeStore::<N, FinalizeMemory<N>>::open(storage.clone())?;
         // Initialize the block store.
-        let block_store = BlockStore::<N, BlockMemory<N>>::open(storage)?;
+        let block_store = BlockStore::<N, BlockMemory<N>>::open_with_authority_retention(storage, authority_retention)?;
         // Return the consensus storage.
         Ok(Self {
             finalize_store,

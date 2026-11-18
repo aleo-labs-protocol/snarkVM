@@ -19,8 +19,6 @@ edition = "2024"
 [features]
 default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
-prune-authority-data = [ ]
-test_authority_retention = [ ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]
@@ -39,6 +37,7 @@ wasm = [
   "snarkvm-ledger-puzzle/wasm",
   "snarkvm-ledger-committee/wasm",
   "snarkvm-ledger-narwhal-batch-certificate/wasm",
+  "snarkvm-ledger-narwhal-batch-header/wasm",
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
@@ -61,6 +60,9 @@ workspace = true
 workspace = true
 
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
+workspace = true
+
+[dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 
 [dependencies.snarkvm-ledger-puzzle]
