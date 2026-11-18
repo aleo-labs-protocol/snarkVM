@@ -37,6 +37,7 @@ mod to_xy_coordinates;
 mod to_y_coordinate;
 mod zero;
 
+#[doc(no_inline)]
 pub use snarkvm_console_network_environment::prelude::*;
 pub use snarkvm_console_types_boolean::Boolean;
 pub use snarkvm_console_types_field::Field;
