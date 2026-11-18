@@ -101,7 +101,9 @@ fn read(path: &Path, stamp: &[u8]) -> Option<GenesisFixture> {
 /// Writes the genesis fixture to `path` through a temporary file and a rename.
 fn write(path: &Path, stamp: &[u8], fixture: &GenesisFixture) -> io::Result<()> {
     let temporary_path = path.with_added_extension("tmp");
-    fs::write(&temporary_path, to_bytes(stamp, fixture)?)?;
+    // `create_new` neither follows nor reuses an existing file, so remove one that an interrupted write left behind.
+    let _ = fs::remove_file(&temporary_path);
+    fs::OpenOptions::new().write(true).create_new(true).open(&temporary_path)?.write_all(&to_bytes(stamp, fixture)?)?;
     fs::rename(temporary_path, path)
 }
 
@@ -139,19 +141,6 @@ mod tests {
         (private_key, block)
     }
 
-    /// Returns a path in the temporary directory that is unique to this process and `name`.
-    fn temporary_path(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("snarkvm-genesis-fixture-{name}-{}", std::process::id()));
-        remove_files(&path);
-        path
-    }
-
-    /// Removes the fixture file at `path` and its lock file.
-    fn remove_files(path: &Path) {
-        let _ = fs::remove_file(path);
-        let _ = fs::remove_file(path.with_added_extension("lock"));
-    }
-
     #[test]
     fn test_stamp_holds_seed() {
         let (path, stamp) = genesis_fixture_path_and_stamp("genesis", 1).expect("Failed to stamp the fixture");
@@ -163,7 +152,8 @@ mod tests {
 
     #[test]
     fn test_hit_matches_miss() {
-        let path = temporary_path("hit");
+        let directory = tempfile::tempdir().expect("Failed to create a temporary directory");
+        let path = directory.path().join("genesis");
         let stamp = b"stamp";
         let fixture = sample_fixture();
         let builds = AtomicUsize::new(0);
@@ -179,7 +169,6 @@ mod tests {
         let bytes = fs::read(&path).expect("Failed to read the fixture file");
         // A different stamp builds the fixture again.
         let rebuilt = load_or_build(&path, b"stamq", build);
-        remove_files(&path);
 
         assert_eq!(miss, fixture);
         assert_eq!(hit, fixture);
@@ -190,7 +179,8 @@ mod tests {
 
     #[test]
     fn test_concurrent_callers_build_once() {
-        let path = temporary_path("concurrent");
+        let directory = tempfile::tempdir().expect("Failed to create a temporary directory");
+        let path = directory.path().join("genesis");
         let stamp = b"stamp";
         let fixture = sample_fixture();
         let builds = AtomicUsize::new(0);
@@ -204,7 +194,6 @@ mod tests {
             let handles = (0..8).map(|_| scope.spawn(|| load_or_build(&path, stamp, build))).collect::<Vec<_>>();
             handles.into_iter().map(|handle| handle.join().expect("A thread panicked")).collect::<Vec<_>>()
         });
-        remove_files(&path);
 
         assert!(results.iter().all(|result| *result == fixture));
         assert_eq!(builds.load(Ordering::Relaxed), 1);
@@ -212,12 +201,32 @@ mod tests {
 
     #[test]
     fn test_unusable_path_builds_without_writing() {
-        let directory = temporary_path("missing-directory");
-        let path = directory.join("genesis");
+        let directory = tempfile::tempdir().expect("Failed to create a temporary directory");
+        let missing_directory = directory.path().join("missing");
+        let path = missing_directory.join("genesis");
         let fixture = sample_fixture();
 
         assert_eq!(load_or_build(&path, b"stamp", || fixture.clone()), fixture);
-        assert!(!directory.exists());
+        assert!(!missing_directory.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_write_replaces_a_temporary_symlink() {
+        let directory = tempfile::tempdir().expect("Failed to create a temporary directory");
+        let path = directory.path().join("genesis");
+        let target = directory.path().join("target");
+        fs::write(&target, b"target").expect("Failed to write the target file");
+        std::os::unix::fs::symlink(&target, path.with_added_extension("tmp")).expect("Failed to create the symlink");
+        let stamp = b"stamp";
+        let fixture = sample_fixture();
+
+        assert_eq!(load_or_build(&path, stamp, || fixture.clone()), fixture);
+        assert_eq!(fs::read(&target).expect("Failed to read the target file"), b"target");
+        assert_eq!(
+            fs::read(&path).expect("Failed to read the fixture file"),
+            to_bytes(stamp, &fixture).expect("Failed to serialize the fixture")
+        );
     }
 
     #[test]
