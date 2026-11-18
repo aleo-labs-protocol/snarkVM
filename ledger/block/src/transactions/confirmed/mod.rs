@@ -365,6 +365,8 @@ pub mod test_helpers {
     use super::*;
     use console::network::MainnetV0;
 
+    use std::sync::OnceLock;
+
     type CurrentNetwork = MainnetV0;
 
     /// Samples an accepted deploy transaction at the given index.
@@ -399,13 +401,21 @@ pub mod test_helpers {
     }
 
     /// Samples an accepted execute transaction at the given index.
+    ///
+    /// With a private fee, every call wraps the same transaction, so a `Transactions` holds at most one such sample.
     pub(crate) fn sample_accepted_execute(
         index: u32,
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> ConfirmedTransaction<CurrentNetwork> {
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         // Sample an execute transaction.
-        let tx = crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng, 0);
+        let tx = match is_fee_private {
+            true => INSTANCE
+                .get_or_init(|| crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0))
+                .clone(),
+            false => crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
+        };
         // Return the confirmed transaction.
         ConfirmedTransaction::accepted_execute(index, tx, vec![]).unwrap()
     }
