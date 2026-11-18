@@ -469,26 +469,27 @@ impl Arguments {
 mod test {
     use super::*;
 
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    /// A source file that only these tests write to, holding one macro invocation per line and deleted when the
+    /// A source file in a private temporary directory, holding one macro invocation per line and deleted when the
     /// test ends.
     ///
     /// The update path resolves an absolute `UpdatableCount::file` as-is, so a count pointed at this file rewrites
     /// it instead of the test's own source. `line` is 1-based, as in `UpdatableCount`.
     struct Fixture {
+        _directory: tempfile::TempDir,
         path: &'static str,
         column: u32,
     }
 
     impl Fixture {
         fn new(macro_name: &str, arguments: &[&str]) -> Self {
-            let path = fixture_path();
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("fixture.rs");
             let prefix = "        let count = ";
             let text: String =
                 arguments.iter().map(|arguments| format!("{prefix}{macro_name}!{arguments};\n")).collect();
             fs::write(&path, text).unwrap();
             Self {
+                _directory: directory,
                 // `UpdatableCount::file` is `&'static str`, which a path built at runtime is not.
                 path: path.into_os_string().into_string().unwrap().leak(),
                 // Note: `unwrap()` is safe as `prefix` is a short literal.
@@ -515,22 +516,6 @@ mod test {
             let line = text.lines().nth(line as usize - 1).unwrap();
             line[line.find('(').unwrap()..=line.rfind(')').unwrap()].to_string()
         }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = fs::remove_file(self.path);
-        }
-    }
-
-    /// Returns a path in the temporary directory that no other test uses.
-    fn fixture_path() -> PathBuf {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        env::temp_dir().join(format!(
-            "snarkvm_updatable_count_{}_{}.rs",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed)
-        ))
     }
 
     fn exact(values: [u64; 4]) -> [Measurement<u64>; 4] {
