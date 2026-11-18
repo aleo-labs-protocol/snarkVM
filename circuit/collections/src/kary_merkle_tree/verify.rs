@@ -114,6 +114,9 @@ mod tests {
     use anyhow::Result;
 
     const ITERATIONS: u128 = 10;
+    /// The number of threads in a Keccak or SHA3 test. Each thread holds one circuit, of about 1.3 GB in the
+    /// public and private modes. A test runner can run the four public and private tests at the same time.
+    const NUM_THREADS: usize = 3;
     const DOMAIN: &str = "MerkleTreeCircuit0";
 
     macro_rules! check_verify {
@@ -197,17 +200,16 @@ mod tests {
 
     macro_rules! check_verify_keccak {
         ($lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_inputs:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
-            // Initialize the leaf hasher.
-            let native_leaf_hasher = snarkvm_console_algorithms::$lh::default();
-            let circuit_leaf_hasher = $lh::<Circuit>::new();
+            // Verifies the tree with `i` leaves, in the circuit of the calling thread.
+            let check_tree = |i: u128, mut rng: TestRng| -> Result<()> {
+                // Initialize the leaf hasher.
+                let native_leaf_hasher = snarkvm_console_algorithms::$lh::default();
+                let circuit_leaf_hasher = $lh::<Circuit>::new();
 
-            let mut rng = TestRng::default();
+                // Initialize the path hasher.
+                let native_path_hasher = snarkvm_console_algorithms::$ph::default();
+                let circuit_path_hasher = $ph::<Circuit>::new();
 
-            // Initialize the path hasher.
-            let native_path_hasher = snarkvm_console_algorithms::$ph::default();
-            let circuit_path_hasher = $ph::<Circuit>::new();
-
-            for i in 0..ITERATIONS {
                 // Determine the number of leaves.
                 let num_leaves = core::cmp::min(($arity as u128).pow($depth as u32), i);
                 // Compute the leaves.
@@ -277,8 +279,29 @@ mod tests {
                     });
                     Circuit::reset();
                 }
-            }
-            Ok(())
+                Ok(())
+            };
+
+            let mut rng = TestRng::default();
+            // Sample a seed for each tree, so that a tree does not depend on the thread that verifies it.
+            let seeds: Vec<u64> = (0..ITERATIONS).map(|_| Uniform::rand(&mut rng)).collect();
+
+            // The circuit is thread-local, so each thread verifies its trees in a circuit of its own.
+            std::thread::scope(|scope| {
+                let threads = (0..NUM_THREADS)
+                    .map(|thread| {
+                        // Thread `t` verifies tree `i` if `i % NUM_THREADS == t`.
+                        let mut trees = seeds.iter().enumerate().skip(thread).step_by(NUM_THREADS);
+                        scope.spawn(move || {
+                            trees.try_for_each(|(i, seed)| check_tree(i as u128, TestRng::from_seed(*seed)))
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                // A failed assertion in a thread is a panic. Raise it again in this thread.
+                threads
+                    .into_iter()
+                    .try_for_each(|handle| handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
+            })
         }};
     }
 
