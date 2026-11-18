@@ -458,7 +458,6 @@ pub mod test_helpers {
 
         vec![
             sample_accepted_deploy(0, 1, Uniform::rand(rng), false, true, rng),
-            sample_accepted_deploy(0, 1, Uniform::rand(rng), false, true, rng),
             sample_accepted_deploy(0, 2, Uniform::rand(rng), false, true, rng),
             sample_accepted_deploy(0, 2, Uniform::rand(rng), true, true, rng),
             sample_accepted_execute(1, true, rng),
