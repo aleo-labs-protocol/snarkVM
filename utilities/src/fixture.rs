@@ -13,14 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FromBytes, ToBytes};
-
 use std::{
     fs,
     io::{self, Write},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
+
+use crate::{FromBytes, ToBytes};
 
 /// Returns the fixture of the running binary that `build` builds.
 ///
@@ -44,14 +44,16 @@ pub fn load_or_build_fixture<T: FromBytes + ToBytes>(
 
 /// Returns the path of the fixture file of the running binary, and the stamp of the fixture.
 ///
-/// The stamp holds the size and the modification time of the binary, and `key`.
+/// The stamp holds the size and the modification time of the binary, and the length and the bytes of `key`.
+/// With the length, the stamp of one key is never the start of the stamp of another key.
 fn fixture_path_and_stamp(extension: &str, key: &[u8]) -> io::Result<(PathBuf, Vec<u8>)> {
     let binary = std::env::current_exe()?;
     let metadata = fs::metadata(&binary)?;
     let modified = metadata.modified()?.duration_since(UNIX_EPOCH).map_err(io::Error::other)?;
-    let mut stamp = Vec::with_capacity(24 + key.len());
+    let mut stamp = Vec::with_capacity(32 + key.len());
     stamp.extend_from_slice(&metadata.len().to_le_bytes());
     stamp.extend_from_slice(&modified.as_nanos().to_le_bytes());
+    stamp.extend_from_slice(&(key.len() as u64).to_le_bytes());
     stamp.extend_from_slice(key);
     Ok((binary.with_added_extension(extension), stamp))
 }
@@ -143,6 +145,10 @@ mod tests {
         let (other_path, other_stamp) = fixture_path_and_stamp("fixture", &[2]).expect("Failed to stamp the fixture");
         assert_eq!(path, other_path);
         assert_ne!(stamp, other_stamp);
+
+        // The stamp of a key is not the start of the stamp of a longer key.
+        let (_, longer_stamp) = fixture_path_and_stamp("fixture", &[1, 2]).expect("Failed to stamp the fixture");
+        assert!(!longer_stamp.starts_with(&stamp));
     }
 
     #[test]
