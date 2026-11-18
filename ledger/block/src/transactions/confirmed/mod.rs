@@ -425,14 +425,9 @@ pub mod test_helpers {
             false => crate::transaction::test_helpers::sample_fee_public_transaction(rng),
         };
 
-        // Extract the rejected deployment.
-        let rejected = crate::rejected::test_helpers::sample_rejected_deployment(
-            version,
-            edition,
-            has_translation_keys,
-            is_fee_private,
-            rng,
-        );
+        // Sample the rejected deployment.
+        let rejected =
+            crate::rejected::test_helpers::sample_rejected_deployment(version, edition, has_translation_keys, rng);
 
         // Return the confirmed transaction.
         ConfirmedTransaction::rejected_deploy(index, fee_transaction, rejected, vec![]).unwrap()
@@ -450,8 +445,8 @@ pub mod test_helpers {
             false => crate::transaction::test_helpers::sample_fee_public_transaction(rng),
         };
 
-        // Extract the rejected execution.
-        let rejected = crate::rejected::test_helpers::sample_rejected_execution(is_fee_private, rng);
+        // Sample the rejected execution.
+        let rejected = crate::rejected::test_helpers::sample_rejected_execution(rng);
 
         // Return the confirmed transaction.
         ConfirmedTransaction::rejected_execute(index, fee_transaction, rejected, vec![]).unwrap()
