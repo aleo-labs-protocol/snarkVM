@@ -3980,7 +3980,7 @@ fn test_find_records_filters_by_ownership() {
 }
 
 /// A pruned block's authority reads as pruned, and the startup spot check passes over pruned blocks.
-#[cfg(all(feature = "prune-authority-data", feature = "test"))]
+#[cfg(feature = "test")]
 #[test]
 fn test_pruned_authority_reads() {
     let rng = &mut TestRng::default();

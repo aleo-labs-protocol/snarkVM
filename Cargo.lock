@@ -3749,6 +3749,7 @@ dependencies = [
  "snarkvm-ledger-block",
  "snarkvm-ledger-committee",
  "snarkvm-ledger-narwhal-batch-certificate",
+ "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-puzzle",
  "snarkvm-ledger-test-helpers",
  "snarkvm-metrics",
