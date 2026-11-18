@@ -98,6 +98,25 @@ jobs:
       # Advisories: bump-advisories.yml.
       - run: cargo deny check bans licenses sources
 
+  # Every tracked file of snarkvm-algorithms-cuda must be in its crate archive.
+  # Without `build.rs`, Cargo only warns and drops the build script, and the
+  # published crate builds without its kernels even where nvcc is installed.
+  cuda-package-files:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - run: |
+          packaged=$(cargo package --locked --list -p snarkvm-algorithms-cuda)
+          missing=$(comm -23 \
+            <(git ls-files algorithms/cuda | sed 's|^algorithms/cuda/||' | sort) \
+            <(sort <<<"$packaged"))
+          if [ -n "$missing" ]; then
+            echo "::error::Missing from the snarkvm-algorithms-cuda archive: ${missing//$'\n'/ }"
+            exit 1
+          fi
+
   wasm:
     permissions: { contents: read, actions: write }
     runs-on: ubuntu-latest
@@ -138,10 +157,20 @@ jobs:
       # Clippy covers everything but the release profile, which only the
       # release branches need checked.
       - run: cargo check --release --workspace --all-targets
-        if: >-
+        if: &release-only >-
           github.event_name == 'workflow_dispatch' ||
           startsWith(github.ref, 'refs/heads/release/') ||
           startsWith(github.base_ref, 'release/')
+      # Compiles the kernels from the crate archive, against the archives of the
+      # workspace crates it depends on. `build.rs` skips the kernels when it finds
+      # no nvcc, so the step requires one.
+      - name: Build snarkvm-algorithms-cuda from its crate archive
+        if: *release-only
+        run: |
+          command -v "${NVCC-nvcc}"
+          cargo package --locked \
+            -p snarkvm-utilities-derives -p snarkvm-utilities \
+            -p snarkvm-fields -p snarkvm-curves -p snarkvm-algorithms-cuda
 
   # Each entry is one build. `cargo test -p a -p b` unifies the features of
   # a and b, and several crates enable `test`, `rocks` or
