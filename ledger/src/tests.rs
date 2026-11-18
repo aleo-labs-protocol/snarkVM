@@ -4044,23 +4044,21 @@ fn test_pruned_authority_through_the_vm() {
 #[cfg(feature = "test")]
 #[test]
 fn test_pruned_authority_window_below_floor() {
-    use crate::test_helpers::{CurrentConsensusStore, CurrentLedger, CurrentNetwork};
+    use crate::test_helpers::{CurrentLedger, CurrentNetwork};
     use snarkvm_ledger_store::min_authority_retention_blocks;
 
-    let rng = &mut TestRng::default();
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
-    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+    let genesis = crate::test_helpers::sample_genesis_block(&mut TestRng::default());
     let window = min_authority_retention_blocks::<CurrentNetwork>() - 1;
     let options = crate::LoadOptions::default().with_authority_retention(Some(window));
     let error = match CurrentLedger::load_with_options(genesis, StorageMode::new_test(None), options) {
         Ok(_) => panic!("Loaded a ledger with a window below the floor"),
         Err(error) => error.to_string(),
     };
-    assert!(error.contains("at least") && !error.contains("snarkos clean"), "{error}");
+    assert!(error.starts_with("Failed to load ledger: ") && error.contains("at least"), "{error}");
+    assert!(!error.contains("snarkos clean"), "{error}");
 }
 
-/// Ensures only a store that another build can open loses the `snarkos clean` advice.
+/// Ensures an `IncompatibleStore` loses the `snarkos clean` advice and other open failures keep it.
 #[test]
 fn test_store_open_error_advice() {
     use snarkvm_ledger_store::IncompatibleStore;

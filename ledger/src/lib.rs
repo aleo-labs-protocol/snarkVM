@@ -261,7 +261,7 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
 }
 
 /// Wraps a failure to open the consensus store. The `snarkos clean` advice is left out for an
-/// [`IncompatibleStore`]: cleaning would destroy a store that another build can open.
+/// [`IncompatibleStore`] (a newer schema, or a backend that cannot prune): nothing is wrong with it.
 fn store_open_error(error: anyhow::Error) -> anyhow::Error {
     if error.chain().any(|cause| cause.is::<IncompatibleStore>()) {
         anyhow::anyhow!("Failed to load ledger\n\n{error:#}\n")
@@ -355,7 +355,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // A bad window is a configuration error, not a damaged store, so check it before the open error
         // can attach the `snarkos clean` advice.
         if let Some(retention_blocks) = options.authority_retention {
-            check_authority_retention_blocks::<N>(retention_blocks)?;
+            check_authority_retention_blocks::<N>(retention_blocks)
+                .map_err(|error| anyhow::anyhow!("Failed to load ledger: {error}"))?;
         }
 
         info!("Loading the ledger from storage...");

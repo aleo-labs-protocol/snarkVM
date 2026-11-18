@@ -160,8 +160,7 @@ fn missing_block_in_tree_error(height: u32, block_tree_cache_path: Option<&std::
 }
 
 /// The network's standard authority retention window: the number of recent blocks whose authority data
-/// a pruning node keeps, and the window snarkOS assumes its peers keep. Production nodes have no way to
-/// change it; devnets use another window through a dev flag.
+/// a pruning node keeps.
 ///
 /// At the ideal block time of 2.5 seconds, the network produces `60 * 60 * 24 / 2.5 = 34,560` blocks
 /// per day, so retaining 500,000 blocks keeps roughly two weeks of authority data before pruning.
@@ -2814,6 +2813,22 @@ mod tests {
         }
         prune_expired_authorities(&block_store.storage, 49, TEST_RETENTION).unwrap();
         assert!(block_store.storage.speculative_authority_pruned_below().unwrap().is_none());
+    }
+
+    /// Ensures the in-memory consensus storage passes its retention window to the block store.
+    #[test]
+    fn test_consensus_memory_prunes() {
+        let rng = &mut TestRng::default();
+        let blocks = sample_block_chain(TEST_RETENTION + 2, rng);
+        let store = crate::ConsensusStore::<CurrentNetwork, crate::helpers::memory::ConsensusMemory<_>>::open_with_authority_retention(
+            StorageMode::new_test(None),
+            Some(TEST_RETENTION),
+        )
+        .unwrap();
+        for block in &blocks {
+            store.block_store().insert(block).unwrap();
+        }
+        assert_eq!(store.block_store().authority_pruned_below().unwrap(), Some(2));
     }
 
     /// Ensures a block inserted through a paused batch, as the VM does with RocksDB, prunes the
