@@ -3980,7 +3980,7 @@ fn test_find_records_filters_by_ownership() {
 }
 
 /// A pruned block's authority reads as pruned, and the startup spot check passes over pruned blocks.
-#[cfg(all(feature = "prune-authority-data", feature = "test"))]
+#[cfg(feature = "test")]
 #[test]
 fn test_pruned_authority_reads() {
     let rng = &mut TestRng::default();
@@ -4004,7 +4004,61 @@ fn test_pruned_authority_reads() {
     assert!(ledger.get_authority(below).is_ok());
 }
 
-/// Ensures only a store that another build can open loses the `snarkos clean` advice.
+/// Blocks added through the VM prune the authority that leaves the window of a ledger loaded with pruning.
+#[cfg(feature = "test")]
+#[test]
+fn test_pruned_authority_through_the_vm() {
+    use crate::test_helpers::{CurrentConsensusStore, CurrentLedger, CurrentNetwork};
+    use snarkvm_ledger_store::min_authority_retention_blocks;
+
+    let window = min_authority_retention_blocks::<CurrentNetwork>();
+    let rng = &mut TestRng::default();
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+    let options = crate::LoadOptions::default().with_authority_retention(Some(window));
+    let ledger = CurrentLedger::load_with_options(genesis, StorageMode::new_test(None), options).unwrap();
+    let block_store = ledger.vm().block_store();
+
+    let mut advance = || {
+        let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    };
+    while ledger.latest_height() < window {
+        advance();
+    }
+    assert_eq!(block_store.authority_pruned_below().unwrap(), None);
+    // The block at height `window + 1` expires block 1.
+    advance();
+    assert_eq!(block_store.authority_pruned_below().unwrap(), Some(2));
+    advance();
+    assert_eq!(block_store.authority_pruned_below().unwrap(), Some(3));
+
+    let error = ledger.get_authority(2).unwrap_err().to_string();
+    assert!(error.contains("has been pruned"), "{error}");
+    assert!(ledger.get_authority(3).is_ok());
+    assert!(ledger.get_authority(0).is_ok());
+}
+
+/// A retention window below the floor is a configuration error, so it must not advise `snarkos clean`.
+#[cfg(feature = "test")]
+#[test]
+fn test_pruned_authority_window_below_floor() {
+    use crate::test_helpers::{CurrentLedger, CurrentNetwork};
+    use snarkvm_ledger_store::min_authority_retention_blocks;
+
+    let genesis = crate::test_helpers::sample_genesis_block(&mut TestRng::default());
+    let window = min_authority_retention_blocks::<CurrentNetwork>() - 1;
+    let options = crate::LoadOptions::default().with_authority_retention(Some(window));
+    let error = match CurrentLedger::load_with_options(genesis, StorageMode::new_test(None), options) {
+        Ok(_) => panic!("Loaded a ledger with a window below the floor"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.starts_with("Failed to load ledger: ") && error.contains("at least"), "{error}");
+    assert!(!error.contains("snarkos clean"), "{error}");
+}
+
+/// Ensures an `IncompatibleStore` loses the `snarkos clean` advice and other open failures keep it.
 #[test]
 fn test_store_open_error_advice() {
     use snarkvm_ledger_store::IncompatibleStore;

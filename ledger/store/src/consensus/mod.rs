@@ -43,6 +43,22 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Initializes the consensus storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
+    /// Initializes the consensus storage, pruning authority data older than `authority_retention`
+    /// blocks if it is set. See [`BlockStore::open_with_authority_retention`].
+    ///
+    /// The default refuses a retention window and calls [`Self::open`]. Storage that prunes overrides
+    /// this method, and may then implement `open` by calling it with `None`; an `open` that calls it
+    /// without the override recurses forever.
+    fn open_with_authority_retention<S: Into<StorageMode>>(
+        storage: S,
+        authority_retention: Option<u32>,
+    ) -> Result<Self> {
+        if authority_retention.is_some() {
+            return Err(crate::IncompatibleStore("This consensus storage does not prune authority data".into()).into());
+        }
+        Self::open(storage)
+    }
+
     /// Returns the finalize storage.
     fn finalize_store(&self) -> &FinalizeStore<N, Self::FinalizeStorage>;
     /// Returns the block storage.
@@ -116,8 +132,17 @@ pub struct ConsensusStore<N: Network, C: ConsensusStorage<N>> {
 impl<N: Network, C: ConsensusStorage<N>> ConsensusStore<N, C> {
     /// Initializes the consensus store.
     pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        Self::open_with_authority_retention(storage, None)
+    }
+
+    /// Initializes the consensus store, pruning authority data older than `authority_retention` blocks
+    /// if it is set.
+    pub fn open_with_authority_retention<S: Into<StorageMode>>(
+        storage: S,
+        authority_retention: Option<u32>,
+    ) -> Result<Self> {
         // Initialize the consensus storage.
-        let storage = C::open(storage.into())?;
+        let storage = C::open_with_authority_retention(storage, authority_retention)?;
         // Return the consensus store.
         Ok(Self { storage, _phantom: PhantomData })
     }
