@@ -35,6 +35,8 @@ thread_local! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TestnetCircuit;
 
+impl crate::sealed_circuit_environment::Sealed for TestnetCircuit {}
+
 impl Environment for TestnetCircuit {
     type Affine = <console::TestnetV0 as console::Environment>::Affine;
     type BaseField = Field;

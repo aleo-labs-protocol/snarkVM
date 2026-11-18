@@ -17,10 +17,8 @@ use snarkvm_utilities::biginteger::BigInteger;
 
 /// A trait that defines parameters for a field that can be used for FFTs.
 ///
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait FftParameters: 'static + Send + Sync + Sized {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FftParameters: crate::sealed_parameters::Sealed + 'static + Send + Sync + Sized {
     type BigInteger: BigInteger;
 
     /// Let `N` be the size of the multiplicative group defined by the field.

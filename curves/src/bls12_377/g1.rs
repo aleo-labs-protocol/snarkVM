@@ -36,6 +36,8 @@ const _: () = assert!(std::mem::offset_of!(super::G1Affine, infinity) == 96);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bls12_377G1Parameters;
 
+impl crate::sealed::Sealed for Bls12_377G1Parameters {}
+
 impl ModelParameters for Bls12_377G1Parameters {
     type BaseField = Fq;
     type ScalarField = Fr;

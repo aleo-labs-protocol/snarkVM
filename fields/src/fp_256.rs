@@ -46,9 +46,7 @@ use std::{
 };
 use zeroize::Zeroize;
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {
     /// Returns the tables that `sqrt` uses. The 2-adicity of the field must be less than 64.
     fn sqrt_tables() -> &'static SqrtTables<Fp256<Self>>;
@@ -166,6 +164,8 @@ impl<P: Fp256Parameters> One for Fp256<P> {
         self.0 == P::R
     }
 }
+
+impl<P: Fp256Parameters> crate::sealed::Sealed for Fp256<P> {}
 
 impl<P: Fp256Parameters> Field for Fp256<P> {
     type BasePrimeField = Self;
