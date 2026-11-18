@@ -127,10 +127,7 @@ pub struct ConsensusStore<N: Network, C: ConsensusStorage<N>> {
 impl<N: Network, C: ConsensusStorage<N>> ConsensusStore<N, C> {
     /// Initializes the consensus store.
     pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
-        // Initialize the consensus storage.
-        let storage = C::open(storage.into())?;
-        // Return the consensus store.
-        Ok(Self { storage, _phantom: PhantomData })
+        Self::open_with_authority_retention(storage, None)
     }
 
     /// Initializes the consensus store, pruning authority data older than `authority_retention` blocks
@@ -139,7 +136,9 @@ impl<N: Network, C: ConsensusStorage<N>> ConsensusStore<N, C> {
         storage: S,
         authority_retention: Option<u32>,
     ) -> Result<Self> {
-        let storage = C::open_with_authority_retention(storage.into(), authority_retention)?;
+        // Initialize the consensus storage.
+        let storage = C::open_with_authority_retention(storage, authority_retention)?;
+        // Return the consensus store.
         Ok(Self { storage, _phantom: PhantomData })
     }
 

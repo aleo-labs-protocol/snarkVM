@@ -332,11 +332,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         info!("Loading the ledger from storage...");
         // Initialize the consensus store.
-        let store =
-            match ConsensusStore::<N, C>::open_with_authority_retention(storage_mode, options.authority_retention) {
-                Ok(store) => store,
-                Err(e) => return Err(store_open_error(e)),
-            };
+        let store = ConsensusStore::<N, C>::open_with_authority_retention(storage_mode, options.authority_retention)
+            .map_err(store_open_error)?;
         lap!(timer, "Load consensus store");
 
         // Initialize a new VM.

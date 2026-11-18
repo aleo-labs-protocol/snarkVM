@@ -2245,6 +2245,11 @@ mod tests {
     /// The retention window of the pruning tests: the smallest one allowed.
     const TEST_RETENTION: u32 = 100;
 
+    /// Opens a block store that prunes with [`TEST_RETENTION`].
+    fn open_pruning<B: BlockStorage<CurrentNetwork>>(storage: StorageMode) -> BlockStore<CurrentNetwork, B> {
+        BlockStore::open_with_authority_retention(storage, Some(TEST_RETENTION)).unwrap()
+    }
+
     /// Returns a chain whose block 1 carries a quorum authority, and one of that authority's certificate IDs.
     fn sample_block_chain_with_quorum(
         num_blocks: u32,
@@ -2323,11 +2328,7 @@ mod tests {
 
         let rng = &mut TestRng::default();
         let blocks = sample_block_chain(NUM_BLOCKS, rng);
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open_with_authority_retention(
-            StorageMode::new_test(None),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockMemory<_>>(StorageMode::new_test(None));
 
         for block in blocks.iter().take(101) {
             block_store.insert(block).unwrap();
@@ -2397,11 +2398,7 @@ mod tests {
         let rng = &mut TestRng::default();
         let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
 
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open_with_authority_retention(
-            StorageMode::new_test(None),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockMemory<_>>(StorageMode::new_test(None));
         for block in blocks.iter().take(101) {
             block_store.insert(block).unwrap();
         }
@@ -2483,11 +2480,7 @@ mod tests {
         let rng = &mut TestRng::default();
         let (blocks, certificate_id) = sample_block_chain_with_quorum(103, rng);
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open_with_authority_retention(
-            StorageMode::new_test(Some(temp_dir)),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockDB<_>>(StorageMode::new_test(Some(temp_dir)));
         for block in blocks.iter().take(101) {
             block_store.insert(block).unwrap();
         }
@@ -2722,11 +2715,7 @@ mod tests {
     fn test_insert_pruning_after_removal() {
         let rng = &mut TestRng::default();
         let blocks = sample_block_chain(104, rng);
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open_with_authority_retention(
-            StorageMode::new_test(None),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockMemory<_>>(StorageMode::new_test(None));
         for block in blocks.iter().take(103) {
             block_store.insert(block).unwrap();
         }
@@ -2745,11 +2734,7 @@ mod tests {
     fn test_insert_fails_when_pruning_fails() {
         let rng = &mut TestRng::default();
         let blocks = sample_block_chain(102, rng);
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open_with_authority_retention(
-            StorageMode::new_test(None),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockMemory<_>>(StorageMode::new_test(None));
         for block in blocks.iter().take(101) {
             block_store.insert(block).unwrap();
         }
@@ -2837,11 +2822,7 @@ mod tests {
         let rng = &mut TestRng::default();
         let blocks = sample_block_chain(TEST_RETENTION + 2, rng);
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open_with_authority_retention(
-            StorageMode::new_test(Some(temp_dir)),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockDB<_>>(StorageMode::new_test(Some(temp_dir)));
         for block in &blocks[..=TEST_RETENTION as usize] {
             block_store.insert(block).unwrap();
         }
@@ -2932,11 +2913,7 @@ mod tests {
 
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage_mode = StorageMode::new_test(Some(temp_dir));
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open_with_authority_retention(
-            storage_mode.clone(),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockDB<_>>(storage_mode.clone());
         for block in &blocks {
             block_store.insert(block).unwrap();
         }
@@ -2955,11 +2932,7 @@ mod tests {
         clear_authority_pruned(&block_store.storage);
         drop(block_store);
 
-        let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open_with_authority_retention(
-            storage_mode.clone(),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let block_store = open_pruning::<BlockDB<_>>(storage_mode.clone());
         assert!(block_store.storage.speculative_authority_pruned_below().unwrap().is_some());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
@@ -2967,9 +2940,7 @@ mod tests {
         drop(block_store);
 
         // Reopening after cleanup is idempotent.
-        let block_store =
-            BlockStore::<CurrentNetwork, BlockDB<_>>::open_with_authority_retention(storage_mode, Some(TEST_RETENTION))
-                .unwrap();
+        let block_store = open_pruning::<BlockDB<_>>(storage_mode);
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
     }
