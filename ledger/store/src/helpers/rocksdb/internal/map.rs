@@ -73,6 +73,8 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
     }
 }
 
+impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> crate::sealed::Sealed for DataMap<K, V> {}
+
 impl<
     'a,
     K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,

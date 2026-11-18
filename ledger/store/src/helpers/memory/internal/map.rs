@@ -91,6 +91,13 @@ impl<
 }
 
 impl<
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+> crate::sealed::Sealed for MemoryMap<K, V>
+{
+}
+
+impl<
     'a,
     K: 'a + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,

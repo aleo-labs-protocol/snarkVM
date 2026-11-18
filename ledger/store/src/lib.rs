@@ -37,7 +37,7 @@ pub use transition::*;
 
 pub use snarkvm_utilities::storage::{StorageMode, aleo_dir, aleo_ledger_dir, aleo_secondary_ledger_dir};
 
-/// Seals the storage traits. Only the storage backends of this crate implement them.
+/// Seals the storage, map and database traits. Only the storage backends of this crate implement them.
 ///
 /// ```compile_fail,E0277
 /// use snarkvm_console::network::MainnetV0;
@@ -68,6 +68,85 @@ pub use snarkvm_utilities::storage::{StorageMode, aleo_dir, aleo_ledger_dir, ale
 ///
 ///     fn block_store(&self) -> &BlockStore<MainnetV0, Self::BlockStorage> {
 ///         self.0.block_store()
+///     }
+/// }
+/// ```
+///
+/// ```compile_fail,E0277
+/// use snarkvm_console::prelude::{Result, Serialize};
+/// use snarkvm_ledger_store::helpers::MapRead;
+/// use std::{
+///     borrow::{Borrow, Cow},
+///     hash::Hash,
+///     iter::Empty,
+/// };
+///
+/// struct EmptyMap;
+///
+/// impl<'a> MapRead<'a, u8, u8> for EmptyMap {
+///     type PendingIterator = Empty<(Cow<'a, u8>, Option<Cow<'a, u8>>)>;
+///     type Iterator = Empty<(Cow<'a, u8>, Cow<'a, u8>)>;
+///     type Keys = Empty<Cow<'a, u8>>;
+///     type Values = Empty<Cow<'a, u8>>;
+///
+///     fn len_confirmed(&self) -> usize {
+///         0
+///     }
+///
+///     fn contains_key_confirmed<Q>(&self, _key: &Q) -> Result<bool>
+///     where
+///         u8: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(false)
+///     }
+///
+///     fn contains_key_speculative<Q>(&self, _key: &Q) -> Result<bool>
+///     where
+///         u8: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(false)
+///     }
+///
+///     fn get_confirmed<Q>(&'a self, _key: &Q) -> Result<Option<Cow<'a, u8>>>
+///     where
+///         u8: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(None)
+///     }
+///
+///     fn get_pending<Q>(&self, _key: &Q) -> Option<Option<u8>>
+///     where
+///         u8: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         None
+///     }
+///
+///     fn get_floor_confirmed<Q>(&'a self, _key: &Q) -> Result<Option<(Cow<'a, u8>, Cow<'a, u8>)>>
+///     where
+///         u8: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(None)
+///     }
+///
+///     fn iter_pending(&'a self) -> Self::PendingIterator {
+///         std::iter::empty()
+///     }
+///
+///     fn iter_confirmed(&'a self) -> Self::Iterator {
+///         std::iter::empty()
+///     }
+///
+///     fn keys_confirmed(&'a self) -> Self::Keys {
+///         std::iter::empty()
+///     }
+///
+///     fn values_confirmed(&'a self) -> Self::Values {
+///         std::iter::empty()
 ///     }
 /// }
 /// ```

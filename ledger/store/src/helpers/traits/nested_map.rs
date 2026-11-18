@@ -19,12 +19,14 @@ use core::hash::Hash;
 use std::borrow::Cow;
 
 /// A trait representing 'nested map'-like storage operations with read-write capabilities.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait NestedMap<
     'a,
     M: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Send + Sync,
     K: 'a + Clone + PartialEq + Eq + Serialize + Deserialize<'a> + Send + Sync,
     V: 'a + Clone + Serialize + Deserialize<'a> + Send + Sync,
->: Clone + NestedMapRead<'a, M, K, V> + Send + Sync
+>: crate::sealed::Sealed + Clone + NestedMapRead<'a, M, K, V> + Send + Sync
 {
     ///
     /// Inserts the given key-value pair.
@@ -83,12 +85,14 @@ pub trait NestedMap<
 }
 
 /// A trait representing 'nested map'-like storage operations with read-only capabilities.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait NestedMapRead<
     'a,
     M: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Sync,
     K: 'a + Clone + PartialEq + Eq + Serialize + Deserialize<'a> + Sync,
     V: 'a + Clone + Serialize + Deserialize<'a> + Sync,
->
+>: crate::sealed::Sealed
 {
     type PendingIterator: Iterator<Item = (Cow<'a, M>, Option<Cow<'a, K>>, Option<Cow<'a, V>>)>;
     type Iterator: Iterator<Item = (Cow<'a, M>, Cow<'a, K>, Cow<'a, V>)>;
