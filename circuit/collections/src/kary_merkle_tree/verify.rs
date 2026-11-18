@@ -246,8 +246,8 @@ mod tests {
                     });
                     Circuit::reset();
 
-                    // Only the last leaf is verified against an incorrect root and an incorrect leaf.
-                    if index != last_index {
+                    // Only the first and last leaf are verified against an incorrect root and an incorrect leaf.
+                    if index != 0 && index != last_index {
                         continue;
                     }
 
