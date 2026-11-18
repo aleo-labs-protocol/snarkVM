@@ -32,7 +32,7 @@ impl<N: Network> Process<N> {
         // Retrieve the stack.
         let stack = self.get_stack(fee.program_id())?;
         // Retrieve the function from the stack.
-        let function = stack.get_function(fee.function_name())?;
+        let function = stack.get_function_ref(fee.function_name())?;
 
         dev_println!("Verifying fee from {}/{}...", fee.program_id(), fee.function_name());
 

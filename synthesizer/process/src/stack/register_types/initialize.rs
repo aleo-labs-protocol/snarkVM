@@ -334,11 +334,16 @@ impl<N: Network> RegisterTypes<N> {
             RegisterType::Future(locator) => {
                 // Ensure that the locator is defined.
                 match locator.program_id() == stack.program_id() {
-                    true => stack.get_function(locator.resource())?,
-                    false => {
-                        stack.get_external_stack(locator.program_id())?.program().get_function(locator.resource())?
+                    true => {
+                        stack.get_function_ref(locator.resource())?;
                     }
-                };
+                    false => {
+                        stack
+                            .get_external_stack(locator.program_id())?
+                            .program()
+                            .get_function_ref(locator.resource())?;
+                    }
+                }
             }
             RegisterType::DynamicRecord => {} // Dynamic records are valid outputs.
             RegisterType::DynamicFuture => bail!("Output '{operand}' cannot be a dynamic future."),
