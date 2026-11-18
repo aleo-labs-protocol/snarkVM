@@ -451,16 +451,17 @@ pub mod test_helpers {
     use super::*;
     use console::{account::PrivateKey, network::MainnetV0, program::ProgramOwner, types::Address};
 
+    pub(crate) use super::execution::test_helpers::sample_execution;
+
     type CurrentNetwork = MainnetV0;
 
-    /// Samples a random deployment transaction with a private or public fee.
-    pub fn sample_deployment_transaction(
+    /// Samples a random deployment and the private key of its program owner.
+    pub(crate) fn sample_deployment_and_private_key(
         version: u8,
         edition: u16,
         has_translation_keys: bool,
-        is_fee_private: bool,
         rng: &mut TestRng,
-    ) -> Transaction<CurrentNetwork> {
+    ) -> (Deployment<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
         // Sample a deployment.
@@ -491,6 +492,20 @@ pub mod test_helpers {
             _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
         };
 
+        (deployment, private_key)
+    }
+
+    /// Samples a random deployment transaction with a private or public fee.
+    pub fn sample_deployment_transaction(
+        version: u8,
+        edition: u16,
+        has_translation_keys: bool,
+        is_fee_private: bool,
+        rng: &mut TestRng,
+    ) -> Transaction<CurrentNetwork> {
+        // Sample a deployment and the private key of its program owner.
+        let (deployment, private_key) = sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
+
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id().unwrap();
         // Construct a program owner (the transaction signer).
@@ -513,7 +528,7 @@ pub mod test_helpers {
         index: usize,
     ) -> Transaction<CurrentNetwork> {
         // Sample an execution.
-        let execution = crate::transaction::execution::test_helpers::sample_execution(rng, index);
+        let execution = sample_execution(rng, index);
         // Compute the execution ID.
         let execution_id = execution.to_execution_id().unwrap();
 
@@ -555,16 +570,10 @@ mod tests {
         // Transaction IDs are created using `transaction_tree`.
         for expected in [
             crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
