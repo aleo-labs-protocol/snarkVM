@@ -88,7 +88,9 @@ fn load_or_build<T: FromBytes + ToBytes>(
     }
     let fixture = build();
     // A failed write leaves the file for a later process to rebuild.
-    let _ = write(path, stamp, &fixture);
+    if let Err(error) = write(path, stamp, &fixture) {
+        eprintln!("Failed to write the test fixture '{}': {error}", path.display());
+    }
     drop(lock);
     fixture
 }
