@@ -365,6 +365,8 @@ pub mod test_helpers {
     use super::*;
     use console::network::MainnetV0;
 
+    use std::sync::OnceLock;
+
     type CurrentNetwork = MainnetV0;
 
     /// Samples an accepted deploy transaction at the given index.
@@ -399,13 +401,21 @@ pub mod test_helpers {
     }
 
     /// Samples an accepted execute transaction at the given index.
+    ///
+    /// With a private fee, every call wraps the same transaction, so a `Transactions` holds at most one such sample.
     pub(crate) fn sample_accepted_execute(
         index: u32,
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> ConfirmedTransaction<CurrentNetwork> {
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         // Sample an execute transaction.
-        let tx = crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng, 0);
+        let tx = match is_fee_private {
+            true => INSTANCE
+                .get_or_init(|| crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0))
+                .clone(),
+            false => crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
+        };
         // Return the confirmed transaction.
         ConfirmedTransaction::accepted_execute(index, tx, vec![]).unwrap()
     }
@@ -425,14 +435,9 @@ pub mod test_helpers {
             false => crate::transaction::test_helpers::sample_fee_public_transaction(rng),
         };
 
-        // Extract the rejected deployment.
-        let rejected = crate::rejected::test_helpers::sample_rejected_deployment(
-            version,
-            edition,
-            has_translation_keys,
-            is_fee_private,
-            rng,
-        );
+        // Sample the rejected deployment.
+        let rejected =
+            crate::rejected::test_helpers::sample_rejected_deployment(version, edition, has_translation_keys, rng);
 
         // Return the confirmed transaction.
         ConfirmedTransaction::rejected_deploy(index, fee_transaction, rejected, vec![]).unwrap()
@@ -450,8 +455,8 @@ pub mod test_helpers {
             false => crate::transaction::test_helpers::sample_fee_public_transaction(rng),
         };
 
-        // Extract the rejected execution.
-        let rejected = crate::rejected::test_helpers::sample_rejected_execution(is_fee_private, rng);
+        // Sample the rejected execution.
+        let rejected = crate::rejected::test_helpers::sample_rejected_execution(rng);
 
         // Return the confirmed transaction.
         ConfirmedTransaction::rejected_execute(index, fee_transaction, rejected, vec![]).unwrap()
@@ -462,7 +467,6 @@ pub mod test_helpers {
         let rng = &mut TestRng::default();
 
         vec![
-            sample_accepted_deploy(0, 1, Uniform::rand(rng), false, true, rng),
             sample_accepted_deploy(0, 1, Uniform::rand(rng), false, true, rng),
             sample_accepted_deploy(0, 2, Uniform::rand(rng), false, true, rng),
             sample_accepted_deploy(0, 2, Uniform::rand(rng), true, true, rng),

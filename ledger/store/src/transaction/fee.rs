@@ -28,7 +28,9 @@ use anyhow::Result;
 use core::marker::PhantomData;
 
 /// A trait for fee storage.
-pub trait FeeStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FeeStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `(fee transition ID, global state root, proof)`.
     type FeeMap: for<'a> Map<'a, N::TransactionID, (N::TransitionID, N::StateRoot, Option<Proof<N>>)>;
     /// The mapping of `fee transition ID` to `transaction ID`.

@@ -6,7 +6,7 @@
 - Scope out necessary tests ahead of time.
 - If uncertain, ask.
 - Think very hard in your planning process.
-- New files, crates, dependencies, abstractions, traits, or error types require approval.
+- New files, crates, dependencies, traits, or error types require approval.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ snarkVM is a virtual machine for zero-knowledge proof execution on the Aleo bloc
 
 ## Rules
 - All changes must be backwards compatible — no consensus forks.
-- New files, crates, dependencies, abstractions, or traits require approval.
+- New files, crates, dependencies, traits, or error types require approval.
 - Do not add cargo features without explicit sign-off.
 - `unwrap`s must have a comment justifying why they can't panic.
 

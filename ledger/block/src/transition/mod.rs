@@ -869,18 +869,12 @@ impl<N: Network> Transition<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use crate::Transaction;
 
     type CurrentNetwork = console::network::MainnetV0;
 
     /// Samples a random transition.
     pub(crate) fn sample_transition(rng: &mut TestRng) -> Transition<CurrentNetwork> {
-        if let Transaction::Execute(_, _, execution, _) =
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0)
-        {
-            execution.into_transitions().next().unwrap()
-        } else {
-            unreachable!()
-        }
+        // The genesis execution holds a transition, so `unwrap` does not panic.
+        crate::transaction::test_helpers::sample_execution(rng, 0).into_transitions().next().unwrap()
     }
 }
