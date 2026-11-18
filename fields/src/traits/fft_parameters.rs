@@ -16,7 +16,9 @@
 use snarkvm_utilities::biginteger::BigInteger;
 
 /// A trait that defines parameters for a field that can be used for FFTs.
-pub trait FftParameters: 'static + Send + Sync + Sized {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FftParameters: crate::sealed_parameters::Sealed + 'static + Send + Sync + Sized {
     type BigInteger: BigInteger;
 
     /// Let `N` be the size of the multiplicative group defined by the field.
@@ -39,7 +41,4 @@ pub trait FftParameters: 'static + Send + Sync + Sized {
     /// GENERATOR^((MODULUS-1) / (2^s *
     /// SMALL_SUBGROUP_BASE^SMALL_SUBGROUP_BASE_ADICITY)) Used for mixed-radix FFT.
     const LARGE_SUBGROUP_ROOT_OF_UNITY: Option<Self::BigInteger> = None;
-
-    /// `TWO_ADIC_ROOT_OF_UNITY^2^i` for `i := 0..TWO_ADICITY-1`
-    const POWERS_OF_ROOTS_OF_UNITY: &'static [Self::BigInteger];
 }

@@ -15,9 +15,14 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for Block<N> {
-    /// Read the block either with or without checking the data.
-    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
+impl<N: Network> Block<N> {
+    /// Reads the block either with or without checking the data, decoding each compute key of
+    /// its authority only if `cache` holds no earlier decode of the same bytes.
+    pub fn read_le_with_cache<R: Read>(
+        mut reader: R,
+        unchecked: bool,
+        cache: &mut ComputeKeyCache<N>,
+    ) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -33,7 +38,7 @@ impl<N: Network> FromBytes for Block<N> {
         let header = FromBytes::read_le_with_unchecked(&mut reader, unchecked)?;
 
         // Read the authority.
-        let authority = Authority::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
+        let authority = Authority::<N>::read_le_with_cache(&mut reader, unchecked, cache)?;
 
         // Read the ratifications.
         let ratifications = Ratifications::read_le_with_unchecked(&mut reader, unchecked)?;
@@ -100,6 +105,13 @@ impl<N: Network> FromBytes for Block<N> {
             true => Ok(block),
             false => Err(error("Mismatching block hash, possible data corruption")),
         }
+    }
+}
+
+impl<N: Network> FromBytes for Block<N> {
+    /// Read the block either with or without checking the data.
+    fn read_le_with_unchecked<R: Read>(reader: R, unchecked: bool) -> IoResult<Self> {
+        Self::read_le_with_cache(reader, unchecked, &mut ComputeKeyCache::default())
     }
 
     /// Reads the block from the buffer.
@@ -178,6 +190,15 @@ mod tests {
         let expected_bytes = genesis_block.to_bytes_le()?;
         assert_eq!(genesis_block, Block::read_le(&expected_bytes[..])?);
         assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
+
+        // A cache shared across reads gives the same block in both modes.
+        let mut cache = ComputeKeyCache::default();
+        for unchecked in [false, true, false, true] {
+            let block = Block::read_le_with_cache(&expected_bytes[..], unchecked, &mut cache)?;
+            assert_eq!(genesis_block, block);
+            assert_eq!(expected_bytes, block.to_bytes_le()?);
+        }
+        assert_eq!(cache.len(), 1);
 
         Ok(())
     }

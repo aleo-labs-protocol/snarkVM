@@ -18,7 +18,10 @@ use snarkvm_fields::{Field, PrimeField, SquareRootField, ToConstraintField};
 
 use core::{fmt::Debug, hash::Hash, iter};
 
-pub trait PairingEngine: Sized + 'static + Copy + Debug + PartialEq + Eq + Hash + Sync + Send {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait PairingEngine:
+    crate::sealed::Sealed + Sized + 'static + Copy + Debug + PartialEq + Eq + Hash + Sync + Send
+{
     /// This is the scalar field of the G1/G2 groups.
     type Fr: PrimeField + SquareRootField + Into<<Self::Fr as PrimeField>::BigInteger>;
 

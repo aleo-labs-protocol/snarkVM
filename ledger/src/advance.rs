@@ -116,10 +116,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// the blocks checks (e.g. [`Ledger::check_next_block`]).
     ///
     /// # Concurrency
-    /// It is guaranteed that at most one call this function is executing at any time and that no reads to the Ledger
-    /// (e.g, by [`Self::prepare_next_beacon_block`] or [`Self::check_next_block`]) execute while the ledger is advancing.
+    /// It is guaranteed that at most one call of this function is executing at any time and that no reads to the Ledger
+    /// (e.g., by [`Self::prepare_advance_to_next_beacon_block`] or [`Self::check_next_block`]) execute while the ledger is advancing.
     /// However, it is still possible that a *previously* valid block is rejected by a call to this function,
-    /// if the ledger advanced between calling `prepare_next_*_block` and passing it to this function.
+    /// if the ledger advanced between calling `prepare_advance_to_next_*_block` and passing it to this function.
     ///
     /// # Panics
     /// This function panics if called from an async context.

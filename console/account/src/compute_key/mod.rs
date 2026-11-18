@@ -15,6 +15,7 @@
 
 mod bitwise;
 mod bytes;
+mod cache;
 mod from_bits;
 mod serialize;
 mod size_in_bits;
@@ -23,6 +24,8 @@ mod to_address;
 mod to_bits;
 mod to_fields;
 mod try_from;
+
+pub use cache::ComputeKeyCache;
 
 #[cfg(feature = "private_key")]
 use crate::PrivateKey;

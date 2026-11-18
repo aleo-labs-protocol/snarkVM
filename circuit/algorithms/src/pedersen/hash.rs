@@ -29,7 +29,8 @@ impl<E: Environment, const NUM_BITS: u8> Hash for Pedersen<E, NUM_BITS> {
 impl<E: Environment, const NUM_BITS: u8> Metrics<dyn Hash<Input = Boolean<E>, Output = Field<E>>>
     for Pedersen<E, NUM_BITS>
 {
-    type Case = Vec<Mode>;
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
+    type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]
     fn count(case: &Self::Case) -> Count {
@@ -40,7 +41,8 @@ impl<E: Environment, const NUM_BITS: u8> Metrics<dyn Hash<Input = Boolean<E>, Ou
 impl<E: Environment, const NUM_BITS: u8> OutputMode<dyn Hash<Input = Boolean<E>, Output = Field<E>>>
     for Pedersen<E, NUM_BITS>
 {
-    type Case = Vec<Mode>;
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
+    type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]
     fn output_mode(parameter: &Self::Case) -> Mode {
@@ -79,16 +81,16 @@ mod tests {
                 assert_eq!(expected, candidate.eject_value());
 
                 // Check constraint counts and output mode.
-                let modes = circuit_input.iter().map(|b| b.eject_mode()).collect::<Vec<_>>();
+                let case = circuit_input.iter().map(CircuitType::from).collect::<Vec<_>>();
                 assert_count!(
                     Pedersen<Circuit, NUM_BITS>,
                     HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
-                    &modes
+                    &case
                 );
                 assert_output_mode!(
                     Pedersen<Circuit, NUM_BITS>,
                     HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
-                    &modes,
+                    &case,
                     candidate
                 );
             });

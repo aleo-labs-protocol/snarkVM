@@ -34,7 +34,7 @@ fn test_get_record_dynamic() {
 
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
@@ -376,7 +376,7 @@ fn translate_transfer_public_to_private() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let address = Address::try_from(&caller_private_key).unwrap();
     println!("Caller address: {address}");
 
@@ -442,7 +442,7 @@ fn translate_transfer_public_to_private() {
 fn test_dynamic_record_with_many_fields() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("many_fields").unwrap().to_field().unwrap();
@@ -574,7 +574,7 @@ fn test_dynamic_record_with_many_fields() {
 fn test_dynamic_record_with_nested_structs() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("nested_structs").unwrap().to_field().unwrap();
@@ -724,7 +724,7 @@ fn test_dynamic_record_with_nested_structs() {
 fn test_dynamic_record_minimal_fields() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("minimal_record").unwrap().to_field().unwrap();
@@ -820,7 +820,7 @@ fn test_dynamic_record_minimal_fields() {
 fn test_dynamic_record_near_maximum_fields() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("max_fields").unwrap().to_field().unwrap();
@@ -973,7 +973,7 @@ fn test_dynamic_record_near_maximum_fields() {
 fn test_dynamic_record_maximum_fields() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("max32_record").unwrap().to_field().unwrap();
@@ -1152,7 +1152,7 @@ fn test_dynamic_record_maximum_fields() {
 fn test_get_record_dynamic_visibility() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("visibility_test").unwrap().to_field().unwrap();

@@ -61,7 +61,7 @@ where
 ///
 /// `x = 0` gives `y^2 = 1` on every twisted Edwards curve, so this point and the
 /// identity `(0, 1)` are the two solutions there, and both are on the curve.
-pub fn order_two_point<P: TwistedEdwardsParameters>() -> Affine<P> {
+fn order_two_point<P: TwistedEdwardsParameters>() -> Affine<P> {
     Affine::<P>::new(P::BaseField::zero(), -P::BaseField::one(), P::BaseField::zero())
 }
 

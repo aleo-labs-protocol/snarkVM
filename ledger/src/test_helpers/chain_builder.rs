@@ -28,9 +28,8 @@ use snarkvm_console::{
     network::MainnetV0,
     prelude::*,
 };
+use snarkvm_ledger_store::StorageMode;
 use snarkvm_synthesizer::vm::VM;
-
-use aleo_std::StorageMode;
 
 use anyhow::{Context, Result};
 use indexmap::{IndexMap, IndexSet};

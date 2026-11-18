@@ -23,14 +23,16 @@ use crate::{
 use console::network::prelude::*;
 use snarkvm_ledger_block::{Execution, Transaction, Transition};
 use snarkvm_synthesizer_snark::Proof;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;
 
 /// A trait for execution storage.
-pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ExecutionStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `([transition ID], has_fee)`.
     type IDMap: for<'a> Map<'a, N::TransactionID, (Vec<N::TransitionID>, bool)>;
     /// The mapping of `transition ID` to `transaction ID`.

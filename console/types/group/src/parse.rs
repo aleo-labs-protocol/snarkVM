@@ -101,7 +101,8 @@ mod tests {
         /// Attempts to construct a group from the given element,
         /// format it in display mode, and recover a group from it.
         fn check_display<E: Environment>(element: E::Affine) {
-            let candidate = Group::<E>::new(element);
+            // `Uniform::rand` clears the cofactor, so this cannot fail.
+            let candidate = Group::<E>::try_new(element).unwrap();
             assert_eq!(format!("{}{}", element.to_x_coordinate(), Group::<E>::type_name()), format!("{candidate}"));
 
             let candidate_recovered = Group::<E>::from_str(&format!("{candidate}")).unwrap();
@@ -119,9 +120,7 @@ mod tests {
 
     #[test]
     fn test_display_zero() {
-        let zero = <CurrentEnvironment as Environment>::Affine::zero();
-
-        let candidate = Group::<CurrentEnvironment>::new(zero);
+        let candidate = Group::<CurrentEnvironment>::zero();
         assert_eq!("0group", &format!("{candidate}"));
     }
 }

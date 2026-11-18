@@ -132,7 +132,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
         rng: &mut R,
     ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
-        let timer = timer!("VM::speculate");
+        let timer = timing_span!("VM::speculate").entered();
 
         // Collect the candidate transactions into a vector.
         let candidate_transactions: Vec<_> = candidate_transactions.collect::<Vec<_>>();
@@ -178,7 +178,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             })
             .collect();
 
-        finish!(timer, "Finished dry-run of the transactions");
+        timing_event!("Finished dry-run of the transactions");
+        drop(timer);
 
         // Return the ratifications, confirmed transactions, aborted transaction IDs, and ratified finalize operations.
         Ok((
@@ -206,7 +207,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transactions: &Transactions<N>,
         rng: &mut R,
     ) -> Result<Vec<FinalizeOperation<N>>> {
-        let timer = timer!("VM::check_speculate");
+        let timer = timing_span!("VM::check_speculate").entered();
 
         // Retrieve the transactions and their rejected IDs.
         let transactions_and_rejected_ids = cfg_iter!(transactions)
@@ -253,7 +254,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // where any aborted transactions should be in the aborted transaction ID list, not in transactions.
         ensure!(aborted_transactions.is_empty(), "Aborted transactions found in the block (from speculation)");
 
-        finish!(timer, "Finished dry-run of the transactions");
+        timing_event!("Finished dry-run of the transactions");
+        drop(timer);
 
         // Return the ratified finalize operations.
         Ok(ratified_finalize_operations)
@@ -438,12 +440,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
-        let timer = timer!("VM::finalize");
+        let timer = timing_span!("VM::finalize").entered();
 
         // Performs a **real-run** of finalize over the list of ratifications, solutions, and transactions.
         let ratified_finalize_operations = self.atomic_finalize(state, ratifications, solutions, transactions)?;
 
-        finish!(timer, "Finished real-run of finalize");
+        timing_event!("Finished real-run of finalize");
+        drop(timer);
         Ok(ratified_finalize_operations)
     }
 }
@@ -523,7 +526,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     )> {
         self.ensure_sequential_processing();
 
-        let timer = timer!("VM::atomic_speculate");
+        let timer = timing_span!("VM::atomic_speculate").entered();
 
         // Retrieve the number of solutions.
         let num_solutions = solutions.len();
@@ -834,7 +837,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Note: This will abort the entire atomic batch.
                     Transaction::Fee(..) => Err("Cannot speculate on a fee transaction".to_string()),
                 };
-                lap!(timer, "Speculated on transaction '{}'", transaction.id());
+                timing_event!("Speculated on transaction '{}'", transaction.id());
 
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
@@ -916,7 +919,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 return Err("Failed to construct the ratifications after speculation".to_string());
             };
 
-            finish!(timer);
+            drop(timer);
 
             // On return, 'atomic_finalize!' will abort the batch, and return the ratifications,
             // confirmed & aborted transactions, and finalize operations from pre-ratify and post-ratify.
@@ -939,7 +942,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(not(test))]
         self.ensure_sequential_processing();
 
-        let timer = timer!("VM::atomic_finalize");
+        let timer = timing_span!("VM::atomic_finalize").entered();
 
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
@@ -1145,7 +1148,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Note: This will abort the entire atomic batch.
                     _ => return Err("Invalid confirmed transaction type".to_string()),
                 };
-                lap!(timer, "Finalizing transaction {}", transaction.id());
+                timing_event!("Finalizing transaction {}", transaction.id());
 
                 match outcome {
                     // If the transaction succeeded to finalize, continue to the next transaction.
@@ -1181,7 +1184,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Commit all the stacks to the process.
             process.commit_stacks();
 
-            finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
+            drop(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
             Ok(ratified_finalize_operations)
         });
@@ -2625,7 +2628,7 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // Sample a private key and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Sample a private key and address for the recipient.
@@ -2633,7 +2636,7 @@ finalize transfer_public:
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =
@@ -2836,7 +2839,7 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // Sample a private key, view key, and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         for finalize_logic in &[
@@ -2849,7 +2852,7 @@ finalize transfer_public:
     div r0 0u128 into r1;",
         ] {
             // Initialize the vm.
-            let vm = test_helpers::sample_vm_with_genesis_block(rng);
+            let vm = test_helpers::sample_vm_with_genesis_block();
 
             // Deploy a new program.
             let genesis =
@@ -2945,11 +2948,11 @@ function ped_hash:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =
@@ -3073,11 +3076,11 @@ finalize compute:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =
@@ -3206,14 +3209,26 @@ finalize compute:
             rng,
         );
 
-        // Construct the delegators, greater than the maximum delegator size.
-        let delegators = (0..MAX_DELEGATORS + 1)
-            .map(|_| {
-                let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-                let validator = Address::try_from(validators.keys().next().unwrap()).unwrap();
-                let amount = MIN_DELEGATOR_STAKE;
-                (private_key, (validator, amount))
+        // Retrieve the validator that every delegator bonds to.
+        // The validator set is non-empty, and an address derivation from a private key does not fail.
+        let validator = Address::try_from(validators.keys().next().unwrap()).unwrap();
+
+        // Sample the delegator account seeds, greater than the maximum delegator size.
+        let seeds = (0..MAX_DELEGATORS + 1).map(|_| Uniform::rand(rng)).collect::<Vec<Field<CurrentNetwork>>>();
+        // Derive the delegator private keys and addresses in parallel.
+        // Neither a private key derivation from a seed nor an address derivation from a private key fails.
+        let delegator_accounts = cfg_into_iter!(seeds)
+            .map(|seed| {
+                let private_key = PrivateKey::<CurrentNetwork>::try_from(seed).unwrap();
+                let address = Address::try_from(&private_key).unwrap();
+                (private_key, address)
             })
+            .collect::<Vec<_>>();
+
+        // Construct the delegators, greater than the maximum delegator size.
+        let delegators = delegator_accounts
+            .iter()
+            .map(|(private_key, _)| (*private_key, (validator, MIN_DELEGATOR_STAKE)))
             .collect::<IndexMap<_, _>>();
 
         // Construct the committee.
@@ -3226,12 +3241,16 @@ finalize compute:
             <CurrentNetwork as Network>::STARTING_SUPPLY - allocated_amount,
         );
         public_balances.extend(sample_public_balances(
-            &delegators.keys().map(|private_key| Address::try_from(private_key).unwrap()).collect::<Vec<_>>(),
+            &delegator_accounts.iter().map(|(_, address)| *address).collect::<Vec<_>>(),
             0,
         ));
 
         // Construct the bonded balances.
-        let bonded_balances = sample_bonded_balances(&validators, &delegators);
+        // Each delegator is its own withdrawal address, as in `sample_bonded_balances`.
+        let mut bonded_balances = sample_bonded_balances(&validators, &IndexMap::new());
+        bonded_balances.extend(
+            delegator_accounts.iter().map(|(_, address)| (*address, (validator, *address, MIN_DELEGATOR_STAKE))),
+        );
 
         // Construct the genesis block, which should fail.
         let result = vm.genesis_quorum(
@@ -4090,10 +4109,10 @@ finalize compute:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = test_helpers::sample_vm_with_genesis_block();
 
         // Deploy a new program.
         let genesis =

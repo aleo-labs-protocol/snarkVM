@@ -35,8 +35,21 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Fp2Parameters:
-    'static + Copy + Clone + Default + Debug + PartialEq + Eq + Hash + Serialize + for<'a> Deserialize<'a> + Send + Sync
+    crate::sealed_parameters::Sealed
+    + 'static
+    + Copy
+    + Clone
+    + Default
+    + Debug
+    + PartialEq
+    + Eq
+    + Hash
+    + Serialize
+    + for<'a> Deserialize<'a>
+    + Send
+    + Sync
 {
     type Fp: PrimeField;
 
@@ -100,6 +113,8 @@ impl<P: Fp2Parameters> One for Fp2<P> {
         self.c0.is_one() && self.c1.is_zero()
     }
 }
+
+impl<P: Fp2Parameters> crate::sealed::Sealed for Fp2<P> {}
 
 impl<P: Fp2Parameters> Field for Fp2<P> {
     type BasePrimeField = P::Fp;

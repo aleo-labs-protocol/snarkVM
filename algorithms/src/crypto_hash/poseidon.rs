@@ -14,14 +14,16 @@
 // limitations under the License.
 
 use crate::{AlgebraicSponge, DuplexSpongeMode, nonnative_params::*};
-use snarkvm_fields::{FieldParameters, PoseidonParameters, PrimeField, ToConstraintField};
+use snarkvm_fields::{FieldParameters, PoseidonParameters, PoseidonSparseRounds, PrimeField, ToConstraintField};
 use snarkvm_utilities::{BigInteger, FromBits, ToBits};
 
+use itertools::Itertools;
 use smallvec::SmallVec;
 use std::{
+    any::Any,
     iter::Peekable,
     ops::{Index, IndexMut},
-    sync::Arc,
+    sync::{Arc, PoisonError, RwLock},
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -64,43 +66,6 @@ impl<F: PrimeField, const RATE: usize, const CAPACITY: usize> IndexMut<usize> fo
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Poseidon<F: PrimeField, const RATE: usize> {
-    parameters: Arc<PoseidonParameters<F, RATE, 1>>,
-}
-
-impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
-    /// Initializes a new instance of the cryptographic hash function.
-    pub fn setup() -> Self {
-        Self { parameters: Arc::new(F::default_poseidon_parameters::<RATE>().unwrap()) }
-    }
-
-    /// Evaluate the cryptographic hash function over a list of field elements
-    /// as input.
-    pub fn evaluate(&self, input: &[F]) -> F {
-        self.evaluate_many(input, 1)[0]
-    }
-
-    /// Evaluate the cryptographic hash function over a list of field elements
-    /// as input, and returns the specified number of field elements as
-    /// output.
-    pub fn evaluate_many(&self, input: &[F], num_outputs: usize) -> Vec<F> {
-        let mut sponge = PoseidonSponge::<F, RATE, 1>::new_with_parameters(&self.parameters);
-        sponge.absorb_native_field_elements(input);
-        sponge.squeeze_native_field_elements(num_outputs).to_vec()
-    }
-
-    /// Evaluate the cryptographic hash function over a non-fixed-length vector,
-    /// in which the length also needs to be hashed.
-    pub fn evaluate_with_len(&self, input: &[F]) -> F {
-        self.evaluate(&[vec![F::from(input.len() as u128)], input.to_vec()].concat())
-    }
-
-    pub fn parameters(&self) -> &Arc<PoseidonParameters<F, RATE, 1>> {
-        &self.parameters
-    }
-}
-
 /// A duplex sponge based using the Poseidon permutation.
 ///
 /// This implementation of Poseidon is entirely from Fractal's implementation in
@@ -117,6 +82,9 @@ pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY: usiz
     pub mode: DuplexSpongeMode,
     /// A persistent lookup table used when compressing elements.
     adjustment_factor_lookup_table: Arc<[F]>,
+    /// The partial rounds of `parameters` in sparse form. If `None`, every
+    /// round multiplies the state by the MDS matrix.
+    sparse_rounds: Option<Arc<PoseidonSparseRounds<F, RATE>>>,
 }
 
 impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSponge<F, RATE, 1> {
@@ -143,6 +111,7 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
 
                 table.into()
             },
+            sparse_rounds: cached_sparse_rounds(parameters),
         }
     }
 
@@ -219,12 +188,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
 
     #[inline]
     fn apply_s_box(&mut self, is_full_round: bool) {
-        let pow_alpha_in_place: fn(&mut F) = match self.parameters.alpha {
-            3 => pow_3_in_place,
-            5 => pow_5_in_place,
-            17 => pow_17_in_place,
-            alpha => panic!("No optimized S-box for alpha = {alpha}"),
-        };
+        let pow_alpha_in_place = pow_alpha_in_place(self.parameters.alpha);
 
         if is_full_round {
             self.state.iter_mut().for_each(pow_alpha_in_place);
@@ -245,6 +209,16 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
 
     #[inline]
     fn permute(&mut self) {
+        match &self.sparse_rounds {
+            Some(sparse_rounds) => permute_sparse(sparse_rounds, &mut self.state),
+            None => self.permute_dense(),
+        }
+    }
+
+    /// Applies the permutation round by round, with the MDS matrix in every
+    /// round.
+    #[inline]
+    fn permute_dense(&mut self) {
         // Determine the partial rounds range bound.
         let partial_rounds = self.parameters.partial_rounds;
         let full_rounds = self.parameters.full_rounds;
@@ -501,6 +475,111 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     }
 }
 
+/// The partial rounds of the most recent parameter sets that sponges were
+/// created with, oldest first. Each entry is a `CacheEntry` of its field and
+/// rate.
+static PARTIAL_ROUNDS_CACHE: RwLock<Vec<Arc<dyn Any + Send + Sync>>> = RwLock::new(Vec::new());
+
+/// The number of parameter sets in `PARTIAL_ROUNDS_CACHE`.
+const PARTIAL_ROUNDS_CACHE_SIZE: usize = 16;
+
+/// A parameter set and its partial rounds. The entry holds the parameters, so
+/// their address is not reused while the entry is in the cache.
+type CacheEntry<F, const RATE: usize> =
+    (Arc<PoseidonParameters<F, RATE, 1>>, Option<Arc<PoseidonSparseRounds<F, RATE>>>);
+
+/// Returns the partial rounds of `parameters` from `PARTIAL_ROUNDS_CACHE`,
+/// computing and caching them if they are not there.
+fn cached_sparse_rounds<F: PrimeField, const RATE: usize>(
+    parameters: &Arc<PoseidonParameters<F, RATE, 1>>,
+) -> Option<Arc<PoseidonSparseRounds<F, RATE>>> {
+    let lookup = |entries: &[Arc<dyn Any + Send + Sync>]| {
+        entries.iter().rev().find_map(|entry| {
+            let (cached_parameters, sparse_rounds) = entry.downcast_ref::<CacheEntry<F, RATE>>()?;
+            (Arc::ptr_eq(cached_parameters, parameters) || cached_parameters == parameters)
+                .then(|| sparse_rounds.clone())
+        })
+    };
+    if let Some(sparse_rounds) = lookup(&PARTIAL_ROUNDS_CACHE.read().unwrap_or_else(PoisonError::into_inner)) {
+        return sparse_rounds;
+    }
+    let sparse_rounds = PoseidonSparseRounds::new(parameters).map(Arc::new);
+    let mut entries = PARTIAL_ROUNDS_CACHE.write().unwrap_or_else(PoisonError::into_inner);
+    if lookup(&entries).is_none() {
+        if entries.len() == PARTIAL_ROUNDS_CACHE_SIZE {
+            entries.remove(0);
+        }
+        let entry: CacheEntry<F, RATE> = (parameters.clone(), sparse_rounds.clone());
+        entries.push(Arc::new(entry));
+    }
+    sparse_rounds
+}
+
+/// Applies the permutation of the parameters of `sparse_rounds` to `state`,
+/// with the partial rounds in their sparse form.
+#[inline]
+fn permute_sparse<F: PrimeField, const RATE: usize>(
+    sparse_rounds: &PoseidonSparseRounds<F, RATE>,
+    state: &mut State<F, RATE, 1>,
+) {
+    let parameters = sparse_rounds.parameters();
+    let pow_alpha_in_place = pow_alpha_in_place::<F>(parameters.alpha);
+    let first_partial_round = parameters.full_rounds / 2;
+    let last_partial_round = first_partial_round + parameters.partial_rounds;
+    let num_rounds = parameters.full_rounds + parameters.partial_rounds;
+
+    let mut current: SmallVec<[F; 10]> = state.iter().copied().collect();
+    let mut next = current.clone();
+    let mut full_round = |current: &mut SmallVec<[F; 10]>, ark: &[F], matrix: &[Vec<F>]| {
+        for (x, c) in current.iter_mut().zip_eq(ark) {
+            *x += c;
+            pow_alpha_in_place(x);
+        }
+        for (x, row) in next.iter_mut().zip_eq(matrix) {
+            *x = F::sum_of_products(current, row);
+        }
+        std::mem::swap(current, &mut next);
+    };
+
+    for round in 0..first_partial_round {
+        let matrix = if round + 1 == first_partial_round { sparse_rounds.first_matrix() } else { &parameters.mds };
+        full_round(&mut current, &parameters.ark[round], matrix);
+    }
+    for round in sparse_rounds.rounds() {
+        current[0] += round.constant();
+        pow_alpha_in_place(&mut current[0]);
+        let first = F::sum_of_products(&current, round.row());
+        // The state has RATE + 1 elements, so it is not empty.
+        let (head, tail) = current.split_first_mut().unwrap();
+        for (x, c) in tail.iter_mut().zip_eq(round.column()) {
+            *x += *c * *head;
+        }
+        *head = first;
+    }
+    for round in last_partial_round..num_rounds {
+        let ark = if round == last_partial_round { sparse_rounds.last_ark() } else { &parameters.ark[round] };
+        full_round(&mut current, ark, &parameters.mds);
+    }
+
+    for (x, y) in state.iter_mut().zip_eq(current) {
+        *x = y;
+    }
+}
+
+/// Returns the S-box function for the exponent `alpha`.
+///
+/// # Panics
+///
+/// Panics if `alpha` is not 3, 5 or 17.
+fn pow_alpha_in_place<F: PrimeField>(alpha: u64) -> fn(&mut F) {
+    match alpha {
+        3 => pow_3_in_place,
+        5 => pow_5_in_place,
+        17 => pow_17_in_place,
+        alpha => panic!("No optimized S-box for alpha = {alpha}"),
+    }
+}
+
 // S-box functions to raise state elements to the values of alpha present in the
 // codebase: 3, 5 and 17. These are more performant than the general pow
 // function.
@@ -527,4 +606,201 @@ fn pow_17_in_place<F: PrimeField>(val: &mut F) {
     val.square_in_place();
     val.square_in_place();
     val.mul_assign(val_copy);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_curves::bls12_377::{Fq, Fr};
+    use snarkvm_fields::{One, PoseidonDefaultField};
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use serial_test::serial;
+
+    /// Returns a sponge of `parameters` whose state is `state`.
+    fn sponge_with_state<F: PrimeField, const RATE: usize>(
+        parameters: &Arc<PoseidonParameters<F, RATE, 1>>,
+        state: &[F],
+    ) -> PoseidonSponge<F, RATE, 1> {
+        let mut sponge = PoseidonSponge::new_with_parameters(parameters);
+        for (x, y) in sponge.state.iter_mut().zip_eq(state) {
+            *x = *y;
+        }
+        sponge
+    }
+
+    /// Checks that `chain` permutations of `state` give the same state with
+    /// `permute` as with `permute_dense`.
+    fn check_state<F: PrimeField, const RATE: usize>(
+        parameters: &Arc<PoseidonParameters<F, RATE, 1>>,
+        state: &[F],
+        chain: usize,
+    ) {
+        let mut sparse = sponge_with_state(parameters, state);
+        let mut dense = sparse.clone();
+        for _ in 0..chain {
+            sparse.permute();
+            dense.permute_dense();
+        }
+        assert_eq!(sparse.state.iter().collect_vec(), dense.state.iter().collect_vec(), "{chain} from {state:?}");
+    }
+
+    /// Checks the sparse permutation of `parameters` against the dense one on
+    /// states of 0, 1 and p - 1, on random states, and on chains of
+    /// permutations.
+    fn check_parameters<F: PrimeField, const RATE: usize>(
+        parameters: PoseidonParameters<F, RATE, 1>,
+        rng: &mut TestRng,
+    ) {
+        let parameters = Arc::new(parameters);
+        assert!(PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.is_some());
+        let width = RATE + 1;
+        let edges = [F::zero(), F::one(), -F::one()];
+        if width <= 5 {
+            for state in (0..width).map(|_| edges).multi_cartesian_product() {
+                check_state(&parameters, &state, 1);
+            }
+        } else {
+            for (a, b) in edges.into_iter().cartesian_product(edges) {
+                for i in 0..width {
+                    let state = (0..width).map(|j| if i == j { b } else { a }).collect_vec();
+                    check_state(&parameters, &state, 1);
+                }
+            }
+        }
+        for _ in 0..100 {
+            let state = (0..width).map(|_| F::rand(rng)).collect_vec();
+            check_state(&parameters, &state, 1);
+        }
+        for chain in [2, 5, 200] {
+            let state = (0..width).map(|_| F::rand(rng)).collect_vec();
+            check_state(&parameters, &state, chain);
+        }
+    }
+
+    /// Returns parameters with the given rounds and `alpha`, random round
+    /// constants, and the MDS matrix of the default parameters of `F` and
+    /// `RATE`, or a random matrix if there are none.
+    fn parameters_with_rounds<F: PrimeField, const RATE: usize>(
+        full_rounds: usize,
+        partial_rounds: usize,
+        alpha: u64,
+        rng: &mut TestRng,
+    ) -> PoseidonParameters<F, RATE, 1> {
+        let ark = (0..full_rounds + partial_rounds).map(|_| (0..RATE + 1).map(|_| F::rand(rng)).collect()).collect();
+        let mds = F::default_poseidon_parameters::<RATE>()
+            .map(|parameters| parameters.mds)
+            .unwrap_or_else(|_| (0..RATE + 1).map(|_| (0..RATE + 1).map(|_| F::rand(rng)).collect()).collect());
+        PoseidonParameters { full_rounds, partial_rounds, alpha, ark, mds }
+    }
+
+    #[test]
+    #[serial]
+    fn test_sparse_permutation_fq() {
+        let rng = &mut TestRng::default();
+        check_parameters(Fq::default_poseidon_parameters::<2>().unwrap(), rng);
+        check_parameters(Fq::default_poseidon_parameters::<3>().unwrap(), rng);
+        check_parameters(Fq::default_poseidon_parameters::<4>().unwrap(), rng);
+        check_parameters(Fq::default_poseidon_parameters::<5>().unwrap(), rng);
+        check_parameters(Fq::default_poseidon_parameters::<6>().unwrap(), rng);
+        check_parameters(Fq::default_poseidon_parameters::<7>().unwrap(), rng);
+        check_parameters(Fq::default_poseidon_parameters::<8>().unwrap(), rng);
+    }
+
+    #[test]
+    #[serial]
+    fn test_sparse_permutation_fr() {
+        let rng = &mut TestRng::default();
+        check_parameters(Fr::default_poseidon_parameters::<2>().unwrap(), rng);
+        check_parameters(Fr::default_poseidon_parameters::<3>().unwrap(), rng);
+        check_parameters(Fr::default_poseidon_parameters::<4>().unwrap(), rng);
+        check_parameters(Fr::default_poseidon_parameters::<5>().unwrap(), rng);
+        check_parameters(Fr::default_poseidon_parameters::<6>().unwrap(), rng);
+        check_parameters(Fr::default_poseidon_parameters::<7>().unwrap(), rng);
+        check_parameters(Fr::default_poseidon_parameters::<8>().unwrap(), rng);
+    }
+
+    #[test]
+    #[serial]
+    fn test_sparse_permutation_round_counts() {
+        let rng = &mut TestRng::default();
+        for (full_rounds, partial_rounds) in [(2, 1), (2, 2), (3, 1), (3, 4), (4, 1), (5, 3), (6, 5), (8, 31), (10, 40)]
+        {
+            for alpha in [3, 5, 17] {
+                check_parameters(parameters_with_rounds::<Fq, 2>(full_rounds, partial_rounds, alpha, rng), rng);
+                check_parameters(parameters_with_rounds::<Fr, 1>(full_rounds, partial_rounds, alpha, rng), rng);
+                check_parameters(parameters_with_rounds::<Fr, 4>(full_rounds, partial_rounds, alpha, rng), rng);
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_sparse_permutation_random_matrix() {
+        let rng = &mut TestRng::default();
+        for _ in 0..5 {
+            let mut parameters = parameters_with_rounds::<Fq, 2>(8, 31, 17, rng);
+            parameters.mds = (0..3).map(|_| (0..3).map(|_| Fq::rand(rng)).collect()).collect();
+            check_parameters(parameters, rng);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_sparse_permutation_fallback() {
+        let rng = &mut TestRng::default();
+        let mut singular = parameters_with_rounds::<Fq, 2>(8, 31, 17, rng);
+        singular.mds[2] = vec![Fq::rand(rng), singular.mds[1][1], singular.mds[1][2]];
+        let singular = Arc::new(singular);
+        let cached_none = || {
+            let entries = PARTIAL_ROUNDS_CACHE.read().unwrap();
+            entries
+                .iter()
+                .filter_map(|entry| entry.downcast_ref::<CacheEntry<Fq, 2>>())
+                .filter(|(parameters, sparse_rounds)| Arc::ptr_eq(parameters, &singular) && sparse_rounds.is_none())
+                .count()
+        };
+        assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
+        assert_eq!(cached_none(), 1);
+        assert!(PoseidonSponge::new_with_parameters(&singular).sparse_rounds.is_none());
+        assert_eq!(cached_none(), 1);
+    }
+
+    #[test]
+    #[serial]
+    fn test_partial_rounds_cache() {
+        let parameters = PoseidonSponge::<Fq, 2, 1>::sample_parameters();
+        let equal_parameters = PoseidonSponge::<Fq, 2, 1>::sample_parameters();
+        assert!(!Arc::ptr_eq(&parameters, &equal_parameters));
+        let a = PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.unwrap();
+        let b = PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.unwrap();
+        let c = PoseidonSponge::new_with_parameters(&equal_parameters).sparse_rounds.unwrap();
+        assert!(Arc::ptr_eq(&a, &b));
+        assert!(Arc::ptr_eq(&a, &c));
+
+        // Parameters that differ in one round constant have their own partial rounds.
+        let mut other_parameters = (*parameters).clone();
+        other_parameters.ark[20][1] += Fq::one();
+        let other_parameters = Arc::new(other_parameters);
+        let d = PoseidonSponge::new_with_parameters(&other_parameters).sparse_rounds.unwrap();
+        assert!(!Arc::ptr_eq(&a, &d));
+        let rng = &mut TestRng::default();
+        let state = (0..3).map(|_| Fq::rand(rng)).collect_vec();
+        check_state(&other_parameters, &state, 1);
+
+        // The cache keeps the most recent parameter sets, and recomputes an evicted
+        // one. Tests that run concurrently may insert the default parameter sets
+        // of a few rates, so only the newest half of these is checked.
+        let others = (0..PARTIAL_ROUNDS_CACHE_SIZE)
+            .map(|_| Arc::new(parameters_with_rounds::<Fq, 2>(8, 31, 17, rng)))
+            .collect_vec();
+        let sparse_rounds =
+            others.iter().map(|p| PoseidonSponge::new_with_parameters(p).sparse_rounds.unwrap()).collect_vec();
+        for (p, r) in others.iter().zip_eq(&sparse_rounds).skip(PARTIAL_ROUNDS_CACHE_SIZE / 2) {
+            assert!(Arc::ptr_eq(&PoseidonSponge::new_with_parameters(p).sparse_rounds.unwrap(), r));
+        }
+        let e = PoseidonSponge::new_with_parameters(&parameters).sparse_rounds.unwrap();
+        assert!(!Arc::ptr_eq(&a, &e));
+        check_state(&parameters, &state, 1);
+    }
 }

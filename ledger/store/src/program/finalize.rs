@@ -26,8 +26,8 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
@@ -76,7 +76,9 @@ fn to_key_id<N: Network>(
 /// // (program_id => (mapping_name => (key => value)))
 /// BTreeMap<ProgramID<N>, BTreeMap<Identifier<N>, BTreeMap<Key, Value>>>
 /// ```
-pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// The committee storage.
     type CommitteeStorage: CommitteeStorage<N>;
     /// The mapping of `program ID` to `[mapping name]`.
@@ -833,8 +835,7 @@ mod tests {
     use super::*;
     use crate::helpers::memory::FinalizeMemory;
     use console::network::MainnetV0;
-
-    use aleo_std::StorageMode;
+    use snarkvm_utilities::StorageMode;
 
     use console::{program::Literal, types::U64};
 

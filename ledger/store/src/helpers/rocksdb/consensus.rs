@@ -20,8 +20,7 @@ use crate::{
     helpers::rocksdb::{BlockDB, FinalizeDB, TransactionDB, TransitionDB},
 };
 use console::prelude::*;
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 /// An RocksDB consensus storage.
 #[derive(Clone)]
@@ -31,6 +30,8 @@ pub struct ConsensusDB<N: Network> {
     /// The block store.
     block_store: BlockStore<N, BlockDB<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for ConsensusDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {

@@ -70,17 +70,15 @@ use snarkvm_ledger_store::{
     ConsensusStorage,
     ConsensusStore,
     IncompatibleStore,
+    StorageMode,
     check_authority_retention_blocks,
 };
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
 };
+use snarkvm_utilities::{timing_event, timing_span};
 
-use aleo_std::{
-    StorageMode,
-    prelude::{finish, lap, timer},
-};
 use anyhow::{Context, Result};
 use core::ops::Range;
 use indexmap::IndexMap;
@@ -278,7 +276,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Like [`Self::load`], with the given options.
     pub fn load_with_options(genesis_block: Block<N>, storage_mode: StorageMode, options: LoadOptions) -> Result<Self> {
-        let timer = timer!("Ledger::load");
+        let timer = timing_span!("Ledger::load").entered();
 
         // Retrieve the genesis hash.
         let genesis_hash = genesis_block.hash();
@@ -292,9 +290,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Spot check the integrity of random blocks upon bootup.
         ledger.check_random_blocks()?;
-        lap!(timer, "Check existence of random blocks");
+        timing_event!("Check existence of random blocks");
 
-        finish!(timer);
+        drop(timer);
         Ok(ledger)
     }
 
@@ -350,7 +348,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     fn load_unchecked_inner(genesis_block: Block<N>, storage_mode: StorageMode, options: LoadOptions) -> Result<Self> {
-        let timer = timer!("Ledger::load_unchecked");
+        let timer = timing_span!("Ledger::load_unchecked").entered();
 
         // A bad window is a configuration error, not a damaged store, so check it before the open error
         // can attach the `snarkos clean` advice.
@@ -363,11 +361,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Initialize the consensus store.
         let store = ConsensusStore::<N, C>::open_with_authority_retention(storage_mode, options.authority_retention)
             .map_err(store_open_error)?;
-        lap!(timer, "Load consensus store");
+        timing_event!("Load consensus store");
 
         // Initialize a new VM.
         let vm = VM::from(store)?;
-        lap!(timer, "Initialize a new VM");
+        timing_event!("Initialize a new VM");
 
         // Retrieve the current committee.
         let current_committee = vm.finalize_store().committee_store().current_committee().ok();
@@ -428,7 +426,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             ledger.advance_to_next_block(&genesis_block)?;
             0
         };
-        lap!(timer, "Initialize genesis");
+        timing_event!("Initialize genesis");
 
         // Ensure that the greatest stored height matches that of the block tree.
         let tree_derived_block_height = ledger.vm().block_store().current_block_height();
@@ -471,7 +469,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Set the epoch prover cache.
         *ledger.epoch_provers_cache.write() = ledger.load_epoch_provers();
 
-        finish!(timer, "Initialize ledger");
+        timing_event!("Initialize ledger");
+        drop(timer);
         Ok(ledger)
     }
 }

@@ -168,12 +168,10 @@ impl<E: Environment, const N: usize> MulAssign<[Boolean<E>; N]> for Group<E> {
 impl<E: Environment> MulAssign<&[Boolean<E>]> for Group<E> {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &[Boolean<E>]) {
-        let base = self.clone();
-
         let mut output = Group::zero();
         for bit in other.iter() {
             output = output.double();
-            output = Group::ternary(bit, &(&base + &output), &output);
+            output = Group::ternary(bit, &(&*self + &output), &output);
         }
         *self = output;
     }
@@ -185,6 +183,20 @@ mod tests {
     use snarkvm_circuit_environment::Circuit;
 
     const ITERATIONS: u64 = 10;
+
+    #[allow(clippy::type_complexity)]
+    fn sample_values(
+        rng: &mut TestRng,
+    ) -> Vec<(console::Group<<Circuit as Environment>::Network>, console::Scalar<<Circuit as Environment>::Network>)>
+    {
+        let mut values = vec![
+            (console::Group::zero(), Uniform::rand(rng)),
+            (Uniform::rand(rng), console::Scalar::zero()),
+            (console::Group::zero(), console::Scalar::zero()),
+        ];
+        values.extend((0..ITERATIONS).map(|_| (Uniform::rand(rng), Uniform::rand(rng))));
+        values
+    }
 
     fn check_mul(
         name: &str,
@@ -232,13 +244,11 @@ mod tests {
 
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar: console::Scalar<<Circuit as Environment>::Network> = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let num_nonzero_bits = (*scalar).to_bigint().to_biguint().bits();
-            let num_constant =
-                (3 /* DOUBLE private */ + 4/* public ADD private */ + 0/* TERNARY */) * (num_nonzero_bits - 1) + 251; // Typically around 760.
+            let num_constant = (3 /* DOUBLE private */ + 4/* public ADD private */ + 0/* TERNARY */)
+                * num_nonzero_bits.saturating_sub(1)
+                + 251; // Typically around 760.
 
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Constant, base);
@@ -255,18 +265,22 @@ mod tests {
     fn test_constant_times_scalar_public() {
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Constant, base);
             let b = Scalar::<Circuit>::new(Mode::Public, scalar);
 
+            // A constant zero base makes every addition in the double-and-add loop return its other operand.
             let name = format!("Mul: a * b {i}");
-            check_mul(&name, &expected, &a, &b, 750, 0, 3001, 3003);
+            match base.is_zero() {
+                true => check_mul(&name, &expected, &a, &b, 250, 0, 2249, 2251),
+                false => check_mul(&name, &expected, &a, &b, 750, 0, 3001, 3003),
+            }
             let name = format!("MulAssign: a * b {i}");
-            check_mul_assign(&name, &expected, &a, &b, 750, 0, 2500, 2500);
+            match base.is_zero() {
+                true => check_mul_assign(&name, &expected, &a, &b, 250, 0, 1748, 1748),
+                false => check_mul_assign(&name, &expected, &a, &b, 750, 0, 2500, 2500),
+            }
         }
     }
 
@@ -274,18 +288,22 @@ mod tests {
     fn test_constant_times_scalar_private() {
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Constant, base);
             let b = Scalar::<Circuit>::new(Mode::Private, scalar);
 
+            // A constant zero base makes every addition in the double-and-add loop return its other operand.
             let name = format!("Mul: a * b {i}");
-            check_mul(&name, &expected, &a, &b, 750, 0, 3001, 3003);
+            match base.is_zero() {
+                true => check_mul(&name, &expected, &a, &b, 250, 0, 2249, 2251),
+                false => check_mul(&name, &expected, &a, &b, 750, 0, 3001, 3003),
+            }
             let name = format!("MulAssign: a * b {i}");
-            check_mul_assign(&name, &expected, &a, &b, 750, 0, 2500, 2500);
+            match base.is_zero() {
+                true => check_mul_assign(&name, &expected, &a, &b, 250, 0, 1748, 1748),
+                false => check_mul_assign(&name, &expected, &a, &b, 750, 0, 2500, 2500),
+            }
         }
     }
 
@@ -296,17 +314,15 @@ mod tests {
 
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar: console::Scalar<<Circuit as Environment>::Network> = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let num_nonzero_bits = (*scalar).to_bigint().to_biguint().bits();
-            let num_constant =
-                (1 /* DOUBLE private */ + 2/* public ADD private */ + 0/* TERNARY */) * (num_nonzero_bits - 1) + 251; // Typically around 760.
-            let num_private =
-                (5 /* DOUBLE private */ + 6/* public ADD private */ + 0/* TERNARY */) * (num_nonzero_bits - 1); // Typically around 2700.
-            let num_constraints =
-                (5 /* DOUBLE private */ + 6/* public ADD private */ + 0/* TERNARY */) * (num_nonzero_bits - 1); // Typically around 2700.
+            let num_constant = (1 /* DOUBLE private */ + 2/* public ADD private */ + 0/* TERNARY */)
+                * num_nonzero_bits.saturating_sub(1)
+                + 251; // Typically around 760.
+            let num_private = (5 /* DOUBLE private */ + 6/* public ADD private */ + 0/* TERNARY */)
+                * num_nonzero_bits.saturating_sub(1); // Typically around 2700.
+            let num_constraints = (5 /* DOUBLE private */ + 6/* public ADD private */ + 0/* TERNARY */)
+                * num_nonzero_bits.saturating_sub(1); // Typically around 2700.
 
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Public, base);
@@ -326,17 +342,15 @@ mod tests {
 
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar: console::Scalar<<Circuit as Environment>::Network> = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let num_nonzero_bits = (*scalar).to_bigint().to_biguint().bits();
-            let num_constant =
-                (1 /* DOUBLE private */ + 2/* private ADD private */ + 0/* TERNARY */) * (num_nonzero_bits - 1) + 251; // Typically around 760.
-            let num_private =
-                (5 /* DOUBLE private */ + 6/* private ADD private */ + 0/* TERNARY */) * (num_nonzero_bits - 1); // Typically around 2700.
-            let num_constraints =
-                (5 /* DOUBLE private */ + 6/* private ADD private */ + 0/* TERNARY */) * (num_nonzero_bits - 1); // Typically around 2700.
+            let num_constant = (1 /* DOUBLE private */ + 2/* private ADD private */ + 0/* TERNARY */)
+                * num_nonzero_bits.saturating_sub(1)
+                + 251; // Typically around 760.
+            let num_private = (5 /* DOUBLE private */ + 6/* private ADD private */ + 0/* TERNARY */)
+                * num_nonzero_bits.saturating_sub(1); // Typically around 2700.
+            let num_constraints = (5 /* DOUBLE private */ + 6/* private ADD private */ + 0/* TERNARY */)
+                * num_nonzero_bits.saturating_sub(1); // Typically around 2700.
 
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Private, base);
@@ -353,10 +367,7 @@ mod tests {
     fn test_public_times_scalar_public() {
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Public, base);
             let b = Scalar::<Circuit>::new(Mode::Public, scalar);
@@ -372,10 +383,7 @@ mod tests {
     fn test_public_times_scalar_private() {
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Public, base);
             let b = Scalar::<Circuit>::new(Mode::Private, scalar);
@@ -391,10 +399,7 @@ mod tests {
     fn test_private_times_scalar_public() {
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Private, base);
             let b = Scalar::<Circuit>::new(Mode::Public, scalar);
@@ -410,10 +415,7 @@ mod tests {
     fn test_private_times_scalar_private() {
         let mut rng = TestRng::default();
 
-        for i in 0..ITERATIONS {
-            let base = Uniform::rand(&mut rng);
-            let scalar = Uniform::rand(&mut rng);
-
+        for (i, (base, scalar)) in sample_values(&mut rng).into_iter().enumerate() {
             let expected = base * scalar;
             let a = Group::<Circuit>::new(Mode::Private, base);
             let b = Scalar::<Circuit>::new(Mode::Private, scalar);

@@ -95,10 +95,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         let bases = (0..NUM_WINDOWS)
             .map(|index| {
                 // Construct an indexed message to attempt to sample a base.
-                let (generator, _, _) = Blake2Xs::hash_to_curve::<E::Affine>(&format!(
-                    "Aleo.BHP.{NUM_WINDOWS}.{WINDOW_SIZE}.{domain}.{index}"
-                ));
-                let mut base = Group::<E>::new(generator);
+                let mut base =
+                    Blake2Xs::hash_to_generator::<E>(&format!("Aleo.BHP.{NUM_WINDOWS}.{WINDOW_SIZE}.{domain}.{index}"));
                 // Compute the generators for the sampled base.
                 let mut powers = Vec::with_capacity(WINDOW_SIZE as usize);
                 for _ in 0..WINDOW_SIZE {
@@ -183,9 +181,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             .into();
 
         // Next, compute the random base.
-        let (generator, _, _) =
-            Blake2Xs::hash_to_curve::<E::Affine>(&format!("Aleo.BHP.{NUM_WINDOWS}.{WINDOW_SIZE}.{domain}.Randomizer"));
-        let mut base_power = Group::<E>::new(generator);
+        let mut base_power =
+            Blake2Xs::hash_to_generator::<E>(&format!("Aleo.BHP.{NUM_WINDOWS}.{WINDOW_SIZE}.{domain}.Randomizer"));
         let mut random_base = Vec::with_capacity(Scalar::<E>::size_in_bits());
         for _ in 0..Scalar::<E>::size_in_bits() {
             random_base.push(base_power);

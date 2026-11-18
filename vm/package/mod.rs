@@ -13,38 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod build;
-mod clean;
 mod deploy;
-mod execute;
-mod is_build_required;
-mod run;
 
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
-    console::{
-        account::PrivateKey,
-        network::{ConsensusVersion, Network},
-        program::{Identifier, Locator, ProgramID, Response, Value},
-    },
-    file::{AVMFile, AleoFile, Manifest, ProverFile, README, VerifierFile},
-    ledger::{
-        block::Execution,
-        query::{Query, QueryTrait},
-        store::helpers::memory::BlockMemory,
-    },
+    console::{network::Network, program::ProgramID},
+    file::{AleoFile, Manifest},
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
-    synthesizer::{
-        process::{Assignments, CallMetrics, CallStack, Process},
-        program::{CallOperator, Instruction, Program, StackTrait},
-    },
+    synthesizer::{process::Process, program::Program},
     utilities::dev_println,
 };
 
-use anyhow::{Result, bail, ensure};
-use core::str::FromStr;
-use rand::{CryptoRng, Rng};
+use anyhow::{Result, ensure};
 use std::path::{Path, PathBuf};
 
 pub struct Package<N: Network> {
@@ -59,28 +40,6 @@ pub struct Package<N: Network> {
 }
 
 impl<N: Network> Package<N> {
-    /// Creates a new package, at the given directory with the given program name.
-    pub fn create(directory: &Path, program_id: &ProgramID<N>) -> Result<Self> {
-        // Ensure the directory path does not exist.
-        ensure!(!directory.exists(), "The program directory already exists: {}", directory.display());
-        // Ensure the program name is valid.
-        ensure!(!Program::is_reserved_keyword(program_id.name()), "Program name is invalid (reserved): {program_id}");
-
-        // Create the program directory.
-        if !directory.exists() {
-            std::fs::create_dir_all(directory)?;
-        }
-
-        // Create the manifest file.
-        let manifest_file = Manifest::create(directory, program_id)?;
-        // Create the program file.
-        let program_file = AleoFile::create(directory, program_id, true)?;
-        // Create the README file.
-        let _readme_file = README::create::<N>(directory, program_id)?;
-
-        Ok(Self { program_id: *program_id, directory: directory.to_path_buf(), manifest_file, program_file })
-    }
-
     /// Opens the package at the given directory with the given program name.
     pub fn open(directory: &Path) -> Result<Self> {
         // Ensure the directory path exists.
@@ -136,11 +95,6 @@ impl<N: Network> Package<N> {
     /// Returns the program.
     pub const fn program(&self) -> &Program<N> {
         self.program_file.program()
-    }
-
-    /// Returns the build directory.
-    pub fn build_directory(&self) -> PathBuf {
-        self.directory.join("build")
     }
 
     /// Returns the imports directory.
@@ -202,52 +156,15 @@ impl<N: Network> Package<N> {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
-    use snarkvm_console::{account::Address, network::MainnetV0, prelude::TestRng};
+    use snarkvm_console::network::MainnetV0;
 
+    use core::str::FromStr;
     use std::{fs::File, io::Write};
-
-    use anyhow::anyhow;
 
     type CurrentNetwork = MainnetV0;
 
     fn temp_dir() -> PathBuf {
         tempfile::tempdir().expect("Failed to open temporary directory").keep()
-    }
-
-    fn env_template() -> String {
-        r#"
-    NETWORK=mainnet
-    PRIVATE_KEY={{PASTE_YOUR_PRIVATE_KEY_HERE}}
-    "#
-        .to_string()
-    }
-
-    /// Loads the environment variables from the .env file.
-    fn dotenv_load() -> Result<()> {
-        // Load environment variables from .env file.
-        // Fails if .env file not found, not readable or invalid.
-        dotenvy::dotenv().map_err(|_| {
-            anyhow!(
-                "Missing a '.env' file. Create the '.env' file in your package's root directory with the following:\n\n{}\n",
-                env_template()
-            )
-        })?;
-        Ok(())
-    }
-
-    /// Returns the private key from the environment.
-    fn dotenv_private_key() -> Result<PrivateKey<CurrentNetwork>> {
-        if cfg!(test) {
-            let rng = &mut crate::utilities::TestRng::fixed(123456789);
-            PrivateKey::<CurrentNetwork>::new(rng)
-        } else {
-            use std::str::FromStr;
-            dotenv_load()?;
-            // Load the private key from the environment.
-            let private_key = dotenvy::var("PRIVATE_KEY").map_err(|e| anyhow!("Missing PRIVATE_KEY - {e}"))?;
-            // Parse the private key.
-            PrivateKey::<CurrentNetwork>::from_str(&private_key)
-        }
     }
 
     /// Samples a (temporary) package containing a `token.aleo` program.
@@ -455,82 +372,10 @@ function main:
         // Return the temporary directory and the package.
         (directory, package)
     }
-
-    /// Samples a candidate input to execute the sample package.
-    pub(crate) fn sample_package_run(
-        program_id: &ProgramID<CurrentNetwork>,
-    ) -> (PrivateKey<CurrentNetwork>, Identifier<CurrentNetwork>, Vec<Value<CurrentNetwork>>) {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
-        match program_id.to_string().as_str() {
-            "token.aleo" => {
-                // Sample a random private key.
-                let private_key = dotenv_private_key().unwrap();
-                let caller = Address::try_from(&private_key).unwrap();
-
-                // Initialize the function name.
-                let function_name = Identifier::from_str("initialize").unwrap();
-
-                // Initialize the function inputs.
-                let r0 = Value::from_str(&caller.to_string()).unwrap();
-                let r1 = Value::from_str("100u64").unwrap();
-
-                (private_key, function_name, vec![r0, r1])
-            }
-            "wallet.aleo" => {
-                // Initialize caller 0.
-                let caller0_private_key = dotenv_private_key().unwrap();
-                let caller0 = Address::try_from(&caller0_private_key).unwrap();
-
-                // Initialize caller 1.
-                let caller1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-                let caller1 = Address::try_from(&caller1_private_key).unwrap();
-
-                // Declare the function name.
-                let function_name = Identifier::from_str("transfer").unwrap();
-
-                // Initialize the function inputs.
-                let r0 = Value::<CurrentNetwork>::from_str(&format!(
-                    "{{ owner: {caller0}.private, amount: 100u64.private, _nonce: 0group.public }}"
-                ))
-                .unwrap();
-                let r1 = Value::<CurrentNetwork>::from_str(&caller1.to_string()).unwrap();
-                let r2 = Value::<CurrentNetwork>::from_str("99u64").unwrap();
-
-                (caller0_private_key, function_name, vec![r0, r1, r2])
-            }
-            "grandparent.aleo" => {
-                // Initialize caller 0.
-                let caller0_private_key = dotenv_private_key().unwrap();
-
-                // Initialize caller 1.
-                let caller1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-                let caller1 = Address::try_from(&caller1_private_key).unwrap();
-
-                // Declare the function name.
-                let function_name = Identifier::from_str("double_wrapper_mint").unwrap();
-
-                // Initialize the function inputs.
-                let r0 = Value::<CurrentNetwork>::from_str(&caller1.to_string()).unwrap();
-                let r1 = Value::<CurrentNetwork>::from_str("1u32").unwrap();
-
-                (caller0_private_key, function_name, vec![r0, r1])
-            }
-            _ => panic!("Invalid program ID for sample package (while testing)"),
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::prelude::MainnetV0;
-    use snarkvm_utilities::TestRng;
-
-    type CurrentAleo = snarkvm_circuit::network::AleoV0;
-    type CurrentNetwork = MainnetV0;
-
     #[test]
     fn test_imports_directory() {
         // Samples a new package at a temporary directory.
@@ -560,83 +405,19 @@ mod tests {
     }
 
     #[test]
-    fn test_build_directory() {
-        // Samples a new package at a temporary directory.
-        let (directory, package) = crate::package::test_helpers::sample_token_package();
-
-        // Ensure the build directory is correct.
-        assert_eq!(package.build_directory(), directory.join("build"));
-        // Ensure the build directory does *not* exist, when the package has not been built.
-        assert!(!package.build_directory().exists());
-
-        // Proactively remove the temporary directory (to conserve space).
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
     fn test_get_process() {
-        // Samples a new package at a temporary directory.
-        let (directory, package) = crate::package::test_helpers::sample_token_package();
+        for (directory, package) in [
+            crate::package::test_helpers::sample_token_package(),
+            crate::package::test_helpers::sample_wallet_package(),
+            crate::package::test_helpers::sample_nested_package(),
+            crate::package::test_helpers::sample_transfer_package(),
+        ] {
+            // Get the process, and ensure it contains the main program.
+            let process = package.get_process().unwrap();
+            assert!(process.contains_program(package.program_id()));
 
-        // Get the program process and check all instructions.
-        assert!(package.get_process().is_ok());
-
-        // Proactively remove the temporary directory (to conserve space).
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn test_package_run_and_execute_match() {
-        // Initialize the program.
-        let program = Program::<CurrentNetwork>::from_str(
-            "
-program foo.aleo;
-
-function bar:
-    input r0 as boolean.private;
-    assert.eq r0 false;",
-        )
-        .unwrap();
-
-        // Samples a new package at a temporary directory.
-        let (directory, package) = crate::package::test_helpers::sample_package_with_program_and_imports(&program, &[]);
-
-        // Ensure the build directory does *not* exist.
-        assert!(!package.build_directory().exists());
-        // Build the package.
-        package.build::<CurrentAleo>().unwrap();
-        // Ensure the build directory exists.
-        assert!(package.build_directory().exists());
-
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-        // Sample the function inputs.
-        let private_key = PrivateKey::new(rng).unwrap();
-        let function_name = Identifier::from_str("bar").unwrap();
-        let inputs = vec![Value::from_str("true").unwrap()];
-
-        // Construct the endpoint.
-        let endpoint = "https://api.explorer.aleo.org/v1".to_string();
-
-        // Run the program function.
-        let run_result = package.run::<CurrentAleo, _>(&private_key, function_name, &inputs, rng).ok();
-
-        // Execute the program function.
-        let execute_result =
-            package.execute::<CurrentAleo, _>(endpoint, &private_key, function_name, &inputs, rng).ok();
-
-        match (run_result, execute_result) {
-            // If both results are `None`, then they both failed.
-            (None, None) => {}
-            // If both results are `Some`, then check that the responses match.
-            (Some((run_response, _)), Some((execute_response, _, _))) => {
-                assert_eq!(run_response, execute_response);
-            }
-            // Otherwise, the results do not match.
-            _ => panic!("Run and execute results do not match"),
+            // Proactively remove the temporary directory (to conserve space).
+            std::fs::remove_dir_all(directory).unwrap();
         }
-
-        // Proactively remove the temporary directory (to conserve space).
-        std::fs::remove_dir_all(directory).unwrap();
     }
 }

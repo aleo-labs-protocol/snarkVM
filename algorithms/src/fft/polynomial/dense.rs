@@ -61,9 +61,7 @@ impl<F: Field> DensePolynomial<F> {
     ///
     /// `degree()` asserts that the last coefficient is non-zero, and
     /// `apply_randomized_selector` divides by degree, so a polynomial that
-    /// skips this is a live panic rather than an untidy one. The loop was
-    /// written out seven times in this file and once in `second.rs`; naming it
-    /// means the next person changing one changes all of them.
+    /// skips this is a live panic rather than an untidy one.
     ///
     /// `from_coefficients_vec` still writes the loop out, and has to: it trims
     /// a bare `Vec<F>` before there is a `Self` to call this on.

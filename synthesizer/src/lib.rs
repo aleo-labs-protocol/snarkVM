@@ -29,9 +29,11 @@ pub use snarkvm_synthesizer_process as process;
 pub use snarkvm_synthesizer_program as program;
 pub use snarkvm_synthesizer_snark as snark;
 
+#[doc(hidden)]
+pub use crate::program::{Command, Instruction};
 pub use crate::{
     process::{Authorization, CallMetrics, Process, Stack, Trace},
-    program::{Closure, Command, Finalize, Function, Instruction, Program},
+    program::{Closure, Finalize, Function, Program},
 };
 
 mod restrictions;
@@ -41,9 +43,11 @@ pub mod vm;
 pub use vm::*;
 
 pub mod prelude {
+    #[doc(hidden)]
+    pub use crate::program::Instruction;
     pub use crate::{
         process::*,
-        program::{Closure, Finalize, Function, Instruction, Mapping, Program},
+        program::{Closure, Finalize, Function, Mapping, Program},
         snark::{Certificate, Proof, ProvingKey, UniversalSRS, VerifyingKey},
         vm::*,
     };

@@ -20,8 +20,7 @@ use crate::{
     helpers::memory::{BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
 };
 use console::prelude::*;
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 /// An in-memory consensus storage.
 #[derive(Clone)]
@@ -31,6 +30,8 @@ pub struct ConsensusMemory<N: Network> {
     /// The block store.
     block_store: BlockStore<N, BlockMemory<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for ConsensusMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {

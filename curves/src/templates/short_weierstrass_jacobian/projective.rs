@@ -18,7 +18,7 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, Zero, impl_add_sub_from_field_ref};
-use snarkvm_utilities::{FromBytes, ToBytes, rand::Uniform};
+use snarkvm_utilities::rand::Uniform;
 
 use core::{
     fmt::{Display, Formatter, Result as FmtResult},
@@ -30,19 +30,18 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use std::io::{Read, Result as IoResult, Write};
 
 // The CUDA FFI reads this by bytes.
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct Projective<P: Parameters> {
-    pub x: P::BaseField,
-    pub y: P::BaseField,
-    pub z: P::BaseField,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) z: P::BaseField,
 }
 
 impl<P: Parameters> Projective<P> {
-    pub const fn new(x: P::BaseField, y: P::BaseField, z: P::BaseField) -> Self {
+    pub(crate) const fn new(x: P::BaseField, y: P::BaseField, z: P::BaseField) -> Self {
         Self { x, y, z }
     }
 }
@@ -134,24 +133,7 @@ impl<P: Parameters> Distribution<Projective<P>> for StandardUniform {
     }
 }
 
-impl<P: Parameters> ToBytes for Projective<P> {
-    #[inline]
-    fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.x.write_le(&mut writer)?;
-        self.y.write_le(&mut writer)?;
-        self.z.write_le(writer)
-    }
-}
-
-impl<P: Parameters> FromBytes for Projective<P> {
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read_le(&mut reader)?;
-        let y = P::BaseField::read_le(&mut reader)?;
-        let z = P::BaseField::read_le(reader)?;
-        Ok(Self::new(x, y, z))
-    }
-}
+impl<P: Parameters> crate::sealed::Sealed for Projective<P> {}
 
 impl<P: Parameters> ProjectiveCurve for Projective<P> {
     type Affine = Affine<P>;

@@ -23,18 +23,17 @@ use core::{
     iter,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use serde::{Serialize, de::DeserializeOwned};
 
 /// Projective representation of an elliptic curve point guaranteed to be in the prime order subgroup.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait ProjectiveCurve:
-    CanonicalSerialize
-    + CanonicalDeserialize
+    crate::sealed::Sealed
     + Copy
     + Clone
     + Debug
     + Display
     + Default
-    + FromBytes
     + Send
     + Sync
     + 'static
@@ -55,7 +54,6 @@ pub trait ProjectiveCurve:
     + for<'a> SubAssign<&'a Self>
     + PartialEq<Self::Affine>
     + Sized
-    + ToBytes
     + iter::Sum
     + From<<Self as ProjectiveCurve>::Affine>
 {
@@ -93,11 +91,6 @@ pub trait ProjectiveCurve:
         copy
     }
 
-    /// Adds an affine element to this element.
-    fn sub_assign_mixed(&mut self, other: &Self::Affine) {
-        self.add_assign_mixed(&-*other);
-    }
-
     /// Returns `self + self`.
     #[must_use]
     fn double(&self) -> Self;
@@ -113,9 +106,12 @@ pub trait ProjectiveCurve:
 
 /// Affine representation of an elliptic curve point guaranteed to be
 /// in the correct prime order subgroup.
+///
+/// This trait is sealed. Only snarkVM implements it.
 #[allow(clippy::wrong_self_convention)]
 pub trait AffineCurve:
-    CanonicalSerialize
+    crate::sealed::Sealed
+    + CanonicalSerialize
     + CanonicalDeserialize
     + Copy
     + Clone
@@ -133,8 +129,6 @@ pub trait AffineCurve:
     + PartialEq<Self::Projective>
     + Mul<Self::ScalarField, Output = Self::Projective>
     + Sized
-    + Serialize
-    + DeserializeOwned
     + ToBytes
     + From<<Self as AffineCurve>::Projective>
     + Zero
@@ -237,6 +231,7 @@ pub trait AffineCurve:
     fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField);
 }
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait PairingCurve: AffineCurve {
     type Engine: PairingEngine<Fr = Self::ScalarField>;
     type Prepared: CanonicalSerialize
@@ -263,11 +258,15 @@ pub trait PairingCurve: AffineCurve {
     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult;
 }
 
-pub trait ModelParameters: 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ModelParameters:
+    crate::sealed::Sealed + 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized
+{
     type BaseField: Field + SquareRootField;
     type ScalarField: PrimeField + SquareRootField + Into<<Self::ScalarField as PrimeField>::BigInteger>;
 }
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait ShortWeierstrassParameters: ModelParameters {
     /// The coefficient `A` of the short Weierstrass curve.
     const WEIERSTRASS_A: Self::BaseField;
@@ -320,6 +319,7 @@ pub trait ShortWeierstrassParameters: ModelParameters {
     ) -> short_weierstrass_jacobian::Projective<Self>;
 }
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait TwistedEdwardsParameters: ModelParameters {
     /// The coefficient `A` of the twisted Edwards curve.
     const EDWARDS_A: Self::BaseField;
@@ -342,6 +342,7 @@ pub trait TwistedEdwardsParameters: ModelParameters {
     }
 }
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait MontgomeryParameters: ModelParameters {
     /// The coefficient `A` of the Montgomery curve.
     const MONTGOMERY_A: Self::BaseField;

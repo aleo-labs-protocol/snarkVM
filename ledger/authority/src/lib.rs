@@ -23,7 +23,7 @@ mod serialize;
 mod string;
 
 use console::{
-    account::{Address, PrivateKey, Signature},
+    account::{Address, ComputeKeyCache, PrivateKey, Signature},
     network::Network,
     prelude::{
         Debug,

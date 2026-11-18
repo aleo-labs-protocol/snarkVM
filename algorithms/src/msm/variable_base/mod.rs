@@ -255,8 +255,8 @@ mod tests {
 
         let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&[], &[])
             .unwrap_or_else(|e| panic!("{e}"));
-        let zero = G1Projective::zero();
-        assert_eq!((sum.x, sum.y, sum.z), (zero.x, zero.y, zero.z));
+        // `==` reads only `z` of a zero point, while `Debug` prints every coordinate.
+        assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()));
     }
 
     /// blst's routines run the ADX code only if its CPUID constructor is in the
