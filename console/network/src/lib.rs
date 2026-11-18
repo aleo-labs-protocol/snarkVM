@@ -72,6 +72,8 @@ mod sealed {
 }
 
 pub mod prelude {
+    #[doc(no_inline)]
+    pub use crate::environment::prelude::*;
     #[cfg(feature = "wasm")]
     pub use crate::get_or_init_consensus_version_heights;
     pub use crate::{
@@ -86,10 +88,10 @@ pub mod prelude {
         TestnetV0,
         consensus_config_value,
         consensus_config_value_by_version,
-        environment::prelude::*,
     };
 }
 
+#[doc(no_inline)]
 pub use crate::environment::prelude::*;
 
 use snarkvm_algorithms::{

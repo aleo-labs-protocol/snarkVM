@@ -18,7 +18,9 @@
 #![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
-pub use snarkvm_console_types::{Address, Field, Group, Scalar, environment::prelude::*};
+#[doc(no_inline)]
+pub use snarkvm_console_types::environment::prelude::*;
+pub use snarkvm_console_types::{Address, Field, Group, Scalar};
 
 mod address;
 
