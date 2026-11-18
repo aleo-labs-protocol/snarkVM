@@ -52,7 +52,9 @@ pub enum TransactionType {
 }
 
 /// A trait for transaction storage.
-pub trait TransactionStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait TransactionStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `transaction type`.
     type IDMap: for<'a> Map<'a, N::TransactionID, TransactionType>;
     /// The deployment storage.
