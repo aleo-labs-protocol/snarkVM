@@ -44,41 +44,45 @@ impl<E: Environment, const NUM_BITS: u8> HashUncompressed for Pedersen<E, NUM_BI
 impl<E: Environment, const NUM_BITS: u8> Metrics<dyn HashUncompressed<Input = Boolean<E>, Output = Group<E>>>
     for Pedersen<E, NUM_BITS>
 {
-    type Case = Vec<Mode>;
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
+    type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]
     fn count(case: &Self::Case) -> Count {
         // Calculate the counts for constructing each of the individual group elements from the bits of the input.
         let group_initialization_counts = case
             .iter()
-            .map(|mode| {
+            .map(|bit| {
                 count!(
                     Group<E>,
                     Ternary<Boolean = Boolean<E>, Output = Group<E>>,
-                    &(*mode, Mode::Constant, Mode::Constant)
+                    &(bit.mode(), Mode::Constant, Mode::Constant)
                 )
             })
             .fold(Count::zero(), |cumulative, count| cumulative + count);
 
-        // Determine the modes of each of the group elements.
-        let mut modes = case.iter().map(|mode| {
-            // The `first` and `second` inputs to `Group::ternary` are always constant so we can directly determine the mode instead of
-            // using the `output_mode` macro. This avoids the need to use `CircuitType` as a parameter, simplifying the logic of this function.
-            match mode.is_constant() {
-                true => Mode::Constant,
-                false => Mode::Private,
-            }
+        // Determine the mode of each of the group elements, and whether it is a constant zero.
+        let mut elements = case.iter().map(|bit| match bit {
+            // The `first` and `second` inputs to `Group::ternary` are a constant base and a constant zero, so a constant `false` bit
+            // selects a constant zero.
+            CircuitType::Constant(constant) => (Mode::Constant, !constant.eject_value()),
+            _ => (Mode::Private, false),
         });
 
         // Calculate the cost of summing the group elements.
-        let sum_counts = match modes.next() {
-            Some(start_mode) => {
-                modes
-                    .fold((start_mode, Count::zero()), |(prev_mode, cumulative), curr_mode| {
-                        let mode = output_mode!(Group<E>, Add<Group<E>, Output = Group<E>>, &(prev_mode, curr_mode));
-                        let sum_count = count!(Group<E>, Add<Group<E>, Output = Group<E>>, &(prev_mode, curr_mode));
-                        (mode, cumulative + sum_count)
-                    })
+        let sum_counts = match elements.next() {
+            Some(start) => {
+                elements
+                    .fold(
+                        (start, Count::zero()),
+                        |((prev_mode, prev_is_zero), cumulative), (curr_mode, curr_is_zero)| {
+                            // The running sum is a constant zero only while every element so far is one.
+                            let case = (prev_mode, curr_mode, prev_is_zero, curr_is_zero);
+                            let mode = output_mode!(Group<E>, Add<Group<E>, Output = Group<E>>, &case);
+                            let sum_count = count!(Group<E>, Add<Group<E>, Output = Group<E>>, &case);
+                            ((mode, prev_is_zero && curr_is_zero), cumulative + sum_count)
+                        },
+                    )
                     .1
             }
             None => Count::zero(),
@@ -91,11 +95,12 @@ impl<E: Environment, const NUM_BITS: u8> Metrics<dyn HashUncompressed<Input = Bo
 impl<E: Environment, const NUM_BITS: u8> OutputMode<dyn HashUncompressed<Input = Boolean<E>, Output = Group<E>>>
     for Pedersen<E, NUM_BITS>
 {
-    type Case = Vec<Mode>;
+    /// The input bits. A constant bit set to `false` selects a constant zero element.
+    type Case = Vec<CircuitType<Boolean<E>>>;
 
     #[inline]
     fn output_mode(parameter: &Self::Case) -> Mode {
-        match parameter.iter().all(|mode| mode.is_constant()) {
+        match parameter.iter().all(|bit| bit.mode().is_constant()) {
             true => Mode::Constant,
             false => Mode::Private,
         }
@@ -133,16 +138,16 @@ mod tests {
                 assert_eq!(expected, candidate.eject_value());
 
                 // Check constraint counts and output mode.
-                let modes = circuit_input.iter().map(|b| b.eject_mode()).collect::<Vec<_>>();
+                let case = circuit_input.iter().map(CircuitType::from).collect::<Vec<_>>();
                 assert_count!(
                     Pedersen<Circuit, NUM_BITS>,
                     HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
-                    &modes
+                    &case
                 );
                 assert_output_mode!(
                     Pedersen<Circuit, NUM_BITS>,
                     HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
-                    &modes,
+                    &case,
                     candidate
                 );
             });
@@ -198,6 +203,41 @@ mod tests {
         check_hash_uncompressed::<{ 3 * NUM_BITS_MULTIPLIER }>(Mode::Private, &mut rng);
         check_hash_uncompressed::<{ 4 * NUM_BITS_MULTIPLIER }>(Mode::Private, &mut rng);
         check_hash_uncompressed::<{ 5 * NUM_BITS_MULTIPLIER }>(Mode::Private, &mut rng);
+    }
+
+    #[test]
+    fn test_hash_uncompressed_mixed() {
+        use console::HashUncompressed as H;
+
+        let mut rng = TestRng::default();
+        let native = console::Pedersen::<<Circuit as Environment>::Network, NUM_BITS_MULTIPLIER>::setup(MESSAGE);
+        let circuit = Pedersen::<Circuit, NUM_BITS_MULTIPLIER>::constant(native.clone());
+
+        for i in 0..ITERATIONS {
+            let input = (0..NUM_BITS_MULTIPLIER).map(|_| bool::rand(&mut rng)).collect::<Vec<bool>>();
+            let expected = native.hash_uncompressed(&input).expect("Failed to hash native input");
+            let modes = [Mode::Constant, Mode::Public, Mode::Private];
+            let circuit_input =
+                input.into_iter().enumerate().map(|(j, bit)| Boolean::new(modes[j % 3], bit)).collect::<Vec<_>>();
+
+            Circuit::scope(format!("Pedersen mixed {i}"), || {
+                let candidate = circuit.hash_uncompressed(&circuit_input);
+                assert_eq!(expected, candidate.eject_value());
+
+                let case = circuit_input.iter().map(CircuitType::from).collect::<Vec<_>>();
+                assert_count!(
+                    Pedersen<Circuit, NUM_BITS_MULTIPLIER>,
+                    HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
+                    &case
+                );
+                assert_output_mode!(
+                    Pedersen<Circuit, NUM_BITS_MULTIPLIER>,
+                    HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
+                    &case,
+                    candidate
+                );
+            });
+        }
     }
 
     #[test]
