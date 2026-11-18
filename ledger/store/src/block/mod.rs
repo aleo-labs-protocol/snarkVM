@@ -159,7 +159,9 @@ fn missing_block_in_tree_error(height: u32, block_tree_cache_path: Option<&std::
     }
 }
 
-/// The default number of recent blocks whose authority data is retained when pruning is enabled.
+/// The network's standard authority retention window: the number of recent blocks whose authority data
+/// a pruning node keeps, and the window snarkOS assumes its peers keep. Production nodes have no way to
+/// change it; devnets use another window through a dev flag.
 ///
 /// At the ideal block time of 2.5 seconds, the network produces `60 * 60 * 24 / 2.5 = 34,560` blocks
 /// per day, so retaining 500,000 blocks keeps roughly two weeks of authority data before pruning.

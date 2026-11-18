@@ -65,7 +65,13 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{BlockAuthority, ConsensusStorage, ConsensusStore, IncompatibleStore};
+use snarkvm_ledger_store::{
+    BlockAuthority,
+    ConsensusStorage,
+    ConsensusStore,
+    IncompatibleStore,
+    check_authority_retention_blocks,
+};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
@@ -124,6 +130,7 @@ pub struct DevCommitteeOptions {
 
 /// Options for [`Ledger::load_with_options`]. The default loads like [`Ledger::load`].
 #[derive(Clone, Copy, Debug, Default)]
+#[non_exhaustive]
 pub struct LoadOptions {
     /// Prunes the authority data older than this many blocks. See
     /// [`BlockStore::open_with_authority_retention`](snarkvm_ledger_store::BlockStore::open_with_authority_retention).
@@ -131,6 +138,21 @@ pub struct LoadOptions {
     /// Installs a dev committee override. See [`Ledger::load_with_dev_committee`].
     #[cfg(feature = "dev-committee")]
     pub dev_committee: Option<DevCommitteeOptions>,
+}
+
+impl LoadOptions {
+    /// Sets the authority retention window.
+    pub fn with_authority_retention(mut self, authority_retention: Option<u32>) -> Self {
+        self.authority_retention = authority_retention;
+        self
+    }
+
+    /// Sets the dev committee override.
+    #[cfg(feature = "dev-committee")]
+    pub fn with_dev_committee(mut self, dev_committee: DevCommitteeOptions) -> Self {
+        self.dev_committee = Some(dev_committee);
+        self
+    }
 }
 
 /// Deterministically builds the dev committee from the given parameters.
@@ -312,7 +334,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        let options = LoadOptions { dev_committee: Some(dev_committee_opts), ..Default::default() };
+        let options = LoadOptions::default().with_dev_committee(dev_committee_opts);
         Self::load_with_options(genesis_block, storage_mode, options)
     }
 
@@ -323,12 +345,18 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        let options = LoadOptions { dev_committee: Some(dev_committee_opts), ..Default::default() };
+        let options = LoadOptions::default().with_dev_committee(dev_committee_opts);
         Self::load_unchecked_inner(genesis_block, storage_mode, options)
     }
 
     fn load_unchecked_inner(genesis_block: Block<N>, storage_mode: StorageMode, options: LoadOptions) -> Result<Self> {
         let timer = timer!("Ledger::load_unchecked");
+
+        // A bad window is a configuration error, not a damaged store, so check it before the open error
+        // can attach the `snarkos clean` advice.
+        if let Some(retention_blocks) = options.authority_retention {
+            check_authority_retention_blocks::<N>(retention_blocks)?;
+        }
 
         info!("Loading the ledger from storage...");
         // Initialize the consensus store.

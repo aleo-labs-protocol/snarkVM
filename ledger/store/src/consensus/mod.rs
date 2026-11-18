@@ -44,13 +44,18 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
     /// Initializes the consensus storage, pruning authority data older than `authority_retention`
-    /// blocks if it is set. See [`BlockStore::open_with_authority_retention`]. Storage that does not
-    /// support pruning refuses a retention window.
+    /// blocks if it is set. See [`BlockStore::open_with_authority_retention`].
+    ///
+    /// The default refuses a retention window and calls [`Self::open`]. Storage that prunes overrides
+    /// this method, and may then implement `open` by calling it with `None`; an `open` that calls it
+    /// without the override recurses forever.
     fn open_with_authority_retention<S: Into<StorageMode>>(
         storage: S,
         authority_retention: Option<u32>,
     ) -> Result<Self> {
-        ensure!(authority_retention.is_none(), "This consensus storage does not prune authority data");
+        if authority_retention.is_some() {
+            return Err(crate::IncompatibleStore("This consensus storage does not prune authority data".into()).into());
+        }
         Self::open(storage)
     }
 

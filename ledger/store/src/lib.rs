@@ -37,7 +37,8 @@ pub use transition::*;
 
 use console::prelude::{Result, bail};
 
-/// A store whose schema is newer than this build. A newer build can open it, so do not delete it.
+/// A store this build will not open as asked, though nothing is wrong with it: its schema is newer
+/// than this build, or the consensus storage cannot prune authority data. Do not delete it.
 #[derive(Debug)]
 pub struct IncompatibleStore(pub String);
 

@@ -144,7 +144,7 @@ jobs:
             runs: |
               nextest run -p snarkvm-ledger
               nextest run -p snarkvm-ledger --features test -E test(/^tests::valid_solutions::/)
-              nextest run -p snarkvm-ledger --features test -E test(/^tests::test_pruned_authority_/)
+              nextest run -p snarkvm-ledger --features test,rocks -E test(/^tests::test_pruned_authority_/)
           # ledger-query's async tests bound wall-clock time, which a loaded
           # hosted runner can exceed.
           - name: ledger-store
