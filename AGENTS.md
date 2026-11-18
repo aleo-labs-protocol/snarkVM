@@ -30,6 +30,7 @@ snarkVM is a virtual machine for zero-knowledge proof execution on the Aleo bloc
 ## Rules
 - All changes must be backwards compatible — no consensus forks.
 - New files, crates, dependencies, abstractions, or traits require approval.
+- Do not add cargo features without explicit sign-off.
 - `unwrap`s must have a comment justifying why they can't panic.
 
 ### Forking Risk
