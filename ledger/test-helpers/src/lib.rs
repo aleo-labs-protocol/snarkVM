@@ -309,7 +309,7 @@ pub fn sample_rejected_deployment(
     has_translation_keys: bool,
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
-    // Sample a deployment and the private key of its program owner.
+    // Sample a deployment and the private key that signs its program owner.
     let (deployment, private_key) =
         crate::sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
 
@@ -495,7 +495,7 @@ function large_transaction:
 
 /****************************************** Transaction *******************************************/
 
-/// Samples a random deployment and the private key of its program owner.
+/// Samples a random deployment and the private key that signs its program owner.
 fn sample_deployment_and_private_key(
     version: u8,
     edition: u16,
@@ -537,7 +537,7 @@ pub fn sample_deployment_transaction(
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Transaction<CurrentNetwork> {
-    // Sample a deployment and the private key of its program owner.
+    // Sample a deployment and the private key that signs its program owner.
     let (deployment, private_key) =
         crate::sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
 
