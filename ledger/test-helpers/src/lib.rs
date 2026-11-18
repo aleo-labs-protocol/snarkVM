@@ -62,8 +62,7 @@ pub fn sample_inputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Input<
     let rng = &mut TestRng::default();
 
     // Sample a transition.
-    let transaction = crate::sample_execution_transaction_with_fee(true, rng, 0);
-    let transition = transaction.transitions().next().unwrap();
+    let transition = crate::sample_transition(rng);
 
     // Retrieve the transition ID and input.
     let transition_id = *transition.id();
@@ -95,8 +94,7 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
     let rng = &mut TestRng::default();
 
     // Sample a transition.
-    let transaction = crate::sample_execution_transaction_with_fee(true, rng, 0);
-    let transition = transaction.transitions().next().unwrap();
+    let transition = crate::sample_transition(rng);
 
     // Retrieve the transition ID and input.
     let transition_id = *transition.id();
