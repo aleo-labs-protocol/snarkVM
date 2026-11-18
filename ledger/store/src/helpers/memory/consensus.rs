@@ -20,8 +20,7 @@ use crate::{
     helpers::memory::{BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
 };
 use console::prelude::*;
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 /// An in-memory consensus storage.
 #[derive(Clone)]
@@ -32,17 +31,14 @@ pub struct ConsensusMemory<N: Network> {
     block_store: BlockStore<N, BlockMemory<N>>,
 }
 
+impl<N: Network> crate::sealed::Sealed for ConsensusMemory<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
     type FinalizeStorage = FinalizeMemory<N>;
     type BlockStorage = BlockMemory<N>;
     type TransactionStorage = TransactionMemory<N>;
     type TransitionStorage = TransitionMemory<N>;
-
-    /// Initializes the consensus storage.
-    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
-        Self::open_with_authority_retention(storage, None)
-    }
 
     /// Initializes the consensus storage, pruning authority data older than `authority_retention` blocks if it is set.
     fn open_with_authority_retention<S: Into<StorageMode>>(storage: S, authority_retention: Option<u32>) -> Result<Self> {

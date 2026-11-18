@@ -23,13 +23,15 @@ use console::{
     types::Field,
 };
 use snarkvm_ledger_block::Input;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use std::borrow::Cow;
 
 /// A trait for transition input storage.
-pub trait InputStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait InputStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transition ID` to `input IDs`.
     type IDMap: for<'a> Map<'a, N::TransitionID, Vec<Field<N>>>;
     /// The mapping of `input ID` to `transition ID`.

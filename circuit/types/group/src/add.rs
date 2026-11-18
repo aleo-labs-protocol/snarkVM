@@ -27,20 +27,30 @@ impl<E: Environment> Add<&Self> for Group<E> {
     type Output = Self;
 
     fn add(self, other: &Self) -> Self::Output {
+        let self_is_zero = self.is_constant() && self.eject_value().is_zero();
+        // If only `other` is constant zero, then return `self`.
+        if !self_is_zero && other.is_constant() && other.eject_value().is_zero() { self } else { &self + other }
+    }
+}
+
+impl<E: Environment> Add<&Group<E>> for &Group<E> {
+    type Output = Group<E>;
+
+    fn add(self, other: &Group<E>) -> Self::Output {
         // If `self` is constant *and* `self` is zero, then return `other`.
         if self.is_constant() && self.eject_value().is_zero() {
             other.clone()
         }
         // If `other` is constant *and* `other` is zero, then return `self`.
         else if other.is_constant() && other.eject_value().is_zero() {
-            self
+            self.clone()
         }
         // Otherwise, compute the sum of `self` and `other`.
         else {
             // This swap reduces the number of constants by one.
             let (this, that) = match other.is_constant() {
-                true => (&self, other),
-                false => (other, &self),
+                true => (self, other),
+                false => (other, self),
             };
 
             let a = Field::constant(console::Field::new(E::EDWARDS_A));
@@ -82,16 +92,8 @@ impl<E: Environment> Add<&Self> for Group<E> {
             let u_plus_a_v0_minus_v1 = u + a_v0 - v1;
             E::enforce(|| (&y3, one_minus_v2, u_plus_a_v0_minus_v1)).expect("Group add y3 constraint unsatisfied");
 
-            Self { x: x3, y: y3 }
+            Group { x: x3, y: y3 }
         }
-    }
-}
-
-impl<E: Environment> Add<&Group<E>> for &Group<E> {
-    type Output = Group<E>;
-
-    fn add(self, other: &Group<E>) -> Self::Output {
-        (*self).clone() + other
     }
 }
 
@@ -103,31 +105,40 @@ impl<E: Environment> AddAssign<Self> for Group<E> {
 
 impl<E: Environment> AddAssign<&Self> for Group<E> {
     fn add_assign(&mut self, other: &Self) {
-        *self = self.clone() + other;
+        *self = &*self + other;
     }
 }
 
 impl<E: Environment> Metrics<dyn Add<Group<E>, Output = Group<E>>> for Group<E> {
-    type Case = (Mode, Mode);
+    /// `(mode of self, mode of other, self is zero, other is zero)`.
+    type Case = (Mode, Mode, bool, bool);
 
     fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::less_than(4, 0, 0, 0),
-            (Mode::Constant, _) | (_, Mode::Constant) => Count::is(2, 0, 3, 3),
-            (_, _) => Count::is(2, 0, 6, 6),
+        match (case.0, case.1, case.2, case.3) {
+            // A constant zero operand: `add` returns the other operand.
+            (Mode::Constant, _, true, _) | (_, Mode::Constant, _, true) => Count::is(0, 0, 0, 0),
+            // Both constant: the sum is a new constant.
+            (Mode::Constant, Mode::Constant, _, _) => Count::less_than(4, 0, 0, 0),
+            // One constant operand: the products with it need no constraints.
+            (Mode::Constant, _, _, _) | (_, Mode::Constant, _, _) => Count::is(2, 0, 3, 3),
+            // Both variable.
+            (_, _, _, _) => Count::is(2, 0, 6, 6),
         }
     }
 }
 
 impl<E: Environment> OutputMode<dyn Add<Group<E>, Output = Group<E>>> for Group<E> {
-    type Case = (Mode, Mode);
+    /// `(mode of self, mode of other, self is zero, other is zero)`.
+    type Case = (Mode, Mode, bool, bool);
 
-    // TODO: This implementation is incorrect. In the case where one operand is a constant and is equal to zero, then the output mode
-    //  is that of the other operand.
     fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
+        match (case.0, case.1, case.2, case.3) {
+            // A constant zero operand: `add` returns the other operand.
+            (Mode::Constant, mode_b, true, _) => mode_b,
+            (mode_a, Mode::Constant, _, true) => mode_a,
+            (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
+            // Otherwise, `add` witnesses a new point.
+            (_, _, _, _) => Mode::Private,
         }
     }
 }
@@ -148,8 +159,9 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a + b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            assert_count!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()), candidate);
+            let case = (a.eject_mode(), b.eject_mode(), a.eject_value().is_zero(), b.eject_value().is_zero());
+            assert_count!(Add(Group, Group) => Group, &case);
+            assert_output_mode!(Add(Group, Group) => Group, &case, candidate);
         });
     }
 
@@ -163,13 +175,48 @@ mod tests {
             let mut candidate = a.clone();
             candidate += b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            assert_count!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()), candidate);
+            let case = (a.eject_mode(), b.eject_mode(), a.eject_value().is_zero(), b.eject_value().is_zero());
+            assert_count!(Add(Group, Group) => Group, &case);
+            assert_output_mode!(Add(Group, Group) => Group, &case, candidate);
         });
+    }
+
+    #[test]
+    fn test_add_constant_zero_keeps_cached_bits() {
+        type AddForm = fn(&Group<Circuit>, &Group<Circuit>) -> Group<Circuit>;
+        let forms: [AddForm; 3] = [|a, zero| a.clone() + zero, |a, zero| a + zero, |a, zero| a.clone() + zero.clone()];
+
+        let mut rng = TestRng::default();
+        let zero = Group::<Circuit>::zero();
+        for mode in [Mode::Public, Mode::Private] {
+            let a = Group::<Circuit>::new(mode, Uniform::rand(&mut rng));
+            let _ = a.to_bits_le();
+            for add in forms {
+                Circuit::scope("a + 0", || {
+                    let _ = add(&a, &zero).to_bits_le();
+                    assert_scope!(0, 0, 0, 0);
+                });
+            }
+        }
+        Circuit::reset();
     }
 
     fn run_test(mode_a: Mode, mode_b: Mode) {
         let mut rng = TestRng::default();
+
+        let generator = console::Group::<<Circuit as Environment>::Network>::generator();
+        let points = [console::Group::zero(), generator, -generator, generator.double()];
+        for first in points {
+            for second in points {
+                let a = Group::<Circuit>::new(mode_a, first);
+                let b = Group::<Circuit>::new(mode_b, second);
+
+                let expected = first + second;
+
+                check_add(&format!("Add: {first} + {second}"), &expected, &a, &b);
+                check_add_assign(&format!("AddAssign: {first} + {second}"), &expected, &a, &b);
+            }
+        }
 
         for i in 0..ITERATIONS {
             let first = Uniform::rand(&mut rng);

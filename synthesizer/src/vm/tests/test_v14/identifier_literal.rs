@@ -27,12 +27,12 @@ fn test_identifier_literal_migration() {
     // Initialize the VM.
     let vm = sample_vm();
     // Initialize the genesis block.
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
 
     // Fetch the private key.
-    let private_key = sample_genesis_private_key(rng);
+    let private_key = sample_genesis_private_key();
 
     // Deploy a test program that uses identifier literal syntax.
     let program_id = ProgramID::<CurrentNetwork>::from_str("identifier_literal_test.aleo").unwrap();
@@ -128,7 +128,7 @@ constructor:
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at one block before V14.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -199,7 +199,7 @@ constructor:
 fn test_call_dynamic_with_identifier_literals() {
     let rng = &mut TestRng::default();
 
-    let private_key = sample_genesis_private_key(rng);
+    let private_key = sample_genesis_private_key();
     let address = Address::try_from(&private_key).unwrap();
 
     // Initialize the VM at V14.
@@ -294,10 +294,10 @@ fn test_identifier_literal_in_dynamic_mapping_ops() {
 
     // Initialize the VM.
     let vm = sample_vm();
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     vm.add_next_block(&genesis).unwrap();
 
-    let private_key = sample_genesis_private_key(rng);
+    let private_key = sample_genesis_private_key();
 
     // Advance the VM to V14.
     let transactions: [Transaction<CurrentNetwork>; 0] = [];
@@ -378,7 +378,7 @@ finalize check_contains:
 fn test_identifier_literal_equality_ops_in_function() {
     let rng = &mut TestRng::default();
 
-    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V14.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -555,7 +555,7 @@ constructor:
 fn test_identifier_literal_ops_in_finalize() {
     let rng = &mut TestRng::default();
 
-    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V14.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -772,7 +772,7 @@ constructor:
 fn test_identifier_literal_ternary_rejected_in_function() {
     let rng = &mut TestRng::default();
 
-    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V14.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -809,7 +809,7 @@ constructor:
 fn test_identifier_literal_ternary_rejected_in_finalize() {
     let rng = &mut TestRng::default();
 
-    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at V14.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -855,10 +855,10 @@ fn test_get_and_get_or_use_dynamic_with_identifier_literals() {
 
     // Initialize the VM.
     let vm = sample_vm();
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     vm.add_next_block(&genesis).unwrap();
 
-    let private_key = sample_genesis_private_key(rng);
+    let private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&private_key).unwrap();
 
     // Advance the VM to V14.

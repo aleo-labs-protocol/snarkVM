@@ -24,7 +24,7 @@ impl<N: Network> Process<N> {
         authorization: Authorization<N>,
         rng: &mut R,
     ) -> Result<(Response<N>, Trace<N>), ProcessExecError> {
-        let timer = timer!("Process::execute");
+        let timer = timing_span!("Process::execute").entered();
 
         // Retrieve the main request (without popping it).
         let request = authorization.peek_next()?;
@@ -49,7 +49,7 @@ impl<N: Network> Process<N> {
         let num_requests = authorization.len();
         // Initialize the call stack.
         let call_stack = CallStack::execute(authorization, trace.clone(), translations)?;
-        lap!(timer, "Initialize call stack");
+        timing_event!("Initialize call stack");
 
         // Retrieve the stack.
         let stack = self.get_stack(request.program_id())?;
@@ -57,7 +57,7 @@ impl<N: Network> Process<N> {
         let Some(response) = stack.execute_function::<A, R>(call_stack, caller, root_tvk, rng)? else {
             return Err(anyhow!("Response should be present in `Execute` mode.").into());
         };
-        lap!(timer, "Execute the function");
+        timing_event!("Execute the function");
 
         // Extract the trace.
         let mut trace = Arc::try_unwrap(trace).unwrap().into_inner();
@@ -76,7 +76,7 @@ impl<N: Network> Process<N> {
         // Construct the call graph.
         trace.construct_call_graph(self)?;
 
-        finish!(timer);
+        drop(timer);
         Ok((response, trace))
     }
 }

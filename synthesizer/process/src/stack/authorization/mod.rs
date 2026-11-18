@@ -374,7 +374,7 @@ impl<N: Network> Authorization<N> {
             let stack = execution_stacks
                 .get(transition.program_id())
                 .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
-            let function = stack.get_function(transition.function_name())?;
+            let function = stack.get_function_ref(transition.function_name())?;
 
             let input_types = function.input_types();
             let output_types = function.output_types();

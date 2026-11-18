@@ -164,7 +164,9 @@ pub fn staking_rewards<N: Network>(
 
     if tracing::enabled!(tracing::Level::TRACE) {
         let invalid_validator_stake = invalid_validator_stake.load(std::sync::atomic::Ordering::Relaxed);
-        trace!("Total stake invalidated due to validator not in committee: {invalid_validator_stake}");
+        if invalid_validator_stake != 0 {
+            trace!("Total stake invalidated due to validator not in committee: {invalid_validator_stake}");
+        }
     }
 
     // Return the result.

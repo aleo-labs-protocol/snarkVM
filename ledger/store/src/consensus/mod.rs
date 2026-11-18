@@ -24,13 +24,15 @@ use crate::{
     TransitionStore,
 };
 use console::network::prelude::*;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 
 /// A trait for consensus storage.
-pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ConsensusStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// The finalize storage.
     type FinalizeStorage: FinalizeStorage<N>;
     /// The block storage.
@@ -41,23 +43,16 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
     type TransitionStorage: TransitionStorage<N>;
 
     /// Initializes the consensus storage.
-    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        Self::open_with_authority_retention(storage, None)
+    }
 
     /// Initializes the consensus storage, pruning authority data older than `authority_retention`
     /// blocks if it is set. See [`BlockStore::open_with_authority_retention`].
-    ///
-    /// The default refuses a retention window and calls [`Self::open`]. Storage that prunes overrides
-    /// this method, and may then implement `open` by calling it with `None`; an `open` that calls it
-    /// without the override recurses forever.
     fn open_with_authority_retention<S: Into<StorageMode>>(
         storage: S,
         authority_retention: Option<u32>,
-    ) -> Result<Self> {
-        if authority_retention.is_some() {
-            return Err(crate::IncompatibleStore("This consensus storage does not prune authority data".into()).into());
-        }
-        Self::open(storage)
-    }
+    ) -> Result<Self>;
 
     /// Returns the finalize storage.
     fn finalize_store(&self) -> &FinalizeStore<N, Self::FinalizeStorage>;

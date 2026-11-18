@@ -333,6 +333,7 @@ pub enum Instruction<N: Network> {
 ///         Self::Div(instruction) => write!(f, "{} {};", self.opcode(), instruction),
 ///     }
 /// ```
+#[doc(hidden)]
 #[macro_export]
 macro_rules! instruction {
     // A variant **with** curly braces:

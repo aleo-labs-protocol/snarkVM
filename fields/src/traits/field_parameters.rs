@@ -18,6 +18,8 @@ use crate::traits::{FftParameters, PoseidonDefaultParameters};
 use core::{fmt::Debug, hash::Hash};
 
 /// A trait that defines parameters for a prime field.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait FieldParameters:
     'static + FftParameters + PoseidonDefaultParameters + Copy + Clone + Debug + Default + PartialEq + Eq + Hash
 {

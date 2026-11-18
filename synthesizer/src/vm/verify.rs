@@ -102,7 +102,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rejected_id: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("VM::check_transaction");
+        let timer = timing_span!("VM::check_transaction").entered();
 
         // Get the current block height for consensus version checks.
         let current_block_height = self.block_store().current_block_height();
@@ -135,7 +135,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 bail!("Failed to compute the Merkle root of the transaction: {error}\n{transaction}");
             }
         };
-        lap!(timer, "Verify the transaction ID");
+        timing_event!("Verify the transaction ID");
 
         /* Transition */
 
@@ -167,7 +167,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure the transition commitments are unique.
         ensure_is_unique!("transition commitment", self, contains_tcm, transaction.transition_commitments());
 
-        lap!(timer, "Check for duplicate elements");
+        timing_event!("Check for duplicate elements");
 
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
@@ -679,7 +679,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", t.program_id()))?;
                         let program = stack.program();
                         Ok(program
-                            .get_function(t.function_name())?
+                            .get_function_ref(t.function_name())?
                             .finalize_logic()
                             .map_or(0, FinalizeCore::num_writes))
                     })
@@ -717,7 +717,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             self.partially_verified_transactions.write().push(cache_key, checksum);
         }
 
-        finish!(timer, "Verify the transaction");
+        timing_event!("Verify the transaction");
+        drop(timer);
         Ok(())
     }
 
@@ -835,9 +836,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Process the logic.
-        let timer = timer!("VM::check_deployment");
+        let timer = timing_span!("VM::check_deployment").entered();
         let result = process!(self, logic).map_err(|error| anyhow!("Deployment verification failed - {error}"));
-        finish!(timer);
+        drop(timer);
         result
     }
 
@@ -852,7 +853,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
         is_partially_verified: bool,
     ) -> Result<()> {
-        let timer = timer!("VM::check_execution");
+        let timer = timing_span!("VM::check_execution").entered();
 
         // Retrieve the block height.
         let block_height = self.block_store().current_block_height();
@@ -899,7 +900,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 execution_stacks,
             ),
         };
-        lap!(timer, "Verify the execution");
+        timing_event!("Verify the execution");
 
         // Ensure the global state root exists in the block store.
         let result = match verification {
@@ -911,7 +912,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             },
             Err(error) => bail!("Execution verification failed - {error}"),
         };
-        finish!(timer, "Check the global state root");
+        timing_event!("Check the global state root");
+        drop(timer);
         result
     }
 
@@ -926,7 +928,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         deployment_or_execution_id: Field<N>,
         is_partially_verified: bool,
     ) -> Result<()> {
-        let timer = timer!("VM::check_fee");
+        let timer = timing_span!("VM::check_fee").entered();
 
         // Ensure the fee does not exceed the limit.
         let fee_amount = fee.amount()?;
@@ -963,7 +965,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(_) => bail!("VM safely halted during fee verification"),
             },
         };
-        lap!(timer, "Verify the fee");
+        timing_event!("Verify the fee");
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
         //  to the speculation layer.
@@ -996,7 +998,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             },
             Err(error) => bail!("Fee verification failed - {error}"),
         };
-        finish!(timer, "Check the global state root");
+        timing_event!("Check the global state root");
+        drop(timer);
         result
     }
 }
@@ -1026,7 +1029,7 @@ mod tests {
         let rng = &mut TestRng::fixed(3104);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
         let mut vm = test_helpers::sample_vm_at_height(height - 1, rng);
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).expect("valid test fixture");
         let inputs = [
             Value::from_str(&address.to_string()).expect("valid test fixture"),
@@ -1065,7 +1068,7 @@ mod tests {
         let rng = &mut TestRng::fixed(3107);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21)?;
         let mut vm = test_helpers::sample_vm_at_height(height - 2, rng);
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key)?;
         let view_key = ViewKey::try_from(&private_key)?;
         let inputs = [Value::from_str(&address.to_string())?, Value::from_str("100000000u64")?];
@@ -1303,7 +1306,7 @@ finalize verify:
     #[test]
     fn test_verify() {
         let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block();
 
         // Fetch a deployment transaction.
         let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
@@ -1360,7 +1363,7 @@ finalize verify:
     #[test]
     fn test_verify_execution() {
         let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block();
 
         // Fetch execution transactions.
         let transactions = [
@@ -1398,7 +1401,7 @@ finalize verify:
     #[test]
     fn test_verify_fee() {
         let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block();
 
         // Fetch execution transactions.
         let transactions = [
@@ -1441,7 +1444,7 @@ finalize verify:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1474,12 +1477,12 @@ finalize verify:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
 
         // Fetch the unspent records.
         let records = genesis.records().collect::<indexmap::IndexMap<_, _>>();
@@ -1616,9 +1619,9 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Fetch the caller's private key.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1692,12 +1695,12 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Create a transaction with on the old version.
         let address = Address::try_from(&private_key).unwrap();
@@ -1738,7 +1741,7 @@ function compute:
         // Sample a new VM
         let new_vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         new_vm.add_next_block(&genesis).unwrap();
 
@@ -1756,12 +1759,12 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Advance the ledger past ConsensusV4 where the new varuna version starts to take place.
         let transactions: [Transaction<CurrentNetwork>; 0] = [];
@@ -1907,12 +1910,12 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Deploy a test program to the ledger.
         let program_id = ProgramID::<CurrentNetwork>::from_str("dummy_program.aleo").unwrap();
@@ -2067,12 +2070,12 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Deploy a test program to the ledger.
         let program_id = ProgramID::<CurrentNetwork>::from_str("dummy_program.aleo").unwrap();
@@ -2123,12 +2126,12 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Deploy a test program to the ledger.
         let program_id = ProgramID::<CurrentNetwork>::from_str("dummy_program.aleo").unwrap();
@@ -2251,12 +2254,12 @@ mod credits_migration_tests {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let view_key = ViewKey::try_from(&private_key).unwrap();
         let address = Address::try_from(&private_key).unwrap();
 
@@ -2518,12 +2521,12 @@ mod credits_migration_tests {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let view_key = ViewKey::try_from(&private_key).unwrap();
         let address = Address::try_from(&private_key).unwrap();
 
@@ -2708,12 +2711,12 @@ function local_transfer:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let view_key = ViewKey::try_from(&private_key).unwrap();
         let address = Address::try_from(&private_key).unwrap();
 

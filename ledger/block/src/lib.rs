@@ -15,7 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
-// #![warn(clippy::cast_possible_truncation)]
+#![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::single_element_loop))]
 
 extern crate snarkvm_console as console;
@@ -51,7 +51,7 @@ mod string;
 mod verify;
 
 use console::{
-    account::PrivateKey,
+    account::{ComputeKeyCache, PrivateKey},
     network::prelude::*,
     program::{Ciphertext, Record},
     types::{Field, Group, U64},
@@ -621,17 +621,73 @@ pub mod test_helpers {
     use snarkvm_algorithms::snark::varuna::VarunaVersion;
     use snarkvm_console::account::{Address, PrivateKey};
     use snarkvm_ledger_query::Query;
-    use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
+    use snarkvm_ledger_store::{BlockStore, StorageMode, helpers::memory::BlockMemory};
     use snarkvm_synthesizer_process::Process;
-    use snarkvm_utilities::PrettyUnwrap;
+    use snarkvm_utilities::{PrettyUnwrap, load_or_build_fixture};
 
-    use aleo_std::StorageMode;
-    use std::sync::OnceLock;
+    use std::{cell::RefCell, collections::HashMap, sync::OnceLock};
 
     type CurrentNetwork = console::network::MainnetV0;
     type CurrentAleo = snarkvm_circuit::network::AleoV0;
 
-    /// Samples a random genesis block.
+    /// Returns the fixture `name` of the running test binary, which `build` builds from an RNG that `name` seeds.
+    ///
+    /// The test processes of one binary share the fixture through a file beside the binary.
+    /// `key` holds the inputs of `build` that are not in `name`.
+    pub(crate) fn sample_fixture<T: FromBytes + ToBytes>(
+        name: &str,
+        key: &[u8],
+        build: impl FnOnce(&mut TestRng) -> T,
+    ) -> T {
+        // Hash the name (FNV-1a), so that each fixture has its own random values.
+        let seed = name
+            .bytes()
+            .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3));
+        load_or_build_fixture(&format!("block-{name}"), key, |_| true, || build(&mut TestRng::from_seed(seed)))
+    }
+
+    /// Returns the fixture `{name}-{n}` for the n-th call with `name` on this thread.
+    ///
+    /// Two calls on one thread return different fixtures, and every thread gets the same fixtures in the same order.
+    pub(crate) fn sample_nth_fixture<T: FromBytes + ToBytes>(
+        name: &str,
+        key: &[u8],
+        build: impl FnOnce(&mut TestRng) -> T,
+    ) -> T {
+        thread_local! {
+            static CALLS: RefCell<HashMap<String, usize>> = RefCell::new(HashMap::new());
+        }
+        let call = CALLS.with_borrow_mut(|calls| {
+            let calls = calls.entry(name.to_string()).or_default();
+            *calls += 1;
+            *calls - 1
+        });
+        sample_fixture(&format!("{name}-{call}"), key, build)
+    }
+
+    /// Returns the key of the fixtures that hold a proof for the genesis block: the hash of that block.
+    pub(crate) fn genesis_fixture_key() -> Vec<u8> {
+        genesis_fixture().0.hash().to_string().into_bytes()
+    }
+
+    /// Returns the genesis block, the transaction of the genesis block, and the genesis private key.
+    ///
+    /// The test processes of one binary share them through a file beside the binary.
+    fn genesis_fixture() -> &'static (Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
+        static INSTANCE: OnceLock<(Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>)> =
+            OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            let (private_key, block) = sample_fixture("genesis", &[], |rng| {
+                let (block, _, private_key) = sample_genesis_block_and_components_raw(rng);
+                (private_key, block)
+            });
+            // The genesis block holds one transaction, so `unwrap` does not panic.
+            let transaction = block.transactions().iter().next().unwrap().deref().clone();
+            (block, transaction, private_key)
+        })
+    }
+
+    /// Returns the genesis block of `sample_genesis_block_and_components`.
     pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
         // Sample the genesis block and components.
         let (block, _, _) = sample_genesis_block_and_components(rng);
@@ -639,7 +695,7 @@ pub mod test_helpers {
         block
     }
 
-    /// Samples a random genesis block and the transaction from the genesis block.
+    /// Returns the genesis block and the transaction of `sample_genesis_block_and_components`.
     pub(crate) fn sample_genesis_block_and_transaction(
         rng: &mut TestRng,
     ) -> (Block<CurrentNetwork>, Transaction<CurrentNetwork>) {
@@ -649,13 +705,13 @@ pub mod test_helpers {
         (block, transaction)
     }
 
-    /// Samples a random genesis block, the transaction from the genesis block, and the genesis private key.
+    /// Returns the genesis block, the transaction of the genesis block, and the genesis private key.
+    ///
+    /// Every call returns the same values. They do not depend on `_rng`, and `_rng` is not advanced.
     pub(crate) fn sample_genesis_block_and_components(
-        rng: &mut TestRng,
+        _rng: &mut TestRng,
     ) -> (Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
-        static INSTANCE: OnceLock<(Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>)> =
-            OnceLock::new();
-        INSTANCE.get_or_init(|| sample_genesis_block_and_components_raw(rng)).clone()
+        genesis_fixture().clone()
     }
 
     /// Samples a random genesis block, the transaction from the genesis block, and the genesis private key.

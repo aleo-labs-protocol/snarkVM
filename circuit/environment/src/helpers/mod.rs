@@ -22,8 +22,6 @@ pub use circuit_type::*;
 pub mod constraint;
 pub use constraint::*;
 
-pub(super) mod converter;
-
 pub mod count;
 pub use count::*;
 

@@ -46,11 +46,10 @@ use std::{
 };
 use zeroize::Zeroize;
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {
-    /// Returns the tables that `sqrt` uses, or `None` for `sqrt` to run Algorithm 1 of Sarkar without tables.
-    fn sqrt_tables() -> Option<&'static SqrtTables<Fp256<Self>>> {
-        None
-    }
+    /// Returns the tables that `sqrt` uses. The 2-adicity of the field must be less than 64.
+    fn sqrt_tables() -> &'static SqrtTables<Fp256<Self>>;
 }
 
 // The CUDA FFI reads this by bytes.
@@ -165,6 +164,8 @@ impl<P: Fp256Parameters> One for Fp256<P> {
         self.0 == P::R
     }
 }
+
+impl<P: Fp256Parameters> crate::sealed::Sealed for Fp256<P> {}
 
 impl<P: Fp256Parameters> Field for Fp256<P> {
     type BasePrimeField = Self;
@@ -519,7 +520,7 @@ impl<P: Fp256Parameters> SquareRootField for Fp256<P> {
 
     #[inline]
     fn sqrt(&self) -> Option<Self> {
-        sqrt_impl!(Self, P, self)
+        sqrt_impl!(P, self)
     }
 
     fn sqrt_in_place(&mut self) -> Option<&mut Self> {

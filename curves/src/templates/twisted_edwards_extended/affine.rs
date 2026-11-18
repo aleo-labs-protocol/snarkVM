@@ -32,18 +32,17 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Affine<P: Parameters> {
-    pub x: P::BaseField,
-    pub y: P::BaseField,
-    pub t: P::BaseField,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) t: P::BaseField,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    pub fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
+    pub(crate) fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
         Self { x, y, t }
     }
 }
@@ -78,6 +77,8 @@ impl<P: Parameters> Display for Affine<P> {
         write!(f, "Affine(x={}, y={})", self.x, self.y)
     }
 }
+
+impl<P: Parameters> crate::sealed::Sealed for Affine<P> {}
 
 impl<P: Parameters> AffineCurve for Affine<P> {
     type BaseField = P::BaseField;
@@ -177,41 +178,14 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         })
     }
 
-    /// Uses a sliding window of up to `WINDOW` bits over the odd multiples `self, 3 * self, 5 * self, ...`.
-    /// Runs in variable time.
     #[inline]
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Projective<P> {
-        const WINDOW: usize = 4;
-        let mut buffer = Vec::with_capacity(bits.size_hint().0);
-        buffer.extend(bits.skip_while(|bit| !bit));
-        let bits = buffer;
-        let base = self.to_projective();
-        let double = base.double();
-        let mut table = [base; 1 << (WINDOW - 1)];
-        for i in 1..table.len() {
-            table[i] = table[i - 1] + double;
-        }
-
         let mut res = Projective::zero();
-        let mut i = 0;
-        while i < bits.len() {
-            if !bits[i] {
-                res.double_in_place();
-                i += 1;
-                continue;
+        for i in bits {
+            res.double_in_place();
+            if i {
+                res.add_assign_mixed(self)
             }
-            let mut end = bits.len().min(i + WINDOW);
-            while !bits[end - 1] {
-                end -= 1;
-            }
-            let digit = bits[i..end].iter().fold(0, |digit, &bit| (digit << 1) | bit as usize);
-            if i == 0 {
-                res = table[digit >> 1];
-            } else {
-                (i..end).for_each(|_| res.double_in_place());
-                res += &table[digit >> 1];
-            }
-            i = end;
         }
         res
     }

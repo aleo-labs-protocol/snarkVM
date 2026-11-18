@@ -42,7 +42,7 @@ impl<N: Network> Debug for PendingBlock<N> {
     }
 }
 
-/// Error returned by [`Self::check_block_subdag`] and [`Self::check_block_subdag_inner`].
+/// Error returned by [`Ledger::check_block_subdag`] and `Ledger::check_block_subdag_inner`.
 ///
 /// This allows parsing for begning errors, such as the block already existing in the ledger.
 #[derive(thiserror::Error, Debug)]
@@ -56,7 +56,7 @@ pub enum CheckBlockError<N: Network> {
     #[error("Block has invalid hash")]
     InvalidHash,
     /// An error related to the given prefix of pending blocks.
-    #[error("The prefix as an error at index {index} - {error:?}")]
+    #[error("The prefix has an error at index {index} - {error:?}")]
     InvalidPrefix { index: usize, error: Box<CheckBlockError<N>> },
     #[error("The block contains solution '{solution_id}', but it already exists in the ledger")]
     SolutionAlreadyExists { solution_id: SolutionID<N> },

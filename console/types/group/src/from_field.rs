@@ -38,7 +38,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample a random value.
-            let expected = Group::<CurrentEnvironment>::new(Uniform::rand(&mut rng));
+            let expected = Group::<CurrentEnvironment>::rand(&mut rng);
             let candidate = Group::<CurrentEnvironment>::from_field(&expected.to_field()?)?;
             assert_eq!(expected, candidate);
         }

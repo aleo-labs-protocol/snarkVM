@@ -22,7 +22,7 @@ use super::*;
 fn test_existence_check() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
 
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();

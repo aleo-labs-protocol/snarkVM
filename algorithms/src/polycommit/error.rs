@@ -16,7 +16,7 @@
 /// The error type for `PolynomialCommitment`.
 #[derive(Debug, Error)]
 pub enum PCError {
-    #[error("{0}")]
+    #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
 
     #[error("QuerySet` refers to polynomial \"{label}\", but it was not provided.")]

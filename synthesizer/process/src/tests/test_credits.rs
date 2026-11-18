@@ -29,13 +29,13 @@ use snarkvm_ledger_store::{
     FinalizeMode,
     FinalizeStorage,
     FinalizeStore,
+    StorageMode,
     atomic_finalize,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
 use snarkvm_synthesizer_snark::VerifyingKey;
 
-use aleo_std::StorageMode;
 use indexmap::IndexMap;
 
 type CurrentNetwork = MainnetV0;
@@ -72,8 +72,7 @@ macro_rules! sample_finalize_store {
         )
         .unwrap();
         #[cfg(not(feature = "rocks"))]
-        let store =
-            FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None)).unwrap();
+        let store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         store
     }};

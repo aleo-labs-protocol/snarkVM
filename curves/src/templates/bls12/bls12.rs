@@ -46,7 +46,10 @@ pub enum TwistType {
     D,
 }
 
-pub trait Bls12Parameters: 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait Bls12Parameters:
+    crate::sealed::Sealed + 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized
+{
     const X: &'static [u64];
     const X_IS_NEGATIVE: bool;
     const TWIST_TYPE: TwistType;
@@ -103,6 +106,8 @@ impl<P: Bls12Parameters> Bls12<P> {
         f
     }
 }
+
+impl<P: Bls12Parameters> crate::sealed::Sealed for Bls12<P> {}
 
 impl<P: Bls12Parameters> PairingEngine for Bls12<P>
 where

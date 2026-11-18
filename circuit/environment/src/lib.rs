@@ -15,6 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::type_complexity)]
+#![warn(clippy::cast_possible_truncation)]
 
 extern crate snarkvm_console_network as console;
 
@@ -44,6 +45,13 @@ pub use testnet_circuit::*;
 
 pub mod traits;
 pub use traits::*;
+
+/// Seals [`Environment`]. `snarkvm-circuit-network` implements it for its networks, so it is
+/// public, but it is not part of the API.
+#[doc(hidden)]
+pub mod sealed_circuit_environment {
+    pub trait Sealed {}
+}
 
 pub mod prelude {
     pub use crate::{

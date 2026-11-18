@@ -805,3 +805,14 @@ fn test_psd8_console_circuit_id_equivalence() {
         "Console and circuit PSD8 ID computations must agree"
     );
 }
+
+#[test]
+fn test_prepare_verifier_inputs_infers_the_transition_map_value_type() {
+    // The public signature fixes the map's value type, so callers may pass an untyped empty map.
+    // The unwrap cannot panic: with no transitions there is no lookup that can fail.
+    let batches = Translation::<CurrentNetwork>::prepare_verifier_inputs(std::iter::empty(), &HashMap::new(), &|_| {
+        unreachable!("No transitions require a verifying key")
+    })
+    .unwrap();
+    assert!(batches.is_empty());
+}

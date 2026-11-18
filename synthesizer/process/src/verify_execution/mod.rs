@@ -31,7 +31,7 @@ impl<N: Network> Process<N> {
         execution: &Execution<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     ) -> Result<()> {
-        let timer = timer!("Process::verify_execution");
+        let timer = timing_span!("Process::verify_execution").entered();
 
         // Ensure the execution contains transitions.
         ensure!(!execution.is_empty(), "There are no transitions in the execution");
@@ -71,7 +71,7 @@ impl<N: Network> Process<N> {
             // Output the locator of the main function.
             Locator::new(*transition.program_id(), *transition.function_name()).to_string()
         };
-        lap!(timer, "Verify the number of transitions");
+        timing_event!("Verify the number of transitions");
 
         // Construct the call graph of the execution.
         let call_graph = Self::construct_call_graph(execution.transitions(), execution_stacks)?;
@@ -137,7 +137,7 @@ impl<N: Network> Process<N> {
             {
                 bail!("Failed to verify a transition input")
             }
-            lap!(timer, "Verify the inputs");
+            timing_event!("Verify the inputs");
 
             // Ensure each output is valid.
             let num_inputs = transition.inputs().len();
@@ -165,14 +165,14 @@ impl<N: Network> Process<N> {
                 }
                 Ok(())
             })?;
-            lap!(timer, "Verify the outputs");
+            timing_event!("Verify the outputs");
 
             // Retrieve the stack.
             let stack = execution_stacks
                 .get(transition.program_id())
                 .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
             // Retrieve the function from the stack.
-            let function = stack.get_function(transition.function_name())?;
+            let function = stack.get_function_ref(transition.function_name())?;
             // Retrieve the program checksum, if the program has a constructor.
             let program_checksum = match stack.program().contains_constructor() {
                 true => Some(stack.program_checksum_as_field()?),
@@ -229,7 +229,7 @@ impl<N: Network> Process<N> {
             let parent = reverse_call_graph.get(transition.id()).and_then(|tid| execution.get_program_id(tid));
 
             // Add the transition to the transition map.
-            transition_map.insert(*transition.id(), (transition, function.clone()));
+            transition_map.insert(*transition.id(), (transition, function));
 
             // Construct the verifier inputs for the transition.
             let inputs = Self::to_transition_verifier_inputs(
@@ -243,7 +243,7 @@ impl<N: Network> Process<N> {
                 execution_stacks,
                 consensus_version,
             )?;
-            lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
+            timing_event!("Constructed the verifier inputs for a transition of {}", function.name());
 
             // Save the verifying key and its inputs.
             verifier_inputs
@@ -252,7 +252,7 @@ impl<N: Network> Process<N> {
                 .or_insert((stack.get_verifying_key(function.name())?, vec![]))
                 .1
                 .push(inputs);
-            lap!(timer, "Stored the verifier inputs for a transition of {}", function.name());
+            timing_event!("Stored the verifier inputs for a transition of {}", function.name());
         }
 
         // Sanity check: each transition must produce exactly one verifier instance.
@@ -277,7 +277,7 @@ impl<N: Network> Process<N> {
         let credits_record_name = Identifier::from_str("credits")?;
 
         // Construct the batch of translation verifier inputs.
-        let batch_translation_inputs = Translation::prepare_verifier_inputs(
+        let batch_translation_inputs = Translation::prepare_verifier_inputs_internal(
             execution.transitions(),
             &transition_map,
             &|(program_id, record_name)| {
@@ -351,9 +351,9 @@ impl<N: Network> Process<N> {
         // Verify the execution proof.
         Trace::verify_execution_proof(&locator, varuna_version, inclusion_version, verifier_inputs, execution)?;
 
-        lap!(timer, "Verify the proof");
+        timing_event!("Verify the proof");
 
-        finish!(timer);
+        drop(timer);
         Ok(())
     }
 }
@@ -365,7 +365,7 @@ impl<N: Network> Process<N> {
         parent: Option<&ProgramID<N>>,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
         program_checksum: Option<N::Field>,
-        transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
+        transition_map: &HashMap<N::TransitionID, (&Transition<N>, &Function<N>)>,
         function_id_cache: &mut HashMap<(ProgramID<N>, Identifier<N>), Field<N>>,
         network_id: &U16<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
@@ -412,7 +412,7 @@ impl<N: Network> Process<N> {
         })?;
 
         // Retrieve the parent function from the transition map.
-        let parent_function = transition_map.get(transition.id()).map(|(_, function)| function.clone());
+        let parent_function = transition_map.get(transition.id()).map(|(_, function)| *function);
 
         // Collect the function call instructions from the parent function.
         // Each entry is (is_dynamic, instruction), where `is_dynamic` indicates a `call.dynamic`.
@@ -422,7 +422,7 @@ impl<N: Network> Process<N> {
                 for instruction in function.instructions() {
                     match instruction {
                         // Dynamic calls (`call.dynamic`) are always function calls and contribute to the call graph.
-                        Instruction::CallDynamic(..) => calls.push(instruction.clone()),
+                        Instruction::CallDynamic(..) => calls.push(instruction),
                         // Static calls (`call`) are included only if they invoke a function (not a closure).
                         // Closures are inlined and do not produce separate transitions.
                         Instruction::Call(call) => {
@@ -432,7 +432,7 @@ impl<N: Network> Process<N> {
                                 .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
                             // Check if this call invokes a function (as opposed to a closure).
                             match call.is_function_call(stack.as_ref()) {
-                                Ok(true) => calls.push(instruction.clone()),
+                                Ok(true) => calls.push(instruction),
                                 Ok(false) => { /* Closure call - skip */ }
                                 Err(e) => bail!("Failed to determine if call is a function call: {e}"),
                             }
@@ -468,7 +468,7 @@ impl<N: Network> Process<N> {
             )?;
 
             // Extract the `CallDynamic` instruction data, if this is a dynamic call.
-            let call_dynamic = match &call_instruction {
+            let call_dynamic = match call_instruction {
                 Instruction::CallDynamic(cd) => Some(cd),
                 Instruction::Call(..) => None,
                 // This should never occur, since `parent_function_calls` only contains `Call` and `CallDynamic`.
@@ -809,10 +809,10 @@ impl<N: Network> Process<N> {
                     .get(caller_pid)
                     .ok_or_else(|| anyhow!("Missing stack for program '{caller_pid}'"))?;
                 // Retrieve the function from the stack.
-                let caller_fname = stack.get_function(caller_fname)?;
+                let caller_function = stack.get_function_ref(caller_fname)?;
                 // Collect the children of the current transition.
                 let mut children = Vec::new();
-                for instruction in caller_fname.instructions() {
+                for instruction in caller_function.instructions() {
                     if let Instruction::Call(call) = instruction {
                         let (pid, fname) = match call.operator() {
                             snarkvm_synthesizer_program::CallOperator::Locator(locator) => {
@@ -821,7 +821,7 @@ impl<N: Network> Process<N> {
                             snarkvm_synthesizer_program::CallOperator::Resource(fname) => (caller_pid, fname),
                         };
                         // Add the child to the traversal stack, only if it is a call to a transition.
-                        if execution_stacks.get(pid).is_some_and(|stack| stack.get_function(fname).is_ok()) {
+                        if execution_stacks.get(pid).is_some_and(|stack| stack.get_function_ref(fname).is_ok()) {
                             children.push(TransitionMetadata::new(&mut counter, Some((*pid, *fname)), None));
                         }
                     }

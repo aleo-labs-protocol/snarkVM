@@ -63,6 +63,8 @@ impl<E: Environment, I: IntegerType> CastLossy<Group<E>> for Integer<E, I> {
 
 impl<E: Environment, I0: IntegerType, I1: IntegerType> CastLossy<Integer<E, I1>> for Integer<E, I0> {
     /// Casts an `Integer` to an `Integer` of a different type, with lossy truncation.
+    // Note: `IntegerType::BITS` is at most 128, so the cast to `usize` is lossless.
+    #[allow(clippy::cast_possible_truncation)]
     fn cast_lossy(&self) -> Integer<E, I1> {
         let mut bits_le = self.to_bits_le();
         // If the source type is smaller than the destination type, then perform the appropriate extension.

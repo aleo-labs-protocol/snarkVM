@@ -32,6 +32,8 @@ use std::ops::Neg;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bls12_377G2Parameters;
 
+impl crate::sealed::Sealed for Bls12_377G2Parameters {}
+
 impl ModelParameters for Bls12_377G2Parameters {
     type BaseField = Fq2;
     type ScalarField = Fr;

@@ -26,8 +26,7 @@ pub struct UniversalVerifier<E: PairingEngine> {
     pub vk: kzg10::VerifierKey<E>,
     /// Information required to enforce degree bounds. Each pair is of the form
     /// `(degree_bound, shifting_advice)`. Each pair is in the form
-    /// `(degree_bound, \beta^{max_degree - i} H),` where `H` is the generator
-    /// of G2, and `i` is of the form `2^k - 1` for `k` in `1` to
-    /// `log_2(max_degree)`.
+    /// `(d, \beta^{-(max_degree - d)} H)`, where `H` is the generator of G2,
+    /// and the degree bound `d` is of the form `2^k - 2`.
     pub prepared_negative_powers_of_beta_h: Arc<BTreeMap<usize, <E::G2Affine as PairingCurve>::Prepared>>,
 }

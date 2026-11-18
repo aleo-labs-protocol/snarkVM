@@ -36,8 +36,8 @@ use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use std::fs;
 use tracing::debug;
 
@@ -85,6 +85,8 @@ pub struct BlockDB<N: Network> {
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionDB<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for BlockDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockDB<N> {

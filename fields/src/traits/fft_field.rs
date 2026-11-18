@@ -16,6 +16,8 @@
 use crate::traits::{FftParameters, Field};
 
 /// The interface for fields that are able to be used in FFTs.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait FftField: Field + From<u128> + From<u64> + From<u32> + From<u16> + From<u8> {
     type FftParameters: FftParameters;
 

@@ -27,8 +27,8 @@ use console::{
 use snarkvm_ledger_block::{Deployment, DeploymentVersion, Fee, Transaction};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::{Certificate, VerifyingKey};
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;
@@ -45,7 +45,9 @@ use std::borrow::Cow;
 /// - **ConsensusVersion::V14**: V3 deployments (amendments) are introduced. Amendments update VKs for an existing
 ///   `(program ID, edition)` without changing the edition. Amendments must target the latest edition
 ///   and require at least one VK to differ from the existing deployment.
-pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait DeploymentStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
     type IDMap: for<'a> Map<'a, N::TransactionID, ProgramID<N>>;
     /// The mapping of `transaction ID` to `edition`.

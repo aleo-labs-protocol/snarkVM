@@ -20,6 +20,7 @@ use crate::{
     InclusionVersion,
     Process,
     Trace,
+    Translation,
     execution_cost,
     execution_cost_for_authorization,
 };
@@ -38,18 +39,18 @@ use snarkvm_ledger_store::{
     BlockStore,
     FinalizeStorage,
     FinalizeStore,
+    StorageMode,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};
 use snarkvm_synthesizer_snark::UniversalSRS;
 
-use aleo_std::StorageMode;
 use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
@@ -3556,6 +3557,51 @@ fn test_dynamic_record_inputs_are_checked_without_entry_data() {
         .authorize_requests::<CurrentAleo, _>(decoded.to_vec_deque().into(), rng)
         .unwrap();
     process.execute::<CurrentAleo, _>(decoded, rng).unwrap();
+}
+
+/// `Translation::prepare_verifier_inputs` takes a map of owned functions, and the verifier calls
+/// `prepare_verifier_inputs_internal` with a map of borrowed functions. Both return the same batches for an execution
+/// that translates a local record and an external record.
+#[test]
+fn test_prepare_verifier_inputs_matches_for_owned_and_borrowed_functions() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let (process, _, _, authorization) = authorize_dynamic_record_inputs(rng);
+    let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng)?;
+    let transitions = trace.transitions();
+
+    let stacks =
+        transitions.iter().map(|transition| process.get_stack(transition.program_id())).collect::<Result<Vec<_>>>()?;
+    let functions = transitions
+        .iter()
+        .zip_eq(&stacks)
+        .map(|(transition, stack)| stack.get_function_ref(transition.function_name()))
+        .collect::<Result<Vec<_>>>()?;
+    let owned = transitions
+        .iter()
+        .zip_eq(&functions)
+        .map(|(transition, function)| (*transition.id(), (transition, (*function).clone())))
+        .collect::<HashMap<_, _>>();
+    let borrowed = transitions
+        .iter()
+        .zip_eq(&functions)
+        .map(|(transition, function)| (*transition.id(), (transition, *function)))
+        .collect::<HashMap<_, _>>();
+    let get_verifying_key = |(program_id, record_name): &(ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>)| {
+        process.get_stack(program_id)?.get_verifying_key(record_name)
+    };
+
+    let from_owned = Translation::prepare_verifier_inputs(transitions.iter(), &owned, &get_verifying_key)?;
+    let from_borrowed =
+        Translation::prepare_verifier_inputs_internal(transitions.iter(), &borrowed, &get_verifying_key)?;
+
+    // One batch for the local `token.aleo/note` and one for the external `token.aleo/ticket`, one input each.
+    assert_eq!(from_owned.iter().map(|(_, inputs)| inputs.len()).collect::<Vec<_>>(), [1, 1]);
+    // The batches come from a `HashMap`, so their order differs between calls.
+    assert_eq!(from_owned.len(), from_borrowed.len());
+    for batch in &from_owned {
+        assert!(from_borrowed.contains(batch), "Missing batch from the borrowed map");
+    }
+    Ok(())
 }
 
 /// A dynamic callee request that takes a record other than the call's input, or the same record with the owner's

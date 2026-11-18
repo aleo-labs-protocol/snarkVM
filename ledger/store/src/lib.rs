@@ -35,10 +35,52 @@ pub use transaction::*;
 mod transition;
 pub use transition::*;
 
+pub use snarkvm_utilities::storage::{StorageMode, aleo_dir, aleo_ledger_dir, aleo_secondary_ledger_dir};
+
+/// Seals the storage traits. Only the storage backends of this crate implement them.
+///
+/// ```compile_fail,E0277
+/// use snarkvm_console::network::MainnetV0;
+/// use snarkvm_ledger_store::{
+///     BlockStore,
+///     ConsensusStorage,
+///     FinalizeStore,
+///     StorageMode,
+///     helpers::memory::{BlockMemory, ConsensusMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
+/// };
+///
+/// #[derive(Clone)]
+/// struct Wrapper(ConsensusMemory<MainnetV0>);
+///
+/// impl ConsensusStorage<MainnetV0> for Wrapper {
+///     type FinalizeStorage = FinalizeMemory<MainnetV0>;
+///     type BlockStorage = BlockMemory<MainnetV0>;
+///     type TransactionStorage = TransactionMemory<MainnetV0>;
+///     type TransitionStorage = TransitionMemory<MainnetV0>;
+///
+///     fn open_with_authority_retention<S: Into<StorageMode>>(
+///         storage: S,
+///         authority_retention: Option<u32>,
+///     ) -> anyhow::Result<Self> {
+///         ConsensusMemory::open_with_authority_retention(storage, authority_retention).map(Self)
+///     }
+///
+///     fn finalize_store(&self) -> &FinalizeStore<MainnetV0, Self::FinalizeStorage> {
+///         self.0.finalize_store()
+///     }
+///
+///     fn block_store(&self) -> &BlockStore<MainnetV0, Self::BlockStorage> {
+///         self.0.block_store()
+///     }
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
 use console::prelude::{Result, bail};
 
-/// A store this build will not open as asked, though nothing is wrong with it: its schema is newer
-/// than this build, or the consensus storage cannot prune authority data. Do not delete it.
+/// A store whose schema is newer than this build. Nothing is wrong with it, so do not delete it.
 #[derive(Debug)]
 pub struct IncompatibleStore(pub String);
 

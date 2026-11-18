@@ -19,15 +19,17 @@ use crate::{
 };
 use console::network::prelude::*;
 use snarkvm_ledger_committee::Committee;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 
 const ROUND_KEY: u8 = 0;
 
 /// A trait for committee storage.
-pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait CommitteeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// The mapping of `()` to `current round`.
     type CurrentRoundMap: for<'a> Map<'a, u8, u64>;
     /// The mapping of `round` to `height`.

@@ -39,8 +39,11 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 /// The interface for a generic field.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Field:
-    'static
+    crate::sealed::Sealed
+    + 'static
     + ToBits
     + ToBytes
     + FromBytes
