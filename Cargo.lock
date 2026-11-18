@@ -3606,7 +3606,6 @@ dependencies = [
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-utilities",
- "tempfile",
 ]
 
 [[package]]

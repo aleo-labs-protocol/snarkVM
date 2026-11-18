@@ -45,9 +45,7 @@ workspace = true
 
 [dependencies.snarkvm-utilities]
 workspace = true
+features = [ "test-helpers" ]
 
 [dependencies.anyhow]
-workspace = true
-
-[dev-dependencies.tempfile]
 workspace = true
