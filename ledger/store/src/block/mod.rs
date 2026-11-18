@@ -61,10 +61,7 @@ use locktick::{
 use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::{Arc, OnceLock},
 };
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
@@ -179,7 +176,6 @@ pub const AUTHORITY_RETENTION_BLOCKS: u32 = 500_000;
 /// the previous block's, so `MAX_GC_ROUNDS` rounds span at most `MAX_GC_ROUNDS / 2` blocks. A window of
 /// `MAX_GC_ROUNDS` blocks keeps twice that.
 pub fn min_authority_retention_blocks<N: Network>() -> u32 {
-    // `MAX_GC_ROUNDS` is 100.
     u32::try_from(BatchHeader::<N>::MAX_GC_ROUNDS).unwrap_or(u32::MAX)
 }
 
@@ -198,7 +194,7 @@ pub fn check_authority_retention_blocks<N: Network>(retention_blocks: u32) -> Re
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum BlockMetadataKey {
-    /// The authority-pruning watermark. See [`BlockStorage::authority_pruned_below`].
+    /// The authority-pruning watermark. See [`BlockStorage::speculative_authority_pruned_below`].
     AuthorityPruned = 0,
 }
 
@@ -344,7 +340,7 @@ fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(
     latest_height: u32,
     retention_blocks: u32,
 ) -> Result<()> {
-    let watermark = storage.authority_pruned_below()?;
+    let watermark = storage.speculative_authority_pruned_below()?;
     let floor = oldest_retained_authority_height(latest_height, retention_blocks);
     if let Some(below) = prune_authority_range(storage, watermark, floor)? {
         prune_certificate_indexes(storage, below)?;
@@ -388,7 +384,7 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(
 }
 
 /// Removes the certificate indexes of blocks below `below`, in one pass over the small index rows.
-/// It runs on every startup, since inserts leave these rows behind.
+/// It runs every time pruning is enabled, since inserts leave these rows behind.
 fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
     let flush = |batch: &[Field<N>]| -> Result<()> {
         if batch.is_empty() {
@@ -547,14 +543,14 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// been pruned. `None` if nothing has been pruned. The speculative read also sees a watermark
     /// queued in the pending batch, so only the pruning code uses it; readers use
     /// [`Self::confirmed_authority_pruned_below`].
-    fn authority_pruned_below(&self) -> Result<Option<u32>> {
+    fn speculative_authority_pruned_below(&self) -> Result<Option<u32>> {
         self.block_metadata_map()
             .get_speculative(&BlockMetadataKey::AuthorityPruned)?
             .map(|b| decode_watermark(&b))
             .transpose()
     }
 
-    /// Returns the committed authority-pruning watermark. See [`Self::authority_pruned_below`].
+    /// Returns the committed authority-pruning watermark. See [`Self::speculative_authority_pruned_below`].
     fn confirmed_authority_pruned_below(&self) -> Result<Option<u32>> {
         self.block_metadata_map()
             .get_confirmed(&BlockMetadataKey::AuthorityPruned)?
@@ -581,7 +577,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// the batch that deletes the data. The watermark never moves backwards.
     fn set_authority_pruned_below(&self, below: u32) -> Result<()> {
         debug_assert!(self.is_atomic_in_progress(), "The watermark must share the batch of the deletes");
-        if self.authority_pruned_below()?.is_some_and(|current| current >= below) {
+        if self.speculative_authority_pruned_below()?.is_some_and(|current| current >= below) {
             return Ok(());
         }
         self.block_metadata_map().insert(BlockMetadataKey::AuthorityPruned, below.to_le_bytes().to_vec())
@@ -808,7 +804,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             // that height. It is ahead only after blocks were removed, and then there is nothing to prune.
             if let Some(retention_blocks) = authority_retention
                 && let Some(expired_height) = block.height().checked_sub(retention_blocks)
-                && self.authority_pruned_below()?.unwrap_or(1) == expired_height
+                && self.speculative_authority_pruned_below()?.unwrap_or(1) == expired_height
             {
                 prune_authority_heights(self, expired_height..expired_height + 1)?;
                 if expired_height.is_multiple_of(AUTHORITY_PRUNING_LOG_INTERVAL) {
@@ -1200,7 +1196,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the (block height, round) of a certificate, or `None` if it is unknown. The index of a
-    /// block whose authority has been pruned can remain until the next startup removes it; it reads
+    /// block whose authority has been pruned can remain until pruning is next enabled; it reads
     /// as absent.
     fn get_certificate_index(&self, certificate_id: &Field<N>) -> Result<Option<(u32, u64)>> {
         let Some(index) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
@@ -1490,8 +1486,8 @@ pub struct BlockStore<N: Network, B: BlockStorage<N>> {
     prepared_block_tree: Arc<Mutex<Option<BlockTree<N>>>>,
     /// Cache of the most recent blocks.
     block_cache: Arc<Option<RwLock<BlockCache<N>>>>,
-    /// The authority retention window in blocks, or `0` while pruning is off.
-    authority_retention: Arc<AtomicU32>,
+    /// The authority retention window in blocks, set once pruning is enabled.
+    authority_retention: Arc<OnceLock<u32>>,
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
@@ -1542,7 +1538,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Whether pruning is on or not, reads report the authorities below the store's watermark as pruned.
     pub fn enable_authority_pruning(&self, retention_blocks: u32) -> Result<()> {
         check_authority_retention_blocks::<N>(retention_blocks)?;
-        ensure!(self.authority_retention().is_none(), "Authority pruning is already enabled");
+        ensure!(self.authority_retention.get().is_none(), "Authority pruning is already enabled");
         if aleo_secondary_ledger_dir(N::ID, self.storage.storage_mode()).is_some() {
             return Ok(());
         }
@@ -1551,13 +1547,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             prune_expired_authorities(&self.storage, latest_height, retention_blocks)
                 .context("Failed to prune expired authority data")?;
         }
-        self.authority_retention.store(retention_blocks, Ordering::SeqCst);
-        Ok(())
-    }
-
-    /// Returns the retention window if authority pruning is enabled.
-    fn authority_retention(&self) -> Option<u32> {
-        Some(self.authority_retention.load(Ordering::SeqCst)).filter(|&blocks| blocks > 0)
+        self.authority_retention.set(retention_blocks).map_err(|_| anyhow!("Authority pruning is already enabled"))
     }
 
     /// Stores the given block into storage.
@@ -1567,7 +1557,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // Prepare an updated Merkle tree containing the new block hash.
         let (updated_tree, state_root) = Self::updated_block_tree(&tree, block)?;
         // Insert the (state root, block height) pair.
-        self.storage.insert(state_root, block, self.authority_retention())?;
+        self.storage.insert(state_root, block, self.authority_retention.get().copied())?;
         // Update the block tree, preserving the previous Merkle tree allocation for performance.
         updated_tree.preserve_tree_allocation(&mut tree);
         *tree = updated_tree;
@@ -1591,7 +1581,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             Self::updated_block_tree(&tree, block)?
         };
         // Insert the (state root, block height) pair.
-        self.storage.insert(state_root, block, self.authority_retention())?;
+        self.storage.insert(state_root, block, self.authority_retention.get().copied())?;
         // Retain the tree until the caller installs or drops it.
         *prepared = Some(updated_tree);
         Ok(())
@@ -2046,7 +2036,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
     }
 
-    /// Prunes the authorities of the blocks below `below`, as startup pruning does. For tests.
+    /// Prunes the authorities of the blocks below `below`, as enabling pruning does. For tests.
     #[cfg(any(test, feature = "test"))]
     pub fn prune_authorities_below(&self, below: u32) -> Result<()> {
         ensure!(below > 1, "Nothing to prune below block {below}");
@@ -2345,7 +2335,7 @@ mod tests {
 
         // At height 101, height 1 expires while height 2 remains retained.
         block_store.insert(&blocks[101]).unwrap();
-        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(2));
+        assert_eq!(block_store.storage.speculative_authority_pruned_below().unwrap(), Some(2));
 
         assert!(block_store.get_block_authority(&genesis_hash).unwrap().is_some());
         assert!(block_store.get_block_authority(&expired_hash).unwrap().is_none());
@@ -2383,18 +2373,12 @@ mod tests {
         let blocks = sample_block_chain(NUM_BLOCKS, rng);
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
-        for block in blocks.iter().take(102) {
+        for block in &blocks {
             block_store.insert(block).unwrap();
         }
 
+        // Without pruning, height 1 outlives any window.
         let expired_hash = blocks[1].hash();
-
-        // At height 101, height 1 is still inside the retained window.
-        assert!(block_store.get_block_authority(&expired_hash).unwrap().is_some());
-
-        // Without pruning, height 1 is retained after height 102 is inserted.
-        block_store.insert(&blocks[102]).unwrap();
-
         assert!(block_store.get_block_authority(&expired_hash).unwrap().is_some());
         assert_eq!(block_store.get_block(&expired_hash).unwrap(), Some(blocks[1].clone()));
     }
@@ -2465,7 +2449,7 @@ mod tests {
         });
 
         assert!(result.is_err());
-        assert!(storage.authority_pruned_below().unwrap().is_none());
+        assert!(storage.speculative_authority_pruned_below().unwrap().is_none());
         assert!(storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
@@ -2473,9 +2457,9 @@ mod tests {
         assert!(!storage.authority_map().contains_key_confirmed(&candidate_hash).unwrap());
         assert!(!storage.reverse_state_root_map().contains_key_confirmed(&candidate_state_root).unwrap());
         storage.insert(candidate_state_root, candidate, Some(TEST_RETENTION)).unwrap();
-        assert!(storage.authority_pruned_below().unwrap().is_some());
+        assert!(storage.speculative_authority_pruned_below().unwrap().is_some());
         assert!(!storage.authority_map().contains_key_confirmed(&expired_hash).unwrap());
-        // The certificate row stays until the next startup, and reads as absent.
+        // The certificate row stays until pruning is next enabled, and reads as absent.
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
         assert!(!storage.contains_block_for_certificate(&certificate_id).unwrap());
         assert!(storage.id_map().contains_key_confirmed(&candidate.height()).unwrap());
@@ -2501,7 +2485,7 @@ mod tests {
         block_store.insert(&blocks[101]).unwrap();
         block_store.abort_atomic();
         block_store.unpause_atomic_writes::<true>().unwrap();
-        assert!(block_store.storage.authority_pruned_below().unwrap().is_none());
+        assert!(block_store.storage.speculative_authority_pruned_below().unwrap().is_none());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_some());
         assert!(block_store.contains_certificate(&certificate_id).unwrap());
 
@@ -2532,11 +2516,11 @@ mod tests {
         atomic_batch_scope!(storage, { prune_authority_heights(&storage, block_height..block_height + 1) }).unwrap();
         assert!(!storage.authority_map().contains_key_confirmed(&block_hash).unwrap());
         assert!(storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
-        assert_eq!(storage.authority_pruned_below().unwrap(), Some(block_height + 1));
+        assert_eq!(storage.speculative_authority_pruned_below().unwrap(), Some(block_height + 1));
 
         // A height without a hash is an error, and rolls back the batch.
         assert!(atomic_batch_scope!(storage, { prune_authority_heights(&storage, 1..4) }).is_err());
-        assert_eq!(storage.authority_pruned_below().unwrap(), Some(block_height + 1));
+        assert_eq!(storage.speculative_authority_pruned_below().unwrap(), Some(block_height + 1));
     }
 
     /// Removes the authority-pruning watermark, which the typed setter cannot move backwards.
@@ -2585,7 +2569,7 @@ mod tests {
         let genesis_index = Field::from_u32(u32::MAX - 1);
         storage.certificate_map().insert(genesis_index, (0, 1)).unwrap();
 
-        assert!(storage.authority_pruned_below().unwrap().is_none());
+        assert!(storage.speculative_authority_pruned_below().unwrap().is_none());
         prune_expired_authorities(&storage, latest_height, TEST_RETENTION).unwrap();
         for certificate_id in quorum_certificates.iter().chain(&expired_indexes) {
             assert!(!storage.certificate_map().contains_key_confirmed(certificate_id).unwrap());
@@ -2594,7 +2578,7 @@ mod tests {
         assert!(storage.certificate_map().contains_key_confirmed(&genesis_index).unwrap());
 
         let floor = oldest_retained_authority_height(latest_height, TEST_RETENTION);
-        assert_eq!(storage.authority_pruned_below().unwrap(), Some(floor));
+        assert_eq!(storage.speculative_authority_pruned_below().unwrap(), Some(floor));
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(0)).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&hash_at(floor - 1)).unwrap());
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(floor)).unwrap());
@@ -2602,7 +2586,7 @@ mod tests {
 
         // A second run finds an empty range.
         prune_expired_authorities(&storage, latest_height, TEST_RETENTION).unwrap();
-        assert_eq!(storage.authority_pruned_below().unwrap(), Some(floor));
+        assert_eq!(storage.speculative_authority_pruned_below().unwrap(), Some(floor));
         assert_eq!(storage.authority_map().len_confirmed(), TEST_RETENTION as usize + 1);
     }
 
@@ -2617,7 +2601,7 @@ mod tests {
         prune_expired_authorities(&storage, latest_height, TEST_RETENTION).unwrap();
 
         let floor = oldest_retained_authority_height(latest_height, TEST_RETENTION);
-        assert_eq!(storage.authority_pruned_below().unwrap(), Some(floor));
+        assert_eq!(storage.speculative_authority_pruned_below().unwrap(), Some(floor));
         // Heights below the watermark are not revisited.
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(resume - 1)).unwrap());
         assert!(!storage.authority_map().contains_key_confirmed(&hash_at(resume)).unwrap());
@@ -2706,7 +2690,7 @@ mod tests {
             bail!("Injected failure after pruning")
         });
         assert!(result.is_err());
-        assert_eq!(storage.authority_pruned_below().unwrap(), None);
+        assert_eq!(storage.speculative_authority_pruned_below().unwrap(), None);
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(1)).unwrap());
     }
 
@@ -2731,13 +2715,13 @@ mod tests {
         for block in blocks.iter().take(103) {
             block_store.insert(block).unwrap();
         }
-        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(3));
+        assert_eq!(block_store.storage.speculative_authority_pruned_below().unwrap(), Some(3));
 
         block_store.remove_last_n(1).unwrap();
         block_store.insert(&blocks[102]).unwrap();
-        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(3));
+        assert_eq!(block_store.storage.speculative_authority_pruned_below().unwrap(), Some(3));
         block_store.insert(&blocks[103]).unwrap();
-        assert_eq!(block_store.storage.authority_pruned_below().unwrap(), Some(4));
+        assert_eq!(block_store.storage.speculative_authority_pruned_below().unwrap(), Some(4));
         assert!(block_store.get_block_authority(&blocks[3].hash()).unwrap().is_none());
     }
 
@@ -2769,7 +2753,7 @@ mod tests {
 
         let error = block_store.enable_authority_pruning(TEST_RETENTION).unwrap_err();
         assert!(error.to_string().contains("Failed to prune expired authority data"), "{error}");
-        assert!(block_store.authority_retention().is_none());
+        assert!(block_store.authority_retention.get().is_none());
     }
 
     /// Ensures the retention window has a floor and pruning is enabled at most once.
@@ -2781,10 +2765,10 @@ mod tests {
 
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         assert!(block_store.enable_authority_pruning(TEST_RETENTION - 1).is_err());
-        assert!(block_store.authority_retention().is_none());
+        assert!(block_store.authority_retention.get().is_none());
         block_store.enable_authority_pruning(TEST_RETENTION).unwrap();
         assert!(block_store.enable_authority_pruning(TEST_RETENTION).is_err());
-        assert_eq!(block_store.authority_retention(), Some(TEST_RETENTION));
+        assert_eq!(block_store.authority_retention.get(), Some(&TEST_RETENTION));
     }
 
     /// Ensures startup pruning walks heights through `id_map` and leaves authorities it does not index.
@@ -2814,7 +2798,7 @@ mod tests {
             block_store.insert(block).unwrap();
         }
         prune_expired_authorities(&block_store.storage, 49, TEST_RETENTION).unwrap();
-        assert!(block_store.storage.authority_pruned_below().unwrap().is_none());
+        assert!(block_store.storage.speculative_authority_pruned_below().unwrap().is_none());
     }
 
     /// Ensures a pruned store opens with pruning off, reads its pruned authorities as pruned and stops
@@ -2916,7 +2900,7 @@ mod tests {
 
         let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode.clone()).unwrap();
         block_store.enable_authority_pruning(TEST_RETENTION).unwrap();
-        assert!(block_store.storage.authority_pruned_below().unwrap().is_some());
+        assert!(block_store.storage.speculative_authority_pruned_below().unwrap().is_some());
         assert!(block_store.get_block_authority(&blocks[1].hash()).unwrap().is_none());
         assert!(!block_store.contains_certificate(&certificate_id).unwrap());
         assert!(!block_store.storage.certificate_map().contains_key_confirmed(&certificate_id).unwrap());
