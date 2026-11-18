@@ -43,7 +43,7 @@ where
 
 // The rand 0.8 default implementation.
 pub trait UniformExt: Uniform {
-    /// Generates a random Option<Self> (50/50 chance of Some or None)
+    /// Generates a random `Option<Self>` (50/50 chance of Some or None)
     fn rand_option<R: Rng + ?Sized>(rng: &mut R) -> Option<Self> {
         if rng.random() { Some(Self::rand(rng)) } else { None }
     }
@@ -215,7 +215,7 @@ impl TryCryptoRng for FixedRng {}
 /// `rng.gen_range(low..=high)` for `usize` on 64-bit. It mustn't be modified
 /// to maintain backwards compatibility. It is a direct reimplementation of
 /// `sample_single_inclusive` for a concrete type (`usize`) an inlined widening multiply
-/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/uniform.rs.
+/// from <https://github.com/rust-random/rand/blob/937320c/src/distributions/uniform.rs>.
 pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -> usize {
     debug_assert!(low <= high);
 
@@ -243,7 +243,7 @@ pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -
 /// This impl reproduces rand 0.8's `slice.choose_weighted(rng, weight_fn)` for u16 weights.
 /// It mustn't be modified to maintain backwards compatibility. It is a direct, "collapsed"
 /// reimplementation of `WeightedIndex::new(weights).sample(rng)` specifically for `u16` weights
-/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/weighted_index.rs.
+/// from <https://github.com/rust-random/rand/blob/937320c/src/distributions/weighted_index.rs>.
 pub fn choose_weighted_legacy<'a, T, R: Rng>(slice: &'a [T], weight_fn: impl Fn(&T) -> u16, rng: &mut R) -> &'a T {
     // WeightedIndex::new.
     let mut iter = slice.iter();

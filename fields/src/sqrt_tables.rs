@@ -24,7 +24,7 @@ const MAX_WINDOWS: usize = 64usize.div_ceil(WINDOW as usize);
 /// Precomputed tables for square roots in a prime field `F`, with `p - 1 = 2^n * m` and `m` odd.
 ///
 /// Notation follows Sarkar, "Computing square roots faster than the Tonelli-Shanks/Bernstein
-/// algorithm", https://eprint.iacr.org/2020/1407.pdf, Section 2: `g` is the 2-adic root of unity,
+/// algorithm", <https://eprint.iacr.org/2020/1407.pdf>, Section 2: `g` is the 2-adic root of unity,
 /// `v = u^((m-1)/2)` and `x = u * v^2 = u^m`. For a square `u` there is an even `t` in `[0, 2^n)`
 /// with `x * g^t = 1`, and `sqrt` returns `u * v * g^(t/2)`, which is the root that Algorithm 1 returns.
 ///
