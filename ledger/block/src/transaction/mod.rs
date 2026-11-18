@@ -455,7 +455,7 @@ pub mod test_helpers {
 
     type CurrentNetwork = MainnetV0;
 
-    /// Samples a random deployment and the private key of its program owner.
+    /// Samples a random deployment and the private key that signs its program owner.
     pub(crate) fn sample_deployment_and_private_key(
         version: u8,
         edition: u16,
@@ -525,7 +525,7 @@ pub mod test_helpers {
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> Transaction<CurrentNetwork> {
-        // Sample a deployment and the private key of its program owner.
+        // Sample a deployment and the private key that signs its program owner.
         let (deployment, private_key) = sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
 
         // Compute the deployment ID.

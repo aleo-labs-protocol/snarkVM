@@ -307,18 +307,13 @@ pub fn sample_rejected_deployment(
     version: u8,
     edition: u16,
     has_translation_keys: bool,
-    is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
-    // Sample a deploy transaction.
-    let deployment =
-        match crate::sample_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng) {
-            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-            _ => unreachable!(),
-        };
+    // Sample a deployment and the private key that signs its program owner.
+    let (deployment, private_key) =
+        crate::sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
 
-    // Sample a new program owner.
-    let private_key = PrivateKey::new(rng).unwrap();
+    // Construct the program owner.
     let deployment_id = deployment.to_deployment_id().unwrap();
     let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
@@ -343,15 +338,12 @@ pub fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNet
 }
 
 /// Samples a rejected execution.
-pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
-    // Sample an execute transaction.
-    let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
-        Transaction::Execute(_, _, execution, _) => execution,
-        _ => unreachable!(),
-    };
+pub fn sample_rejected_execution(rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    // Sample an execution.
+    let execution = crate::sample_execution(rng, 0);
 
     // Return the rejected execution.
-    Rejected::new_execution(*execution)
+    Rejected::new_execution(execution)
 }
 
 /********************************************** Fee ***********************************************/
@@ -503,14 +495,13 @@ function large_transaction:
 
 /****************************************** Transaction *******************************************/
 
-/// Samples a random deployment transaction with a private or public fee.
-pub fn sample_deployment_transaction(
+/// Samples a random deployment and the private key that signs its program owner.
+fn sample_deployment_and_private_key(
     version: u8,
     edition: u16,
     has_translation_keys: bool,
-    is_fee_private: bool,
     rng: &mut TestRng,
-) -> Transaction<CurrentNetwork> {
+) -> (Deployment<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
     // Sample a private key.
     let private_key = PrivateKey::new(rng).unwrap();
     // Sample a deployment.
@@ -534,6 +525,21 @@ pub fn sample_deployment_transaction(
         }
         _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
     };
+
+    (deployment, private_key)
+}
+
+/// Samples a random deployment transaction with a private or public fee.
+pub fn sample_deployment_transaction(
+    version: u8,
+    edition: u16,
+    has_translation_keys: bool,
+    is_fee_private: bool,
+    rng: &mut TestRng,
+) -> Transaction<CurrentNetwork> {
+    // Sample a deployment and the private key that signs its program owner.
+    let (deployment, private_key) =
+        crate::sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
 
     // Compute the deployment ID.
     let deployment_id = deployment.to_deployment_id().unwrap();
