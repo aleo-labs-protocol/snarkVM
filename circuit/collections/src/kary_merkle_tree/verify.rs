@@ -228,6 +228,9 @@ mod tests {
                 let last_index = leaves.len().saturating_sub(1);
                 let indices = [0, leaves.len() / 2, last_index];
                 for (index, merkle_leaf) in leaves.iter().enumerate().filter(|(index, _)| indices.contains(index)) {
+                    // Name the tree and the leaf in the assertion messages.
+                    let case = format!("{i}-leaf tree, leaf {index}");
+
                     // Compute the Merkle path.
                     let merkle_path = merkle_tree.prove(index, merkle_leaf)?;
 
@@ -235,16 +238,17 @@ mod tests {
                     let path =
                         KaryMerklePath::<Circuit, $ph<Circuit>, $depth, $arity>::new(Mode::$mode, merkle_path.clone());
 
-                    assert_eq!(merkle_path, path.eject_value());
+                    assert_eq!(merkle_path, path.eject_value(), "{case} (path)");
                     // Initialize the Merkle root.
                     let root = <$ph<Circuit> as PathHash<Circuit>>::Hash::new(Mode::$mode, *merkle_tree.root());
                     // Initialize the Merkle leaf.
                     let leaf: Vec<_> = Inject::new(Mode::$mode, merkle_leaf.clone());
 
                     Circuit::scope(format!("Verify {}", Mode::$mode), || {
+                        let case = format!("{case}, correct root and leaf");
                         let candidate = path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &root, &leaf);
-                        assert!(candidate.eject_value());
-                        assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
+                        assert!(candidate.eject_value(), "{case} (candidate)");
+                        assert_scope!(case, $num_constants, $num_public, $num_private, $num_constraints);
                     });
                     Circuit::reset();
 
@@ -258,9 +262,10 @@ mod tests {
                         <$ph<Circuit> as PathHash<Circuit>>::Hash::new(Mode::$mode, Default::default());
 
                     Circuit::scope(format!("Verify (Incorrect Root) {}", Mode::$mode), || {
+                        let case = format!("{case}, incorrect root");
                         let candidate = path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &incorrect_root, &leaf);
-                        assert!(!candidate.eject_value());
-                        assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
+                        assert!(!candidate.eject_value(), "{case} (candidate)");
+                        assert_scope!(case, $num_constants, $num_public, $num_private, $num_constraints);
                     });
                     Circuit::reset();
 
@@ -273,9 +278,10 @@ mod tests {
                     incorrect_leaf[0] = Inject::new(Mode::$mode, incorrect_value);
 
                     Circuit::scope(format!("Verify (Incorrect Leaf) {}", Mode::$mode), || {
+                        let case = format!("{case}, incorrect leaf");
                         let candidate = path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &root, &incorrect_leaf);
-                        assert!(!candidate.eject_value());
-                        assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
+                        assert!(!candidate.eject_value(), "{case} (candidate)");
+                        assert_scope!(case, $num_constants, $num_public, $num_private, $num_constraints);
                     });
                     Circuit::reset();
                 }
