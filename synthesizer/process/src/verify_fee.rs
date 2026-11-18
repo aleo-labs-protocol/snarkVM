@@ -279,7 +279,7 @@ impl<N: Network> Process<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::prelude::TestRng;
+    use console::{network::MainnetV0, prelude::TestRng, types::Group};
     use snarkvm_ledger_block::Transaction;
 
     #[test]
@@ -335,5 +335,41 @@ mod tests {
                 },
             }
         }
+    }
+
+    /// Returns a proofless `credits.aleo` fee transition for `function_name` with the given inputs and outputs.
+    fn sample_proofless_fee(
+        function_name: &str,
+        inputs: Vec<Input<MainnetV0>>,
+        outputs: Vec<Output<MainnetV0>>,
+    ) -> Result<Fee<MainnetV0>> {
+        let transition = Transition::new(
+            ProgramID::from_str("credits.aleo")?,
+            Identifier::from_str(function_name)?,
+            inputs,
+            outputs,
+            Group::generator(),
+            Field::zero(),
+            Field::zero(),
+        )?;
+        Ok(Fee::from_unchecked(transition, Default::default(), None))
+    }
+
+    /// A fee that names a function `credits.aleo` does not define is rejected by the function lookup.
+    #[test]
+    fn test_verify_fee_rejects_undefined_function() -> Result<()> {
+        let fee = sample_proofless_fee("fee_missing", vec![], vec![])?;
+
+        // Construct a new process.
+        let process = Process::load()?;
+
+        // The function lookup rejects the fee before the fee-shape and proof checks.
+        let Err(error) =
+            process.verify_fee(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &fee, Field::zero())
+        else {
+            bail!("Expected `verify_fee` to reject the fee")
+        };
+        assert_eq!(error.to_string(), "Function 'credits.aleo/fee_missing' is not defined.");
+        Ok(())
     }
 }
