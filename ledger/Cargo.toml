@@ -122,7 +122,8 @@ test-helpers = [
   "snarkvm-ledger-test-helpers",
   "snarkvm-ledger-committee/test-helpers",
   "snarkvm-ledger-narwhal/test-helpers",
-  "dep:snarkvm-circuit"
+  "dep:snarkvm-circuit",
+  "snarkvm-console/test-helpers"
 ]
 test_targets = [
   "snarkvm-console/test_targets",

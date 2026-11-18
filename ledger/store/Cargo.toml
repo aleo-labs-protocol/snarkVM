@@ -134,3 +134,7 @@ workspace = true
 
 [dev-dependencies.tracing]
 workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test-helpers" ]

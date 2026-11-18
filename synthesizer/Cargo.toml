@@ -193,7 +193,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem" ]
+features = [ "filesystem", "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true

@@ -87,7 +87,7 @@ features = [ "derive" ]
 
 [dev-dependencies.snarkvm-utilities]
 path = "."
-features = [ "storage" ]
+features = [ "storage", "test-helpers" ]
 
 [dev-dependencies.criterion]
 workspace = true

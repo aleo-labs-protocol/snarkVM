@@ -28,6 +28,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-utilities]
 workspace = true
+features = [ "test-helpers" ]
 
 [dev-dependencies.anyhow]
 workspace = true

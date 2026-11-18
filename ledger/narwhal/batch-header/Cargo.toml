@@ -27,7 +27,7 @@ edition = "2024"
 default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers" ]
+test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
