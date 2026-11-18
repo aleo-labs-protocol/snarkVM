@@ -95,7 +95,7 @@ use snarkvm_algorithms::{
 };
 use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4, Poseidon8};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
-use snarkvm_console_types::{Field, Group, Scalar};
+use snarkvm_console_types::{Field, Group, GroupWindowTable, Scalar};
 use snarkvm_curves::PairingEngine;
 
 use snarkvm_algorithms::polycommit::kzg10::UniversalParams;
@@ -515,6 +515,14 @@ pub trait Network:
 
     /// Returns the scalar multiplication on the generator `G`.
     fn g_scalar_multiply(scalar: &Scalar<Self>) -> Group<Self>;
+
+    /// Returns the scalar multiplication on the generator `G`, for a public `scalar`.
+    ///
+    /// Its table lookups depend on the digits of `scalar`, so it takes only public scalars. Secret scalars keep
+    /// `g_scalar_multiply`.
+    fn g_scalar_multiply_public(scalar: &Scalar<Self>) -> Group<Self> {
+        Self::g_scalar_multiply(scalar)
+    }
 
     /// Returns the Varuna universal prover.
     fn varuna_universal_prover() -> &'static UniversalProver<Self::PairingCurve>;

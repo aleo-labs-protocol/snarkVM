@@ -149,6 +149,32 @@ impl<N: Network> BatchHeader<N> {
         previous_certificate_ids: IndexSet<Field<N>>,
         signature: Signature<N>,
     ) -> Result<Self> {
+        Self::from_internal(
+            author,
+            round,
+            timestamp,
+            committee_id,
+            transmission_ids,
+            previous_certificate_ids,
+            signature,
+            None,
+        )
+    }
+
+    /// Initializes a new batch header, verifying its signature through `cache` if there is one.
+    ///
+    /// The caller counts the verification in `cache` once the header passes its remaining checks.
+    #[allow(clippy::too_many_arguments)]
+    fn from_internal(
+        author: Address<N>,
+        round: u64,
+        timestamp: i64,
+        committee_id: Field<N>,
+        transmission_ids: IndexSet<TransmissionID<N>>,
+        previous_certificate_ids: IndexSet<Field<N>>,
+        signature: Signature<N>,
+        cache: Option<&ComputeKeyCache<N>>,
+    ) -> Result<Self> {
         match round {
             0 | 1 => {
                 // If the round is zero or one, then there should be no previous certificate IDs.
@@ -181,9 +207,11 @@ impl<N: Network> BatchHeader<N> {
             &previous_certificate_ids,
         )?;
         // Verify the signature.
-        if !signature.verify(&author, &[batch_id]) {
-            bail!("Invalid signature for the batch header");
-        }
+        let signer = match cache {
+            Some(cache) => cache.verify_and_recover_signer(&signature, &[batch_id]),
+            None => signature.verify_and_recover_signer(&[batch_id]),
+        };
+        ensure!(signer == Some(author), "Invalid signature for the batch header");
         // Return the batch header.
         Ok(Self::from_unchecked(
             author,

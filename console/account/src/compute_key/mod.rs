@@ -31,7 +31,7 @@ pub use cache::ComputeKeyCache;
 use crate::PrivateKey;
 
 use snarkvm_console_network::prelude::*;
-use snarkvm_console_types::{Address, Boolean, Field, Group, Scalar};
+use snarkvm_console_types::{Address, Boolean, Field, Group, GroupWindowTable, Scalar};
 
 static _COMPUTE_KEY_PREFIX: [u8; 10] = [109, 249, 98, 224, 36, 15, 213, 187, 79, 190]; // AComputeKey1
 
