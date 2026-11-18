@@ -403,6 +403,7 @@ pub mod test_helpers {
     /// Samples an accepted execute transaction at the given index.
     ///
     /// With a private fee, every call wraps the same transaction, so a `Transactions` holds at most one such sample.
+    /// `sample_execution_transaction_with_fee` can return that transaction too.
     pub(crate) fn sample_accepted_execute(
         index: u32,
         is_fee_private: bool,

@@ -416,7 +416,7 @@ pub mod test_helpers {
     type CurrentNetwork = MainnetV0;
     type CurrentAleo = snarkvm_circuit::network::AleoV0;
 
-    pub(crate) fn sample_deployment_v1(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    pub(crate) fn sample_deployment_v1(edition: u16, _rng: &mut TestRng) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
         let deployment = INSTANCE
             .get_or_init(|| {
@@ -439,10 +439,12 @@ function compute:
                 // Construct the process.
                 let process = Process::load().unwrap();
                 // Compute the deployment.
-                let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-                // Return the deployment.
-                // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-                Deployment::from_str(&deployment.to_string()).unwrap()
+                crate::test_helpers::sample_fixture("deployment-v1", &[], |rng| {
+                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                    // Return the deployment.
+                    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                    Deployment::from_str(&deployment.to_string()).unwrap()
+                })
             })
             .clone();
         // Create a new deployment with the desired edition.
@@ -483,10 +485,12 @@ function compute:
                 // Construct the process.
                 let process = Process::load().unwrap();
                 // Compute the deployment.
-                let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-                // Return the deployment.
-                // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-                Deployment::from_str(&deployment.to_string()).unwrap()
+                crate::test_helpers::sample_fixture("deployment-v2", &[], |rng| {
+                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                    // Return the deployment.
+                    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                    Deployment::from_str(&deployment.to_string()).unwrap()
+                })
             })
             .clone();
         // Create a new deployment with the desired edition.
@@ -531,10 +535,12 @@ function compute:
                 // Construct the process.
                 let process = Process::load().unwrap();
                 // Compute the deployment.
-                let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-                // Return the deployment.
-                // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-                Deployment::from_str(&deployment.to_string()).unwrap()
+                crate::test_helpers::sample_fixture("deployment-v2-translation-keys", &[], |rng| {
+                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                    // Return the deployment.
+                    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                    Deployment::from_str(&deployment.to_string()).unwrap()
+                })
             })
             .clone();
         // Create a new deployment with the desired edition.
