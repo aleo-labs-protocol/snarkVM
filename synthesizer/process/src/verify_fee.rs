@@ -66,22 +66,22 @@ impl<N: Network> Process<N> {
         // We only need to check that the variant type matches because we already check the hashes in
         // the `Input::verify` and `Output::verify` functions.
         ensure!(
-            function.input_types().len() == fee.inputs().len(),
+            function.inputs().len() == fee.inputs().len(),
             "The number of fee inputs is incorrect: expected {}, found {}",
-            function.input_types().len(),
+            function.inputs().len(),
             fee.inputs().len()
         );
-        for (function_input, fee_input) in function.input_types().iter().zip_eq(fee.inputs().iter()) {
-            ensure!(fee_input.is_type(function_input), "The fee input variants do not match");
+        for (function_input, fee_input) in function.inputs().iter().zip_eq(fee.inputs().iter()) {
+            ensure!(fee_input.is_type(function_input.value_type()), "The fee input variants do not match");
         }
         ensure!(
-            function.output_types().len() == fee.outputs().len(),
+            function.outputs().len() == fee.outputs().len(),
             "The number of fee outputs is incorrect: expected {}, found {}",
-            function.output_types().len(),
+            function.outputs().len(),
             fee.outputs().len()
         );
-        for (function_output, fee_output) in function.output_types().iter().zip_eq(fee.outputs().iter()) {
-            ensure!(fee_output.is_type(function_output), "The fee output variants do not match");
+        for (function_output, fee_output) in function.outputs().iter().zip_eq(fee.outputs().iter()) {
+            ensure!(fee_output.is_type(function_output.value_type()), "The fee output variants do not match");
         }
 
         // Retrieve the candidate deployment or execution ID.
