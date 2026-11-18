@@ -45,7 +45,7 @@ fn decrypt_first_record(
 fn test_closure_record_input() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // Define a program with a closure that reads a record field.
@@ -142,7 +142,7 @@ fn test_closure_record_output_rejected() {
 fn test_closure_external_record_input() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -248,7 +248,7 @@ fn test_closure_external_record_input() -> Result<()> {
 #[test]
 fn test_closure_external_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let parent_program = Program::from_str(
         r"
@@ -305,7 +305,7 @@ fn test_closure_external_record_output() -> Result<()> {
 fn test_closure_dynamic_record_input() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -435,7 +435,7 @@ fn test_closure_cannot_contain_call() {
 fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -529,7 +529,7 @@ fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> 
 #[test]
 fn test_pre_v15_closure_external_record_input_only_rejected_at_v15() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -619,7 +619,7 @@ fn test_pre_v15_closure_external_record_input_only_rejected_at_v15() -> Result<(
 #[test]
 fn test_pre_v15_closure_external_record_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -716,7 +716,7 @@ fn test_pre_v15_closure_external_record_output_rejected_at_v15_runtime() -> Resu
 #[test]
 fn test_mixed_closures_forbidden_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -819,7 +819,7 @@ fn test_mixed_closures_forbidden_output_rejected_at_v15_runtime() -> Result<()> 
 #[test]
 fn test_pre_v15_cross_program_closure_forbidden_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -935,7 +935,7 @@ fn test_pre_v15_cross_program_closure_forbidden_output_rejected_at_v15_runtime()
 #[test]
 fn test_closure_dynamic_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // A program whose closure casts a record to DynamicRecord and outputs it. This is
     // rejected at V15+ because `ensure_records_exist` assumes closures cannot extend
@@ -979,7 +979,7 @@ fn test_closure_dynamic_record_output() -> Result<()> {
 #[test]
 fn test_pre_v15_closure_external_record_output_works_before_v15() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -1058,7 +1058,7 @@ fn test_pre_v15_closure_external_record_output_works_before_v15() -> Result<()> 
 #[test]
 fn test_mixed_closures_deploy_rejected_at_v15() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Parent defines the record.
     let parent_program = Program::from_str(

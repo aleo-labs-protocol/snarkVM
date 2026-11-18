@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Synthesizer for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -33,7 +33,6 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-profiler = [ "snarkvm-algorithms/profiler" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -45,10 +44,8 @@ serial = [
   "snarkvm-synthesizer-program/serial",
   "snarkvm-synthesizer-snark/serial"
 ]
-setup = [ ]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
-timer = [ "aleo-std/timer" ]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-block/wasm",
@@ -134,10 +131,6 @@ workspace = true
 [dependencies.snarkvm-utilities]
 workspace = true
 
-[dependencies.aleo-std]
-workspace = true
-features = [ "storage" ]
-
 [dependencies.anyhow]
 workspace = true
 
@@ -181,7 +174,7 @@ features = [ "sync" ]
 workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 
 [dev-dependencies.anyhow]
 workspace = true
@@ -203,10 +196,6 @@ workspace = true
 features = [ "filesystem" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
-workspace = true
-features = [ "test-helpers" ]
-
-[dev-dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 features = [ "test-helpers" ]
 
@@ -233,10 +222,6 @@ version = "0.9"
 
 [dev-dependencies.tempfile]
 workspace = true
-
-[dev-dependencies.test-log]
-version = "0.2"
-features = [ "trace" ]
 
 [dev-dependencies.walkdir]
 version = "2"

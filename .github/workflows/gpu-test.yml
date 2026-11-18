@@ -31,6 +31,8 @@ on:
       # versions the kernels resolve to, including `blst` and `sppark`.
       - 'Cargo.toml'
       - 'Cargo.lock'
+      # Sets the target CPU of the host code.
+      - '.cargo/config.toml'
       - '.github/workflows/gpu-test.yml'
       # check-shared-refs runs only when these filters match, and other
       # workflows hold gh-actions refs too.
@@ -47,6 +49,7 @@ on:
       - 'algorithms/Cargo.toml'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - '.cargo/config.toml'
       - '.github/workflows/gpu-test.yml'
       - '.github/workflows/**'
       - '!**/*.md'
@@ -69,6 +72,8 @@ jobs:
   # runs code that holds this repository's OIDC token.
   check-shared-refs:
     runs-on: ubuntu-latest
+    # A push runs only in this repository; see ci.yml. The jobs below need this one.
+    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -95,24 +100,24 @@ jobs:
       (github.event.pull_request == null ||
        github.event.pull_request.head.repo.full_name == github.repository)
 
+  # start-runners is skipped for a fork pull request, whose box
+  # fork-pr-runners.yml starts (see ci.yml), and when check-shared-refs fails.
   gpu-test:
-    needs: start-runners
+    needs: [check-shared-refs, start-runners]
     # The runner stays registered while stopped, so the job queues rather than
     # fails.
     runs-on: [self-hosted, linux, x64, gpu]
     if: >-
-      github.event_name != 'pull_request_target' &&
-      (github.event.pull_request == null ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+      !cancelled() && github.event_name != 'pull_request_target' &&
+      github.repository == 'aleo-labs-protocol/snarkVM' &&
+      needs.check-shared-refs.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.start-runners.result)
 
     timeout-minutes: 120
     env:
       # sm_86 SASS runs on an A10G and an L4 (sm_89), so either runner takes
       # the job.
       CUDA_ARCH: sm_86
-      # `x86-64-v3` does not include ADX, and both runners have it, so the build
-      # checks that blst and this crate agree on ADX whatever the target says.
-      RUSTFLAGS: -C target-cpu=x86-64-v3
     steps:
       # Checks disk headroom and the GPU, and starts the peak-memory sampler
       # that gpu-runner-report reads.
@@ -135,6 +140,72 @@ jobs:
           done
           if [ -n "${NVCC+set}" ]; then nv="$NVCC"; else nv=nvcc; fi
           "$nv" --version | tail -2
+
+      - name: Test the packaged CUDA crate
+        run: |
+          set -euo pipefail
+          cargo package --locked --no-verify \
+            -p snarkvm-utilities-derives -p snarkvm-utilities \
+            -p snarkvm-fields -p snarkvm-curves -p snarkvm-algorithms-cuda
+          CUDA_PACKAGE_TEST_DIR=$(mktemp -d "$RUNNER_TEMP/cuda-package.XXXXXX")
+          export CUDA_PACKAGE_TEST_DIR
+          cargo metadata --locked --no-deps --format-version 1 > "$CUDA_PACKAGE_TEST_DIR/metadata.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import tarfile
+
+          probe = Path(os.environ["CUDA_PACKAGE_TEST_DIR"])
+          metadata = json.loads((probe / "metadata.json").read_text())
+          names = {"snarkvm-utilities-derives", "snarkvm-utilities", "snarkvm-fields",
+                   "snarkvm-curves", "snarkvm-algorithms-cuda"}
+          packages = [p for p in metadata["packages"] if p["name"] in names]
+          assert len(packages) == len(names)
+          patches = []
+          versions = {}
+          for package in packages:
+              name, version = package["name"], package["version"]
+              versions[name] = version
+              archive_path = Path(metadata["target_directory"]) / "package" / f"{name}-{version}.crate"
+              with tarfile.open(archive_path) as archive:
+                  for member in archive.getmembers():
+                      destination = (probe / member.name).resolve()
+                      assert destination.is_relative_to(probe)
+                      if member.isfile():
+                          destination.parent.mkdir(parents=True, exist_ok=True)
+                          destination.write_bytes(archive.extractfile(member).read())
+                      else:
+                          assert member.isdir()
+              patches.append(f'{name} = {{ path = {json.dumps(str(probe / f"{name}-{version}"))} }}')
+          dependencies = [f'{name} = "={versions[name]}"'
+                          for name in ("snarkvm-algorithms-cuda", "snarkvm-curves")]
+          (probe / "Cargo.toml").write_text(
+              '[package]\nname = "cuda-package-smoke"\nversion = "0.0.0"\nedition = "2024"\n'
+              '[workspace]\n[dependencies]\n' + "\n".join(dependencies) +
+              '\n[patch.crates-io]\n' + "\n".join(patches) + "\n")
+          shutil.copyfile("Cargo.lock", probe / "Cargo.lock")
+          (probe / "src").mkdir()
+          (probe / "src/main.rs").write_text('''
+          use snarkvm_algorithms_cuda::{NTT, NTTDirection, NTTInputOutputOrder, NTTType};
+          use snarkvm_curves::bls12_377::Fr;
+
+          const _: () = assert!(snarkvm_algorithms_cuda::HAVE_NVCC);
+
+          fn main() {
+              assert!(snarkvm_algorithms_cuda::device_count() > 0);
+              let original: Vec<Fr> = (0..1024u64).map(Fr::from).collect();
+              let mut values = original.clone();
+              for direction in [NTTDirection::Forward, NTTDirection::Inverse] {
+                  NTT(values.len(), &mut values, NTTInputOutputOrder::NN, direction, NTTType::Standard)
+                      .unwrap_or_else(|error| panic!("{error}"));
+              }
+              assert_eq!(values, original);
+          }
+          ''')
+          PY
+          cargo run --release --offline --manifest-path "$CUDA_PACKAGE_TEST_DIR/Cargo.toml"
 
       # `tee` keeps a log after GitHub expires the run log. Without `pipefail`
       # the step takes tee's exit status and a failing test reports green.

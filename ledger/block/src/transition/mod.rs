@@ -188,7 +188,7 @@ impl<N: Network> Transition<N> {
                         }
                         (InputID::Private(input_hash), Value::Plaintext(plaintext)) => {
                             // Construct the (console) input index as a field element.
-                            let index = Field::from_u16(index as u16);
+                            let index = Field::from_u16(u16::try_from(index)?);
                             // Compute the ciphertext, with the input view key as `Hash(function ID || tvk || index)`.
                             let ciphertext =
                                 plaintext.encrypt_symmetric(N::hash_psd4(&[function_id, *request.tvk(), index])?)?;
@@ -358,7 +358,7 @@ impl<N: Network> Transition<N> {
                         }
                         (InputID::Private(input_hash), Value::Plaintext(plaintext)) => {
                             // Construct the (console) input index as a field element.
-                            let index = Field::from_u16(index as u16);
+                            let index = Field::from_u16(u16::try_from(index)?);
                             // Compute the ciphertext, with the input view key as `Hash(function ID || tvk || index)`.
                             let ciphertext =
                                 plaintext.encrypt_symmetric(N::hash_psd4(&[function_id, *request.tvk(), index])?)?;

@@ -24,7 +24,6 @@ mod tests;
 
 use snarkvm_console_types::prelude::*;
 
-use aleo_std::prelude::*;
 use std::ops::Range;
 
 #[derive(Clone)]
@@ -63,7 +62,7 @@ impl<LH: LeafHash<Hash = PH::Hash>, PH: PathHash, const DEPTH: u8, const ARITY: 
     /// Initializes a new Merkle tree with the given leaves.
     #[inline]
     pub fn new(leaf_hasher: &LH, path_hasher: &PH, leaves: &[LH::Leaf]) -> Result<Self> {
-        let timer = timer!("MerkleTree::new");
+        let timer = timing_span!("MerkleTree::new").entered();
 
         // Ensure the Merkle tree depth is greater than 0.
         ensure!(DEPTH > 0, "Merkle tree depth must be greater than 0");
@@ -106,7 +105,7 @@ impl<LH: LeafHash<Hash = PH::Hash>, PH: PathHash, const DEPTH: u8, const ARITY: 
 
         // Compute and store each leaf hash.
         tree[num_nodes..num_nodes + leaves.len()].clone_from_slice(&leaf_hasher.hash_leaves(leaves)?);
-        lap!(timer, "Hashed {} leaves", leaves.len());
+        timing_event!("Hashed {} leaves", leaves.len());
 
         // Compute and store the hashes for each level, iterating from the penultimate level to the root level.
         let mut start_index = num_nodes;
@@ -135,7 +134,7 @@ impl<LH: LeafHash<Hash = PH::Hash>, PH: PathHash, const DEPTH: u8, const ARITY: 
             // Update the start index for the next level.
             start_index = start;
         }
-        lap!(timer, "Hashed {} levels", tree_depth);
+        timing_event!("Hashed {} levels", tree_depth);
 
         // Compute the root hash, by iterating from the root level up to `DEPTH`.
         let mut root_hash = tree[0];
@@ -149,9 +148,9 @@ impl<LH: LeafHash<Hash = PH::Hash>, PH: PathHash, const DEPTH: u8, const ARITY: 
 
             root_hash = path_hasher.hash_children(&input)?;
         }
-        lap!(timer, "Hashed {} padding levels", padding_depth);
+        timing_event!("Hashed {} padding levels", padding_depth);
 
-        finish!(timer);
+        drop(timer);
 
         Ok(Self {
             leaf_hasher: leaf_hasher.clone(),

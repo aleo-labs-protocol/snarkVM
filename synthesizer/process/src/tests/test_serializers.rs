@@ -167,7 +167,7 @@ function test_serde_equivalence:
                 None,
                 rng,
             );
-            let exec_is_ok = res_exec.is_ok() || <CurrentAleo as circuit::Environment>::is_satisfied();
+            let exec_is_ok = res_exec.is_ok() && <CurrentAleo as circuit::Environment>::is_satisfied();
 
             // Check that either all operations succeeded.
             assert!(

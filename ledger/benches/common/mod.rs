@@ -14,10 +14,9 @@
 // limitations under the License.
 
 use snarkvm_ledger::{Block, Ledger};
-use snarkvm_ledger_store::{BlockStorage, BlockStore, ConsensusStorage};
+use snarkvm_ledger_store::{BlockStorage, BlockStore, ConsensusStorage, StorageMode};
 use snarkvm_utilities::{FromBytes, PrettyUnwrap};
 
-use aleo_std::StorageMode;
 use anyhow::{Result, ensure};
 use std::{fs, path::PathBuf};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};

@@ -61,7 +61,7 @@ macro_rules! prepare_impl {
 
         for (transition_index, transition) in $transitions.iter().enumerate() {
             // Construct the transaction leaf.
-            let transaction_leaf = TransactionLeaf::new_execution(transition_index as u16, **transition.id());
+            let transaction_leaf = TransactionLeaf::new_execution(u16::try_from(transition_index)?, **transition.id());
 
             // Process the input tasks.
             match $self.input_tasks.get(transition.id()) {
