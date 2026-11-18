@@ -679,7 +679,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", t.program_id()))?;
                         let program = stack.program();
                         Ok(program
-                            .get_function(t.function_name())?
+                            .get_function_ref(t.function_name())?
                             .finalize_logic()
                             .map_or(0, FinalizeCore::num_writes))
                     })
