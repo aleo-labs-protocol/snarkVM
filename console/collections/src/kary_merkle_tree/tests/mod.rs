@@ -591,34 +591,42 @@ fn test_merkle_tree_depth_3_arity_3_sha3() -> Result<()> {
 
 #[test]
 fn test_kary_merkle_tree_size_is_within_bounds() -> Result<()> {
-    fn run_test<const DEPTH: u8, const ARITY: u8>(num_leaves: u128, rng: &mut TestRng) -> Result<()> {
-        type LH = BHP1024<CurrentEnvironment>;
-        type PH = BHP512<CurrentEnvironment>;
+    type LH = BHP1024<CurrentEnvironment>;
+    type PH = BHP512<CurrentEnvironment>;
 
+    fn run_test<const DEPTH: u8, const ARITY: u8>(
+        leaf_hasher: &LH,
+        path_hasher: &PH,
+        num_leaves: u128,
+        rng: &mut TestRng,
+    ) -> Result<()> {
         println!("Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
         // Check the Merkle tree.
         check_kary_merkle_tree::<LH, PH, DEPTH, ARITY>(
-            &LH::setup("AleoMerkleTreeTest0")?,
-            &PH::setup("AleoMerkleTreeTest1")?,
+            leaf_hasher,
+            path_hasher,
             &(0..num_leaves).map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le()).collect::<Vec<Vec<bool>>>(),
         )
     }
 
+    let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
+    let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
+
     let mut rng = TestRng::default();
 
     // Ensure DEPTH = 0 fails.
-    assert!(run_test::<0, 2>(0, &mut rng).is_err());
+    assert!(run_test::<0, 2>(&leaf_hasher, &path_hasher, 0, &mut rng).is_err());
     // Ensure ARITY = 1 fails.
-    assert!(run_test::<1, 1>(1, &mut rng).is_err());
+    assert!(run_test::<1, 1>(&leaf_hasher, &path_hasher, 1, &mut rng).is_err());
     // Ensure DEPTH = 2, ARITY = 2 with more than 4 leaves fails.
-    assert!(run_test::<2, 2>(4, &mut rng).is_ok());
+    assert!(run_test::<2, 2>(&leaf_hasher, &path_hasher, 4, &mut rng).is_ok());
     for num_leaves in 5..100 {
-        assert!(run_test::<2, 2>(num_leaves, &mut rng).is_err());
+        assert!(run_test::<2, 2>(&leaf_hasher, &path_hasher, num_leaves, &mut rng).is_err());
     }
     // Ensure DEPTH = 4, ARITY = 3 with more than 81 leaves fails.
-    assert!(run_test::<4, 3>(81, &mut rng).is_ok());
+    assert!(run_test::<4, 3>(&leaf_hasher, &path_hasher, 81, &mut rng).is_ok());
     for num_leaves in 82..1000 {
-        assert!(run_test::<4, 3>(num_leaves, &mut rng).is_err());
+        assert!(run_test::<4, 3>(&leaf_hasher, &path_hasher, num_leaves, &mut rng).is_err());
     }
     Ok(())
 }
