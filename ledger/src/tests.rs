@@ -4004,6 +4004,37 @@ fn test_pruned_authority_reads() {
     assert!(ledger.get_authority(below).is_ok());
 }
 
+/// Blocks added through the VM prune the authority that leaves the window, once pruning is enabled on
+/// the ledger's block store.
+#[cfg(feature = "test")]
+#[test]
+fn test_pruned_authority_through_the_vm() {
+    const WINDOW: u32 = 100;
+    let rng = &mut TestRng::default();
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    let block_store = ledger.vm().block_store();
+    block_store.enable_authority_pruning(WINDOW).unwrap();
+
+    let mut advance = || {
+        let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    };
+    while ledger.latest_height() < WINDOW {
+        advance();
+    }
+    assert_eq!(block_store.authority_pruned_below().unwrap(), None);
+    // The block at height `WINDOW + 1` expires block 1.
+    advance();
+    assert_eq!(block_store.authority_pruned_below().unwrap(), Some(2));
+    advance();
+    assert_eq!(block_store.authority_pruned_below().unwrap(), Some(3));
+
+    let error = ledger.get_authority(2).unwrap_err().to_string();
+    assert!(error.contains("has been pruned"), "{error}");
+    assert!(ledger.get_authority(3).is_ok());
+    assert!(ledger.get_authority(0).is_ok());
+}
+
 /// Ensures only a store that another build can open loses the `snarkos clean` advice.
 #[test]
 fn test_store_open_error_advice() {

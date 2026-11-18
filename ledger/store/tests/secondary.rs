@@ -67,6 +67,12 @@ fn test_secondary_catches_up_with_primary() {
     let block_store = BlockStore::<CurrentNetwork, BlockDB<_>>::open(storage_mode).unwrap();
     assert_eq!(block_store.max_height(), None);
 
+    // A secondary instance records the pruning window, once, but leaves pruning to its primary.
+    let window = snarkvm_ledger_store::min_authority_retention_blocks::<CurrentNetwork>();
+    block_store.enable_authority_pruning(window).unwrap();
+    assert_eq!(block_store.authority_retention(), Some(window));
+    assert!(block_store.enable_authority_pruning(window).is_err());
+
     // Insert a block using the primary instance.
     run_primary(&primary_path, "insert");
 

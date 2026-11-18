@@ -295,6 +295,10 @@ impl<
     fn unpause_atomic_writes<const DISCARD_BATCH: bool>(&self) -> Result<()> {
         self.database.unpause_atomic_writes::<DISCARD_BATCH>()
     }
+
+    fn are_atomic_writes_paused(&self) -> bool {
+        self.database.are_atomic_writes_paused()
+    }
 }
 
 impl<

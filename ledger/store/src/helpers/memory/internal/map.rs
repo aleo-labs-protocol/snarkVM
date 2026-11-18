@@ -267,6 +267,11 @@ impl<
         // No effect.
         Ok(())
     }
+
+    fn are_atomic_writes_paused(&self) -> bool {
+        // Pausing has no effect.
+        false
+    }
 }
 
 impl<

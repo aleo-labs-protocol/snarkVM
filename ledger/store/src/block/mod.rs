@@ -194,7 +194,7 @@ pub fn check_authority_retention_blocks<N: Network>(retention_blocks: u32) -> Re
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum BlockMetadataKey {
-    /// The authority-pruning watermark. See [`BlockStorage::speculative_authority_pruned_below`].
+    /// The authority-pruning watermark. See [`BlockStore::authority_pruned_below`].
     AuthorityPruned = 0,
 }
 
@@ -758,6 +758,11 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.transaction_store().finish_atomic()
     }
 
+    /// Returns `true` while atomic writes are paused.
+    fn are_atomic_writes_paused(&self) -> bool {
+        self.state_root_map().are_atomic_writes_paused()
+    }
+
     /// Pauses atomic writes.
     fn pause_atomic_writes(&self) -> Result<()> {
         // Since this applies to the entire storage, any map can be used; this
@@ -801,7 +806,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
         atomic_batch_scope!(self, {
             // Prune the authority that expires with this block. Enabling pruning leaves the watermark at
-            // that height. It is ahead only after blocks were removed, and then there is nothing to prune.
+            // that height. It is ahead after blocks were removed or a restart with a larger window; then
+            // inserts prune nothing until the window reaches it.
             if let Some(retention_blocks) = authority_retention
                 && let Some(expired_height) = block.height().checked_sub(retention_blocks)
                 && self.speculative_authority_pruned_below()?.unwrap_or(1) == expired_height
@@ -1531,23 +1537,42 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 
     /// Prunes the authority data older than the last `retention_blocks` blocks, then keeps pruning as
-    /// blocks are inserted. Call it once, after opening the store and before inserting blocks. A
-    /// failure here leaves pruning off. A secondary instance does not prune: its primary does, and the
-    /// secondary sees the result when it catches up.
+    /// blocks are inserted. Call it once, at startup: it blocks inserts and block-tree reads while it
+    /// runs, and fails while a write batch is open or paused. A failure leaves pruning off. A secondary
+    /// instance records the window but does not prune: its primary does, and the secondary sees the
+    /// result when it catches up.
     ///
     /// Whether pruning is on or not, reads report the authorities below the store's watermark as pruned.
     pub fn enable_authority_pruning(&self, retention_blocks: u32) -> Result<()> {
         check_authority_retention_blocks::<N>(retention_blocks)?;
+        // Hold the locks the inserts take, in their order, so no block goes in meanwhile.
+        let prepared = self.prepared_block_tree.lock();
+        let tree = self.tree.write();
         ensure!(self.authority_retention.get().is_none(), "Authority pruning is already enabled");
         if aleo_secondary_ledger_dir(N::ID, self.storage.storage_mode()).is_some() {
-            return Ok(());
+            info!("A secondary instance does not prune authority data; its primary does");
+            return self.set_authority_retention(retention_blocks);
         }
+        let batch_open = || self.storage.is_atomic_in_progress() || self.storage.are_atomic_writes_paused();
+        ensure!(prepared.is_none() && !batch_open(), "Cannot enable authority pruning during a block write");
         // Inserts prune only the height that expires with them, so the watermark must be caught up here.
-        if let Some(latest_height) = self.max_height() {
+        if let Some(latest_height) = u32::try_from(tree.number_of_leaves())?.checked_sub(1) {
             prune_expired_authorities(&self.storage, latest_height, retention_blocks)
                 .context("Failed to prune expired authority data")?;
         }
+        // A pause that began meanwhile holds some of the pruning, and may discard it.
+        ensure!(!batch_open(), "A block write started while authority pruning was being enabled");
+        self.set_authority_retention(retention_blocks)
+    }
+
+    /// Records the retention window, which turns on insert-time pruning.
+    fn set_authority_retention(&self, retention_blocks: u32) -> Result<()> {
         self.authority_retention.set(retention_blocks).map_err(|_| anyhow!("Authority pruning is already enabled"))
+    }
+
+    /// Returns the retention window if authority pruning is enabled.
+    pub fn authority_retention(&self) -> Option<u32> {
+        self.authority_retention.get().copied()
     }
 
     /// Stores the given block into storage.
@@ -1557,7 +1582,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // Prepare an updated Merkle tree containing the new block hash.
         let (updated_tree, state_root) = Self::updated_block_tree(&tree, block)?;
         // Insert the (state root, block height) pair.
-        self.storage.insert(state_root, block, self.authority_retention.get().copied())?;
+        self.storage.insert(state_root, block, self.authority_retention())?;
         // Update the block tree, preserving the previous Merkle tree allocation for performance.
         updated_tree.preserve_tree_allocation(&mut tree);
         *tree = updated_tree;
@@ -1581,7 +1606,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             Self::updated_block_tree(&tree, block)?
         };
         // Insert the (state root, block height) pair.
-        self.storage.insert(state_root, block, self.authority_retention.get().copied())?;
+        self.storage.insert(state_root, block, self.authority_retention())?;
         // Retain the tree until the caller installs or drops it.
         *prepared = Some(updated_tree);
         Ok(())
@@ -2753,7 +2778,7 @@ mod tests {
 
         let error = block_store.enable_authority_pruning(TEST_RETENTION).unwrap_err();
         assert!(error.to_string().contains("Failed to prune expired authority data"), "{error}");
-        assert!(block_store.authority_retention.get().is_none());
+        assert!(block_store.authority_retention().is_none());
     }
 
     /// Ensures the retention window has a floor and pruning is enabled at most once.
@@ -2765,10 +2790,10 @@ mod tests {
 
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         assert!(block_store.enable_authority_pruning(TEST_RETENTION - 1).is_err());
-        assert!(block_store.authority_retention.get().is_none());
+        assert!(block_store.authority_retention().is_none());
         block_store.enable_authority_pruning(TEST_RETENTION).unwrap();
         assert!(block_store.enable_authority_pruning(TEST_RETENTION).is_err());
-        assert_eq!(block_store.authority_retention.get(), Some(&TEST_RETENTION));
+        assert_eq!(block_store.authority_retention(), Some(TEST_RETENTION));
     }
 
     /// Ensures startup pruning walks heights through `id_map` and leaves authorities it does not index.
@@ -2799,6 +2824,19 @@ mod tests {
         }
         prune_expired_authorities(&block_store.storage, 49, TEST_RETENTION).unwrap();
         assert!(block_store.storage.speculative_authority_pruned_below().unwrap().is_none());
+    }
+
+    /// Ensures pruning is not enabled while block writes are paused.
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_enable_refused_while_writes_paused() {
+        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
+        let block_store =
+            BlockStore::<CurrentNetwork, BlockDB<_>>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
+        block_store.pause_atomic_writes().unwrap();
+        assert!(block_store.enable_authority_pruning(TEST_RETENTION).is_err());
+        block_store.unpause_atomic_writes::<true>().unwrap();
+        block_store.enable_authority_pruning(TEST_RETENTION).unwrap();
     }
 
     /// Ensures a pruned store opens with pruning off, reads its pruned authorities as pruned and stops

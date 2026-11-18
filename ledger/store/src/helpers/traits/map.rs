@@ -87,6 +87,11 @@ pub trait Map<
     /// behavior of atomic write batches that was altered by calling `pause_atomic_writes`.
     ///
     fn unpause_atomic_writes<const DISCARD_BATCH: bool>(&self) -> Result<()>;
+
+    ///
+    /// Returns `true` while atomic writes are paused.
+    ///
+    fn are_atomic_writes_paused(&self) -> bool;
 }
 
 /// A trait representing map-like storage operations with read-only capabilities.
