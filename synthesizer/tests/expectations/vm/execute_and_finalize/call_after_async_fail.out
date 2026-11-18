@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program parent.aleo: Process deployment failed: The ''call'' can only be invoked before an ''async'' instruction'
-outputs: []

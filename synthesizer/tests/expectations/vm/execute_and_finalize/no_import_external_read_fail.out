@@ -1,3 +1,0 @@
-errors:
-- 'Failed to run `VM::deploy for program relay.aleo: Process deployment failed: External program ''registry.aleo'' is not imported by ''relay.aleo''.'
-outputs: []

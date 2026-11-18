@@ -1,6 +1,0 @@
-errors: []
-outputs:
-- verified: true
-  speculate: the execution was accepted
-  add_next_block: succeeded.
-- execute: 'Process execution failed: Stack execution failed: Instruction (call child.aleo/foo into r0 r1;) at index 0 failed: Failed to evaluate: Call failed: Substack evaluation failed: Instruction (assert.eq self.caller self.signer;) at index 0 failed: ''assert.eq'' failed: ''aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy'' is not equal to ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' (should be equal)'
