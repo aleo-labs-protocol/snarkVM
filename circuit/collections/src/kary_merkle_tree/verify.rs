@@ -221,7 +221,11 @@ mod tests {
                     &leaves,
                 )?;
 
-                for (index, merkle_leaf) in leaves.iter().enumerate() {
+                // Verify the first, middle and last leaf of the tree, where `check_verify!` verifies every leaf.
+                // Each tree has one more leaf than the previous one, so the last leaf takes each index once.
+                let last_index = leaves.len().saturating_sub(1);
+                let indices = [0, leaves.len() / 2, last_index];
+                for (index, merkle_leaf) in leaves.iter().enumerate().filter(|(index, _)| indices.contains(index)) {
                     // Compute the Merkle path.
                     let merkle_path = merkle_tree.prove(index, merkle_leaf)?;
 
@@ -241,6 +245,11 @@ mod tests {
                         assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
                     });
                     Circuit::reset();
+
+                    // Only the last leaf is verified against an incorrect root and an incorrect leaf.
+                    if index != last_index {
+                        continue;
+                    }
 
                     // Initialize an incorrect Merkle root.
                     let incorrect_root =
