@@ -15,6 +15,11 @@
 
 use super::*;
 
+impl<N: Network, A: circuit::Aleo<Network = N>> snarkvm_synthesizer_program::sealed_execution::Sealed
+    for Registers<N, A>
+{
+}
+
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers<N, A> {
     /// Returns the transition signer.
     #[inline]

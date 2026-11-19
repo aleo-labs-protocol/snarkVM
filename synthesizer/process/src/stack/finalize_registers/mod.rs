@@ -76,6 +76,8 @@ impl<N: Network> FinalizeRegisters<N> {
     }
 }
 
+impl<N: Network> snarkvm_synthesizer_program::sealed_execution::Sealed for FinalizeRegisters<N> {}
+
 impl<N: Network> FinalizeRegistersState<N> for FinalizeRegisters<N> {
     /// Returns the global state for the finalize scope.
     #[inline]

@@ -65,6 +65,14 @@ pub use mapping::*;
 mod traits;
 pub use traits::*;
 
+/// Seals [`StackTrait`], [`RegistersTrait`], [`RegistersSigner`], [`RegistersCircuit`],
+/// [`FinalizeRegistersState`] and [`FinalizeStoreTrait`]. `snarkvm-synthesizer-process` and
+/// `snarkvm-ledger-store` implement it, so it is public, but it is not part of the API.
+#[doc(hidden)]
+pub mod sealed_execution {
+    pub trait Sealed {}
+}
+
 mod bytes;
 mod parse;
 mod serialize;

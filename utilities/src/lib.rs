@@ -76,6 +76,25 @@ pub use errors::*;
 /// Use old name for backward-compatibility.
 pub use errors::io_error as error;
 
+/// Seals [`PrettyUnwrap`]. Only this crate implements it.
+///
+/// ```compile_fail,E0277
+/// use snarkvm_utilities::PrettyUnwrap;
+///
+/// struct Wrapper;
+///
+/// impl PrettyUnwrap for Wrapper {
+///     type Inner = ();
+///
+///     fn pretty_unwrap(self) -> Self::Inner {}
+///
+///     fn pretty_expect<S: ToString>(self, _: S) -> Self::Inner {}
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// The `tracing` crate, for the expansion of `timing_span!` and `timing_event!`.
 #[doc(hidden)]
 pub use tracing;

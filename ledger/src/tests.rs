@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod pending_blocks;
+
 use crate::{
     Ledger,
     RecordsFilter,
@@ -3487,7 +3489,7 @@ mod valid_solutions {
 #[test]
 fn test_forged_block_subdags() -> Result<()> {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new_with_quorum_size(10, rng)?;
+    let mut chain_builder = TestChainBuilder::new()?;
     // Construct 3 quorum blocks.
     let mut quorum_blocks = chain_builder.generate_blocks(3, rng)?;
 

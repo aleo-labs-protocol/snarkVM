@@ -52,7 +52,7 @@ on every event.
 | `test-merge (ledger-merge)` | `cpu` | merge | 90 | the ignored `valid_solutions` tests of `snarkvm-ledger`; the ignored tests of `-ledger-store`; `-ledger-block` | `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
 | `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
 | `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
-| `test-merge (synthesizer-release)` | `cpu` | merge | 90 | `snarkvm-synthesizer` lib and bins with `test`, release | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
+| `test-merge (synthesizer-test)` | `cpu` | merge | 90 | `snarkvm-synthesizer` lib and bins with `test` | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
 | `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
 | `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests with `test,dev-print` | `synthesizer-integration` |
 | `test-merge (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
