@@ -1238,6 +1238,28 @@ mod cuda_tests {
         assert_eq!(open(device), want);
         assert!(stats().device_reads >= reads + 2, "the device-only terms were read");
     }
+
+    /// A quotient of zero commits to zero with every coordinate written.
+    #[test]
+    fn accumulate_open_of_zero_is_zero() {
+        use snarkvm_curves::{ProjectiveCurve, bls12_377::G1Projective};
+
+        let rng = &mut TestRng::default();
+        let out_len = 1 << 11;
+        let poly = vec![Fr::zero(); out_len];
+        let bases =
+            G1Projective::batch_normalization_into_affine((1..out_len).map(|_| G1Projective::rand(rng)).collect());
+        let none = snarkvm_algorithms_cuda::DeviceCopy::default();
+        let sum = snarkvm_algorithms_cuda::accumulate_open::<_, G1Projective, _>(
+            out_len,
+            &[(Fr::rand(rng), &poly, &none)],
+            &Fr::rand(rng),
+            &bases,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        // `==` reads only `z` of a zero point, while `Debug` prints every coordinate.
+        assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()));
+    }
 }
 
 #[cfg(test)]

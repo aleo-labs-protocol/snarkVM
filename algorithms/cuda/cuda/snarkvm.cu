@@ -1105,6 +1105,13 @@ public:
             out->inf();
             ret = RustError{cudaErrorUnknown};
         }
+        // A sum at infinity has only Z written, and Rust reads all three
+        // coordinates.
+        if (ret.code == cudaSuccess && out->is_inf()) {
+            fp_t zero;
+            zero.zero();
+            *out = point_t{zero, fp_t::one(), zero};
+        }
         return ret;
     }
 
