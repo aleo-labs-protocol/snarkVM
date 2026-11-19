@@ -345,7 +345,22 @@ impl Database for RocksDB {
                     options.set_statistics_level(rocksdb::statistics::StatsLevel::ExceptHistogramOrTimers);
                 }
 
-                Arc::new(rocksdb::DB::open(&options, &primary_path)?)
+                // Measurement build: rewrite every table file once, so that all of them carry filters.
+                options.set_max_background_jobs(16);
+                options.set_max_subcompactions(8);
+                let rocksdb = Arc::new(rocksdb::DB::open(&options, &primary_path)?);
+                let marker = std::path::Path::new(&primary_path).join("FULL_COMPACTION_DONE");
+                if !marker.exists() {
+                    let timer = std::time::Instant::now();
+                    tracing::info!("Compacting the whole database (measurement build)...");
+                    let mut compact_options = rocksdb::CompactOptions::default();
+                    compact_options.set_bottommost_level_compaction(rocksdb::BottommostLevelCompaction::Force);
+                    compact_options.set_exclusive_manual_compaction(false);
+                    rocksdb.compact_range_opt(None::<&[u8]>, None::<&[u8]>, &compact_options);
+                    std::fs::write(&marker, b"")?;
+                    tracing::info!("Compacted the whole database in {:?}", timer.elapsed());
+                }
+                rocksdb
             };
             // Refuse a database written by a newer build before any map is opened.
             // A secondary instance is read-only, so the primary is the one that stamps `V0`.
