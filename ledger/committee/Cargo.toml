@@ -28,7 +28,7 @@ default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
-prop-tests = [ "dep:rand", "dep:rand_chacha", "test-strategy", "dep:anyhow", "dep:proptest" ]
+prop-tests = [ "dep:rand", "dep:rand_chacha", "dep:anyhow", "dep:proptest" ]
 test-helpers = [ "prop-tests", "rand_distr", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]
@@ -72,10 +72,6 @@ optional = true
 
 [dependencies.rayon]
 workspace = true
-
-[dependencies.test-strategy]
-version = "0.4.5"
-optional = true
 
 [dev-dependencies.bincode]
 workspace = true
