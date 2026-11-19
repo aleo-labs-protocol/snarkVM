@@ -1,0 +1,52 @@
+# Circuit shape of `to_lower_bits_be` for each operand mode and a fixed set of field elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-field --test snapshots
+field.constant k=8 | * : 8 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=8 | 2^8 : halt
+field.constant k=8 | -1 : halt
+field.public k=8 | _ : 0 0 8 9 17/9/8 private 90b985aa4b92454f
+field.private k=8 | _ : 0 0 8 9 17/9/8 private 237ff8471d1ec939
+field.constant k=16 | * : 16 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=16 | 2^16 : halt
+field.constant k=16 | -1 : halt
+field.public k=16 | _ : 0 0 16 17 33/17/16 private 6bb7fece06b6a27e
+field.private k=16 | _ : 0 0 16 17 33/17/16 private 906a97ed6773230a
+field.constant k=32 | * : 32 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=32 | 2^32 : halt
+field.constant k=32 | -1 : halt
+field.public k=32 | _ : 0 0 32 33 65/33/32 private e7e0ebcb980f5374
+field.private k=32 | _ : 0 0 32 33 65/33/32 private 95dad77aae6cad69
+field.constant k=64 | * : 64 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=64 | 2^64 : halt
+field.constant k=64 | -1 : halt
+field.public k=64 | _ : 0 0 64 65 129/65/64 private 71543a5c4465cd03
+field.private k=64 | _ : 0 0 64 65 129/65/64 private 499b032850241df8
+field.constant k=128 | * : 128 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=128 | 2^128 : halt
+field.constant k=128 | -1 : halt
+field.public k=128 | _ : 0 0 128 129 257/129/128 private 1569829be40a7851
+field.private k=128 | _ : 0 0 128 129 257/129/128 private e7641491fe9240f8
+field.constant k=251 | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=251 | 2^251 : halt
+field.constant k=251 | -1 : halt
+field.public k=251 | _ : 0 0 251 252 503/252/251 private 8fbff76bdd2acb9a
+field.private k=251 | _ : 0 0 251 252 503/252/251 private 40aaba4a862cc4d3
+field.constant k=252 | * : 252 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=252 | 2^252 : halt
+field.constant k=252 | -1 : halt
+field.public k=252 | _ : 0 0 252 253 505/253/252 private addc6c65d9e95657
+field.private k=252 | _ : 0 0 252 253 505/253/252 private 0c3e2444e926a6a7
+field.constant k=253 | * : 253 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.public k=253 | _ : 0 0 505 507 926/672/671 private 60cd0c491c1a2783
+field.private k=253 | _ : 0 0 505 507 926/672/671 private 8a7cec7ea8f92b85
+field.constant k=254 | * : halt
+field.public k=254 | _ : halt
+field.private k=254 | _ : halt
