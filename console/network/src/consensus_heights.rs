@@ -24,6 +24,10 @@ use std::io;
 ///
 /// At an upgrade height, snarkOS nodes stop communicating with nodes of a lower
 /// `ConsensusVersion` by default. A height of `u32::MAX` is an unscheduled stub and is not an upgrade.
+///
+/// Minor releases add a variant for each new consensus version, and snarkVM does not treat this as a
+/// breaking change. Gate on a version with comparisons such as `>=`. An exhaustive match must be updated
+/// for each new version, so that each new version is handled explicitly.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Sequence)]
 #[repr(u16)]
 pub enum ConsensusVersion {
