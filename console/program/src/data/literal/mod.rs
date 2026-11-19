@@ -26,6 +26,7 @@ mod sample;
 mod serialize;
 mod size_in_bits;
 mod size_in_bytes;
+mod ternary;
 mod to_bits;
 mod to_type;
 mod variant;

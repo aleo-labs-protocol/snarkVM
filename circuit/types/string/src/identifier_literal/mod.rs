@@ -15,6 +15,7 @@
 
 mod equal;
 mod helpers;
+mod ternary;
 
 use snarkvm_circuit_environment::prelude::*;
 use snarkvm_circuit_types_boolean::Boolean;

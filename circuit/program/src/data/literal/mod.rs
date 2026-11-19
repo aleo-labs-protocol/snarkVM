@@ -21,6 +21,7 @@ mod cast_lossy;
 mod equal;
 mod from_bits;
 mod size_in_bits;
+mod ternary;
 mod to_bits;
 mod to_fields;
 mod to_type;
