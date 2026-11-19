@@ -1,7 +1,9 @@
 # Circuit shape of `neg` for each integer type, operand mode and edge value.
 # Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
 # A `_` stands for each value of a variable operand. The test checks that they give one result.
-# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is a hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
 # A mixed output mode counts the constant, public and private bits.
 # The test also checks each case with the console operation. A defined case must give the console
 # value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
@@ -22,23 +24,23 @@ u64.private _ : halt
 u128.constant * : halt
 u128.public _ : halt
 u128.private _ : halt
-i8.constant * : 16 0 0 0 0/0/0 constant
+i8.constant * : 16 0 0 0 0/0/0 constant cbf29ce484222325
 i8.constant MIN : halt
-i8.public _ : 8 0 10 12 29/12/10 private
-i8.private _ : 8 0 10 12 29/12/10 private
-i16.constant * : 32 0 0 0 0/0/0 constant
+i8.public _ : 8 0 10 12 29/12/10 private abd71d28cf7921f4
+i8.private _ : 8 0 10 12 29/12/10 private 3ac3310e0f5acfbb
+i16.constant * : 32 0 0 0 0/0/0 constant cbf29ce484222325
 i16.constant MIN : halt
-i16.public _ : 16 0 18 20 53/20/18 private
-i16.private _ : 16 0 18 20 53/20/18 private
-i32.constant * : 64 0 0 0 0/0/0 constant
+i16.public _ : 16 0 18 20 53/20/18 private 564c2d278d8d76bc
+i16.private _ : 16 0 18 20 53/20/18 private 45f74780fe617c4b
+i32.constant * : 64 0 0 0 0/0/0 constant cbf29ce484222325
 i32.constant MIN : halt
-i32.public _ : 32 0 34 36 101/36/34 private
-i32.private _ : 32 0 34 36 101/36/34 private
-i64.constant * : 128 0 0 0 0/0/0 constant
+i32.public _ : 32 0 34 36 101/36/34 private b2d7b8e9d081de3c
+i32.private _ : 32 0 34 36 101/36/34 private 144d5f00aa45326b
+i64.constant * : 128 0 0 0 0/0/0 constant cbf29ce484222325
 i64.constant MIN : halt
-i64.public _ : 64 0 66 68 197/68/66 private
-i64.private _ : 64 0 66 68 197/68/66 private
-i128.constant * : 256 0 0 0 0/0/0 constant
+i64.public _ : 64 0 66 68 197/68/66 private 41123b1d53f3f523
+i64.private _ : 64 0 66 68 197/68/66 private 58c2b985139fca50
+i128.constant * : 256 0 0 0 0/0/0 constant cbf29ce484222325
 i128.constant MIN : halt
-i128.public _ : 128 0 130 132 389/132/130 private
-i128.private _ : 128 0 130 132 389/132/130 private
+i128.public _ : 128 0 130 132 389/132/130 private f16181e0ff939a25
+i128.private _ : 128 0 130 132 389/132/130 private 595b3872b3dacfda

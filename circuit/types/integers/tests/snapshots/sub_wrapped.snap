@@ -1,99 +1,813 @@
 # Circuit shape of `sub_wrapped` for each integer type, operand mode and edge value.
 # Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
 # A `_` stands for each value of a variable operand. The test checks that they give one result.
-# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is a hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
 # A mixed output mode counts the constant, public and private bits.
 # The test also checks each case with the console operation. A defined case must give the console
 # value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
 # A `*` line gives the result of each case of its block that has no line of its own.
 # Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
-u8.constant u8.constant * : 8 0 0 0 0/0/0 constant
-u8.constant u8.public * : 0 0 9 10 27/10/9 private
-u8.constant u8.private * : 0 0 9 10 27/10/9 private
-u8.public u8.constant * : 0 0 9 10 27/10/9 private
-u8.public u8.public _ _ : 0 0 9 10 35/10/9 private
-u8.public u8.private _ _ : 0 0 9 10 35/10/9 private
-u8.private u8.constant * : 0 0 9 10 27/10/9 private
-u8.private u8.public _ _ : 0 0 9 10 35/10/9 private
-u8.private u8.private _ _ : 0 0 9 10 35/10/9 private
-u16.constant u16.constant * : 16 0 0 0 0/0/0 constant
-u16.constant u16.public * : 0 0 17 18 51/18/17 private
-u16.constant u16.private * : 0 0 17 18 51/18/17 private
-u16.public u16.constant * : 0 0 17 18 51/18/17 private
-u16.public u16.public _ _ : 0 0 17 18 67/18/17 private
-u16.public u16.private _ _ : 0 0 17 18 67/18/17 private
-u16.private u16.constant * : 0 0 17 18 51/18/17 private
-u16.private u16.public _ _ : 0 0 17 18 67/18/17 private
-u16.private u16.private _ _ : 0 0 17 18 67/18/17 private
-u32.constant u32.constant * : 32 0 0 0 0/0/0 constant
-u32.constant u32.public * : 0 0 33 34 99/34/33 private
-u32.constant u32.private * : 0 0 33 34 99/34/33 private
-u32.public u32.constant * : 0 0 33 34 99/34/33 private
-u32.public u32.public _ _ : 0 0 33 34 131/34/33 private
-u32.public u32.private _ _ : 0 0 33 34 131/34/33 private
-u32.private u32.constant * : 0 0 33 34 99/34/33 private
-u32.private u32.public _ _ : 0 0 33 34 131/34/33 private
-u32.private u32.private _ _ : 0 0 33 34 131/34/33 private
-u64.constant u64.constant * : 64 0 0 0 0/0/0 constant
-u64.constant u64.public * : 0 0 65 66 195/66/65 private
-u64.constant u64.private * : 0 0 65 66 195/66/65 private
-u64.public u64.constant * : 0 0 65 66 195/66/65 private
-u64.public u64.public _ _ : 0 0 65 66 259/66/65 private
-u64.public u64.private _ _ : 0 0 65 66 259/66/65 private
-u64.private u64.constant * : 0 0 65 66 195/66/65 private
-u64.private u64.public _ _ : 0 0 65 66 259/66/65 private
-u64.private u64.private _ _ : 0 0 65 66 259/66/65 private
-u128.constant u128.constant * : 128 0 0 0 0/0/0 constant
-u128.constant u128.public * : 0 0 129 130 387/130/129 private
-u128.constant u128.private * : 0 0 129 130 387/130/129 private
-u128.public u128.constant * : 0 0 129 130 387/130/129 private
-u128.public u128.public _ _ : 0 0 129 130 515/130/129 private
-u128.public u128.private _ _ : 0 0 129 130 515/130/129 private
-u128.private u128.constant * : 0 0 129 130 387/130/129 private
-u128.private u128.public _ _ : 0 0 129 130 515/130/129 private
-u128.private u128.private _ _ : 0 0 129 130 515/130/129 private
-i8.constant i8.constant * : 8 0 0 0 0/0/0 constant
-i8.constant i8.public * : 0 0 9 10 27/10/9 private
-i8.constant i8.private * : 0 0 9 10 27/10/9 private
-i8.public i8.constant * : 0 0 9 10 27/10/9 private
-i8.public i8.public _ _ : 0 0 9 10 35/10/9 private
-i8.public i8.private _ _ : 0 0 9 10 35/10/9 private
-i8.private i8.constant * : 0 0 9 10 27/10/9 private
-i8.private i8.public _ _ : 0 0 9 10 35/10/9 private
-i8.private i8.private _ _ : 0 0 9 10 35/10/9 private
-i16.constant i16.constant * : 16 0 0 0 0/0/0 constant
-i16.constant i16.public * : 0 0 17 18 51/18/17 private
-i16.constant i16.private * : 0 0 17 18 51/18/17 private
-i16.public i16.constant * : 0 0 17 18 51/18/17 private
-i16.public i16.public _ _ : 0 0 17 18 67/18/17 private
-i16.public i16.private _ _ : 0 0 17 18 67/18/17 private
-i16.private i16.constant * : 0 0 17 18 51/18/17 private
-i16.private i16.public _ _ : 0 0 17 18 67/18/17 private
-i16.private i16.private _ _ : 0 0 17 18 67/18/17 private
-i32.constant i32.constant * : 32 0 0 0 0/0/0 constant
-i32.constant i32.public * : 0 0 33 34 99/34/33 private
-i32.constant i32.private * : 0 0 33 34 99/34/33 private
-i32.public i32.constant * : 0 0 33 34 99/34/33 private
-i32.public i32.public _ _ : 0 0 33 34 131/34/33 private
-i32.public i32.private _ _ : 0 0 33 34 131/34/33 private
-i32.private i32.constant * : 0 0 33 34 99/34/33 private
-i32.private i32.public _ _ : 0 0 33 34 131/34/33 private
-i32.private i32.private _ _ : 0 0 33 34 131/34/33 private
-i64.constant i64.constant * : 64 0 0 0 0/0/0 constant
-i64.constant i64.public * : 0 0 65 66 195/66/65 private
-i64.constant i64.private * : 0 0 65 66 195/66/65 private
-i64.public i64.constant * : 0 0 65 66 195/66/65 private
-i64.public i64.public _ _ : 0 0 65 66 259/66/65 private
-i64.public i64.private _ _ : 0 0 65 66 259/66/65 private
-i64.private i64.constant * : 0 0 65 66 195/66/65 private
-i64.private i64.public _ _ : 0 0 65 66 259/66/65 private
-i64.private i64.private _ _ : 0 0 65 66 259/66/65 private
-i128.constant i128.constant * : 128 0 0 0 0/0/0 constant
-i128.constant i128.public * : 0 0 129 130 387/130/129 private
-i128.constant i128.private * : 0 0 129 130 387/130/129 private
-i128.public i128.constant * : 0 0 129 130 387/130/129 private
-i128.public i128.public _ _ : 0 0 129 130 515/130/129 private
-i128.public i128.private _ _ : 0 0 129 130 515/130/129 private
-i128.private i128.constant * : 0 0 129 130 387/130/129 private
-i128.private i128.public _ _ : 0 0 129 130 515/130/129 private
-i128.private i128.private _ _ : 0 0 129 130 515/130/129 private
+u8.constant u8.constant * : 8 0 0 0 0/0/0 constant cbf29ce484222325
+u8.constant u8.public 0 _ : 0 0 9 10 27/10/9 private fe3471b339e4acb9
+u8.constant u8.public 1 _ : 0 0 9 10 27/10/9 private f8cedb10e99bcb80
+u8.constant u8.public 2 _ : 0 0 9 10 27/10/9 private 607172bbd4653143
+u8.constant u8.public 3 _ : 0 0 9 10 27/10/9 private deb988da90f9c84a
+u8.constant u8.public 2^3-1 _ : 0 0 9 10 27/10/9 private 0e0bc45e7cae860e
+u8.constant u8.public 2^3 _ : 0 0 9 10 27/10/9 private 51292ff47a56c591
+u8.constant u8.public 2^3+1 _ : 0 0 9 10 27/10/9 private 6ce25f0878e92db8
+u8.constant u8.public 2^4-1 _ : 0 0 9 10 27/10/9 private e426d19d4fa0ac46
+u8.constant u8.public 2^4 _ : 0 0 9 10 27/10/9 private d96e55375cae1dc9
+u8.constant u8.public 2^4+1 _ : 0 0 9 10 27/10/9 private 53720ed04e924650
+u8.constant u8.public 2^7-1 _ : 0 0 9 10 27/10/9 private 0dd00f572e322c36
+u8.constant u8.public 2^7 _ : 0 0 9 10 27/10/9 private 73867944ab4cad39
+u8.constant u8.public 2^7+1 _ : 0 0 9 10 27/10/9 private 19c491cfa8663200
+u8.constant u8.public 2^8-2^4 _ : 0 0 9 10 27/10/9 private d0444a1cad97daa9
+u8.constant u8.public MAX-1 _ : 0 0 9 10 27/10/9 private bda251d1c870487f
+u8.constant u8.public MAX _ : 0 0 9 10 27/10/9 private fea40d22045c70b6
+u8.constant u8.private 0 _ : 0 0 9 10 27/10/9 private 8acce0ccc7d36af1
+u8.constant u8.private 1 _ : 0 0 9 10 27/10/9 private 9da577dd7c71fcd0
+u8.constant u8.private 2 _ : 0 0 9 10 27/10/9 private 71777d6cf4fff5fb
+u8.constant u8.private 3 _ : 0 0 9 10 27/10/9 private e5cc143581062dea
+u8.constant u8.private 2^3-1 _ : 0 0 9 10 27/10/9 private 045f079890b94cde
+u8.constant u8.private 2^3 _ : 0 0 9 10 27/10/9 private 4d6a9e0df8415a79
+u8.constant u8.private 2^3+1 _ : 0 0 9 10 27/10/9 private d0a4c91c9d34d4b8
+u8.constant u8.private 2^4-1 _ : 0 0 9 10 27/10/9 private 1c6e3ddbfa05f706
+u8.constant u8.private 2^4 _ : 0 0 9 10 27/10/9 private 4648494fd62a04c1
+u8.constant u8.private 2^4+1 _ : 0 0 9 10 27/10/9 private 4a2a9bd724576320
+u8.constant u8.private 2^7-1 _ : 0 0 9 10 27/10/9 private b2b8eb8e0934b6f6
+u8.constant u8.private 2^7 _ : 0 0 9 10 27/10/9 private 78fe743d67f67171
+u8.constant u8.private 2^7+1 _ : 0 0 9 10 27/10/9 private 411d31faaefc4750
+u8.constant u8.private 2^8-2^4 _ : 0 0 9 10 27/10/9 private bca5d94306a4a6a1
+u8.constant u8.private MAX-1 _ : 0 0 9 10 27/10/9 private 7dbab216cd094dc7
+u8.constant u8.private MAX _ : 0 0 9 10 27/10/9 private e626cc471264f776
+u8.public u8.constant _ 0 : 0 0 9 10 27/10/9 private 5bbc8c83d7458ed6
+u8.public u8.constant _ 1 : 0 0 9 10 27/10/9 private 01628ba328d26b31
+u8.public u8.constant _ 2 : 0 0 9 10 27/10/9 private 9f86bf2dd582031c
+u8.public u8.constant _ 3 : 0 0 9 10 27/10/9 private 2a1f360eb0953a8f
+u8.public u8.constant _ 2^3-1 : 0 0 9 10 27/10/9 private 73918cce11569c93
+u8.public u8.constant _ 2^3 : 0 0 9 10 27/10/9 private 9d6648391f113d5e
+u8.public u8.constant _ 2^3+1 : 0 0 9 10 27/10/9 private 68272381be6aaef9
+u8.public u8.constant _ 2^4-1 : 0 0 9 10 27/10/9 private 0a7ec0830f7456db
+u8.public u8.constant _ 2^4 : 0 0 9 10 27/10/9 private 94bf29bd86094666
+u8.public u8.constant _ 2^4+1 : 0 0 9 10 27/10/9 private 15878bf8564a8ec1
+u8.public u8.constant _ 2^7-1 : 0 0 9 10 27/10/9 private 629c3c81d3e172cb
+u8.public u8.constant _ 2^7 : 0 0 9 10 27/10/9 private 360433053217e456
+u8.public u8.constant _ 2^7+1 : 0 0 9 10 27/10/9 private 39a7664ee23f78b1
+u8.public u8.constant _ 2^8-2^4 : 0 0 9 10 27/10/9 private 6fb0b7e375531786
+u8.public u8.constant _ MAX-1 : 0 0 9 10 27/10/9 private c880d30908026de8
+u8.public u8.constant _ MAX : 0 0 9 10 27/10/9 private 12e1172d8d4e804b
+u8.public u8.public _ _ : 0 0 9 10 35/10/9 private f4032b1267b73682
+u8.public u8.private _ _ : 0 0 9 10 35/10/9 private 01cf27461c654d92
+u8.private u8.constant _ 0 : 0 0 9 10 27/10/9 private 1997ebe58521b656
+u8.private u8.constant _ 1 : 0 0 9 10 27/10/9 private f5ca0cdd0bdd68e9
+u8.private u8.constant _ 2 : 0 0 9 10 27/10/9 private 6fb4b5cddfa890f4
+u8.private u8.constant _ 3 : 0 0 9 10 27/10/9 private bbb69e5c27c06cbf
+u8.private u8.constant _ 2^3-1 : 0 0 9 10 27/10/9 private 9f3a491c470ff963
+u8.private u8.constant _ 2^3 : 0 0 9 10 27/10/9 private 6bfa6fe66a4b2c6e
+u8.private u8.constant _ 2^3+1 : 0 0 9 10 27/10/9 private 84c6c89dad7621a1
+u8.private u8.constant _ 2^4-1 : 0 0 9 10 27/10/9 private 83fe1e8b35c0e1db
+u8.private u8.constant _ 2^4 : 0 0 9 10 27/10/9 private c06125e94cc62026
+u8.private u8.constant _ 2^4+1 : 0 0 9 10 27/10/9 private 1649633481f8bc79
+u8.private u8.constant _ 2^7-1 : 0 0 9 10 27/10/9 private 4e9448793740d04b
+u8.private u8.constant _ 2^7 : 0 0 9 10 27/10/9 private a5a0f944732cc9d6
+u8.private u8.constant _ 2^7+1 : 0 0 9 10 27/10/9 private 38b9a2b1fb369c69
+u8.private u8.constant _ 2^8-2^4 : 0 0 9 10 27/10/9 private 5ff4373efd0656c6
+u8.private u8.constant _ MAX-1 : 0 0 9 10 27/10/9 private b322c03f0fac1df0
+u8.private u8.constant _ MAX : 0 0 9 10 27/10/9 private 5bf00054efbee7cb
+u8.private u8.public _ _ : 0 0 9 10 35/10/9 private 0e130d1da44a1602
+u8.private u8.private _ _ : 0 0 9 10 35/10/9 private cac98fdae341dc3a
+u16.constant u16.constant * : 16 0 0 0 0/0/0 constant cbf29ce484222325
+u16.constant u16.public 0 _ : 0 0 17 18 51/18/17 private cfd690e5a63962d1
+u16.constant u16.public 1 _ : 0 0 17 18 51/18/17 private 4e2c45d3ec8a4418
+u16.constant u16.public 2 _ : 0 0 17 18 51/18/17 private abea6bad426449db
+u16.constant u16.public 3 _ : 0 0 17 18 51/18/17 private 8d66494f78ea6962
+u16.constant u16.public 2^7-1 _ : 0 0 17 18 51/18/17 private 3c26be99ada92a3e
+u16.constant u16.public 2^7 _ : 0 0 17 18 51/18/17 private 916a658bad83eb51
+u16.constant u16.public 2^7+1 _ : 0 0 17 18 51/18/17 private 48b4580672f0b298
+u16.constant u16.public 2^8-1 _ : 0 0 17 18 51/18/17 private 54dd678e886ebabe
+u16.constant u16.public 2^8 _ : 0 0 17 18 51/18/17 private a08dc386361a03d1
+u16.constant u16.public 2^8+1 _ : 0 0 17 18 51/18/17 private 7021ecdb6ca75d18
+u16.constant u16.public 2^15-1 _ : 0 0 17 18 51/18/17 private 8ea272e89b59bdbe
+u16.constant u16.public 2^15 _ : 0 0 17 18 51/18/17 private 56cf298a987ae2d1
+u16.constant u16.public 2^15+1 _ : 0 0 17 18 51/18/17 private a1ad4979ace9c418
+u16.constant u16.public 2^16-2^8 _ : 0 0 17 18 51/18/17 private 5857b2b18b455dd1
+u16.constant u16.public MAX-1 _ : 0 0 17 18 51/18/17 private 50e255d63c669217
+u16.constant u16.public MAX _ : 0 0 17 18 51/18/17 private 99e3f70aa57f3dbe
+u16.constant u16.private 0 _ : 0 0 17 18 51/18/17 private e0edd4059bbdfca1
+u16.constant u16.private 1 _ : 0 0 17 18 51/18/17 private 2c2f00aa5ccd3f38
+u16.constant u16.private 2 _ : 0 0 17 18 51/18/17 private 9e88eea81a846dbb
+u16.constant u16.private 3 _ : 0 0 17 18 51/18/17 private 96900b0657a6e402
+u16.constant u16.private 2^7-1 _ : 0 0 17 18 51/18/17 private fd5a876c1f47947e
+u16.constant u16.private 2^7 _ : 0 0 17 18 51/18/17 private d249c2ee4bc9ef21
+u16.constant u16.private 2^7+1 _ : 0 0 17 18 51/18/17 private 5511cf4803a057b8
+u16.constant u16.private 2^8-1 _ : 0 0 17 18 51/18/17 private 41ed478a1279b0fe
+u16.constant u16.private 2^8 _ : 0 0 17 18 51/18/17 private 5e23925aae7cfda1
+u16.constant u16.private 2^8+1 _ : 0 0 17 18 51/18/17 private aa8eb7568e6b9438
+u16.constant u16.private 2^15-1 _ : 0 0 17 18 51/18/17 private 59a88e63ec934bfe
+u16.constant u16.private 2^15 _ : 0 0 17 18 51/18/17 private cca4b2e21d177ca1
+u16.constant u16.private 2^15+1 _ : 0 0 17 18 51/18/17 private 825b67d9f424bf38
+u16.constant u16.private 2^16-2^8 _ : 0 0 17 18 51/18/17 private ee1b23c7b964dfa1
+u16.constant u16.private MAX-1 _ : 0 0 17 18 51/18/17 private 00dd05b1e3dba3f7
+u16.constant u16.private MAX _ : 0 0 17 18 51/18/17 private 9b74a6dc9e3acbfe
+u16.public u16.constant _ 0 : 0 0 17 18 51/18/17 private f2ccadde1a16ff56
+u16.public u16.constant _ 1 : 0 0 17 18 51/18/17 private 5eab5bd21e3557a9
+u16.public u16.constant _ 2 : 0 0 17 18 51/18/17 private 04dffc4ec1b09cec
+u16.public u16.constant _ 3 : 0 0 17 18 51/18/17 private 5ba00bd822427de7
+u16.public u16.constant _ 2^7-1 : 0 0 17 18 51/18/17 private aac3e360369061d3
+u16.public u16.constant _ 2^7 : 0 0 17 18 51/18/17 private 318fbc3771c74ed6
+u16.public u16.constant _ 2^7+1 : 0 0 17 18 51/18/17 private 31c13c15aca89129
+u16.public u16.constant _ 2^8-1 : 0 0 17 18 51/18/17 private 8bbec613c4b55f53
+u16.public u16.constant _ 2^8 : 0 0 17 18 51/18/17 private 71ad2e13fef2f856
+u16.public u16.constant _ 2^8+1 : 0 0 17 18 51/18/17 private 8e10d3105002c4a9
+u16.public u16.constant _ 2^15-1 : 0 0 17 18 51/18/17 private 6da8bd777ee49a53
+u16.public u16.constant _ 2^15 : 0 0 17 18 51/18/17 private d0375d6da6977f56
+u16.public u16.constant _ 2^15+1 : 0 0 17 18 51/18/17 private 00a2585469bfd7a9
+u16.public u16.constant _ 2^16-2^8 : 0 0 17 18 51/18/17 private 11b840429d894e56
+u16.public u16.constant _ MAX-1 : 0 0 17 18 51/18/17 private 20801f527a298c08
+u16.public u16.constant _ MAX : 0 0 17 18 51/18/17 private 7994620cc8351a53
+u16.public u16.public _ _ : 0 0 17 18 67/18/17 private e188a3618c862d82
+u16.public u16.private _ _ : 0 0 17 18 67/18/17 private 4a295de8de24c4a2
+u16.private u16.constant _ 0 : 0 0 17 18 51/18/17 private 7a7a3a6ce37e5a0e
+u16.private u16.constant _ 1 : 0 0 17 18 51/18/17 private c46c10c53268e371
+u16.private u16.constant _ 2 : 0 0 17 18 51/18/17 private b97094dd9bf7ba2c
+u16.private u16.constant _ 3 : 0 0 17 18 51/18/17 private ce1411c9ce2fc8f7
+u16.private u16.constant _ 2^7-1 : 0 0 17 18 51/18/17 private b6ad325a94b4c5e3
+u16.private u16.constant _ 2^7 : 0 0 17 18 51/18/17 private ecfd51f5a7bba58e
+u16.private u16.constant _ 2^7+1 : 0 0 17 18 51/18/17 private b21ebdd4ae3bd6f1
+u16.private u16.constant _ 2^8-1 : 0 0 17 18 51/18/17 private f03f3c2b0f445b63
+u16.private u16.constant _ 2^8 : 0 0 17 18 51/18/17 private 101e2b33b3fdbb0e
+u16.private u16.constant _ 2^8+1 : 0 0 17 18 51/18/17 private 89d085a20eb30871
+u16.private u16.constant _ 2^15-1 : 0 0 17 18 51/18/17 private 78c1ad3ce08a8263
+u16.private u16.constant _ 2^15 : 0 0 17 18 51/18/17 private 4745c51eff34da0e
+u16.private u16.constant _ 2^15+1 : 0 0 17 18 51/18/17 private d39c8c248f936371
+u16.private u16.constant _ 2^16-2^8 : 0 0 17 18 51/18/17 private 7b3b24f73484710e
+u16.private u16.constant _ MAX-1 : 0 0 17 18 51/18/17 private ece451c1bd93a888
+u16.private u16.constant _ MAX : 0 0 17 18 51/18/17 private 64ad51d229db0263
+u16.private u16.public _ _ : 0 0 17 18 67/18/17 private d1d4db1b8e934572
+u16.private u16.private _ _ : 0 0 17 18 67/18/17 private f7173009108eb45a
+u32.constant u32.constant * : 32 0 0 0 0/0/0 constant cbf29ce484222325
+u32.constant u32.public 0 _ : 0 0 33 34 99/34/33 private 126799f39b31eb71
+u32.constant u32.public 1 _ : 0 0 33 34 99/34/33 private d52ec93ead6ff2e8
+u32.constant u32.public 2 _ : 0 0 33 34 99/34/33 private 94514adea3deb1eb
+u32.constant u32.public 3 _ : 0 0 33 34 99/34/33 private 958f8741ce9e0ca2
+u32.constant u32.public 2^15-1 _ : 0 0 33 34 99/34/33 private 0f1ea03db9d2879e
+u32.constant u32.public 2^15 _ : 0 0 33 34 99/34/33 private 14ed3d44abe76b71
+u32.constant u32.public 2^15+1 _ : 0 0 33 34 99/34/33 private d04c786e023d72e8
+u32.constant u32.public 2^16-1 _ : 0 0 33 34 99/34/33 private 0b27033eee2e079e
+u32.constant u32.public 2^16 _ : 0 0 33 34 99/34/33 private 59f15dfb7862eb71
+u32.constant u32.public 2^16+1 _ : 0 0 33 34 99/34/33 private 21dd0cd3eb08f2e8
+u32.constant u32.public 2^31-1 _ : 0 0 33 34 99/34/33 private 7efbec969bbd079e
+u32.constant u32.public 2^31 _ : 0 0 33 34 99/34/33 private 4bb87f5e1b31eb71
+u32.constant u32.public 2^31+1 _ : 0 0 33 34 99/34/33 private fd9360cb2d6ff2e8
+u32.constant u32.public 2^32-2^16 _ : 0 0 33 34 99/34/33 private c129fb994044eb71
+u32.constant u32.public MAX-1 _ : 0 0 33 34 99/34/33 private 97c199bfadc9c287
+u32.constant u32.public MAX _ : 0 0 33 34 99/34/33 private 4e519fef1bbd079e
+u32.constant u32.private 0 _ : 0 0 33 34 99/34/33 private 71d0de5115690cc1
+u32.constant u32.private 1 _ : 0 0 33 34 99/34/33 private bfa96464a3dad508
+u32.constant u32.private 2 _ : 0 0 33 34 99/34/33 private e4869f90832a7f9b
+u32.constant u32.private 3 _ : 0 0 33 34 99/34/33 private 22c03f2538e36692
+u32.constant u32.private 2^15-1 _ : 0 0 33 34 99/34/33 private a8dc9b300075b52e
+u32.constant u32.private 2^15 _ : 0 0 33 34 99/34/33 private 36864b4a70888cc1
+u32.constant u32.private 2^15+1 _ : 0 0 33 34 99/34/33 private d9cf0a66b3085508
+u32.constant u32.private 2^16-1 _ : 0 0 33 34 99/34/33 private 674c5c0ae507352e
+u32.constant u32.private 2^16 _ : 0 0 33 34 99/34/33 private 93ac9aeec61e0cc1
+u32.constant u32.private 2^16+1 _ : 0 0 33 34 99/34/33 private 83379d2cd7abd508
+u32.constant u32.private 2^31-1 _ : 0 0 33 34 99/34/33 private 065ce55ff926352e
+u32.constant u32.private 2^31 _ : 0 0 33 34 99/34/33 private baa6676b95690cc1
+u32.constant u32.private 2^31+1 _ : 0 0 33 34 99/34/33 private 5eb9184723dad508
+u32.constant u32.private 2^32-2^16 _ : 0 0 33 34 99/34/33 private ffa39aa894a00cc1
+u32.constant u32.private MAX-1 _ : 0 0 33 34 99/34/33 private e49f9aefb358ecb7
+u32.constant u32.private MAX _ : 0 0 33 34 99/34/33 private a6489bbe7926352e
+u32.public u32.constant _ 0 : 0 0 33 34 99/34/33 private 6b95e9c1e6d63056
+u32.public u32.constant _ 1 : 0 0 33 34 99/34/33 private 816c3c7ccb8ba559
+u32.public u32.constant _ 2 : 0 0 33 34 99/34/33 private fbcc4a6c4088876c
+u32.public u32.constant _ 3 : 0 0 33 34 99/34/33 private 2ef9ac7be8ef8897
+u32.public u32.constant _ 2^15-1 : 0 0 33 34 99/34/33 private ae2e0f75fae14363
+u32.public u32.constant _ 2^15 : 0 0 33 34 99/34/33 private adb5b1d7ffacb056
+u32.public u32.constant _ 2^15+1 : 0 0 33 34 99/34/33 private 04227cc740bc2559
+u32.public u32.constant _ 2^16-1 : 0 0 33 34 99/34/33 private 529cd3b6f7a3c363
+u32.public u32.constant _ 2^16 : 0 0 33 34 99/34/33 private 9ee4f5006a2b3056
+u32.public u32.constant _ 2^16+1 : 0 0 33 34 99/34/33 private 40f80467ed70a559
+u32.public u32.constant _ 2^31-1 : 0 0 33 34 99/34/33 private 903cf1a2ae0ac363
+u32.public u32.constant _ 2^31 : 0 0 33 34 99/34/33 private 1c66719566d63056
+u32.public u32.constant _ 2^31+1 : 0 0 33 34 99/34/33 private 683cc4504b8ba559
+u32.public u32.constant _ 2^32-2^16 : 0 0 33 34 99/34/33 private 4a8a59c66dd13056
+u32.public u32.constant _ MAX-1 : 0 0 33 34 99/34/33 private ad464dff84d985a8
+u32.public u32.constant _ MAX : 0 0 33 34 99/34/33 private 63eca0562e0ac363
+u32.public u32.public _ _ : 0 0 33 34 131/34/33 private 627c439b5092d112
+u32.public u32.private _ _ : 0 0 33 34 131/34/33 private 4ee51ae174ee6f82
+u32.private u32.constant _ 0 : 0 0 33 34 99/34/33 private 41d9d75fc26efe7e
+u32.private u32.constant _ 1 : 0 0 33 34 99/34/33 private ad1643b7b1c39e21
+u32.private u32.constant _ 2 : 0 0 33 34 99/34/33 private 51d7bd62602acd3c
+u32.private u32.constant _ 3 : 0 0 33 34 99/34/33 private d505592d922ad5e7
+u32.private u32.constant _ 2^15-1 : 0 0 33 34 99/34/33 private 3c6a71bc282a15b3
+u32.private u32.constant _ 2^15 : 0 0 33 34 99/34/33 private f084e94e8ce57e7e
+u32.private u32.constant _ 2^15+1 : 0 0 33 34 99/34/33 private 9aa34d483be81e21
+u32.private u32.constant _ 2^16-1 : 0 0 33 34 99/34/33 private 5d23c28b1f4095b3
+u32.private u32.constant _ 2^16 : 0 0 33 34 99/34/33 private a9c0e1f3c2fbfe7e
+u32.private u32.constant _ 2^16+1 : 0 0 33 34 99/34/33 private 4561aedac1049e21
+u32.private u32.constant _ 2^31-1 : 0 0 33 34 99/34/33 private 690c491c00b795b3
+u32.private u32.constant _ 2^31 : 0 0 33 34 99/34/33 private 725399ed426efe7e
+u32.private u32.constant _ 2^31+1 : 0 0 33 34 99/34/33 private b05a794931c39e21
+u32.private u32.constant _ 2^32-2^16 : 0 0 33 34 99/34/33 private c18089b61c51fe7e
+u32.private u32.constant _ MAX-1 : 0 0 33 34 99/34/33 private 185f97812689d5f8
+u32.private u32.constant _ MAX : 0 0 33 34 99/34/33 private eb12bd1580b795b3
+u32.private u32.public _ _ : 0 0 33 34 131/34/33 private 94d70ccf4ccac622
+u32.private u32.private _ _ : 0 0 33 34 131/34/33 private a4b93c3ecc1c387a
+u64.constant u64.constant * : 64 0 0 0 0/0/0 constant cbf29ce484222325
+u64.constant u64.public 0 _ : 0 0 65 66 195/66/65 private c8aa58f7f387e6fe
+u64.constant u64.public 1 _ : 0 0 65 66 195/66/65 private d7e83756bd03eb6b
+u64.constant u64.public 2 _ : 0 0 65 66 195/66/65 private f3d1b8d3119a3618
+u64.constant u64.public 3 _ : 0 0 65 66 195/66/65 private 6642b25b8bf6dac5
+u64.constant u64.public 2^31-1 _ : 0 0 65 66 195/66/65 private 110dca06b7d45fe1
+u64.constant u64.public 2^31 _ : 0 0 65 66 195/66/65 private 71b8900c7387e6fe
+u64.constant u64.public 2^31+1 _ : 0 0 65 66 195/66/65 private b0c7de013d03eb6b
+u64.constant u64.public 2^32-1 _ : 0 0 65 66 195/66/65 private 5029f3e937d45fe1
+u64.constant u64.public 2^32 _ : 0 0 65 66 195/66/65 private 5957ee12f387e6fe
+u64.constant u64.public 2^32+1 _ : 0 0 65 66 195/66/65 private 8e77e7e1bd03eb6b
+u64.constant u64.public 2^63-1 _ : 0 0 65 66 195/66/65 private a385bf9a37d45fe1
+u64.constant u64.public 2^63 _ : 0 0 65 66 195/66/65 private 48aa58f7f387e6fe
+u64.constant u64.public 2^63+1 _ : 0 0 65 66 195/66/65 private 57e83756bd03eb6b
+u64.constant u64.public 2^64-2^32 _ : 0 0 65 66 195/66/65 private 6366f824f387e6fe
+u64.constant u64.public MAX-1 _ : 0 0 65 66 195/66/65 private 9c0316441fd278c4
+u64.constant u64.public MAX _ : 0 0 65 66 195/66/65 private cf80c8bd19ab8f24
+u64.constant u64.private 0 _ : 0 0 65 66 195/66/65 private 0f10a17dd2d33f9a
+u64.constant u64.private 1 _ : 0 0 65 66 195/66/65 private 56409aa1cc570cb7
+u64.constant u64.private 2 _ : 0 0 65 66 195/66/65 private 79b5b26df41f75fc
+u64.constant u64.private 3 _ : 0 0 65 66 195/66/65 private 277faaa788399309
+u64.constant u64.private 2^31-1 _ : 0 0 65 66 195/66/65 private 42eb26b1071dba95
+u64.constant u64.private 2^31 _ : 0 0 65 66 195/66/65 private 1ec4766652d33f9a
+u64.constant u64.private 2^31+1 _ : 0 0 65 66 195/66/65 private 660280aa4c570cb7
+u64.constant u64.private 2^32-1 _ : 0 0 65 66 195/66/65 private ea88248d871dba95
+u64.constant u64.private 2^32 _ : 0 0 65 66 195/66/65 private 2b5c1f70d2d33f9a
+u64.constant u64.private 2^32+1 _ : 0 0 65 66 195/66/65 private f7b448b8cc570cb7
+u64.constant u64.private 2^63-1 _ : 0 0 65 66 195/66/65 private 9f8e36d6871dba95
+u64.constant u64.private 2^63 _ : 0 0 65 66 195/66/65 private 8f10a17dd2d33f9a
+u64.constant u64.private 2^63+1 _ : 0 0 65 66 195/66/65 private d6409aa1cc570cb7
+u64.constant u64.private 2^64-2^32 _ : 0 0 65 66 195/66/65 private 9c5a5f5ad2d33f9a
+u64.constant u64.private MAX-1 _ : 0 0 65 66 195/66/65 private 1250de52b9852658
+u64.constant u64.private MAX _ : 0 0 65 66 195/66/65 private 30dbc57c409f4a38
+u64.public u64.constant _ 0 : 0 0 65 66 195/66/65 private 043c9c1441b9adee
+u64.public u64.constant _ 1 : 0 0 65 66 195/66/65 private 71442b1cbd49788e
+u64.public u64.constant _ 2 : 0 0 65 66 195/66/65 private f0ee34162de64a97
+u64.public u64.constant _ 3 : 0 0 65 66 195/66/65 private e9e16dfa6d45f24c
+u64.public u64.constant _ 2^31-1 : 0 0 65 66 195/66/65 private 2a77fa255f8ceb98
+u64.public u64.constant _ 2^31 : 0 0 65 66 195/66/65 private ca839cb028e62101
+u64.public u64.constant _ 2^31+1 : 0 0 65 66 195/66/65 private 3eef5ee63d49788e
+u64.public u64.constant _ 2^32-1 : 0 0 65 66 195/66/65 private ebedd22cdf8ceb98
+u64.public u64.constant _ 2^32 : 0 0 65 66 195/66/65 private 16c98c03a8e62101
+u64.public u64.constant _ 2^32+1 : 0 0 65 66 195/66/65 private c1e7d80bbd49788e
+u64.public u64.constant _ 2^63-1 : 0 0 65 66 195/66/65 private 6d61971ddf8ceb98
+u64.public u64.constant _ 2^63 : 0 0 65 66 195/66/65 private 27f9d7f0a8e62101
+u64.public u64.constant _ 2^63+1 : 0 0 65 66 195/66/65 private f1442b1cbd49788e
+u64.public u64.constant _ 2^64-2^32 : 0 0 65 66 195/66/65 private a2a8f031a8e62101
+u64.public u64.constant _ MAX-1 : 0 0 65 66 195/66/65 private 124e7fec813edc93
+u64.public u64.constant _ MAX : 0 0 65 66 195/66/65 private ed61971ddf8ceb98
+u64.public u64.public _ _ : 0 0 65 66 259/66/65 private 65d64aa2101a5d15
+u64.public u64.private _ _ : 0 0 65 66 259/66/65 private 46a056ca7ca79fd9
+u64.private u64.constant _ 0 : 0 0 65 66 195/66/65 private 1c020bdfe46e46f6
+u64.private u64.constant _ 1 : 0 0 65 66 195/66/65 private 628f823d95e56116
+u64.private u64.constant _ 2 : 0 0 65 66 195/66/65 private b72517833f285687
+u64.private u64.constant _ 3 : 0 0 65 66 195/66/65 private 9e7fd9ff54e3a41c
+u64.private u64.constant _ 2^31-1 : 0 0 65 66 195/66/65 private 8ccb81a3fafe7c68
+u64.private u64.constant _ 2^31 : 0 0 65 66 195/66/65 private b502d5168d361c89
+u64.private u64.constant _ 2^31+1 : 0 0 65 66 195/66/65 private 54d1c05515e56116
+u64.private u64.constant _ 2^32-1 : 0 0 65 66 195/66/65 private 34aeeb4b7afe7c68
+u64.private u64.constant _ 2^32 : 0 0 65 66 195/66/65 private f489ec7e0d361c89
+u64.private u64.constant _ 2^32+1 : 0 0 65 66 195/66/65 private 6bdf7e8095e56116
+u64.private u64.constant _ 2^63-1 : 0 0 65 66 195/66/65 private 38a516c07afe7c68
+u64.private u64.constant _ 2^63 : 0 0 65 66 195/66/65 private 301742c30d361c89
+u64.private u64.constant _ 2^63+1 : 0 0 65 66 195/66/65 private e28f823d95e56116
+u64.private u64.constant _ 2^64-2^32 : 0 0 65 66 195/66/65 private 3299bb2c0d361c89
+u64.private u64.constant _ MAX-1 : 0 0 65 66 195/66/65 private b6898f43b4f80043
+u64.private u64.constant _ MAX : 0 0 65 66 195/66/65 private b8a516c07afe7c68
+u64.private u64.public _ _ : 0 0 65 66 259/66/65 private ae128fd5771a46b5
+u64.private u64.private _ _ : 0 0 65 66 259/66/65 private f37e012bd90d2771
+u128.constant u128.constant * : 128 0 0 0 0/0/0 constant cbf29ce484222325
+u128.constant u128.public * : 0 0 129 130 387/130/129 private 7f1c0d3ecadcdf4b
+u128.constant u128.public 0 _ : 0 0 129 130 387/130/129 private 56be8d144cc339b4
+u128.constant u128.public 1 _ : 0 0 129 130 387/130/129 private 5376d5a172166459
+u128.constant u128.public 2 _ : 0 0 129 130 387/130/129 private 4eb5782696c7745a
+u128.constant u128.public 3 _ : 0 0 129 130 387/130/129 private ad0be31815f1880f
+u128.constant u128.public 2^63 _ : 0 0 129 130 387/130/129 private d6be8d144cc339b4
+u128.constant u128.public 2^63+1 _ : 0 0 129 130 387/130/129 private d376d5a172166459
+u128.constant u128.public 2^64-1 _ : 0 0 129 130 387/130/129 private 89cae06790db4026
+u128.constant u128.public 2^64 _ : 0 0 129 130 387/130/129 private eaaf7d8b44206681
+u128.constant u128.public 2^64+1 _ : 0 0 129 130 387/130/129 private 06f8f43129b8cfcc
+u128.constant u128.public 2^127 _ : 0 0 129 130 387/130/129 private d6be8d144cc339b4
+u128.constant u128.public 2^127+1 _ : 0 0 129 130 387/130/129 private d376d5a172166459
+u128.constant u128.public 2^128-2^64 _ : 0 0 129 130 387/130/129 private e0b782c0e1dbdc1f
+u128.constant u128.public MAX-1 _ : 0 0 129 130 387/130/129 private 2d4935c7e0ac94a5
+u128.constant u128.public MAX _ : 0 0 129 130 387/130/129 private 1f6b0f0e8602ae6c
+u128.constant u128.private * : 0 0 129 130 387/130/129 private 627b456ef127b373
+u128.constant u128.private 0 _ : 0 0 129 130 387/130/129 private e1d7075c77a5e83c
+u128.constant u128.private 1 _ : 0 0 129 130 387/130/129 private fcc9f6e47f7bf141
+u128.constant u128.private 2 _ : 0 0 129 130 387/130/129 private cae4d261714bbb82
+u128.constant u128.private 3 _ : 0 0 129 130 387/130/129 private 9577ce289c401187
+u128.constant u128.private 2^63 _ : 0 0 129 130 387/130/129 private 61d7075c77a5e83c
+u128.constant u128.private 2^63+1 _ : 0 0 129 130 387/130/129 private 7cc9f6e47f7bf141
+u128.constant u128.private 2^64-1 _ : 0 0 129 130 387/130/129 private 05806af8caa84dfe
+u128.constant u128.private 2^64 _ : 0 0 129 130 387/130/129 private c957d8df86c8f909
+u128.constant u128.private 2^64+1 _ : 0 0 129 130 387/130/129 private d22e4f99d3ed1374
+u128.constant u128.private 2^127 _ : 0 0 129 130 387/130/129 private 61d7075c77a5e83c
+u128.constant u128.private 2^127+1 _ : 0 0 129 130 387/130/129 private 7cc9f6e47f7bf141
+u128.constant u128.private 2^128-2^64 _ : 0 0 129 130 387/130/129 private d7ac58bd36c9ad17
+u128.constant u128.private MAX-1 _ : 0 0 129 130 387/130/129 private 874bb0dd42bc017d
+u128.constant u128.private MAX _ : 0 0 129 130 387/130/129 private 4434b5d0a71ece94
+u128.public u128.constant * : 0 0 129 130 387/130/129 private ee3e5342751b6c48
+u128.public u128.constant _ 0 : 0 0 129 130 387/130/129 private 340a1063416feb3a
+u128.public u128.constant _ 1 : 0 0 129 130 387/130/129 private 61441fe5270be0f5
+u128.public u128.constant _ 3 : 0 0 129 130 387/130/129 private e94681b4736b0a47
+u128.public u128.constant _ 2^63-1 : 0 0 129 130 387/130/129 private 1e257b8549d8948b
+u128.public u128.constant _ 2^63 : 0 0 129 130 387/130/129 private 99b67a32f288b2ae
+u128.public u128.constant _ 2^63+1 : 0 0 129 130 387/130/129 private e1441fe5270be0f5
+u128.public u128.constant _ 2^64-1 : 0 0 129 130 387/130/129 private 9e257b8549d8948b
+u128.public u128.constant _ 2^64 : 0 0 129 130 387/130/129 private 19b67a32f288b2ae
+u128.public u128.constant _ 2^64+1 : 0 0 129 130 387/130/129 private b23ff4f9a9ce0d8e
+u128.public u128.constant _ 2^127-1 : 0 0 129 130 387/130/129 private 361ebba8a999df32
+u128.public u128.constant _ 2^127 : 0 0 129 130 387/130/129 private a626d913c9608e1f
+u128.public u128.constant _ 2^127+1 : 0 0 129 130 387/130/129 private e1441fe5270be0f5
+u128.public u128.constant _ MAX-1 : 0 0 129 130 387/130/129 private 2f5b0598b205a391
+u128.public u128.constant _ MAX : 0 0 129 130 387/130/129 private b61ebba8a999df32
+u128.public u128.public _ _ : 0 0 129 130 515/130/129 private 7c0f41d9f77cc9ee
+u128.public u128.private _ _ : 0 0 129 130 515/130/129 private c2573efefb81e826
+u128.private u128.constant * : 0 0 129 130 387/130/129 private 87d3a7a6afb89c64
+u128.private u128.constant _ 0 : 0 0 129 130 387/130/129 private f94ffd2ca283470e
+u128.private u128.constant _ 1 : 0 0 129 130 387/130/129 private 96e52c4e15898c81
+u128.private u128.constant _ 3 : 0 0 129 130 387/130/129 private f7bbf207b60210bb
+u128.private u128.constant _ 2^63-1 : 0 0 129 130 387/130/129 private 99f0de613215a37f
+u128.private u128.constant _ 2^63 : 0 0 129 130 387/130/129 private ac75e103cdffc012
+u128.private u128.constant _ 2^63+1 : 0 0 129 130 387/130/129 private 16e52c4e15898c81
+u128.private u128.constant _ 2^64-1 : 0 0 129 130 387/130/129 private 19f0de613215a37f
+u128.private u128.constant _ 2^64 : 0 0 129 130 387/130/129 private 2c75e103cdffc012
+u128.private u128.constant _ 2^64+1 : 0 0 129 130 387/130/129 private 1ded1aebf65656f2
+u128.private u128.constant _ 2^127-1 : 0 0 129 130 387/130/129 private 81d993e763557fe6
+u128.private u128.constant _ 2^127 : 0 0 129 130 387/130/129 private 15378b60b8052913
+u128.private u128.constant _ 2^127+1 : 0 0 129 130 387/130/129 private 16e52c4e15898c81
+u128.private u128.constant _ MAX-1 : 0 0 129 130 387/130/129 private 50755a38618a9bed
+u128.private u128.constant _ MAX : 0 0 129 130 387/130/129 private 01d993e763557fe6
+u128.private u128.public _ _ : 0 0 129 130 515/130/129 private 51c387dbcaea9932
+u128.private u128.private _ _ : 0 0 129 130 515/130/129 private b2bbdce854fb871a
+i8.constant i8.constant * : 8 0 0 0 0/0/0 constant cbf29ce484222325
+i8.constant i8.public MIN _ : 0 0 9 10 27/10/9 private 73867944ab4cad39
+i8.constant i8.public MIN+1 _ : 0 0 9 10 27/10/9 private 19c491cfa8663200
+i8.constant i8.public -2^4-1 _ : 0 0 9 10 27/10/9 private 1c7eb96caa964aa6
+i8.constant i8.public -2^4 _ : 0 0 9 10 27/10/9 private d0444a1cad97daa9
+i8.constant i8.public -2^4+1 _ : 0 0 9 10 27/10/9 private ea1fb3a28d1a30b0
+i8.constant i8.public -2 _ : 0 0 9 10 27/10/9 private bda251d1c870487f
+i8.constant i8.public -1 _ : 0 0 9 10 27/10/9 private fea40d22045c70b6
+i8.constant i8.public 0 _ : 0 0 9 10 27/10/9 private fe3471b339e4acb9
+i8.constant i8.public 1 _ : 0 0 9 10 27/10/9 private f8cedb10e99bcb80
+i8.constant i8.public 2 _ : 0 0 9 10 27/10/9 private 607172bbd4653143
+i8.constant i8.public 3 _ : 0 0 9 10 27/10/9 private deb988da90f9c84a
+i8.constant i8.public 2^3-1 _ : 0 0 9 10 27/10/9 private 0e0bc45e7cae860e
+i8.constant i8.public 2^3 _ : 0 0 9 10 27/10/9 private 51292ff47a56c591
+i8.constant i8.public 2^3+1 _ : 0 0 9 10 27/10/9 private 6ce25f0878e92db8
+i8.constant i8.public 2^4-1 _ : 0 0 9 10 27/10/9 private e426d19d4fa0ac46
+i8.constant i8.public 2^4 _ : 0 0 9 10 27/10/9 private d96e55375cae1dc9
+i8.constant i8.public 2^4+1 _ : 0 0 9 10 27/10/9 private 53720ed04e924650
+i8.constant i8.public 2^6-1 _ : 0 0 9 10 27/10/9 private a2e25ca5397ae376
+i8.constant i8.public 2^6 _ : 0 0 9 10 27/10/9 private 5f671bbbff566e79
+i8.constant i8.public 2^6+1 _ : 0 0 9 10 27/10/9 private 3231a4cdb2214a40
+i8.constant i8.public MAX-1 _ : 0 0 9 10 27/10/9 private e162342649d6c1ff
+i8.constant i8.public MAX _ : 0 0 9 10 27/10/9 private 0dd00f572e322c36
+i8.constant i8.private MIN _ : 0 0 9 10 27/10/9 private 78fe743d67f67171
+i8.constant i8.private MIN+1 _ : 0 0 9 10 27/10/9 private 411d31faaefc4750
+i8.constant i8.private -2^4-1 _ : 0 0 9 10 27/10/9 private c65c4a817ab5d466
+i8.constant i8.private -2^4 _ : 0 0 9 10 27/10/9 private bca5d94306a4a6a1
+i8.constant i8.private -2^4+1 _ : 0 0 9 10 27/10/9 private 013a7deb97795800
+i8.constant i8.private -2 _ : 0 0 9 10 27/10/9 private 7dbab216cd094dc7
+i8.constant i8.private -1 _ : 0 0 9 10 27/10/9 private e626cc471264f776
+i8.constant i8.private 0 _ : 0 0 9 10 27/10/9 private 8acce0ccc7d36af1
+i8.constant i8.private 1 _ : 0 0 9 10 27/10/9 private 9da577dd7c71fcd0
+i8.constant i8.private 2 _ : 0 0 9 10 27/10/9 private 71777d6cf4fff5fb
+i8.constant i8.private 3 _ : 0 0 9 10 27/10/9 private e5cc143581062dea
+i8.constant i8.private 2^3-1 _ : 0 0 9 10 27/10/9 private 045f079890b94cde
+i8.constant i8.private 2^3 _ : 0 0 9 10 27/10/9 private 4d6a9e0df8415a79
+i8.constant i8.private 2^3+1 _ : 0 0 9 10 27/10/9 private d0a4c91c9d34d4b8
+i8.constant i8.private 2^4-1 _ : 0 0 9 10 27/10/9 private 1c6e3ddbfa05f706
+i8.constant i8.private 2^4 _ : 0 0 9 10 27/10/9 private 4648494fd62a04c1
+i8.constant i8.private 2^4+1 _ : 0 0 9 10 27/10/9 private 4a2a9bd724576320
+i8.constant i8.private 2^6-1 _ : 0 0 9 10 27/10/9 private 8ae0be454c28f736
+i8.constant i8.private 2^6 _ : 0 0 9 10 27/10/9 private 6a6059511922e3b1
+i8.constant i8.private 2^6+1 _ : 0 0 9 10 27/10/9 private 1f4355b2f8251c90
+i8.constant i8.private MAX-1 _ : 0 0 9 10 27/10/9 private 8f47fb1131953347
+i8.constant i8.private MAX _ : 0 0 9 10 27/10/9 private b2b8eb8e0934b6f6
+i8.public i8.constant _ MIN : 0 0 9 10 27/10/9 private 360433053217e456
+i8.public i8.constant _ MIN+1 : 0 0 9 10 27/10/9 private 39a7664ee23f78b1
+i8.public i8.constant _ -2^4-1 : 0 0 9 10 27/10/9 private 351d4cebef6434fb
+i8.public i8.constant _ -2^4 : 0 0 9 10 27/10/9 private 6fb0b7e375531786
+i8.public i8.constant _ -2^4+1 : 0 0 9 10 27/10/9 private 5b799be448777d61
+i8.public i8.constant _ -2 : 0 0 9 10 27/10/9 private c880d30908026de8
+i8.public i8.constant _ -1 : 0 0 9 10 27/10/9 private 12e1172d8d4e804b
+i8.public i8.constant _ 0 : 0 0 9 10 27/10/9 private 5bbc8c83d7458ed6
+i8.public i8.constant _ 1 : 0 0 9 10 27/10/9 private 01628ba328d26b31
+i8.public i8.constant _ 2 : 0 0 9 10 27/10/9 private 9f86bf2dd582031c
+i8.public i8.constant _ 3 : 0 0 9 10 27/10/9 private 2a1f360eb0953a8f
+i8.public i8.constant _ 2^3-1 : 0 0 9 10 27/10/9 private 73918cce11569c93
+i8.public i8.constant _ 2^3 : 0 0 9 10 27/10/9 private 9d6648391f113d5e
+i8.public i8.constant _ 2^3+1 : 0 0 9 10 27/10/9 private 68272381be6aaef9
+i8.public i8.constant _ 2^4-1 : 0 0 9 10 27/10/9 private 0a7ec0830f7456db
+i8.public i8.constant _ 2^4 : 0 0 9 10 27/10/9 private 94bf29bd86094666
+i8.public i8.constant _ 2^4+1 : 0 0 9 10 27/10/9 private 15878bf8564a8ec1
+i8.public i8.constant _ 2^6-1 : 0 0 9 10 27/10/9 private db74c63cc2cf9d0b
+i8.public i8.constant _ 2^6 : 0 0 9 10 27/10/9 private fa1167d8b4e5dc96
+i8.public i8.constant _ 2^6+1 : 0 0 9 10 27/10/9 private 9fb766f80672b8f1
+i8.public i8.constant _ MAX-1 : 0 0 9 10 27/10/9 private 6b913d3418a93a68
+i8.public i8.constant _ MAX : 0 0 9 10 27/10/9 private 629c3c81d3e172cb
+i8.public i8.public _ _ : 0 0 9 10 35/10/9 private f4032b1267b73682
+i8.public i8.private _ _ : 0 0 9 10 35/10/9 private 01cf27461c654d92
+i8.private i8.constant _ MIN : 0 0 9 10 27/10/9 private a5a0f944732cc9d6
+i8.private i8.constant _ MIN+1 : 0 0 9 10 27/10/9 private 38b9a2b1fb369c69
+i8.private i8.constant _ -2^4-1 : 0 0 9 10 27/10/9 private a29caaf415b0bffb
+i8.private i8.constant _ -2^4 : 0 0 9 10 27/10/9 private 5ff4373efd0656c6
+i8.private i8.constant _ -2^4+1 : 0 0 9 10 27/10/9 private 16be1d0aaae60699
+i8.private i8.constant _ -2 : 0 0 9 10 27/10/9 private b322c03f0fac1df0
+i8.private i8.constant _ -1 : 0 0 9 10 27/10/9 private 5bf00054efbee7cb
+i8.private i8.constant _ 0 : 0 0 9 10 27/10/9 private 1997ebe58521b656
+i8.private i8.constant _ 1 : 0 0 9 10 27/10/9 private f5ca0cdd0bdd68e9
+i8.private i8.constant _ 2 : 0 0 9 10 27/10/9 private 6fb4b5cddfa890f4
+i8.private i8.constant _ 3 : 0 0 9 10 27/10/9 private bbb69e5c27c06cbf
+i8.private i8.constant _ 2^3-1 : 0 0 9 10 27/10/9 private 9f3a491c470ff963
+i8.private i8.constant _ 2^3 : 0 0 9 10 27/10/9 private 6bfa6fe66a4b2c6e
+i8.private i8.constant _ 2^3+1 : 0 0 9 10 27/10/9 private 84c6c89dad7621a1
+i8.private i8.constant _ 2^4-1 : 0 0 9 10 27/10/9 private 83fe1e8b35c0e1db
+i8.private i8.constant _ 2^4 : 0 0 9 10 27/10/9 private c06125e94cc62026
+i8.private i8.constant _ 2^4+1 : 0 0 9 10 27/10/9 private 1649633481f8bc79
+i8.private i8.constant _ 2^6-1 : 0 0 9 10 27/10/9 private 773104e75acd008b
+i8.private i8.constant _ 2^6 : 0 0 9 10 27/10/9 private 1fe681a57cb31116
+i8.private i8.constant _ 2^6+1 : 0 0 9 10 27/10/9 private 3481d16431d412a9
+i8.private i8.constant _ MAX-1 : 0 0 9 10 27/10/9 private fb8b3b168bcc0c70
+i8.private i8.constant _ MAX : 0 0 9 10 27/10/9 private 4e9448793740d04b
+i8.private i8.public _ _ : 0 0 9 10 35/10/9 private 0e130d1da44a1602
+i8.private i8.private _ _ : 0 0 9 10 35/10/9 private cac98fdae341dc3a
+i16.constant i16.constant * : 16 0 0 0 0/0/0 constant cbf29ce484222325
+i16.constant i16.public MIN _ : 0 0 17 18 51/18/17 private 56cf298a987ae2d1
+i16.constant i16.public MIN+1 _ : 0 0 17 18 51/18/17 private a1ad4979ace9c418
+i16.constant i16.public -2^8-1 _ : 0 0 17 18 51/18/17 private fb66f08dfecb9cbe
+i16.constant i16.public -2^8 _ : 0 0 17 18 51/18/17 private 5857b2b18b455dd1
+i16.constant i16.public -2^8+1 _ : 0 0 17 18 51/18/17 private f478ddbd68f0d718
+i16.constant i16.public -2 _ : 0 0 17 18 51/18/17 private 50e255d63c669217
+i16.constant i16.public -1 _ : 0 0 17 18 51/18/17 private 99e3f70aa57f3dbe
+i16.constant i16.public 0 _ : 0 0 17 18 51/18/17 private cfd690e5a63962d1
+i16.constant i16.public 1 _ : 0 0 17 18 51/18/17 private 4e2c45d3ec8a4418
+i16.constant i16.public 2 _ : 0 0 17 18 51/18/17 private abea6bad426449db
+i16.constant i16.public 3 _ : 0 0 17 18 51/18/17 private 8d66494f78ea6962
+i16.constant i16.public 2^7-1 _ : 0 0 17 18 51/18/17 private 3c26be99ada92a3e
+i16.constant i16.public 2^7 _ : 0 0 17 18 51/18/17 private 916a658bad83eb51
+i16.constant i16.public 2^7+1 _ : 0 0 17 18 51/18/17 private 48b4580672f0b298
+i16.constant i16.public 2^8-1 _ : 0 0 17 18 51/18/17 private 54dd678e886ebabe
+i16.constant i16.public 2^8 _ : 0 0 17 18 51/18/17 private a08dc386361a03d1
+i16.constant i16.public 2^8+1 _ : 0 0 17 18 51/18/17 private 7021ecdb6ca75d18
+i16.constant i16.public 2^14-1 _ : 0 0 17 18 51/18/17 private 3f0c1cfaf8c4fdbe
+i16.constant i16.public 2^14 _ : 0 0 17 18 51/18/17 private 19958a2e7f2f22d1
+i16.constant i16.public 2^14+1 _ : 0 0 17 18 51/18/17 private 3845a46ae32b0418
+i16.constant i16.public MAX-1 _ : 0 0 17 18 51/18/17 private 523a699c7df71217
+i16.constant i16.public MAX _ : 0 0 17 18 51/18/17 private 8ea272e89b59bdbe
+i16.constant i16.private MIN _ : 0 0 17 18 51/18/17 private cca4b2e21d177ca1
+i16.constant i16.private MIN+1 _ : 0 0 17 18 51/18/17 private 825b67d9f424bf38
+i16.constant i16.private -2^8-1 _ : 0 0 17 18 51/18/17 private 98b2414a613002fe
+i16.constant i16.private -2^8 _ : 0 0 17 18 51/18/17 private ee1b23c7b964dfa1
+i16.constant i16.private -2^8+1 _ : 0 0 17 18 51/18/17 private d9d281db5b9b9638
+i16.constant i16.private -2 _ : 0 0 17 18 51/18/17 private 00dd05b1e3dba3f7
+i16.constant i16.private -1 _ : 0 0 17 18 51/18/17 private 9b74a6dc9e3acbfe
+i16.constant i16.private 0 _ : 0 0 17 18 51/18/17 private e0edd4059bbdfca1
+i16.constant i16.private 1 _ : 0 0 17 18 51/18/17 private 2c2f00aa5ccd3f38
+i16.constant i16.private 2 _ : 0 0 17 18 51/18/17 private 9e88eea81a846dbb
+i16.constant i16.private 3 _ : 0 0 17 18 51/18/17 private 96900b0657a6e402
+i16.constant i16.private 2^7-1 _ : 0 0 17 18 51/18/17 private fd5a876c1f47947e
+i16.constant i16.private 2^7 _ : 0 0 17 18 51/18/17 private d249c2ee4bc9ef21
+i16.constant i16.private 2^7+1 _ : 0 0 17 18 51/18/17 private 5511cf4803a057b8
+i16.constant i16.private 2^8-1 _ : 0 0 17 18 51/18/17 private 41ed478a1279b0fe
+i16.constant i16.private 2^8 _ : 0 0 17 18 51/18/17 private 5e23925aae7cfda1
+i16.constant i16.private 2^8+1 _ : 0 0 17 18 51/18/17 private aa8eb7568e6b9438
+i16.constant i16.private 2^14-1 _ : 0 0 17 18 51/18/17 private ee7252fc9cc38bfe
+i16.constant i16.private 2^14 _ : 0 0 17 18 51/18/17 private 59f42169c810bca1
+i16.constant i16.private 2^14+1 _ : 0 0 17 18 51/18/17 private 46fc95dca314ff38
+i16.constant i16.private MAX-1 _ : 0 0 17 18 51/18/17 private 579ee331ec6823f7
+i16.constant i16.private MAX _ : 0 0 17 18 51/18/17 private 59a88e63ec934bfe
+i16.public i16.constant _ MIN : 0 0 17 18 51/18/17 private d0375d6da6977f56
+i16.public i16.constant _ MIN+1 : 0 0 17 18 51/18/17 private 00a2585469bfd7a9
+i16.public i16.constant _ -2^8-1 : 0 0 17 18 51/18/17 private bff071a5f3d80d53
+i16.public i16.constant _ -2^8 : 0 0 17 18 51/18/17 private 11b840429d894e56
+i16.public i16.constant _ -2^8+1 : 0 0 17 18 51/18/17 private 950ec6b2170862a9
+i16.public i16.constant _ -2 : 0 0 17 18 51/18/17 private 20801f527a298c08
+i16.public i16.constant _ -1 : 0 0 17 18 51/18/17 private 7994620cc8351a53
+i16.public i16.constant _ 0 : 0 0 17 18 51/18/17 private f2ccadde1a16ff56
+i16.public i16.constant _ 1 : 0 0 17 18 51/18/17 private 5eab5bd21e3557a9
+i16.public i16.constant _ 2 : 0 0 17 18 51/18/17 private 04dffc4ec1b09cec
+i16.public i16.constant _ 3 : 0 0 17 18 51/18/17 private 5ba00bd822427de7
+i16.public i16.constant _ 2^7-1 : 0 0 17 18 51/18/17 private aac3e360369061d3
+i16.public i16.constant _ 2^7 : 0 0 17 18 51/18/17 private 318fbc3771c74ed6
+i16.public i16.constant _ 2^7+1 : 0 0 17 18 51/18/17 private 31c13c15aca89129
+i16.public i16.constant _ 2^8-1 : 0 0 17 18 51/18/17 private 8bbec613c4b55f53
+i16.public i16.constant _ 2^8 : 0 0 17 18 51/18/17 private 71ad2e13fef2f856
+i16.public i16.constant _ 2^8+1 : 0 0 17 18 51/18/17 private 8e10d3105002c4a9
+i16.public i16.constant _ 2^14-1 : 0 0 17 18 51/18/17 private fe0d7ccdae24da53
+i16.public i16.constant _ 2^14 : 0 0 17 18 51/18/17 private e354e08ada03bf56
+i16.public i16.constant _ 2^14+1 : 0 0 17 18 51/18/17 private bbc69deaea6f17a9
+i16.public i16.constant _ MAX-1 : 0 0 17 18 51/18/17 private f4787664b57d0c08
+i16.public i16.constant _ MAX : 0 0 17 18 51/18/17 private 6da8bd777ee49a53
+i16.public i16.public _ _ : 0 0 17 18 67/18/17 private e188a3618c862d82
+i16.public i16.private _ _ : 0 0 17 18 67/18/17 private 4a295de8de24c4a2
+i16.private i16.constant _ MIN : 0 0 17 18 51/18/17 private 4745c51eff34da0e
+i16.private i16.constant _ MIN+1 : 0 0 17 18 51/18/17 private d39c8c248f936371
+i16.private i16.constant _ -2^8-1 : 0 0 17 18 51/18/17 private cebf6b8cc8d1e963
+i16.private i16.constant _ -2^8 : 0 0 17 18 51/18/17 private 7b3b24f73484710e
+i16.private i16.constant _ -2^8+1 : 0 0 17 18 51/18/17 private 5c0e252da7184e71
+i16.private i16.constant _ -2 : 0 0 17 18 51/18/17 private ece451c1bd93a888
+i16.private i16.constant _ -1 : 0 0 17 18 51/18/17 private 64ad51d229db0263
+i16.private i16.constant _ 0 : 0 0 17 18 51/18/17 private 7a7a3a6ce37e5a0e
+i16.private i16.constant _ 1 : 0 0 17 18 51/18/17 private c46c10c53268e371
+i16.private i16.constant _ 2 : 0 0 17 18 51/18/17 private b97094dd9bf7ba2c
+i16.private i16.constant _ 3 : 0 0 17 18 51/18/17 private ce1411c9ce2fc8f7
+i16.private i16.constant _ 2^7-1 : 0 0 17 18 51/18/17 private b6ad325a94b4c5e3
+i16.private i16.constant _ 2^7 : 0 0 17 18 51/18/17 private ecfd51f5a7bba58e
+i16.private i16.constant _ 2^7+1 : 0 0 17 18 51/18/17 private b21ebdd4ae3bd6f1
+i16.private i16.constant _ 2^8-1 : 0 0 17 18 51/18/17 private f03f3c2b0f445b63
+i16.private i16.constant _ 2^8 : 0 0 17 18 51/18/17 private 101e2b33b3fdbb0e
+i16.private i16.constant _ 2^8+1 : 0 0 17 18 51/18/17 private 89d085a20eb30871
+i16.private i16.constant _ 2^14-1 : 0 0 17 18 51/18/17 private a91e17208310c263
+i16.private i16.constant _ 2^14 : 0 0 17 18 51/18/17 private 1f776b35afec1a0e
+i16.private i16.constant _ 2^14+1 : 0 0 17 18 51/18/17 private ead9d399161ea371
+i16.private i16.constant _ MAX-1 : 0 0 17 18 51/18/17 private 56e800c0fb212888
+i16.private i16.constant _ MAX : 0 0 17 18 51/18/17 private 78c1ad3ce08a8263
+i16.private i16.public _ _ : 0 0 17 18 67/18/17 private d1d4db1b8e934572
+i16.private i16.private _ _ : 0 0 17 18 67/18/17 private f7173009108eb45a
+i32.constant i32.constant * : 32 0 0 0 0/0/0 constant cbf29ce484222325
+i32.constant i32.public MIN _ : 0 0 33 34 99/34/33 private 4bb87f5e1b31eb71
+i32.constant i32.public MIN+1 _ : 0 0 33 34 99/34/33 private fd9360cb2d6ff2e8
+i32.constant i32.public -2^16-1 _ : 0 0 33 34 99/34/33 private 202a9dbefec0079e
+i32.constant i32.public -2^16 _ : 0 0 33 34 99/34/33 private c129fb994044eb71
+i32.constant i32.public -2^16+1 _ : 0 0 33 34 99/34/33 private d369522180d2f2e8
+i32.constant i32.public -2 _ : 0 0 33 34 99/34/33 private 97c199bfadc9c287
+i32.constant i32.public -1 _ : 0 0 33 34 99/34/33 private 4e519fef1bbd079e
+i32.constant i32.public 0 _ : 0 0 33 34 99/34/33 private 126799f39b31eb71
+i32.constant i32.public 1 _ : 0 0 33 34 99/34/33 private d52ec93ead6ff2e8
+i32.constant i32.public 2 _ : 0 0 33 34 99/34/33 private 94514adea3deb1eb
+i32.constant i32.public 3 _ : 0 0 33 34 99/34/33 private 958f8741ce9e0ca2
+i32.constant i32.public 2^15-1 _ : 0 0 33 34 99/34/33 private 0f1ea03db9d2879e
+i32.constant i32.public 2^15 _ : 0 0 33 34 99/34/33 private 14ed3d44abe76b71
+i32.constant i32.public 2^15+1 _ : 0 0 33 34 99/34/33 private d04c786e023d72e8
+i32.constant i32.public 2^16-1 _ : 0 0 33 34 99/34/33 private 0b27033eee2e079e
+i32.constant i32.public 2^16 _ : 0 0 33 34 99/34/33 private 59f15dfb7862eb71
+i32.constant i32.public 2^16+1 _ : 0 0 33 34 99/34/33 private 21dd0cd3eb08f2e8
+i32.constant i32.public 2^30-1 _ : 0 0 33 34 99/34/33 private ae3770e65bbd079e
+i32.constant i32.public 2^30 _ : 0 0 33 34 99/34/33 private f0994116db31eb71
+i32.constant i32.public 2^30+1 _ : 0 0 33 34 99/34/33 private bf29a058ed6ff2e8
+i32.constant i32.public MAX-1 _ : 0 0 33 34 99/34/33 private 07c9e5ff2dc9c287
+i32.constant i32.public MAX _ : 0 0 33 34 99/34/33 private 7efbec969bbd079e
+i32.constant i32.private MIN _ : 0 0 33 34 99/34/33 private baa6676b95690cc1
+i32.constant i32.private MIN+1 _ : 0 0 33 34 99/34/33 private 5eb9184723dad508
+i32.constant i32.private -2^16-1 _ : 0 0 33 34 99/34/33 private 3acc5208e311352e
+i32.constant i32.private -2^16 _ : 0 0 33 34 99/34/33 private ffa39aa894a00cc1
+i32.constant i32.private -2^16+1 _ : 0 0 33 34 99/34/33 private ce22ec725425d508
+i32.constant i32.private -2 _ : 0 0 33 34 99/34/33 private e49f9aefb358ecb7
+i32.constant i32.private -1 _ : 0 0 33 34 99/34/33 private a6489bbe7926352e
+i32.constant i32.private 0 _ : 0 0 33 34 99/34/33 private 71d0de5115690cc1
+i32.constant i32.private 1 _ : 0 0 33 34 99/34/33 private bfa96464a3dad508
+i32.constant i32.private 2 _ : 0 0 33 34 99/34/33 private e4869f90832a7f9b
+i32.constant i32.private 3 _ : 0 0 33 34 99/34/33 private 22c03f2538e36692
+i32.constant i32.private 2^15-1 _ : 0 0 33 34 99/34/33 private a8dc9b300075b52e
+i32.constant i32.private 2^15 _ : 0 0 33 34 99/34/33 private 36864b4a70888cc1
+i32.constant i32.private 2^15+1 _ : 0 0 33 34 99/34/33 private d9cf0a66b3085508
+i32.constant i32.private 2^16-1 _ : 0 0 33 34 99/34/33 private 674c5c0ae507352e
+i32.constant i32.private 2^16 _ : 0 0 33 34 99/34/33 private 93ac9aeec61e0cc1
+i32.constant i32.private 2^16+1 _ : 0 0 33 34 99/34/33 private 83379d2cd7abd508
+i32.constant i32.private 2^30-1 _ : 0 0 33 34 99/34/33 private 1f4c2bf6b926352e
+i32.constant i32.private 2^30 _ : 0 0 33 34 99/34/33 private b80c84b755690cc1
+i32.constant i32.private 2^30+1 _ : 0 0 33 34 99/34/33 private d16f1ddce3dad508
+i32.constant i32.private MAX-1 _ : 0 0 33 34 99/34/33 private 08544cc93358ecb7
+i32.constant i32.private MAX _ : 0 0 33 34 99/34/33 private 065ce55ff926352e
+i32.public i32.constant _ MIN : 0 0 33 34 99/34/33 private 1c66719566d63056
+i32.public i32.constant _ MIN+1 : 0 0 33 34 99/34/33 private 683cc4504b8ba559
+i32.public i32.constant _ -2^16-1 : 0 0 33 34 99/34/33 private ee53c6666aa1c363
+i32.public i32.constant _ -2^16 : 0 0 33 34 99/34/33 private 4a8a59c66dd13056
+i32.public i32.constant _ -2^16+1 : 0 0 33 34 99/34/33 private 5c99f8f62bfea559
+i32.public i32.constant _ -2 : 0 0 33 34 99/34/33 private ad464dff84d985a8
+i32.public i32.constant _ -1 : 0 0 33 34 99/34/33 private 63eca0562e0ac363
+i32.public i32.constant _ 0 : 0 0 33 34 99/34/33 private 6b95e9c1e6d63056
+i32.public i32.constant _ 1 : 0 0 33 34 99/34/33 private 816c3c7ccb8ba559
+i32.public i32.constant _ 2 : 0 0 33 34 99/34/33 private fbcc4a6c4088876c
+i32.public i32.constant _ 3 : 0 0 33 34 99/34/33 private 2ef9ac7be8ef8897
+i32.public i32.constant _ 2^15-1 : 0 0 33 34 99/34/33 private ae2e0f75fae14363
+i32.public i32.constant _ 2^15 : 0 0 33 34 99/34/33 private adb5b1d7ffacb056
+i32.public i32.constant _ 2^15+1 : 0 0 33 34 99/34/33 private 04227cc740bc2559
+i32.public i32.constant _ 2^16-1 : 0 0 33 34 99/34/33 private 529cd3b6f7a3c363
+i32.public i32.constant _ 2^16 : 0 0 33 34 99/34/33 private 9ee4f5006a2b3056
+i32.public i32.constant _ 2^16+1 : 0 0 33 34 99/34/33 private 40f80467ed70a559
+i32.public i32.constant _ 2^30-1 : 0 0 33 34 99/34/33 private d644ca886e0ac363
+i32.public i32.constant _ 2^30 : 0 0 33 34 99/34/33 private 2514b69826d63056
+i32.public i32.constant _ 2^30+1 : 0 0 33 34 99/34/33 private 007de4120b8ba559
+i32.public i32.constant _ MAX-1 : 0 0 33 34 99/34/33 private 5ecc8b7204d985a8
+i32.public i32.constant _ MAX : 0 0 33 34 99/34/33 private 903cf1a2ae0ac363
+i32.public i32.public _ _ : 0 0 33 34 131/34/33 private 627c439b5092d112
+i32.public i32.private _ _ : 0 0 33 34 131/34/33 private 4ee51ae174ee6f82
+i32.private i32.constant _ MIN : 0 0 33 34 99/34/33 private 725399ed426efe7e
+i32.private i32.constant _ MIN+1 : 0 0 33 34 99/34/33 private b05a794931c39e21
+i32.private i32.constant _ -2^16-1 : 0 0 33 34 99/34/33 private cbfac7dede2695b3
+i32.private i32.constant _ -2^16 : 0 0 33 34 99/34/33 private c18089b61c51fe7e
+i32.private i32.constant _ -2^16+1 : 0 0 33 34 99/34/33 private ac7d0f1dd38a9e21
+i32.private i32.constant _ -2 : 0 0 33 34 99/34/33 private 185f97812689d5f8
+i32.private i32.constant _ -1 : 0 0 33 34 99/34/33 private eb12bd1580b795b3
+i32.private i32.constant _ 0 : 0 0 33 34 99/34/33 private 41d9d75fc26efe7e
+i32.private i32.constant _ 1 : 0 0 33 34 99/34/33 private ad1643b7b1c39e21
+i32.private i32.constant _ 2 : 0 0 33 34 99/34/33 private 51d7bd62602acd3c
+i32.private i32.constant _ 3 : 0 0 33 34 99/34/33 private d505592d922ad5e7
+i32.private i32.constant _ 2^15-1 : 0 0 33 34 99/34/33 private 3c6a71bc282a15b3
+i32.private i32.constant _ 2^15 : 0 0 33 34 99/34/33 private f084e94e8ce57e7e
+i32.private i32.constant _ 2^15+1 : 0 0 33 34 99/34/33 private 9aa34d483be81e21
+i32.private i32.constant _ 2^16-1 : 0 0 33 34 99/34/33 private 5d23c28b1f4095b3
+i32.private i32.constant _ 2^16 : 0 0 33 34 99/34/33 private a9c0e1f3c2fbfe7e
+i32.private i32.constant _ 2^16+1 : 0 0 33 34 99/34/33 private 4561aedac1049e21
+i32.private i32.constant _ 2^30-1 : 0 0 33 34 99/34/33 private 7fcb2495c0b795b3
+i32.private i32.constant _ 2^30 : 0 0 33 34 99/34/33 private 6e806641026efe7e
+i32.private i32.constant _ 2^30+1 : 0 0 33 34 99/34/33 private 03fe2828f1c39e21
+i32.private i32.constant _ MAX-1 : 0 0 33 34 99/34/33 private 5f1b61efa689d5f8
+i32.private i32.constant _ MAX : 0 0 33 34 99/34/33 private 690c491c00b795b3
+i32.private i32.public _ _ : 0 0 33 34 131/34/33 private 94d70ccf4ccac622
+i32.private i32.private _ _ : 0 0 33 34 131/34/33 private a4b93c3ecc1c387a
+i64.constant i64.constant * : 64 0 0 0 0/0/0 constant cbf29ce484222325
+i64.constant i64.public MIN _ : 0 0 65 66 195/66/65 private 48aa58f7f387e6fe
+i64.constant i64.public MIN+1 _ : 0 0 65 66 195/66/65 private 57e83756bd03eb6b
+i64.constant i64.public -2^32-1 _ : 0 0 65 66 195/66/65 private d2a2423337d45fe1
+i64.constant i64.public -2^32 _ : 0 0 65 66 195/66/65 private 6366f824f387e6fe
+i64.constant i64.public -2^32+1 _ : 0 0 65 66 195/66/65 private e1f0ef0bbd03eb6b
+i64.constant i64.public -2 _ : 0 0 65 66 195/66/65 private 9c0316441fd278c4
+i64.constant i64.public -1 _ : 0 0 65 66 195/66/65 private cf80c8bd19ab8f24
+i64.constant i64.public 0 _ : 0 0 65 66 195/66/65 private c8aa58f7f387e6fe
+i64.constant i64.public 1 _ : 0 0 65 66 195/66/65 private d7e83756bd03eb6b
+i64.constant i64.public 2 _ : 0 0 65 66 195/66/65 private f3d1b8d3119a3618
+i64.constant i64.public 3 _ : 0 0 65 66 195/66/65 private 6642b25b8bf6dac5
+i64.constant i64.public 2^31-1 _ : 0 0 65 66 195/66/65 private 110dca06b7d45fe1
+i64.constant i64.public 2^31 _ : 0 0 65 66 195/66/65 private 71b8900c7387e6fe
+i64.constant i64.public 2^31+1 _ : 0 0 65 66 195/66/65 private b0c7de013d03eb6b
+i64.constant i64.public 2^32-1 _ : 0 0 65 66 195/66/65 private 5029f3e937d45fe1
+i64.constant i64.public 2^32 _ : 0 0 65 66 195/66/65 private 5957ee12f387e6fe
+i64.constant i64.public 2^32+1 _ : 0 0 65 66 195/66/65 private 8e77e7e1bd03eb6b
+i64.constant i64.public 2^62-1 _ : 0 0 65 66 195/66/65 private e385bf9a37d45fe1
+i64.constant i64.public 2^62 _ : 0 0 65 66 195/66/65 private 88aa58f7f387e6fe
+i64.constant i64.public 2^62+1 _ : 0 0 65 66 195/66/65 private 97e83756bd03eb6b
+i64.constant i64.public MAX-1 _ : 0 0 65 66 195/66/65 private 1c0316441fd278c4
+i64.constant i64.public MAX _ : 0 0 65 66 195/66/65 private a385bf9a37d45fe1
+i64.constant i64.private MIN _ : 0 0 65 66 195/66/65 private 8f10a17dd2d33f9a
+i64.constant i64.private MIN+1 _ : 0 0 65 66 195/66/65 private d6409aa1cc570cb7
+i64.constant i64.private -2^32-1 _ : 0 0 65 66 195/66/65 private a209e3af871dba95
+i64.constant i64.private -2^32 _ : 0 0 65 66 195/66/65 private 9c5a5f5ad2d33f9a
+i64.constant i64.private -2^32+1 _ : 0 0 65 66 195/66/65 private f354a43acc570cb7
+i64.constant i64.private -2 _ : 0 0 65 66 195/66/65 private 1250de52b9852658
+i64.constant i64.private -1 _ : 0 0 65 66 195/66/65 private 30dbc57c409f4a38
+i64.constant i64.private 0 _ : 0 0 65 66 195/66/65 private 0f10a17dd2d33f9a
+i64.constant i64.private 1 _ : 0 0 65 66 195/66/65 private 56409aa1cc570cb7
+i64.constant i64.private 2 _ : 0 0 65 66 195/66/65 private 79b5b26df41f75fc
+i64.constant i64.private 3 _ : 0 0 65 66 195/66/65 private 277faaa788399309
+i64.constant i64.private 2^31-1 _ : 0 0 65 66 195/66/65 private 42eb26b1071dba95
+i64.constant i64.private 2^31 _ : 0 0 65 66 195/66/65 private 1ec4766652d33f9a
+i64.constant i64.private 2^31+1 _ : 0 0 65 66 195/66/65 private 660280aa4c570cb7
+i64.constant i64.private 2^32-1 _ : 0 0 65 66 195/66/65 private ea88248d871dba95
+i64.constant i64.private 2^32 _ : 0 0 65 66 195/66/65 private 2b5c1f70d2d33f9a
+i64.constant i64.private 2^32+1 _ : 0 0 65 66 195/66/65 private f7b448b8cc570cb7
+i64.constant i64.private 2^62-1 _ : 0 0 65 66 195/66/65 private df8e36d6871dba95
+i64.constant i64.private 2^62 _ : 0 0 65 66 195/66/65 private cf10a17dd2d33f9a
+i64.constant i64.private 2^62+1 _ : 0 0 65 66 195/66/65 private 16409aa1cc570cb7
+i64.constant i64.private MAX-1 _ : 0 0 65 66 195/66/65 private 9250de52b9852658
+i64.constant i64.private MAX _ : 0 0 65 66 195/66/65 private 9f8e36d6871dba95
+i64.public i64.constant _ MIN : 0 0 65 66 195/66/65 private 27f9d7f0a8e62101
+i64.public i64.constant _ MIN+1 : 0 0 65 66 195/66/65 private f1442b1cbd49788e
+i64.public i64.constant _ -2^32-1 : 0 0 65 66 195/66/65 private 4e38bc8adf8ceb98
+i64.public i64.constant _ -2^32 : 0 0 65 66 195/66/65 private a2a8f031a8e62101
+i64.public i64.constant _ -2^32+1 : 0 0 65 66 195/66/65 private 9fbaa3f1bd49788e
+i64.public i64.constant _ -2 : 0 0 65 66 195/66/65 private 124e7fec813edc93
+i64.public i64.constant _ -1 : 0 0 65 66 195/66/65 private ed61971ddf8ceb98
+i64.public i64.constant _ 0 : 0 0 65 66 195/66/65 private 043c9c1441b9adee
+i64.public i64.constant _ 1 : 0 0 65 66 195/66/65 private 71442b1cbd49788e
+i64.public i64.constant _ 2 : 0 0 65 66 195/66/65 private f0ee34162de64a97
+i64.public i64.constant _ 3 : 0 0 65 66 195/66/65 private e9e16dfa6d45f24c
+i64.public i64.constant _ 2^31-1 : 0 0 65 66 195/66/65 private 2a77fa255f8ceb98
+i64.public i64.constant _ 2^31 : 0 0 65 66 195/66/65 private ca839cb028e62101
+i64.public i64.constant _ 2^31+1 : 0 0 65 66 195/66/65 private 3eef5ee63d49788e
+i64.public i64.constant _ 2^32-1 : 0 0 65 66 195/66/65 private ebedd22cdf8ceb98
+i64.public i64.constant _ 2^32 : 0 0 65 66 195/66/65 private 16c98c03a8e62101
+i64.public i64.constant _ 2^32+1 : 0 0 65 66 195/66/65 private c1e7d80bbd49788e
+i64.public i64.constant _ 2^62-1 : 0 0 65 66 195/66/65 private 2d61971ddf8ceb98
+i64.public i64.constant _ 2^62 : 0 0 65 66 195/66/65 private e7f9d7f0a8e62101
+i64.public i64.constant _ 2^62+1 : 0 0 65 66 195/66/65 private b1442b1cbd49788e
+i64.public i64.constant _ MAX-1 : 0 0 65 66 195/66/65 private 924e7fec813edc93
+i64.public i64.constant _ MAX : 0 0 65 66 195/66/65 private 6d61971ddf8ceb98
+i64.public i64.public _ _ : 0 0 65 66 259/66/65 private 65d64aa2101a5d15
+i64.public i64.private _ _ : 0 0 65 66 259/66/65 private 46a056ca7ca79fd9
+i64.private i64.constant _ MIN : 0 0 65 66 195/66/65 private 301742c30d361c89
+i64.private i64.constant _ MIN+1 : 0 0 65 66 195/66/65 private e28f823d95e56116
+i64.private i64.constant _ -2^32-1 : 0 0 65 66 195/66/65 private df2586497afe7c68
+i64.private i64.constant _ -2^32 : 0 0 65 66 195/66/65 private 3299bb2c0d361c89
+i64.private i64.constant _ -2^32+1 : 0 0 65 66 195/66/65 private b179b9de95e56116
+i64.private i64.constant _ -2 : 0 0 65 66 195/66/65 private b6898f43b4f80043
+i64.private i64.constant _ -1 : 0 0 65 66 195/66/65 private b8a516c07afe7c68
+i64.private i64.constant _ 0 : 0 0 65 66 195/66/65 private 1c020bdfe46e46f6
+i64.private i64.constant _ 1 : 0 0 65 66 195/66/65 private 628f823d95e56116
+i64.private i64.constant _ 2 : 0 0 65 66 195/66/65 private b72517833f285687
+i64.private i64.constant _ 3 : 0 0 65 66 195/66/65 private 9e7fd9ff54e3a41c
+i64.private i64.constant _ 2^31-1 : 0 0 65 66 195/66/65 private 8ccb81a3fafe7c68
+i64.private i64.constant _ 2^31 : 0 0 65 66 195/66/65 private b502d5168d361c89
+i64.private i64.constant _ 2^31+1 : 0 0 65 66 195/66/65 private 54d1c05515e56116
+i64.private i64.constant _ 2^32-1 : 0 0 65 66 195/66/65 private 34aeeb4b7afe7c68
+i64.private i64.constant _ 2^32 : 0 0 65 66 195/66/65 private f489ec7e0d361c89
+i64.private i64.constant _ 2^32+1 : 0 0 65 66 195/66/65 private 6bdf7e8095e56116
+i64.private i64.constant _ 2^62-1 : 0 0 65 66 195/66/65 private f8a516c07afe7c68
+i64.private i64.constant _ 2^62 : 0 0 65 66 195/66/65 private f01742c30d361c89
+i64.private i64.constant _ 2^62+1 : 0 0 65 66 195/66/65 private a28f823d95e56116
+i64.private i64.constant _ MAX-1 : 0 0 65 66 195/66/65 private 36898f43b4f80043
+i64.private i64.constant _ MAX : 0 0 65 66 195/66/65 private 38a516c07afe7c68
+i64.private i64.public _ _ : 0 0 65 66 259/66/65 private ae128fd5771a46b5
+i64.private i64.private _ _ : 0 0 65 66 259/66/65 private f37e012bd90d2771
+i128.constant i128.constant * : 128 0 0 0 0/0/0 constant cbf29ce484222325
+i128.constant i128.public * : 0 0 129 130 387/130/129 private d6be8d144cc339b4
+i128.constant i128.public MIN+1 _ : 0 0 129 130 387/130/129 private d376d5a172166459
+i128.constant i128.public -2^64-1 _ : 0 0 129 130 387/130/129 private aaa89b93a4ed9f98
+i128.constant i128.public -2^64 _ : 0 0 129 130 387/130/129 private e0b782c0e1dbdc1f
+i128.constant i128.public -2^64+1 _ : 0 0 129 130 387/130/129 private 9fa4205888cc16f2
+i128.constant i128.public -2 _ : 0 0 129 130 387/130/129 private 2d4935c7e0ac94a5
+i128.constant i128.public -1 _ : 0 0 129 130 387/130/129 private 1f6b0f0e8602ae6c
+i128.constant i128.public 0 _ : 0 0 129 130 387/130/129 private 56be8d144cc339b4
+i128.constant i128.public 1 _ : 0 0 129 130 387/130/129 private 5376d5a172166459
+i128.constant i128.public 2 _ : 0 0 129 130 387/130/129 private 4eb5782696c7745a
+i128.constant i128.public 3 _ : 0 0 129 130 387/130/129 private ad0be31815f1880f
+i128.constant i128.public 2^63-1 _ : 0 0 129 130 387/130/129 private 7f1c0d3ecadcdf4b
+i128.constant i128.public 2^63+1 _ : 0 0 129 130 387/130/129 private d376d5a172166459
+i128.constant i128.public 2^64-1 _ : 0 0 129 130 387/130/129 private 89cae06790db4026
+i128.constant i128.public 2^64 _ : 0 0 129 130 387/130/129 private eaaf7d8b44206681
+i128.constant i128.public 2^64+1 _ : 0 0 129 130 387/130/129 private 06f8f43129b8cfcc
+i128.constant i128.public 2^126-1 _ : 0 0 129 130 387/130/129 private bf1c0d3ecadcdf4b
+i128.constant i128.public 2^126 _ : 0 0 129 130 387/130/129 private 16be8d144cc339b4
+i128.constant i128.public 2^126+1 _ : 0 0 129 130 387/130/129 private 1376d5a172166459
+i128.constant i128.public MAX-1 _ : 0 0 129 130 387/130/129 private ad4935c7e0ac94a5
+i128.constant i128.public MAX _ : 0 0 129 130 387/130/129 private 7f1c0d3ecadcdf4b
+i128.constant i128.private * : 0 0 129 130 387/130/129 private 61d7075c77a5e83c
+i128.constant i128.private MIN+1 _ : 0 0 129 130 387/130/129 private 7cc9f6e47f7bf141
+i128.constant i128.private -2^64-1 _ : 0 0 129 130 387/130/129 private 946857948952c790
+i128.constant i128.private -2^64 _ : 0 0 129 130 387/130/129 private d7ac58bd36c9ad17
+i128.constant i128.private -2^64+1 _ : 0 0 129 130 387/130/129 private 1254d900dcfa503a
+i128.constant i128.private -2 _ : 0 0 129 130 387/130/129 private 874bb0dd42bc017d
+i128.constant i128.private -1 _ : 0 0 129 130 387/130/129 private 4434b5d0a71ece94
+i128.constant i128.private 0 _ : 0 0 129 130 387/130/129 private e1d7075c77a5e83c
+i128.constant i128.private 1 _ : 0 0 129 130 387/130/129 private fcc9f6e47f7bf141
+i128.constant i128.private 2 _ : 0 0 129 130 387/130/129 private cae4d261714bbb82
+i128.constant i128.private 3 _ : 0 0 129 130 387/130/129 private 9577ce289c401187
+i128.constant i128.private 2^63-1 _ : 0 0 129 130 387/130/129 private 627b456ef127b373
+i128.constant i128.private 2^63+1 _ : 0 0 129 130 387/130/129 private 7cc9f6e47f7bf141
+i128.constant i128.private 2^64-1 _ : 0 0 129 130 387/130/129 private 05806af8caa84dfe
+i128.constant i128.private 2^64 _ : 0 0 129 130 387/130/129 private c957d8df86c8f909
+i128.constant i128.private 2^64+1 _ : 0 0 129 130 387/130/129 private d22e4f99d3ed1374
+i128.constant i128.private 2^126-1 _ : 0 0 129 130 387/130/129 private a27b456ef127b373
+i128.constant i128.private 2^126 _ : 0 0 129 130 387/130/129 private a1d7075c77a5e83c
+i128.constant i128.private 2^126+1 _ : 0 0 129 130 387/130/129 private bcc9f6e47f7bf141
+i128.constant i128.private MAX-1 _ : 0 0 129 130 387/130/129 private 074bb0dd42bc017d
+i128.constant i128.private MAX _ : 0 0 129 130 387/130/129 private 627b456ef127b373
+i128.public i128.constant * : 0 0 129 130 387/130/129 private e1441fe5270be0f5
+i128.public i128.constant _ MIN : 0 0 129 130 387/130/129 private a626d913c9608e1f
+i128.public i128.constant _ -2^64-1 : 0 0 129 130 387/130/129 private 6ece00baa64c9e89
+i128.public i128.constant _ -2^64 : 0 0 129 130 387/130/129 private ee3e5342751b6c48
+i128.public i128.constant _ -2^64+1 : 0 0 129 130 387/130/129 private 9332af13f7871168
+i128.public i128.constant _ -2 : 0 0 129 130 387/130/129 private 2f5b0598b205a391
+i128.public i128.constant _ -1 : 0 0 129 130 387/130/129 private b61ebba8a999df32
+i128.public i128.constant _ 0 : 0 0 129 130 387/130/129 private 340a1063416feb3a
+i128.public i128.constant _ 1 : 0 0 129 130 387/130/129 private 61441fe5270be0f5
+i128.public i128.constant _ 2 : 0 0 129 130 387/130/129 private ee3e5342751b6c48
+i128.public i128.constant _ 3 : 0 0 129 130 387/130/129 private e94681b4736b0a47
+i128.public i128.constant _ 2^63-1 : 0 0 129 130 387/130/129 private 1e257b8549d8948b
+i128.public i128.constant _ 2^63 : 0 0 129 130 387/130/129 private 99b67a32f288b2ae
+i128.public i128.constant _ 2^64-1 : 0 0 129 130 387/130/129 private 9e257b8549d8948b
+i128.public i128.constant _ 2^64 : 0 0 129 130 387/130/129 private 19b67a32f288b2ae
+i128.public i128.constant _ 2^64+1 : 0 0 129 130 387/130/129 private b23ff4f9a9ce0d8e
+i128.public i128.constant _ 2^126-1 : 0 0 129 130 387/130/129 private f61ebba8a999df32
+i128.public i128.constant _ 2^126 : 0 0 129 130 387/130/129 private 6626d913c9608e1f
+i128.public i128.constant _ 2^126+1 : 0 0 129 130 387/130/129 private 21441fe5270be0f5
+i128.public i128.constant _ MAX-1 : 0 0 129 130 387/130/129 private af5b0598b205a391
+i128.public i128.constant _ MAX : 0 0 129 130 387/130/129 private 361ebba8a999df32
+i128.public i128.public _ _ : 0 0 129 130 515/130/129 private 7c0f41d9f77cc9ee
+i128.public i128.private _ _ : 0 0 129 130 515/130/129 private c2573efefb81e826
+i128.private i128.constant * : 0 0 129 130 387/130/129 private 16e52c4e15898c81
+i128.private i128.constant _ MIN : 0 0 129 130 387/130/129 private 15378b60b8052913
+i128.private i128.constant _ -2^64-1 : 0 0 129 130 387/130/129 private 6a136c0eb141c465
+i128.private i128.constant _ -2^64 : 0 0 129 130 387/130/129 private 87d3a7a6afb89c64
+i128.private i128.constant _ -2^64+1 : 0 0 129 130 387/130/129 private 67cfa55a7e26bb04
+i128.private i128.constant _ -2 : 0 0 129 130 387/130/129 private 50755a38618a9bed
+i128.private i128.constant _ -1 : 0 0 129 130 387/130/129 private 01d993e763557fe6
+i128.private i128.constant _ 0 : 0 0 129 130 387/130/129 private f94ffd2ca283470e
+i128.private i128.constant _ 1 : 0 0 129 130 387/130/129 private 96e52c4e15898c81
+i128.private i128.constant _ 2 : 0 0 129 130 387/130/129 private 87d3a7a6afb89c64
+i128.private i128.constant _ 3 : 0 0 129 130 387/130/129 private f7bbf207b60210bb
+i128.private i128.constant _ 2^63-1 : 0 0 129 130 387/130/129 private 99f0de613215a37f
+i128.private i128.constant _ 2^63 : 0 0 129 130 387/130/129 private ac75e103cdffc012
+i128.private i128.constant _ 2^64-1 : 0 0 129 130 387/130/129 private 19f0de613215a37f
+i128.private i128.constant _ 2^64 : 0 0 129 130 387/130/129 private 2c75e103cdffc012
+i128.private i128.constant _ 2^64+1 : 0 0 129 130 387/130/129 private 1ded1aebf65656f2
+i128.private i128.constant _ 2^126-1 : 0 0 129 130 387/130/129 private 41d993e763557fe6
+i128.private i128.constant _ 2^126 : 0 0 129 130 387/130/129 private d5378b60b8052913
+i128.private i128.constant _ 2^126+1 : 0 0 129 130 387/130/129 private 56e52c4e15898c81
+i128.private i128.constant _ MAX-1 : 0 0 129 130 387/130/129 private d0755a38618a9bed
+i128.private i128.constant _ MAX : 0 0 129 130 387/130/129 private 81d993e763557fe6
+i128.private i128.public _ _ : 0 0 129 130 515/130/129 private 51c387dbcaea9932
+i128.private i128.private _ _ : 0 0 129 130 515/130/129 private b2bbdce854fb871a

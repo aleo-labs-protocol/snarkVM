@@ -1,39 +1,41 @@
 # Circuit shape of `abs_wrapped` for each integer type, operand mode and edge value.
 # Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
 # A `_` stands for each value of a variable operand. The test checks that they give one result.
-# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is a hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
 # A mixed output mode counts the constant, public and private bits.
 # The test also checks each case with the console operation. A defined case must give the console
 # value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
 # A `*` line gives the result of each case of its block that has no line of its own.
 # Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
-u8.constant * : 0 0 0 0 0/0/0 constant
-u8.public _ : 0 0 0 0 0/0/0 public
-u8.private _ : 0 0 0 0 0/0/0 private
-u16.constant * : 0 0 0 0 0/0/0 constant
-u16.public _ : 0 0 0 0 0/0/0 public
-u16.private _ : 0 0 0 0 0/0/0 private
-u32.constant * : 0 0 0 0 0/0/0 constant
-u32.public _ : 0 0 0 0 0/0/0 public
-u32.private _ : 0 0 0 0 0/0/0 private
-u64.constant * : 0 0 0 0 0/0/0 constant
-u64.public _ : 0 0 0 0 0/0/0 public
-u64.private _ : 0 0 0 0 0/0/0 private
-u128.constant * : 0 0 0 0 0/0/0 constant
-u128.public _ : 0 0 0 0 0/0/0 public
-u128.private _ : 0 0 0 0 0/0/0 private
-i8.constant * : 16 0 0 0 0/0/0 constant
-i8.public _ : 8 0 17 18 35/26/25 private
-i8.private _ : 8 0 17 18 35/26/25 private
-i16.constant * : 32 0 0 0 0/0/0 constant
-i16.public _ : 16 0 33 34 67/50/49 private
-i16.private _ : 16 0 33 34 67/50/49 private
-i32.constant * : 64 0 0 0 0/0/0 constant
-i32.public _ : 32 0 65 66 131/98/97 private
-i32.private _ : 32 0 65 66 131/98/97 private
-i64.constant * : 128 0 0 0 0/0/0 constant
-i64.public _ : 64 0 129 130 259/194/193 private
-i64.private _ : 64 0 129 130 259/194/193 private
-i128.constant * : 256 0 0 0 0/0/0 constant
-i128.public _ : 128 0 257 258 515/386/385 private
-i128.private _ : 128 0 257 258 515/386/385 private
+u8.constant * : 0 0 0 0 0/0/0 constant cbf29ce484222325
+u8.public _ : 0 0 0 0 0/0/0 public cbf29ce484222325
+u8.private _ : 0 0 0 0 0/0/0 private cbf29ce484222325
+u16.constant * : 0 0 0 0 0/0/0 constant cbf29ce484222325
+u16.public _ : 0 0 0 0 0/0/0 public cbf29ce484222325
+u16.private _ : 0 0 0 0 0/0/0 private cbf29ce484222325
+u32.constant * : 0 0 0 0 0/0/0 constant cbf29ce484222325
+u32.public _ : 0 0 0 0 0/0/0 public cbf29ce484222325
+u32.private _ : 0 0 0 0 0/0/0 private cbf29ce484222325
+u64.constant * : 0 0 0 0 0/0/0 constant cbf29ce484222325
+u64.public _ : 0 0 0 0 0/0/0 public cbf29ce484222325
+u64.private _ : 0 0 0 0 0/0/0 private cbf29ce484222325
+u128.constant * : 0 0 0 0 0/0/0 constant cbf29ce484222325
+u128.public _ : 0 0 0 0 0/0/0 public cbf29ce484222325
+u128.private _ : 0 0 0 0 0/0/0 private cbf29ce484222325
+i8.constant * : 16 0 0 0 0/0/0 constant cbf29ce484222325
+i8.public _ : 8 0 17 18 35/26/25 private 6ab05d0439b668d1
+i8.private _ : 8 0 17 18 35/26/25 private 989af9050832b011
+i16.constant * : 32 0 0 0 0/0/0 constant cbf29ce484222325
+i16.public _ : 16 0 33 34 67/50/49 private 5573bcb7206014a1
+i16.private _ : 16 0 33 34 67/50/49 private 8d81da1a32335b11
+i32.constant * : 64 0 0 0 0/0/0 constant cbf29ce484222325
+i32.public _ : 32 0 65 66 131/98/97 private 7babc70c4ff2f651
+i32.private _ : 32 0 65 66 131/98/97 private b39ebc9bad822661
+i64.constant * : 128 0 0 0 0/0/0 constant cbf29ce484222325
+i64.public _ : 64 0 129 130 259/194/193 private 06752a3c395992be
+i64.private _ : 64 0 129 130 259/194/193 private a947f03288fd7d5a
+i128.constant * : 256 0 0 0 0/0/0 constant cbf29ce484222325
+i128.public _ : 128 0 257 258 515/386/385 private e8d3b2ec3af61e34
+i128.private _ : 128 0 257 258 515/386/385 private b2283f20a779063c
