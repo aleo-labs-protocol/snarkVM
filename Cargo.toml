@@ -130,12 +130,8 @@ async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 no-embedded-srs = [ "snarkvm-parameters/no-embedded-srs" ]
-locktick = [
-  "snarkvm-algorithms?/locktick",
-  "snarkvm-ledger?/locktick",
-  "snarkvm-parameters?/locktick",
-  "snarkvm-synthesizer?/locktick"
-]
+# Has no effect. Locktick is enabled with `--cfg locktick`; see `.cargo/config.toml`.
+locktick = [ ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
 test = [ "snarkvm-ledger/test" ]
 test-helpers = [ "snarkvm-algorithms?/test-helpers", "snarkvm-ledger/test-helpers" ]

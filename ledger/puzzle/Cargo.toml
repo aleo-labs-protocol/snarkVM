@@ -34,7 +34,6 @@ default = [ "indexmap/rayon", "rayon" ]
 # Enables nothing; `rayon` is a required dependency.
 rayon = [ ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-locktick = [ "dep:locktick", "snarkvm-algorithms/locktick" ]
 serial = [ "snarkvm-console/serial", "snarkvm-algorithms/serial" ]
 setup = [ ]
 wasm = [ "snarkvm-console/wasm" ]
@@ -59,15 +58,7 @@ workspace = true
 workspace = true
 features = [ "serde", "rayon" ]
 
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
 [dependencies.lru]
-workspace = true
-
-[dependencies.parking_lot]
 workspace = true
 
 [dependencies.rand]

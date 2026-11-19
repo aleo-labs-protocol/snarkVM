@@ -19,7 +19,6 @@ edition = "2024"
 [features]
 default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
-locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]
 serial = [
@@ -83,11 +82,6 @@ workspace = true
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]
-
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
 
 [dependencies.parking_lot]
 workspace = true

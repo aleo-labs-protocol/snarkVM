@@ -28,13 +28,9 @@ pub use schema::{STORAGE_VERSION, StorageVersion};
 #[cfg(test)]
 mod tests;
 
-use snarkvm_utilities::StorageMode;
+use snarkvm_utilities::{StorageMode, locks::Mutex};
 
 use anyhow::{Result, bail, ensure};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::Mutex;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::Mutex;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
     borrow::Borrow,

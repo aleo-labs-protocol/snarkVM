@@ -408,7 +408,7 @@ mod tests {
     use super::*;
     use console::prelude::TestRng;
 
-    use parking_lot::RwLock;
+    use snarkvm_utilities::locks::RwLock;
     use std::sync::Arc;
 
     type CurrentNetwork = console::network::MainnetV0;

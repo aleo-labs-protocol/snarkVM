@@ -15,14 +15,11 @@
 
 use console::{account::Address, network::prelude::*};
 use snarkvm_ledger_committee::{Committee, MIN_DELEGATOR_STAKE};
+use snarkvm_utilities::locks::Mutex;
 
 use indexmap::IndexMap;
 use std::sync::atomic::AtomicU64;
 
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::Mutex;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::Mutex;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 

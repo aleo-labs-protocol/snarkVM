@@ -95,16 +95,12 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_utilities::{timing_event, timing_span, try_vm_runtime};
+use snarkvm_utilities::{locks::RwLock, timing_event, timing_span, try_vm_runtime};
 
 use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
 use lru::LruCache;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
     collections::{HashMap, HashSet},

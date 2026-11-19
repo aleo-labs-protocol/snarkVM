@@ -28,7 +28,6 @@ default = [ "indexmap/rayon", "rayon" ]
 # Enables nothing; `rayon` is a required dependency.
 rayon = [ ]
 async = [ "snarkvm-ledger-query/async" ]
-locktick = [ "dep:locktick", "snarkvm-ledger-store/locktick" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -100,14 +99,6 @@ workspace = true
 features = [ "serde" ]
 
 [dependencies.itertools]
-workspace = true
-
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
-[dependencies.parking_lot]
 workspace = true
 
 [dependencies.rand]

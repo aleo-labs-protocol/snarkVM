@@ -82,7 +82,7 @@ workspace = true
 [dev-dependencies.bincode]
 workspace = true
 
-[dev-dependencies.parking_lot]
+[dev-dependencies.snarkvm-utilities]
 workspace = true
 
 [dev-dependencies.rand_distr]
