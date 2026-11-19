@@ -66,15 +66,15 @@ impl<E: Environment, I: IntegerType> Metrics<dyn Mul<Integer<E, I>, Output = Int
     type Case = (Mode, Mode);
 
     fn count(case: &Self::Case) -> Count {
-        <Self as Metrics<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
+        <Self as Metrics<dyn MulChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
     }
 }
 
 impl<E: Environment, I: IntegerType> OutputMode<dyn Mul<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
+    type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
-        <Self as OutputMode<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
+        <Self as OutputMode<dyn MulChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
     }
 }
 
