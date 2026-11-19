@@ -124,6 +124,7 @@ package = [
   "dep:ureq"
 ]
 
+announce-blocks = [ "snarkvm-synthesizer/announce-blocks" ]
 async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
