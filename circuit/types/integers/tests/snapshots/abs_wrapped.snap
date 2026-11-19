@@ -1,5 +1,5 @@
 # Circuit shape of `abs_wrapped` for each integer type, operand mode and edge value.
-# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
 # A `_` stands for each value of a variable operand. The test checks that they give one result.
 # Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
 # The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
@@ -9,33 +9,33 @@
 # value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
 # A `*` line gives the result of each case of its block that has no line of its own.
 # Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
-u8.constant * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
-u8.public _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
-u8.private _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
-u16.constant * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
-u16.public _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
-u16.private _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
-u32.constant * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
-u32.public _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
-u32.private _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
-u64.constant * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
-u64.public _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
-u64.private _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
-u128.constant * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
-u128.public _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
-u128.private _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
-i8.constant * : 16 0 0 0 0/0/0 constant e3b0c44298fc1c14
-i8.public _ : 8 0 17 18 35/26/25 private a1497ab92c819970
-i8.private _ : 8 0 17 18 35/26/25 private f3b85b546febb23d
-i16.constant * : 32 0 0 0 0/0/0 constant e3b0c44298fc1c14
-i16.public _ : 16 0 33 34 67/50/49 private fa05a50a49ea05ea
-i16.private _ : 16 0 33 34 67/50/49 private 0d8980d88f570595
-i32.constant * : 64 0 0 0 0/0/0 constant e3b0c44298fc1c14
-i32.public _ : 32 0 65 66 131/98/97 private 153c0e32c2557a6d
-i32.private _ : 32 0 65 66 131/98/97 private 1f83aa23e60f39f8
-i64.constant * : 128 0 0 0 0/0/0 constant e3b0c44298fc1c14
-i64.public _ : 64 0 129 130 259/194/193 private 610b37459ff95d93
-i64.private _ : 64 0 129 130 259/194/193 private ba7b1081ffbc6be6
-i128.constant * : 256 0 0 0 0/0/0 constant e3b0c44298fc1c14
-i128.public _ : 128 0 257 258 515/386/385 private 60d1b1c6a959342f
-i128.private _ : 128 0 257 258 515/386/385 private 7e4dd36223d5cc62
+u8.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+u8.public | _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+u8.private | _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+u16.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+u16.public | _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+u16.private | _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+u32.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+u32.public | _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+u32.private | _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+u64.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+u64.public | _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+u64.private | _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+u128.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+u128.public | _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+u128.private | _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+i8.constant | * : 16 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i8.public | _ : 8 0 17 18 35/26/25 private a1497ab92c819970
+i8.private | _ : 8 0 17 18 35/26/25 private f3b85b546febb23d
+i16.constant | * : 32 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i16.public | _ : 16 0 33 34 67/50/49 private fa05a50a49ea05ea
+i16.private | _ : 16 0 33 34 67/50/49 private 0d8980d88f570595
+i32.constant | * : 64 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i32.public | _ : 32 0 65 66 131/98/97 private 153c0e32c2557a6d
+i32.private | _ : 32 0 65 66 131/98/97 private 1f83aa23e60f39f8
+i64.constant | * : 128 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i64.public | _ : 64 0 129 130 259/194/193 private 610b37459ff95d93
+i64.private | _ : 64 0 129 130 259/194/193 private ba7b1081ffbc6be6
+i128.constant | * : 256 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i128.public | _ : 128 0 257 258 515/386/385 private 60d1b1c6a959342f
+i128.private | _ : 128 0 257 258 515/386/385 private 7e4dd36223d5cc62

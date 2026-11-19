@@ -18,38 +18,42 @@
 //! Each test synthesizes one operation for every integer type, every operand mode and a fixed set of
 //! edge values, and compares the counts, output mode and structural digest with `snapshots/{op}.snap`.
 
-mod harness;
-
-use harness::{Case, Output, assert_snapshot, measure, mode_jobs, run_parallel, value_label};
-
-use snarkvm_circuit_environment::{Circuit, prelude::*};
+use snarkvm_circuit_environment::{
+    Circuit,
+    prelude::*,
+    snapshot::{Case, SnapshotFiles, assert_snapshot, measure, mode_jobs, run_parallel, value_label},
+};
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_integers::Integer;
 use snarkvm_console_types_integers::Integer as ConsoleInteger;
 
 use num_traits::NumCast;
 
-impl<I: IntegerType> Output for Integer<Circuit, I> {
-    type Value = I;
+const FILES: SnapshotFiles = SnapshotFiles {
+    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
+    coverage: "each integer type, operand mode and edge value",
+    command: "cargo test -p snarkvm-circuit-types-integers --test snapshots",
+};
 
-    fn bit_modes(&self) -> Vec<Mode> {
-        self.to_bits_le().iter().map(Eject::eject_mode).collect()
-    }
+/// Returns the mode of each bit of `output`.
+fn bit_modes<O: ToBits<Boolean = Boolean<Circuit>>>(output: &O) -> Vec<Mode> {
+    output.to_bits_le().iter().map(Eject::eject_mode).collect()
+}
 
-    fn value(&self) -> I {
-        *self.eject_value()
+/// Converts a console result into the value that the circuit output ejects.
+trait IntoEjected<P> {
+    fn into_ejected(self) -> P;
+}
+
+impl<I: IntegerType> IntoEjected<ConsoleInteger<<Circuit as Environment>::Network, I>> for I {
+    fn into_ejected(self) -> ConsoleInteger<<Circuit as Environment>::Network, I> {
+        ConsoleInteger::new(self)
     }
 }
 
-impl Output for Boolean<Circuit> {
-    type Value = bool;
-
-    fn bit_modes(&self) -> Vec<Mode> {
-        vec![self.eject_mode()]
-    }
-
-    fn value(&self) -> bool {
-        self.eject_value()
+impl IntoEjected<bool> for bool {
+    fn into_ejected(self) -> bool {
+        self
     }
 }
 
@@ -139,18 +143,22 @@ fn magnitudes<M: Magnitude>(amounts: &[u64]) -> Vec<(M, String)> {
 }
 
 /// Returns the cases of a unary operation on `I` with an operand of the given mode.
-fn unary<I: IntegerType, O: Output>(
+fn unary<I: IntegerType, O: Eject + ToBits<Boolean = Boolean<Circuit>>, V: IntoEjected<O::Primitive>>(
     operation: impl Fn(&Integer<Circuit, I>) -> O,
-    oracle: impl Fn(I) -> Option<O::Value>,
+    oracle: impl Fn(I) -> Option<V>,
     mode: Mode,
-) -> Vec<Case> {
+) -> Vec<Case>
+where
+    O::Primitive: Debug + PartialEq,
+{
     let block = format!("{}.{mode}", I::type_name());
     edge_values::<I>()
         .into_iter()
         .map(|(x, label)| {
             Circuit::reset();
             let a = Integer::<Circuit, I>::new(mode, ConsoleInteger::new(x));
-            let outcome = measure(&format!("{block} {label}"), oracle(x), || operation(&a));
+            let expected = oracle(x).map(V::into_ejected);
+            let outcome = measure(&format!("{block} {label}"), expected, Some(bit_modes::<O>), || operation(&a));
             Case { block: block.clone(), values: value_label(mode, &label).to_string(), outcome }
         })
         .collect()
@@ -172,23 +180,27 @@ impl<T> Values<T> {
 }
 
 /// Returns the cases of a binary operation of `I` and `M` with operands of the given modes.
-fn binary<I: IntegerType, M: IntegerType, O: Output>(
+fn binary<I: IntegerType, M: IntegerType, O: Eject + ToBits<Boolean = Boolean<Circuit>>, V: IntoEjected<O::Primitive>>(
     operation: impl Fn(&Integer<Circuit, I>, &Integer<Circuit, M>) -> O,
-    oracle: impl Fn(I, M) -> Option<O::Value>,
+    oracle: impl Fn(I, M) -> Option<V>,
     lhs: &Values<I>,
     rhs: &Values<M>,
     modes: &[Mode],
-) -> Vec<Case> {
+) -> Vec<Case>
+where
+    O::Primitive: Debug + PartialEq,
+{
     let (mode_a, mode_b) = (modes[0], modes[1]);
     let block = format!("{}.{mode_a} {}.{mode_b}", I::type_name(), M::type_name());
-    let mut cases = Vec::new();
+    let mut cases = Vec::with_capacity(lhs.for_mode(mode_a).len() * rhs.for_mode(mode_b).len());
     for (x, label_x) in lhs.for_mode(mode_a) {
         for (y, label_y) in rhs.for_mode(mode_b) {
             Circuit::reset();
             let a = Integer::<Circuit, I>::new(mode_a, ConsoleInteger::new(*x));
             let b = Integer::<Circuit, M>::new(mode_b, ConsoleInteger::new(*y));
             let label = format!("{block} {label_x} {label_y}");
-            let outcome = measure(&label, oracle(*x, *y), || operation(&a, &b));
+            let expected = oracle(*x, *y).map(V::into_ejected);
+            let outcome = measure(&label, expected, Some(bit_modes::<O>), || operation(&a, &b));
             let values = format!("{} {}", value_label(mode_a, label_x), value_label(mode_b, label_y));
             cases.push(Case { block: block.clone(), values, outcome });
         }
@@ -276,9 +288,9 @@ macro_rules! unary_snapshot {
         #[test]
         fn $op() {
             fn cases<I: IntegerType>(modes: &[Mode]) -> Vec<Case> {
-                unary::<I, _>(|$a: &Integer<Circuit, I>| $circuit, |$x: I| $console, modes[0])
+                unary::<I, _, _>(|$a: &Integer<Circuit, I>| $circuit, |$x: I| $console, modes[0])
             }
-            assert_snapshot(stringify!($op), 1, for_each_type!(cases, 1));
+            assert_snapshot(&FILES, stringify!($op), for_each_type!(cases, 1));
         }
     };
 }
@@ -289,8 +301,9 @@ macro_rules! binary_snapshot {
         #[test]
         fn $op() {
             fn cases<I: IntegerType>(modes: &[Mode]) -> Vec<Case> {
-                let values = Values { constant: edge_values::<I>(), variable: edge_values::<I>() };
-                binary::<I, I, _>(
+                let edges = edge_values::<I>();
+                let values = Values { constant: edges.clone(), variable: edges };
+                binary::<I, I, _, _>(
                     |$a: &Integer<Circuit, I>, $b: &Integer<Circuit, I>| $circuit,
                     |$x: I, $y: I| $console,
                     &values,
@@ -298,7 +311,7 @@ macro_rules! binary_snapshot {
                     modes,
                 )
             }
-            assert_snapshot(stringify!($op), 2, for_each_type!(cases, 2));
+            assert_snapshot(&FILES, stringify!($op), for_each_type!(cases, 2));
         }
     };
 }
@@ -312,7 +325,7 @@ macro_rules! magnitude_snapshot {
         #[test]
         fn $op() {
             fn cases<I: IntegerType, M: Magnitude>(modes: &[Mode]) -> Vec<Case> {
-                binary::<I, M, _>(
+                binary::<I, M, _, _>(
                     |$a: &Integer<Circuit, I>, $b: &Integer<Circuit, M>| $circuit,
                     |$x: I, $y: M| {
                         let $y = to_u32($y);
@@ -323,7 +336,7 @@ macro_rules! magnitude_snapshot {
                     modes,
                 )
             }
-            assert_snapshot(stringify!($op), 2, for_each_type_and_magnitude!(cases));
+            assert_snapshot(&FILES, stringify!($op), for_each_type_and_magnitude!(cases));
         }
     };
 }
@@ -458,8 +471,8 @@ fn ternary_cases<I: IntegerType>(modes: &[Mode]) -> Vec<Case> {
                 let a = Integer::<Circuit, I>::new(mode_a, ConsoleInteger::new(*x));
                 let b = Integer::<Circuit, I>::new(mode_b, ConsoleInteger::new(*y));
                 let label = format!("{block} {condition} {label_x} {label_y}");
-                let expected = Some(if condition { *x } else { *y });
-                let outcome = measure(&label, expected, || Integer::ternary(&c, &a, &b));
+                let expected = Some(ConsoleInteger::new(if condition { *x } else { *y }));
+                let outcome = measure(&label, expected, Some(bit_modes), || Integer::ternary(&c, &a, &b));
                 let values = format!(
                     "{} {} {}",
                     value_label(mode_c, &condition.to_string()),
@@ -475,5 +488,5 @@ fn ternary_cases<I: IntegerType>(modes: &[Mode]) -> Vec<Case> {
 
 #[test]
 fn ternary() {
-    assert_snapshot("ternary", 3, for_each_type!(ternary_cases, 3));
+    assert_snapshot(&FILES, "ternary", for_each_type!(ternary_cases, 3));
 }

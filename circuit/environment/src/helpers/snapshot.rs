@@ -13,9 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Records the synthesized shape of each case and compares it with a checked-in snapshot file.
-
-use snarkvm_circuit_environment::{Circuit, Environment, Mode};
+//! Snapshot tests of circuit shape.
+//!
+//! A test synthesizes an operation for each case, records the counts, nonzeros, output mode and a
+//! structural digest of the constraints, and compares them with a checked-in snapshot file.
 
 use std::{
     cell::Cell,
@@ -24,26 +25,27 @@ use std::{
     fs,
     num::NonZeroUsize,
     panic::{self, AssertUnwindSafe},
-    path::PathBuf,
+    path::Path,
     sync::{Mutex, Once, PoisonError},
     thread,
 };
 
+use crate::{Circuit, Eject, Environment, Mode};
+
 /// The variable that makes `assert_snapshot` rewrite the snapshot files.
 const UPDATE_VARIABLE: &str = "UPDATE_CIRCUIT_SNAPSHOTS";
 
-/// A circuit output whose mode and value the harness records.
-pub trait Output {
-    type Value: Debug + PartialEq;
-
-    /// Returns the mode of each output bit.
-    fn bit_modes(&self) -> Vec<Mode>;
-
-    /// Returns the value of the output.
-    fn value(&self) -> Self::Value;
+/// The snapshot files of a test target.
+pub struct SnapshotFiles {
+    /// The directory of the files, such as `concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots")`.
+    pub directory: &'static str,
+    /// What each file covers, such as `each integer type, operand mode and edge value`.
+    pub coverage: &'static str,
+    /// The command that runs the tests, such as `cargo test -p snarkvm-circuit-types-integers --test snapshots`.
+    pub command: &'static str,
 }
 
-/// One case of an op.
+/// One case of an operation.
 pub struct Case {
     /// The type and mode of each operand, such as `u8.constant u8.private`.
     pub block: String,
@@ -86,9 +88,11 @@ fn catch_quietly<T>(logic: impl FnOnce() -> T) -> Option<T> {
     result.ok()
 }
 
-/// Returns the mode of `output`, with a count per mode if the bits differ in mode.
-fn render_mode<O: Output>(output: &O) -> String {
-    let modes = output.bit_modes();
+/// Returns the mode of `output`, with a count per mode if `bit_modes` gives bits that differ in mode.
+fn render_mode<O: Eject>(output: &O, bit_modes: Option<fn(&O) -> Vec<Mode>>) -> String {
+    let Some(modes) = bit_modes.map(|bit_modes| bit_modes(output)) else {
+        return output.eject_mode().to_string();
+    };
     let count = |mode| modes.iter().filter(|m| **m == mode).count();
     let combined = Mode::combine(Mode::Constant, modes.iter().copied());
     match modes.iter().all(|mode| *mode == combined) {
@@ -103,35 +107,44 @@ fn render_mode<O: Output>(output: &O) -> String {
 ///
 /// The caller injects the operands before the call, so the counts and the digest cover the operation alone.
 /// `expected` is the console result, or `None` if the operation is undefined for the operands.
+/// `bit_modes`, if given, returns the mode of each bit of the output. It runs after the circuit is reset,
+/// so any constraint it adds does not reach the counts or the digest.
 /// Panics if a defined case does not produce `expected` in a satisfied circuit,
 /// or if an undefined case gives a satisfied circuit.
-pub fn measure<O: Output>(label: &str, expected: Option<O::Value>, operation: impl FnOnce() -> O) -> String {
+pub fn measure<O: Eject>(
+    label: &str,
+    expected: Option<O::Primitive>,
+    bit_modes: Option<fn(&O) -> Vec<Mode>>,
+    operation: impl FnOnce() -> O,
+) -> String
+where
+    O::Primitive: Debug + PartialEq,
+{
+    let starts = (Circuit::num_constraints(), Circuit::num_public(), Circuit::num_private());
     let result = catch_quietly(|| {
         Circuit::scope("snapshot", || {
             let output = operation();
             let (a, b, c) = Circuit::num_nonzeros_in_scope();
-            let (public, private, constraints) =
-                (Circuit::num_public_in_scope(), Circuit::num_private_in_scope(), Circuit::num_constraints_in_scope());
-            let shape = format!(
-                "{} {public} {private} {constraints} {a}/{b}/{c} {}",
+            let counts = format!(
+                "{} {} {} {} {a}/{b}/{c}",
                 Circuit::num_constants_in_scope(),
-                render_mode(&output),
+                Circuit::num_public_in_scope(),
+                Circuit::num_private_in_scope(),
+                Circuit::num_constraints_in_scope()
             );
-            // The in-scope counts exclude any nested scope, so these starts hold only while the
-            // operation opens no scope of its own.
-            let first_public = Circuit::num_public() - public;
-            let first_private = Circuit::num_private() - private;
-            let first_constraint = Circuit::num_constraints() - constraints;
-            (shape, (first_constraint, first_public, first_private), Circuit::is_satisfied_in_scope(), output.value())
+            let satisfied = Circuit::is_satisfied_in_scope();
+            (counts, starts, satisfied, output)
         })
     });
     let r1cs = Circuit::eject_r1cs_and_reset();
-    let result = result.map(|(shape, (first_constraint, first_public, first_private), satisfied, value)| {
+    let result = result.map(|(counts, (first_constraint, first_public, first_private), satisfied, output)| {
         let digest = r1cs.structural_digest(first_constraint, first_public, first_private);
         let mut prefix = [0u8; 8];
         prefix.copy_from_slice(&digest[..8]);
-        (format!("{shape} {:016x}", u64::from_be_bytes(prefix)), satisfied, value)
+        let mode = render_mode(&output, bit_modes);
+        (format!("{counts} {mode} {:016x}", u64::from_be_bytes(prefix)), satisfied, output.eject_value())
     });
+    Circuit::reset();
 
     match (result, expected) {
         (None, None) => "halt".to_string(),
@@ -164,7 +177,8 @@ pub fn mode_jobs(arity: u32, block: fn(&[Mode]) -> Vec<Case>) -> impl Iterator<I
 ///
 /// Each thread has its own circuit, as the circuit is thread-local.
 pub fn run_parallel(jobs: Vec<Job>) -> Vec<Case> {
-    let workers = thread::available_parallelism().map_or(1, NonZeroUsize::get).min(jobs.len());
+    // Half the threads, because the test runner already runs several test binaries at once.
+    let workers = (thread::available_parallelism().map_or(1, NonZeroUsize::get) / 2).clamp(1, jobs.len().max(1));
     let queue = Mutex::new(jobs.into_iter().enumerate());
     let next = || queue.lock().unwrap_or_else(PoisonError::into_inner).next();
     let mut results: Vec<(usize, Vec<Case>)> = thread::scope(|scope| {
@@ -193,16 +207,11 @@ fn default_outcome(cases: &[Case]) -> Option<(&str, usize)> {
     tally.into_iter().rev().max_by_key(|(_, count)| *count)
 }
 
-/// Splits `cases` into runs that share a block.
-fn blocks(cases: &[Case]) -> Vec<&[Case]> {
-    cases.chunk_by(|a, b| a.block == b.block).collect()
-}
-
 /// Renders the snapshot file of `op`.
-fn render(op: &str, cases: &[Case]) -> String {
+fn render(files: &SnapshotFiles, op: &str, cases: &[Case]) -> String {
     let mut output = format!(
-        "# Circuit shape of `{op}` for each integer type, operand mode and edge value.\n\
-         # Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>\n\
+        "# Circuit shape of `{op}` for {}.\n\
+         # Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>\n\
          # A `_` stands for each value of a variable operand. The test checks that they give one result.\n\
          # Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.\n\
          # The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,\n\
@@ -211,42 +220,42 @@ fn render(op: &str, cases: &[Case]) -> String {
          # The test also checks each case with the console operation. A defined case must give the console\n\
          # value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.\n\
          # A `*` line gives the result of each case of its block that has no line of its own.\n\
-         # Regenerate: {UPDATE_VARIABLE}=1 cargo test -p snarkvm-circuit-types-integers --test snapshots\n"
+         # Regenerate: {UPDATE_VARIABLE}=1 {}\n",
+        files.coverage, files.command
     );
-    for block in blocks(cases) {
+    for block in cases.chunk_by(|a, b| a.block == b.block) {
         // A `*` line that stands for a single case would hide that case's values.
         let default = match default_outcome(block) {
             Some((outcome, count)) if count > 1 => {
-                output += &format!("{} * : {outcome}\n", block[0].block);
+                output += &format!("{} | * : {outcome}\n", block[0].block);
                 Some(outcome)
             }
             _ => None,
         };
         for case in block.iter().filter(|case| Some(case.outcome.as_str()) != default) {
-            output += &format!("{} {} : {}\n", case.block, case.values, case.outcome);
+            output += &format!("{} | {} : {}\n", case.block, case.values, case.outcome);
         }
     }
     output
 }
 
 /// A parsed snapshot block: the default result and the result of each listed case.
+#[derive(Default)]
 struct StoredBlock<'a> {
     default: Option<&'a str>,
     cases: HashMap<&'a str, &'a str>,
 }
 
 /// Parses a snapshot file into its blocks, keyed by the block string.
-fn parse(stored: &str, arity: usize) -> HashMap<String, StoredBlock<'_>> {
-    let mut blocks: HashMap<String, StoredBlock> = HashMap::new();
+fn parse(stored: &str) -> HashMap<&str, StoredBlock<'_>> {
+    let mut blocks: HashMap<&str, StoredBlock> = HashMap::new();
     for line in stored.lines().filter(|line| !line.is_empty() && !line.starts_with('#')) {
-        let Some((key, result)) = line.split_once(" : ") else {
-            panic!("malformed snapshot line: `{line}`");
+        let Some(((block, values), result)) =
+            line.split_once(" : ").and_then(|(key, result)| Some((key.split_once(" | ")?, result)))
+        else {
+            panic!("malformed snapshot line: `{line}`. Rewrite the file with {UPDATE_VARIABLE}=1.");
         };
-        // The block is the first `arity` tokens of the key; the values are the rest.
-        let split = key.match_indices(' ').nth(arity - 1).map_or(key.len(), |(index, _)| index);
-        let (block, values) = (&key[..split], key[split..].trim_start());
-        let entry =
-            blocks.entry(block.to_string()).or_insert_with(|| StoredBlock { default: None, cases: HashMap::new() });
+        let entry = blocks.entry(block).or_default();
         match values {
             "*" => entry.default = Some(result),
             _ => {
@@ -258,22 +267,23 @@ fn parse(stored: &str, arity: usize) -> HashMap<String, StoredBlock<'_>> {
 }
 
 /// Returns the number of merged cases whose stored result differs, and a description of the first one.
-fn compare(stored: &str, arity: usize, cases: &[Case]) -> (usize, Option<String>) {
-    let blocks = parse(stored, arity);
+fn compare(stored: &str, cases: &[Case]) -> (usize, Option<String>) {
+    let blocks = parse(stored);
     let mut differences = Vec::new();
     let mut seen: HashSet<(&str, &str)> = HashSet::with_capacity(cases.len());
     for case in cases {
         seen.insert((case.block.as_str(), "*"));
         seen.insert((case.block.as_str(), case.values.as_str()));
         let found = case.outcome.as_str();
-        let expected =
-            blocks.get(&case.block).and_then(|block| block.cases.get(case.values.as_str()).copied().or(block.default));
+        let expected = blocks
+            .get(case.block.as_str())
+            .and_then(|block| block.cases.get(case.values.as_str()).copied().or(block.default));
         match expected {
             Some(expected) if expected == found => (),
             Some(expected) => {
-                differences.push(format!("`{} {}`: stored `{expected}`, found `{found}`", case.block, case.values))
+                differences.push(format!("`{} | {}`: stored `{expected}`, found `{found}`", case.block, case.values))
             }
-            None => differences.push(format!("`{} {}`: not stored, found `{found}`", case.block, case.values)),
+            None => differences.push(format!("`{} | {}`: not stored, found `{found}`", case.block, case.values)),
         }
     }
     let mut stale: Vec<String> = blocks
@@ -284,10 +294,10 @@ fn compare(stored: &str, arity: usize, cases: &[Case]) -> (usize, Option<String>
                 .map(|_| "*")
                 .into_iter()
                 .chain(stored.cases.keys().copied())
-                .map(move |values| (block, values))
+                .map(move |values| (*block, values))
         })
-        .filter(|(block, values)| !seen.contains(&(block.as_str(), *values)))
-        .map(|(block, values)| format!("`{block} {values}`: stored, but not a case"))
+        .filter(|key| !seen.contains(key))
+        .map(|(block, values)| format!("`{block} | {values}`: stored, but not a case"))
         .collect();
     stale.sort();
     differences.extend(stale);
@@ -305,7 +315,7 @@ fn merge(op: &str, cases: Vec<Case>) -> Vec<Case> {
             Entry::Occupied(entry) => assert_eq!(
                 merged[*entry.get()].outcome,
                 case.outcome,
-                "`{op}`: `{} {}` depends on the value of a variable operand",
+                "`{op}`: `{} | {}` depends on the value of a variable operand",
                 case.block,
                 case.values
             ),
@@ -318,13 +328,13 @@ fn merge(op: &str, cases: Vec<Case>) -> Vec<Case> {
     merged
 }
 
-/// Compares the cases of `op` with `tests/snapshots/{op}.snap`, or rewrites the file if `UPDATE_VARIABLE` is `1`.
+/// Compares the cases of `op` with `{op}.snap` in `files.directory`, or rewrites the file if `UPDATE_VARIABLE` is `1`.
 ///
-/// `arity` is the number of operands. `cases` must list the cases of each block together.
-pub fn assert_snapshot(op: &str, arity: usize, cases: Vec<Case>) {
+/// `cases` must list the cases of each block together.
+pub fn assert_snapshot(files: &SnapshotFiles, op: &str, cases: Vec<Case>) {
     let cases = &merge(op, cases);
-    let rendered = render(op, cases);
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots").join(format!("{op}.snap"));
+    let rendered = render(files, op, cases);
+    let path = Path::new(files.directory).join(format!("{op}.snap"));
     if std::env::var(UPDATE_VARIABLE).as_deref() == Ok("1") {
         fs::write(&path, rendered).unwrap_or_else(|error| panic!("cannot write {}: {error}", path.display()));
         return;
@@ -336,7 +346,7 @@ pub fn assert_snapshot(op: &str, arity: usize, cases: Vec<Case>) {
     if stored == rendered {
         return;
     }
-    let (differences, first) = compare(&stored, arity, cases);
+    let (differences, first) = compare(&stored, cases);
     match first {
         Some(first) => panic!(
             "`{op}`: {differences} of {} merged cases differ from {}. First: {first}. \

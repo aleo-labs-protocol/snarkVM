@@ -40,5 +40,8 @@ pub use variable::*;
 pub mod r1cs;
 pub use r1cs::*;
 
+#[cfg(feature = "test-helpers")]
+pub mod snapshot;
+
 pub mod updatable_count;
 pub use updatable_count::*;
