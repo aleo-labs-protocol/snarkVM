@@ -165,7 +165,10 @@ impl<N: Network> Deployment<N> {
 
     /// Returns the size in bytes.
     pub fn size_in_bytes(&self) -> Result<u64> {
-        Ok(u64::try_from(self.to_bytes_le()?.len())?)
+        // Count the bytes without storing them.
+        let mut writer = LimitedWriter::new(std::io::sink(), usize::MAX);
+        self.write_le(&mut writer)?;
+        Ok(u64::try_from(writer.bytes_written())?)
     }
 
     /// Returns the number of program functions in the deployment.
