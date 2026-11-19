@@ -19,7 +19,8 @@
 //! wrappers, which record where each lock is created and acquired. The `locktick-` cargo aliases
 //! in `.cargo/config.toml`, such as `cargo locktick-clippy`, set the cfg.
 //!
-//! `clippy.toml` disallows the `parking_lot` and `locktick` lock types everywhere else.
+//! `clippy.toml` disallows the `parking_lot` and `locktick` lock types everywhere else, and
+//! `tokio::sync`'s locks everywhere, since snarkVM has no async locks.
 
 #![allow(clippy::disallowed_types)]
 
