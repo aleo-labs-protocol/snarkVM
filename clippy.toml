@@ -1,6 +1,9 @@
 disallowed-types = [
   { path = "parking_lot::Mutex", reason = "use snarkvm_utilities::locks::Mutex, which locktick can instrument" },
   { path = "parking_lot::RwLock", reason = "use snarkvm_utilities::locks::RwLock, which locktick can instrument" },
+  { path = "parking_lot::MutexGuard", reason = "use snarkvm_utilities::locks::MutexGuard, which is locktick's guard under --cfg locktick" },
+  { path = "parking_lot::RwLockReadGuard", reason = "use snarkvm_utilities::locks::RwLockReadGuard, which is locktick's guard under --cfg locktick" },
+  { path = "parking_lot::RwLockWriteGuard", reason = "use snarkvm_utilities::locks::RwLockWriteGuard, which is locktick's guard under --cfg locktick" },
   { path = "locktick::parking_lot::Mutex", reason = "use snarkvm_utilities::locks::Mutex, which is this type under --cfg locktick" },
   { path = "locktick::parking_lot::RwLock", reason = "use snarkvm_utilities::locks::RwLock, which is this type under --cfg locktick" },
   { path = "tokio::sync::Mutex", reason = "snarkVM's locks come from snarkvm_utilities::locks, which has no async locks" },
