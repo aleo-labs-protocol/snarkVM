@@ -2792,7 +2792,6 @@ dependencies = [
  "rand",
  "rusty-hook",
  "serde_json",
- "snarkvm",
  "snarkvm-algorithms",
  "snarkvm-circuit",
  "snarkvm-console",
