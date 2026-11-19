@@ -195,14 +195,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The ignored tests run without `filesystem`, and read the powers
-          # files that the runs with it cache in ~/.aleo/resources.
+          # The first run's powers tests, with `filesystem`, cache the powers
+          # files in ~/.aleo/resources. The ignored tests run without
+          # `filesystem`, and read those files. The last two runs share a build.
           - name: crates
             runs: |
-              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections
-              nextest run -p snarkvm-parameters --features filesystem -E test(/powers::tests/)
-              nextest run -p snarkvm-parameters --run-ignored all
-              nextest run -p snarkvm-algorithms --run-ignored ignored-only
+              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections -p snarkvm-parameters --features snarkvm-parameters/filesystem -E !package(snarkvm-parameters)|test(/powers::tests/)
+              nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored all -E package(snarkvm-parameters)
+              nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored ignored-only -E package(snarkvm-algorithms)
           - name: ledger
             runs: |
               nextest run -p snarkvm-ledger
@@ -253,7 +253,8 @@ jobs:
       - name: Check that the build targets skylake
         if: runner.arch == 'X64'
         run: cargo rustc -q -p snarkvm-utilities-derives --lib -- --print cfg | grep -q 'target_feature="adx"'
-      # Each line of `runs` is one cargo command.
+      # Each line of `runs` is one cargo command, split on whitespace with no
+      # quote handling.
       - name: Test
         env:
           RUNS: ${{ matrix.runs }}
