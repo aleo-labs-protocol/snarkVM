@@ -178,6 +178,24 @@ jobs:
             -p snarkvm-utilities-derives -p snarkvm-utilities \
             -p snarkvm-fields -p snarkvm-curves -p snarkvm-algorithms-cuda
 
+  # Clippy under `--cfg locktick`, where `snarkvm_utilities::locks` provides
+  # locktick's locks.
+  lint-locktick:
+    needs: [check-shared-refs, start-cpu-runners]
+    runs-on: [self-hosted, linux, x64, cpu]
+    timeout-minutes: 90
+    if: *fleet-if
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
+      # An env RUSTFLAGS replaces `--cfg locktick` without an error, and the
+      # build then has no locktick dependency.
+      - name: Check that the build sets cfg(locktick)
+        run: cargo locktick-clippy -q -p snarkvm-utilities --message-format=json | grep '"name":"locktick"' > /dev/null
+      - run: cargo locktick-clippy --workspace --all-targets --all-features -- -D warnings
+
   # `cargo test -p a -p b` unifies the features of a and b, and several crates
   # enable `test`, `rocks` or `test_consensus_heights` on their dependencies,
   # which changes what those dependencies compute. Crates share a command only
@@ -547,7 +565,7 @@ jobs:
   # release branch, where it is not meant to run.
   ci-ok:
     if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
+    needs: [check-shared-refs, fmt, deny, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
