@@ -266,7 +266,7 @@ impl<F: PrimeField> R1CS<F> {
     /// from `first_public` or `first_private`.
     #[cfg(feature = "test-helpers")]
     pub fn structural_digest(&self, first_constraint: u64, first_public: u64, first_private: u64) -> [u8; 32] {
-        let mut hasher = WordHasher::new();
+        let mut hasher = Sha256::new();
         let skip = usize::try_from(first_constraint).unwrap_or(usize::MAX);
         let linear_combinations = self.constraints.iter().skip(skip).flat_map(|constraint| {
             let (a, b, c) = constraint.to_terms();
@@ -274,58 +274,32 @@ impl<F: PrimeField> R1CS<F> {
         });
         for (position, linear_combination) in linear_combinations.enumerate() {
             let terms = linear_combination.to_terms();
-            hasher.write_u64(position as u64);
-            hasher.write_field(linear_combination.to_constant());
-            hasher.write_u64(terms.len() as u64);
+            hasher.update((position as u64).to_le_bytes());
+            write_field(&mut hasher, linear_combination.to_constant());
+            hasher.update((terms.len() as u64).to_le_bytes());
             for (variable, coefficient) in terms {
                 let (tag, index) = match variable {
-                    Variable::Constant(_) => (0, 0),
+                    Variable::Constant(_) => {
+                        panic!("malformed linear combination: a constant variable among its terms")
+                    }
                     Variable::Public(_) if variable.index() < first_public => (1, variable.index()),
                     Variable::Public(_) => (2, variable.index() - first_public),
                     Variable::Private(_) if variable.index() < first_private => (3, variable.index()),
                     Variable::Private(_) => (4, variable.index() - first_private),
                 };
-                hasher.write_u64((tag << 56) | index);
-                hasher.write_field(*coefficient);
+                hasher.update(((tag << 56) | index).to_le_bytes());
+                write_field(&mut hasher, *coefficient);
             }
         }
-        hasher.finish()
+        hasher.finalize().into()
     }
 }
 
-/// A SHA-256 hash of a stream of little-endian 64-bit words, fed to the hasher in blocks.
+/// Hashes the limbs of the canonical integer of `value`, least significant first, as little-endian words.
 #[cfg(feature = "test-helpers")]
-struct WordHasher {
-    hasher: Sha256,
-    buffer: [u8; 8192],
-    length: usize,
-}
-
-#[cfg(feature = "test-helpers")]
-impl WordHasher {
-    fn new() -> Self {
-        Self { hasher: Sha256::new(), buffer: [0; 8192], length: 0 }
-    }
-
-    fn write_u64(&mut self, value: u64) {
-        if self.length == self.buffer.len() {
-            self.hasher.update(self.buffer.as_slice());
-            self.length = 0;
-        }
-        self.buffer[self.length..self.length + 8].copy_from_slice(&value.to_le_bytes());
-        self.length += 8;
-    }
-
-    /// Writes the limbs of the canonical integer of `value`, least significant first.
-    fn write_field<F: PrimeField>(&mut self, value: F) {
-        for limb in AsRef::<[u64]>::as_ref(&value.to_bigint()) {
-            self.write_u64(*limb);
-        }
-    }
-
-    fn finish(mut self) -> [u8; 32] {
-        self.hasher.update(&self.buffer[..self.length]);
-        self.hasher.finalize().into()
+fn write_field<F: PrimeField>(hasher: &mut Sha256, value: F) {
+    for limb in AsRef::<[u64]>::as_ref(&value.to_bigint()) {
+        hasher.update(limb.to_le_bytes());
     }
 }
 

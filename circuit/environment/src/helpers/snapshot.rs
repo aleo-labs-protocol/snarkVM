@@ -26,11 +26,13 @@ use std::{
     num::NonZeroUsize,
     panic::{self, AssertUnwindSafe},
     path::Path,
-    sync::{Mutex, Once, PoisonError},
+    sync::{Condvar, Mutex, Once, PoisonError},
     thread,
 };
 
-use crate::{Circuit, Eject, Environment, Mode};
+use itertools::Itertools;
+
+use crate::{Circuit, Eject, Environment, Inject, Mode, prelude::TypeName};
 
 /// The variable that makes `assert_snapshot` rewrite the snapshot files.
 const UPDATE_VARIABLE: &str = "UPDATE_CIRCUIT_SNAPSHOTS";
@@ -56,10 +58,29 @@ pub struct Case {
 }
 
 /// A job that returns the cases of one block.
-pub type Job = Box<dyn FnOnce() -> Vec<Case> + Send>;
+pub struct Job {
+    /// The relative cost of the job. The pool starts the costliest jobs first.
+    cost: u64,
+    run: Box<dyn FnOnce() -> Vec<Case> + Send>,
+}
+
+/// The values of an operand when it is a constant and when it is a variable.
+pub struct Values<P> {
+    pub constant: Vec<(P, String)>,
+    pub variable: Vec<(P, String)>,
+}
+
+impl<P> Values<P> {
+    fn for_mode(&self, mode: Mode) -> &[(P, String)] {
+        match mode {
+            Mode::Constant => &self.constant,
+            _ => &self.variable,
+        }
+    }
+}
 
 /// Returns the label of an operand in `Case::values`.
-pub fn value_label(mode: Mode, label: &str) -> &str {
+fn value_label(mode: Mode, label: &str) -> &str {
     match mode {
         Mode::Constant => label,
         _ => "_",
@@ -103,7 +124,7 @@ fn render_mode<O: Eject>(output: &O, bit_modes: Option<fn(&O) -> Vec<Mode>>) -> 
     }
 }
 
-/// Synthesizes `operation` in a new scope, then resets the circuit.
+/// Synthesizes `operation`, then resets the circuit.
 ///
 /// The caller injects the operands before the call, so the counts and the digest cover the operation alone.
 /// `expected` is the console result, or `None` if the operation is undefined for the operands.
@@ -120,29 +141,34 @@ pub fn measure<O: Eject>(
 where
     O::Primitive: Debug + PartialEq,
 {
-    let starts = (Circuit::num_constraints(), Circuit::num_public(), Circuit::num_private());
-    let result = catch_quietly(|| {
-        Circuit::scope("snapshot", || {
-            let output = operation();
-            let (a, b, c) = Circuit::num_nonzeros_in_scope();
-            let counts = format!(
-                "{} {} {} {} {a}/{b}/{c}",
-                Circuit::num_constants_in_scope(),
-                Circuit::num_public_in_scope(),
-                Circuit::num_private_in_scope(),
-                Circuit::num_constraints_in_scope()
-            );
-            let satisfied = Circuit::is_satisfied_in_scope();
-            (counts, starts, satisfied, output)
-        })
+    let first_constant = Circuit::num_constants();
+    let first_public = Circuit::num_public();
+    let first_private = Circuit::num_private();
+    let first_constraint = Circuit::num_constraints();
+    let first_nonzeros = Circuit::num_nonzeros();
+    let result = catch_quietly(operation).map(|output| {
+        let nonzeros = Circuit::num_nonzeros();
+        let counts = format!(
+            "{} {} {} {} {}/{}/{}",
+            Circuit::num_constants() - first_constant,
+            Circuit::num_public() - first_public,
+            Circuit::num_private() - first_private,
+            Circuit::num_constraints() - first_constraint,
+            nonzeros.0 - first_nonzeros.0,
+            nonzeros.1 - first_nonzeros.1,
+            nonzeros.2 - first_nonzeros.2,
+        );
+        (counts, output)
     });
     let r1cs = Circuit::eject_r1cs_and_reset();
-    let result = result.map(|(counts, (first_constraint, first_public, first_private), satisfied, output)| {
+    let result = result.map(|(counts, output)| {
+        let skip = usize::try_from(first_constraint).unwrap_or(usize::MAX);
+        let satisfied = r1cs.to_constraints().iter().skip(skip).all(|constraint| constraint.is_satisfied());
         let digest = r1cs.structural_digest(first_constraint, first_public, first_private);
-        let mut prefix = [0u8; 8];
-        prefix.copy_from_slice(&digest[..8]);
+        // Note: `expect` is safe as the digest has 32 bytes.
+        let prefix = u64::from_be_bytes(digest[..8].try_into().expect("the digest has 32 bytes"));
         let mode = render_mode(&output, bit_modes);
-        (format!("{counts} {mode} {:016x}", u64::from_be_bytes(prefix)), satisfied, output.eject_value())
+        (format!("{counts} {mode} {prefix:016x}"), satisfied, output.eject_value())
     });
     Circuit::reset();
 
@@ -161,29 +187,177 @@ where
     }
 }
 
-/// Returns one job per combination of `arity` operand modes, in lexicographic order of the modes.
+/// Returns the cases of a unary operation on an operand of the given mode, one per value.
+pub fn unary<A, O>(
+    operation: impl Fn(&A) -> O,
+    oracle: impl Fn(A::Primitive) -> Option<O::Primitive>,
+    bit_modes: Option<fn(&O) -> Vec<Mode>>,
+    values: &[(A::Primitive, String)],
+    [mode]: [Mode; 1],
+) -> Vec<Case>
+where
+    A: Inject + TypeName,
+    A::Primitive: Clone,
+    O: Eject,
+    O::Primitive: Debug + PartialEq,
+{
+    let block = format!("{}.{mode}", A::type_name());
+    values
+        .iter()
+        .map(|(x, label)| {
+            Circuit::reset();
+            let a = A::new(mode, x.clone());
+            let outcome = measure(&format!("{block} {label}"), oracle(x.clone()), bit_modes, || operation(&a));
+            Case { block: block.clone(), values: value_label(mode, label).to_string(), outcome }
+        })
+        .collect()
+}
+
+/// Returns the cases of a binary operation on operands of the given modes, one per pair of values.
+pub fn binary<A, B, O>(
+    operation: impl Fn(&A, &B) -> O,
+    oracle: impl Fn(A::Primitive, B::Primitive) -> Option<O::Primitive>,
+    bit_modes: Option<fn(&O) -> Vec<Mode>>,
+    lhs: &Values<A::Primitive>,
+    rhs: &Values<B::Primitive>,
+    [mode_a, mode_b]: [Mode; 2],
+) -> Vec<Case>
+where
+    A: Inject + TypeName,
+    A::Primitive: Clone,
+    B: Inject + TypeName,
+    B::Primitive: Clone,
+    O: Eject,
+    O::Primitive: Debug + PartialEq,
+{
+    let block = format!("{}.{mode_a} {}.{mode_b}", A::type_name(), B::type_name());
+    let (lhs, rhs) = (lhs.for_mode(mode_a), rhs.for_mode(mode_b));
+    let mut cases = Vec::with_capacity(lhs.len() * rhs.len());
+    for (x, label_x) in lhs {
+        for (y, label_y) in rhs {
+            Circuit::reset();
+            let a = A::new(mode_a, x.clone());
+            let b = B::new(mode_b, y.clone());
+            let label = format!("{block} {label_x} {label_y}");
+            let outcome = measure(&label, oracle(x.clone(), y.clone()), bit_modes, || operation(&a, &b));
+            let values = format!("{} {}", value_label(mode_a, label_x), value_label(mode_b, label_y));
+            cases.push(Case { block: block.clone(), values, outcome });
+        }
+    }
+    cases
+}
+
+/// Returns the cases of a ternary operation on a condition and two operands of the given modes,
+/// one per condition and pair of values.
+pub fn ternary<C, A>(
+    operation: impl Fn(&C, &A, &A) -> A,
+    bit_modes: Option<fn(&A) -> Vec<Mode>>,
+    values: &[(<A as Inject>::Primitive, String)],
+    [mode_c, mode_a, mode_b]: [Mode; 3],
+) -> Vec<Case>
+where
+    C: Inject<Primitive = bool> + TypeName,
+    A: Inject + Eject<Primitive = <A as Inject>::Primitive> + TypeName,
+    <A as Inject>::Primitive: Clone + Debug + PartialEq,
+{
+    let block = format!("{}.{mode_c} {}.{mode_a} {}.{mode_b}", C::type_name(), A::type_name(), A::type_name());
+    let mut cases = Vec::with_capacity(2 * values.len() * values.len());
+    for condition in [false, true] {
+        for (x, label_x) in values {
+            for (y, label_y) in values {
+                Circuit::reset();
+                let c = C::new(mode_c, condition);
+                let a = A::new(mode_a, x.clone());
+                let b = A::new(mode_b, y.clone());
+                let label = format!("{block} {condition} {label_x} {label_y}");
+                let expected = Some(if condition { x.clone() } else { y.clone() });
+                let outcome = measure(&label, expected, bit_modes, || operation(&c, &a, &b));
+                let values = format!(
+                    "{} {} {}",
+                    value_label(mode_c, &condition.to_string()),
+                    value_label(mode_a, label_x),
+                    value_label(mode_b, label_y)
+                );
+                cases.push(Case { block: block.clone(), values, outcome });
+            }
+        }
+    }
+    cases
+}
+
+/// Returns one job per combination of `N` operand modes, in lexicographic order of the modes.
 ///
-/// Each job calls `block` with its modes.
-pub fn mode_jobs(arity: u32, block: fn(&[Mode]) -> Vec<Case>) -> impl Iterator<Item = Job> {
-    const MODES: [Mode; 3] = [Mode::Constant, Mode::Public, Mode::Private];
-    (0..MODES.len().pow(arity)).map(move |combination| -> Job {
-        let modes: Vec<Mode> =
-            (0..arity).rev().map(|digit| MODES[combination / MODES.len().pow(digit) % MODES.len()]).collect();
-        Box::new(move || block(&modes))
+/// Each job calls `block` with its modes. Its cost is `cost`, doubled for each variable operand.
+pub fn mode_jobs<const N: usize>(cost: u64, block: fn([Mode; N]) -> Vec<Case>) -> impl Iterator<Item = Job> {
+    (0..N).map(|_| [Mode::Constant, Mode::Public, Mode::Private]).multi_cartesian_product().map(move |modes| {
+        // Note: `expect` is safe as each combination has one mode per operand.
+        let modes: [Mode; N] = modes.try_into().expect("each combination has `N` modes");
+        let variables = modes.iter().filter(|mode| !mode.is_constant()).count();
+        Job { cost: cost << variables, run: Box::new(move || block(modes)) }
     })
 }
 
-/// Runs the jobs on a pool of threads and concatenates their results in the order of the jobs.
+/// The number of threads that run the jobs of one test.
 ///
-/// Each thread has its own circuit, as the circuit is thread-local.
-pub fn run_parallel(jobs: Vec<Job>) -> Vec<Case> {
-    // Half the threads, because the test runner already runs several test binaries at once.
-    let workers = (thread::available_parallelism().map_or(1, NonZeroUsize::get) / 2).clamp(1, jobs.len().max(1));
-    let queue = Mutex::new(jobs.into_iter().enumerate());
+/// `.config/nextest.toml` reserves as many threads for each snapshot test. Keep the two equal.
+const WORKERS: usize = 8;
+
+/// The number of jobs that run in this process, across tests.
+static RUNNING: Mutex<usize> = Mutex::new(0);
+/// Signals that a job finished.
+static FINISHED: Condvar = Condvar::new();
+
+/// A slot in the limit on the jobs that run in this process at once.
+struct Slot;
+
+impl Slot {
+    /// Waits until fewer jobs than the available parallelism run in this process, then takes a slot.
+    fn take() -> Self {
+        let limit = thread::available_parallelism().map_or(1, NonZeroUsize::get);
+        let mut running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
+        while *running >= limit {
+            running = FINISHED.wait(running).unwrap_or_else(PoisonError::into_inner);
+        }
+        *running += 1;
+        Self
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        *RUNNING.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+        FINISHED.notify_one();
+    }
+}
+
+/// Runs the jobs on a pool of `WORKERS` threads, costliest first, and concatenates their results in the
+/// order of the jobs.
+///
+/// Each thread has its own circuit, as the circuit is thread-local. `cargo test` runs tests as threads of
+/// one process, so the jobs of all tests share a limit of the available parallelism.
+pub fn run_parallel(jobs: impl IntoIterator<Item = Job>) -> Vec<Case> {
+    let mut jobs: Vec<(usize, Job)> = jobs.into_iter().enumerate().collect();
+    jobs.sort_by_key(|(_, job)| std::cmp::Reverse(job.cost));
+    let workers = WORKERS.min(jobs.len()).max(1);
+    let queue = Mutex::new(jobs.into_iter());
+    // A failed job empties the queue, so the test reports without running the remaining jobs.
     let next = || queue.lock().unwrap_or_else(PoisonError::into_inner).next();
     let mut results: Vec<(usize, Vec<Case>)> = thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
-            .map(|_| scope.spawn(|| std::iter::from_fn(next).map(|(index, job)| (index, job())).collect::<Vec<_>>()))
+            .map(|_| {
+                scope.spawn(|| {
+                    std::iter::from_fn(next)
+                        .map(|(index, job)| {
+                            let _slot = Slot::take();
+                            let cases = panic::catch_unwind(AssertUnwindSafe(job.run)).unwrap_or_else(|error| {
+                                queue.lock().unwrap_or_else(PoisonError::into_inner).by_ref().for_each(drop);
+                                panic::resume_unwind(error)
+                            });
+                            (index, cases)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
             .collect();
         handles
             .into_iter()
@@ -266,8 +440,9 @@ fn parse(stored: &str) -> HashMap<&str, StoredBlock<'_>> {
     blocks
 }
 
-/// Returns the number of merged cases whose stored result differs, and a description of the first one.
-fn compare(stored: &str, cases: &[Case]) -> (usize, Option<String>) {
+/// Returns a description of each merged case whose stored result differs, in the order of the cases,
+/// then of each stored case that is no longer a case.
+fn compare(stored: &str, cases: &[Case]) -> Vec<String> {
     let blocks = parse(stored);
     let mut differences = Vec::new();
     let mut seen: HashSet<(&str, &str)> = HashSet::with_capacity(cases.len());
@@ -301,7 +476,7 @@ fn compare(stored: &str, cases: &[Case]) -> (usize, Option<String>) {
         .collect();
     stale.sort();
     differences.extend(stale);
-    (differences.len(), differences.into_iter().next())
+    differences
 }
 
 /// Merges the cases that differ only in the values of variable operands.
@@ -346,11 +521,12 @@ pub fn assert_snapshot(files: &SnapshotFiles, op: &str, cases: Vec<Case>) {
     if stored == rendered {
         return;
     }
-    let (differences, first) = compare(&stored, cases);
-    match first {
+    let differences = compare(&stored, cases);
+    match differences.first() {
         Some(first) => panic!(
-            "`{op}`: {differences} of {} merged cases differ from {}. First: {first}. \
+            "`{op}`: {} of {} merged cases differ from {}. First: {first}. \
              If the change is deliberate, run with {UPDATE_VARIABLE}=1 to rewrite the file.",
+            differences.len(),
             cases.len(),
             path.display(),
         ),

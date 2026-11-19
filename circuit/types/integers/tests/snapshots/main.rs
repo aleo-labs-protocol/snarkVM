@@ -21,7 +21,7 @@
 use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
-    snapshot::{Case, SnapshotFiles, assert_snapshot, measure, mode_jobs, run_parallel, value_label},
+    snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_integers::Integer;
@@ -40,13 +40,16 @@ fn bit_modes<O: ToBits<Boolean = Boolean<Circuit>>>(output: &O) -> Vec<Mode> {
     output.to_bits_le().iter().map(Eject::eject_mode).collect()
 }
 
+/// A console integer of type `I`.
+type Console<I> = ConsoleInteger<<Circuit as Environment>::Network, I>;
+
 /// Converts a console result into the value that the circuit output ejects.
 trait IntoEjected<P> {
     fn into_ejected(self) -> P;
 }
 
-impl<I: IntegerType> IntoEjected<ConsoleInteger<<Circuit as Environment>::Network, I>> for I {
-    fn into_ejected(self) -> ConsoleInteger<<Circuit as Environment>::Network, I> {
+impl<I: IntegerType> IntoEjected<Console<I>> for I {
+    fn into_ejected(self) -> Console<I> {
         ConsoleInteger::new(self)
     }
 }
@@ -62,9 +65,9 @@ fn power<I: IntegerType>(k: u64) -> Option<I> {
     I::one().checked_shl(&u32::try_from(k).ok()?)
 }
 
-/// Removes the later duplicates of each value, then sorts by value.
-fn dedup_and_sort<T: Copy + Ord>(candidates: Vec<(Option<T>, String)>) -> Vec<(T, String)> {
-    let mut values: Vec<(T, String)> = Vec::with_capacity(candidates.len());
+/// Removes the later duplicates of each value, sorts by value, and returns the values as console integers.
+fn dedup_and_sort<I: IntegerType>(candidates: Vec<(Option<I>, String)>) -> Vec<(Console<I>, String)> {
+    let mut values: Vec<(I, String)> = Vec::with_capacity(candidates.len());
     for (value, label) in candidates {
         if let Some(value) = value
             && values.iter().all(|(v, _)| *v != value)
@@ -73,14 +76,14 @@ fn dedup_and_sort<T: Copy + Ord>(candidates: Vec<(Option<T>, String)>) -> Vec<(T
         }
     }
     values.sort_by_key(|(value, _)| *value);
-    values
+    values.into_iter().map(|(value, label)| (ConsoleInteger::new(value), label)).collect()
 }
 
 /// Returns the edge values of `I` with their labels.
 ///
 /// The values are 0 to 3, -1, -2, `MIN`, `MAX` and their neighbours, `2^k` and its neighbours for
 /// `k` below and at the half width and at the top bit, and the values with only the upper half set.
-fn edge_values<I: IntegerType>() -> Vec<(I, String)> {
+fn edge_values<I: IntegerType>() -> Vec<(Console<I>, String)> {
     let one = I::one();
     let two = one + one;
     let three = two + one;
@@ -121,7 +124,7 @@ fn edge_values<I: IntegerType>() -> Vec<(I, String)> {
 }
 
 /// Returns a few values of `I` that differ in their bit patterns.
-fn small_values<I: IntegerType>() -> Vec<(I, String)> {
+fn small_values<I: IntegerType>() -> Vec<(Console<I>, String)> {
     let one = I::one();
     let candidates = vec![
         (Some(I::zero()), "0".to_string()),
@@ -134,151 +137,59 @@ fn small_values<I: IntegerType>() -> Vec<(I, String)> {
     dedup_and_sort(candidates)
 }
 
+/// Returns the shift amounts for `I`: 0 to 2, and the amounts around half the width, the width and twice
+/// the width of `I`.
+fn shift_amounts<I: IntegerType>() -> [u64; 11] {
+    let (half, bits) = (I::BITS / 2, I::BITS);
+    [0, 1, 2, half - 1, half, half + 1, bits - 2, bits - 1, bits, bits + 1, 2 * bits]
+}
+
+/// Returns the shift amounts for a variable shift of `I`: 0, 1, and the width of `I` and its predecessor.
+fn variable_shift_amounts<I: IntegerType>() -> [u64; 4] {
+    [0, 1, I::BITS - 1, I::BITS]
+}
+
+/// Returns the exponents for `I`: 0 to 3, and the width of `I` and its predecessor.
+fn exponents<I: IntegerType>() -> [u64; 6] {
+    [0, 1, 2, 3, I::BITS - 1, I::BITS]
+}
+
 /// Returns `amounts` and `M::MAX` as values of `M`, with their labels.
-fn magnitudes<M: Magnitude>(amounts: &[u64]) -> Vec<(M, String)> {
+fn magnitudes<M: Magnitude>(amounts: &[u64]) -> Vec<(Console<M>, String)> {
     let mut candidates: Vec<_> =
         amounts.iter().map(|amount| (<M as NumCast>::from(*amount), amount.to_string())).collect();
     candidates.push((Some(M::MAX), "MAX".to_string()));
     dedup_and_sort(candidates)
 }
 
-/// Returns the cases of a unary operation on `I` with an operand of the given mode.
-fn unary<I: IntegerType, O: Eject + ToBits<Boolean = Boolean<Circuit>>, V: IntoEjected<O::Primitive>>(
-    operation: impl Fn(&Integer<Circuit, I>) -> O,
-    oracle: impl Fn(I) -> Option<V>,
-    mode: Mode,
-) -> Vec<Case>
-where
-    O::Primitive: Debug + PartialEq,
-{
-    let block = format!("{}.{mode}", I::type_name());
-    edge_values::<I>()
-        .into_iter()
-        .map(|(x, label)| {
-            Circuit::reset();
-            let a = Integer::<Circuit, I>::new(mode, ConsoleInteger::new(x));
-            let expected = oracle(x).map(V::into_ejected);
-            let outcome = measure(&format!("{block} {label}"), expected, Some(bit_modes::<O>), || operation(&a));
-            Case { block: block.clone(), values: value_label(mode, &label).to_string(), outcome }
-        })
-        .collect()
+/// Returns the width of `I`, which is the cost of its jobs.
+///
+/// Inside `for_each!`, `I` is a primitive type, so `I::BITS` names its inherent `u32` constant instead.
+fn bits<I: IntegerType>() -> u64 {
+    I::BITS
 }
 
-/// The values of an operand when it is a constant and when it is a variable.
-struct Values<T> {
-    constant: Vec<(T, String)>,
-    variable: Vec<(T, String)>,
-}
-
-impl<T> Values<T> {
-    fn for_mode(&self, mode: Mode) -> &[(T, String)] {
-        match mode {
-            Mode::Constant => &self.constant,
-            _ => &self.variable,
-        }
-    }
-}
-
-/// Returns the cases of a binary operation of `I` and `M` with operands of the given modes.
-fn binary<I: IntegerType, M: IntegerType, O: Eject + ToBits<Boolean = Boolean<Circuit>>, V: IntoEjected<O::Primitive>>(
-    operation: impl Fn(&Integer<Circuit, I>, &Integer<Circuit, M>) -> O,
-    oracle: impl Fn(I, M) -> Option<V>,
-    lhs: &Values<I>,
-    rhs: &Values<M>,
-    modes: &[Mode],
-) -> Vec<Case>
-where
-    O::Primitive: Debug + PartialEq,
-{
-    let (mode_a, mode_b) = (modes[0], modes[1]);
-    let block = format!("{}.{mode_a} {}.{mode_b}", I::type_name(), M::type_name());
-    let mut cases = Vec::with_capacity(lhs.for_mode(mode_a).len() * rhs.for_mode(mode_b).len());
-    for (x, label_x) in lhs.for_mode(mode_a) {
-        for (y, label_y) in rhs.for_mode(mode_b) {
-            Circuit::reset();
-            let a = Integer::<Circuit, I>::new(mode_a, ConsoleInteger::new(*x));
-            let b = Integer::<Circuit, M>::new(mode_b, ConsoleInteger::new(*y));
-            let label = format!("{block} {label_x} {label_y}");
-            let expected = oracle(*x, *y).map(V::into_ejected);
-            let outcome = measure(&label, expected, Some(bit_modes::<O>), || operation(&a, &b));
-            let values = format!("{} {}", value_label(mode_a, label_x), value_label(mode_b, label_y));
-            cases.push(Case { block: block.clone(), values, outcome });
-        }
-    }
-    cases
-}
-
-/// Returns `amount` as a `u32`.
-fn to_u32<M: Magnitude>(amount: M) -> u32 {
-    // Note: `unwrap()` is safe as every `Magnitude` is at most 32 bits.
-    amount.to_u32().unwrap()
-}
-
-/// Runs `$cases::<I>` in parallel, once per block: each integer type `I` and each combination of
-/// `$arity` operand modes.
-macro_rules! for_each_type {
-    ($cases:ident, $arity:expr) => {
-        run_parallel(
-            [
-                mode_jobs($arity, $cases::<u8>),
-                mode_jobs($arity, $cases::<u16>),
-                mode_jobs($arity, $cases::<u32>),
-                mode_jobs($arity, $cases::<u64>),
-                mode_jobs($arity, $cases::<u128>),
-                mode_jobs($arity, $cases::<i8>),
-                mode_jobs($arity, $cases::<i16>),
-                mode_jobs($arity, $cases::<i32>),
-                mode_jobs($arity, $cases::<i64>),
-                mode_jobs($arity, $cases::<i128>),
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
-        )
+/// Binds `$t` to each of the given types in turn and returns the values of `$body` as an array.
+macro_rules! for_each {
+    ($t:ident in [$($ty:ty),+] => $body:expr) => {
+        [$({
+            type $t = $ty;
+            $body
+        }),+]
     };
 }
 
-/// Runs `$cases::<I, M>` in parallel, once per block: each integer type `I`, each magnitude type `M`
-/// and each combination of two operand modes.
-macro_rules! for_each_type_and_magnitude {
-    ($cases:ident) => {
-        run_parallel(
-            [
-                mode_jobs(2, $cases::<u8, u8>),
-                mode_jobs(2, $cases::<u8, u16>),
-                mode_jobs(2, $cases::<u8, u32>),
-                mode_jobs(2, $cases::<u16, u8>),
-                mode_jobs(2, $cases::<u16, u16>),
-                mode_jobs(2, $cases::<u16, u32>),
-                mode_jobs(2, $cases::<u32, u8>),
-                mode_jobs(2, $cases::<u32, u16>),
-                mode_jobs(2, $cases::<u32, u32>),
-                mode_jobs(2, $cases::<u64, u8>),
-                mode_jobs(2, $cases::<u64, u16>),
-                mode_jobs(2, $cases::<u64, u32>),
-                mode_jobs(2, $cases::<u128, u8>),
-                mode_jobs(2, $cases::<u128, u16>),
-                mode_jobs(2, $cases::<u128, u32>),
-                mode_jobs(2, $cases::<i8, u8>),
-                mode_jobs(2, $cases::<i8, u16>),
-                mode_jobs(2, $cases::<i8, u32>),
-                mode_jobs(2, $cases::<i16, u8>),
-                mode_jobs(2, $cases::<i16, u16>),
-                mode_jobs(2, $cases::<i16, u32>),
-                mode_jobs(2, $cases::<i32, u8>),
-                mode_jobs(2, $cases::<i32, u16>),
-                mode_jobs(2, $cases::<i32, u32>),
-                mode_jobs(2, $cases::<i64, u8>),
-                mode_jobs(2, $cases::<i64, u16>),
-                mode_jobs(2, $cases::<i64, u32>),
-                mode_jobs(2, $cases::<i128, u8>),
-                mode_jobs(2, $cases::<i128, u16>),
-                mode_jobs(2, $cases::<i128, u32>),
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
-        )
+/// Binds `$t` to each integer type in turn and returns the values of `$body` as an array.
+macro_rules! for_each_integer {
+    ($t:ident => $body:expr) => {
+        for_each!($t in [u8, u16, u32, u64, u128, i8, i16, i32, i64, i128] => $body)
+    };
+}
+
+/// Binds `$t` to each magnitude type in turn and returns the values of `$body` as an array.
+macro_rules! for_each_magnitude {
+    ($t:ident => $body:expr) => {
+        for_each!($t in [u8, u16, u32] => $body)
     };
 }
 
@@ -287,10 +198,20 @@ macro_rules! unary_snapshot {
     ($op:ident, |$a:ident| $circuit:expr, |$x:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases<I: IntegerType>(modes: &[Mode]) -> Vec<Case> {
-                unary::<I, _, _>(|$a: &Integer<Circuit, I>| $circuit, |$x: I| $console, modes[0])
+            fn cases<I: IntegerType>(modes: [Mode; 1]) -> Vec<Case> {
+                snapshot::unary(
+                    |$a: &Integer<Circuit, I>| $circuit,
+                    |$x: Console<I>| {
+                        let $x = *$x;
+                        $console.map(IntoEjected::into_ejected)
+                    },
+                    Some(bit_modes),
+                    &edge_values::<I>(),
+                    modes,
+                )
             }
-            assert_snapshot(&FILES, stringify!($op), for_each_type!(cases, 1));
+            let jobs = for_each_integer!(I => mode_jobs(bits::<I>(), cases::<I>));
+            assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
         }
     };
 }
@@ -300,18 +221,23 @@ macro_rules! binary_snapshot {
     ($op:ident, |$a:ident, $b:ident| $circuit:expr, |$x:ident, $y:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases<I: IntegerType>(modes: &[Mode]) -> Vec<Case> {
+            fn cases<I: IntegerType>(modes: [Mode; 2]) -> Vec<Case> {
                 let edges = edge_values::<I>();
                 let values = Values { constant: edges.clone(), variable: edges };
-                binary::<I, I, _, _>(
+                snapshot::binary(
                     |$a: &Integer<Circuit, I>, $b: &Integer<Circuit, I>| $circuit,
-                    |$x: I, $y: I| $console,
+                    |$x: Console<I>, $y: Console<I>| {
+                        let ($x, $y) = (*$x, *$y);
+                        $console.map(IntoEjected::into_ejected)
+                    },
+                    Some(bit_modes),
                     &values,
                     &values,
                     modes,
                 )
             }
-            assert_snapshot(&FILES, stringify!($op), for_each_type!(cases, 2));
+            let jobs = for_each_integer!(I => mode_jobs(bits::<I>(), cases::<I>));
+            assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
         }
     };
 }
@@ -324,19 +250,23 @@ macro_rules! magnitude_snapshot {
     ($op:ident, $rhs:expr, $variable_rhs:expr, |$a:ident, $b:ident| $circuit:expr, |$x:ident, $y:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases<I: IntegerType, M: Magnitude>(modes: &[Mode]) -> Vec<Case> {
-                binary::<I, M, _, _>(
+            fn cases<I: IntegerType, M: Magnitude>(modes: [Mode; 2]) -> Vec<Case> {
+                snapshot::binary(
                     |$a: &Integer<Circuit, I>, $b: &Integer<Circuit, M>| $circuit,
-                    |$x: I, $y: M| {
-                        let $y = to_u32($y);
-                        $console
+                    |$x: Console<I>, $y: Console<M>| {
+                        let $x = *$x;
+                        // Note: `unwrap()` is safe as every `Magnitude` is at most 32 bits.
+                        let $y = $y.to_u32().unwrap();
+                        $console.map(IntoEjected::into_ejected)
                     },
+                    Some(bit_modes),
                     &Values { constant: edge_values::<I>(), variable: small_values::<I>() },
                     &Values { constant: magnitudes::<M>(&$rhs), variable: magnitudes::<M>(&$variable_rhs) },
                     modes,
                 )
             }
-            assert_snapshot(&FILES, stringify!($op), for_each_type_and_magnitude!(cases));
+            let jobs = for_each_integer!(I => for_each_magnitude!(M => mode_jobs(bits::<I>() * bits::<M>(), cases::<I, M>)));
+            assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten().flatten()));
         }
     };
 }
@@ -355,84 +285,33 @@ binary_snapshot!(rem_wrapped, |a, b| a.rem_wrapped(b), |x, y| (!y.is_zero()).the
 binary_snapshot!(modulo, |a, b| a.modulo(b), |x, y| (!I::is_signed() && !y.is_zero()).then(|| x.wrapping_rem(&y)));
 
 // Powers and shifts.
-magnitude_snapshot!(pow_checked, [0, 1, 2, 3, I::BITS - 1, I::BITS], [0, 1, 2], |a, b| a.pow_checked(b), |x, y| x
-    .checked_pow(&y));
-magnitude_snapshot!(pow_wrapped, [0, 1, 2, 3, I::BITS - 1, I::BITS], [0, 1, 2], |a, b| a.pow_wrapped(b), |x, y| Some(
-    x.wrapping_pow(&y)
-));
+magnitude_snapshot!(pow_checked, exponents::<I>(), [0, 1, 2], |a, b| a.pow_checked(b), |x, y| x.checked_pow(&y));
+magnitude_snapshot!(pow_wrapped, exponents::<I>(), [0, 1, 2], |a, b| a.pow_wrapped(b), |x, y| Some(x.wrapping_pow(&y)));
 magnitude_snapshot!(
     shl_checked,
-    [
-        0,
-        1,
-        2,
-        I::BITS / 2 - 1,
-        I::BITS / 2,
-        I::BITS / 2 + 1,
-        I::BITS - 2,
-        I::BITS - 1,
-        I::BITS,
-        I::BITS + 1,
-        2 * I::BITS
-    ],
-    [0, 1, I::BITS - 1, I::BITS],
+    shift_amounts::<I>(),
+    variable_shift_amounts::<I>(),
     |a, b| a.shl_checked(b),
     |x, y| x.checked_shl(&y)
 );
 magnitude_snapshot!(
     shl_wrapped,
-    [
-        0,
-        1,
-        2,
-        I::BITS / 2 - 1,
-        I::BITS / 2,
-        I::BITS / 2 + 1,
-        I::BITS - 2,
-        I::BITS - 1,
-        I::BITS,
-        I::BITS + 1,
-        2 * I::BITS
-    ],
-    [0, 1, I::BITS - 1, I::BITS],
+    shift_amounts::<I>(),
+    variable_shift_amounts::<I>(),
     |a, b| a.shl_wrapped(b),
     |x, y| Some(x.wrapping_shl(y))
 );
 magnitude_snapshot!(
     shr_checked,
-    [
-        0,
-        1,
-        2,
-        I::BITS / 2 - 1,
-        I::BITS / 2,
-        I::BITS / 2 + 1,
-        I::BITS - 2,
-        I::BITS - 1,
-        I::BITS,
-        I::BITS + 1,
-        2 * I::BITS
-    ],
-    [0, 1, I::BITS - 1, I::BITS],
+    shift_amounts::<I>(),
+    variable_shift_amounts::<I>(),
     |a, b| a.shr_checked(b),
     |x, y| x.checked_shr(y)
 );
 magnitude_snapshot!(
     shr_wrapped,
-    [
-        0,
-        1,
-        2,
-        I::BITS / 2 - 1,
-        I::BITS / 2,
-        I::BITS / 2 + 1,
-        I::BITS - 2,
-        I::BITS - 1,
-        I::BITS,
-        I::BITS + 1,
-        2 * I::BITS
-    ],
-    [0, 1, I::BITS - 1, I::BITS],
+    shift_amounts::<I>(),
+    variable_shift_amounts::<I>(),
     |a, b| a.shr_wrapped(b),
     |x, y| Some(x.wrapping_shr(y))
 );
@@ -456,37 +335,16 @@ binary_snapshot!(is_less_than_or_equal, |a, b| a.is_less_than_or_equal(b), |x, y
 binary_snapshot!(is_greater_than, |a, b| a.is_greater_than(b), |x, y| Some(x > y));
 binary_snapshot!(is_greater_than_or_equal, |a, b| a.is_greater_than_or_equal(b), |x, y| Some(x >= y));
 
-/// Returns the cases of `ternary` on `I` with operands of the given modes, for each condition and a few
-/// operand values.
-fn ternary_cases<I: IntegerType>(modes: &[Mode]) -> Vec<Case> {
-    let (mode_c, mode_a, mode_b) = (modes[0], modes[1], modes[2]);
-    let block = format!("boolean.{mode_c} {}.{mode_a} {}.{mode_b}", I::type_name(), I::type_name());
-    let values = small_values::<I>();
-    let mut cases = Vec::with_capacity(2 * values.len().pow(2));
-    for condition in [false, true] {
-        for (x, label_x) in &values {
-            for (y, label_y) in &values {
-                Circuit::reset();
-                let c = Boolean::<Circuit>::new(mode_c, condition);
-                let a = Integer::<Circuit, I>::new(mode_a, ConsoleInteger::new(*x));
-                let b = Integer::<Circuit, I>::new(mode_b, ConsoleInteger::new(*y));
-                let label = format!("{block} {condition} {label_x} {label_y}");
-                let expected = Some(ConsoleInteger::new(if condition { *x } else { *y }));
-                let outcome = measure(&label, expected, Some(bit_modes), || Integer::ternary(&c, &a, &b));
-                let values = format!(
-                    "{} {} {}",
-                    value_label(mode_c, &condition.to_string()),
-                    value_label(mode_a, label_x),
-                    value_label(mode_b, label_y)
-                );
-                cases.push(Case { block: block.clone(), values, outcome });
-            }
-        }
-    }
-    cases
-}
-
 #[test]
 fn ternary() {
-    assert_snapshot(&FILES, "ternary", for_each_type!(ternary_cases, 3));
+    fn cases<I: IntegerType>(modes: [Mode; 3]) -> Vec<Case> {
+        snapshot::ternary(
+            |c: &Boolean<Circuit>, a: &Integer<Circuit, I>, b: &Integer<Circuit, I>| Integer::ternary(c, a, b),
+            Some(bit_modes),
+            &small_values::<I>(),
+            modes,
+        )
+    }
+    let jobs = for_each_integer!(I => mode_jobs(bits::<I>(), cases::<I>));
+    assert_snapshot(&FILES, "ternary", run_parallel(jobs.into_iter().flatten()));
 }
