@@ -264,12 +264,17 @@ impl<E: Environment, I: IntegerType> Metrics<dyn MulChecked<Integer<E, I>, Outpu
 impl<E: Environment, I: IntegerType> OutputMode<dyn MulChecked<Integer<E, I>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, Mode);
+    /// `(mode of self, mode of other, self is zero, other is zero)`.
+    type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            _ => Mode::Private,
+        // Up to 64 bits, the product is a witness, so it is constant only if both operands are constant.
+        // At 128 bits, Karatsuba multiplication by a constant zero gives a constant zero.
+        let uses_karatsuba = 2 * I::BITS >= (E::BaseField::size_in_bits() - 1) as u64;
+        match (case.0, case.1, case.2, case.3) {
+            (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
+            (Mode::Constant, _, true, _) | (_, Mode::Constant, _, true) if uses_karatsuba => Mode::Constant,
+            (_, _, _, _) => Mode::Private,
         }
     }
 }
@@ -294,13 +299,15 @@ mod tests {
     ) {
         let a = Integer::<Circuit, I>::new(mode_a, first);
         let b = Integer::<Circuit, I>::new(mode_b, second);
+        let a_is_zero = a.is_zero().eject_value();
+        let b_is_zero = b.is_zero().eject_value();
         match first.checked_mul(&second) {
             Some(expected) => Circuit::scope(name, || {
                 let candidate = a.mul_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
                 assert_count!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                // assert_output_mode!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
+                assert_output_mode!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero), candidate);
             }),
             None => match (mode_a, mode_b) {
                 (Mode::Constant, Mode::Constant) => check_operation_halts(&a, &b, Integer::mul_checked),
