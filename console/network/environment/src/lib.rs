@@ -111,6 +111,8 @@ pub mod prelude {
 
     pub use snarkvm_curves::{AffineCurve, MontgomeryParameters, ProjectiveCurve, TwistedEdwardsParameters};
     pub use snarkvm_fields::{Field as _, PrimeField as _, SquareRootField as _, Zero as _};
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub use snarkvm_utilities::TestRng;
     pub use snarkvm_utilities::{
         DeserializeExt,
         FromBits as _,
@@ -118,7 +120,6 @@ pub mod prelude {
         FromBytesDeserializer,
         FromBytesUncheckedDeserializer,
         LimitedWriter,
-        TestRng,
         ToBits as _,
         ToBitsRaw as _,
         ToBytes,

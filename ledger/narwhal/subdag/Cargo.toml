@@ -27,7 +27,7 @@ edition = "2024"
 default = [ "indexmap/rayon", "rayon" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers" ]
+test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true

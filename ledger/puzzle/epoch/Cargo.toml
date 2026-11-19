@@ -98,7 +98,7 @@ optional = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "test" ]
+features = [ "test", "test-helpers" ]
 
 [dev-dependencies.hex]
 workspace = true

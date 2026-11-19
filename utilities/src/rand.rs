@@ -23,6 +23,7 @@ use rand::{
     distr::{Distribution, StandardUniform},
 };
 use rand_chacha::ChaCha20Rng;
+#[cfg(any(test, feature = "test-helpers"))]
 use rand_xorshift::XorShiftRng;
 
 /// A trait for a uniform random number generator.
@@ -58,6 +59,9 @@ impl<T: Uniform> UniformExt for T {}
 ///
 /// Every `TestRng::default()` takes its seed from the `TEST_SEED` environment variable if it is set.
 /// To replay a failure, run `TEST_SEED=<seed> cargo test -p <crate> -- <test> --exact`.
+///
+/// The `test-helpers` feature provides it.
+#[cfg(any(test, feature = "test-helpers"))]
 #[derive(Clone)]
 pub struct TestRng {
     seed: u64,
@@ -65,6 +69,7 @@ pub struct TestRng {
     calls: usize,
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl Default for TestRng {
     fn default() -> Self {
         // Obtain the initial seed from `TEST_SEED`, or else using entropy provided by the OS.
@@ -81,6 +86,7 @@ impl Default for TestRng {
     }
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl TestRng {
     pub fn fixed(seed: u64) -> Self {
         // Print the seed, so it's displayed if any of the tests using `test_rng` fails.
@@ -160,6 +166,7 @@ impl TestRng {
     }
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl TryRng for TestRng {
     type Error = Infallible;
 
@@ -180,8 +187,10 @@ impl TryRng for TestRng {
     }
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl TryCryptoRng for TestRng {}
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl Drop for TestRng {
     fn drop(&mut self) {
         println!("Called TestRng with seed {} {} times", self.seed, self.calls);

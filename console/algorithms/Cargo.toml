@@ -83,6 +83,10 @@ workspace = true
 workspace = true
 features = [ "preserve_order" ]
 
+[dev-dependencies.snarkvm-console-types]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 serial = [ ]

@@ -27,3 +27,7 @@ workspace = true
 [dev-dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
+
+[dev-dependencies.snarkvm-console-network-environment]
+workspace = true
+features = [ "test-helpers" ]
