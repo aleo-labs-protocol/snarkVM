@@ -146,19 +146,84 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn PowChecked<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, Mode, bool, bool);
+    type Case = (CircuitType<Integer<E, I>>, CircuitType<Integer<E, M>>);
 
+    #[rustfmt::skip]
     fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (Mode::Constant, _) | (_, Mode::Constant) => {
-                let mul_count = count!(Integer<E, I>, MulWrapped<Integer<E, I>, Output=Integer<E, I>>, case);
-                (2 * M::BITS * mul_count) + Count::is(2 * I::BITS, 0, I::BITS, I::BITS)
+        let (n, m) = (I::BITS, M::BITS);
+
+        // The cost of one loop iteration with a variable `self`, as `(constants, private, constraints)`:
+        //  - `lead`: `result` is still the constant one.
+        //  - `step`: `result` is a variable and `bit` is a constant.
+        // A variable `bit` adds `n + 1` private variables and `n + 2` constraints to each iteration.
+        // A constant set `bit` adds one constraint.
+        let (lead, step) = match (I::is_signed(), 2 * I::BITS < (E::BaseField::size_in_bits() - 1) as u64) {
+            (false, true) => ((n, n + 2, n + 2), (0, (2 * n) + 3, (2 * n) + 4)),
+            (false, false) => ((n, (3 * n / 2) + 3, (3 * n / 2) + 4), (0, (3 * n) + 10, (3 * n) + 14)),
+            (true, true) => ((5 * n, (6 * n) + 8, (6 * n) + 10), (6 * n, (16 * n) + 17, (16 * n) + 26)),
+            (true, false) => ((5 * n, 841, 844), (6 * n, 2200, 2212)),
+        };
+
+        match (&case.0, &case.1) {
+            (CircuitType::Constant(_), CircuitType::Constant(_)) => Count::is(n, 0, 0, 0),
+            (_, CircuitType::Constant(exponent)) => {
+                let bits = exponent.eject_value().to_bits_le();
+                // `result` is the constant one up to and including the iteration of the top set bit, or throughout for zero.
+                let num_lead = m - bits.iter().rposition(|bit| *bit).unwrap_or(0) as u64;
+                let num_steps = m - num_lead;
+                let num_ones = bits.iter().filter(|bit| **bit).count() as u64;
+                Count::is(
+                    n + (num_lead * lead.0) + (num_steps * step.0),
+                    0,
+                    (num_lead * lead.1) + (num_steps * step.1),
+                    (num_lead * lead.2) + (num_steps * step.2) + num_ones,
+                )
             }
-            (_, _) => {
-                let mul_count = count!(Integer<E, I>, MulWrapped<Integer<E, I>, Output=Integer<E, I>>, case);
-                (2 * M::BITS * mul_count) + Count::is(2 * I::BITS, 0, I::BITS, I::BITS)
+            (CircuitType::Constant(base), _) => {
+                // After the first iteration, the bits of `result` are constant where `self` and one agree.
+                // For 128-bit integers, a constant half of `result` makes the second squaring cheaper.
+                // For signed integers, a negative `self` gives `result` a variable sign.
+                let bits = base.eject_value().to_bits_le();
+                let (lower, upper) = bits.split_at(bits.len() / 2);
+                let upper_is_zero = upper.iter().all(|bit| !bit);
+                let lower_is_one = lower.iter().enumerate().all(|(i, bit)| *bit == (i == 0));
+                let is_zero = upper_is_zero && lower.iter().all(|bit| !bit);
+                let is_one = upper_is_zero && lower_is_one;
+                let is_negative = I::is_signed() && upper.last().is_some_and(|bit| *bit);
+
+                match (I::is_signed(), 2 * I::BITS < (E::BaseField::size_in_bits() - 1) as u64) {
+                    (false, true) => match is_one {
+                        true => Count::is((3 * n) + 1 + ((m - 1) * ((2 * n) + 1)), 0, 0, 0),
+                        false => Count::is((3 * n) + 1, 0, (m - 1) * ((3 * n) + 3), (m - 1) * ((3 * n) + 5)),
+                    },
+                    (false, false) => match (is_one, is_zero, lower_is_one, upper_is_zero) {
+                        (true, _, _, _) => Count::is(450 + ((m - 1) * 322), 0, 0, 0),
+                        (_, true, _, _) => Count::is(450 + ((m - 1) * 194), 0, ((m - 1) * 324) - 1, ((m - 1) * 327) - 2),
+                        (_, _, true, _) => Count::is(450, 0, ((m - 1) * 520) - 1, ((m - 1) * 525) - 1),
+                        (_, _, _, true) => Count::is(450, 0, ((m - 1) * 520) - 1, ((m - 1) * 525) - 2),
+                        (_, _, _, _) => Count::is(450, 0, (m - 1) * 520, (m - 1) * 525),
+                    },
+                    (true, true) => match (is_one, is_negative) {
+                        (true, _) => Count::is((9 * n) + 1 + ((m - 1) * ((8 * n) + 1)), 0, 0, 0),
+                        (_, true) => Count::is((9 * n) + 1 + ((m - 1) * 7 * n), 0, (m - 1) * ((15 * n) + 15), (m - 1) * ((15 * n) + 24)),
+                        (_, false) => Count::is((9 * n) + 1 + ((m - 1) * 7 * n), 0, ((m - 1) * ((15 * n) + 15)) - ((3 * n) + 3), ((m - 1) * ((15 * n) + 24)) - ((3 * n) + 4)),
+                    },
+                    (true, false) => match (is_one, is_zero, is_negative, lower_is_one, upper_is_zero) {
+                        (true, _, _, _, _) => Count::is(1218 + ((m - 1) * 1090), 0, 0, 0),
+                        (_, true, _, _, _) => Count::is(1218 + ((m - 1) * 1218), 0, ((m - 1) * 1483) - 388, ((m - 1) * 1492) - 390),
+                        (_, _, true, _, _) => Count::is(1218 + ((m - 1) * 896), 0, (m - 1) * 2068, (m - 1) * 2080),
+                        (_, _, _, true, _) => Count::is(1218 + ((m - 1) * 896), 0, ((m - 1) * 2068) - 388, ((m - 1) * 2080) - 389),
+                        (_, _, _, _, true) => Count::is(1218 + ((m - 1) * 896), 0, ((m - 1) * 2068) - 388, ((m - 1) * 2080) - 390),
+                        (_, _, _, _, _) => Count::is(1218 + ((m - 1) * 896), 0, ((m - 1) * 2068) - 387, ((m - 1) * 2080) - 388),
+                    },
+                }
             }
+            (_, _) => Count::is(
+                n + lead.0 + ((m - 1) * step.0),
+                0,
+                lead.1 + ((m - 1) * step.1) + (m * (n + 1)),
+                lead.2 + ((m - 1) * step.2) + (m * (n + 2)),
+            ),
         }
     }
 }
@@ -166,23 +231,14 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn PowChecked<Intege
 impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn PowChecked<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, CircuitType<Integer<E, M>>);
+    type Case = (CircuitType<Integer<E, I>>, CircuitType<Integer<E, M>>);
 
     fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, (case.1.mode(), &case.1)) {
-            (Mode::Constant, (Mode::Constant, _)) => Mode::Constant,
-            (Mode::Constant, (mode, _)) => match mode {
-                Mode::Constant => Mode::Constant,
-                _ => Mode::Private,
-            },
-            (_, (Mode::Constant, case)) => match case {
-                // Determine if the constant is all zeros.
-                CircuitType::Constant(constant) => match constant.eject_value().is_zero() {
-                    true => Mode::Constant,
-                    false => Mode::Private,
-                },
-                _ => E::halt("The constant is required for the output mode of `pow_wrapped` with a constant."),
-            },
+        match (&case.0, &case.1) {
+            (CircuitType::Constant(_), CircuitType::Constant(_)) => Mode::Constant,
+            // `result` stays the constant one.
+            (CircuitType::Constant(base), _) if base.eject_value().is_one() => Mode::Constant,
+            (_, CircuitType::Constant(exponent)) if exponent.eject_value().is_zero() => Mode::Constant,
             (_, _) => Mode::Private,
         }
     }
@@ -196,7 +252,7 @@ mod tests {
 
     use std::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    // Lowered to 4; we run (~5 * ITERATIONS) cases for most tests.
+    // Lowered to 4; we run (~7 * ITERATIONS) cases for most tests.
     const ITERATIONS: u64 = 4;
 
     fn check_pow<I: IntegerType + RefUnwindSafe, M: Magnitude + RefUnwindSafe>(
@@ -213,20 +269,18 @@ mod tests {
                 let candidate = a.pow_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                // assert_count!(PowChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
-                // assert_output_mode!(PowChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, CircuitType::from(&b)), candidate);
+                assert_count!(PowChecked(Integer<I>, Integer<M>) => Integer<I>, &(CircuitType::from(&a), CircuitType::from(&b)));
+                assert_output_mode!(PowChecked(Integer<I>, Integer<M>) => Integer<I>, &(CircuitType::from(&a), CircuitType::from(&b)), candidate);
                 assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
             }),
-            None => {
-                match (mode_a, mode_b) {
-                    (Mode::Constant, Mode::Constant) => check_operation_halts(&a, &b, Integer::pow_checked),
-                    _ => Circuit::scope(name, || {
-                        let _candidate = a.pow_checked(&b);
-                        // assert_count_fails!(PowChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));A
-                        assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
-                    }),
-                }
-            }
+            None => match (mode_a, mode_b) {
+                (Mode::Constant, Mode::Constant) => check_operation_halts(&a, &b, Integer::pow_checked),
+                _ => Circuit::scope(name, || {
+                    let _candidate = a.pow_checked(&b);
+                    assert_count_fails!(PowChecked(Integer<I>, Integer<M>) => Integer<I>, &(CircuitType::from(&a), CircuitType::from(&b)));
+                    assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
+                }),
+            },
         }
         Circuit::reset();
     }
@@ -246,6 +300,12 @@ mod tests {
 
             let name = format!("Pow One: {mode_a} ** {mode_b} {i}");
             check_pow::<I, M>(&name, first, console::Integer::one(), mode_a, mode_b);
+
+            let name = format!("Zero Base: {mode_a} ** {mode_b} {i}");
+            check_pow::<I, M>(&name, console::Integer::zero(), second, mode_a, mode_b);
+
+            let name = format!("One Base: {mode_a} ** {mode_b} {i}");
+            check_pow::<I, M>(&name, console::Integer::one(), second, mode_a, mode_b);
 
             // Check that the square is computed correctly.
             let name = format!("Square: {mode_a} ** {mode_b} {i}");
