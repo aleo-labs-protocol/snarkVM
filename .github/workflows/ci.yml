@@ -355,7 +355,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [ledger-rocks, ledger-merge, parameters, parameters-uncached, synthesizer-release, synthesizer-prerelease, synthesizer-integration, synthesizer-program]
+        name: [ledger-rocks, ledger-merge, parameters, parameters-uncached, synthesizer-test, synthesizer-prerelease, synthesizer-integration, synthesizer-program]
         include:
           - name: ledger-rocks
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
@@ -369,8 +369,8 @@ jobs:
             runs: nextest run -p snarkvm-parameters --features filesystem -j 2
           - name: parameters-uncached
             runs: nextest run -p snarkvm-parameters --features filesystem --run-ignored ignored-only -j 2
-          - name: synthesizer-release
-            runs: nextest run -p snarkvm-synthesizer --release --lib --bins --features test -j 8
+          - name: synthesizer-test
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --features test -j 8
           - name: synthesizer-prerelease
             runs: |
               nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2
