@@ -106,8 +106,11 @@ fn get_map_and_key(map_key: &[u8]) -> Result<(&[u8], &[u8])> {
     Ok((map, key))
 }
 
-impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned>
-    crate::sealed::SealedNestedMap<M, K, V> for NestedDataMap<M, K, V>
+impl<
+    M: Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    K: Clone + Debug + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    V: Clone + Serialize + DeserializeOwned + Send + Sync,
+> crate::sealed::SealedNestedMap<M, K, V> for NestedDataMap<M, K, V>
 {
 }
 

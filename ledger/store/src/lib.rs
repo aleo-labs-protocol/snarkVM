@@ -248,9 +248,14 @@ mod sealed {
 
     /// Seals the map traits for the key and value types of each map, so that an outside crate cannot implement them
     /// for a map of this crate with its own key or value type.
+    ///
+    /// Each map implements this marker with the same bounds as its `Map` and `MapRead` impls. With looser bounds, an
+    /// outside crate can implement those traits for the map with a key or value type that the impls do not cover.
     pub trait SealedMap<K, V> {}
 
     /// Seals the nested map traits for the map, key and value types of each nested map.
+    ///
+    /// Each nested map implements this marker with the same bounds as its `NestedMap` and `NestedMapRead` impls.
     pub trait SealedNestedMap<M, K, V> {}
 }
 
