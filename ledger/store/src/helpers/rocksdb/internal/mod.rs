@@ -75,7 +75,10 @@ pub const MAX_OPEN_FILES: u16 = 8192;
 static DATABASES: LazyLock<parking_lot::Mutex<HashMap<PathBuf, RocksDB>>> =
     LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 
-pub trait Database {
+/// A trait for opening the database and its maps.
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait Database: crate::sealed::Sealed {
     /// Opens the database.
     fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self>
     where
@@ -172,6 +175,8 @@ impl RocksDB {
         Ok(())
     }
 }
+
+impl crate::sealed::Sealed for RocksDB {}
 
 impl Database for RocksDB {
     /// Opens the database.

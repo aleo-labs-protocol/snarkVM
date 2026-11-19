@@ -178,12 +178,13 @@ jobs:
             -p snarkvm-utilities-derives -p snarkvm-utilities \
             -p snarkvm-fields -p snarkvm-curves -p snarkvm-algorithms-cuda
 
-  # Each entry is one build. `cargo test -p a -p b` unifies the features of
-  # a and b, and several crates enable `test`, `rocks` or
-  # `test_consensus_heights` on their dependencies, which changes what those
-  # dependencies compute. Crates share an entry only where that unification
-  # enables none of those features, nor `wasm` or `large_params`, on any
-  # snarkvm crate. Helper features such as `test-helpers` can still be unified.
+  # `cargo test -p a -p b` unifies the features of a and b, and several crates
+  # enable `test`, `rocks` or `test_consensus_heights` on their dependencies,
+  # which changes what those dependencies compute. Crates share a command only
+  # where that unification enables none of those features, nor `wasm` or
+  # `large_params`, on any snarkvm crate. Helper features such as
+  # `test-helpers` can still be unified. Each command in an entry with a
+  # different feature set rebuilds the snarkvm crates whose features change.
   #
   # Cheap entries run on free hosted runners, the rest on the fleet.
   test:
@@ -195,25 +196,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The ignored tests run without `filesystem`, and read the powers
-          # files that the runs with it cache in ~/.aleo/resources.
+          # The first run's powers tests, with `filesystem`, cache the powers
+          # files in ~/.aleo/resources. The ignored tests run without
+          # `filesystem`, and read those files. The last two runs share a build.
           - name: crates
             runs: |
-              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections
-              nextest run -p snarkvm-parameters --features filesystem -E test(/powers::tests/)
-              nextest run -p snarkvm-parameters --run-ignored all
-              nextest run -p snarkvm-algorithms --run-ignored ignored-only
+              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections -p snarkvm-parameters --features snarkvm-parameters/filesystem -E !package(snarkvm-parameters)|test(/powers::tests/)
+              nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored all -E package(snarkvm-parameters)
+              nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored ignored-only -E package(snarkvm-algorithms)
           - name: ledger
             runs: |
               nextest run -p snarkvm-ledger
-              nextest run -p snarkvm-ledger --features test -E test(/^tests::valid_solutions::/)
               nextest run -p snarkvm-ledger --features test,rocks -E test(/^tests::test_pruned_authority_/)
           # ledger-query's async tests bound wall-clock time, which a loaded
           # hosted runner can exceed.
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
-              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)
               nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
               nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch
               nextest run -p snarkvm-ledger-query --features async
@@ -224,6 +223,14 @@ jobs:
               nextest run -p snarkvm-synthesizer-process
               nextest run -p snarkvm-synthesizer-program --lib --bins
               nextest run -p snarkvm-circuit-program
+          # nextest runs no doctests. The `compile_fail` doctests check that
+          # outside crates cannot implement the sealed traits. This entry is one
+          # workspace build, so it unifies `test` and `rocks`, which no doctest
+          # depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
+          # of the RocksDB maps need `rocks`; the flag enables it even if no
+          # dev-dependency does.
+          - name: doctests
+            runs: test --workspace --exclude snarkvm-wasm --doc --features snarkvm-ledger-store/rocks
     name: test (${{ matrix.name }})
     steps: &test-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -254,7 +261,8 @@ jobs:
       - name: Check that the build targets skylake
         if: runner.arch == 'X64'
         run: cargo rustc -q -p snarkvm-utilities-derives --lib -- --print cfg | grep -q 'target_feature="adx"'
-      # Each line of `runs` is one cargo command.
+      # Each line of `runs` is one cargo command, split on whitespace with no
+      # quote handling.
       - name: Test
         env:
           RUNS: ${{ matrix.runs }}
@@ -356,22 +364,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [ledger-rocks, ledger-merge, parameters, parameters-uncached, synthesizer-release, synthesizer-prerelease, synthesizer-integration, synthesizer-program]
+        name: [ledger-rocks, ledger-merge, parameters, parameters-uncached, synthesizer-test, synthesizer-prerelease, synthesizer-integration, synthesizer-program]
         include:
           - name: ledger-rocks
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
+          # Only this entry runs valid_solutions and the genesis tests that need
+          # `dev_genesis_state_root`, so pull requests to staging do not.
+          # valid_solutions needs `test`, whose low proof targets let it find valid
+          # solutions. `dev_genesis_state_root` fixes the stored genesis state root.
           # test_cumulative_proof_target_correctness is left out: it takes 150 s or 475 s from run to run.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
+              nextest run -p snarkvm-ledger --features test --run-ignored all -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
+              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
+              nextest run -p snarkvm-ledger --features dev_genesis_state_root,test -E test(test_load_dev_genesis_state_root)
               nextest run -p snarkvm-ledger-block -j 12
           - name: parameters
             runs: nextest run -p snarkvm-parameters --features filesystem -j 2
           - name: parameters-uncached
             runs: nextest run -p snarkvm-parameters --features filesystem --run-ignored ignored-only -j 2
-          - name: synthesizer-release
-            runs: nextest run -p snarkvm-synthesizer --release --lib --bins --features test -j 8
+          - name: synthesizer-test
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --features test -j 8
           - name: synthesizer-prerelease
             runs: |
               nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2

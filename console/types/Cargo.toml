@@ -49,6 +49,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console-network]
 path = "../network"
+features = [ "test-helpers" ]
 
 [features]
 default = [
@@ -83,3 +84,4 @@ string = [
   "snarkvm-console-types-integers"
 ]
 serial = [ "snarkvm-console-network-environment/serial" ]
+test-helpers = [ "snarkvm-console-network-environment/test-helpers" ]

@@ -21,7 +21,7 @@ workspace = true
 
 [dependencies.snarkvm-console]
 workspace = true
-features = ["filesystem"]
+features = ["filesystem", "test-helpers"]
 
 [dependencies.snarkvm-circuit]
 workspace = true

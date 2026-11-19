@@ -54,7 +54,6 @@ required-features = [ "test-helpers", "rocks" ]
 name = "dag"
 path = "benches/dag.rs"
 harness = false
-required-features = ["test-helpers"]
 
 [[bench]]
 name = "transaction"
@@ -118,11 +117,14 @@ test = [
   "snarkvm-ledger-store/test",
   "snarkvm-synthesizer/test"
 ]
+# Keep the [dev-dependencies] in sync with this list: the unit tests build `test_helpers` through
+# `cfg(test)`, without this feature.
 test-helpers = [
   "snarkvm-ledger-test-helpers",
   "snarkvm-ledger-committee/test-helpers",
   "snarkvm-ledger-narwhal/test-helpers",
-  "dep:snarkvm-circuit"
+  "dep:snarkvm-circuit",
+  "snarkvm-console/test-helpers"
 ]
 test_targets = [
   "snarkvm-console/test_targets",
@@ -217,15 +219,19 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem" ]
-
-[dev-dependencies.snarkvm-ledger]
-path = "."
-features = [ "test-helpers" ]
+features = [ "filesystem", "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
 features = [ "test" ]
+
+[dev-dependencies.snarkvm-ledger-committee]
+workspace = true
+features = [ "test-helpers" ]
+
+[dev-dependencies.snarkvm-ledger-narwhal]
+workspace = true
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 workspace = true

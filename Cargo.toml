@@ -532,8 +532,11 @@ version = "2.0.11"
 [workspace.dependencies.time]
 version = "0.3"
 
+# `#[tracing::instrument]` needs the `attributes` feature, which is off.
 [workspace.dependencies.tracing]
 version = "0.1"
+default-features = false
+features = [ "std" ]
 
 [workspace.dependencies.tracing-subscriber]
 version = "0.3"
@@ -609,9 +612,6 @@ workspace = true
 optional = true
 features = [ "json" ]
 default-features = true
-
-[dev-dependencies.snarkvm]
-path = "."
 
 [dev-dependencies.rusty-hook]
 version = "0.11.2"

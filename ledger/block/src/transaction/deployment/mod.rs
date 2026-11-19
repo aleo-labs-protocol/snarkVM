@@ -416,13 +416,38 @@ pub mod test_helpers {
     type CurrentNetwork = MainnetV0;
     type CurrentAleo = snarkvm_circuit::network::AleoV0;
 
+    /// Returns the deployment of the program `source`.
+    ///
+    /// The test processes of one binary share it through the fixture `name`, and `instance` holds it for this process.
+    fn sample_program_deployment(
+        instance: &'static OnceLock<Deployment<CurrentNetwork>>,
+        name: &str,
+        source: &str,
+    ) -> Deployment<CurrentNetwork> {
+        instance
+            .get_or_init(|| {
+                crate::test_helpers::sample_fixture(name, source.as_bytes(), |rng| {
+                    // Initialize a new program.
+                    let (string, program) = Program::<CurrentNetwork>::parse(source).unwrap();
+                    assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+                    // Construct the process.
+                    let process = Process::load().unwrap();
+                    // Compute the deployment.
+                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                    // Return the deployment.
+                    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                    Deployment::from_str(&deployment.to_string()).unwrap()
+                })
+            })
+            .clone()
+    }
+
     pub(crate) fn sample_deployment_v1(edition: u16, _rng: &mut TestRng) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
-        let deployment = INSTANCE
-            .get_or_init(|| {
-                // Initialize a new program.
-                let (string, program) = Program::<CurrentNetwork>::parse(
-                    r"
+        let deployment = sample_program_deployment(
+            &INSTANCE,
+            "deployment-v1",
+            r"
 program testing_three.aleo;
 
 mapping store:
@@ -433,20 +458,7 @@ function compute:
     input r0 as u32.private;
     add r0 r0 into r1;
     output r1 as u32.public;",
-                )
-                .unwrap();
-                assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-                // Construct the process.
-                let process = Process::load().unwrap();
-                // Compute the deployment.
-                crate::test_helpers::sample_fixture("deployment-v1", &[], |rng| {
-                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-                    // Return the deployment.
-                    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-                    Deployment::from_str(&deployment.to_string()).unwrap()
-                })
-            })
-            .clone();
+        );
         // Create a new deployment with the desired edition.
         // Note the only valid editions for V1 deployments are 0 and 1.
         Deployment::<CurrentNetwork>::new(
@@ -464,11 +476,10 @@ function compute:
         rng: &mut TestRng,
     ) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
-        let deployment = INSTANCE
-            .get_or_init(|| {
-                // Initialize a new program.
-                let (string, program) = Program::<CurrentNetwork>::parse(
-                    r"
+        let deployment = sample_program_deployment(
+            &INSTANCE,
+            "deployment-v2",
+            r"
 program testing_four.aleo;
 
 mapping store:
@@ -479,20 +490,7 @@ function compute:
     input r0 as u32.private;
     add r0 r0 into r1;
     output r1 as u32.public;",
-                )
-                .unwrap();
-                assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-                // Construct the process.
-                let process = Process::load().unwrap();
-                // Compute the deployment.
-                crate::test_helpers::sample_fixture("deployment-v2", &[], |rng| {
-                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-                    // Return the deployment.
-                    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-                    Deployment::from_str(&deployment.to_string()).unwrap()
-                })
-            })
-            .clone();
+        );
         // Create a new deployment with the desired edition.
         Deployment::<CurrentNetwork>::new(
             edition,
@@ -509,11 +507,11 @@ function compute:
         rng: &mut TestRng,
     ) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
-        let deployment = INSTANCE
-            .get_or_init(|| {
-                // Initialize a new program with records (required for translation VKs).
-                let (string, program) = Program::<CurrentNetwork>::parse(
-                    r"
+        // The program has a record, which the translation keys need.
+        let deployment = sample_program_deployment(
+            &INSTANCE,
+            "deployment-v2-translation-keys",
+            r"
 program testing_five.aleo;
 
 record data:
@@ -529,20 +527,7 @@ function compute:
     input r0 as u32.private;
     add r0 r0 into r1;
     output r1 as u32.public;",
-                )
-                .unwrap();
-                assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-                // Construct the process.
-                let process = Process::load().unwrap();
-                // Compute the deployment.
-                crate::test_helpers::sample_fixture("deployment-v2-translation-keys", &[], |rng| {
-                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-                    // Return the deployment.
-                    // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-                    Deployment::from_str(&deployment.to_string()).unwrap()
-                })
-            })
-            .clone();
+        );
         // Create a new deployment with the desired edition.
         Deployment::<CurrentNetwork>::new(
             edition,

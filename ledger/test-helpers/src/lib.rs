@@ -13,6 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Every helper in this crate is `#[inline]`, so the crate that calls it compiles it.
+// A helper without `#[inline]` is compiled here, and every test binary that uses this crate waits for it.
+// Clippy enforces this for public helpers only.
+#![warn(clippy::missing_inline_in_public_items)]
+
 extern crate snarkvm_circuit as circuit;
 extern crate snarkvm_console as console;
 
@@ -56,11 +61,13 @@ type CurrentAleo = circuit::network::AleoV0;
 /****************************************** Transition ********************************************/
 
 /// Samples a random transition.
+#[inline]
 pub fn sample_transition(rng: &mut TestRng) -> Transition<CurrentNetwork> {
     crate::sample_execution(rng, 0).into_transitions().next().unwrap()
 }
 
 /// Sample the transition inputs.
+#[inline]
 pub fn sample_inputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Input<CurrentNetwork>)> {
     let rng = &mut TestRng::default();
 
@@ -93,6 +100,7 @@ pub fn sample_inputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Input<
 }
 
 /// Sample the transition outputs.
+#[inline]
 pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Output<CurrentNetwork>)> {
     let rng = &mut TestRng::default();
 
@@ -167,6 +175,7 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
 
 /******************************************* Deployment *******************************************/
 
+#[inline]
 pub fn sample_deployment_v1(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
@@ -207,6 +216,7 @@ function compute:
     .unwrap()
 }
 
+#[inline]
 pub fn sample_deployment_v2_without_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
@@ -247,6 +257,7 @@ function compute:
     .unwrap()
 }
 
+#[inline]
 pub fn sample_deployment_v2_with_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
@@ -295,6 +306,7 @@ function compute:
 /// Samples a V3 deployment (amendment) for the same program as V2 without translation keys.
 /// The edition must match an existing deployment's edition.
 /// V3 = checksum + no owner.
+#[inline]
 pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     // Sample a V2 deployment without translation keys, then remove the owner to make it V3.
     let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
@@ -303,22 +315,18 @@ pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<Curre
 }
 
 /// Samples a rejected deployment.
+#[inline]
 pub fn sample_rejected_deployment(
     version: u8,
     edition: u16,
     has_translation_keys: bool,
-    is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
-    // Sample a deploy transaction.
-    let deployment =
-        match crate::sample_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng) {
-            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-            _ => unreachable!(),
-        };
+    // Sample a deployment and the private key that signs its program owner.
+    let (deployment, private_key) =
+        crate::sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
 
-    // Sample a new program owner.
-    let private_key = PrivateKey::new(rng).unwrap();
+    // Construct the program owner.
     let deployment_id = deployment.to_deployment_id().unwrap();
     let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
@@ -329,6 +337,7 @@ pub fn sample_rejected_deployment(
 /******************************************* Execution ********************************************/
 
 /// Samples a random execution.
+#[inline]
 pub fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNetwork> {
     // Sample the genesis block.
     let block = crate::sample_genesis_block(rng);
@@ -343,20 +352,19 @@ pub fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNet
 }
 
 /// Samples a rejected execution.
-pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
-    // Sample an execute transaction.
-    let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
-        Transaction::Execute(_, _, execution, _) => execution,
-        _ => unreachable!(),
-    };
+#[inline]
+pub fn sample_rejected_execution(rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    // Sample an execution.
+    let execution = crate::sample_execution(rng, 0);
 
     // Return the rejected execution.
-    Rejected::new_execution(*execution)
+    Rejected::new_execution(execution)
 }
 
 /********************************************** Fee ***********************************************/
 
 /// Samples a random hardcoded private fee.
+#[inline]
 pub fn sample_fee_private_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
     static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
     INSTANCE
@@ -370,6 +378,7 @@ pub fn sample_fee_private_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
 }
 
 /// Samples a random private fee.
+#[inline]
 pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng: &mut TestRng) -> Fee<CurrentNetwork> {
     // Sample the genesis block, transaction, and private key.
     let (block, transactions, private_key) = crate::sample_genesis_block_and_components(rng);
@@ -415,6 +424,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
 }
 
 /// Samples a random hardcoded public fee.
+#[inline]
 pub fn sample_fee_public_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
     static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
     INSTANCE
@@ -428,6 +438,7 @@ pub fn sample_fee_public_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
 }
 
 /// Samples a random public fee.
+#[inline]
 pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng: &mut TestRng) -> Fee<CurrentNetwork> {
     // Sample the genesis block, transaction, and private key.
     let (block, _, private_key) = crate::sample_genesis_block_and_components(rng);
@@ -470,6 +481,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
 /******************************************** Program *********************************************/
 
 /// Deploy a program that produces large transactions under the maximum transaction size.
+#[inline]
 pub fn small_transaction_program() -> Program<CurrentNetwork> {
     Program::from_str(
         r"
@@ -485,6 +497,7 @@ function small_transaction:
 }
 
 /// Deploy a program that produces large transactions above the maximum transaction size.
+#[inline]
 pub fn large_transaction_program() -> Program<CurrentNetwork> {
     Program::from_str(
         r"
@@ -503,14 +516,14 @@ function large_transaction:
 
 /****************************************** Transaction *******************************************/
 
-/// Samples a random deployment transaction with a private or public fee.
-pub fn sample_deployment_transaction(
+/// Samples a random deployment and the private key that signs its program owner.
+#[inline]
+fn sample_deployment_and_private_key(
     version: u8,
     edition: u16,
     has_translation_keys: bool,
-    is_fee_private: bool,
     rng: &mut TestRng,
-) -> Transaction<CurrentNetwork> {
+) -> (Deployment<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
     // Sample a private key.
     let private_key = PrivateKey::new(rng).unwrap();
     // Sample a deployment.
@@ -535,6 +548,22 @@ pub fn sample_deployment_transaction(
         _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
     };
 
+    (deployment, private_key)
+}
+
+/// Samples a random deployment transaction with a private or public fee.
+#[inline]
+pub fn sample_deployment_transaction(
+    version: u8,
+    edition: u16,
+    has_translation_keys: bool,
+    is_fee_private: bool,
+    rng: &mut TestRng,
+) -> Transaction<CurrentNetwork> {
+    // Sample a deployment and the private key that signs its program owner.
+    let (deployment, private_key) =
+        crate::sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
+
     // Compute the deployment ID.
     let deployment_id = deployment.to_deployment_id().unwrap();
     // Construct a program owner.
@@ -551,6 +580,7 @@ pub fn sample_deployment_transaction(
 }
 
 /// Samples a random execution transaction with a private or public fee.
+#[inline]
 pub fn sample_execution_transaction_with_fee(
     is_fee_private: bool,
     rng: &mut TestRng,
@@ -572,6 +602,7 @@ pub fn sample_execution_transaction_with_fee(
 }
 
 /// Samples a large transaction.
+#[inline]
 pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
     static INSTANCE: std::sync::OnceLock<Execution<CurrentNetwork>> = std::sync::OnceLock::new();
 
@@ -629,6 +660,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
 }
 
 /// Samples a random private fee transaction.
+#[inline]
 pub fn sample_fee_private_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
     // Sample a private fee.
     let fee = crate::sample_fee_private_hardcoded(rng);
@@ -637,6 +669,7 @@ pub fn sample_fee_private_transaction(rng: &mut TestRng) -> Transaction<CurrentN
 }
 
 /// Samples a random public fee transaction.
+#[inline]
 pub fn sample_fee_public_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
     // Sample a public fee.
     let fee = crate::sample_fee_public_hardcoded(rng);
@@ -647,6 +680,7 @@ pub fn sample_fee_public_transaction(rng: &mut TestRng) -> Transaction<CurrentNe
 /****************************************** Transactions ******************************************/
 
 /// Samples a block transactions.
+#[inline]
 pub fn sample_block_transactions(rng: &mut TestRng) -> Transactions<CurrentNetwork> {
     crate::sample_genesis_block(rng).transactions().clone()
 }
@@ -654,6 +688,7 @@ pub fn sample_block_transactions(rng: &mut TestRng) -> Transactions<CurrentNetwo
 /********************************************* Block **********************************************/
 
 /// Samples a random genesis block.
+#[inline]
 pub fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
     // Sample the genesis block and components.
     let (block, _, _) = crate::sample_genesis_block_and_components(rng);
@@ -662,6 +697,7 @@ pub fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
 }
 
 /// Samples a random genesis block and the transactions from the genesis block.
+#[inline]
 pub fn sample_genesis_block_and_transactions(
     rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>) {
@@ -675,6 +711,7 @@ pub fn sample_genesis_block_and_transactions(
 ///
 /// Every call returns the same genesis block and genesis private key.
 /// They do not depend on `_rng`, and `_rng` is not advanced.
+#[inline]
 pub fn sample_genesis_block_and_components(
     _rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
@@ -685,6 +722,7 @@ pub fn sample_genesis_block_and_components(
 /// Returns the genesis private key, which signs the block of `sample_genesis_block`.
 ///
 /// The key does not depend on `_rng`, and `_rng` is not advanced.
+#[inline]
 pub fn sample_genesis_private_key(_rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
     genesis_fixture().0
 }
@@ -695,6 +733,7 @@ const GENESIS_FIXTURE_SEED: u64 = 1_779_135_982;
 /// Returns the genesis private key and the genesis block that it signs.
 ///
 /// The test processes of one binary share the fixture through a file beside the binary.
+#[inline]
 fn genesis_fixture() -> &'static (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
     static INSTANCE: OnceLock<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> = OnceLock::new();
     INSTANCE.get_or_init(|| {
@@ -703,6 +742,7 @@ fn genesis_fixture() -> &'static (PrivateKey<CurrentNetwork>, Block<CurrentNetwo
 }
 
 /// Builds the genesis fixture from an RNG with the given seed.
+#[inline]
 fn build_genesis_fixture(seed: u64) -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
     let rng = &mut TestRng::from_seed(seed);
     // Sample the genesis private key.
@@ -715,6 +755,7 @@ fn build_genesis_fixture(seed: u64) -> (PrivateKey<CurrentNetwork>, Block<Curren
 /// Samples a random genesis block, the transactions from the genesis block, and the genesis private key.
 ///
 /// The genesis private key is the key of `sample_genesis_private_key`.
+#[inline]
 pub fn sample_genesis_block_and_components_uncached(
     rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
@@ -727,6 +768,7 @@ pub fn sample_genesis_block_and_components_uncached(
 }
 
 /// Returns a new genesis block, which `private_key` signs, and the transactions of the block.
+#[inline]
 fn build_genesis_block_and_transactions(
     private_key: &PrivateKey<CurrentNetwork>,
     rng: &mut TestRng,

@@ -33,6 +33,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console-network]
 path = "../network"
+features = [ "test-helpers" ]
 
 [dev-dependencies.bincode]
 workspace = true
