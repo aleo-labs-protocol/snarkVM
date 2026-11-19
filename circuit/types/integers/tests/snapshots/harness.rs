@@ -15,7 +15,7 @@
 
 //! Records the synthesized shape of each case and compares it with a checked-in snapshot file.
 
-use snarkvm_circuit_environment::{Circuit, Environment, Mode};
+use snarkvm_circuit_environment::{Circuit, Environment, LinearCombination, Mode, Variable, prelude::PrimeField};
 
 use std::{
     cell::Cell,
@@ -111,13 +111,68 @@ fn render_mode<O: Output>(output: &O) -> String {
     }
 }
 
+/// A 64-bit FNV-1a hash that takes a 64-bit word per step instead of a byte.
+///
+/// Each step is a bijection of the state, so a sequence that differs from another in one word
+/// always gives a different hash.
+struct Fnv1a(u64);
+
+impl Fnv1a {
+    fn new() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = (self.0 ^ value).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+
+    fn write_field(&mut self, value: <Circuit as Environment>::BaseField) {
+        for limb in value.to_bigint().as_ref() {
+            self.write_u64(*limb);
+        }
+    }
+}
+
+/// Returns a digest of the structure of `linear_combinations`: the constant, coefficients and variables
+/// of each one, and its position, which is `3 * constraint + {0, 1, 2}` for A, B and C.
+///
+/// A variable that exists before the operation keeps its index, which depends only on the injected
+/// operands. A variable that the operation allocates gets its index relative to the first public or
+/// private variable of the operation, so the digest does not depend on what precedes the operation.
+fn digest<'a>(
+    linear_combinations: impl Iterator<Item = (&'a LinearCombination<<Circuit as Environment>::BaseField>, usize)>,
+    first_public: u64,
+    first_private: u64,
+) -> u64 {
+    let mut hash = Fnv1a::new();
+    for (lc, position) in linear_combinations {
+        let (constant, terms) = lc.to_constant_and_terms();
+        hash.write_u64(position as u64);
+        hash.write_field(constant);
+        hash.write_u64(terms.len() as u64);
+        for (variable, coefficient) in terms {
+            let (tag, index) = match variable {
+                Variable::Constant(_) => (0, 0),
+                Variable::Public(_) if variable.index() < first_public => (1, variable.index()),
+                Variable::Public(_) => (2, variable.index() - first_public),
+                Variable::Private(_) if variable.index() < first_private => (3, variable.index()),
+                Variable::Private(_) => (4, variable.index() - first_private),
+            };
+            hash.write_u64((tag << 56) | index);
+            hash.write_field(*coefficient);
+        }
+    }
+    hash.0
+}
+
 /// Synthesizes `operation` in a new scope, then resets the circuit.
 ///
-/// The caller injects the operands before the call, so the counts cover the operation alone.
+/// The caller injects the operands before the call, so the counts and the digest cover the operation alone.
 /// `expected` is the console result, or `None` if the operation is undefined for the operands.
 /// Panics if a defined case does not produce `expected` in a satisfied circuit,
 /// or if an undefined case gives a satisfied circuit.
 pub fn measure<O: Output>(label: &str, expected: Option<O::Value>, operation: impl FnOnce() -> O) -> Outcome {
+    let first = (Circuit::num_public(), Circuit::num_private(), Circuit::num_constraints());
     let result = catch_quietly(|| {
         Circuit::scope("snapshot", || {
             let output = operation();
@@ -133,7 +188,15 @@ pub fn measure<O: Output>(label: &str, expected: Option<O::Value>, operation: im
             (shape, Circuit::is_satisfied_in_scope(), output.value())
         })
     });
-    Circuit::reset();
+    let r1cs = Circuit::eject_r1cs_and_reset();
+    let result = result.map(|(shape, satisfied, value)| {
+        let skip = usize::try_from(first.2).unwrap_or(usize::MAX);
+        let lcs = r1cs.to_constraints().iter().skip(skip).enumerate().flat_map(|(position, constraint)| {
+            let (a, b, c) = constraint.to_terms();
+            [(a, 3 * position), (b, 3 * position + 1), (c, 3 * position + 2)]
+        });
+        (format!("{shape} {:016x}", digest(lcs, first.0, first.1)), satisfied, value)
+    });
 
     match (result, expected) {
         (None, None) => Outcome::Halt,
@@ -187,7 +250,9 @@ fn render(op: &str, cases: &[Case]) -> String {
         "# Circuit shape of `{op}` for each integer type, operand mode and edge value.\n\
          # Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>\n\
          # A `_` stands for each value of a variable operand. The test checks that they give one result.\n\
-         # Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.\n\
+         # Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.\n\
+         # The digest is a hash of the constraint structure: the order of the constraints, and the constant,\n\
+         # coefficients and variables of each linear combination.\n\
          # A mixed output mode counts the constant, public and private bits.\n\
          # The test also checks each case with the console operation. A defined case must give the console\n\
          # value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.\n\
