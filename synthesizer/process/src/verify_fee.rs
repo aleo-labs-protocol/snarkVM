@@ -373,19 +373,35 @@ mod tests {
         Ok(())
     }
 
-    /// A `fee_public` transition whose input or output variants differ from the function is rejected.
+    /// A `fee_public` or `fee_private` transition whose input or output variants differ from the function is rejected.
     #[test]
     fn test_verify_fee_rejects_mismatched_types() -> Result<()> {
         let public = || Input::Public(Field::zero(), None);
+        let record = || Input::Record(Field::zero(), Field::zero());
         let future = || Output::Future(Field::zero(), None);
+        let record_output = || Output::Record(Field::zero(), Field::zero(), None, None);
         let cases = [
             (
+                "fee_public",
                 vec![public(), public(), Input::Private(Field::zero(), None)],
                 vec![future()],
                 "The fee input variants do not match",
             ),
             (
+                "fee_public",
                 vec![public(), public(), public()],
+                vec![Output::Public(Field::zero(), None)],
+                "The fee output variants do not match",
+            ),
+            (
+                "fee_private",
+                vec![public(), public(), public(), public()],
+                vec![record_output()],
+                "The fee input variants do not match",
+            ),
+            (
+                "fee_private",
+                vec![record(), public(), public(), public()],
                 vec![Output::Public(Field::zero(), None)],
                 "The fee output variants do not match",
             ),
@@ -394,8 +410,8 @@ mod tests {
         // Construct a new process.
         let process = Process::load()?;
 
-        for (inputs, outputs, expected) in cases {
-            let fee = sample_proofless_fee("fee_public", inputs, outputs)?;
+        for (function_name, inputs, outputs, expected) in cases {
+            let fee = sample_proofless_fee(function_name, inputs, outputs)?;
             let Err(error) =
                 process.verify_fee(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &fee, Field::zero())
             else {

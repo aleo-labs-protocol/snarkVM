@@ -1208,25 +1208,33 @@ mod tests {
     /// A future output that names an undefined function in the same program is rejected by the function lookup.
     #[test]
     fn test_future_output_rejects_undefined_local_function() -> Result<()> {
-        let program = Program::<CurrentNetwork>::from_str(
-            r"
+        let program = |output_type: &str| {
+            Program::<CurrentNetwork>::from_str(&format!(
+                r"
 program dangling_local.aleo;
 
 function foo:
     input r0 as u64.public;
     async foo r0 into r1;
-    output r1 as dangling_local.aleo/missing.future;
+    output r1 as {output_type};
 
 finalize foo:
     input r0 as u64.public;
     assert.eq r0 r0;
 
 constructor:
-    assert.eq true true;",
-        )?;
+    assert.eq true true;"
+            ))
+        };
 
         let process = Process::<CurrentNetwork>::load()?;
-        let Err(error) = Stack::new(&process, &program) else { bail!("Expected `Stack::new` to reject the program") };
+        // The program is valid when the output names the future that `async` produces.
+        Stack::new(&process, &program("dangling_local.aleo/foo.future")?)?;
+        // No operand can hold an undefined future, so the operand-type check would also reject this output.
+        // The lookup runs first, so its error is the one returned.
+        let Err(error) = Stack::new(&process, &program("dangling_local.aleo/missing.future")?) else {
+            bail!("Expected `Stack::new` to reject the program")
+        };
         assert_eq!(format!("{error:#}"), "Function 'dangling_local.aleo/missing' is not defined.");
         Ok(())
     }
@@ -1234,8 +1242,9 @@ constructor:
     /// A future output that names an undefined function in an imported program is rejected by the function lookup.
     #[test]
     fn test_future_output_rejects_undefined_external_function() -> Result<()> {
-        let program = Program::<CurrentNetwork>::from_str(
-            r"
+        let program = |output_type: &str| {
+            Program::<CurrentNetwork>::from_str(&format!(
+                r"
 import credits.aleo;
 
 program dangling_external.aleo;
@@ -1244,18 +1253,25 @@ function foo:
     input r0 as u64.public;
     call credits.aleo/transfer_public self.caller r0 into r1;
     async foo r1 into r2;
-    output r2 as credits.aleo/missing.future;
+    output r2 as {output_type};
 
 finalize foo:
     input r0 as credits.aleo/transfer_public.future;
     await r0;
 
 constructor:
-    assert.eq true true;",
-        )?;
+    assert.eq true true;"
+            ))
+        };
 
         let process = Process::<CurrentNetwork>::load()?;
-        let Err(error) = Stack::new(&process, &program) else { bail!("Expected `Stack::new` to reject the program") };
+        // The program is valid when the output names the future that `async` produces.
+        Stack::new(&process, &program("dangling_external.aleo/foo.future")?)?;
+        // No operand can hold an undefined future, so the operand-type check would also reject this output.
+        // The lookup runs first, so its error is the one returned.
+        let Err(error) = Stack::new(&process, &program("credits.aleo/missing.future")?) else {
+            bail!("Expected `Stack::new` to reject the program")
+        };
         assert_eq!(format!("{error:#}"), "Function 'credits.aleo/missing' is not defined.");
         Ok(())
     }
