@@ -377,7 +377,8 @@ public:
             dev = ch.recv();
             point_t::dadd(*out, *out, partial_sums[dev]);
         }
-        // A sum at infinity has only Z written, as with no points above.
+        // At infinity sppark leaves X and Y unset, or as computed by the
+        // addition that cancelled. Rust reads all three, as with no points.
         if (out->is_inf()) {
             fp_t zero;
             zero.zero();

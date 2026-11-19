@@ -259,7 +259,8 @@ mod tests {
         assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()));
     }
 
-    /// An MSM that sums to zero returns zero with every coordinate written.
+    /// An MSM that sums to zero returns zero with every coordinate written,
+    /// whether every term is zero or the terms cancel.
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     #[test]
     fn test_msm_cuda_summing_to_zero_is_zero() {
@@ -267,13 +268,17 @@ mod tests {
         use snarkvm_fields::Zero;
         use snarkvm_utilities::BigInteger256;
 
-        let mut rng = TestRng::default();
+        let g = G1Affine::prime_subgroup_generator();
         for i in 11..15 {
-            let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 1 << i);
-            let scalars = vec![BigInteger256::from(0); 1 << i];
-            let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&bases, &scalars)
-                .unwrap_or_else(|e| panic!("{e}"));
-            assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()), "size {}", 1 << i);
+            let n = 1 << i;
+            let cancelling: Vec<_> = (0..n).map(|j| if j % 2 == 0 { g } else { -g }).collect();
+            for (bases, scalar) in [(vec![g; n], 0), (cancelling, 1)] {
+                let scalars = vec![BigInteger256::from(scalar); n];
+                let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&bases, &scalars)
+                    .unwrap_or_else(|e| panic!("{e}"));
+                // `==` reads only `z` of a zero point, while `Debug` prints every coordinate.
+                assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()), "size {n}, scalar {scalar}");
+            }
         }
     }
 
