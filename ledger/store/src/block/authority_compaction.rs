@@ -142,18 +142,6 @@ impl Drop for CompactionState {
     }
 }
 
-/// A [`BlockStore`]'s share of its [`CompactionState`].
-#[derive(Clone, Default)]
-pub(super) struct AuthorityCompaction(Arc<CompactionState>);
-
-impl Deref for AuthorityCompaction {
-    type Target = CompactionState;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Counts the authority pruned by the insert of the block at `height`, if any, and starts a
     /// compaction every [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`] of them, subject to
@@ -193,7 +181,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         #[cfg(test)]
         let gate = AUTHORITY_COMPACTION_GATE.with(|gate| gate.borrow().clone());
-        let (storage, state) = (self.storage.clone(), Arc::downgrade(&compaction.0));
+        let (storage, state) = (self.storage.clone(), Arc::downgrade(compaction));
         let compact = move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 compact_authority_slices(
@@ -292,7 +280,10 @@ thread_local! {
 mod tests {
     use super::*;
     use crate::{
-        block::{test_chain::sample_block_chain, tests::TEST_RETENTION},
+        block::{
+            test_chain::sample_block_chain,
+            tests::{TEST_RETENTION, open_pruning},
+        },
         helpers::memory::BlockMemory,
     };
 
@@ -321,11 +312,7 @@ mod tests {
     /// counts no inserts.
     #[test]
     fn test_memory_storage_compacts_nothing() {
-        let store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open_with_authority_retention(
-            StorageMode::new_test(None),
-            Some(TEST_RETENTION),
-        )
-        .unwrap();
+        let store = open_pruning::<BlockMemory<_>>(StorageMode::new_test(None));
         assert!(!store.compact_authorities());
         let rng = &mut TestRng::default();
         let before = compactions();

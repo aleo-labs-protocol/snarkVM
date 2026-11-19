@@ -17,7 +17,7 @@ pub mod confirmed_tx_type;
 pub use confirmed_tx_type::*;
 
 mod authority_compaction;
-use authority_compaction::AuthorityCompaction;
+use authority_compaction::CompactionState;
 mod cache;
 use cache::BlockCache;
 
@@ -1463,7 +1463,7 @@ pub struct BlockStore<N: Network, B: BlockStorage<N>> {
     /// The authority retention window in blocks if this store prunes authority data.
     authority_retention: Option<u32>,
     /// The state of the background authority map compaction.
-    authority_compaction: AuthorityCompaction,
+    authority_compaction: Arc<CompactionState>,
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
@@ -2246,7 +2246,7 @@ mod tests {
     pub(super) const TEST_RETENTION: u32 = 100;
 
     /// Opens a block store that prunes with [`TEST_RETENTION`].
-    fn open_pruning<B: BlockStorage<CurrentNetwork>>(storage: StorageMode) -> BlockStore<CurrentNetwork, B> {
+    pub(super) fn open_pruning<B: BlockStorage<CurrentNetwork>>(storage: StorageMode) -> BlockStore<CurrentNetwork, B> {
         BlockStore::open_with_authority_retention(storage, Some(TEST_RETENTION)).unwrap()
     }
 
