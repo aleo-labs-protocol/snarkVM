@@ -21,6 +21,8 @@
 //! Each job first builds the global constants of `AleoV0` on its thread. Otherwise the first operation
 //! that uses them on a thread counts their constants.
 
+use std::sync::LazyLock;
+
 use snarkvm_circuit_account::{ComputeKey, PrivateKey, Signature};
 use snarkvm_circuit_network::{Aleo, AleoV0};
 use snarkvm_circuit_types::{
@@ -29,7 +31,7 @@ use snarkvm_circuit_types::{
     Field,
     environment::{
         prelude::*,
-        snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+        snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel, value_label},
     },
 };
 use snarkvm_console_account as console;
@@ -81,14 +83,17 @@ named!(NamedComputeKey, ComputeKey, "compute_key");
 
 /// Returns three private keys sampled from a fixed seed, with their labels.
 fn private_keys() -> Vec<(console::PrivateKey<Network>, String)> {
-    let rng = &mut TestRng::from_seed(0);
-    (1..=3)
-        .map(|i| {
-            // Note: `expect` is safe as `PrivateKey::new` fails only if a Poseidon hash of two elements fails.
-            let private_key = console::PrivateKey::new(rng).expect("the key derivation hashes two elements");
-            (private_key, format!("key-{i}"))
-        })
-        .collect()
+    static KEYS: LazyLock<Vec<(console::PrivateKey<Network>, String)>> = LazyLock::new(|| {
+        let rng = &mut TestRng::from_seed(0);
+        (1..=3)
+            .map(|i| {
+                // Note: `expect` is safe as `PrivateKey::new` fails only if a Poseidon hash of two elements fails.
+                let private_key = console::PrivateKey::new(rng).expect("the key derivation hashes two elements");
+                (private_key, format!("key-{i}"))
+            })
+            .collect()
+    });
+    KEYS.clone()
 }
 
 /// Returns the compute key of each private key, with its label.
@@ -113,33 +118,31 @@ fn addresses() -> Vec<(console::Address<Network>, String)> {
         .collect()
 }
 
-/// Returns the message that each signature signs, with its label.
-fn message() -> (Vec<console::Field<Network>>, String) {
-    (vec![console::Field::from_u64(1), console::Field::from_u64(2)], "[1,2]".to_string())
-}
-
-/// Returns the signature of `message` by each of the first two private keys, with its label.
-fn signatures() -> Vec<(console::Signature<Network>, String)> {
-    let rng = &mut TestRng::from_seed(1);
-    let (message, _) = message();
-    private_keys()
+/// Returns the messages, with their labels. Each signature signs the first one.
+fn messages() -> Vec<(Vec<console::Field<Network>>, String)> {
+    [[1, 2], [1, 3]]
         .into_iter()
-        .take(2)
-        .map(|(private_key, label)| {
-            // Note: `expect` is safe as `sign` fails only on a message that is too long or whose second element
-            // is the hash of its first.
-            let signature = console::Signature::sign(&private_key, &message, rng).expect("a valid message");
-            (signature, label.replace("key", "sig"))
-        })
+        .map(|message| (message.map(console::Field::from_u64).to_vec(), format!("[{},{}]", message[0], message[1])))
         .collect()
 }
 
-/// Returns the label of an operand of the given mode in `Case::values`.
-fn value_label(mode: Mode, label: &str) -> &str {
-    match mode {
-        Mode::Constant => label,
-        _ => "_",
-    }
+/// Returns the signature of the first message by each of the first two private keys, with its label.
+fn signatures() -> Vec<(console::Signature<Network>, String)> {
+    static SIGNATURES: LazyLock<Vec<(console::Signature<Network>, String)>> = LazyLock::new(|| {
+        let rng = &mut TestRng::from_seed(1);
+        let (message, _) = &messages()[0];
+        private_keys()
+            .into_iter()
+            .take(2)
+            .map(|(private_key, label)| {
+                // Note: `expect` is safe as `sign` fails only on a message that is too long or whose second element
+                // is the hash of its first.
+                let signature = console::Signature::sign(&private_key, message, rng).expect("a valid message");
+                (signature, label.replace("key", "sig"))
+            })
+            .collect()
+    });
+    SIGNATURES.clone()
 }
 
 #[test]
@@ -147,7 +150,7 @@ fn from_private_key() {
     fn cases(modes: [Mode; 1]) -> Vec<Case> {
         AleoV0::initialize_global_constants();
         snapshot::unary(
-            |a: &NamedPrivateKey| NamedComputeKey(ComputeKey::from_private_key(&a.0)),
+            |a: &NamedPrivateKey| ComputeKey::from_private_key(&a.0),
             |x| console::ComputeKey::try_from(&x).ok(),
             None,
             &private_keys(),
@@ -179,7 +182,7 @@ macro_rules! binary_snapshot {
         fn $op() {
             fn cases(modes: [Mode; 2]) -> Vec<Case> {
                 AleoV0::initialize_global_constants();
-                let values = Values { constant: $values, variable: $values };
+                let values = Values::same($values);
                 snapshot::binary(
                     |$a: &$type, $b: &$type| -> Boolean<AleoV0> { $circuit },
                     |$x, $y| Some($console),
@@ -230,31 +233,38 @@ fn signature_ternary() {
     assert_snapshot(&FILES, "signature_ternary", run_parallel(mode_jobs(1, cases)));
 }
 
-/// Covers each signature and address, which gives both valid and invalid pairs, with one message.
+/// Covers each signature, address and message. A signature is valid only for its own address and the first message.
 #[test]
 fn verify() {
     fn cases([mode_s, mode_a, mode_m]: [Mode; 3]) -> Vec<Case> {
         AleoV0::initialize_global_constants();
-        let block = format!("signature.{mode_s} address.{mode_a} field[2].{mode_m}");
-        let (message, label_m) = message();
-        let (signatures, addresses) = (signatures(), addresses());
-        let mut cases = Vec::with_capacity(signatures.len() * addresses.len());
+        let (signatures, addresses, messages) = (signatures(), addresses(), messages());
+        let block = format!(
+            "{}.{mode_s} {}.{mode_a} {}[{}].{mode_m}",
+            Signature::<AleoV0>::type_name(),
+            Address::<AleoV0>::type_name(),
+            Field::<AleoV0>::type_name(),
+            messages[0].0.len()
+        );
+        let mut cases = Vec::with_capacity(signatures.len() * addresses.len() * messages.len());
         for (signature, label_s) in &signatures {
             for (address, label_a) in &addresses {
-                AleoV0::reset();
-                let s = Signature::<AleoV0>::new(mode_s, *signature);
-                let a = Address::<AleoV0>::new(mode_a, *address);
-                let m: Vec<Field<AleoV0>> = Inject::new(mode_m, message.clone());
-                let label = format!("{block} {label_s} {label_a} {label_m}");
-                let expected = Some(signature.verify(address, &message));
-                let outcome = snapshot::measure(&label, expected, None, || s.verify(&a, &m));
-                let values = format!(
-                    "{} {} {}",
-                    value_label(mode_s, label_s),
-                    value_label(mode_a, label_a),
-                    value_label(mode_m, &label_m)
-                );
-                cases.push(Case { block: block.clone(), values, outcome });
+                for (message, label_m) in &messages {
+                    AleoV0::reset();
+                    let s = Signature::<AleoV0>::new(mode_s, *signature);
+                    let a = Address::<AleoV0>::new(mode_a, *address);
+                    let m: Vec<Field<AleoV0>> = Inject::new(mode_m, message.clone());
+                    let label = format!("{block} {label_s} {label_a} {label_m}");
+                    let expected = Some(signature.verify(address, message));
+                    let outcome = snapshot::measure(&label, expected, None, || s.verify(&a, &m));
+                    let values = format!(
+                        "{} {} {}",
+                        value_label(mode_s, label_s),
+                        value_label(mode_a, label_a),
+                        value_label(mode_m, label_m)
+                    );
+                    cases.push(Case { block: block.clone(), values, outcome });
+                }
             }
         }
         cases

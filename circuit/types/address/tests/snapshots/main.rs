@@ -53,7 +53,7 @@ macro_rules! binary_snapshot {
         #[test]
         fn $op() {
             fn cases(modes: [Mode; 2]) -> Vec<Case> {
-                let values = Values { constant: values(), variable: values() };
+                let values = Values::same(values());
                 snapshot::binary(
                     |$a: &Address<Circuit>, $b: &Address<Circuit>| -> Boolean<Circuit> { $circuit },
                     |$x: Console, $y: Console| Some(*$console),

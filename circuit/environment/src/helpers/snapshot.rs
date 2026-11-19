@@ -26,7 +26,7 @@ use std::{
     num::NonZeroUsize,
     panic::{self, AssertUnwindSafe},
     path::Path,
-    sync::{Condvar, Mutex, Once, PoisonError},
+    sync::{Condvar, Mutex, Once, OnceLock, PoisonError},
     thread,
 };
 
@@ -71,6 +71,14 @@ pub struct Values<P> {
 }
 
 impl<P> Values<P> {
+    /// Returns the values that an operand takes in every mode.
+    pub fn same(values: Vec<(P, String)>) -> Self
+    where
+        P: Clone,
+    {
+        Self { constant: values.clone(), variable: values }
+    }
+
     fn for_mode(&self, mode: Mode) -> &[(P, String)] {
         match mode {
             Mode::Constant => &self.constant,
@@ -79,8 +87,8 @@ impl<P> Values<P> {
     }
 }
 
-/// Returns the label of an operand in `Case::values`.
-fn value_label(mode: Mode, label: &str) -> &str {
+/// Returns the label of an operand in `Case::values`: `label` for a constant, `_` for a variable.
+pub fn value_label(mode: Mode, label: &str) -> &str {
     match mode {
         Mode::Constant => label,
         _ => "_",
@@ -297,13 +305,19 @@ pub fn mode_jobs<const N: usize>(cost: u64, block: fn([Mode; N]) -> Vec<Case>) -
     })
 }
 
-/// The number of threads that run the jobs of one test.
+/// The most threads that run the jobs of one test.
 ///
 /// `.config/nextest.toml` reserves as many threads for each snapshot test. Keep the two equal.
 const WORKERS: usize = 8;
 
 /// The number of jobs that run in this process, across tests.
 static RUNNING: Mutex<usize> = Mutex::new(0);
+
+/// Returns the available parallelism of this process.
+fn parallelism() -> usize {
+    static PARALLELISM: OnceLock<usize> = OnceLock::new();
+    *PARALLELISM.get_or_init(|| thread::available_parallelism().map_or(1, NonZeroUsize::get))
+}
 /// Signals that a job finished.
 static FINISHED: Condvar = Condvar::new();
 
@@ -313,7 +327,7 @@ struct Slot;
 impl Slot {
     /// Waits until fewer jobs than the available parallelism run in this process, then takes a slot.
     fn take() -> Self {
-        let limit = thread::available_parallelism().map_or(1, NonZeroUsize::get);
+        let limit = parallelism();
         let mut running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
         while *running >= limit {
             running = FINISHED.wait(running).unwrap_or_else(PoisonError::into_inner);
@@ -330,7 +344,7 @@ impl Drop for Slot {
     }
 }
 
-/// Runs the jobs on a pool of `WORKERS` threads, costliest first, and concatenates their results in the
+/// Runs the jobs on a pool of up to `WORKERS` threads, costliest first, and concatenates their results in the
 /// order of the jobs.
 ///
 /// Each thread has its own circuit, as the circuit is thread-local. `cargo test` runs tests as threads of
@@ -338,7 +352,7 @@ impl Drop for Slot {
 pub fn run_parallel(jobs: impl IntoIterator<Item = Job>) -> Vec<Case> {
     let mut jobs: Vec<(usize, Job)> = jobs.into_iter().enumerate().collect();
     jobs.sort_by_key(|(_, job)| std::cmp::Reverse(job.cost));
-    let workers = WORKERS.min(jobs.len()).max(1);
+    let workers = WORKERS.min(parallelism()).min(jobs.len()).max(1);
     let queue = Mutex::new(jobs.into_iter());
     // A failed job empties the queue, so the test reports without running the remaining jobs.
     let next = || queue.lock().unwrap_or_else(PoisonError::into_inner).next();

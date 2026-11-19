@@ -222,8 +222,7 @@ macro_rules! binary_snapshot {
         #[test]
         fn $op() {
             fn cases<I: IntegerType>(modes: [Mode; 2]) -> Vec<Case> {
-                let edges = edge_values::<I>();
-                let values = Values { constant: edges.clone(), variable: edges };
+                let values = Values::same(edge_values::<I>());
                 snapshot::binary(
                     |$a: &Integer<Circuit, I>, $b: &Integer<Circuit, I>| $circuit,
                     |$x: Console<I>, $y: Console<I>| {
