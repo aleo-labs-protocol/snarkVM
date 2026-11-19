@@ -330,11 +330,22 @@ mod tests {
 
         type Store = BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>>;
 
-        /// Opens a store that prunes with [`TEST_RETENTION`] if `prunes`.
+        /// Opens a store on `storage_mode` that prunes with [`TEST_RETENTION`] if `prunes`.
+        fn open_with(storage_mode: StorageMode, prunes: bool) -> Store {
+            BlockStore::open_with_authority_retention(storage_mode, prunes.then_some(TEST_RETENTION)).unwrap()
+        }
+
+        /// Opens an empty store that prunes with [`TEST_RETENTION`] if `prunes`.
         fn open(prunes: bool) -> Store {
-            let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-            let retention = prunes.then_some(TEST_RETENTION);
-            BlockStore::open_with_authority_retention(StorageMode::new_test(Some(temp_dir)), retention).unwrap()
+            open_with(StorageMode::new_test(Some(Arc::new(tempfile::tempdir().unwrap()))), prunes)
+        }
+
+        /// Opens, as [`open`] does, a store whose storage has pruned before.
+        fn open_pruned(prunes: bool) -> Store {
+            let storage_mode = StorageMode::new_test(Some(Arc::new(tempfile::tempdir().unwrap())));
+            let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
+            atomic_batch_scope!(storage, { storage.set_authority_pruned_below(2) }).unwrap();
+            open_with(storage_mode, prunes)
         }
 
         fn running_joins() -> usize {
@@ -351,13 +362,20 @@ mod tests {
             store.authority_compaction.last.lock().running()
         }
 
-        /// Opens a store whose compaction runs on a thread the returned gate controls; the thread
-        /// waits before its first slice.
-        fn open_with_gate() -> (Store, Arc<Gate>) {
+        /// Runs `open` with any compaction it starts on a thread the returned gate controls; the
+        /// thread waits before its first slice.
+        fn with_gate(open: impl FnOnce() -> Store) -> (Store, Arc<Gate>) {
             let gate = Arc::new(Gate::default());
             AUTHORITY_COMPACTION_GATE.with(|slot| *slot.borrow_mut() = Some(gate.clone()));
-            let store = open(true);
+            let store = open();
             AUTHORITY_COMPACTION_GATE.with(|slot| *slot.borrow_mut() = None);
+            (store, gate)
+        }
+
+        /// Opens a pruning store that has pruned before, with its open-time compaction on a gated
+        /// thread.
+        fn open_with_gate() -> (Store, Arc<Gate>) {
+            let (store, gate) = with_gate(|| open_pruned(true));
             assert!(thread_running(&store));
             (store, gate)
         }
@@ -426,28 +444,98 @@ mod tests {
             assert_eq!(gate.passed(), 0);
         }
 
-        /// Ensures an open starts exactly one authority compaction if the store prunes and none
-        /// otherwise, and that a stop then has nothing to join.
+        /// Ensures an open starts one authority compaction thread, and the floor, only if the store
+        /// prunes and has pruned before.
         #[test]
         fn test_open_starts_authority_compaction() {
-            for prunes in [true, false] {
+            for (prunes, pruned_before) in [(true, true), (true, false), (false, true)] {
+                let starts = prunes && pruned_before;
                 let before = compactions();
-                let store = open(prunes);
-                assert_eq!(compactions(), before + usize::from(prunes));
+                let (store, _gate) = with_gate(|| if pruned_before { open_pruned(prunes) } else { open(prunes) });
+                assert_eq!(compactions(), before + usize::from(starts), "{prunes} {pruned_before}");
+                assert_eq!(thread_running(&store), starts);
+                assert_eq!(store.authority_compaction.last.lock().started.is_some(), starts);
                 let joins = running_joins();
                 store.stop_background_work();
-                assert_eq!(running_joins(), joins);
+                assert_eq!(running_joins(), joins + usize::from(starts));
             }
         }
 
-        /// Checks that insert-time pruning compacts the authority map once per
-        /// `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities if the store prunes, and that a
-        /// store that does not prune never compacts.
+        /// Ensures a secondary instance opened with a retention window does not prune, so it
+        /// neither counts inserts nor compacts. The primary and the secondary each run in a child
+        /// process, as a process holds only one database outside the test storage mode.
+        #[test]
+        fn test_secondary_does_not_compact() {
+            const ROLE: &str = "SNARKVM_COMPACTION_TEST_ROLE";
+            const PRIMARY: &str = "SNARKVM_COMPACTION_TEST_PRIMARY";
+            const SECONDARY: &str = "SNARKVM_COMPACTION_TEST_SECONDARY";
+            let path = |var| std::path::PathBuf::from(std::env::var(var).unwrap());
+            match std::env::var(ROLE).as_deref() {
+                Ok("primary") => {
+                    let primary = open_with(StorageMode::Custom(path(PRIMARY), None), true);
+                    for block in &sample_block_chain(TEST_RETENTION + 2, &mut TestRng::default()) {
+                        primary.insert(block).unwrap();
+                    }
+                    assert_eq!(primary.authority_pruned_below().unwrap(), Some(2));
+                }
+                Ok("secondary") => {
+                    let storage_mode = StorageMode::Custom(path(PRIMARY), Some(path(SECONDARY)));
+                    let (secondary, _gate) = with_gate(|| open_with(storage_mode, true));
+                    assert_eq!(secondary.authority_retention, None);
+                    assert_eq!(secondary.authority_pruned_below().unwrap(), Some(2));
+                    assert_eq!(compactions(), 0);
+                    assert!(!thread_running(&secondary));
+                }
+                _ => {
+                    let (primary_dir, secondary_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+                    for role in ["primary", "secondary"] {
+                        let status = std::process::Command::new(std::env::current_exe().unwrap())
+                            .args([
+                                "block::authority_compaction::tests::rocks::test_secondary_does_not_compact",
+                                "--exact",
+                            ])
+                            .env(ROLE, role)
+                            .env(PRIMARY, primary_dir.path())
+                            .env(SECONDARY, secondary_dir.path())
+                            .status()
+                            .unwrap();
+                        assert!(status.success(), "The {role} instance failed");
+                    }
+                }
+            }
+        }
+
+        /// Ensures a deferred insert whose batch is discarded counts nothing.
+        #[test]
+        fn test_discarded_deferred_insert_is_not_counted() {
+            let store = open(true);
+            let blocks = sample_block_chain(TEST_RETENTION + 2, &mut TestRng::default());
+            for block in &blocks[..=TEST_RETENTION as usize] {
+                store.insert(block).unwrap();
+            }
+            let pruned = || store.authority_compaction.pruned.load(Ordering::SeqCst);
+            assert_eq!(pruned(), 0);
+
+            // The VM's path for a block that fails to finalize.
+            let block = &blocks[TEST_RETENTION as usize + 1];
+            store.pause_atomic_writes().unwrap();
+            store.insert_deferring_block_tree(block).unwrap();
+            store.abort_atomic();
+            store.discard_prepared_block_tree();
+            store.unpause_atomic_writes::<true>().unwrap();
+            assert_eq!(pruned(), 0);
+
+            insert(&store, block, true);
+            assert_eq!(pruned(), 1);
+        }
+
+        /// Checks that insert-time pruning on a store opened empty compacts the authority map once
+        /// per `AUTHORITY_COMPACTION_INTERVAL_BLOCKS` pruned authorities if the store prunes, without
+        /// waiting for the floor, and that a store that does not prune never compacts.
         fn check_insert_time_pruning_compacts_after_interval(prunes: bool, deferred: bool) {
             let store = open(prunes);
             let rng = &mut TestRng::default();
             let blocks = sample_block_chain(TEST_RETENTION + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
-            clear_floor(&store);
             let before = compactions();
             // The insert at the retention height prunes nothing; the interval of inserts after it ends here.
             let trigger = TEST_RETENTION + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
@@ -478,7 +566,6 @@ mod tests {
             let rng = &mut TestRng::default();
             let blocks = sample_block_chain(TEST_RETENTION + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng);
             let trigger = TEST_RETENTION + AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
-            clear_floor(&store);
             block(&store);
 
             let before = compactions();
