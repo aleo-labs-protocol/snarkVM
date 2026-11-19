@@ -445,6 +445,22 @@ impl<
 impl<
     K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+> MemoryMap<K, V>
+{
+    /// Keeps only the rows whose value `retain` accepts and returns the numbers of kept and removed
+    /// rows. Bypasses the atomic batch, so it refuses to run while one is in progress.
+    pub(crate) fn retain_all(&self, mut retain: impl FnMut(&V) -> bool) -> Result<(usize, usize)> {
+        ensure!(!self.is_atomic_in_progress(), "retain_all bypasses the atomic batch");
+        let mut map = self.map.write();
+        let before = map.len();
+        map.retain(|_, value| retain(value));
+        Ok((map.len(), before - map.len()))
+    }
+}
+
+impl<
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Deref for MemoryMap<K, V>
 {
     type Target = Arc<RwLock<BTreeMap<Vec<u8>, V>>>;

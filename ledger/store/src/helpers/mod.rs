@@ -20,6 +20,9 @@ pub mod rocksdb;
 #[cfg(test)]
 pub(crate) mod test_helpers;
 
+mod progress;
+pub(crate) use progress::Progress;
+
 mod traits;
 pub use traits::*;
 
