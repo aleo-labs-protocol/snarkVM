@@ -39,3 +39,24 @@ impl<N: Network> FromBytes for EntryType<N> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_bytes_variant_tags() -> Result<()> {
+        // Each EntryType variant, with the tag byte it writes first.
+        let cases = [("field.constant", 0), ("field.public", 1), ("field.private", 2)];
+        for (string, tag) in cases {
+            let expected = EntryType::<CurrentNetwork>::from_str(string)?;
+            let bytes = expected.to_bytes_le()?;
+            assert_eq!(bytes[0], tag, "{string}");
+            assert_eq!(expected, EntryType::read_le(&bytes[..])?);
+        }
+        Ok(())
+    }
+}

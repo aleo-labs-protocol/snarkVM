@@ -99,4 +99,19 @@ mod tests {
             assert_eq!(expected, candidate);
         }
     }
+
+    #[test]
+    fn test_bytes_variant_tags() -> Result<()> {
+        // Each FinalizeType variant, with the tag byte it writes first.
+        let cases = [("field.public", 0), ("credits.aleo/mint_public.future", 1), ("dynamic.future", 2)];
+        for (string, tag) in cases {
+            let expected = FinalizeType::<CurrentNetwork>::from_str(string)?;
+            let bytes = expected.to_bytes_le()?;
+            assert_eq!(bytes[0], tag, "{string}");
+            assert_eq!(expected, FinalizeType::read_le(&bytes[..])?);
+        }
+        // Variants without a payload write only the tag.
+        assert_eq!(FinalizeType::<CurrentNetwork>::DynamicFuture.to_bytes_le()?, [2]);
+        Ok(())
+    }
 }
