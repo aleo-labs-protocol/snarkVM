@@ -11,6 +11,7 @@
 # Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-scalar --test snapshots
 field.constant | * : 253 0 0 0 0/0/0 constant e3b0c44298fc1c14
 field.constant | r : halt
+field.constant | 2^251 : halt
 field.constant | p-1 : halt
 field.public | _ : 0 0 755 759 1298/1042/1040 private a7a660e437c6979f
 field.private | _ : 0 0 755 759 1298/1042/1040 private b99995b407362454

@@ -26,7 +26,7 @@ use snarkvm_circuit_environment::{
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_field::Field;
 use snarkvm_circuit_types_scalar::Scalar;
-use snarkvm_console_types_scalar::{Field as ConsoleField, FromField as _, Scalar as ConsoleScalar, ToField as _};
+use snarkvm_console_types_scalar::{Field as ConsoleField, FromField as _, Scalar as ConsoleScalar};
 
 const FILES: SnapshotFiles = SnapshotFiles {
     directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
@@ -58,7 +58,7 @@ fn values() -> Vec<(Console, String)> {
     ]
 }
 
-/// Returns 0, 1, `r-1`, `r` and `p-1` as base field elements, with their labels.
+/// Returns 0, 1, `r-1`, `r`, `2^251` and `p-1` as base field elements, with their labels.
 ///
 /// `p` is the modulus of the base field.
 fn field_values() -> Vec<(Base, String)> {
@@ -70,6 +70,10 @@ fn field_values() -> Vec<(Base, String)> {
         (Base::one(), "1".to_string()),
         (modulus - Base::one(), "r-1".to_string()),
         (modulus, "r".to_string()),
+        (
+            (0..Console::SIZE_IN_BITS).fold(Base::one(), |power, _| power.double()),
+            format!("2^{}", Console::SIZE_IN_BITS),
+        ),
         (-Base::one(), "p-1".to_string()),
     ]
 }
@@ -100,6 +104,12 @@ fn bits_values(n: usize) -> Vec<(Vec<bool>, String)> {
     values
 }
 
+/// Returns `bits` in reverse order.
+fn reversed(mut bits: Vec<bool>) -> Vec<bool> {
+    bits.reverse();
+    bits
+}
+
 /// Defines a snapshot test of a unary operation on an operand of the given type.
 macro_rules! unary_snapshot {
     ($op:ident, $input:ty, $values:expr, |$a:ident| $circuit:expr, |$x:ident| $console:expr) => {
@@ -117,41 +127,6 @@ macro_rules! unary_snapshot {
             assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
         }
     };
-}
-
-/// Defines a snapshot test of an operation that recovers a scalar from bits, for each of the given numbers of bits.
-///
-/// `$order` maps little-endian bits to the order that the operation takes. Every bit has the same mode.
-/// The test ejects the base field element of the scalar, as a scalar that is at least `r` cannot be ejected.
-macro_rules! from_bits_snapshot {
-    ($op:ident, [$($n:literal),+], $order:expr) => {
-        #[test]
-        fn $op() {
-            fn cases<const N: usize>([mode]: [Mode; 1]) -> Vec<Case> {
-                let block = format!("{}[{N}].{mode}", Boolean::<Circuit>::type_name());
-                bits_values(N)
-                    .into_iter()
-                    .map(|(bits_le, label)| {
-                        Circuit::reset();
-                        let expected = Console::from_bits_le(&bits_le).ok().and_then(|scalar| scalar.to_field().ok());
-                        let bits: Vec<Boolean<Circuit>> = Inject::new(mode, $order(bits_le));
-                        let outcome = snapshot::measure(&format!("{block} {label}"), expected, None, || {
-                            Scalar::$op(&bits).to_field()
-                        });
-                        Case { block: block.clone(), values: value_label(mode, &label).to_string(), outcome }
-                    })
-                    .collect()
-            }
-            let jobs = [$(mode_jobs($n, cases::<$n>)),+];
-            assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
-        }
-    };
-}
-
-/// Returns `bits` in reverse order.
-fn reversed(mut bits: Vec<bool>) -> Vec<bool> {
-    bits.reverse();
-    bits
 }
 
 /// Defines a snapshot test of a binary operation on two scalars.
@@ -175,6 +150,49 @@ macro_rules! binary_snapshot {
     };
 }
 
+/// Defines a snapshot test of an operation that recovers a scalar from bits, for each of the given numbers of bits.
+///
+/// `$order` maps little-endian bits to the order that the operation takes. Every bit has the same mode.
+macro_rules! from_bits_snapshot {
+    ($op:ident, [$($n:literal),+], $order:expr) => {
+        #[test]
+        fn $op() {
+            fn cases<const N: usize>([mode]: [Mode; 1]) -> Vec<Case> {
+                let block = format!("{}[{N}].{mode}", Boolean::<Circuit>::type_name());
+                bits_values(N)
+                    .into_iter()
+                    .map(|(bits_le, label)| {
+                        Circuit::reset();
+                        let expected = Console::from_bits_le(&bits_le).ok();
+                        let bits: Vec<Boolean<Circuit>> = Inject::new(mode, $order(bits_le));
+                        let outcome =
+                            snapshot::measure(&format!("{block} {label}"), expected, None, || Scalar::$op(&bits));
+                        Case { block: block.clone(), values: value_label(mode, &label).to_string(), outcome }
+                    })
+                    .collect()
+            }
+            let jobs = [$(mode_jobs($n, cases::<$n>)),+];
+            assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
+        }
+    };
+}
+
+/// Defines a snapshot test of an operation that takes no operands and returns a constant.
+macro_rules! nullary_snapshot {
+    ($op:ident, $expected:expr) => {
+        #[test]
+        fn $op() {
+            Circuit::reset();
+            let outcome = snapshot::measure(stringify!($op), Some($expected), None, Scalar::<Circuit>::$op);
+            assert_snapshot(&FILES, stringify!($op), vec![Case {
+                block: "()".to_string(),
+                values: "()".to_string(),
+                outcome,
+            }]);
+        }
+    };
+}
+
 // Arithmetic.
 binary_snapshot!(add, |a, b| a + b, |x, y| Some(x + y));
 
@@ -187,21 +205,8 @@ binary_snapshot!(is_greater_than, |a, b| a.is_greater_than(b), |x, y| Some(*x.is
 binary_snapshot!(is_greater_than_or_equal, |a, b| a.is_greater_than_or_equal(b), |x, y| Some(
     *x.is_greater_than_or_equal(&y)
 ));
-
-// Bits.
-unary_snapshot!(to_bits_le, Scalar<Circuit>, values(), |a| a.to_bits_le(), |x| Some(x.to_bits_le()));
-unary_snapshot!(to_bits_be, Scalar<Circuit>, values(), |a| a.to_bits_be(), |x| Some(x.to_bits_be()));
-from_bits_snapshot!(from_bits_le, [8, 250, 251, 252], |bits| bits);
-from_bits_snapshot!(from_bits_be, [8, 250, 251, 252], reversed);
-
-// Base field elements. `from_field` returns the base field element of the scalar, as a scalar that is at least
-// `r` cannot be ejected.
-unary_snapshot!(from_field, Field<Circuit>, field_values(), |a| Scalar::from_field(a.clone()).to_field(), |x| {
-    Console::from_field(&x).ok().map(|_| x)
-});
-unary_snapshot!(from_field_lossy, Field<Circuit>, field_values(), |a| Scalar::from_field_lossy(a), |x| Some(
-    Console::from_field_lossy(&x)
-));
+unary_snapshot!(is_zero, Scalar<Circuit>, values(), |a| a.is_zero(), |x| Some(x.is_zero()));
+unary_snapshot!(is_one, Scalar<Circuit>, values(), |a| a.is_one(), |x| Some(x.is_one()));
 
 #[test]
 fn ternary() {
@@ -215,3 +220,21 @@ fn ternary() {
     }
     assert_snapshot(&FILES, "ternary", run_parallel(mode_jobs(1, cases)));
 }
+
+// Bits.
+unary_snapshot!(to_bits_le, Scalar<Circuit>, values(), |a| a.to_bits_le(), |x| Some(x.to_bits_le()));
+unary_snapshot!(to_bits_be, Scalar<Circuit>, values(), |a| a.to_bits_be(), |x| Some(x.to_bits_be()));
+from_bits_snapshot!(from_bits_le, [8, 250, 251, 252], |bits| bits);
+from_bits_snapshot!(from_bits_be, [8, 250, 251, 252], reversed);
+
+// Base field elements.
+unary_snapshot!(from_field, Field<Circuit>, field_values(), |a| Scalar::from_field(a.clone()), |x| {
+    Console::from_field(&x).ok()
+});
+unary_snapshot!(from_field_lossy, Field<Circuit>, field_values(), |a| Scalar::from_field_lossy(a), |x| Some(
+    Console::from_field_lossy(&x)
+));
+
+// Constants.
+nullary_snapshot!(one, Console::one());
+nullary_snapshot!(zero, Console::zero());

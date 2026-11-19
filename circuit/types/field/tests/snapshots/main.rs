@@ -87,7 +87,8 @@ fn lower_values(k: usize) -> Vec<(Console, String)> {
     dedup_and_sort(candidates)
 }
 
-/// Returns 0, 1, -1, the least nonzero value with zero lower `n-k` bits, and the greatest one, with their labels.
+/// Returns 0, 1, -1, the least nonzero value with zero lower `n-k` bits if `k` is positive, and the greatest one,
+/// with their labels.
 ///
 /// `n` is the size of a field element. The greatest value is `p-1` with its lower `n-k` bits cleared.
 fn upper_values(k: usize) -> Vec<(Console, String)> {
@@ -96,13 +97,16 @@ fn upper_values(k: usize) -> Vec<(Console, String)> {
     bits_le[..shift].fill(false);
     // Note: `expect` is safe as the bits are at most the bits of `p-1`.
     let greatest = Console::from_bits_le(&bits_le).expect("the bits are less than the modulus");
-    dedup_and_sort(vec![
+    let mut candidates = vec![
         (Console::zero(), "0".to_string()),
         (Console::one(), "1".to_string()),
         (-Console::one(), "-1".to_string()),
-        (power(shift), format!("2^{shift}")),
         (greatest, format!("(p-1)>>{shift}<<{shift}")),
-    ])
+    ];
+    if shift < Console::SIZE_IN_BITS {
+        candidates.push((power(shift), format!("2^{shift}")));
+    }
+    dedup_and_sort(candidates)
 }
 
 /// Returns the first `k` bits, or `None` if a later bit is set or there are fewer than `k` bits.
@@ -115,9 +119,19 @@ fn lower_bits_le(x: Console, k: usize) -> Option<Vec<bool>> {
     prefix(x.to_bits_le(), k)
 }
 
+/// Returns the lower `k` bits of `x` in big-endian order, or `None` if `x` does not fit in `k` bits.
+fn lower_bits_be(x: Console, k: usize) -> Option<Vec<bool>> {
+    lower_bits_le(x, k).map(reversed)
+}
+
 /// Returns the upper `k` bits of `x` in big-endian order, or `None` if a lower bit of `x` is set.
 fn upper_bits_be(x: Console, k: usize) -> Option<Vec<bool>> {
     prefix(x.to_bits_be(), k)
+}
+
+/// Returns the upper `k` bits of `x` in little-endian order, or `None` if a lower bit of `x` is set.
+fn upper_bits_le(x: Console, k: usize) -> Option<Vec<bool>> {
+    upper_bits_be(x, k).map(reversed)
 }
 
 /// Returns `bits` in reverse order.
@@ -152,13 +166,19 @@ fn bits_values(n: usize) -> Vec<(Vec<bool>, String)> {
     values
 }
 
-/// Defines a snapshot test of a unary operation.
+/// Defines a snapshot test of a unary operation on an operand of the given type.
 macro_rules! unary_snapshot {
-    ($op:ident, $values:expr, |$a:ident| $circuit:expr, |$x:ident| $console:expr) => {
+    ($op:ident, $input:ty, $values:expr, |$a:ident| $circuit:expr, |$x:ident| $console:expr) => {
         #[test]
         fn $op() {
             fn cases(modes: [Mode; 1]) -> Vec<Case> {
-                snapshot::unary(|$a: &Field<Circuit>| $circuit, |$x: Console| $console, None, &$values, modes)
+                snapshot::unary(
+                    |$a: &$input| $circuit,
+                    |$x: <$input as Inject>::Primitive| $console,
+                    None,
+                    &$values,
+                    modes,
+                )
             }
             assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
         }
@@ -190,31 +210,31 @@ macro_rules! binary_snapshot {
 fn bit_count_cases(
     k: usize,
     operation: impl Fn(&Field<Circuit>, usize) -> Vec<Boolean<Circuit>>,
-    oracle: impl Fn(Console, usize) -> Option<Vec<bool>>,
-    values: &[(Console, String)],
+    oracle: fn(Console, usize) -> Option<Vec<bool>>,
+    values: fn(usize) -> Vec<(Console, String)>,
     [mode]: [Mode; 1],
 ) -> Vec<Case> {
     let block = format!("{}.{mode} k={k}", Field::<Circuit>::type_name());
-    values
-        .iter()
+    values(k)
+        .into_iter()
         .map(|(x, label)| {
             Circuit::reset();
-            let a = Field::<Circuit>::new(mode, *x);
-            let outcome = snapshot::measure(&format!("{block} {label}"), oracle(*x, k), None, || operation(&a, k));
-            Case { block: block.clone(), values: value_label(mode, label).to_string(), outcome }
+            let a = Field::<Circuit>::new(mode, x);
+            let outcome = snapshot::measure(&format!("{block} {label}"), oracle(x, k), None, || operation(&a, k));
+            Case { block: block.clone(), values: value_label(mode, &label).to_string(), outcome }
         })
         .collect()
 }
 
 /// Defines a snapshot test of an operation that takes a bit count, for each of the given bit counts.
 ///
-/// `$values` returns the values for a bit count.
+/// `$values` returns the values for a bit count, and `$oracle` returns the console result.
 macro_rules! bit_count_snapshot {
-    ($op:ident, [$($k:literal),+], $values:path, |$x:ident, $count:ident| $console:expr) => {
+    ($op:ident, [$($k:literal),+], $values:path, $oracle:path) => {
         #[test]
         fn $op() {
             fn cases<const K: usize>(modes: [Mode; 1]) -> Vec<Case> {
-                bit_count_cases(K, |a, k| a.$op(k), |$x, $count| $console, &$values(K), modes)
+                bit_count_cases(K, |a, k| a.$op(k), $oracle, $values, modes)
             }
             let jobs = [$(mode_jobs($k, cases::<$k>)),+];
             assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
@@ -272,12 +292,14 @@ binary_snapshot!(sub, |a, b| a - b, |x, y| Some(x - y));
 binary_snapshot!(mul, |a, b| a * b, |x, y| Some(x * y));
 binary_snapshot!(div, |a, b| a / b, |x, y| (!y.is_zero()).then(|| x / y));
 binary_snapshot!(pow, |a, b| a.pow(b), |x, y| Some(x.pow(y)));
-unary_snapshot!(double, values(), |a| a.double(), |x| Some(x.double()));
-unary_snapshot!(square, values(), |a| a.square(), |x| Some(x.square()));
-unary_snapshot!(inverse, values(), |a| a.inverse(), |x| x.inverse().ok());
-unary_snapshot!(neg, values(), |a| -a, |x| Some(-x));
-unary_snapshot!(square_root, square_root_values(), |a| a.square_root(), |x| x.square_root().ok());
-unary_snapshot!(even_square_root, square_root_values(), |a| a.even_square_root(), |x| x.even_square_root().ok());
+unary_snapshot!(double, Field<Circuit>, values(), |a| a.double(), |x| Some(x.double()));
+unary_snapshot!(square, Field<Circuit>, values(), |a| a.square(), |x| Some(x.square()));
+unary_snapshot!(inverse, Field<Circuit>, values(), |a| a.inverse(), |x| x.inverse().ok());
+unary_snapshot!(neg, Field<Circuit>, values(), |a| -a, |x| Some(-x));
+unary_snapshot!(square_root, Field<Circuit>, square_root_values(), |a| a.square_root(), |x| x.square_root().ok());
+unary_snapshot!(even_square_root, Field<Circuit>, square_root_values(), |a| a.even_square_root(), |x| x
+    .even_square_root()
+    .ok());
 
 /// Covers each pair of values. Division by zero is undefined, except that `0 / 0` on two variables gives a
 /// satisfied circuit for any quotient, and the circuit returns 0.
@@ -311,8 +333,8 @@ binary_snapshot!(is_greater_than, |a, b| a.is_greater_than(b), |x, y| Some(*x.is
 binary_snapshot!(is_greater_than_or_equal, |a, b| a.is_greater_than_or_equal(b), |x, y| Some(
     *x.is_greater_than_or_equal(&y)
 ));
-unary_snapshot!(is_zero, values(), |a| a.is_zero(), |x| Some(x.is_zero()));
-unary_snapshot!(is_one, values(), |a| a.is_one(), |x| Some(x.is_one()));
+unary_snapshot!(is_zero, Field<Circuit>, values(), |a| a.is_zero(), |x| Some(x.is_zero()));
+unary_snapshot!(is_one, Field<Circuit>, values(), |a| a.is_one(), |x| Some(x.is_one()));
 
 #[test]
 fn ternary() {
@@ -328,38 +350,22 @@ fn ternary() {
 }
 
 // Bits.
-unary_snapshot!(to_bits_le, values(), |a| a.to_bits_le(), |x| Some(x.to_bits_le()));
-unary_snapshot!(to_bits_be, values(), |a| a.to_bits_be(), |x| Some(x.to_bits_be()));
-bit_count_snapshot!(to_lower_bits_le, [8, 16, 32, 64, 128, 251, 252, 253, 254], lower_values, |x, k| lower_bits_le(
-    x, k
-));
-bit_count_snapshot!(to_lower_bits_be, [8, 16, 32, 64, 128, 251, 252, 253, 254], lower_values, |x, k| lower_bits_le(
-    x, k
-)
-.map(reversed));
-bit_count_snapshot!(to_upper_bits_le, [1, 9, 17, 33, 65, 129, 251, 252, 253, 254], upper_values, |x, k| upper_bits_be(
-    x, k
-)
-.map(reversed));
-bit_count_snapshot!(to_upper_bits_be, [1, 9, 17, 33, 65, 129, 251, 252, 253, 254], upper_values, |x, k| upper_bits_be(
-    x, k
-));
+unary_snapshot!(to_bits_le, Field<Circuit>, values(), |a| a.to_bits_le(), |x| Some(x.to_bits_le()));
+unary_snapshot!(to_bits_be, Field<Circuit>, values(), |a| a.to_bits_be(), |x| Some(x.to_bits_be()));
+bit_count_snapshot!(to_lower_bits_le, [0, 8, 16, 32, 64, 128, 251, 252, 253, 254], lower_values, lower_bits_le);
+bit_count_snapshot!(to_lower_bits_be, [0, 8, 16, 32, 64, 128, 251, 252, 253, 254], lower_values, lower_bits_be);
+bit_count_snapshot!(to_upper_bits_le, [0, 1, 9, 17, 33, 65, 129, 251, 252, 253, 254], upper_values, upper_bits_le);
+bit_count_snapshot!(to_upper_bits_be, [0, 1, 9, 17, 33, 65, 129, 251, 252, 253, 254], upper_values, upper_bits_be);
 from_bits_snapshot!(from_bits_le, [8, 252, 253, 254], |bits| bits);
 from_bits_snapshot!(from_bits_be, [8, 252, 253, 254], reversed);
 
-#[test]
-fn from_boolean() {
-    fn cases(modes: [Mode; 1]) -> Vec<Case> {
-        snapshot::unary(
-            |a: &Boolean<Circuit>| Field::from_boolean(a),
-            |x: bool| Some(if x { Console::one() } else { Console::zero() }),
-            None,
-            &[(false, "false".to_string()), (true, "true".to_string())],
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "from_boolean", run_parallel(mode_jobs(1, cases)));
-}
+unary_snapshot!(
+    from_boolean,
+    Boolean<Circuit>,
+    [(false, "false".to_string()), (true, "true".to_string())],
+    |a| Field::from_boolean(a),
+    |x| Some(if x { Console::one() } else { Console::zero() })
+);
 
 // Constants.
 nullary_snapshot!(one, Console::one());

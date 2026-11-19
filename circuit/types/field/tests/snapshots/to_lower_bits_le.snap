@@ -9,6 +9,10 @@
 # value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
 # A `*` line gives the result of each case of its block that has no line of its own.
 # Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-field --test snapshots
+field.constant k=0 | * : halt
+field.constant k=0 | 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.public k=0 | _ : 0 0 0 1 1/1/0 constant 01c4b29a4b4371c2
+field.private k=0 | _ : 0 0 0 1 1/1/0 constant 01a5df048a067782
 field.constant k=8 | * : 8 0 0 0 0/0/0 constant e3b0c44298fc1c14
 field.constant k=8 | 2^8 : halt
 field.constant k=8 | -1 : halt
