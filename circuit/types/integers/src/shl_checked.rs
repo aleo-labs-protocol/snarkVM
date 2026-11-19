@@ -242,13 +242,16 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlChecked<Intege
 impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn ShlChecked<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, Mode);
+    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
+    type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (mode_a, Mode::Constant) => mode_a,
-            (_, _) => Mode::Private,
+        match (case.0, case.1, case.2) {
+            (Mode::Constant, Mode::Constant, _) => Mode::Constant,
+            // A constant zero `self` gives a constant zero at every width.
+            (Mode::Constant, _, true) => Mode::Constant,
+            // The output bits are new witnesses, even for a constant `rhs`.
+            (_, _, _) => Mode::Private,
         }
     }
 }
@@ -282,7 +285,7 @@ mod tests {
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
                 assert_count!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
-                // assert_output_mode!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b), candidate);
+                assert_output_mode!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero), candidate);
                 assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
             }),
             None => match (mode_a, mode_b) {
@@ -295,15 +298,13 @@ mod tests {
                     } else {
                         Circuit::scope(name, || {
                             let _candidate = a.shl_checked(&b);
-                            // assert_count_fails!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
-                            assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
+                            assert_count_fails!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
                         })
                     }
                 }
                 _ => Circuit::scope(name, || {
                     let _candidate = a.shl_checked(&b);
-                    // assert_count_fails!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
-                    assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
+                    assert_count_fails!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
                 }),
             },
         };
