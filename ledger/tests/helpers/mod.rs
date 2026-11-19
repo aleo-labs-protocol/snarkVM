@@ -65,10 +65,8 @@ pub struct BlockOptions {
 
 impl TestChainBuilder {
     /// Returns a builder on the genesis fixture of `sample_test_env`, with the four validators of its committee.
-    ///
     /// Every call returns a builder on the same genesis block.
-    /// The builder does not depend on `_rng`, and `_rng` is not advanced.
-    pub fn new(_rng: &mut TestRng) -> Self {
+    pub fn new() -> Self {
         let (private_keys, genesis_block) = sample_genesis_committee();
         Self::from_genesis(private_keys, genesis_block)
     }

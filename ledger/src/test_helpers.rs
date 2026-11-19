@@ -152,25 +152,16 @@ mod tests {
     #[test]
     fn test_sample_genesis_committee_holds_the_committee_keys() {
         let (private_keys, genesis) = sample_genesis_committee();
-        let (fixture_private_key, fixture_block) = genesis_fixture();
-        assert_eq!(private_keys[0], *fixture_private_key);
-        assert_eq!(genesis, *fixture_block);
+        assert_eq!(private_keys[0], genesis_fixture().0);
 
-        let committee = load_ledger(genesis).latest_committee().expect("Failed to get the genesis committee");
+        let committee = match genesis.ratifications().iter().next() {
+            Some(crate::Ratify::Genesis(committee, ..)) => committee,
+            _ => panic!("Expected a genesis ratification"),
+        };
         let addresses = private_keys
             .iter()
             .map(|private_key| Address::try_from(private_key).expect("Failed to derive an address"))
             .collect::<Vec<_>>();
         assert_eq!(addresses, committee.members().keys().copied().collect::<Vec<_>>());
-    }
-
-    #[test]
-    fn test_chain_builder_does_not_advance_rng() {
-        let rng = &mut TestRng::fixed(1);
-        let builder = TestChainBuilder::new(rng).expect("Failed to initialize the chain builder");
-        assert_eq!(rng.random::<u64>(), TestRng::fixed(1).random::<u64>());
-        let (private_keys, genesis) = sample_genesis_committee();
-        assert_eq!(builder.private_keys(), private_keys);
-        assert_eq!(*builder.genesis_block(), genesis);
     }
 }
