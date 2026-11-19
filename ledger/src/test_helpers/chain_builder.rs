@@ -125,6 +125,17 @@ impl<N: Network> Default for GenerateBlockOptions<N> {
     }
 }
 
+impl TestChainBuilder<CurrentNetwork> {
+    /// Initialize the builder on the genesis fixture of `sample_test_env`, with the four validators of its committee.
+    ///
+    /// Every call returns a builder on the same genesis block.
+    /// The builder does not depend on `_rng`, and `_rng` is not advanced.
+    pub fn new(_rng: &mut TestRng) -> Result<Self> {
+        let (private_keys, genesis_block) = super::sample_genesis_committee();
+        Self::from_genesis(private_keys, genesis_block)
+    }
+}
+
 impl<N: Network> TestChainBuilder<N> {
     /// Generate a new committee and genesis block.
     pub fn initialize_components(committee_size: usize, rng: &mut TestRng) -> Result<(Vec<PrivateKey<N>>, Block<N>)> {
@@ -150,11 +161,6 @@ impl<N: Network> TestChainBuilder<N> {
         );
 
         Ok((private_keys, genesis_block))
-    }
-
-    /// Initialize the builder with the default quorum size.
-    pub fn new(rng: &mut TestRng) -> Result<Self> {
-        Self::new_with_quorum_size(4, rng)
     }
 
     /// Initialize the builder with the specified quorum size.

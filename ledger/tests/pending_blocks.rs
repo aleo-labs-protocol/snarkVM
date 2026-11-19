@@ -25,7 +25,7 @@ use snarkvm_utilities::TestRng;
 fn test_preprocess_block() {
     let rng = &mut TestRng::default();
 
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new(rng);
 
     // Construct the ledger.
     let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
@@ -78,7 +78,7 @@ fn test_check_block_error_display() {
 #[test]
 fn test_prefix_with_duplicate_block_error() {
     let rng = &mut TestRng::default();
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new(rng);
 
     // Construct the ledger.
     let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
@@ -138,7 +138,7 @@ fn test_prefix_with_duplicate_block_error() {
 #[test]
 fn test_atomicity_check_uses_prefix_latest_block() {
     let rng = &mut TestRng::default();
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new(rng);
 
     // External ledger starts at genesis and is never explicitly advanced in this test.
     let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
@@ -173,7 +173,7 @@ fn test_atomicity_check_uses_prefix_latest_block() {
 #[test]
 fn test_check_block_content_invalid_height() {
     let rng = &mut TestRng::default();
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new(rng);
 
     // Construct the ledger.
     let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(

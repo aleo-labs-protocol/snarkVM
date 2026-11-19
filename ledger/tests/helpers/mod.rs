@@ -18,10 +18,9 @@ use snarkvm_console::{
     network::MainnetV0,
     prelude::*,
 };
-use snarkvm_ledger::{Block, Ledger};
+use snarkvm_ledger::{Block, Ledger, test_helpers::sample_genesis_committee};
 use snarkvm_ledger_narwhal::{BatchCertificate, BatchHeader, Subdag};
-use snarkvm_ledger_store::{ConsensusStore, StorageMode};
-use snarkvm_synthesizer::vm::VM;
+use snarkvm_ledger_store::StorageMode;
 
 use indexmap::{IndexMap, IndexSet};
 use std::collections::{BTreeMap, HashMap};
@@ -65,24 +64,12 @@ pub struct BlockOptions {
 }
 
 impl TestChainBuilder {
-    pub fn new(committee_size: usize, rng: &mut TestRng) -> Self {
-        // Sample the genesis private key.
-        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-        // Initialize the store.
-        let store = ConsensusStore::<_, LedgerType<_>>::open(StorageMode::new_test(None)).unwrap();
-        // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-        let seed: u64 = rng.random();
-        let genesis_rng = &mut TestRng::from_seed(seed);
-        let genesis_block = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
-
-        // Reconstruct the private keys of the genesis committee.  genesis_beacon uses `private_key`
-        // as the first member, then samples (committee_size - 1) more from the seeded RNG.
-        let genesis_rng = &mut TestRng::from_seed(seed);
-        let mut private_keys = vec![private_key];
-        for _ in 1..committee_size {
-            private_keys.push(PrivateKey::new(genesis_rng).unwrap());
-        }
-
+    /// Returns a builder on the genesis fixture of `sample_test_env`, with the four validators of its committee.
+    ///
+    /// Every call returns a builder on the same genesis block.
+    /// The builder does not depend on `_rng`, and `_rng` is not advanced.
+    pub fn new(_rng: &mut TestRng) -> Self {
+        let (private_keys, genesis_block) = sample_genesis_committee();
         Self::from_genesis(private_keys, genesis_block)
     }
 
