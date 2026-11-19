@@ -57,12 +57,7 @@ pub const MAX_OPEN_FILES: u16 = 8192;
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
 // TODO: remove the static in favor of improved `open` methods.
-// note: this object can't utilize locktick for lock accounting, but it is only ever accessed
-//       when first creating the database(s), so this is acceptable; this will also no longer
-//       be an issue once the above TODO is complete.
-#[allow(clippy::disallowed_types)]
-static DATABASES: LazyLock<parking_lot::Mutex<HashMap<PathBuf, RocksDB>>> =
-    LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
+static DATABASES: LazyLock<Mutex<HashMap<PathBuf, RocksDB>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// A trait for opening the database and its maps.
 ///

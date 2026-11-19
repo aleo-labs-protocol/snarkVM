@@ -3525,7 +3525,6 @@ dependencies = [
  "anyhow",
  "bincode",
  "indexmap 2.14.0",
- "parking_lot",
  "rayon",
  "rocksdb",
  "serde",

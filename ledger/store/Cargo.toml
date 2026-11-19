@@ -83,9 +83,6 @@ workspace = true
 workspace = true
 features = [ "serde" ]
 
-[dependencies.parking_lot]
-workspace = true
-
 [dependencies.rayon]
 workspace = true
 
