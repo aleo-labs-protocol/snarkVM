@@ -40,6 +40,7 @@ pub use snarkvm_console_types as types;
 
 pub mod prelude {
     #[cfg(feature = "network")]
+    #[doc(no_inline)]
     pub use crate::network::prelude::*;
 }
 

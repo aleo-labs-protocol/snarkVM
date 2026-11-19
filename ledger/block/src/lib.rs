@@ -649,6 +649,8 @@ pub mod test_helpers {
     /// Returns the fixture `{name}-{n}` for the n-th call with `name` on this thread.
     ///
     /// Two calls on one thread return different fixtures, and every thread gets the same fixtures in the same order.
+    /// So a thread that a test starts gets the fixtures that the test thread got. Sample on the test thread
+    /// where two samples must be different.
     pub(crate) fn sample_nth_fixture<T: FromBytes + ToBytes>(
         name: &str,
         key: &[u8],

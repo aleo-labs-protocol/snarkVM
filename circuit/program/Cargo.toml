@@ -31,7 +31,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "network", "types" ]
+features = [ "network", "types", "test-helpers" ]
 
 [dev-dependencies.snarkvm-console-program]
 workspace = true

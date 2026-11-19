@@ -23,6 +23,10 @@ workspace = true
 [dependencies.snarkvm-circuit-types-integers]
 workspace = true
 
+[dev-dependencies.snarkvm-circuit-environment]
+workspace = true
+features = [ "test-helpers" ]
+
 [dev-dependencies.snarkvm-utilities]
 workspace = true
 

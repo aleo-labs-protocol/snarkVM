@@ -15,7 +15,7 @@ harness = false
 
 [features]
 default = [ ]
-test = [ ]
+test = [ "snarkvm-console-network/test-helpers" ]
 dev-print = [
   "snarkvm-utilities/dev-print",
   "snarkvm-console-algorithms/dev-print",
@@ -71,3 +71,7 @@ workspace = true
 
 [dev-dependencies.criterion]
 workspace = true
+
+[dev-dependencies.snarkvm-console-network]
+workspace = true
+features = [ "test-helpers" ]

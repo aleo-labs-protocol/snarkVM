@@ -27,7 +27,7 @@ edition = "2024"
 default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ ]
+test-helpers = [ "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -50,3 +50,7 @@ features = [ "preserve_order" ]
 
 [dev-dependencies.bincode]
 workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test-helpers" ]

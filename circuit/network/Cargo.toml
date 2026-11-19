@@ -23,5 +23,9 @@ workspace = true
 [dev-dependencies.snarkvm-console-types]
 workspace = true
 
+[dev-dependencies.snarkvm-console-network]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
 wasm = [ "snarkvm-console-network/wasm" ]

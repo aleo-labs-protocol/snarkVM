@@ -42,7 +42,12 @@ workspace = true
 workspace = true
 features = [ "derive" ]
 
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
 default = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 serial = [ "snarkvm-utilities/serial" ]
+test-helpers = [ "snarkvm-utilities/test-helpers" ]
