@@ -126,19 +126,34 @@ impl<E: Environment, I: IntegerType> OutputMode<dyn Rem<Integer<E, I>, Output = 
 impl<E: Environment, I: IntegerType> Metrics<dyn RemChecked<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
     type Case = (Mode, Mode);
 
+    #[rustfmt::skip]
     fn count(case: &Self::Case) -> Count {
-        match I::is_signed() {
-            true => match (case.0, case.1) {
-                (Mode::Constant, Mode::Constant) => Count::is(2 * I::BITS, 0, 0, 0),
-                (Mode::Constant, _) | (_, Mode::Constant) => {
-                    Count::less_than(9 * I::BITS, 0, (8 * I::BITS) + 2, (8 * I::BITS) + 12)
-                }
-                (_, _) => Count::is(8 * I::BITS, 0, (10 * I::BITS) + 15, (10 * I::BITS) + 27),
+        // Integers of up to 64 bits check Euclidean division in one field element.
+        // At 128 bits, the check uses `mul_checked` and `add_checked`.
+        //
+        // `Count::less_than` is an upper bound for a count that depends on the values:
+        //  - A constant `self` equal to `MIN` adds one constraint to the signed overflow check.
+        //  - A constant `other` equal to `-1` adds one constraint to the signed overflow check.
+        //  - At 128 bits, a constant `other` with an absolute value of at least `2^64` adds one constraint to `mul_checked`.
+        match (case.0, case.1) {
+            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
+            (Mode::Constant, _) => match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
+                (true, true) => Count::less_than(7 * I::BITS, 0, (6 * I::BITS) + 6, (6 * I::BITS) + 12),
+                (true, false) => Count::less_than(7 * I::BITS, 0, 1097, 1107),
+                (false, true) => Count::is(I::BITS, 0, (3 * I::BITS) + 2, (3 * I::BITS) + 5),
+                (false, false) => Count::is(I::BITS, 0, 709, 716),
             },
-            false => match (case.0, case.1) {
-                (Mode::Constant, Mode::Constant) => Count::is(2 * I::BITS, 0, 0, 0),
-                (_, Mode::Constant) => Count::is(2 * I::BITS, 0, (3 * I::BITS) + 1, (3 * I::BITS) + 4),
-                (Mode::Constant, _) | (_, _) => Count::is(2 * I::BITS, 0, (3 * I::BITS) + 4, (3 * I::BITS) + 9),
+            (_, Mode::Constant) => match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
+                (true, true) => Count::less_than(7 * I::BITS, 0, (7 * I::BITS) + 5, (7 * I::BITS) + 11),
+                (true, false) => Count::less_than(7 * I::BITS, 0, 1222, 1231),
+                (false, true) => Count::is(I::BITS, 0, (3 * I::BITS) + 1, (3 * I::BITS) + 4),
+                (false, false) => Count::less_than(I::BITS, 0, 706, 713),
+            },
+            (_, _) => match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
+                (true, true) => Count::is(6 * I::BITS, 0, (9 * I::BITS) + 10, (9 * I::BITS) + 17),
+                (true, false) => Count::is(6 * I::BITS, 0, 1485, 1496),
+                (false, true) => Count::is(I::BITS, 0, (3 * I::BITS) + 2, (3 * I::BITS) + 5),
+                (false, false) => Count::is(I::BITS, 0, 709, 716),
             },
         }
     }
@@ -182,8 +197,7 @@ mod tests {
                 Mode::Constant => check_operation_halts(&a, &b, Integer::rem_checked),
                 _ => Circuit::scope(name, || {
                     let _candidate = a.rem_checked(&b);
-                    // assert_count_fails!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                    assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
+                    assert_count_fails!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
                 }),
             }
         } else {
@@ -192,16 +206,14 @@ mod tests {
                     let candidate = a.rem_checked(&b);
                     assert_eq!(expected, *candidate.eject_value());
                     assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                    // assert_count!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                    // assert_output_mode!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
-                    assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
+                    assert_count!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
+                    assert_output_mode!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
                 }),
                 None => match (mode_a, mode_b) {
                     (Mode::Constant, Mode::Constant) => check_operation_halts(&a, &b, Integer::rem_checked),
                     _ => Circuit::scope(name, || {
                         let _candidate = a.rem_checked(&b);
-                        // assert_count_fails!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                        assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
+                        assert_count_fails!(RemChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
                     }),
                 },
             }
