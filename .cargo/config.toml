@@ -3,11 +3,10 @@
 [target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=skylake"]
 
-# `cargo locktick-<command>` builds with `--cfg locktick`, under which
-# `snarkvm_utilities::locks` provides locktick's instrumented locks. An env
-# RUSTFLAGS replaces this flag along with the target rustflags above. Cargo
-# drops a `--config` placed before an external subcommand such as `clippy`, so
-# each alias puts it after its subcommand.
+# `cargo locktick-<command>` builds with `--cfg locktick` (see `snarkvm_utilities::locks`).
+# An env RUSTFLAGS replaces this flag along with the target rustflags above. Cargo drops a
+# `--config` placed before an external subcommand such as `clippy`, so each alias puts it
+# after its subcommand.
 [alias]
 locktick-build = ["build", "--config", "target.'cfg(all())'.rustflags=['--cfg','locktick']"]
 locktick-check = ["check", "--config", "target.'cfg(all())'.rustflags=['--cfg','locktick']"]

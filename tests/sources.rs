@@ -67,10 +67,8 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
     }
 }
 
-// `CARGO_MANIFEST_DIR` rather than ".": a build script's working directory was
-// the package root by definition, a test binary's is only that when cargo runs
-// it, and against the wrong tree this walks nothing and passes.
-
+// Walks `CARGO_MANIFEST_DIR`: a test binary's working directory is the package root only when
+// cargo runs it, and against another tree the walk finds nothing and passes.
 #[test]
 fn licenses_are_present() {
     check_file_licenses(env!("CARGO_MANIFEST_DIR"));

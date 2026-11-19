@@ -82,9 +82,6 @@ workspace = true
 [dev-dependencies.bincode]
 workspace = true
 
-[dev-dependencies.snarkvm-utilities]
-workspace = true
-
 [dev-dependencies.rand_distr]
 version = "0.6"
 
@@ -94,3 +91,6 @@ workspace = true
 [dev-dependencies.snarkvm-ledger-committee]
 path = "."
 features = [ "test-helpers" ]
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true

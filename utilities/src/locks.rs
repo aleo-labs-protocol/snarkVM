@@ -24,39 +24,26 @@
 #![allow(clippy::disallowed_types)]
 
 #[cfg(locktick)]
-pub use locktick::lock_snapshots;
+use locktick::parking_lot as backend;
+#[cfg(not(locktick))]
+use parking_lot as backend;
+
+#[cfg(not(locktick))]
+type Guard<G> = G;
+#[cfg(locktick)]
+type Guard<G> = locktick::LockGuard<G>;
 
 /// A mutual exclusion lock.
-#[cfg(not(locktick))]
-pub type Mutex<T> = parking_lot::Mutex<T>;
-/// A mutual exclusion lock.
-#[cfg(locktick)]
-pub type Mutex<T> = locktick::parking_lot::Mutex<T>;
+pub type Mutex<T> = backend::Mutex<T>;
 
 /// A reader-writer lock.
-#[cfg(not(locktick))]
-pub type RwLock<T> = parking_lot::RwLock<T>;
-/// A reader-writer lock.
-#[cfg(locktick)]
-pub type RwLock<T> = locktick::parking_lot::RwLock<T>;
+pub type RwLock<T> = backend::RwLock<T>;
 
 /// The guard that [`Mutex::lock`] returns.
-#[cfg(not(locktick))]
-pub type MutexGuard<'a, T> = parking_lot::MutexGuard<'a, T>;
-/// The guard that [`Mutex::lock`] returns.
-#[cfg(locktick)]
-pub type MutexGuard<'a, T> = locktick::LockGuard<parking_lot::MutexGuard<'a, T>>;
+pub type MutexGuard<'a, T> = Guard<parking_lot::MutexGuard<'a, T>>;
 
 /// The guard that [`RwLock::read`] returns.
-#[cfg(not(locktick))]
-pub type RwLockReadGuard<'a, T> = parking_lot::RwLockReadGuard<'a, T>;
-/// The guard that [`RwLock::read`] returns.
-#[cfg(locktick)]
-pub type RwLockReadGuard<'a, T> = locktick::LockGuard<parking_lot::RwLockReadGuard<'a, T>>;
+pub type RwLockReadGuard<'a, T> = Guard<parking_lot::RwLockReadGuard<'a, T>>;
 
 /// The guard that [`RwLock::write`] returns.
-#[cfg(not(locktick))]
-pub type RwLockWriteGuard<'a, T> = parking_lot::RwLockWriteGuard<'a, T>;
-/// The guard that [`RwLock::write`] returns.
-#[cfg(locktick)]
-pub type RwLockWriteGuard<'a, T> = locktick::LockGuard<parking_lot::RwLockWriteGuard<'a, T>>;
+pub type RwLockWriteGuard<'a, T> = Guard<parking_lot::RwLockWriteGuard<'a, T>>;

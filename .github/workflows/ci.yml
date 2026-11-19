@@ -178,8 +178,6 @@ jobs:
             -p snarkvm-utilities-derives -p snarkvm-utilities \
             -p snarkvm-fields -p snarkvm-curves -p snarkvm-algorithms-cuda
 
-  # Clippy under `--cfg locktick`, where `snarkvm_utilities::locks` provides
-  # locktick's locks.
   lint-locktick:
     needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
