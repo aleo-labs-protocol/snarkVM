@@ -17,6 +17,8 @@ use crate::matches_type;
 
 use super::*;
 
+impl<N: Network> snarkvm_synthesizer_program::sealed_execution::Sealed for Stack<N> {}
+
 impl<N: Network> StackTrait<N> for Stack<N> {
     /// Checks that the given value matches the layout of the value type.
     fn matches_value_type(&self, value: &Value<N>, value_type: &ValueType<N>) -> Result<()> {

@@ -103,6 +103,8 @@ thread_local! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AleoTestnetV0;
 
+impl crate::sealed::Sealed for AleoTestnetV0 {}
+
 impl Aleo for AleoTestnetV0 {
     /// Initializes the global constants for the Aleo environment.
     fn initialize_global_constants() {
