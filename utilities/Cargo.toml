@@ -48,6 +48,9 @@ optional = true
 [dependencies.num-bigint]
 version = "0.5"
 
+[dependencies.parking_lot]
+workspace = true
+
 [dependencies.rand]
 workspace = true
 
@@ -86,6 +89,10 @@ workspace = true
 workspace = true
 features = [ "derive" ]
 
+[target.'cfg(locktick)'.dependencies.locktick]
+workspace = true
+features = [ "parking_lot" ]
+
 [dev-dependencies.snarkvm-utilities]
 path = "."
 features = [ "storage", "test-helpers" ]
@@ -105,3 +112,6 @@ serial = [ "derive" ]
 storage = [ "dep:dirs", "dep:tempfile" ]
 test-helpers = [ "dep:rand_xorshift" ]
 wasm = [ ]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [ "cfg(locktick)" ] }
