@@ -204,15 +204,12 @@ jobs:
               nextest run -p snarkvm-parameters --run-ignored all
               nextest run -p snarkvm-algorithms --run-ignored ignored-only
           - name: ledger
-            runs: |
-              nextest run -p snarkvm-ledger
-              nextest run -p snarkvm-ledger --features test -E test(/^tests::valid_solutions::/)
+            runs: nextest run -p snarkvm-ledger
           # ledger-query's async tests bound wall-clock time, which a loaded
           # hosted runner can exceed.
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
-              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)
               nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
               nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch
               nextest run -p snarkvm-ledger-query --features async
@@ -359,11 +356,17 @@ jobs:
         include:
           - name: ledger-rocks
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
+          # Only this entry runs valid_solutions and
+          # test_genesis_commitment_checks_passed_block_tree_root, so pull requests to
+          # staging do not. valid_solutions needs `test`, whose low proof targets let
+          # it find valid solutions. The genesis test needs `dev_genesis_state_root`,
+          # which fixes the stored genesis state root.
           # test_cumulative_proof_target_correctness is left out: it takes 150 s or 475 s from run to run.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test --run-ignored ignored-only -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
+              nextest run -p snarkvm-ledger --features test --run-ignored all -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
+              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)
               nextest run -p snarkvm-ledger-block -j 12
           - name: parameters
             runs: nextest run -p snarkvm-parameters --features filesystem -j 2
