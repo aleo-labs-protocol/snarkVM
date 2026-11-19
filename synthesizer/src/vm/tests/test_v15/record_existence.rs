@@ -238,7 +238,6 @@ fn program_remapper() -> Program<CurrentNetwork> {
 
     Program::<CurrentNetwork>::from_str(&format!(
         r"
-        import base.aleo;
         import mini_remapper.aleo;
         import frontier.aleo;
 
@@ -778,7 +777,7 @@ fn test_existence_check_families() {
 
     let vm = sample_vm_with_programs(
         &caller_private_key,
-        &[program_base(), program_frontier(), program_mini_remapper(), program_remapper()],
+        &[program_frontier(), program_mini_remapper(), program_remapper()],
         rng,
     );
 
