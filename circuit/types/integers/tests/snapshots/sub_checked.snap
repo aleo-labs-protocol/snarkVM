@@ -1,0 +1,1199 @@
+# Circuit shape of `sub_checked` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant u8.constant * : 8 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 1 : halt
+u8.constant u8.constant 0 2 : halt
+u8.constant u8.constant 0 3 : halt
+u8.constant u8.constant 0 2^3-1 : halt
+u8.constant u8.constant 0 2^3 : halt
+u8.constant u8.constant 0 2^3+1 : halt
+u8.constant u8.constant 0 2^4-1 : halt
+u8.constant u8.constant 0 2^4 : halt
+u8.constant u8.constant 0 2^4+1 : halt
+u8.constant u8.constant 0 2^7-1 : halt
+u8.constant u8.constant 0 2^7 : halt
+u8.constant u8.constant 0 2^7+1 : halt
+u8.constant u8.constant 0 2^8-2^4 : halt
+u8.constant u8.constant 0 MAX-1 : halt
+u8.constant u8.constant 0 MAX : halt
+u8.constant u8.constant 1 2 : halt
+u8.constant u8.constant 1 3 : halt
+u8.constant u8.constant 1 2^3-1 : halt
+u8.constant u8.constant 1 2^3 : halt
+u8.constant u8.constant 1 2^3+1 : halt
+u8.constant u8.constant 1 2^4-1 : halt
+u8.constant u8.constant 1 2^4 : halt
+u8.constant u8.constant 1 2^4+1 : halt
+u8.constant u8.constant 1 2^7-1 : halt
+u8.constant u8.constant 1 2^7 : halt
+u8.constant u8.constant 1 2^7+1 : halt
+u8.constant u8.constant 1 2^8-2^4 : halt
+u8.constant u8.constant 1 MAX-1 : halt
+u8.constant u8.constant 1 MAX : halt
+u8.constant u8.constant 2 3 : halt
+u8.constant u8.constant 2 2^3-1 : halt
+u8.constant u8.constant 2 2^3 : halt
+u8.constant u8.constant 2 2^3+1 : halt
+u8.constant u8.constant 2 2^4-1 : halt
+u8.constant u8.constant 2 2^4 : halt
+u8.constant u8.constant 2 2^4+1 : halt
+u8.constant u8.constant 2 2^7-1 : halt
+u8.constant u8.constant 2 2^7 : halt
+u8.constant u8.constant 2 2^7+1 : halt
+u8.constant u8.constant 2 2^8-2^4 : halt
+u8.constant u8.constant 2 MAX-1 : halt
+u8.constant u8.constant 2 MAX : halt
+u8.constant u8.constant 3 2^3-1 : halt
+u8.constant u8.constant 3 2^3 : halt
+u8.constant u8.constant 3 2^3+1 : halt
+u8.constant u8.constant 3 2^4-1 : halt
+u8.constant u8.constant 3 2^4 : halt
+u8.constant u8.constant 3 2^4+1 : halt
+u8.constant u8.constant 3 2^7-1 : halt
+u8.constant u8.constant 3 2^7 : halt
+u8.constant u8.constant 3 2^7+1 : halt
+u8.constant u8.constant 3 2^8-2^4 : halt
+u8.constant u8.constant 3 MAX-1 : halt
+u8.constant u8.constant 3 MAX : halt
+u8.constant u8.constant 2^3-1 2^3 : halt
+u8.constant u8.constant 2^3-1 2^3+1 : halt
+u8.constant u8.constant 2^3-1 2^4-1 : halt
+u8.constant u8.constant 2^3-1 2^4 : halt
+u8.constant u8.constant 2^3-1 2^4+1 : halt
+u8.constant u8.constant 2^3-1 2^7-1 : halt
+u8.constant u8.constant 2^3-1 2^7 : halt
+u8.constant u8.constant 2^3-1 2^7+1 : halt
+u8.constant u8.constant 2^3-1 2^8-2^4 : halt
+u8.constant u8.constant 2^3-1 MAX-1 : halt
+u8.constant u8.constant 2^3-1 MAX : halt
+u8.constant u8.constant 2^3 2^3+1 : halt
+u8.constant u8.constant 2^3 2^4-1 : halt
+u8.constant u8.constant 2^3 2^4 : halt
+u8.constant u8.constant 2^3 2^4+1 : halt
+u8.constant u8.constant 2^3 2^7-1 : halt
+u8.constant u8.constant 2^3 2^7 : halt
+u8.constant u8.constant 2^3 2^7+1 : halt
+u8.constant u8.constant 2^3 2^8-2^4 : halt
+u8.constant u8.constant 2^3 MAX-1 : halt
+u8.constant u8.constant 2^3 MAX : halt
+u8.constant u8.constant 2^3+1 2^4-1 : halt
+u8.constant u8.constant 2^3+1 2^4 : halt
+u8.constant u8.constant 2^3+1 2^4+1 : halt
+u8.constant u8.constant 2^3+1 2^7-1 : halt
+u8.constant u8.constant 2^3+1 2^7 : halt
+u8.constant u8.constant 2^3+1 2^7+1 : halt
+u8.constant u8.constant 2^3+1 2^8-2^4 : halt
+u8.constant u8.constant 2^3+1 MAX-1 : halt
+u8.constant u8.constant 2^3+1 MAX : halt
+u8.constant u8.constant 2^4-1 2^4 : halt
+u8.constant u8.constant 2^4-1 2^4+1 : halt
+u8.constant u8.constant 2^4-1 2^7-1 : halt
+u8.constant u8.constant 2^4-1 2^7 : halt
+u8.constant u8.constant 2^4-1 2^7+1 : halt
+u8.constant u8.constant 2^4-1 2^8-2^4 : halt
+u8.constant u8.constant 2^4-1 MAX-1 : halt
+u8.constant u8.constant 2^4-1 MAX : halt
+u8.constant u8.constant 2^4 2^4+1 : halt
+u8.constant u8.constant 2^4 2^7-1 : halt
+u8.constant u8.constant 2^4 2^7 : halt
+u8.constant u8.constant 2^4 2^7+1 : halt
+u8.constant u8.constant 2^4 2^8-2^4 : halt
+u8.constant u8.constant 2^4 MAX-1 : halt
+u8.constant u8.constant 2^4 MAX : halt
+u8.constant u8.constant 2^4+1 2^7-1 : halt
+u8.constant u8.constant 2^4+1 2^7 : halt
+u8.constant u8.constant 2^4+1 2^7+1 : halt
+u8.constant u8.constant 2^4+1 2^8-2^4 : halt
+u8.constant u8.constant 2^4+1 MAX-1 : halt
+u8.constant u8.constant 2^4+1 MAX : halt
+u8.constant u8.constant 2^7-1 2^7 : halt
+u8.constant u8.constant 2^7-1 2^7+1 : halt
+u8.constant u8.constant 2^7-1 2^8-2^4 : halt
+u8.constant u8.constant 2^7-1 MAX-1 : halt
+u8.constant u8.constant 2^7-1 MAX : halt
+u8.constant u8.constant 2^7 2^7+1 : halt
+u8.constant u8.constant 2^7 2^8-2^4 : halt
+u8.constant u8.constant 2^7 MAX-1 : halt
+u8.constant u8.constant 2^7 MAX : halt
+u8.constant u8.constant 2^7+1 2^8-2^4 : halt
+u8.constant u8.constant 2^7+1 MAX-1 : halt
+u8.constant u8.constant 2^7+1 MAX : halt
+u8.constant u8.constant 2^8-2^4 MAX-1 : halt
+u8.constant u8.constant 2^8-2^4 MAX : halt
+u8.constant u8.constant MAX-1 MAX : halt
+u8.constant u8.public * : 0 0 9 11 28/11/10 private
+u8.constant u8.private * : 0 0 9 11 28/11/10 private
+u8.public u8.constant * : 0 0 9 11 28/11/10 private
+u8.public u8.public _ _ : 0 0 9 11 36/11/10 private
+u8.public u8.private _ _ : 0 0 9 11 36/11/10 private
+u8.private u8.constant * : 0 0 9 11 28/11/10 private
+u8.private u8.public _ _ : 0 0 9 11 36/11/10 private
+u8.private u8.private _ _ : 0 0 9 11 36/11/10 private
+u16.constant u16.constant * : 16 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 1 : halt
+u16.constant u16.constant 0 2 : halt
+u16.constant u16.constant 0 3 : halt
+u16.constant u16.constant 0 2^7-1 : halt
+u16.constant u16.constant 0 2^7 : halt
+u16.constant u16.constant 0 2^7+1 : halt
+u16.constant u16.constant 0 2^8-1 : halt
+u16.constant u16.constant 0 2^8 : halt
+u16.constant u16.constant 0 2^8+1 : halt
+u16.constant u16.constant 0 2^15-1 : halt
+u16.constant u16.constant 0 2^15 : halt
+u16.constant u16.constant 0 2^15+1 : halt
+u16.constant u16.constant 0 2^16-2^8 : halt
+u16.constant u16.constant 0 MAX-1 : halt
+u16.constant u16.constant 0 MAX : halt
+u16.constant u16.constant 1 2 : halt
+u16.constant u16.constant 1 3 : halt
+u16.constant u16.constant 1 2^7-1 : halt
+u16.constant u16.constant 1 2^7 : halt
+u16.constant u16.constant 1 2^7+1 : halt
+u16.constant u16.constant 1 2^8-1 : halt
+u16.constant u16.constant 1 2^8 : halt
+u16.constant u16.constant 1 2^8+1 : halt
+u16.constant u16.constant 1 2^15-1 : halt
+u16.constant u16.constant 1 2^15 : halt
+u16.constant u16.constant 1 2^15+1 : halt
+u16.constant u16.constant 1 2^16-2^8 : halt
+u16.constant u16.constant 1 MAX-1 : halt
+u16.constant u16.constant 1 MAX : halt
+u16.constant u16.constant 2 3 : halt
+u16.constant u16.constant 2 2^7-1 : halt
+u16.constant u16.constant 2 2^7 : halt
+u16.constant u16.constant 2 2^7+1 : halt
+u16.constant u16.constant 2 2^8-1 : halt
+u16.constant u16.constant 2 2^8 : halt
+u16.constant u16.constant 2 2^8+1 : halt
+u16.constant u16.constant 2 2^15-1 : halt
+u16.constant u16.constant 2 2^15 : halt
+u16.constant u16.constant 2 2^15+1 : halt
+u16.constant u16.constant 2 2^16-2^8 : halt
+u16.constant u16.constant 2 MAX-1 : halt
+u16.constant u16.constant 2 MAX : halt
+u16.constant u16.constant 3 2^7-1 : halt
+u16.constant u16.constant 3 2^7 : halt
+u16.constant u16.constant 3 2^7+1 : halt
+u16.constant u16.constant 3 2^8-1 : halt
+u16.constant u16.constant 3 2^8 : halt
+u16.constant u16.constant 3 2^8+1 : halt
+u16.constant u16.constant 3 2^15-1 : halt
+u16.constant u16.constant 3 2^15 : halt
+u16.constant u16.constant 3 2^15+1 : halt
+u16.constant u16.constant 3 2^16-2^8 : halt
+u16.constant u16.constant 3 MAX-1 : halt
+u16.constant u16.constant 3 MAX : halt
+u16.constant u16.constant 2^7-1 2^7 : halt
+u16.constant u16.constant 2^7-1 2^7+1 : halt
+u16.constant u16.constant 2^7-1 2^8-1 : halt
+u16.constant u16.constant 2^7-1 2^8 : halt
+u16.constant u16.constant 2^7-1 2^8+1 : halt
+u16.constant u16.constant 2^7-1 2^15-1 : halt
+u16.constant u16.constant 2^7-1 2^15 : halt
+u16.constant u16.constant 2^7-1 2^15+1 : halt
+u16.constant u16.constant 2^7-1 2^16-2^8 : halt
+u16.constant u16.constant 2^7-1 MAX-1 : halt
+u16.constant u16.constant 2^7-1 MAX : halt
+u16.constant u16.constant 2^7 2^7+1 : halt
+u16.constant u16.constant 2^7 2^8-1 : halt
+u16.constant u16.constant 2^7 2^8 : halt
+u16.constant u16.constant 2^7 2^8+1 : halt
+u16.constant u16.constant 2^7 2^15-1 : halt
+u16.constant u16.constant 2^7 2^15 : halt
+u16.constant u16.constant 2^7 2^15+1 : halt
+u16.constant u16.constant 2^7 2^16-2^8 : halt
+u16.constant u16.constant 2^7 MAX-1 : halt
+u16.constant u16.constant 2^7 MAX : halt
+u16.constant u16.constant 2^7+1 2^8-1 : halt
+u16.constant u16.constant 2^7+1 2^8 : halt
+u16.constant u16.constant 2^7+1 2^8+1 : halt
+u16.constant u16.constant 2^7+1 2^15-1 : halt
+u16.constant u16.constant 2^7+1 2^15 : halt
+u16.constant u16.constant 2^7+1 2^15+1 : halt
+u16.constant u16.constant 2^7+1 2^16-2^8 : halt
+u16.constant u16.constant 2^7+1 MAX-1 : halt
+u16.constant u16.constant 2^7+1 MAX : halt
+u16.constant u16.constant 2^8-1 2^8 : halt
+u16.constant u16.constant 2^8-1 2^8+1 : halt
+u16.constant u16.constant 2^8-1 2^15-1 : halt
+u16.constant u16.constant 2^8-1 2^15 : halt
+u16.constant u16.constant 2^8-1 2^15+1 : halt
+u16.constant u16.constant 2^8-1 2^16-2^8 : halt
+u16.constant u16.constant 2^8-1 MAX-1 : halt
+u16.constant u16.constant 2^8-1 MAX : halt
+u16.constant u16.constant 2^8 2^8+1 : halt
+u16.constant u16.constant 2^8 2^15-1 : halt
+u16.constant u16.constant 2^8 2^15 : halt
+u16.constant u16.constant 2^8 2^15+1 : halt
+u16.constant u16.constant 2^8 2^16-2^8 : halt
+u16.constant u16.constant 2^8 MAX-1 : halt
+u16.constant u16.constant 2^8 MAX : halt
+u16.constant u16.constant 2^8+1 2^15-1 : halt
+u16.constant u16.constant 2^8+1 2^15 : halt
+u16.constant u16.constant 2^8+1 2^15+1 : halt
+u16.constant u16.constant 2^8+1 2^16-2^8 : halt
+u16.constant u16.constant 2^8+1 MAX-1 : halt
+u16.constant u16.constant 2^8+1 MAX : halt
+u16.constant u16.constant 2^15-1 2^15 : halt
+u16.constant u16.constant 2^15-1 2^15+1 : halt
+u16.constant u16.constant 2^15-1 2^16-2^8 : halt
+u16.constant u16.constant 2^15-1 MAX-1 : halt
+u16.constant u16.constant 2^15-1 MAX : halt
+u16.constant u16.constant 2^15 2^15+1 : halt
+u16.constant u16.constant 2^15 2^16-2^8 : halt
+u16.constant u16.constant 2^15 MAX-1 : halt
+u16.constant u16.constant 2^15 MAX : halt
+u16.constant u16.constant 2^15+1 2^16-2^8 : halt
+u16.constant u16.constant 2^15+1 MAX-1 : halt
+u16.constant u16.constant 2^15+1 MAX : halt
+u16.constant u16.constant 2^16-2^8 MAX-1 : halt
+u16.constant u16.constant 2^16-2^8 MAX : halt
+u16.constant u16.constant MAX-1 MAX : halt
+u16.constant u16.public * : 0 0 17 19 52/19/18 private
+u16.constant u16.private * : 0 0 17 19 52/19/18 private
+u16.public u16.constant * : 0 0 17 19 52/19/18 private
+u16.public u16.public _ _ : 0 0 17 19 68/19/18 private
+u16.public u16.private _ _ : 0 0 17 19 68/19/18 private
+u16.private u16.constant * : 0 0 17 19 52/19/18 private
+u16.private u16.public _ _ : 0 0 17 19 68/19/18 private
+u16.private u16.private _ _ : 0 0 17 19 68/19/18 private
+u32.constant u32.constant * : 32 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 1 : halt
+u32.constant u32.constant 0 2 : halt
+u32.constant u32.constant 0 3 : halt
+u32.constant u32.constant 0 2^15-1 : halt
+u32.constant u32.constant 0 2^15 : halt
+u32.constant u32.constant 0 2^15+1 : halt
+u32.constant u32.constant 0 2^16-1 : halt
+u32.constant u32.constant 0 2^16 : halt
+u32.constant u32.constant 0 2^16+1 : halt
+u32.constant u32.constant 0 2^31-1 : halt
+u32.constant u32.constant 0 2^31 : halt
+u32.constant u32.constant 0 2^31+1 : halt
+u32.constant u32.constant 0 2^32-2^16 : halt
+u32.constant u32.constant 0 MAX-1 : halt
+u32.constant u32.constant 0 MAX : halt
+u32.constant u32.constant 1 2 : halt
+u32.constant u32.constant 1 3 : halt
+u32.constant u32.constant 1 2^15-1 : halt
+u32.constant u32.constant 1 2^15 : halt
+u32.constant u32.constant 1 2^15+1 : halt
+u32.constant u32.constant 1 2^16-1 : halt
+u32.constant u32.constant 1 2^16 : halt
+u32.constant u32.constant 1 2^16+1 : halt
+u32.constant u32.constant 1 2^31-1 : halt
+u32.constant u32.constant 1 2^31 : halt
+u32.constant u32.constant 1 2^31+1 : halt
+u32.constant u32.constant 1 2^32-2^16 : halt
+u32.constant u32.constant 1 MAX-1 : halt
+u32.constant u32.constant 1 MAX : halt
+u32.constant u32.constant 2 3 : halt
+u32.constant u32.constant 2 2^15-1 : halt
+u32.constant u32.constant 2 2^15 : halt
+u32.constant u32.constant 2 2^15+1 : halt
+u32.constant u32.constant 2 2^16-1 : halt
+u32.constant u32.constant 2 2^16 : halt
+u32.constant u32.constant 2 2^16+1 : halt
+u32.constant u32.constant 2 2^31-1 : halt
+u32.constant u32.constant 2 2^31 : halt
+u32.constant u32.constant 2 2^31+1 : halt
+u32.constant u32.constant 2 2^32-2^16 : halt
+u32.constant u32.constant 2 MAX-1 : halt
+u32.constant u32.constant 2 MAX : halt
+u32.constant u32.constant 3 2^15-1 : halt
+u32.constant u32.constant 3 2^15 : halt
+u32.constant u32.constant 3 2^15+1 : halt
+u32.constant u32.constant 3 2^16-1 : halt
+u32.constant u32.constant 3 2^16 : halt
+u32.constant u32.constant 3 2^16+1 : halt
+u32.constant u32.constant 3 2^31-1 : halt
+u32.constant u32.constant 3 2^31 : halt
+u32.constant u32.constant 3 2^31+1 : halt
+u32.constant u32.constant 3 2^32-2^16 : halt
+u32.constant u32.constant 3 MAX-1 : halt
+u32.constant u32.constant 3 MAX : halt
+u32.constant u32.constant 2^15-1 2^15 : halt
+u32.constant u32.constant 2^15-1 2^15+1 : halt
+u32.constant u32.constant 2^15-1 2^16-1 : halt
+u32.constant u32.constant 2^15-1 2^16 : halt
+u32.constant u32.constant 2^15-1 2^16+1 : halt
+u32.constant u32.constant 2^15-1 2^31-1 : halt
+u32.constant u32.constant 2^15-1 2^31 : halt
+u32.constant u32.constant 2^15-1 2^31+1 : halt
+u32.constant u32.constant 2^15-1 2^32-2^16 : halt
+u32.constant u32.constant 2^15-1 MAX-1 : halt
+u32.constant u32.constant 2^15-1 MAX : halt
+u32.constant u32.constant 2^15 2^15+1 : halt
+u32.constant u32.constant 2^15 2^16-1 : halt
+u32.constant u32.constant 2^15 2^16 : halt
+u32.constant u32.constant 2^15 2^16+1 : halt
+u32.constant u32.constant 2^15 2^31-1 : halt
+u32.constant u32.constant 2^15 2^31 : halt
+u32.constant u32.constant 2^15 2^31+1 : halt
+u32.constant u32.constant 2^15 2^32-2^16 : halt
+u32.constant u32.constant 2^15 MAX-1 : halt
+u32.constant u32.constant 2^15 MAX : halt
+u32.constant u32.constant 2^15+1 2^16-1 : halt
+u32.constant u32.constant 2^15+1 2^16 : halt
+u32.constant u32.constant 2^15+1 2^16+1 : halt
+u32.constant u32.constant 2^15+1 2^31-1 : halt
+u32.constant u32.constant 2^15+1 2^31 : halt
+u32.constant u32.constant 2^15+1 2^31+1 : halt
+u32.constant u32.constant 2^15+1 2^32-2^16 : halt
+u32.constant u32.constant 2^15+1 MAX-1 : halt
+u32.constant u32.constant 2^15+1 MAX : halt
+u32.constant u32.constant 2^16-1 2^16 : halt
+u32.constant u32.constant 2^16-1 2^16+1 : halt
+u32.constant u32.constant 2^16-1 2^31-1 : halt
+u32.constant u32.constant 2^16-1 2^31 : halt
+u32.constant u32.constant 2^16-1 2^31+1 : halt
+u32.constant u32.constant 2^16-1 2^32-2^16 : halt
+u32.constant u32.constant 2^16-1 MAX-1 : halt
+u32.constant u32.constant 2^16-1 MAX : halt
+u32.constant u32.constant 2^16 2^16+1 : halt
+u32.constant u32.constant 2^16 2^31-1 : halt
+u32.constant u32.constant 2^16 2^31 : halt
+u32.constant u32.constant 2^16 2^31+1 : halt
+u32.constant u32.constant 2^16 2^32-2^16 : halt
+u32.constant u32.constant 2^16 MAX-1 : halt
+u32.constant u32.constant 2^16 MAX : halt
+u32.constant u32.constant 2^16+1 2^31-1 : halt
+u32.constant u32.constant 2^16+1 2^31 : halt
+u32.constant u32.constant 2^16+1 2^31+1 : halt
+u32.constant u32.constant 2^16+1 2^32-2^16 : halt
+u32.constant u32.constant 2^16+1 MAX-1 : halt
+u32.constant u32.constant 2^16+1 MAX : halt
+u32.constant u32.constant 2^31-1 2^31 : halt
+u32.constant u32.constant 2^31-1 2^31+1 : halt
+u32.constant u32.constant 2^31-1 2^32-2^16 : halt
+u32.constant u32.constant 2^31-1 MAX-1 : halt
+u32.constant u32.constant 2^31-1 MAX : halt
+u32.constant u32.constant 2^31 2^31+1 : halt
+u32.constant u32.constant 2^31 2^32-2^16 : halt
+u32.constant u32.constant 2^31 MAX-1 : halt
+u32.constant u32.constant 2^31 MAX : halt
+u32.constant u32.constant 2^31+1 2^32-2^16 : halt
+u32.constant u32.constant 2^31+1 MAX-1 : halt
+u32.constant u32.constant 2^31+1 MAX : halt
+u32.constant u32.constant 2^32-2^16 MAX-1 : halt
+u32.constant u32.constant 2^32-2^16 MAX : halt
+u32.constant u32.constant MAX-1 MAX : halt
+u32.constant u32.public * : 0 0 33 35 100/35/34 private
+u32.constant u32.private * : 0 0 33 35 100/35/34 private
+u32.public u32.constant * : 0 0 33 35 100/35/34 private
+u32.public u32.public _ _ : 0 0 33 35 132/35/34 private
+u32.public u32.private _ _ : 0 0 33 35 132/35/34 private
+u32.private u32.constant * : 0 0 33 35 100/35/34 private
+u32.private u32.public _ _ : 0 0 33 35 132/35/34 private
+u32.private u32.private _ _ : 0 0 33 35 132/35/34 private
+u64.constant u64.constant * : 64 0 0 0 0/0/0 constant
+u64.constant u64.constant 0 1 : halt
+u64.constant u64.constant 0 2 : halt
+u64.constant u64.constant 0 3 : halt
+u64.constant u64.constant 0 2^31-1 : halt
+u64.constant u64.constant 0 2^31 : halt
+u64.constant u64.constant 0 2^31+1 : halt
+u64.constant u64.constant 0 2^32-1 : halt
+u64.constant u64.constant 0 2^32 : halt
+u64.constant u64.constant 0 2^32+1 : halt
+u64.constant u64.constant 0 2^63-1 : halt
+u64.constant u64.constant 0 2^63 : halt
+u64.constant u64.constant 0 2^63+1 : halt
+u64.constant u64.constant 0 2^64-2^32 : halt
+u64.constant u64.constant 0 MAX-1 : halt
+u64.constant u64.constant 0 MAX : halt
+u64.constant u64.constant 1 2 : halt
+u64.constant u64.constant 1 3 : halt
+u64.constant u64.constant 1 2^31-1 : halt
+u64.constant u64.constant 1 2^31 : halt
+u64.constant u64.constant 1 2^31+1 : halt
+u64.constant u64.constant 1 2^32-1 : halt
+u64.constant u64.constant 1 2^32 : halt
+u64.constant u64.constant 1 2^32+1 : halt
+u64.constant u64.constant 1 2^63-1 : halt
+u64.constant u64.constant 1 2^63 : halt
+u64.constant u64.constant 1 2^63+1 : halt
+u64.constant u64.constant 1 2^64-2^32 : halt
+u64.constant u64.constant 1 MAX-1 : halt
+u64.constant u64.constant 1 MAX : halt
+u64.constant u64.constant 2 3 : halt
+u64.constant u64.constant 2 2^31-1 : halt
+u64.constant u64.constant 2 2^31 : halt
+u64.constant u64.constant 2 2^31+1 : halt
+u64.constant u64.constant 2 2^32-1 : halt
+u64.constant u64.constant 2 2^32 : halt
+u64.constant u64.constant 2 2^32+1 : halt
+u64.constant u64.constant 2 2^63-1 : halt
+u64.constant u64.constant 2 2^63 : halt
+u64.constant u64.constant 2 2^63+1 : halt
+u64.constant u64.constant 2 2^64-2^32 : halt
+u64.constant u64.constant 2 MAX-1 : halt
+u64.constant u64.constant 2 MAX : halt
+u64.constant u64.constant 3 2^31-1 : halt
+u64.constant u64.constant 3 2^31 : halt
+u64.constant u64.constant 3 2^31+1 : halt
+u64.constant u64.constant 3 2^32-1 : halt
+u64.constant u64.constant 3 2^32 : halt
+u64.constant u64.constant 3 2^32+1 : halt
+u64.constant u64.constant 3 2^63-1 : halt
+u64.constant u64.constant 3 2^63 : halt
+u64.constant u64.constant 3 2^63+1 : halt
+u64.constant u64.constant 3 2^64-2^32 : halt
+u64.constant u64.constant 3 MAX-1 : halt
+u64.constant u64.constant 3 MAX : halt
+u64.constant u64.constant 2^31-1 2^31 : halt
+u64.constant u64.constant 2^31-1 2^31+1 : halt
+u64.constant u64.constant 2^31-1 2^32-1 : halt
+u64.constant u64.constant 2^31-1 2^32 : halt
+u64.constant u64.constant 2^31-1 2^32+1 : halt
+u64.constant u64.constant 2^31-1 2^63-1 : halt
+u64.constant u64.constant 2^31-1 2^63 : halt
+u64.constant u64.constant 2^31-1 2^63+1 : halt
+u64.constant u64.constant 2^31-1 2^64-2^32 : halt
+u64.constant u64.constant 2^31-1 MAX-1 : halt
+u64.constant u64.constant 2^31-1 MAX : halt
+u64.constant u64.constant 2^31 2^31+1 : halt
+u64.constant u64.constant 2^31 2^32-1 : halt
+u64.constant u64.constant 2^31 2^32 : halt
+u64.constant u64.constant 2^31 2^32+1 : halt
+u64.constant u64.constant 2^31 2^63-1 : halt
+u64.constant u64.constant 2^31 2^63 : halt
+u64.constant u64.constant 2^31 2^63+1 : halt
+u64.constant u64.constant 2^31 2^64-2^32 : halt
+u64.constant u64.constant 2^31 MAX-1 : halt
+u64.constant u64.constant 2^31 MAX : halt
+u64.constant u64.constant 2^31+1 2^32-1 : halt
+u64.constant u64.constant 2^31+1 2^32 : halt
+u64.constant u64.constant 2^31+1 2^32+1 : halt
+u64.constant u64.constant 2^31+1 2^63-1 : halt
+u64.constant u64.constant 2^31+1 2^63 : halt
+u64.constant u64.constant 2^31+1 2^63+1 : halt
+u64.constant u64.constant 2^31+1 2^64-2^32 : halt
+u64.constant u64.constant 2^31+1 MAX-1 : halt
+u64.constant u64.constant 2^31+1 MAX : halt
+u64.constant u64.constant 2^32-1 2^32 : halt
+u64.constant u64.constant 2^32-1 2^32+1 : halt
+u64.constant u64.constant 2^32-1 2^63-1 : halt
+u64.constant u64.constant 2^32-1 2^63 : halt
+u64.constant u64.constant 2^32-1 2^63+1 : halt
+u64.constant u64.constant 2^32-1 2^64-2^32 : halt
+u64.constant u64.constant 2^32-1 MAX-1 : halt
+u64.constant u64.constant 2^32-1 MAX : halt
+u64.constant u64.constant 2^32 2^32+1 : halt
+u64.constant u64.constant 2^32 2^63-1 : halt
+u64.constant u64.constant 2^32 2^63 : halt
+u64.constant u64.constant 2^32 2^63+1 : halt
+u64.constant u64.constant 2^32 2^64-2^32 : halt
+u64.constant u64.constant 2^32 MAX-1 : halt
+u64.constant u64.constant 2^32 MAX : halt
+u64.constant u64.constant 2^32+1 2^63-1 : halt
+u64.constant u64.constant 2^32+1 2^63 : halt
+u64.constant u64.constant 2^32+1 2^63+1 : halt
+u64.constant u64.constant 2^32+1 2^64-2^32 : halt
+u64.constant u64.constant 2^32+1 MAX-1 : halt
+u64.constant u64.constant 2^32+1 MAX : halt
+u64.constant u64.constant 2^63-1 2^63 : halt
+u64.constant u64.constant 2^63-1 2^63+1 : halt
+u64.constant u64.constant 2^63-1 2^64-2^32 : halt
+u64.constant u64.constant 2^63-1 MAX-1 : halt
+u64.constant u64.constant 2^63-1 MAX : halt
+u64.constant u64.constant 2^63 2^63+1 : halt
+u64.constant u64.constant 2^63 2^64-2^32 : halt
+u64.constant u64.constant 2^63 MAX-1 : halt
+u64.constant u64.constant 2^63 MAX : halt
+u64.constant u64.constant 2^63+1 2^64-2^32 : halt
+u64.constant u64.constant 2^63+1 MAX-1 : halt
+u64.constant u64.constant 2^63+1 MAX : halt
+u64.constant u64.constant 2^64-2^32 MAX-1 : halt
+u64.constant u64.constant 2^64-2^32 MAX : halt
+u64.constant u64.constant MAX-1 MAX : halt
+u64.constant u64.public * : 0 0 65 67 196/67/66 private
+u64.constant u64.private * : 0 0 65 67 196/67/66 private
+u64.public u64.constant * : 0 0 65 67 196/67/66 private
+u64.public u64.public _ _ : 0 0 65 67 260/67/66 private
+u64.public u64.private _ _ : 0 0 65 67 260/67/66 private
+u64.private u64.constant * : 0 0 65 67 196/67/66 private
+u64.private u64.public _ _ : 0 0 65 67 260/67/66 private
+u64.private u64.private _ _ : 0 0 65 67 260/67/66 private
+u128.constant u128.constant * : 128 0 0 0 0/0/0 constant
+u128.constant u128.constant 0 1 : halt
+u128.constant u128.constant 0 2 : halt
+u128.constant u128.constant 0 3 : halt
+u128.constant u128.constant 0 2^63-1 : halt
+u128.constant u128.constant 0 2^63 : halt
+u128.constant u128.constant 0 2^63+1 : halt
+u128.constant u128.constant 0 2^64-1 : halt
+u128.constant u128.constant 0 2^64 : halt
+u128.constant u128.constant 0 2^64+1 : halt
+u128.constant u128.constant 0 2^127-1 : halt
+u128.constant u128.constant 0 2^127 : halt
+u128.constant u128.constant 0 2^127+1 : halt
+u128.constant u128.constant 0 2^128-2^64 : halt
+u128.constant u128.constant 0 MAX-1 : halt
+u128.constant u128.constant 0 MAX : halt
+u128.constant u128.constant 1 2 : halt
+u128.constant u128.constant 1 3 : halt
+u128.constant u128.constant 1 2^63-1 : halt
+u128.constant u128.constant 1 2^63 : halt
+u128.constant u128.constant 1 2^63+1 : halt
+u128.constant u128.constant 1 2^64-1 : halt
+u128.constant u128.constant 1 2^64 : halt
+u128.constant u128.constant 1 2^64+1 : halt
+u128.constant u128.constant 1 2^127-1 : halt
+u128.constant u128.constant 1 2^127 : halt
+u128.constant u128.constant 1 2^127+1 : halt
+u128.constant u128.constant 1 2^128-2^64 : halt
+u128.constant u128.constant 1 MAX-1 : halt
+u128.constant u128.constant 1 MAX : halt
+u128.constant u128.constant 2 3 : halt
+u128.constant u128.constant 2 2^63-1 : halt
+u128.constant u128.constant 2 2^63 : halt
+u128.constant u128.constant 2 2^63+1 : halt
+u128.constant u128.constant 2 2^64-1 : halt
+u128.constant u128.constant 2 2^64 : halt
+u128.constant u128.constant 2 2^64+1 : halt
+u128.constant u128.constant 2 2^127-1 : halt
+u128.constant u128.constant 2 2^127 : halt
+u128.constant u128.constant 2 2^127+1 : halt
+u128.constant u128.constant 2 2^128-2^64 : halt
+u128.constant u128.constant 2 MAX-1 : halt
+u128.constant u128.constant 2 MAX : halt
+u128.constant u128.constant 3 2^63-1 : halt
+u128.constant u128.constant 3 2^63 : halt
+u128.constant u128.constant 3 2^63+1 : halt
+u128.constant u128.constant 3 2^64-1 : halt
+u128.constant u128.constant 3 2^64 : halt
+u128.constant u128.constant 3 2^64+1 : halt
+u128.constant u128.constant 3 2^127-1 : halt
+u128.constant u128.constant 3 2^127 : halt
+u128.constant u128.constant 3 2^127+1 : halt
+u128.constant u128.constant 3 2^128-2^64 : halt
+u128.constant u128.constant 3 MAX-1 : halt
+u128.constant u128.constant 3 MAX : halt
+u128.constant u128.constant 2^63-1 2^63 : halt
+u128.constant u128.constant 2^63-1 2^63+1 : halt
+u128.constant u128.constant 2^63-1 2^64-1 : halt
+u128.constant u128.constant 2^63-1 2^64 : halt
+u128.constant u128.constant 2^63-1 2^64+1 : halt
+u128.constant u128.constant 2^63-1 2^127-1 : halt
+u128.constant u128.constant 2^63-1 2^127 : halt
+u128.constant u128.constant 2^63-1 2^127+1 : halt
+u128.constant u128.constant 2^63-1 2^128-2^64 : halt
+u128.constant u128.constant 2^63-1 MAX-1 : halt
+u128.constant u128.constant 2^63-1 MAX : halt
+u128.constant u128.constant 2^63 2^63+1 : halt
+u128.constant u128.constant 2^63 2^64-1 : halt
+u128.constant u128.constant 2^63 2^64 : halt
+u128.constant u128.constant 2^63 2^64+1 : halt
+u128.constant u128.constant 2^63 2^127-1 : halt
+u128.constant u128.constant 2^63 2^127 : halt
+u128.constant u128.constant 2^63 2^127+1 : halt
+u128.constant u128.constant 2^63 2^128-2^64 : halt
+u128.constant u128.constant 2^63 MAX-1 : halt
+u128.constant u128.constant 2^63 MAX : halt
+u128.constant u128.constant 2^63+1 2^64-1 : halt
+u128.constant u128.constant 2^63+1 2^64 : halt
+u128.constant u128.constant 2^63+1 2^64+1 : halt
+u128.constant u128.constant 2^63+1 2^127-1 : halt
+u128.constant u128.constant 2^63+1 2^127 : halt
+u128.constant u128.constant 2^63+1 2^127+1 : halt
+u128.constant u128.constant 2^63+1 2^128-2^64 : halt
+u128.constant u128.constant 2^63+1 MAX-1 : halt
+u128.constant u128.constant 2^63+1 MAX : halt
+u128.constant u128.constant 2^64-1 2^64 : halt
+u128.constant u128.constant 2^64-1 2^64+1 : halt
+u128.constant u128.constant 2^64-1 2^127-1 : halt
+u128.constant u128.constant 2^64-1 2^127 : halt
+u128.constant u128.constant 2^64-1 2^127+1 : halt
+u128.constant u128.constant 2^64-1 2^128-2^64 : halt
+u128.constant u128.constant 2^64-1 MAX-1 : halt
+u128.constant u128.constant 2^64-1 MAX : halt
+u128.constant u128.constant 2^64 2^64+1 : halt
+u128.constant u128.constant 2^64 2^127-1 : halt
+u128.constant u128.constant 2^64 2^127 : halt
+u128.constant u128.constant 2^64 2^127+1 : halt
+u128.constant u128.constant 2^64 2^128-2^64 : halt
+u128.constant u128.constant 2^64 MAX-1 : halt
+u128.constant u128.constant 2^64 MAX : halt
+u128.constant u128.constant 2^64+1 2^127-1 : halt
+u128.constant u128.constant 2^64+1 2^127 : halt
+u128.constant u128.constant 2^64+1 2^127+1 : halt
+u128.constant u128.constant 2^64+1 2^128-2^64 : halt
+u128.constant u128.constant 2^64+1 MAX-1 : halt
+u128.constant u128.constant 2^64+1 MAX : halt
+u128.constant u128.constant 2^127-1 2^127 : halt
+u128.constant u128.constant 2^127-1 2^127+1 : halt
+u128.constant u128.constant 2^127-1 2^128-2^64 : halt
+u128.constant u128.constant 2^127-1 MAX-1 : halt
+u128.constant u128.constant 2^127-1 MAX : halt
+u128.constant u128.constant 2^127 2^127+1 : halt
+u128.constant u128.constant 2^127 2^128-2^64 : halt
+u128.constant u128.constant 2^127 MAX-1 : halt
+u128.constant u128.constant 2^127 MAX : halt
+u128.constant u128.constant 2^127+1 2^128-2^64 : halt
+u128.constant u128.constant 2^127+1 MAX-1 : halt
+u128.constant u128.constant 2^127+1 MAX : halt
+u128.constant u128.constant 2^128-2^64 MAX-1 : halt
+u128.constant u128.constant 2^128-2^64 MAX : halt
+u128.constant u128.constant MAX-1 MAX : halt
+u128.constant u128.public * : 0 0 129 131 388/131/130 private
+u128.constant u128.private * : 0 0 129 131 388/131/130 private
+u128.public u128.constant * : 0 0 129 131 388/131/130 private
+u128.public u128.public _ _ : 0 0 129 131 516/131/130 private
+u128.public u128.private _ _ : 0 0 129 131 516/131/130 private
+u128.private u128.constant * : 0 0 129 131 388/131/130 private
+u128.private u128.public _ _ : 0 0 129 131 516/131/130 private
+u128.private u128.private _ _ : 0 0 129 131 516/131/130 private
+i8.constant i8.constant * : 8 0 0 0 0/0/0 constant
+i8.constant i8.constant MIN 1 : halt
+i8.constant i8.constant MIN 2 : halt
+i8.constant i8.constant MIN 3 : halt
+i8.constant i8.constant MIN 2^3-1 : halt
+i8.constant i8.constant MIN 2^3 : halt
+i8.constant i8.constant MIN 2^3+1 : halt
+i8.constant i8.constant MIN 2^4-1 : halt
+i8.constant i8.constant MIN 2^4 : halt
+i8.constant i8.constant MIN 2^4+1 : halt
+i8.constant i8.constant MIN 2^6-1 : halt
+i8.constant i8.constant MIN 2^6 : halt
+i8.constant i8.constant MIN 2^6+1 : halt
+i8.constant i8.constant MIN MAX-1 : halt
+i8.constant i8.constant MIN MAX : halt
+i8.constant i8.constant MIN+1 2 : halt
+i8.constant i8.constant MIN+1 3 : halt
+i8.constant i8.constant MIN+1 2^3-1 : halt
+i8.constant i8.constant MIN+1 2^3 : halt
+i8.constant i8.constant MIN+1 2^3+1 : halt
+i8.constant i8.constant MIN+1 2^4-1 : halt
+i8.constant i8.constant MIN+1 2^4 : halt
+i8.constant i8.constant MIN+1 2^4+1 : halt
+i8.constant i8.constant MIN+1 2^6-1 : halt
+i8.constant i8.constant MIN+1 2^6 : halt
+i8.constant i8.constant MIN+1 2^6+1 : halt
+i8.constant i8.constant MIN+1 MAX-1 : halt
+i8.constant i8.constant MIN+1 MAX : halt
+i8.constant i8.constant -2^4-1 MAX-1 : halt
+i8.constant i8.constant -2^4-1 MAX : halt
+i8.constant i8.constant -2^4 MAX-1 : halt
+i8.constant i8.constant -2^4 MAX : halt
+i8.constant i8.constant -2^4+1 MAX-1 : halt
+i8.constant i8.constant -2^4+1 MAX : halt
+i8.constant i8.constant -2 MAX : halt
+i8.constant i8.constant 0 MIN : halt
+i8.constant i8.constant 1 MIN : halt
+i8.constant i8.constant 1 MIN+1 : halt
+i8.constant i8.constant 2 MIN : halt
+i8.constant i8.constant 2 MIN+1 : halt
+i8.constant i8.constant 3 MIN : halt
+i8.constant i8.constant 3 MIN+1 : halt
+i8.constant i8.constant 2^3-1 MIN : halt
+i8.constant i8.constant 2^3-1 MIN+1 : halt
+i8.constant i8.constant 2^3 MIN : halt
+i8.constant i8.constant 2^3 MIN+1 : halt
+i8.constant i8.constant 2^3+1 MIN : halt
+i8.constant i8.constant 2^3+1 MIN+1 : halt
+i8.constant i8.constant 2^4-1 MIN : halt
+i8.constant i8.constant 2^4-1 MIN+1 : halt
+i8.constant i8.constant 2^4 MIN : halt
+i8.constant i8.constant 2^4 MIN+1 : halt
+i8.constant i8.constant 2^4+1 MIN : halt
+i8.constant i8.constant 2^4+1 MIN+1 : halt
+i8.constant i8.constant 2^6-1 MIN : halt
+i8.constant i8.constant 2^6-1 MIN+1 : halt
+i8.constant i8.constant 2^6 MIN : halt
+i8.constant i8.constant 2^6 MIN+1 : halt
+i8.constant i8.constant 2^6+1 MIN : halt
+i8.constant i8.constant 2^6+1 MIN+1 : halt
+i8.constant i8.constant MAX-1 MIN : halt
+i8.constant i8.constant MAX-1 MIN+1 : halt
+i8.constant i8.constant MAX-1 -2^4-1 : halt
+i8.constant i8.constant MAX-1 -2^4 : halt
+i8.constant i8.constant MAX-1 -2^4+1 : halt
+i8.constant i8.constant MAX-1 -2 : halt
+i8.constant i8.constant MAX MIN : halt
+i8.constant i8.constant MAX MIN+1 : halt
+i8.constant i8.constant MAX -2^4-1 : halt
+i8.constant i8.constant MAX -2^4 : halt
+i8.constant i8.constant MAX -2^4+1 : halt
+i8.constant i8.constant MAX -2 : halt
+i8.constant i8.constant MAX -1 : halt
+i8.constant i8.public * : 0 0 11 13 30/14/13 private
+i8.constant i8.public MIN _ : 0 0 11 13 31/14/13 private
+i8.constant i8.public MIN+1 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.public -2^4-1 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.public -2^4 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.public -2^4+1 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.public -2 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.public -1 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.private * : 0 0 11 13 30/14/13 private
+i8.constant i8.private MIN _ : 0 0 11 13 31/14/13 private
+i8.constant i8.private MIN+1 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.private -2^4-1 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.private -2^4 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.private -2^4+1 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.private -2 _ : 0 0 11 13 31/14/13 private
+i8.constant i8.private -1 _ : 0 0 11 13 31/14/13 private
+i8.public i8.constant * : 0 0 10 12 29/13/10 private
+i8.public i8.constant _ MIN : 0 0 10 12 30/12/10 private
+i8.public i8.constant _ MIN+1 : 0 0 10 12 30/12/10 private
+i8.public i8.constant _ -2^4-1 : 0 0 10 12 30/12/10 private
+i8.public i8.constant _ -2^4 : 0 0 10 12 30/12/10 private
+i8.public i8.constant _ -2^4+1 : 0 0 10 12 30/12/10 private
+i8.public i8.constant _ -2 : 0 0 10 12 30/12/10 private
+i8.public i8.constant _ -1 : 0 0 10 12 30/12/10 private
+i8.public i8.public _ _ : 0 0 12 14 39/15/16 private
+i8.public i8.private _ _ : 0 0 12 14 39/15/16 private
+i8.private i8.constant * : 0 0 10 12 29/13/10 private
+i8.private i8.constant _ MIN : 0 0 10 12 30/12/10 private
+i8.private i8.constant _ MIN+1 : 0 0 10 12 30/12/10 private
+i8.private i8.constant _ -2^4-1 : 0 0 10 12 30/12/10 private
+i8.private i8.constant _ -2^4 : 0 0 10 12 30/12/10 private
+i8.private i8.constant _ -2^4+1 : 0 0 10 12 30/12/10 private
+i8.private i8.constant _ -2 : 0 0 10 12 30/12/10 private
+i8.private i8.constant _ -1 : 0 0 10 12 30/12/10 private
+i8.private i8.public _ _ : 0 0 12 14 39/15/16 private
+i8.private i8.private _ _ : 0 0 12 14 39/15/16 private
+i16.constant i16.constant * : 16 0 0 0 0/0/0 constant
+i16.constant i16.constant MIN 1 : halt
+i16.constant i16.constant MIN 2 : halt
+i16.constant i16.constant MIN 3 : halt
+i16.constant i16.constant MIN 2^7-1 : halt
+i16.constant i16.constant MIN 2^7 : halt
+i16.constant i16.constant MIN 2^7+1 : halt
+i16.constant i16.constant MIN 2^8-1 : halt
+i16.constant i16.constant MIN 2^8 : halt
+i16.constant i16.constant MIN 2^8+1 : halt
+i16.constant i16.constant MIN 2^14-1 : halt
+i16.constant i16.constant MIN 2^14 : halt
+i16.constant i16.constant MIN 2^14+1 : halt
+i16.constant i16.constant MIN MAX-1 : halt
+i16.constant i16.constant MIN MAX : halt
+i16.constant i16.constant MIN+1 2 : halt
+i16.constant i16.constant MIN+1 3 : halt
+i16.constant i16.constant MIN+1 2^7-1 : halt
+i16.constant i16.constant MIN+1 2^7 : halt
+i16.constant i16.constant MIN+1 2^7+1 : halt
+i16.constant i16.constant MIN+1 2^8-1 : halt
+i16.constant i16.constant MIN+1 2^8 : halt
+i16.constant i16.constant MIN+1 2^8+1 : halt
+i16.constant i16.constant MIN+1 2^14-1 : halt
+i16.constant i16.constant MIN+1 2^14 : halt
+i16.constant i16.constant MIN+1 2^14+1 : halt
+i16.constant i16.constant MIN+1 MAX-1 : halt
+i16.constant i16.constant MIN+1 MAX : halt
+i16.constant i16.constant -2^8-1 MAX-1 : halt
+i16.constant i16.constant -2^8-1 MAX : halt
+i16.constant i16.constant -2^8 MAX-1 : halt
+i16.constant i16.constant -2^8 MAX : halt
+i16.constant i16.constant -2^8+1 MAX-1 : halt
+i16.constant i16.constant -2^8+1 MAX : halt
+i16.constant i16.constant -2 MAX : halt
+i16.constant i16.constant 0 MIN : halt
+i16.constant i16.constant 1 MIN : halt
+i16.constant i16.constant 1 MIN+1 : halt
+i16.constant i16.constant 2 MIN : halt
+i16.constant i16.constant 2 MIN+1 : halt
+i16.constant i16.constant 3 MIN : halt
+i16.constant i16.constant 3 MIN+1 : halt
+i16.constant i16.constant 2^7-1 MIN : halt
+i16.constant i16.constant 2^7-1 MIN+1 : halt
+i16.constant i16.constant 2^7 MIN : halt
+i16.constant i16.constant 2^7 MIN+1 : halt
+i16.constant i16.constant 2^7+1 MIN : halt
+i16.constant i16.constant 2^7+1 MIN+1 : halt
+i16.constant i16.constant 2^8-1 MIN : halt
+i16.constant i16.constant 2^8-1 MIN+1 : halt
+i16.constant i16.constant 2^8 MIN : halt
+i16.constant i16.constant 2^8 MIN+1 : halt
+i16.constant i16.constant 2^8+1 MIN : halt
+i16.constant i16.constant 2^8+1 MIN+1 : halt
+i16.constant i16.constant 2^14-1 MIN : halt
+i16.constant i16.constant 2^14-1 MIN+1 : halt
+i16.constant i16.constant 2^14 MIN : halt
+i16.constant i16.constant 2^14 MIN+1 : halt
+i16.constant i16.constant 2^14+1 MIN : halt
+i16.constant i16.constant 2^14+1 MIN+1 : halt
+i16.constant i16.constant MAX-1 MIN : halt
+i16.constant i16.constant MAX-1 MIN+1 : halt
+i16.constant i16.constant MAX-1 -2^8-1 : halt
+i16.constant i16.constant MAX-1 -2^8 : halt
+i16.constant i16.constant MAX-1 -2^8+1 : halt
+i16.constant i16.constant MAX-1 -2 : halt
+i16.constant i16.constant MAX MIN : halt
+i16.constant i16.constant MAX MIN+1 : halt
+i16.constant i16.constant MAX -2^8-1 : halt
+i16.constant i16.constant MAX -2^8 : halt
+i16.constant i16.constant MAX -2^8+1 : halt
+i16.constant i16.constant MAX -2 : halt
+i16.constant i16.constant MAX -1 : halt
+i16.constant i16.public * : 0 0 19 21 54/22/21 private
+i16.constant i16.public MIN _ : 0 0 19 21 55/22/21 private
+i16.constant i16.public MIN+1 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.public -2^8-1 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.public -2^8 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.public -2^8+1 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.public -2 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.public -1 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.private * : 0 0 19 21 54/22/21 private
+i16.constant i16.private MIN _ : 0 0 19 21 55/22/21 private
+i16.constant i16.private MIN+1 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.private -2^8-1 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.private -2^8 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.private -2^8+1 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.private -2 _ : 0 0 19 21 55/22/21 private
+i16.constant i16.private -1 _ : 0 0 19 21 55/22/21 private
+i16.public i16.constant * : 0 0 18 20 53/21/18 private
+i16.public i16.constant _ MIN : 0 0 18 20 54/20/18 private
+i16.public i16.constant _ MIN+1 : 0 0 18 20 54/20/18 private
+i16.public i16.constant _ -2^8-1 : 0 0 18 20 54/20/18 private
+i16.public i16.constant _ -2^8 : 0 0 18 20 54/20/18 private
+i16.public i16.constant _ -2^8+1 : 0 0 18 20 54/20/18 private
+i16.public i16.constant _ -2 : 0 0 18 20 54/20/18 private
+i16.public i16.constant _ -1 : 0 0 18 20 54/20/18 private
+i16.public i16.public _ _ : 0 0 20 22 71/23/24 private
+i16.public i16.private _ _ : 0 0 20 22 71/23/24 private
+i16.private i16.constant * : 0 0 18 20 53/21/18 private
+i16.private i16.constant _ MIN : 0 0 18 20 54/20/18 private
+i16.private i16.constant _ MIN+1 : 0 0 18 20 54/20/18 private
+i16.private i16.constant _ -2^8-1 : 0 0 18 20 54/20/18 private
+i16.private i16.constant _ -2^8 : 0 0 18 20 54/20/18 private
+i16.private i16.constant _ -2^8+1 : 0 0 18 20 54/20/18 private
+i16.private i16.constant _ -2 : 0 0 18 20 54/20/18 private
+i16.private i16.constant _ -1 : 0 0 18 20 54/20/18 private
+i16.private i16.public _ _ : 0 0 20 22 71/23/24 private
+i16.private i16.private _ _ : 0 0 20 22 71/23/24 private
+i32.constant i32.constant * : 32 0 0 0 0/0/0 constant
+i32.constant i32.constant MIN 1 : halt
+i32.constant i32.constant MIN 2 : halt
+i32.constant i32.constant MIN 3 : halt
+i32.constant i32.constant MIN 2^15-1 : halt
+i32.constant i32.constant MIN 2^15 : halt
+i32.constant i32.constant MIN 2^15+1 : halt
+i32.constant i32.constant MIN 2^16-1 : halt
+i32.constant i32.constant MIN 2^16 : halt
+i32.constant i32.constant MIN 2^16+1 : halt
+i32.constant i32.constant MIN 2^30-1 : halt
+i32.constant i32.constant MIN 2^30 : halt
+i32.constant i32.constant MIN 2^30+1 : halt
+i32.constant i32.constant MIN MAX-1 : halt
+i32.constant i32.constant MIN MAX : halt
+i32.constant i32.constant MIN+1 2 : halt
+i32.constant i32.constant MIN+1 3 : halt
+i32.constant i32.constant MIN+1 2^15-1 : halt
+i32.constant i32.constant MIN+1 2^15 : halt
+i32.constant i32.constant MIN+1 2^15+1 : halt
+i32.constant i32.constant MIN+1 2^16-1 : halt
+i32.constant i32.constant MIN+1 2^16 : halt
+i32.constant i32.constant MIN+1 2^16+1 : halt
+i32.constant i32.constant MIN+1 2^30-1 : halt
+i32.constant i32.constant MIN+1 2^30 : halt
+i32.constant i32.constant MIN+1 2^30+1 : halt
+i32.constant i32.constant MIN+1 MAX-1 : halt
+i32.constant i32.constant MIN+1 MAX : halt
+i32.constant i32.constant -2^16-1 MAX-1 : halt
+i32.constant i32.constant -2^16-1 MAX : halt
+i32.constant i32.constant -2^16 MAX-1 : halt
+i32.constant i32.constant -2^16 MAX : halt
+i32.constant i32.constant -2^16+1 MAX-1 : halt
+i32.constant i32.constant -2^16+1 MAX : halt
+i32.constant i32.constant -2 MAX : halt
+i32.constant i32.constant 0 MIN : halt
+i32.constant i32.constant 1 MIN : halt
+i32.constant i32.constant 1 MIN+1 : halt
+i32.constant i32.constant 2 MIN : halt
+i32.constant i32.constant 2 MIN+1 : halt
+i32.constant i32.constant 3 MIN : halt
+i32.constant i32.constant 3 MIN+1 : halt
+i32.constant i32.constant 2^15-1 MIN : halt
+i32.constant i32.constant 2^15-1 MIN+1 : halt
+i32.constant i32.constant 2^15 MIN : halt
+i32.constant i32.constant 2^15 MIN+1 : halt
+i32.constant i32.constant 2^15+1 MIN : halt
+i32.constant i32.constant 2^15+1 MIN+1 : halt
+i32.constant i32.constant 2^16-1 MIN : halt
+i32.constant i32.constant 2^16-1 MIN+1 : halt
+i32.constant i32.constant 2^16 MIN : halt
+i32.constant i32.constant 2^16 MIN+1 : halt
+i32.constant i32.constant 2^16+1 MIN : halt
+i32.constant i32.constant 2^16+1 MIN+1 : halt
+i32.constant i32.constant 2^30-1 MIN : halt
+i32.constant i32.constant 2^30-1 MIN+1 : halt
+i32.constant i32.constant 2^30 MIN : halt
+i32.constant i32.constant 2^30 MIN+1 : halt
+i32.constant i32.constant 2^30+1 MIN : halt
+i32.constant i32.constant 2^30+1 MIN+1 : halt
+i32.constant i32.constant MAX-1 MIN : halt
+i32.constant i32.constant MAX-1 MIN+1 : halt
+i32.constant i32.constant MAX-1 -2^16-1 : halt
+i32.constant i32.constant MAX-1 -2^16 : halt
+i32.constant i32.constant MAX-1 -2^16+1 : halt
+i32.constant i32.constant MAX-1 -2 : halt
+i32.constant i32.constant MAX MIN : halt
+i32.constant i32.constant MAX MIN+1 : halt
+i32.constant i32.constant MAX -2^16-1 : halt
+i32.constant i32.constant MAX -2^16 : halt
+i32.constant i32.constant MAX -2^16+1 : halt
+i32.constant i32.constant MAX -2 : halt
+i32.constant i32.constant MAX -1 : halt
+i32.constant i32.public * : 0 0 35 37 102/38/37 private
+i32.constant i32.public MIN _ : 0 0 35 37 103/38/37 private
+i32.constant i32.public MIN+1 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.public -2^16-1 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.public -2^16 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.public -2^16+1 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.public -2 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.public -1 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.private * : 0 0 35 37 102/38/37 private
+i32.constant i32.private MIN _ : 0 0 35 37 103/38/37 private
+i32.constant i32.private MIN+1 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.private -2^16-1 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.private -2^16 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.private -2^16+1 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.private -2 _ : 0 0 35 37 103/38/37 private
+i32.constant i32.private -1 _ : 0 0 35 37 103/38/37 private
+i32.public i32.constant * : 0 0 34 36 101/37/34 private
+i32.public i32.constant _ MIN : 0 0 34 36 102/36/34 private
+i32.public i32.constant _ MIN+1 : 0 0 34 36 102/36/34 private
+i32.public i32.constant _ -2^16-1 : 0 0 34 36 102/36/34 private
+i32.public i32.constant _ -2^16 : 0 0 34 36 102/36/34 private
+i32.public i32.constant _ -2^16+1 : 0 0 34 36 102/36/34 private
+i32.public i32.constant _ -2 : 0 0 34 36 102/36/34 private
+i32.public i32.constant _ -1 : 0 0 34 36 102/36/34 private
+i32.public i32.public _ _ : 0 0 36 38 135/39/40 private
+i32.public i32.private _ _ : 0 0 36 38 135/39/40 private
+i32.private i32.constant * : 0 0 34 36 101/37/34 private
+i32.private i32.constant _ MIN : 0 0 34 36 102/36/34 private
+i32.private i32.constant _ MIN+1 : 0 0 34 36 102/36/34 private
+i32.private i32.constant _ -2^16-1 : 0 0 34 36 102/36/34 private
+i32.private i32.constant _ -2^16 : 0 0 34 36 102/36/34 private
+i32.private i32.constant _ -2^16+1 : 0 0 34 36 102/36/34 private
+i32.private i32.constant _ -2 : 0 0 34 36 102/36/34 private
+i32.private i32.constant _ -1 : 0 0 34 36 102/36/34 private
+i32.private i32.public _ _ : 0 0 36 38 135/39/40 private
+i32.private i32.private _ _ : 0 0 36 38 135/39/40 private
+i64.constant i64.constant * : 64 0 0 0 0/0/0 constant
+i64.constant i64.constant MIN 1 : halt
+i64.constant i64.constant MIN 2 : halt
+i64.constant i64.constant MIN 3 : halt
+i64.constant i64.constant MIN 2^31-1 : halt
+i64.constant i64.constant MIN 2^31 : halt
+i64.constant i64.constant MIN 2^31+1 : halt
+i64.constant i64.constant MIN 2^32-1 : halt
+i64.constant i64.constant MIN 2^32 : halt
+i64.constant i64.constant MIN 2^32+1 : halt
+i64.constant i64.constant MIN 2^62-1 : halt
+i64.constant i64.constant MIN 2^62 : halt
+i64.constant i64.constant MIN 2^62+1 : halt
+i64.constant i64.constant MIN MAX-1 : halt
+i64.constant i64.constant MIN MAX : halt
+i64.constant i64.constant MIN+1 2 : halt
+i64.constant i64.constant MIN+1 3 : halt
+i64.constant i64.constant MIN+1 2^31-1 : halt
+i64.constant i64.constant MIN+1 2^31 : halt
+i64.constant i64.constant MIN+1 2^31+1 : halt
+i64.constant i64.constant MIN+1 2^32-1 : halt
+i64.constant i64.constant MIN+1 2^32 : halt
+i64.constant i64.constant MIN+1 2^32+1 : halt
+i64.constant i64.constant MIN+1 2^62-1 : halt
+i64.constant i64.constant MIN+1 2^62 : halt
+i64.constant i64.constant MIN+1 2^62+1 : halt
+i64.constant i64.constant MIN+1 MAX-1 : halt
+i64.constant i64.constant MIN+1 MAX : halt
+i64.constant i64.constant -2^32-1 MAX-1 : halt
+i64.constant i64.constant -2^32-1 MAX : halt
+i64.constant i64.constant -2^32 MAX-1 : halt
+i64.constant i64.constant -2^32 MAX : halt
+i64.constant i64.constant -2^32+1 MAX-1 : halt
+i64.constant i64.constant -2^32+1 MAX : halt
+i64.constant i64.constant -2 MAX : halt
+i64.constant i64.constant 0 MIN : halt
+i64.constant i64.constant 1 MIN : halt
+i64.constant i64.constant 1 MIN+1 : halt
+i64.constant i64.constant 2 MIN : halt
+i64.constant i64.constant 2 MIN+1 : halt
+i64.constant i64.constant 3 MIN : halt
+i64.constant i64.constant 3 MIN+1 : halt
+i64.constant i64.constant 2^31-1 MIN : halt
+i64.constant i64.constant 2^31-1 MIN+1 : halt
+i64.constant i64.constant 2^31 MIN : halt
+i64.constant i64.constant 2^31 MIN+1 : halt
+i64.constant i64.constant 2^31+1 MIN : halt
+i64.constant i64.constant 2^31+1 MIN+1 : halt
+i64.constant i64.constant 2^32-1 MIN : halt
+i64.constant i64.constant 2^32-1 MIN+1 : halt
+i64.constant i64.constant 2^32 MIN : halt
+i64.constant i64.constant 2^32 MIN+1 : halt
+i64.constant i64.constant 2^32+1 MIN : halt
+i64.constant i64.constant 2^32+1 MIN+1 : halt
+i64.constant i64.constant 2^62-1 MIN : halt
+i64.constant i64.constant 2^62-1 MIN+1 : halt
+i64.constant i64.constant 2^62 MIN : halt
+i64.constant i64.constant 2^62 MIN+1 : halt
+i64.constant i64.constant 2^62+1 MIN : halt
+i64.constant i64.constant 2^62+1 MIN+1 : halt
+i64.constant i64.constant MAX-1 MIN : halt
+i64.constant i64.constant MAX-1 MIN+1 : halt
+i64.constant i64.constant MAX-1 -2^32-1 : halt
+i64.constant i64.constant MAX-1 -2^32 : halt
+i64.constant i64.constant MAX-1 -2^32+1 : halt
+i64.constant i64.constant MAX-1 -2 : halt
+i64.constant i64.constant MAX MIN : halt
+i64.constant i64.constant MAX MIN+1 : halt
+i64.constant i64.constant MAX -2^32-1 : halt
+i64.constant i64.constant MAX -2^32 : halt
+i64.constant i64.constant MAX -2^32+1 : halt
+i64.constant i64.constant MAX -2 : halt
+i64.constant i64.constant MAX -1 : halt
+i64.constant i64.public * : 0 0 67 69 198/70/69 private
+i64.constant i64.public MIN _ : 0 0 67 69 199/70/69 private
+i64.constant i64.public MIN+1 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.public -2^32-1 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.public -2^32 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.public -2^32+1 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.public -2 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.public -1 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.private * : 0 0 67 69 198/70/69 private
+i64.constant i64.private MIN _ : 0 0 67 69 199/70/69 private
+i64.constant i64.private MIN+1 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.private -2^32-1 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.private -2^32 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.private -2^32+1 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.private -2 _ : 0 0 67 69 199/70/69 private
+i64.constant i64.private -1 _ : 0 0 67 69 199/70/69 private
+i64.public i64.constant * : 0 0 66 68 197/69/66 private
+i64.public i64.constant _ MIN : 0 0 66 68 198/68/66 private
+i64.public i64.constant _ MIN+1 : 0 0 66 68 198/68/66 private
+i64.public i64.constant _ -2^32-1 : 0 0 66 68 198/68/66 private
+i64.public i64.constant _ -2^32 : 0 0 66 68 198/68/66 private
+i64.public i64.constant _ -2^32+1 : 0 0 66 68 198/68/66 private
+i64.public i64.constant _ -2 : 0 0 66 68 198/68/66 private
+i64.public i64.constant _ -1 : 0 0 66 68 198/68/66 private
+i64.public i64.public _ _ : 0 0 68 70 263/71/72 private
+i64.public i64.private _ _ : 0 0 68 70 263/71/72 private
+i64.private i64.constant * : 0 0 66 68 197/69/66 private
+i64.private i64.constant _ MIN : 0 0 66 68 198/68/66 private
+i64.private i64.constant _ MIN+1 : 0 0 66 68 198/68/66 private
+i64.private i64.constant _ -2^32-1 : 0 0 66 68 198/68/66 private
+i64.private i64.constant _ -2^32 : 0 0 66 68 198/68/66 private
+i64.private i64.constant _ -2^32+1 : 0 0 66 68 198/68/66 private
+i64.private i64.constant _ -2 : 0 0 66 68 198/68/66 private
+i64.private i64.constant _ -1 : 0 0 66 68 198/68/66 private
+i64.private i64.public _ _ : 0 0 68 70 263/71/72 private
+i64.private i64.private _ _ : 0 0 68 70 263/71/72 private
+i128.constant i128.constant * : 128 0 0 0 0/0/0 constant
+i128.constant i128.constant MIN 1 : halt
+i128.constant i128.constant MIN 2 : halt
+i128.constant i128.constant MIN 3 : halt
+i128.constant i128.constant MIN 2^63-1 : halt
+i128.constant i128.constant MIN 2^63 : halt
+i128.constant i128.constant MIN 2^63+1 : halt
+i128.constant i128.constant MIN 2^64-1 : halt
+i128.constant i128.constant MIN 2^64 : halt
+i128.constant i128.constant MIN 2^64+1 : halt
+i128.constant i128.constant MIN 2^126-1 : halt
+i128.constant i128.constant MIN 2^126 : halt
+i128.constant i128.constant MIN 2^126+1 : halt
+i128.constant i128.constant MIN MAX-1 : halt
+i128.constant i128.constant MIN MAX : halt
+i128.constant i128.constant MIN+1 2 : halt
+i128.constant i128.constant MIN+1 3 : halt
+i128.constant i128.constant MIN+1 2^63-1 : halt
+i128.constant i128.constant MIN+1 2^63 : halt
+i128.constant i128.constant MIN+1 2^63+1 : halt
+i128.constant i128.constant MIN+1 2^64-1 : halt
+i128.constant i128.constant MIN+1 2^64 : halt
+i128.constant i128.constant MIN+1 2^64+1 : halt
+i128.constant i128.constant MIN+1 2^126-1 : halt
+i128.constant i128.constant MIN+1 2^126 : halt
+i128.constant i128.constant MIN+1 2^126+1 : halt
+i128.constant i128.constant MIN+1 MAX-1 : halt
+i128.constant i128.constant MIN+1 MAX : halt
+i128.constant i128.constant -2^64-1 MAX-1 : halt
+i128.constant i128.constant -2^64-1 MAX : halt
+i128.constant i128.constant -2^64 MAX-1 : halt
+i128.constant i128.constant -2^64 MAX : halt
+i128.constant i128.constant -2^64+1 MAX-1 : halt
+i128.constant i128.constant -2^64+1 MAX : halt
+i128.constant i128.constant -2 MAX : halt
+i128.constant i128.constant 0 MIN : halt
+i128.constant i128.constant 1 MIN : halt
+i128.constant i128.constant 1 MIN+1 : halt
+i128.constant i128.constant 2 MIN : halt
+i128.constant i128.constant 2 MIN+1 : halt
+i128.constant i128.constant 3 MIN : halt
+i128.constant i128.constant 3 MIN+1 : halt
+i128.constant i128.constant 2^63-1 MIN : halt
+i128.constant i128.constant 2^63-1 MIN+1 : halt
+i128.constant i128.constant 2^63 MIN : halt
+i128.constant i128.constant 2^63 MIN+1 : halt
+i128.constant i128.constant 2^63+1 MIN : halt
+i128.constant i128.constant 2^63+1 MIN+1 : halt
+i128.constant i128.constant 2^64-1 MIN : halt
+i128.constant i128.constant 2^64-1 MIN+1 : halt
+i128.constant i128.constant 2^64 MIN : halt
+i128.constant i128.constant 2^64 MIN+1 : halt
+i128.constant i128.constant 2^64+1 MIN : halt
+i128.constant i128.constant 2^64+1 MIN+1 : halt
+i128.constant i128.constant 2^126-1 MIN : halt
+i128.constant i128.constant 2^126-1 MIN+1 : halt
+i128.constant i128.constant 2^126 MIN : halt
+i128.constant i128.constant 2^126 MIN+1 : halt
+i128.constant i128.constant 2^126+1 MIN : halt
+i128.constant i128.constant 2^126+1 MIN+1 : halt
+i128.constant i128.constant MAX-1 MIN : halt
+i128.constant i128.constant MAX-1 MIN+1 : halt
+i128.constant i128.constant MAX-1 -2^64-1 : halt
+i128.constant i128.constant MAX-1 -2^64 : halt
+i128.constant i128.constant MAX-1 -2^64+1 : halt
+i128.constant i128.constant MAX-1 -2 : halt
+i128.constant i128.constant MAX MIN : halt
+i128.constant i128.constant MAX MIN+1 : halt
+i128.constant i128.constant MAX -2^64-1 : halt
+i128.constant i128.constant MAX -2^64 : halt
+i128.constant i128.constant MAX -2^64+1 : halt
+i128.constant i128.constant MAX -2 : halt
+i128.constant i128.constant MAX -1 : halt
+i128.constant i128.public * : 0 0 131 133 390/134/133 private
+i128.constant i128.public MIN _ : 0 0 131 133 391/134/133 private
+i128.constant i128.public MIN+1 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.public -2^64-1 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.public -2^64 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.public -2^64+1 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.public -2 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.public -1 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.private * : 0 0 131 133 390/134/133 private
+i128.constant i128.private MIN _ : 0 0 131 133 391/134/133 private
+i128.constant i128.private MIN+1 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.private -2^64-1 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.private -2^64 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.private -2^64+1 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.private -2 _ : 0 0 131 133 391/134/133 private
+i128.constant i128.private -1 _ : 0 0 131 133 391/134/133 private
+i128.public i128.constant * : 0 0 130 132 389/133/130 private
+i128.public i128.constant _ MIN : 0 0 130 132 390/132/130 private
+i128.public i128.constant _ MIN+1 : 0 0 130 132 390/132/130 private
+i128.public i128.constant _ -2^64-1 : 0 0 130 132 390/132/130 private
+i128.public i128.constant _ -2^64 : 0 0 130 132 390/132/130 private
+i128.public i128.constant _ -2^64+1 : 0 0 130 132 390/132/130 private
+i128.public i128.constant _ -2 : 0 0 130 132 390/132/130 private
+i128.public i128.constant _ -1 : 0 0 130 132 390/132/130 private
+i128.public i128.public _ _ : 0 0 132 134 519/135/136 private
+i128.public i128.private _ _ : 0 0 132 134 519/135/136 private
+i128.private i128.constant * : 0 0 130 132 389/133/130 private
+i128.private i128.constant _ MIN : 0 0 130 132 390/132/130 private
+i128.private i128.constant _ MIN+1 : 0 0 130 132 390/132/130 private
+i128.private i128.constant _ -2^64-1 : 0 0 130 132 390/132/130 private
+i128.private i128.constant _ -2^64 : 0 0 130 132 390/132/130 private
+i128.private i128.constant _ -2^64+1 : 0 0 130 132 390/132/130 private
+i128.private i128.constant _ -2 : 0 0 130 132 390/132/130 private
+i128.private i128.constant _ -1 : 0 0 130 132 390/132/130 private
+i128.private i128.public _ _ : 0 0 132 134 519/135/136 private
+i128.private i128.private _ _ : 0 0 132 134 519/135/136 private

@@ -1,0 +1,139 @@
+# Circuit shape of `is_not_equal` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant u8.constant * : 0 0 0 0 0/0/0 constant
+u8.constant u8.public * : 0 0 2 2 18/3/1 private
+u8.constant u8.public 0 _ : 0 0 2 2 16/3/1 private
+u8.constant u8.private * : 0 0 2 2 18/3/1 private
+u8.constant u8.private 0 _ : 0 0 2 2 16/3/1 private
+u8.public u8.constant * : 0 0 2 2 18/3/1 private
+u8.public u8.constant _ 0 : 0 0 2 2 16/3/1 private
+u8.public u8.public _ _ : 0 0 2 2 32/3/1 private
+u8.public u8.private _ _ : 0 0 2 2 32/3/1 private
+u8.private u8.constant * : 0 0 2 2 18/3/1 private
+u8.private u8.constant _ 0 : 0 0 2 2 16/3/1 private
+u8.private u8.public _ _ : 0 0 2 2 32/3/1 private
+u8.private u8.private _ _ : 0 0 2 2 32/3/1 private
+u16.constant u16.constant * : 0 0 0 0 0/0/0 constant
+u16.constant u16.public * : 0 0 2 2 34/3/1 private
+u16.constant u16.public 0 _ : 0 0 2 2 32/3/1 private
+u16.constant u16.private * : 0 0 2 2 34/3/1 private
+u16.constant u16.private 0 _ : 0 0 2 2 32/3/1 private
+u16.public u16.constant * : 0 0 2 2 34/3/1 private
+u16.public u16.constant _ 0 : 0 0 2 2 32/3/1 private
+u16.public u16.public _ _ : 0 0 2 2 64/3/1 private
+u16.public u16.private _ _ : 0 0 2 2 64/3/1 private
+u16.private u16.constant * : 0 0 2 2 34/3/1 private
+u16.private u16.constant _ 0 : 0 0 2 2 32/3/1 private
+u16.private u16.public _ _ : 0 0 2 2 64/3/1 private
+u16.private u16.private _ _ : 0 0 2 2 64/3/1 private
+u32.constant u32.constant * : 0 0 0 0 0/0/0 constant
+u32.constant u32.public * : 0 0 2 2 66/3/1 private
+u32.constant u32.public 0 _ : 0 0 2 2 64/3/1 private
+u32.constant u32.private * : 0 0 2 2 66/3/1 private
+u32.constant u32.private 0 _ : 0 0 2 2 64/3/1 private
+u32.public u32.constant * : 0 0 2 2 66/3/1 private
+u32.public u32.constant _ 0 : 0 0 2 2 64/3/1 private
+u32.public u32.public _ _ : 0 0 2 2 128/3/1 private
+u32.public u32.private _ _ : 0 0 2 2 128/3/1 private
+u32.private u32.constant * : 0 0 2 2 66/3/1 private
+u32.private u32.constant _ 0 : 0 0 2 2 64/3/1 private
+u32.private u32.public _ _ : 0 0 2 2 128/3/1 private
+u32.private u32.private _ _ : 0 0 2 2 128/3/1 private
+u64.constant u64.constant * : 0 0 0 0 0/0/0 constant
+u64.constant u64.public * : 0 0 2 2 130/3/1 private
+u64.constant u64.public 0 _ : 0 0 2 2 128/3/1 private
+u64.constant u64.private * : 0 0 2 2 130/3/1 private
+u64.constant u64.private 0 _ : 0 0 2 2 128/3/1 private
+u64.public u64.constant * : 0 0 2 2 130/3/1 private
+u64.public u64.constant _ 0 : 0 0 2 2 128/3/1 private
+u64.public u64.public _ _ : 0 0 2 2 256/3/1 private
+u64.public u64.private _ _ : 0 0 2 2 256/3/1 private
+u64.private u64.constant * : 0 0 2 2 130/3/1 private
+u64.private u64.constant _ 0 : 0 0 2 2 128/3/1 private
+u64.private u64.public _ _ : 0 0 2 2 256/3/1 private
+u64.private u64.private _ _ : 0 0 2 2 256/3/1 private
+u128.constant u128.constant * : 0 0 0 0 0/0/0 constant
+u128.constant u128.public * : 0 0 2 2 258/3/1 private
+u128.constant u128.public 0 _ : 0 0 2 2 256/3/1 private
+u128.constant u128.private * : 0 0 2 2 258/3/1 private
+u128.constant u128.private 0 _ : 0 0 2 2 256/3/1 private
+u128.public u128.constant * : 0 0 2 2 258/3/1 private
+u128.public u128.constant _ 0 : 0 0 2 2 256/3/1 private
+u128.public u128.public _ _ : 0 0 2 2 512/3/1 private
+u128.public u128.private _ _ : 0 0 2 2 512/3/1 private
+u128.private u128.constant * : 0 0 2 2 258/3/1 private
+u128.private u128.constant _ 0 : 0 0 2 2 256/3/1 private
+u128.private u128.public _ _ : 0 0 2 2 512/3/1 private
+u128.private u128.private _ _ : 0 0 2 2 512/3/1 private
+i8.constant i8.constant * : 0 0 0 0 0/0/0 constant
+i8.constant i8.public * : 0 0 2 2 18/3/1 private
+i8.constant i8.public 0 _ : 0 0 2 2 16/3/1 private
+i8.constant i8.private * : 0 0 2 2 18/3/1 private
+i8.constant i8.private 0 _ : 0 0 2 2 16/3/1 private
+i8.public i8.constant * : 0 0 2 2 18/3/1 private
+i8.public i8.constant _ 0 : 0 0 2 2 16/3/1 private
+i8.public i8.public _ _ : 0 0 2 2 32/3/1 private
+i8.public i8.private _ _ : 0 0 2 2 32/3/1 private
+i8.private i8.constant * : 0 0 2 2 18/3/1 private
+i8.private i8.constant _ 0 : 0 0 2 2 16/3/1 private
+i8.private i8.public _ _ : 0 0 2 2 32/3/1 private
+i8.private i8.private _ _ : 0 0 2 2 32/3/1 private
+i16.constant i16.constant * : 0 0 0 0 0/0/0 constant
+i16.constant i16.public * : 0 0 2 2 34/3/1 private
+i16.constant i16.public 0 _ : 0 0 2 2 32/3/1 private
+i16.constant i16.private * : 0 0 2 2 34/3/1 private
+i16.constant i16.private 0 _ : 0 0 2 2 32/3/1 private
+i16.public i16.constant * : 0 0 2 2 34/3/1 private
+i16.public i16.constant _ 0 : 0 0 2 2 32/3/1 private
+i16.public i16.public _ _ : 0 0 2 2 64/3/1 private
+i16.public i16.private _ _ : 0 0 2 2 64/3/1 private
+i16.private i16.constant * : 0 0 2 2 34/3/1 private
+i16.private i16.constant _ 0 : 0 0 2 2 32/3/1 private
+i16.private i16.public _ _ : 0 0 2 2 64/3/1 private
+i16.private i16.private _ _ : 0 0 2 2 64/3/1 private
+i32.constant i32.constant * : 0 0 0 0 0/0/0 constant
+i32.constant i32.public * : 0 0 2 2 66/3/1 private
+i32.constant i32.public 0 _ : 0 0 2 2 64/3/1 private
+i32.constant i32.private * : 0 0 2 2 66/3/1 private
+i32.constant i32.private 0 _ : 0 0 2 2 64/3/1 private
+i32.public i32.constant * : 0 0 2 2 66/3/1 private
+i32.public i32.constant _ 0 : 0 0 2 2 64/3/1 private
+i32.public i32.public _ _ : 0 0 2 2 128/3/1 private
+i32.public i32.private _ _ : 0 0 2 2 128/3/1 private
+i32.private i32.constant * : 0 0 2 2 66/3/1 private
+i32.private i32.constant _ 0 : 0 0 2 2 64/3/1 private
+i32.private i32.public _ _ : 0 0 2 2 128/3/1 private
+i32.private i32.private _ _ : 0 0 2 2 128/3/1 private
+i64.constant i64.constant * : 0 0 0 0 0/0/0 constant
+i64.constant i64.public * : 0 0 2 2 130/3/1 private
+i64.constant i64.public 0 _ : 0 0 2 2 128/3/1 private
+i64.constant i64.private * : 0 0 2 2 130/3/1 private
+i64.constant i64.private 0 _ : 0 0 2 2 128/3/1 private
+i64.public i64.constant * : 0 0 2 2 130/3/1 private
+i64.public i64.constant _ 0 : 0 0 2 2 128/3/1 private
+i64.public i64.public _ _ : 0 0 2 2 256/3/1 private
+i64.public i64.private _ _ : 0 0 2 2 256/3/1 private
+i64.private i64.constant * : 0 0 2 2 130/3/1 private
+i64.private i64.constant _ 0 : 0 0 2 2 128/3/1 private
+i64.private i64.public _ _ : 0 0 2 2 256/3/1 private
+i64.private i64.private _ _ : 0 0 2 2 256/3/1 private
+i128.constant i128.constant * : 0 0 0 0 0/0/0 constant
+i128.constant i128.public * : 0 0 2 2 258/3/1 private
+i128.constant i128.public 0 _ : 0 0 2 2 256/3/1 private
+i128.constant i128.private * : 0 0 2 2 258/3/1 private
+i128.constant i128.private 0 _ : 0 0 2 2 256/3/1 private
+i128.public i128.constant * : 0 0 2 2 258/3/1 private
+i128.public i128.constant _ 0 : 0 0 2 2 256/3/1 private
+i128.public i128.public _ _ : 0 0 2 2 512/3/1 private
+i128.public i128.private _ _ : 0 0 2 2 512/3/1 private
+i128.private i128.constant * : 0 0 2 2 258/3/1 private
+i128.private i128.constant _ 0 : 0 0 2 2 256/3/1 private
+i128.private i128.public _ _ : 0 0 2 2 512/3/1 private
+i128.private i128.private _ _ : 0 0 2 2 512/3/1 private

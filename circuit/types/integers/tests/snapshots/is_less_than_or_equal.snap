@@ -1,0 +1,239 @@
+# Circuit shape of `is_less_than_or_equal` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant u8.constant * : 1 0 0 0 0/0/0 constant
+u8.constant u8.public * : 8 0 9 10 27/10/9 private
+u8.constant u8.private * : 8 0 9 10 27/10/9 private
+u8.public u8.constant * : 8 0 9 10 27/10/9 private
+u8.public u8.public _ _ : 8 0 9 10 35/10/9 private
+u8.public u8.private _ _ : 8 0 9 10 35/10/9 private
+u8.private u8.constant * : 8 0 9 10 27/10/9 private
+u8.private u8.public _ _ : 8 0 9 10 35/10/9 private
+u8.private u8.private _ _ : 8 0 9 10 35/10/9 private
+u16.constant u16.constant * : 1 0 0 0 0/0/0 constant
+u16.constant u16.public * : 16 0 17 18 51/18/17 private
+u16.constant u16.private * : 16 0 17 18 51/18/17 private
+u16.public u16.constant * : 16 0 17 18 51/18/17 private
+u16.public u16.public _ _ : 16 0 17 18 67/18/17 private
+u16.public u16.private _ _ : 16 0 17 18 67/18/17 private
+u16.private u16.constant * : 16 0 17 18 51/18/17 private
+u16.private u16.public _ _ : 16 0 17 18 67/18/17 private
+u16.private u16.private _ _ : 16 0 17 18 67/18/17 private
+u32.constant u32.constant * : 1 0 0 0 0/0/0 constant
+u32.constant u32.public * : 32 0 33 34 99/34/33 private
+u32.constant u32.private * : 32 0 33 34 99/34/33 private
+u32.public u32.constant * : 32 0 33 34 99/34/33 private
+u32.public u32.public _ _ : 32 0 33 34 131/34/33 private
+u32.public u32.private _ _ : 32 0 33 34 131/34/33 private
+u32.private u32.constant * : 32 0 33 34 99/34/33 private
+u32.private u32.public _ _ : 32 0 33 34 131/34/33 private
+u32.private u32.private _ _ : 32 0 33 34 131/34/33 private
+u64.constant u64.constant * : 1 0 0 0 0/0/0 constant
+u64.constant u64.public * : 64 0 65 66 195/66/65 private
+u64.constant u64.private * : 64 0 65 66 195/66/65 private
+u64.public u64.constant * : 64 0 65 66 195/66/65 private
+u64.public u64.public _ _ : 64 0 65 66 259/66/65 private
+u64.public u64.private _ _ : 64 0 65 66 259/66/65 private
+u64.private u64.constant * : 64 0 65 66 195/66/65 private
+u64.private u64.public _ _ : 64 0 65 66 259/66/65 private
+u64.private u64.private _ _ : 64 0 65 66 259/66/65 private
+u128.constant u128.constant * : 1 0 0 0 0/0/0 constant
+u128.constant u128.public * : 128 0 129 130 387/130/129 private
+u128.constant u128.private * : 128 0 129 130 387/130/129 private
+u128.public u128.constant * : 128 0 129 130 387/130/129 private
+u128.public u128.public _ _ : 128 0 129 130 515/130/129 private
+u128.public u128.private _ _ : 128 0 129 130 515/130/129 private
+u128.private u128.constant * : 128 0 129 130 387/130/129 private
+u128.private u128.public _ _ : 128 0 129 130 515/130/129 private
+u128.private u128.private _ _ : 128 0 129 130 515/130/129 private
+i8.constant i8.constant * : 1 0 0 0 0/0/0 constant
+i8.constant i8.public * : 8 0 10 11 29/13/11 private
+i8.constant i8.public MIN _ : 8 0 10 11 28/12/10 private
+i8.constant i8.public MIN+1 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.public -2^4-1 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.public -2^4 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.public -2^4+1 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.public -2 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.public -1 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.private * : 8 0 10 11 29/13/11 private
+i8.constant i8.private MIN _ : 8 0 10 11 28/12/10 private
+i8.constant i8.private MIN+1 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.private -2^4-1 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.private -2^4 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.private -2^4+1 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.private -2 _ : 8 0 10 11 28/12/10 private
+i8.constant i8.private -1 _ : 8 0 10 11 28/12/10 private
+i8.public i8.constant * : 8 0 10 11 29/12/10 private
+i8.public i8.constant _ MIN : 8 0 10 11 28/12/12 private
+i8.public i8.constant _ MIN+1 : 8 0 10 11 28/12/12 private
+i8.public i8.constant _ -2^4-1 : 8 0 10 11 28/12/12 private
+i8.public i8.constant _ -2^4 : 8 0 10 11 28/12/12 private
+i8.public i8.constant _ -2^4+1 : 8 0 10 11 28/12/12 private
+i8.public i8.constant _ -2 : 8 0 10 11 28/12/12 private
+i8.public i8.constant _ -1 : 8 0 10 11 28/12/12 private
+i8.public i8.public _ _ : 8 0 12 13 39/16/15 private
+i8.public i8.private _ _ : 8 0 12 13 39/16/15 private
+i8.private i8.constant * : 8 0 10 11 29/12/10 private
+i8.private i8.constant _ MIN : 8 0 10 11 28/12/12 private
+i8.private i8.constant _ MIN+1 : 8 0 10 11 28/12/12 private
+i8.private i8.constant _ -2^4-1 : 8 0 10 11 28/12/12 private
+i8.private i8.constant _ -2^4 : 8 0 10 11 28/12/12 private
+i8.private i8.constant _ -2^4+1 : 8 0 10 11 28/12/12 private
+i8.private i8.constant _ -2 : 8 0 10 11 28/12/12 private
+i8.private i8.constant _ -1 : 8 0 10 11 28/12/12 private
+i8.private i8.public _ _ : 8 0 12 13 39/16/15 private
+i8.private i8.private _ _ : 8 0 12 13 39/16/15 private
+i16.constant i16.constant * : 1 0 0 0 0/0/0 constant
+i16.constant i16.public * : 16 0 18 19 53/21/19 private
+i16.constant i16.public MIN _ : 16 0 18 19 52/20/18 private
+i16.constant i16.public MIN+1 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.public -2^8-1 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.public -2^8 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.public -2^8+1 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.public -2 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.public -1 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.private * : 16 0 18 19 53/21/19 private
+i16.constant i16.private MIN _ : 16 0 18 19 52/20/18 private
+i16.constant i16.private MIN+1 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.private -2^8-1 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.private -2^8 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.private -2^8+1 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.private -2 _ : 16 0 18 19 52/20/18 private
+i16.constant i16.private -1 _ : 16 0 18 19 52/20/18 private
+i16.public i16.constant * : 16 0 18 19 53/20/18 private
+i16.public i16.constant _ MIN : 16 0 18 19 52/20/20 private
+i16.public i16.constant _ MIN+1 : 16 0 18 19 52/20/20 private
+i16.public i16.constant _ -2^8-1 : 16 0 18 19 52/20/20 private
+i16.public i16.constant _ -2^8 : 16 0 18 19 52/20/20 private
+i16.public i16.constant _ -2^8+1 : 16 0 18 19 52/20/20 private
+i16.public i16.constant _ -2 : 16 0 18 19 52/20/20 private
+i16.public i16.constant _ -1 : 16 0 18 19 52/20/20 private
+i16.public i16.public _ _ : 16 0 20 21 71/24/23 private
+i16.public i16.private _ _ : 16 0 20 21 71/24/23 private
+i16.private i16.constant * : 16 0 18 19 53/20/18 private
+i16.private i16.constant _ MIN : 16 0 18 19 52/20/20 private
+i16.private i16.constant _ MIN+1 : 16 0 18 19 52/20/20 private
+i16.private i16.constant _ -2^8-1 : 16 0 18 19 52/20/20 private
+i16.private i16.constant _ -2^8 : 16 0 18 19 52/20/20 private
+i16.private i16.constant _ -2^8+1 : 16 0 18 19 52/20/20 private
+i16.private i16.constant _ -2 : 16 0 18 19 52/20/20 private
+i16.private i16.constant _ -1 : 16 0 18 19 52/20/20 private
+i16.private i16.public _ _ : 16 0 20 21 71/24/23 private
+i16.private i16.private _ _ : 16 0 20 21 71/24/23 private
+i32.constant i32.constant * : 1 0 0 0 0/0/0 constant
+i32.constant i32.public * : 32 0 34 35 101/37/35 private
+i32.constant i32.public MIN _ : 32 0 34 35 100/36/34 private
+i32.constant i32.public MIN+1 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.public -2^16-1 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.public -2^16 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.public -2^16+1 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.public -2 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.public -1 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.private * : 32 0 34 35 101/37/35 private
+i32.constant i32.private MIN _ : 32 0 34 35 100/36/34 private
+i32.constant i32.private MIN+1 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.private -2^16-1 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.private -2^16 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.private -2^16+1 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.private -2 _ : 32 0 34 35 100/36/34 private
+i32.constant i32.private -1 _ : 32 0 34 35 100/36/34 private
+i32.public i32.constant * : 32 0 34 35 101/36/34 private
+i32.public i32.constant _ MIN : 32 0 34 35 100/36/36 private
+i32.public i32.constant _ MIN+1 : 32 0 34 35 100/36/36 private
+i32.public i32.constant _ -2^16-1 : 32 0 34 35 100/36/36 private
+i32.public i32.constant _ -2^16 : 32 0 34 35 100/36/36 private
+i32.public i32.constant _ -2^16+1 : 32 0 34 35 100/36/36 private
+i32.public i32.constant _ -2 : 32 0 34 35 100/36/36 private
+i32.public i32.constant _ -1 : 32 0 34 35 100/36/36 private
+i32.public i32.public _ _ : 32 0 36 37 135/40/39 private
+i32.public i32.private _ _ : 32 0 36 37 135/40/39 private
+i32.private i32.constant * : 32 0 34 35 101/36/34 private
+i32.private i32.constant _ MIN : 32 0 34 35 100/36/36 private
+i32.private i32.constant _ MIN+1 : 32 0 34 35 100/36/36 private
+i32.private i32.constant _ -2^16-1 : 32 0 34 35 100/36/36 private
+i32.private i32.constant _ -2^16 : 32 0 34 35 100/36/36 private
+i32.private i32.constant _ -2^16+1 : 32 0 34 35 100/36/36 private
+i32.private i32.constant _ -2 : 32 0 34 35 100/36/36 private
+i32.private i32.constant _ -1 : 32 0 34 35 100/36/36 private
+i32.private i32.public _ _ : 32 0 36 37 135/40/39 private
+i32.private i32.private _ _ : 32 0 36 37 135/40/39 private
+i64.constant i64.constant * : 1 0 0 0 0/0/0 constant
+i64.constant i64.public * : 64 0 66 67 197/69/67 private
+i64.constant i64.public MIN _ : 64 0 66 67 196/68/66 private
+i64.constant i64.public MIN+1 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.public -2^32-1 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.public -2^32 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.public -2^32+1 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.public -2 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.public -1 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.private * : 64 0 66 67 197/69/67 private
+i64.constant i64.private MIN _ : 64 0 66 67 196/68/66 private
+i64.constant i64.private MIN+1 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.private -2^32-1 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.private -2^32 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.private -2^32+1 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.private -2 _ : 64 0 66 67 196/68/66 private
+i64.constant i64.private -1 _ : 64 0 66 67 196/68/66 private
+i64.public i64.constant * : 64 0 66 67 197/68/66 private
+i64.public i64.constant _ MIN : 64 0 66 67 196/68/68 private
+i64.public i64.constant _ MIN+1 : 64 0 66 67 196/68/68 private
+i64.public i64.constant _ -2^32-1 : 64 0 66 67 196/68/68 private
+i64.public i64.constant _ -2^32 : 64 0 66 67 196/68/68 private
+i64.public i64.constant _ -2^32+1 : 64 0 66 67 196/68/68 private
+i64.public i64.constant _ -2 : 64 0 66 67 196/68/68 private
+i64.public i64.constant _ -1 : 64 0 66 67 196/68/68 private
+i64.public i64.public _ _ : 64 0 68 69 263/72/71 private
+i64.public i64.private _ _ : 64 0 68 69 263/72/71 private
+i64.private i64.constant * : 64 0 66 67 197/68/66 private
+i64.private i64.constant _ MIN : 64 0 66 67 196/68/68 private
+i64.private i64.constant _ MIN+1 : 64 0 66 67 196/68/68 private
+i64.private i64.constant _ -2^32-1 : 64 0 66 67 196/68/68 private
+i64.private i64.constant _ -2^32 : 64 0 66 67 196/68/68 private
+i64.private i64.constant _ -2^32+1 : 64 0 66 67 196/68/68 private
+i64.private i64.constant _ -2 : 64 0 66 67 196/68/68 private
+i64.private i64.constant _ -1 : 64 0 66 67 196/68/68 private
+i64.private i64.public _ _ : 64 0 68 69 263/72/71 private
+i64.private i64.private _ _ : 64 0 68 69 263/72/71 private
+i128.constant i128.constant * : 1 0 0 0 0/0/0 constant
+i128.constant i128.public * : 128 0 130 131 389/133/131 private
+i128.constant i128.public MIN _ : 128 0 130 131 388/132/130 private
+i128.constant i128.public MIN+1 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.public -2^64-1 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.public -2^64 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.public -2^64+1 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.public -2 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.public -1 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.private * : 128 0 130 131 389/133/131 private
+i128.constant i128.private MIN _ : 128 0 130 131 388/132/130 private
+i128.constant i128.private MIN+1 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.private -2^64-1 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.private -2^64 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.private -2^64+1 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.private -2 _ : 128 0 130 131 388/132/130 private
+i128.constant i128.private -1 _ : 128 0 130 131 388/132/130 private
+i128.public i128.constant * : 128 0 130 131 389/132/130 private
+i128.public i128.constant _ MIN : 128 0 130 131 388/132/132 private
+i128.public i128.constant _ MIN+1 : 128 0 130 131 388/132/132 private
+i128.public i128.constant _ -2^64-1 : 128 0 130 131 388/132/132 private
+i128.public i128.constant _ -2^64 : 128 0 130 131 388/132/132 private
+i128.public i128.constant _ -2^64+1 : 128 0 130 131 388/132/132 private
+i128.public i128.constant _ -2 : 128 0 130 131 388/132/132 private
+i128.public i128.constant _ -1 : 128 0 130 131 388/132/132 private
+i128.public i128.public _ _ : 128 0 132 133 519/136/135 private
+i128.public i128.private _ _ : 128 0 132 133 519/136/135 private
+i128.private i128.constant * : 128 0 130 131 389/132/130 private
+i128.private i128.constant _ MIN : 128 0 130 131 388/132/132 private
+i128.private i128.constant _ MIN+1 : 128 0 130 131 388/132/132 private
+i128.private i128.constant _ -2^64-1 : 128 0 130 131 388/132/132 private
+i128.private i128.constant _ -2^64 : 128 0 130 131 388/132/132 private
+i128.private i128.constant _ -2^64+1 : 128 0 130 131 388/132/132 private
+i128.private i128.constant _ -2 : 128 0 130 131 388/132/132 private
+i128.private i128.constant _ -1 : 128 0 130 131 388/132/132 private
+i128.private i128.public _ _ : 128 0 132 133 519/136/135 private
+i128.private i128.private _ _ : 128 0 132 133 519/136/135 private

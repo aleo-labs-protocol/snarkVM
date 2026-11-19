@@ -1,0 +1,44 @@
+# Circuit shape of `abs_checked` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant * : 0 0 0 0 0/0/0 constant
+u8.public _ : 0 0 0 0 0/0/0 public
+u8.private _ : 0 0 0 0 0/0/0 private
+u16.constant * : 0 0 0 0 0/0/0 constant
+u16.public _ : 0 0 0 0 0/0/0 public
+u16.private _ : 0 0 0 0 0/0/0 private
+u32.constant * : 0 0 0 0 0/0/0 constant
+u32.public _ : 0 0 0 0 0/0/0 public
+u32.private _ : 0 0 0 0 0/0/0 private
+u64.constant * : 0 0 0 0 0/0/0 constant
+u64.public _ : 0 0 0 0 0/0/0 public
+u64.private _ : 0 0 0 0 0/0/0 private
+u128.constant * : 0 0 0 0 0/0/0 constant
+u128.public _ : 0 0 0 0 0/0/0 public
+u128.private _ : 0 0 0 0 0/0/0 private
+i8.constant * : 16 0 0 0 0/0/0 constant
+i8.constant MIN : halt
+i8.public _ : 8 0 19 21 38/30/29 private
+i8.private _ : 8 0 19 21 38/30/29 private
+i16.constant * : 32 0 0 0 0/0/0 constant
+i16.constant MIN : halt
+i16.public _ : 16 0 35 37 70/54/53 private
+i16.private _ : 16 0 35 37 70/54/53 private
+i32.constant * : 64 0 0 0 0/0/0 constant
+i32.constant MIN : halt
+i32.public _ : 32 0 67 69 134/102/101 private
+i32.private _ : 32 0 67 69 134/102/101 private
+i64.constant * : 128 0 0 0 0/0/0 constant
+i64.constant MIN : halt
+i64.public _ : 64 0 131 133 262/198/197 private
+i64.private _ : 64 0 131 133 262/198/197 private
+i128.constant * : 256 0 0 0 0/0/0 constant
+i128.constant MIN : halt
+i128.public _ : 128 0 259 261 518/390/389 private
+i128.private _ : 128 0 259 261 518/390/389 private

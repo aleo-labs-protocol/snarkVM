@@ -1,0 +1,215 @@
+# Circuit shape of `modulo` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant u8.constant * : 8 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 0 : halt
+u8.constant u8.constant 1 0 : halt
+u8.constant u8.constant 2 0 : halt
+u8.constant u8.constant 3 0 : halt
+u8.constant u8.constant 2^3-1 0 : halt
+u8.constant u8.constant 2^3 0 : halt
+u8.constant u8.constant 2^3+1 0 : halt
+u8.constant u8.constant 2^4-1 0 : halt
+u8.constant u8.constant 2^4 0 : halt
+u8.constant u8.constant 2^4+1 0 : halt
+u8.constant u8.constant 2^7-1 0 : halt
+u8.constant u8.constant 2^7 0 : halt
+u8.constant u8.constant 2^7+1 0 : halt
+u8.constant u8.constant 2^8-2^4 0 : halt
+u8.constant u8.constant MAX-1 0 : halt
+u8.constant u8.constant MAX 0 : halt
+u8.constant u8.public * : 8 0 26 29 78/36/20 private
+u8.constant u8.public 0 _ : 8 0 26 29 77/36/20 private
+u8.constant u8.private * : 8 0 26 29 78/36/20 private
+u8.constant u8.private 0 _ : 8 0 26 29 77/36/20 private
+u8.public u8.constant * : 8 0 25 28 69/28/26 private
+u8.public u8.constant _ 0 : halt
+u8.public u8.public _ _ : 8 0 26 29 85/36/20 private
+u8.public u8.private _ _ : 8 0 26 29 85/36/20 private
+u8.private u8.constant * : 8 0 25 28 69/28/26 private
+u8.private u8.constant _ 0 : halt
+u8.private u8.public _ _ : 8 0 26 29 85/36/20 private
+u8.private u8.private _ _ : 8 0 26 29 85/36/20 private
+u16.constant u16.constant * : 16 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 0 : halt
+u16.constant u16.constant 1 0 : halt
+u16.constant u16.constant 2 0 : halt
+u16.constant u16.constant 3 0 : halt
+u16.constant u16.constant 2^7-1 0 : halt
+u16.constant u16.constant 2^7 0 : halt
+u16.constant u16.constant 2^7+1 0 : halt
+u16.constant u16.constant 2^8-1 0 : halt
+u16.constant u16.constant 2^8 0 : halt
+u16.constant u16.constant 2^8+1 0 : halt
+u16.constant u16.constant 2^15-1 0 : halt
+u16.constant u16.constant 2^15 0 : halt
+u16.constant u16.constant 2^15+1 0 : halt
+u16.constant u16.constant 2^16-2^8 0 : halt
+u16.constant u16.constant MAX-1 0 : halt
+u16.constant u16.constant MAX 0 : halt
+u16.constant u16.public * : 16 0 50 53 150/68/36 private
+u16.constant u16.public 0 _ : 16 0 50 53 149/68/36 private
+u16.constant u16.private * : 16 0 50 53 150/68/36 private
+u16.constant u16.private 0 _ : 16 0 50 53 149/68/36 private
+u16.public u16.constant * : 16 0 49 52 133/52/50 private
+u16.public u16.constant _ 0 : halt
+u16.public u16.public _ _ : 16 0 50 53 165/68/36 private
+u16.public u16.private _ _ : 16 0 50 53 165/68/36 private
+u16.private u16.constant * : 16 0 49 52 133/52/50 private
+u16.private u16.constant _ 0 : halt
+u16.private u16.public _ _ : 16 0 50 53 165/68/36 private
+u16.private u16.private _ _ : 16 0 50 53 165/68/36 private
+u32.constant u32.constant * : 32 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 0 : halt
+u32.constant u32.constant 1 0 : halt
+u32.constant u32.constant 2 0 : halt
+u32.constant u32.constant 3 0 : halt
+u32.constant u32.constant 2^15-1 0 : halt
+u32.constant u32.constant 2^15 0 : halt
+u32.constant u32.constant 2^15+1 0 : halt
+u32.constant u32.constant 2^16-1 0 : halt
+u32.constant u32.constant 2^16 0 : halt
+u32.constant u32.constant 2^16+1 0 : halt
+u32.constant u32.constant 2^31-1 0 : halt
+u32.constant u32.constant 2^31 0 : halt
+u32.constant u32.constant 2^31+1 0 : halt
+u32.constant u32.constant 2^32-2^16 0 : halt
+u32.constant u32.constant MAX-1 0 : halt
+u32.constant u32.constant MAX 0 : halt
+u32.constant u32.public * : 32 0 98 101 294/132/68 private
+u32.constant u32.public 0 _ : 32 0 98 101 293/132/68 private
+u32.constant u32.private * : 32 0 98 101 294/132/68 private
+u32.constant u32.private 0 _ : 32 0 98 101 293/132/68 private
+u32.public u32.constant * : 32 0 97 100 261/100/98 private
+u32.public u32.constant _ 0 : halt
+u32.public u32.public _ _ : 32 0 98 101 325/132/68 private
+u32.public u32.private _ _ : 32 0 98 101 325/132/68 private
+u32.private u32.constant * : 32 0 97 100 261/100/98 private
+u32.private u32.constant _ 0 : halt
+u32.private u32.public _ _ : 32 0 98 101 325/132/68 private
+u32.private u32.private _ _ : 32 0 98 101 325/132/68 private
+u64.constant u64.constant * : 64 0 0 0 0/0/0 constant
+u64.constant u64.constant 0 0 : halt
+u64.constant u64.constant 1 0 : halt
+u64.constant u64.constant 2 0 : halt
+u64.constant u64.constant 3 0 : halt
+u64.constant u64.constant 2^31-1 0 : halt
+u64.constant u64.constant 2^31 0 : halt
+u64.constant u64.constant 2^31+1 0 : halt
+u64.constant u64.constant 2^32-1 0 : halt
+u64.constant u64.constant 2^32 0 : halt
+u64.constant u64.constant 2^32+1 0 : halt
+u64.constant u64.constant 2^63-1 0 : halt
+u64.constant u64.constant 2^63 0 : halt
+u64.constant u64.constant 2^63+1 0 : halt
+u64.constant u64.constant 2^64-2^32 0 : halt
+u64.constant u64.constant MAX-1 0 : halt
+u64.constant u64.constant MAX 0 : halt
+u64.constant u64.public * : 64 0 194 197 582/260/132 private
+u64.constant u64.public 0 _ : 64 0 194 197 581/260/132 private
+u64.constant u64.private * : 64 0 194 197 582/260/132 private
+u64.constant u64.private 0 _ : 64 0 194 197 581/260/132 private
+u64.public u64.constant * : 64 0 193 196 517/196/194 private
+u64.public u64.constant _ 0 : halt
+u64.public u64.public _ _ : 64 0 194 197 645/260/132 private
+u64.public u64.private _ _ : 64 0 194 197 645/260/132 private
+u64.private u64.constant * : 64 0 193 196 517/196/194 private
+u64.private u64.constant _ 0 : halt
+u64.private u64.public _ _ : 64 0 194 197 645/260/132 private
+u64.private u64.private _ _ : 64 0 194 197 645/260/132 private
+u128.constant u128.constant * : 128 0 0 0 0/0/0 constant
+u128.constant u128.constant 0 0 : halt
+u128.constant u128.constant 1 0 : halt
+u128.constant u128.constant 2 0 : halt
+u128.constant u128.constant 3 0 : halt
+u128.constant u128.constant 2^63-1 0 : halt
+u128.constant u128.constant 2^63 0 : halt
+u128.constant u128.constant 2^63+1 0 : halt
+u128.constant u128.constant 2^64-1 0 : halt
+u128.constant u128.constant 2^64 0 : halt
+u128.constant u128.constant 2^64+1 0 : halt
+u128.constant u128.constant 2^127-1 0 : halt
+u128.constant u128.constant 2^127 0 : halt
+u128.constant u128.constant 2^127+1 0 : halt
+u128.constant u128.constant 2^128-2^64 0 : halt
+u128.constant u128.constant MAX-1 0 : halt
+u128.constant u128.constant MAX 0 : halt
+u128.constant u128.public * : 128 0 709 716 2253/969/582 private
+u128.constant u128.public 0 _ : 128 0 709 716 2252/969/582 private
+u128.constant u128.private * : 128 0 709 716 2253/969/582 private
+u128.constant u128.private 0 _ : 128 0 709 716 2252/969/582 private
+u128.public u128.constant * : 128 0 706 712 2120/712/579 private
+u128.public u128.constant _ 0 : halt
+u128.public u128.constant _ 2^64 : 128 0 706 713 2120/713/579 private
+u128.public u128.constant _ 2^64+1 : 128 0 706 713 2184/713/579 private
+u128.public u128.constant _ 2^127-1 : 128 0 706 713 2184/713/579 private
+u128.public u128.constant _ 2^127 : 128 0 706 713 2120/713/579 private
+u128.public u128.constant _ 2^127+1 : 128 0 706 713 2184/713/579 private
+u128.public u128.constant _ 2^128-2^64 : 128 0 706 713 2120/713/579 private
+u128.public u128.constant _ MAX-1 : 128 0 706 713 2184/713/579 private
+u128.public u128.constant _ MAX : 128 0 706 713 2184/713/579 private
+u128.public u128.public _ _ : 128 0 709 716 2380/969/582 private
+u128.public u128.private _ _ : 128 0 709 716 2380/969/582 private
+u128.private u128.constant * : 128 0 706 712 2120/712/579 private
+u128.private u128.constant _ 0 : halt
+u128.private u128.constant _ 2^64 : 128 0 706 713 2120/713/579 private
+u128.private u128.constant _ 2^64+1 : 128 0 706 713 2184/713/579 private
+u128.private u128.constant _ 2^127-1 : 128 0 706 713 2184/713/579 private
+u128.private u128.constant _ 2^127 : 128 0 706 713 2120/713/579 private
+u128.private u128.constant _ 2^127+1 : 128 0 706 713 2184/713/579 private
+u128.private u128.constant _ 2^128-2^64 : 128 0 706 713 2120/713/579 private
+u128.private u128.constant _ MAX-1 : 128 0 706 713 2184/713/579 private
+u128.private u128.constant _ MAX : 128 0 706 713 2184/713/579 private
+u128.private u128.public _ _ : 128 0 709 716 2380/969/582 private
+u128.private u128.private _ _ : 128 0 709 716 2380/969/582 private
+i8.constant i8.constant * : halt
+i8.constant i8.public * : halt
+i8.constant i8.private * : halt
+i8.public i8.constant * : halt
+i8.public i8.public _ _ : halt
+i8.public i8.private _ _ : halt
+i8.private i8.constant * : halt
+i8.private i8.public _ _ : halt
+i8.private i8.private _ _ : halt
+i16.constant i16.constant * : halt
+i16.constant i16.public * : halt
+i16.constant i16.private * : halt
+i16.public i16.constant * : halt
+i16.public i16.public _ _ : halt
+i16.public i16.private _ _ : halt
+i16.private i16.constant * : halt
+i16.private i16.public _ _ : halt
+i16.private i16.private _ _ : halt
+i32.constant i32.constant * : halt
+i32.constant i32.public * : halt
+i32.constant i32.private * : halt
+i32.public i32.constant * : halt
+i32.public i32.public _ _ : halt
+i32.public i32.private _ _ : halt
+i32.private i32.constant * : halt
+i32.private i32.public _ _ : halt
+i32.private i32.private _ _ : halt
+i64.constant i64.constant * : halt
+i64.constant i64.public * : halt
+i64.constant i64.private * : halt
+i64.public i64.constant * : halt
+i64.public i64.public _ _ : halt
+i64.public i64.private _ _ : halt
+i64.private i64.constant * : halt
+i64.private i64.public _ _ : halt
+i64.private i64.private _ _ : halt
+i128.constant i128.constant * : halt
+i128.constant i128.public * : halt
+i128.constant i128.private * : halt
+i128.public i128.constant * : halt
+i128.public i128.public _ _ : halt
+i128.public i128.private _ _ : halt
+i128.private i128.constant * : halt
+i128.private i128.public _ _ : halt
+i128.private i128.private _ _ : halt

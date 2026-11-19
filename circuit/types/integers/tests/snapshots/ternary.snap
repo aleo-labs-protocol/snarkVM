@@ -1,0 +1,1109 @@
+# Circuit shape of `ternary` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+boolean.constant u8.constant u8.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.public * : 0 0 0 0 0/0/0 public
+boolean.constant u8.constant u8.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.public true 2^4 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.private * : 0 0 0 0 0/0/0 private
+boolean.constant u8.constant u8.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.private true 2^4 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.constant u8.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u8.public u8.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u8.public u8.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant u8.public u8.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant u8.public u8.constant true _ 2^4 : 0 0 0 0 0/0/0 public
+boolean.constant u8.public u8.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant u8.public u8.public * : 0 0 0 0 0/0/0 public
+boolean.constant u8.public u8.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u8.public u8.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u8.private u8.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u8.private u8.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant u8.private u8.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant u8.private u8.constant true _ 2^4 : 0 0 0 0 0/0/0 private
+boolean.constant u8.private u8.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant u8.private u8.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u8.private u8.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u8.private u8.private * : 0 0 0 0 0/0/0 private
+boolean.public u8.constant u8.constant * : 0 0 0 0 0/0/0 constant
+boolean.public u8.constant u8.constant _ 0 1 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.public u8.constant u8.constant _ 0 2^4 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.public u8.constant u8.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.public u8.constant u8.constant _ 1 0 : 0 0 0 0 0/0/0 public[c7/u1/p0]
+boolean.public u8.constant u8.constant _ 1 2^4 : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public u8.constant u8.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.public u8.constant u8.constant _ 2^4 0 : 0 0 0 0 0/0/0 public[c7/u1/p0]
+boolean.public u8.constant u8.constant _ 2^4 1 : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public u8.constant u8.constant _ 2^4 MAX : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.public u8.constant u8.constant _ MAX 0 : 0 0 0 0 0/0/0 public
+boolean.public u8.constant u8.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c1/u7/p0]
+boolean.public u8.constant u8.constant _ MAX 2^4 : 0 0 0 0 0/0/0 public[c1/u7/p0]
+boolean.public u8.constant u8.public * : 0 0 8 8 16/9/9 private
+boolean.public u8.constant u8.public _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.public u8.constant u8.public _ MAX _ : 0 0 8 8 16/16/16 private
+boolean.public u8.constant u8.private * : 0 0 8 8 16/9/9 private
+boolean.public u8.constant u8.private _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.public u8.constant u8.private _ MAX _ : 0 0 8 8 16/16/16 private
+boolean.public u8.public u8.constant * : 0 0 8 8 8/9/9 private
+boolean.public u8.public u8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.public u8.public u8.constant _ _ MAX : 0 0 8 8 8/16/16 private
+boolean.public u8.public u8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.public u8.public u8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.public u8.private u8.constant * : 0 0 8 8 8/9/9 private
+boolean.public u8.private u8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.public u8.private u8.constant _ _ MAX : 0 0 8 8 8/16/16 private
+boolean.public u8.private u8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.public u8.private u8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private u8.constant u8.constant * : 0 0 0 0 0/0/0 constant
+boolean.private u8.constant u8.constant _ 0 1 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private u8.constant u8.constant _ 0 2^4 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private u8.constant u8.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.private u8.constant u8.constant _ 1 0 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private u8.constant u8.constant _ 1 2^4 : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private u8.constant u8.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.private u8.constant u8.constant _ 2^4 0 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private u8.constant u8.constant _ 2^4 1 : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private u8.constant u8.constant _ 2^4 MAX : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.private u8.constant u8.constant _ MAX 0 : 0 0 0 0 0/0/0 private
+boolean.private u8.constant u8.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.private u8.constant u8.constant _ MAX 2^4 : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.private u8.constant u8.public * : 0 0 8 8 16/9/9 private
+boolean.private u8.constant u8.public _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.private u8.constant u8.public _ MAX _ : 0 0 8 8 16/16/16 private
+boolean.private u8.constant u8.private * : 0 0 8 8 16/9/9 private
+boolean.private u8.constant u8.private _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.private u8.constant u8.private _ MAX _ : 0 0 8 8 16/16/16 private
+boolean.private u8.public u8.constant * : 0 0 8 8 8/9/9 private
+boolean.private u8.public u8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.private u8.public u8.constant _ _ MAX : 0 0 8 8 8/16/16 private
+boolean.private u8.public u8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private u8.public u8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private u8.private u8.constant * : 0 0 8 8 8/9/9 private
+boolean.private u8.private u8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.private u8.private u8.constant _ _ MAX : 0 0 8 8 8/16/16 private
+boolean.private u8.private u8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private u8.private u8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.constant u16.constant u16.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.public * : 0 0 0 0 0/0/0 public
+boolean.constant u16.constant u16.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.public true 2^8 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.private * : 0 0 0 0 0/0/0 private
+boolean.constant u16.constant u16.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.private true 2^8 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.constant u16.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u16.public u16.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u16.public u16.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant u16.public u16.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant u16.public u16.constant true _ 2^8 : 0 0 0 0 0/0/0 public
+boolean.constant u16.public u16.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant u16.public u16.public * : 0 0 0 0 0/0/0 public
+boolean.constant u16.public u16.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u16.public u16.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u16.private u16.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u16.private u16.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant u16.private u16.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant u16.private u16.constant true _ 2^8 : 0 0 0 0 0/0/0 private
+boolean.constant u16.private u16.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant u16.private u16.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u16.private u16.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u16.private u16.private * : 0 0 0 0 0/0/0 private
+boolean.public u16.constant u16.constant * : 0 0 0 0 0/0/0 constant
+boolean.public u16.constant u16.constant _ 0 1 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.public u16.constant u16.constant _ 0 2^8 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.public u16.constant u16.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.public u16.constant u16.constant _ 1 0 : 0 0 0 0 0/0/0 public[c15/u1/p0]
+boolean.public u16.constant u16.constant _ 1 2^8 : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public u16.constant u16.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.public u16.constant u16.constant _ 2^8 0 : 0 0 0 0 0/0/0 public[c15/u1/p0]
+boolean.public u16.constant u16.constant _ 2^8 1 : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public u16.constant u16.constant _ 2^8 MAX : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.public u16.constant u16.constant _ MAX 0 : 0 0 0 0 0/0/0 public
+boolean.public u16.constant u16.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c1/u15/p0]
+boolean.public u16.constant u16.constant _ MAX 2^8 : 0 0 0 0 0/0/0 public[c1/u15/p0]
+boolean.public u16.constant u16.public * : 0 0 16 16 32/17/17 private
+boolean.public u16.constant u16.public _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.public u16.constant u16.public _ MAX _ : 0 0 16 16 32/32/32 private
+boolean.public u16.constant u16.private * : 0 0 16 16 32/17/17 private
+boolean.public u16.constant u16.private _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.public u16.constant u16.private _ MAX _ : 0 0 16 16 32/32/32 private
+boolean.public u16.public u16.constant * : 0 0 16 16 16/17/17 private
+boolean.public u16.public u16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.public u16.public u16.constant _ _ MAX : 0 0 16 16 16/32/32 private
+boolean.public u16.public u16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.public u16.public u16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.public u16.private u16.constant * : 0 0 16 16 16/17/17 private
+boolean.public u16.private u16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.public u16.private u16.constant _ _ MAX : 0 0 16 16 16/32/32 private
+boolean.public u16.private u16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.public u16.private u16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private u16.constant u16.constant * : 0 0 0 0 0/0/0 constant
+boolean.private u16.constant u16.constant _ 0 1 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private u16.constant u16.constant _ 0 2^8 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private u16.constant u16.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.private u16.constant u16.constant _ 1 0 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private u16.constant u16.constant _ 1 2^8 : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private u16.constant u16.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.private u16.constant u16.constant _ 2^8 0 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private u16.constant u16.constant _ 2^8 1 : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private u16.constant u16.constant _ 2^8 MAX : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.private u16.constant u16.constant _ MAX 0 : 0 0 0 0 0/0/0 private
+boolean.private u16.constant u16.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.private u16.constant u16.constant _ MAX 2^8 : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.private u16.constant u16.public * : 0 0 16 16 32/17/17 private
+boolean.private u16.constant u16.public _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.private u16.constant u16.public _ MAX _ : 0 0 16 16 32/32/32 private
+boolean.private u16.constant u16.private * : 0 0 16 16 32/17/17 private
+boolean.private u16.constant u16.private _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.private u16.constant u16.private _ MAX _ : 0 0 16 16 32/32/32 private
+boolean.private u16.public u16.constant * : 0 0 16 16 16/17/17 private
+boolean.private u16.public u16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.private u16.public u16.constant _ _ MAX : 0 0 16 16 16/32/32 private
+boolean.private u16.public u16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private u16.public u16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private u16.private u16.constant * : 0 0 16 16 16/17/17 private
+boolean.private u16.private u16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.private u16.private u16.constant _ _ MAX : 0 0 16 16 16/32/32 private
+boolean.private u16.private u16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private u16.private u16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.constant u32.constant u32.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.public * : 0 0 0 0 0/0/0 public
+boolean.constant u32.constant u32.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.public true 2^16 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.private * : 0 0 0 0 0/0/0 private
+boolean.constant u32.constant u32.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.private true 2^16 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.constant u32.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u32.public u32.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u32.public u32.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant u32.public u32.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant u32.public u32.constant true _ 2^16 : 0 0 0 0 0/0/0 public
+boolean.constant u32.public u32.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant u32.public u32.public * : 0 0 0 0 0/0/0 public
+boolean.constant u32.public u32.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u32.public u32.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u32.private u32.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u32.private u32.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant u32.private u32.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant u32.private u32.constant true _ 2^16 : 0 0 0 0 0/0/0 private
+boolean.constant u32.private u32.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant u32.private u32.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u32.private u32.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u32.private u32.private * : 0 0 0 0 0/0/0 private
+boolean.public u32.constant u32.constant * : 0 0 0 0 0/0/0 constant
+boolean.public u32.constant u32.constant _ 0 1 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.public u32.constant u32.constant _ 0 2^16 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.public u32.constant u32.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.public u32.constant u32.constant _ 1 0 : 0 0 0 0 0/0/0 public[c31/u1/p0]
+boolean.public u32.constant u32.constant _ 1 2^16 : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public u32.constant u32.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.public u32.constant u32.constant _ 2^16 0 : 0 0 0 0 0/0/0 public[c31/u1/p0]
+boolean.public u32.constant u32.constant _ 2^16 1 : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public u32.constant u32.constant _ 2^16 MAX : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.public u32.constant u32.constant _ MAX 0 : 0 0 0 0 0/0/0 public
+boolean.public u32.constant u32.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c1/u31/p0]
+boolean.public u32.constant u32.constant _ MAX 2^16 : 0 0 0 0 0/0/0 public[c1/u31/p0]
+boolean.public u32.constant u32.public * : 0 0 32 32 64/33/33 private
+boolean.public u32.constant u32.public _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.public u32.constant u32.public _ MAX _ : 0 0 32 32 64/64/64 private
+boolean.public u32.constant u32.private * : 0 0 32 32 64/33/33 private
+boolean.public u32.constant u32.private _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.public u32.constant u32.private _ MAX _ : 0 0 32 32 64/64/64 private
+boolean.public u32.public u32.constant * : 0 0 32 32 32/33/33 private
+boolean.public u32.public u32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.public u32.public u32.constant _ _ MAX : 0 0 32 32 32/64/64 private
+boolean.public u32.public u32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.public u32.public u32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.public u32.private u32.constant * : 0 0 32 32 32/33/33 private
+boolean.public u32.private u32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.public u32.private u32.constant _ _ MAX : 0 0 32 32 32/64/64 private
+boolean.public u32.private u32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.public u32.private u32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private u32.constant u32.constant * : 0 0 0 0 0/0/0 constant
+boolean.private u32.constant u32.constant _ 0 1 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private u32.constant u32.constant _ 0 2^16 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private u32.constant u32.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.private u32.constant u32.constant _ 1 0 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private u32.constant u32.constant _ 1 2^16 : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private u32.constant u32.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.private u32.constant u32.constant _ 2^16 0 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private u32.constant u32.constant _ 2^16 1 : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private u32.constant u32.constant _ 2^16 MAX : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.private u32.constant u32.constant _ MAX 0 : 0 0 0 0 0/0/0 private
+boolean.private u32.constant u32.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.private u32.constant u32.constant _ MAX 2^16 : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.private u32.constant u32.public * : 0 0 32 32 64/33/33 private
+boolean.private u32.constant u32.public _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.private u32.constant u32.public _ MAX _ : 0 0 32 32 64/64/64 private
+boolean.private u32.constant u32.private * : 0 0 32 32 64/33/33 private
+boolean.private u32.constant u32.private _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.private u32.constant u32.private _ MAX _ : 0 0 32 32 64/64/64 private
+boolean.private u32.public u32.constant * : 0 0 32 32 32/33/33 private
+boolean.private u32.public u32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.private u32.public u32.constant _ _ MAX : 0 0 32 32 32/64/64 private
+boolean.private u32.public u32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private u32.public u32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private u32.private u32.constant * : 0 0 32 32 32/33/33 private
+boolean.private u32.private u32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.private u32.private u32.constant _ _ MAX : 0 0 32 32 32/64/64 private
+boolean.private u32.private u32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private u32.private u32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.constant u64.constant u64.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.public * : 0 0 0 0 0/0/0 public
+boolean.constant u64.constant u64.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.public true 2^32 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.private * : 0 0 0 0 0/0/0 private
+boolean.constant u64.constant u64.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.private true 2^32 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.constant u64.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u64.public u64.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u64.public u64.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant u64.public u64.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant u64.public u64.constant true _ 2^32 : 0 0 0 0 0/0/0 public
+boolean.constant u64.public u64.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant u64.public u64.public * : 0 0 0 0 0/0/0 public
+boolean.constant u64.public u64.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u64.public u64.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u64.private u64.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u64.private u64.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant u64.private u64.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant u64.private u64.constant true _ 2^32 : 0 0 0 0 0/0/0 private
+boolean.constant u64.private u64.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant u64.private u64.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u64.private u64.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u64.private u64.private * : 0 0 0 0 0/0/0 private
+boolean.public u64.constant u64.constant * : 0 0 0 0 0/0/0 constant
+boolean.public u64.constant u64.constant _ 0 1 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.public u64.constant u64.constant _ 0 2^32 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.public u64.constant u64.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.public u64.constant u64.constant _ 1 0 : 0 0 0 0 0/0/0 public[c63/u1/p0]
+boolean.public u64.constant u64.constant _ 1 2^32 : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public u64.constant u64.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.public u64.constant u64.constant _ 2^32 0 : 0 0 0 0 0/0/0 public[c63/u1/p0]
+boolean.public u64.constant u64.constant _ 2^32 1 : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public u64.constant u64.constant _ 2^32 MAX : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.public u64.constant u64.constant _ MAX 0 : 0 0 0 0 0/0/0 public
+boolean.public u64.constant u64.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c1/u63/p0]
+boolean.public u64.constant u64.constant _ MAX 2^32 : 0 0 0 0 0/0/0 public[c1/u63/p0]
+boolean.public u64.constant u64.public * : 0 0 64 64 128/65/65 private
+boolean.public u64.constant u64.public _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.public u64.constant u64.public _ MAX _ : 0 0 64 64 128/128/128 private
+boolean.public u64.constant u64.private * : 0 0 64 64 128/65/65 private
+boolean.public u64.constant u64.private _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.public u64.constant u64.private _ MAX _ : 0 0 64 64 128/128/128 private
+boolean.public u64.public u64.constant * : 0 0 64 64 64/65/65 private
+boolean.public u64.public u64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.public u64.public u64.constant _ _ MAX : 0 0 64 64 64/128/128 private
+boolean.public u64.public u64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.public u64.public u64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.public u64.private u64.constant * : 0 0 64 64 64/65/65 private
+boolean.public u64.private u64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.public u64.private u64.constant _ _ MAX : 0 0 64 64 64/128/128 private
+boolean.public u64.private u64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.public u64.private u64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private u64.constant u64.constant * : 0 0 0 0 0/0/0 constant
+boolean.private u64.constant u64.constant _ 0 1 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private u64.constant u64.constant _ 0 2^32 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private u64.constant u64.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.private u64.constant u64.constant _ 1 0 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private u64.constant u64.constant _ 1 2^32 : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private u64.constant u64.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.private u64.constant u64.constant _ 2^32 0 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private u64.constant u64.constant _ 2^32 1 : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private u64.constant u64.constant _ 2^32 MAX : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.private u64.constant u64.constant _ MAX 0 : 0 0 0 0 0/0/0 private
+boolean.private u64.constant u64.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.private u64.constant u64.constant _ MAX 2^32 : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.private u64.constant u64.public * : 0 0 64 64 128/65/65 private
+boolean.private u64.constant u64.public _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.private u64.constant u64.public _ MAX _ : 0 0 64 64 128/128/128 private
+boolean.private u64.constant u64.private * : 0 0 64 64 128/65/65 private
+boolean.private u64.constant u64.private _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.private u64.constant u64.private _ MAX _ : 0 0 64 64 128/128/128 private
+boolean.private u64.public u64.constant * : 0 0 64 64 64/65/65 private
+boolean.private u64.public u64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.private u64.public u64.constant _ _ MAX : 0 0 64 64 64/128/128 private
+boolean.private u64.public u64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private u64.public u64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private u64.private u64.constant * : 0 0 64 64 64/65/65 private
+boolean.private u64.private u64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.private u64.private u64.constant _ _ MAX : 0 0 64 64 64/128/128 private
+boolean.private u64.private u64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private u64.private u64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.constant u128.constant u128.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.public * : 0 0 0 0 0/0/0 public
+boolean.constant u128.constant u128.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.public true 2^64 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.private * : 0 0 0 0 0/0/0 private
+boolean.constant u128.constant u128.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.private true 2^64 _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.constant u128.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant u128.public u128.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u128.public u128.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant u128.public u128.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant u128.public u128.constant true _ 2^64 : 0 0 0 0 0/0/0 public
+boolean.constant u128.public u128.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant u128.public u128.public * : 0 0 0 0 0/0/0 public
+boolean.constant u128.public u128.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u128.public u128.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u128.private u128.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant u128.private u128.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant u128.private u128.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant u128.private u128.constant true _ 2^64 : 0 0 0 0 0/0/0 private
+boolean.constant u128.private u128.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant u128.private u128.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant u128.private u128.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant u128.private u128.private * : 0 0 0 0 0/0/0 private
+boolean.public u128.constant u128.constant * : 0 0 0 0 0/0/0 constant
+boolean.public u128.constant u128.constant _ 0 1 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.public u128.constant u128.constant _ 0 2^64 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.public u128.constant u128.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.public u128.constant u128.constant _ 1 0 : 0 0 0 0 0/0/0 public[c127/u1/p0]
+boolean.public u128.constant u128.constant _ 1 2^64 : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public u128.constant u128.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.public u128.constant u128.constant _ 2^64 0 : 0 0 0 0 0/0/0 public[c127/u1/p0]
+boolean.public u128.constant u128.constant _ 2^64 1 : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public u128.constant u128.constant _ 2^64 MAX : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.public u128.constant u128.constant _ MAX 0 : 0 0 0 0 0/0/0 public
+boolean.public u128.constant u128.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c1/u127/p0]
+boolean.public u128.constant u128.constant _ MAX 2^64 : 0 0 0 0 0/0/0 public[c1/u127/p0]
+boolean.public u128.constant u128.public * : 0 0 128 128 256/129/129 private
+boolean.public u128.constant u128.public _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.public u128.constant u128.public _ MAX _ : 0 0 128 128 256/256/256 private
+boolean.public u128.constant u128.private * : 0 0 128 128 256/129/129 private
+boolean.public u128.constant u128.private _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.public u128.constant u128.private _ MAX _ : 0 0 128 128 256/256/256 private
+boolean.public u128.public u128.constant * : 0 0 128 128 128/129/129 private
+boolean.public u128.public u128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.public u128.public u128.constant _ _ MAX : 0 0 128 128 128/256/256 private
+boolean.public u128.public u128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.public u128.public u128.private _ _ _ : 0 0 128 128 128/256/256 private
+boolean.public u128.private u128.constant * : 0 0 128 128 128/129/129 private
+boolean.public u128.private u128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.public u128.private u128.constant _ _ MAX : 0 0 128 128 128/256/256 private
+boolean.public u128.private u128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.public u128.private u128.private _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private u128.constant u128.constant * : 0 0 0 0 0/0/0 constant
+boolean.private u128.constant u128.constant _ 0 1 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private u128.constant u128.constant _ 0 2^64 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private u128.constant u128.constant _ 0 MAX : 0 0 0 0 0/0/0 private
+boolean.private u128.constant u128.constant _ 1 0 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private u128.constant u128.constant _ 1 2^64 : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private u128.constant u128.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.private u128.constant u128.constant _ 2^64 0 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private u128.constant u128.constant _ 2^64 1 : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private u128.constant u128.constant _ 2^64 MAX : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.private u128.constant u128.constant _ MAX 0 : 0 0 0 0 0/0/0 private
+boolean.private u128.constant u128.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.private u128.constant u128.constant _ MAX 2^64 : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.private u128.constant u128.public * : 0 0 128 128 256/129/129 private
+boolean.private u128.constant u128.public _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.private u128.constant u128.public _ MAX _ : 0 0 128 128 256/256/256 private
+boolean.private u128.constant u128.private * : 0 0 128 128 256/129/129 private
+boolean.private u128.constant u128.private _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.private u128.constant u128.private _ MAX _ : 0 0 128 128 256/256/256 private
+boolean.private u128.public u128.constant * : 0 0 128 128 128/129/129 private
+boolean.private u128.public u128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.private u128.public u128.constant _ _ MAX : 0 0 128 128 128/256/256 private
+boolean.private u128.public u128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private u128.public u128.private _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private u128.private u128.constant * : 0 0 128 128 128/129/129 private
+boolean.private u128.private u128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.private u128.private u128.constant _ _ MAX : 0 0 128 128 128/256/256 private
+boolean.private u128.private u128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private u128.private u128.private _ _ _ : 0 0 128 128 128/256/256 private
+boolean.constant i8.constant i8.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.public * : 0 0 0 0 0/0/0 public
+boolean.constant i8.constant i8.public true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.public true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.public true 2^4 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.private * : 0 0 0 0 0/0/0 private
+boolean.constant i8.constant i8.private true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.private true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.private true 2^4 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.constant i8.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i8.public i8.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i8.public i8.constant true _ MIN : 0 0 0 0 0/0/0 public
+boolean.constant i8.public i8.constant true _ -1 : 0 0 0 0 0/0/0 public
+boolean.constant i8.public i8.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant i8.public i8.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant i8.public i8.constant true _ 2^4 : 0 0 0 0 0/0/0 public
+boolean.constant i8.public i8.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant i8.public i8.public * : 0 0 0 0 0/0/0 public
+boolean.constant i8.public i8.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i8.public i8.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i8.private i8.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i8.private i8.constant true _ MIN : 0 0 0 0 0/0/0 private
+boolean.constant i8.private i8.constant true _ -1 : 0 0 0 0 0/0/0 private
+boolean.constant i8.private i8.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant i8.private i8.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant i8.private i8.constant true _ 2^4 : 0 0 0 0 0/0/0 private
+boolean.constant i8.private i8.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant i8.private i8.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i8.private i8.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i8.private i8.private * : 0 0 0 0 0/0/0 private
+boolean.public i8.constant i8.constant * : 0 0 0 0 0/0/0 constant
+boolean.public i8.constant i8.constant _ MIN -1 : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.public i8.constant i8.constant _ MIN 0 : 0 0 0 0 0/0/0 public[c7/u1/p0]
+boolean.public i8.constant i8.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public i8.constant i8.constant _ MIN 2^4 : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public i8.constant i8.constant _ MIN MAX : 0 0 0 0 0/0/0 private[c0/u1/p7]
+boolean.public i8.constant i8.constant _ -1 MIN : 0 0 0 0 0/0/0 public[c1/u7/p0]
+boolean.public i8.constant i8.constant _ -1 0 : 0 0 0 0 0/0/0 public
+boolean.public i8.constant i8.constant _ -1 1 : 0 0 0 0 0/0/0 public[c1/u7/p0]
+boolean.public i8.constant i8.constant _ -1 2^4 : 0 0 0 0 0/0/0 public[c1/u7/p0]
+boolean.public i8.constant i8.constant _ -1 MAX : 0 0 0 0 0/0/0 public[c7/u1/p0]
+boolean.public i8.constant i8.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.public i8.constant i8.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.public i8.constant i8.constant _ 0 1 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.public i8.constant i8.constant _ 0 2^4 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.public i8.constant i8.constant _ 0 MAX : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.public i8.constant i8.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public i8.constant i8.constant _ 1 -1 : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.public i8.constant i8.constant _ 1 0 : 0 0 0 0 0/0/0 public[c7/u1/p0]
+boolean.public i8.constant i8.constant _ 1 2^4 : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public i8.constant i8.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p6]
+boolean.public i8.constant i8.constant _ 2^4 MIN : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public i8.constant i8.constant _ 2^4 -1 : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.public i8.constant i8.constant _ 2^4 0 : 0 0 0 0 0/0/0 public[c7/u1/p0]
+boolean.public i8.constant i8.constant _ 2^4 1 : 0 0 0 0 0/0/0 private[c6/u1/p1]
+boolean.public i8.constant i8.constant _ 2^4 MAX : 0 0 0 0 0/0/0 private[c2/u0/p6]
+boolean.public i8.constant i8.constant _ MAX MIN : 0 0 0 0 0/0/0 private[c0/u7/p1]
+boolean.public i8.constant i8.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.public i8.constant i8.constant _ MAX 0 : 0 0 0 0 0/0/0 public[c1/u7/p0]
+boolean.public i8.constant i8.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c2/u6/p0]
+boolean.public i8.constant i8.constant _ MAX 2^4 : 0 0 0 0 0/0/0 public[c2/u6/p0]
+boolean.public i8.constant i8.public * : 0 0 8 8 16/9/9 private
+boolean.public i8.constant i8.public _ -1 _ : 0 0 8 8 16/16/16 private
+boolean.public i8.constant i8.public _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.public i8.constant i8.public _ MAX _ : 0 0 8 8 16/15/15 private
+boolean.public i8.constant i8.private * : 0 0 8 8 16/9/9 private
+boolean.public i8.constant i8.private _ -1 _ : 0 0 8 8 16/16/16 private
+boolean.public i8.constant i8.private _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.public i8.constant i8.private _ MAX _ : 0 0 8 8 16/15/15 private
+boolean.public i8.public i8.constant * : 0 0 8 8 8/9/9 private
+boolean.public i8.public i8.constant _ _ -1 : 0 0 8 8 8/16/16 private
+boolean.public i8.public i8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.public i8.public i8.constant _ _ MAX : 0 0 8 8 8/15/15 private
+boolean.public i8.public i8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.public i8.public i8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.public i8.private i8.constant * : 0 0 8 8 8/9/9 private
+boolean.public i8.private i8.constant _ _ -1 : 0 0 8 8 8/16/16 private
+boolean.public i8.private i8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.public i8.private i8.constant _ _ MAX : 0 0 8 8 8/15/15 private
+boolean.public i8.private i8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.public i8.private i8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private i8.constant i8.constant * : 0 0 0 0 0/0/0 private[c1/u0/p7]
+boolean.private i8.constant i8.constant _ MIN MIN : 0 0 0 0 0/0/0 constant
+boolean.private i8.constant i8.constant _ MIN 0 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private i8.constant i8.constant _ MIN 2^4 : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private i8.constant i8.constant _ MIN MAX : 0 0 0 0 0/0/0 private
+boolean.private i8.constant i8.constant _ -1 -1 : 0 0 0 0 0/0/0 constant
+boolean.private i8.constant i8.constant _ -1 0 : 0 0 0 0 0/0/0 private
+boolean.private i8.constant i8.constant _ -1 MAX : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.private i8.constant i8.constant _ 0 0 : 0 0 0 0 0/0/0 constant
+boolean.private i8.constant i8.constant _ 0 1 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ 0 2^4 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private i8.constant i8.constant _ 1 0 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ 1 1 : 0 0 0 0 0/0/0 constant
+boolean.private i8.constant i8.constant _ 1 2^4 : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private i8.constant i8.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p6]
+boolean.private i8.constant i8.constant _ 2^4 MIN : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private i8.constant i8.constant _ 2^4 0 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ 2^4 1 : 0 0 0 0 0/0/0 private[c6/u0/p2]
+boolean.private i8.constant i8.constant _ 2^4 2^4 : 0 0 0 0 0/0/0 constant
+boolean.private i8.constant i8.constant _ 2^4 MAX : 0 0 0 0 0/0/0 private[c2/u0/p6]
+boolean.private i8.constant i8.constant _ MAX MIN : 0 0 0 0 0/0/0 private
+boolean.private i8.constant i8.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c7/u0/p1]
+boolean.private i8.constant i8.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c2/u0/p6]
+boolean.private i8.constant i8.constant _ MAX 2^4 : 0 0 0 0 0/0/0 private[c2/u0/p6]
+boolean.private i8.constant i8.constant _ MAX MAX : 0 0 0 0 0/0/0 constant
+boolean.private i8.constant i8.public * : 0 0 8 8 16/9/9 private
+boolean.private i8.constant i8.public _ -1 _ : 0 0 8 8 16/16/16 private
+boolean.private i8.constant i8.public _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.private i8.constant i8.public _ MAX _ : 0 0 8 8 16/15/15 private
+boolean.private i8.constant i8.private * : 0 0 8 8 16/9/9 private
+boolean.private i8.constant i8.private _ -1 _ : 0 0 8 8 16/16/16 private
+boolean.private i8.constant i8.private _ 0 _ : 0 0 8 8 16/8/8 private
+boolean.private i8.constant i8.private _ MAX _ : 0 0 8 8 16/15/15 private
+boolean.private i8.public i8.constant * : 0 0 8 8 8/9/9 private
+boolean.private i8.public i8.constant _ _ -1 : 0 0 8 8 8/16/16 private
+boolean.private i8.public i8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.private i8.public i8.constant _ _ MAX : 0 0 8 8 8/15/15 private
+boolean.private i8.public i8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private i8.public i8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private i8.private i8.constant * : 0 0 8 8 8/9/9 private
+boolean.private i8.private i8.constant _ _ -1 : 0 0 8 8 8/16/16 private
+boolean.private i8.private i8.constant _ _ 0 : 0 0 8 8 8/8/8 private
+boolean.private i8.private i8.constant _ _ MAX : 0 0 8 8 8/15/15 private
+boolean.private i8.private i8.public _ _ _ : 0 0 8 8 8/16/16 private
+boolean.private i8.private i8.private _ _ _ : 0 0 8 8 8/16/16 private
+boolean.constant i16.constant i16.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.public * : 0 0 0 0 0/0/0 public
+boolean.constant i16.constant i16.public true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.public true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.public true 2^8 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.private * : 0 0 0 0 0/0/0 private
+boolean.constant i16.constant i16.private true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.private true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.private true 2^8 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.constant i16.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i16.public i16.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i16.public i16.constant true _ MIN : 0 0 0 0 0/0/0 public
+boolean.constant i16.public i16.constant true _ -1 : 0 0 0 0 0/0/0 public
+boolean.constant i16.public i16.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant i16.public i16.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant i16.public i16.constant true _ 2^8 : 0 0 0 0 0/0/0 public
+boolean.constant i16.public i16.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant i16.public i16.public * : 0 0 0 0 0/0/0 public
+boolean.constant i16.public i16.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i16.public i16.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i16.private i16.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i16.private i16.constant true _ MIN : 0 0 0 0 0/0/0 private
+boolean.constant i16.private i16.constant true _ -1 : 0 0 0 0 0/0/0 private
+boolean.constant i16.private i16.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant i16.private i16.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant i16.private i16.constant true _ 2^8 : 0 0 0 0 0/0/0 private
+boolean.constant i16.private i16.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant i16.private i16.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i16.private i16.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i16.private i16.private * : 0 0 0 0 0/0/0 private
+boolean.public i16.constant i16.constant * : 0 0 0 0 0/0/0 constant
+boolean.public i16.constant i16.constant _ MIN -1 : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.public i16.constant i16.constant _ MIN 0 : 0 0 0 0 0/0/0 public[c15/u1/p0]
+boolean.public i16.constant i16.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public i16.constant i16.constant _ MIN 2^8 : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public i16.constant i16.constant _ MIN MAX : 0 0 0 0 0/0/0 private[c0/u1/p15]
+boolean.public i16.constant i16.constant _ -1 MIN : 0 0 0 0 0/0/0 public[c1/u15/p0]
+boolean.public i16.constant i16.constant _ -1 0 : 0 0 0 0 0/0/0 public
+boolean.public i16.constant i16.constant _ -1 1 : 0 0 0 0 0/0/0 public[c1/u15/p0]
+boolean.public i16.constant i16.constant _ -1 2^8 : 0 0 0 0 0/0/0 public[c1/u15/p0]
+boolean.public i16.constant i16.constant _ -1 MAX : 0 0 0 0 0/0/0 public[c15/u1/p0]
+boolean.public i16.constant i16.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.public i16.constant i16.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.public i16.constant i16.constant _ 0 1 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.public i16.constant i16.constant _ 0 2^8 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.public i16.constant i16.constant _ 0 MAX : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.public i16.constant i16.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public i16.constant i16.constant _ 1 -1 : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.public i16.constant i16.constant _ 1 0 : 0 0 0 0 0/0/0 public[c15/u1/p0]
+boolean.public i16.constant i16.constant _ 1 2^8 : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public i16.constant i16.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p14]
+boolean.public i16.constant i16.constant _ 2^8 MIN : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public i16.constant i16.constant _ 2^8 -1 : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.public i16.constant i16.constant _ 2^8 0 : 0 0 0 0 0/0/0 public[c15/u1/p0]
+boolean.public i16.constant i16.constant _ 2^8 1 : 0 0 0 0 0/0/0 private[c14/u1/p1]
+boolean.public i16.constant i16.constant _ 2^8 MAX : 0 0 0 0 0/0/0 private[c2/u0/p14]
+boolean.public i16.constant i16.constant _ MAX MIN : 0 0 0 0 0/0/0 private[c0/u15/p1]
+boolean.public i16.constant i16.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.public i16.constant i16.constant _ MAX 0 : 0 0 0 0 0/0/0 public[c1/u15/p0]
+boolean.public i16.constant i16.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c2/u14/p0]
+boolean.public i16.constant i16.constant _ MAX 2^8 : 0 0 0 0 0/0/0 public[c2/u14/p0]
+boolean.public i16.constant i16.public * : 0 0 16 16 32/17/17 private
+boolean.public i16.constant i16.public _ -1 _ : 0 0 16 16 32/32/32 private
+boolean.public i16.constant i16.public _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.public i16.constant i16.public _ MAX _ : 0 0 16 16 32/31/31 private
+boolean.public i16.constant i16.private * : 0 0 16 16 32/17/17 private
+boolean.public i16.constant i16.private _ -1 _ : 0 0 16 16 32/32/32 private
+boolean.public i16.constant i16.private _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.public i16.constant i16.private _ MAX _ : 0 0 16 16 32/31/31 private
+boolean.public i16.public i16.constant * : 0 0 16 16 16/17/17 private
+boolean.public i16.public i16.constant _ _ -1 : 0 0 16 16 16/32/32 private
+boolean.public i16.public i16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.public i16.public i16.constant _ _ MAX : 0 0 16 16 16/31/31 private
+boolean.public i16.public i16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.public i16.public i16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.public i16.private i16.constant * : 0 0 16 16 16/17/17 private
+boolean.public i16.private i16.constant _ _ -1 : 0 0 16 16 16/32/32 private
+boolean.public i16.private i16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.public i16.private i16.constant _ _ MAX : 0 0 16 16 16/31/31 private
+boolean.public i16.private i16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.public i16.private i16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private i16.constant i16.constant * : 0 0 0 0 0/0/0 private[c1/u0/p15]
+boolean.private i16.constant i16.constant _ MIN MIN : 0 0 0 0 0/0/0 constant
+boolean.private i16.constant i16.constant _ MIN 0 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private i16.constant i16.constant _ MIN 2^8 : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private i16.constant i16.constant _ MIN MAX : 0 0 0 0 0/0/0 private
+boolean.private i16.constant i16.constant _ -1 -1 : 0 0 0 0 0/0/0 constant
+boolean.private i16.constant i16.constant _ -1 0 : 0 0 0 0 0/0/0 private
+boolean.private i16.constant i16.constant _ -1 MAX : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.private i16.constant i16.constant _ 0 0 : 0 0 0 0 0/0/0 constant
+boolean.private i16.constant i16.constant _ 0 1 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ 0 2^8 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private i16.constant i16.constant _ 1 0 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ 1 1 : 0 0 0 0 0/0/0 constant
+boolean.private i16.constant i16.constant _ 1 2^8 : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private i16.constant i16.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p14]
+boolean.private i16.constant i16.constant _ 2^8 MIN : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private i16.constant i16.constant _ 2^8 0 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ 2^8 1 : 0 0 0 0 0/0/0 private[c14/u0/p2]
+boolean.private i16.constant i16.constant _ 2^8 2^8 : 0 0 0 0 0/0/0 constant
+boolean.private i16.constant i16.constant _ 2^8 MAX : 0 0 0 0 0/0/0 private[c2/u0/p14]
+boolean.private i16.constant i16.constant _ MAX MIN : 0 0 0 0 0/0/0 private
+boolean.private i16.constant i16.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c15/u0/p1]
+boolean.private i16.constant i16.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c2/u0/p14]
+boolean.private i16.constant i16.constant _ MAX 2^8 : 0 0 0 0 0/0/0 private[c2/u0/p14]
+boolean.private i16.constant i16.constant _ MAX MAX : 0 0 0 0 0/0/0 constant
+boolean.private i16.constant i16.public * : 0 0 16 16 32/17/17 private
+boolean.private i16.constant i16.public _ -1 _ : 0 0 16 16 32/32/32 private
+boolean.private i16.constant i16.public _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.private i16.constant i16.public _ MAX _ : 0 0 16 16 32/31/31 private
+boolean.private i16.constant i16.private * : 0 0 16 16 32/17/17 private
+boolean.private i16.constant i16.private _ -1 _ : 0 0 16 16 32/32/32 private
+boolean.private i16.constant i16.private _ 0 _ : 0 0 16 16 32/16/16 private
+boolean.private i16.constant i16.private _ MAX _ : 0 0 16 16 32/31/31 private
+boolean.private i16.public i16.constant * : 0 0 16 16 16/17/17 private
+boolean.private i16.public i16.constant _ _ -1 : 0 0 16 16 16/32/32 private
+boolean.private i16.public i16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.private i16.public i16.constant _ _ MAX : 0 0 16 16 16/31/31 private
+boolean.private i16.public i16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private i16.public i16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private i16.private i16.constant * : 0 0 16 16 16/17/17 private
+boolean.private i16.private i16.constant _ _ -1 : 0 0 16 16 16/32/32 private
+boolean.private i16.private i16.constant _ _ 0 : 0 0 16 16 16/16/16 private
+boolean.private i16.private i16.constant _ _ MAX : 0 0 16 16 16/31/31 private
+boolean.private i16.private i16.public _ _ _ : 0 0 16 16 16/32/32 private
+boolean.private i16.private i16.private _ _ _ : 0 0 16 16 16/32/32 private
+boolean.constant i32.constant i32.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.public * : 0 0 0 0 0/0/0 public
+boolean.constant i32.constant i32.public true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.public true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.public true 2^16 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.private * : 0 0 0 0 0/0/0 private
+boolean.constant i32.constant i32.private true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.private true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.private true 2^16 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.constant i32.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i32.public i32.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i32.public i32.constant true _ MIN : 0 0 0 0 0/0/0 public
+boolean.constant i32.public i32.constant true _ -1 : 0 0 0 0 0/0/0 public
+boolean.constant i32.public i32.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant i32.public i32.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant i32.public i32.constant true _ 2^16 : 0 0 0 0 0/0/0 public
+boolean.constant i32.public i32.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant i32.public i32.public * : 0 0 0 0 0/0/0 public
+boolean.constant i32.public i32.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i32.public i32.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i32.private i32.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i32.private i32.constant true _ MIN : 0 0 0 0 0/0/0 private
+boolean.constant i32.private i32.constant true _ -1 : 0 0 0 0 0/0/0 private
+boolean.constant i32.private i32.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant i32.private i32.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant i32.private i32.constant true _ 2^16 : 0 0 0 0 0/0/0 private
+boolean.constant i32.private i32.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant i32.private i32.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i32.private i32.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i32.private i32.private * : 0 0 0 0 0/0/0 private
+boolean.public i32.constant i32.constant * : 0 0 0 0 0/0/0 constant
+boolean.public i32.constant i32.constant _ MIN -1 : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.public i32.constant i32.constant _ MIN 0 : 0 0 0 0 0/0/0 public[c31/u1/p0]
+boolean.public i32.constant i32.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public i32.constant i32.constant _ MIN 2^16 : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public i32.constant i32.constant _ MIN MAX : 0 0 0 0 0/0/0 private[c0/u1/p31]
+boolean.public i32.constant i32.constant _ -1 MIN : 0 0 0 0 0/0/0 public[c1/u31/p0]
+boolean.public i32.constant i32.constant _ -1 0 : 0 0 0 0 0/0/0 public
+boolean.public i32.constant i32.constant _ -1 1 : 0 0 0 0 0/0/0 public[c1/u31/p0]
+boolean.public i32.constant i32.constant _ -1 2^16 : 0 0 0 0 0/0/0 public[c1/u31/p0]
+boolean.public i32.constant i32.constant _ -1 MAX : 0 0 0 0 0/0/0 public[c31/u1/p0]
+boolean.public i32.constant i32.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.public i32.constant i32.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.public i32.constant i32.constant _ 0 1 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.public i32.constant i32.constant _ 0 2^16 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.public i32.constant i32.constant _ 0 MAX : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.public i32.constant i32.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public i32.constant i32.constant _ 1 -1 : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.public i32.constant i32.constant _ 1 0 : 0 0 0 0 0/0/0 public[c31/u1/p0]
+boolean.public i32.constant i32.constant _ 1 2^16 : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public i32.constant i32.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p30]
+boolean.public i32.constant i32.constant _ 2^16 MIN : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public i32.constant i32.constant _ 2^16 -1 : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.public i32.constant i32.constant _ 2^16 0 : 0 0 0 0 0/0/0 public[c31/u1/p0]
+boolean.public i32.constant i32.constant _ 2^16 1 : 0 0 0 0 0/0/0 private[c30/u1/p1]
+boolean.public i32.constant i32.constant _ 2^16 MAX : 0 0 0 0 0/0/0 private[c2/u0/p30]
+boolean.public i32.constant i32.constant _ MAX MIN : 0 0 0 0 0/0/0 private[c0/u31/p1]
+boolean.public i32.constant i32.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.public i32.constant i32.constant _ MAX 0 : 0 0 0 0 0/0/0 public[c1/u31/p0]
+boolean.public i32.constant i32.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c2/u30/p0]
+boolean.public i32.constant i32.constant _ MAX 2^16 : 0 0 0 0 0/0/0 public[c2/u30/p0]
+boolean.public i32.constant i32.public * : 0 0 32 32 64/33/33 private
+boolean.public i32.constant i32.public _ -1 _ : 0 0 32 32 64/64/64 private
+boolean.public i32.constant i32.public _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.public i32.constant i32.public _ MAX _ : 0 0 32 32 64/63/63 private
+boolean.public i32.constant i32.private * : 0 0 32 32 64/33/33 private
+boolean.public i32.constant i32.private _ -1 _ : 0 0 32 32 64/64/64 private
+boolean.public i32.constant i32.private _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.public i32.constant i32.private _ MAX _ : 0 0 32 32 64/63/63 private
+boolean.public i32.public i32.constant * : 0 0 32 32 32/33/33 private
+boolean.public i32.public i32.constant _ _ -1 : 0 0 32 32 32/64/64 private
+boolean.public i32.public i32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.public i32.public i32.constant _ _ MAX : 0 0 32 32 32/63/63 private
+boolean.public i32.public i32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.public i32.public i32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.public i32.private i32.constant * : 0 0 32 32 32/33/33 private
+boolean.public i32.private i32.constant _ _ -1 : 0 0 32 32 32/64/64 private
+boolean.public i32.private i32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.public i32.private i32.constant _ _ MAX : 0 0 32 32 32/63/63 private
+boolean.public i32.private i32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.public i32.private i32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private i32.constant i32.constant * : 0 0 0 0 0/0/0 private[c1/u0/p31]
+boolean.private i32.constant i32.constant _ MIN MIN : 0 0 0 0 0/0/0 constant
+boolean.private i32.constant i32.constant _ MIN 0 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private i32.constant i32.constant _ MIN 2^16 : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private i32.constant i32.constant _ MIN MAX : 0 0 0 0 0/0/0 private
+boolean.private i32.constant i32.constant _ -1 -1 : 0 0 0 0 0/0/0 constant
+boolean.private i32.constant i32.constant _ -1 0 : 0 0 0 0 0/0/0 private
+boolean.private i32.constant i32.constant _ -1 MAX : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.private i32.constant i32.constant _ 0 0 : 0 0 0 0 0/0/0 constant
+boolean.private i32.constant i32.constant _ 0 1 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ 0 2^16 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private i32.constant i32.constant _ 1 0 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ 1 1 : 0 0 0 0 0/0/0 constant
+boolean.private i32.constant i32.constant _ 1 2^16 : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private i32.constant i32.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p30]
+boolean.private i32.constant i32.constant _ 2^16 MIN : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private i32.constant i32.constant _ 2^16 0 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ 2^16 1 : 0 0 0 0 0/0/0 private[c30/u0/p2]
+boolean.private i32.constant i32.constant _ 2^16 2^16 : 0 0 0 0 0/0/0 constant
+boolean.private i32.constant i32.constant _ 2^16 MAX : 0 0 0 0 0/0/0 private[c2/u0/p30]
+boolean.private i32.constant i32.constant _ MAX MIN : 0 0 0 0 0/0/0 private
+boolean.private i32.constant i32.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c31/u0/p1]
+boolean.private i32.constant i32.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c2/u0/p30]
+boolean.private i32.constant i32.constant _ MAX 2^16 : 0 0 0 0 0/0/0 private[c2/u0/p30]
+boolean.private i32.constant i32.constant _ MAX MAX : 0 0 0 0 0/0/0 constant
+boolean.private i32.constant i32.public * : 0 0 32 32 64/33/33 private
+boolean.private i32.constant i32.public _ -1 _ : 0 0 32 32 64/64/64 private
+boolean.private i32.constant i32.public _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.private i32.constant i32.public _ MAX _ : 0 0 32 32 64/63/63 private
+boolean.private i32.constant i32.private * : 0 0 32 32 64/33/33 private
+boolean.private i32.constant i32.private _ -1 _ : 0 0 32 32 64/64/64 private
+boolean.private i32.constant i32.private _ 0 _ : 0 0 32 32 64/32/32 private
+boolean.private i32.constant i32.private _ MAX _ : 0 0 32 32 64/63/63 private
+boolean.private i32.public i32.constant * : 0 0 32 32 32/33/33 private
+boolean.private i32.public i32.constant _ _ -1 : 0 0 32 32 32/64/64 private
+boolean.private i32.public i32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.private i32.public i32.constant _ _ MAX : 0 0 32 32 32/63/63 private
+boolean.private i32.public i32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private i32.public i32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private i32.private i32.constant * : 0 0 32 32 32/33/33 private
+boolean.private i32.private i32.constant _ _ -1 : 0 0 32 32 32/64/64 private
+boolean.private i32.private i32.constant _ _ 0 : 0 0 32 32 32/32/32 private
+boolean.private i32.private i32.constant _ _ MAX : 0 0 32 32 32/63/63 private
+boolean.private i32.private i32.public _ _ _ : 0 0 32 32 32/64/64 private
+boolean.private i32.private i32.private _ _ _ : 0 0 32 32 32/64/64 private
+boolean.constant i64.constant i64.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.public * : 0 0 0 0 0/0/0 public
+boolean.constant i64.constant i64.public true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.public true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.public true 2^32 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.private * : 0 0 0 0 0/0/0 private
+boolean.constant i64.constant i64.private true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.private true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.private true 2^32 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.constant i64.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i64.public i64.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i64.public i64.constant true _ MIN : 0 0 0 0 0/0/0 public
+boolean.constant i64.public i64.constant true _ -1 : 0 0 0 0 0/0/0 public
+boolean.constant i64.public i64.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant i64.public i64.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant i64.public i64.constant true _ 2^32 : 0 0 0 0 0/0/0 public
+boolean.constant i64.public i64.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant i64.public i64.public * : 0 0 0 0 0/0/0 public
+boolean.constant i64.public i64.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i64.public i64.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i64.private i64.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i64.private i64.constant true _ MIN : 0 0 0 0 0/0/0 private
+boolean.constant i64.private i64.constant true _ -1 : 0 0 0 0 0/0/0 private
+boolean.constant i64.private i64.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant i64.private i64.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant i64.private i64.constant true _ 2^32 : 0 0 0 0 0/0/0 private
+boolean.constant i64.private i64.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant i64.private i64.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i64.private i64.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i64.private i64.private * : 0 0 0 0 0/0/0 private
+boolean.public i64.constant i64.constant * : 0 0 0 0 0/0/0 constant
+boolean.public i64.constant i64.constant _ MIN -1 : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.public i64.constant i64.constant _ MIN 0 : 0 0 0 0 0/0/0 public[c63/u1/p0]
+boolean.public i64.constant i64.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public i64.constant i64.constant _ MIN 2^32 : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public i64.constant i64.constant _ MIN MAX : 0 0 0 0 0/0/0 private[c0/u1/p63]
+boolean.public i64.constant i64.constant _ -1 MIN : 0 0 0 0 0/0/0 public[c1/u63/p0]
+boolean.public i64.constant i64.constant _ -1 0 : 0 0 0 0 0/0/0 public
+boolean.public i64.constant i64.constant _ -1 1 : 0 0 0 0 0/0/0 public[c1/u63/p0]
+boolean.public i64.constant i64.constant _ -1 2^32 : 0 0 0 0 0/0/0 public[c1/u63/p0]
+boolean.public i64.constant i64.constant _ -1 MAX : 0 0 0 0 0/0/0 public[c63/u1/p0]
+boolean.public i64.constant i64.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.public i64.constant i64.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.public i64.constant i64.constant _ 0 1 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.public i64.constant i64.constant _ 0 2^32 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.public i64.constant i64.constant _ 0 MAX : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.public i64.constant i64.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public i64.constant i64.constant _ 1 -1 : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.public i64.constant i64.constant _ 1 0 : 0 0 0 0 0/0/0 public[c63/u1/p0]
+boolean.public i64.constant i64.constant _ 1 2^32 : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public i64.constant i64.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p62]
+boolean.public i64.constant i64.constant _ 2^32 MIN : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public i64.constant i64.constant _ 2^32 -1 : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.public i64.constant i64.constant _ 2^32 0 : 0 0 0 0 0/0/0 public[c63/u1/p0]
+boolean.public i64.constant i64.constant _ 2^32 1 : 0 0 0 0 0/0/0 private[c62/u1/p1]
+boolean.public i64.constant i64.constant _ 2^32 MAX : 0 0 0 0 0/0/0 private[c2/u0/p62]
+boolean.public i64.constant i64.constant _ MAX MIN : 0 0 0 0 0/0/0 private[c0/u63/p1]
+boolean.public i64.constant i64.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.public i64.constant i64.constant _ MAX 0 : 0 0 0 0 0/0/0 public[c1/u63/p0]
+boolean.public i64.constant i64.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c2/u62/p0]
+boolean.public i64.constant i64.constant _ MAX 2^32 : 0 0 0 0 0/0/0 public[c2/u62/p0]
+boolean.public i64.constant i64.public * : 0 0 64 64 128/65/65 private
+boolean.public i64.constant i64.public _ -1 _ : 0 0 64 64 128/128/128 private
+boolean.public i64.constant i64.public _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.public i64.constant i64.public _ MAX _ : 0 0 64 64 128/127/127 private
+boolean.public i64.constant i64.private * : 0 0 64 64 128/65/65 private
+boolean.public i64.constant i64.private _ -1 _ : 0 0 64 64 128/128/128 private
+boolean.public i64.constant i64.private _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.public i64.constant i64.private _ MAX _ : 0 0 64 64 128/127/127 private
+boolean.public i64.public i64.constant * : 0 0 64 64 64/65/65 private
+boolean.public i64.public i64.constant _ _ -1 : 0 0 64 64 64/128/128 private
+boolean.public i64.public i64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.public i64.public i64.constant _ _ MAX : 0 0 64 64 64/127/127 private
+boolean.public i64.public i64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.public i64.public i64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.public i64.private i64.constant * : 0 0 64 64 64/65/65 private
+boolean.public i64.private i64.constant _ _ -1 : 0 0 64 64 64/128/128 private
+boolean.public i64.private i64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.public i64.private i64.constant _ _ MAX : 0 0 64 64 64/127/127 private
+boolean.public i64.private i64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.public i64.private i64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private i64.constant i64.constant * : 0 0 0 0 0/0/0 private[c1/u0/p63]
+boolean.private i64.constant i64.constant _ MIN MIN : 0 0 0 0 0/0/0 constant
+boolean.private i64.constant i64.constant _ MIN 0 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private i64.constant i64.constant _ MIN 2^32 : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private i64.constant i64.constant _ MIN MAX : 0 0 0 0 0/0/0 private
+boolean.private i64.constant i64.constant _ -1 -1 : 0 0 0 0 0/0/0 constant
+boolean.private i64.constant i64.constant _ -1 0 : 0 0 0 0 0/0/0 private
+boolean.private i64.constant i64.constant _ -1 MAX : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.private i64.constant i64.constant _ 0 0 : 0 0 0 0 0/0/0 constant
+boolean.private i64.constant i64.constant _ 0 1 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ 0 2^32 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private i64.constant i64.constant _ 1 0 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ 1 1 : 0 0 0 0 0/0/0 constant
+boolean.private i64.constant i64.constant _ 1 2^32 : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private i64.constant i64.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p62]
+boolean.private i64.constant i64.constant _ 2^32 MIN : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private i64.constant i64.constant _ 2^32 0 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ 2^32 1 : 0 0 0 0 0/0/0 private[c62/u0/p2]
+boolean.private i64.constant i64.constant _ 2^32 2^32 : 0 0 0 0 0/0/0 constant
+boolean.private i64.constant i64.constant _ 2^32 MAX : 0 0 0 0 0/0/0 private[c2/u0/p62]
+boolean.private i64.constant i64.constant _ MAX MIN : 0 0 0 0 0/0/0 private
+boolean.private i64.constant i64.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c63/u0/p1]
+boolean.private i64.constant i64.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c2/u0/p62]
+boolean.private i64.constant i64.constant _ MAX 2^32 : 0 0 0 0 0/0/0 private[c2/u0/p62]
+boolean.private i64.constant i64.constant _ MAX MAX : 0 0 0 0 0/0/0 constant
+boolean.private i64.constant i64.public * : 0 0 64 64 128/65/65 private
+boolean.private i64.constant i64.public _ -1 _ : 0 0 64 64 128/128/128 private
+boolean.private i64.constant i64.public _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.private i64.constant i64.public _ MAX _ : 0 0 64 64 128/127/127 private
+boolean.private i64.constant i64.private * : 0 0 64 64 128/65/65 private
+boolean.private i64.constant i64.private _ -1 _ : 0 0 64 64 128/128/128 private
+boolean.private i64.constant i64.private _ 0 _ : 0 0 64 64 128/64/64 private
+boolean.private i64.constant i64.private _ MAX _ : 0 0 64 64 128/127/127 private
+boolean.private i64.public i64.constant * : 0 0 64 64 64/65/65 private
+boolean.private i64.public i64.constant _ _ -1 : 0 0 64 64 64/128/128 private
+boolean.private i64.public i64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.private i64.public i64.constant _ _ MAX : 0 0 64 64 64/127/127 private
+boolean.private i64.public i64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private i64.public i64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private i64.private i64.constant * : 0 0 64 64 64/65/65 private
+boolean.private i64.private i64.constant _ _ -1 : 0 0 64 64 64/128/128 private
+boolean.private i64.private i64.constant _ _ 0 : 0 0 64 64 64/64/64 private
+boolean.private i64.private i64.constant _ _ MAX : 0 0 64 64 64/127/127 private
+boolean.private i64.private i64.public _ _ _ : 0 0 64 64 64/128/128 private
+boolean.private i64.private i64.private _ _ _ : 0 0 64 64 64/128/128 private
+boolean.constant i128.constant i128.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.public * : 0 0 0 0 0/0/0 public
+boolean.constant i128.constant i128.public true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.public true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.public true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.public true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.public true 2^64 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.public true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.private * : 0 0 0 0 0/0/0 private
+boolean.constant i128.constant i128.private true MIN _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.private true -1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.private true 0 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.private true 1 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.private true 2^64 _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.constant i128.private true MAX _ : 0 0 0 0 0/0/0 constant
+boolean.constant i128.public i128.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i128.public i128.constant true _ MIN : 0 0 0 0 0/0/0 public
+boolean.constant i128.public i128.constant true _ -1 : 0 0 0 0 0/0/0 public
+boolean.constant i128.public i128.constant true _ 0 : 0 0 0 0 0/0/0 public
+boolean.constant i128.public i128.constant true _ 1 : 0 0 0 0 0/0/0 public
+boolean.constant i128.public i128.constant true _ 2^64 : 0 0 0 0 0/0/0 public
+boolean.constant i128.public i128.constant true _ MAX : 0 0 0 0 0/0/0 public
+boolean.constant i128.public i128.public * : 0 0 0 0 0/0/0 public
+boolean.constant i128.public i128.private false _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i128.public i128.private true _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i128.private i128.constant * : 0 0 0 0 0/0/0 constant
+boolean.constant i128.private i128.constant true _ MIN : 0 0 0 0 0/0/0 private
+boolean.constant i128.private i128.constant true _ -1 : 0 0 0 0 0/0/0 private
+boolean.constant i128.private i128.constant true _ 0 : 0 0 0 0 0/0/0 private
+boolean.constant i128.private i128.constant true _ 1 : 0 0 0 0 0/0/0 private
+boolean.constant i128.private i128.constant true _ 2^64 : 0 0 0 0 0/0/0 private
+boolean.constant i128.private i128.constant true _ MAX : 0 0 0 0 0/0/0 private
+boolean.constant i128.private i128.public false _ _ : 0 0 0 0 0/0/0 public
+boolean.constant i128.private i128.public true _ _ : 0 0 0 0 0/0/0 private
+boolean.constant i128.private i128.private * : 0 0 0 0 0/0/0 private
+boolean.public i128.constant i128.constant * : 0 0 0 0 0/0/0 constant
+boolean.public i128.constant i128.constant _ MIN -1 : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.public i128.constant i128.constant _ MIN 0 : 0 0 0 0 0/0/0 public[c127/u1/p0]
+boolean.public i128.constant i128.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public i128.constant i128.constant _ MIN 2^64 : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public i128.constant i128.constant _ MIN MAX : 0 0 0 0 0/0/0 private[c0/u1/p127]
+boolean.public i128.constant i128.constant _ -1 MIN : 0 0 0 0 0/0/0 public[c1/u127/p0]
+boolean.public i128.constant i128.constant _ -1 0 : 0 0 0 0 0/0/0 public
+boolean.public i128.constant i128.constant _ -1 1 : 0 0 0 0 0/0/0 public[c1/u127/p0]
+boolean.public i128.constant i128.constant _ -1 2^64 : 0 0 0 0 0/0/0 public[c1/u127/p0]
+boolean.public i128.constant i128.constant _ -1 MAX : 0 0 0 0 0/0/0 public[c127/u1/p0]
+boolean.public i128.constant i128.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.public i128.constant i128.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.public i128.constant i128.constant _ 0 1 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.public i128.constant i128.constant _ 0 2^64 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.public i128.constant i128.constant _ 0 MAX : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.public i128.constant i128.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public i128.constant i128.constant _ 1 -1 : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.public i128.constant i128.constant _ 1 0 : 0 0 0 0 0/0/0 public[c127/u1/p0]
+boolean.public i128.constant i128.constant _ 1 2^64 : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public i128.constant i128.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p126]
+boolean.public i128.constant i128.constant _ 2^64 MIN : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public i128.constant i128.constant _ 2^64 -1 : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.public i128.constant i128.constant _ 2^64 0 : 0 0 0 0 0/0/0 public[c127/u1/p0]
+boolean.public i128.constant i128.constant _ 2^64 1 : 0 0 0 0 0/0/0 private[c126/u1/p1]
+boolean.public i128.constant i128.constant _ 2^64 MAX : 0 0 0 0 0/0/0 private[c2/u0/p126]
+boolean.public i128.constant i128.constant _ MAX MIN : 0 0 0 0 0/0/0 private[c0/u127/p1]
+boolean.public i128.constant i128.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.public i128.constant i128.constant _ MAX 0 : 0 0 0 0 0/0/0 public[c1/u127/p0]
+boolean.public i128.constant i128.constant _ MAX 1 : 0 0 0 0 0/0/0 public[c2/u126/p0]
+boolean.public i128.constant i128.constant _ MAX 2^64 : 0 0 0 0 0/0/0 public[c2/u126/p0]
+boolean.public i128.constant i128.public * : 0 0 128 128 256/129/129 private
+boolean.public i128.constant i128.public _ -1 _ : 0 0 128 128 256/256/256 private
+boolean.public i128.constant i128.public _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.public i128.constant i128.public _ MAX _ : 0 0 128 128 256/255/255 private
+boolean.public i128.constant i128.private * : 0 0 128 128 256/129/129 private
+boolean.public i128.constant i128.private _ -1 _ : 0 0 128 128 256/256/256 private
+boolean.public i128.constant i128.private _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.public i128.constant i128.private _ MAX _ : 0 0 128 128 256/255/255 private
+boolean.public i128.public i128.constant * : 0 0 128 128 128/129/129 private
+boolean.public i128.public i128.constant _ _ -1 : 0 0 128 128 128/256/256 private
+boolean.public i128.public i128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.public i128.public i128.constant _ _ MAX : 0 0 128 128 128/255/255 private
+boolean.public i128.public i128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.public i128.public i128.private _ _ _ : 0 0 128 128 128/256/256 private
+boolean.public i128.private i128.constant * : 0 0 128 128 128/129/129 private
+boolean.public i128.private i128.constant _ _ -1 : 0 0 128 128 128/256/256 private
+boolean.public i128.private i128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.public i128.private i128.constant _ _ MAX : 0 0 128 128 128/255/255 private
+boolean.public i128.private i128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.public i128.private i128.private _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private i128.constant i128.constant * : 0 0 0 0 0/0/0 private[c1/u0/p127]
+boolean.private i128.constant i128.constant _ MIN MIN : 0 0 0 0 0/0/0 constant
+boolean.private i128.constant i128.constant _ MIN 0 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ MIN 1 : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private i128.constant i128.constant _ MIN 2^64 : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private i128.constant i128.constant _ MIN MAX : 0 0 0 0 0/0/0 private
+boolean.private i128.constant i128.constant _ -1 -1 : 0 0 0 0 0/0/0 constant
+boolean.private i128.constant i128.constant _ -1 0 : 0 0 0 0 0/0/0 private
+boolean.private i128.constant i128.constant _ -1 MAX : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ 0 MIN : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ 0 -1 : 0 0 0 0 0/0/0 private
+boolean.private i128.constant i128.constant _ 0 0 : 0 0 0 0 0/0/0 constant
+boolean.private i128.constant i128.constant _ 0 1 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ 0 2^64 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ 1 MIN : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private i128.constant i128.constant _ 1 0 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ 1 1 : 0 0 0 0 0/0/0 constant
+boolean.private i128.constant i128.constant _ 1 2^64 : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private i128.constant i128.constant _ 1 MAX : 0 0 0 0 0/0/0 private[c2/u0/p126]
+boolean.private i128.constant i128.constant _ 2^64 MIN : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private i128.constant i128.constant _ 2^64 0 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ 2^64 1 : 0 0 0 0 0/0/0 private[c126/u0/p2]
+boolean.private i128.constant i128.constant _ 2^64 2^64 : 0 0 0 0 0/0/0 constant
+boolean.private i128.constant i128.constant _ 2^64 MAX : 0 0 0 0 0/0/0 private[c2/u0/p126]
+boolean.private i128.constant i128.constant _ MAX MIN : 0 0 0 0 0/0/0 private
+boolean.private i128.constant i128.constant _ MAX -1 : 0 0 0 0 0/0/0 private[c127/u0/p1]
+boolean.private i128.constant i128.constant _ MAX 1 : 0 0 0 0 0/0/0 private[c2/u0/p126]
+boolean.private i128.constant i128.constant _ MAX 2^64 : 0 0 0 0 0/0/0 private[c2/u0/p126]
+boolean.private i128.constant i128.constant _ MAX MAX : 0 0 0 0 0/0/0 constant
+boolean.private i128.constant i128.public * : 0 0 128 128 256/129/129 private
+boolean.private i128.constant i128.public _ -1 _ : 0 0 128 128 256/256/256 private
+boolean.private i128.constant i128.public _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.private i128.constant i128.public _ MAX _ : 0 0 128 128 256/255/255 private
+boolean.private i128.constant i128.private * : 0 0 128 128 256/129/129 private
+boolean.private i128.constant i128.private _ -1 _ : 0 0 128 128 256/256/256 private
+boolean.private i128.constant i128.private _ 0 _ : 0 0 128 128 256/128/128 private
+boolean.private i128.constant i128.private _ MAX _ : 0 0 128 128 256/255/255 private
+boolean.private i128.public i128.constant * : 0 0 128 128 128/129/129 private
+boolean.private i128.public i128.constant _ _ -1 : 0 0 128 128 128/256/256 private
+boolean.private i128.public i128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.private i128.public i128.constant _ _ MAX : 0 0 128 128 128/255/255 private
+boolean.private i128.public i128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private i128.public i128.private _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private i128.private i128.constant * : 0 0 128 128 128/129/129 private
+boolean.private i128.private i128.constant _ _ -1 : 0 0 128 128 128/256/256 private
+boolean.private i128.private i128.constant _ _ 0 : 0 0 128 128 128/128/128 private
+boolean.private i128.private i128.constant _ _ MAX : 0 0 128 128 128/255/255 private
+boolean.private i128.private i128.public _ _ _ : 0 0 128 128 128/256/256 private
+boolean.private i128.private i128.private _ _ _ : 0 0 128 128 128/256/256 private

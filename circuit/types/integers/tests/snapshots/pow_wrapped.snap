@@ -1,0 +1,1359 @@
+# Circuit shape of `pow_wrapped` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant u8.constant * : 8 0 0 0 0/0/0 constant
+u8.constant u8.public * : 24 0 257 271 569/382/313 private
+u8.constant u8.public 0 _ : 115 0 166 173 387/228/166 private
+u8.constant u8.public 1 _ : 136 0 0 0 0/0/0 constant
+u8.constant u8.public 2^4 _ : 24 0 259 273 546/385/315 private
+u8.constant u8.public 2^4+1 _ : 24 0 256 270 568/380/312 private
+u8.constant u8.public 2^7-1 _ : 24 0 259 273 574/385/315 private
+u8.constant u8.public 2^7 _ : 24 0 259 273 546/385/315 private
+u8.constant u8.public 2^7+1 _ : 24 0 256 270 568/380/312 private
+u8.constant u8.public 2^8-2^4 _ : 24 0 259 273 546/385/315 private
+u8.constant u8.public MAX-1 _ : 24 0 259 273 574/385/315 private
+u8.constant u8.public MAX _ : 24 0 259 273 574/385/315 private
+u8.constant u8.private * : 24 0 257 271 569/382/313 private
+u8.constant u8.private 0 _ : 115 0 166 173 387/228/166 private
+u8.constant u8.private 1 _ : 136 0 0 0 0/0/0 constant
+u8.constant u8.private 2^4 _ : 24 0 259 273 546/385/315 private
+u8.constant u8.private 2^4+1 _ : 24 0 256 270 568/380/312 private
+u8.constant u8.private 2^7-1 _ : 24 0 259 273 574/385/315 private
+u8.constant u8.private 2^7 _ : 24 0 259 273 546/385/315 private
+u8.constant u8.private 2^7+1 _ : 24 0 256 270 568/380/312 private
+u8.constant u8.private 2^8-2^4 _ : 24 0 259 273 546/385/315 private
+u8.constant u8.private MAX-1 _ : 24 0 259 273 574/385/315 private
+u8.constant u8.private MAX _ : 24 0 259 273 574/385/315 private
+u8.public u8.constant * : 64 0 123 132 320/150/123 private
+u8.public u8.constant _ 0 : 72 0 104 112 272/112/104 constant
+u8.public u8.constant _ 1 : 72 0 104 112 272/112/104 private
+u8.public u8.constant _ 7 : 56 0 142 152 368/188/142 private
+u8.public u8.constant _ 8 : 48 0 161 172 416/226/161 private
+u8.public u8.constant _ MAX : 16 0 237 252 608/378/237 private
+u8.public u8.public _ _ : 16 0 301 316 672/499/358 private
+u8.public u8.private _ _ : 16 0 301 316 672/499/358 private
+u8.private u8.constant * : 64 0 123 132 320/150/123 private
+u8.private u8.constant _ 0 : 72 0 104 112 272/112/104 constant
+u8.private u8.constant _ 1 : 72 0 104 112 272/112/104 private
+u8.private u8.constant _ 7 : 56 0 142 152 368/188/142 private
+u8.private u8.constant _ 8 : 48 0 161 172 416/226/161 private
+u8.private u8.constant _ MAX : 16 0 237 252 608/378/237 private
+u8.private u8.public _ _ : 16 0 301 316 672/499/358 private
+u8.private u8.private _ _ : 16 0 301 316 672/499/358 private
+u8.constant u16.constant * : 8 0 0 0 0/0/0 constant
+u8.constant u16.public * : 24 0 553 583 1233/830/673 private
+u8.constant u16.public 0 _ : 219 0 358 373 843/500/358 private
+u8.constant u16.public 1 _ : 264 0 0 0 0/0/0 constant
+u8.constant u16.public 2^4 _ : 24 0 555 585 1178/833/675 private
+u8.constant u16.public 2^4+1 _ : 24 0 552 582 1232/828/672 private
+u8.constant u16.public 2^7-1 _ : 24 0 555 585 1238/833/675 private
+u8.constant u16.public 2^7 _ : 24 0 555 585 1178/833/675 private
+u8.constant u16.public 2^7+1 _ : 24 0 552 582 1232/828/672 private
+u8.constant u16.public 2^8-2^4 _ : 24 0 555 585 1178/833/675 private
+u8.constant u16.public MAX-1 _ : 24 0 555 585 1238/833/675 private
+u8.constant u16.public MAX _ : 24 0 555 585 1238/833/675 private
+u8.constant u16.private * : 24 0 553 583 1233/830/673 private
+u8.constant u16.private 0 _ : 219 0 358 373 843/500/358 private
+u8.constant u16.private 1 _ : 264 0 0 0 0/0/0 constant
+u8.constant u16.private 2^4 _ : 24 0 555 585 1178/833/675 private
+u8.constant u16.private 2^4+1 _ : 24 0 552 582 1232/828/672 private
+u8.constant u16.private 2^7-1 _ : 24 0 555 585 1238/833/675 private
+u8.constant u16.private 2^7 _ : 24 0 555 585 1178/833/675 private
+u8.constant u16.private 2^7+1 _ : 24 0 552 582 1232/828/672 private
+u8.constant u16.private 2^8-2^4 _ : 24 0 555 585 1178/833/675 private
+u8.constant u16.private MAX-1 _ : 24 0 555 585 1238/833/675 private
+u8.constant u16.private MAX _ : 24 0 555 585 1238/833/675 private
+u8.public u16.constant * : 128 0 227 244 592/262/227 private
+u8.public u16.constant _ 0 : 136 0 208 224 544/224/208 constant
+u8.public u16.constant _ 1 : 136 0 208 224 544/224/208 private
+u8.public u16.constant _ 7 : 120 0 246 264 640/300/246 private
+u8.public u16.constant _ 8 : 112 0 265 284 688/338/265 private
+u8.public u16.constant _ MAX : 16 0 493 524 1264/794/493 private
+u8.public u16.public _ _ : 16 0 621 652 1392/1043/742 private
+u8.public u16.private _ _ : 16 0 621 652 1392/1043/742 private
+u8.private u16.constant * : 128 0 227 244 592/262/227 private
+u8.private u16.constant _ 0 : 136 0 208 224 544/224/208 constant
+u8.private u16.constant _ 1 : 136 0 208 224 544/224/208 private
+u8.private u16.constant _ 7 : 120 0 246 264 640/300/246 private
+u8.private u16.constant _ 8 : 112 0 265 284 688/338/265 private
+u8.private u16.constant _ MAX : 16 0 493 524 1264/794/493 private
+u8.private u16.public _ _ : 16 0 621 652 1392/1043/742 private
+u8.private u16.private _ _ : 16 0 621 652 1392/1043/742 private
+u8.constant u32.constant * : 8 0 0 0 0/0/0 constant
+u8.constant u32.public * : 24 0 1145 1207 2561/1726/1393 private
+u8.constant u32.public 0 _ : 427 0 742 773 1755/1044/742 private
+u8.constant u32.public 1 _ : 520 0 0 0 0/0/0 constant
+u8.constant u32.public 2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+u8.constant u32.public 2^4+1 _ : 24 0 1144 1206 2560/1724/1392 private
+u8.constant u32.public 2^7-1 _ : 24 0 1147 1209 2566/1729/1395 private
+u8.constant u32.public 2^7 _ : 24 0 1147 1209 2442/1729/1395 private
+u8.constant u32.public 2^7+1 _ : 24 0 1144 1206 2560/1724/1392 private
+u8.constant u32.public 2^8-2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+u8.constant u32.public MAX-1 _ : 24 0 1147 1209 2566/1729/1395 private
+u8.constant u32.public MAX _ : 24 0 1147 1209 2566/1729/1395 private
+u8.constant u32.private * : 24 0 1145 1207 2561/1726/1393 private
+u8.constant u32.private 0 _ : 427 0 742 773 1755/1044/742 private
+u8.constant u32.private 1 _ : 520 0 0 0 0/0/0 constant
+u8.constant u32.private 2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+u8.constant u32.private 2^4+1 _ : 24 0 1144 1206 2560/1724/1392 private
+u8.constant u32.private 2^7-1 _ : 24 0 1147 1209 2566/1729/1395 private
+u8.constant u32.private 2^7 _ : 24 0 1147 1209 2442/1729/1395 private
+u8.constant u32.private 2^7+1 _ : 24 0 1144 1206 2560/1724/1392 private
+u8.constant u32.private 2^8-2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+u8.constant u32.private MAX-1 _ : 24 0 1147 1209 2566/1729/1395 private
+u8.constant u32.private MAX _ : 24 0 1147 1209 2566/1729/1395 private
+u8.public u32.constant * : 256 0 435 468 1136/486/435 private
+u8.public u32.constant _ 0 : 264 0 416 448 1088/448/416 constant
+u8.public u32.constant _ 1 : 264 0 416 448 1088/448/416 private
+u8.public u32.constant _ 7 : 248 0 454 488 1184/524/454 private
+u8.public u32.constant _ 8 : 240 0 473 508 1232/562/473 private
+u8.public u32.constant _ MAX : 16 0 1005 1068 2576/1626/1005 private
+u8.public u32.public _ _ : 16 0 1261 1324 2832/2131/1510 private
+u8.public u32.private _ _ : 16 0 1261 1324 2832/2131/1510 private
+u8.private u32.constant * : 256 0 435 468 1136/486/435 private
+u8.private u32.constant _ 0 : 264 0 416 448 1088/448/416 constant
+u8.private u32.constant _ 1 : 264 0 416 448 1088/448/416 private
+u8.private u32.constant _ 7 : 248 0 454 488 1184/524/454 private
+u8.private u32.constant _ 8 : 240 0 473 508 1232/562/473 private
+u8.private u32.constant _ MAX : 16 0 1005 1068 2576/1626/1005 private
+u8.private u32.public _ _ : 16 0 1261 1324 2832/2131/1510 private
+u8.private u32.private _ _ : 16 0 1261 1324 2832/2131/1510 private
+u16.constant u8.constant * : 16 0 0 0 0/0/0 constant
+u16.constant u8.public * : 48 0 481 495 1089/734/593 private
+u16.constant u8.public 0 _ : 223 0 306 313 739/440/306 private
+u16.constant u8.public 1 _ : 272 0 0 0 0/0/0 constant
+u16.constant u8.public 2^8 _ : 48 0 483 497 1038/737/595 private
+u16.constant u8.public 2^8+1 _ : 48 0 480 494 1088/732/592 private
+u16.constant u8.public 2^15-1 _ : 48 0 483 497 1094/737/595 private
+u16.constant u8.public 2^15 _ : 48 0 483 497 1038/737/595 private
+u16.constant u8.public 2^15+1 _ : 48 0 480 494 1088/732/592 private
+u16.constant u8.public 2^16-2^8 _ : 48 0 483 497 1038/737/595 private
+u16.constant u8.public MAX-1 _ : 48 0 483 497 1094/737/595 private
+u16.constant u8.public MAX _ : 48 0 483 497 1094/737/595 private
+u16.constant u8.private * : 48 0 481 495 1089/734/593 private
+u16.constant u8.private 0 _ : 223 0 306 313 739/440/306 private
+u16.constant u8.private 1 _ : 272 0 0 0 0/0/0 constant
+u16.constant u8.private 2^8 _ : 48 0 483 497 1038/737/595 private
+u16.constant u8.private 2^8+1 _ : 48 0 480 494 1088/732/592 private
+u16.constant u8.private 2^15-1 _ : 48 0 483 497 1094/737/595 private
+u16.constant u8.private 2^15 _ : 48 0 483 497 1038/737/595 private
+u16.constant u8.private 2^15+1 _ : 48 0 480 494 1088/732/592 private
+u16.constant u8.private 2^16-2^8 _ : 48 0 483 497 1038/737/595 private
+u16.constant u8.private MAX-1 _ : 48 0 483 497 1094/737/595 private
+u16.constant u8.private MAX _ : 48 0 483 497 1094/737/595 private
+u16.public u8.constant * : 128 0 231 240 616/282/231 private
+u16.public u8.constant _ 0 : 144 0 200 208 528/208/200 constant
+u16.public u8.constant _ 1 : 144 0 200 208 528/208/200 private
+u16.public u8.constant _ 15 : 96 0 293 304 792/430/293 private
+u16.public u8.constant _ 16 : 80 0 324 336 880/504/324 private
+u16.public u8.constant _ MAX : 32 0 417 432 1144/726/417 private
+u16.public u8.public _ _ : 32 0 545 560 1272/967/658 private
+u16.public u8.private _ _ : 32 0 545 560 1272/967/658 private
+u16.private u8.constant * : 128 0 231 240 616/282/231 private
+u16.private u8.constant _ 0 : 144 0 200 208 528/208/200 constant
+u16.private u8.constant _ 1 : 144 0 200 208 528/208/200 private
+u16.private u8.constant _ 15 : 96 0 293 304 792/430/293 private
+u16.private u8.constant _ 16 : 80 0 324 336 880/504/324 private
+u16.private u8.constant _ MAX : 32 0 417 432 1144/726/417 private
+u16.private u8.public _ _ : 32 0 545 560 1272/967/658 private
+u16.private u8.private _ _ : 32 0 545 560 1272/967/658 private
+u16.constant u16.constant * : 16 0 0 0 0/0/0 constant
+u16.constant u16.public * : 48 0 1033 1063 2361/1598/1273 private
+u16.constant u16.public 0 _ : 423 0 658 673 1611/968/658 private
+u16.constant u16.public 1 _ : 528 0 0 0 0/0/0 constant
+u16.constant u16.public 2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+u16.constant u16.public 2^8+1 _ : 48 0 1032 1062 2360/1596/1272 private
+u16.constant u16.public 2^15-1 _ : 48 0 1035 1065 2366/1601/1275 private
+u16.constant u16.public 2^15 _ : 48 0 1035 1065 2246/1601/1275 private
+u16.constant u16.public 2^15+1 _ : 48 0 1032 1062 2360/1596/1272 private
+u16.constant u16.public 2^16-2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+u16.constant u16.public MAX-1 _ : 48 0 1035 1065 2366/1601/1275 private
+u16.constant u16.public MAX _ : 48 0 1035 1065 2366/1601/1275 private
+u16.constant u16.private * : 48 0 1033 1063 2361/1598/1273 private
+u16.constant u16.private 0 _ : 423 0 658 673 1611/968/658 private
+u16.constant u16.private 1 _ : 528 0 0 0 0/0/0 constant
+u16.constant u16.private 2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+u16.constant u16.private 2^8+1 _ : 48 0 1032 1062 2360/1596/1272 private
+u16.constant u16.private 2^15-1 _ : 48 0 1035 1065 2366/1601/1275 private
+u16.constant u16.private 2^15 _ : 48 0 1035 1065 2246/1601/1275 private
+u16.constant u16.private 2^15+1 _ : 48 0 1032 1062 2360/1596/1272 private
+u16.constant u16.private 2^16-2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+u16.constant u16.private MAX-1 _ : 48 0 1035 1065 2366/1601/1275 private
+u16.constant u16.private MAX _ : 48 0 1035 1065 2366/1601/1275 private
+u16.public u16.constant * : 256 0 431 448 1144/490/431 private
+u16.public u16.constant _ 0 : 272 0 400 416 1056/416/400 constant
+u16.public u16.constant _ 1 : 272 0 400 416 1056/416/400 private
+u16.public u16.constant _ 15 : 224 0 493 512 1320/638/493 private
+u16.public u16.constant _ 16 : 208 0 524 544 1408/712/524 private
+u16.public u16.constant _ MAX : 32 0 865 896 2376/1526/865 private
+u16.public u16.public _ _ : 32 0 1121 1152 2632/2023/1362 private
+u16.public u16.private _ _ : 32 0 1121 1152 2632/2023/1362 private
+u16.private u16.constant * : 256 0 431 448 1144/490/431 private
+u16.private u16.constant _ 0 : 272 0 400 416 1056/416/400 constant
+u16.private u16.constant _ 1 : 272 0 400 416 1056/416/400 private
+u16.private u16.constant _ 15 : 224 0 493 512 1320/638/493 private
+u16.private u16.constant _ 16 : 208 0 524 544 1408/712/524 private
+u16.private u16.constant _ MAX : 32 0 865 896 2376/1526/865 private
+u16.private u16.public _ _ : 32 0 1121 1152 2632/2023/1362 private
+u16.private u16.private _ _ : 32 0 1121 1152 2632/2023/1362 private
+u16.constant u32.constant * : 16 0 0 0 0/0/0 constant
+u16.constant u32.public * : 48 0 2137 2199 4905/3326/2633 private
+u16.constant u32.public 0 _ : 823 0 1362 1393 3355/2024/1362 private
+u16.constant u32.public 1 _ : 1040 0 0 0 0/0/0 constant
+u16.constant u32.public 2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+u16.constant u32.public 2^8+1 _ : 48 0 2136 2198 4904/3324/2632 private
+u16.constant u32.public 2^15-1 _ : 48 0 2139 2201 4910/3329/2635 private
+u16.constant u32.public 2^15 _ : 48 0 2139 2201 4662/3329/2635 private
+u16.constant u32.public 2^15+1 _ : 48 0 2136 2198 4904/3324/2632 private
+u16.constant u32.public 2^16-2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+u16.constant u32.public MAX-1 _ : 48 0 2139 2201 4910/3329/2635 private
+u16.constant u32.public MAX _ : 48 0 2139 2201 4910/3329/2635 private
+u16.constant u32.private * : 48 0 2137 2199 4905/3326/2633 private
+u16.constant u32.private 0 _ : 823 0 1362 1393 3355/2024/1362 private
+u16.constant u32.private 1 _ : 1040 0 0 0 0/0/0 constant
+u16.constant u32.private 2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+u16.constant u32.private 2^8+1 _ : 48 0 2136 2198 4904/3324/2632 private
+u16.constant u32.private 2^15-1 _ : 48 0 2139 2201 4910/3329/2635 private
+u16.constant u32.private 2^15 _ : 48 0 2139 2201 4662/3329/2635 private
+u16.constant u32.private 2^15+1 _ : 48 0 2136 2198 4904/3324/2632 private
+u16.constant u32.private 2^16-2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+u16.constant u32.private MAX-1 _ : 48 0 2139 2201 4910/3329/2635 private
+u16.constant u32.private MAX _ : 48 0 2139 2201 4910/3329/2635 private
+u16.public u32.constant * : 512 0 831 864 2200/906/831 private
+u16.public u32.constant _ 0 : 528 0 800 832 2112/832/800 constant
+u16.public u32.constant _ 1 : 528 0 800 832 2112/832/800 private
+u16.public u32.constant _ 15 : 480 0 893 928 2376/1054/893 private
+u16.public u32.constant _ 16 : 464 0 924 960 2464/1128/924 private
+u16.public u32.constant _ MAX : 32 0 1761 1824 4840/3126/1761 private
+u16.public u32.public _ _ : 32 0 2273 2336 5352/4135/2770 private
+u16.public u32.private _ _ : 32 0 2273 2336 5352/4135/2770 private
+u16.private u32.constant * : 512 0 831 864 2200/906/831 private
+u16.private u32.constant _ 0 : 528 0 800 832 2112/832/800 constant
+u16.private u32.constant _ 1 : 528 0 800 832 2112/832/800 private
+u16.private u32.constant _ 15 : 480 0 893 928 2376/1054/893 private
+u16.private u32.constant _ 16 : 464 0 924 960 2464/1128/924 private
+u16.private u32.constant _ MAX : 32 0 1761 1824 4840/3126/1761 private
+u16.private u32.public _ _ : 32 0 2273 2336 5352/4135/2770 private
+u16.private u32.private _ _ : 32 0 2273 2336 5352/4135/2770 private
+u32.constant u8.constant * : 32 0 0 0 0/0/0 constant
+u32.constant u8.public * : 96 0 929 943 2129/1438/1153 private
+u32.constant u8.public 0 _ : 439 0 586 593 1443/864/586 private
+u32.constant u8.public 1 _ : 544 0 0 0 0/0/0 constant
+u32.constant u8.public 2^16 _ : 96 0 931 945 2022/1441/1155 private
+u32.constant u8.public 2^16+1 _ : 96 0 928 942 2128/1436/1152 private
+u32.constant u8.public 2^31-1 _ : 96 0 931 945 2134/1441/1155 private
+u32.constant u8.public 2^31 _ : 96 0 931 945 2022/1441/1155 private
+u32.constant u8.public 2^31+1 _ : 96 0 928 942 2128/1436/1152 private
+u32.constant u8.public 2^32-2^16 _ : 96 0 931 945 2022/1441/1155 private
+u32.constant u8.public MAX-1 _ : 96 0 931 945 2134/1441/1155 private
+u32.constant u8.public MAX _ : 96 0 931 945 2134/1441/1155 private
+u32.constant u8.private * : 96 0 929 943 2129/1438/1153 private
+u32.constant u8.private 0 _ : 439 0 586 593 1443/864/586 private
+u32.constant u8.private 1 _ : 544 0 0 0 0/0/0 constant
+u32.constant u8.private 2^16 _ : 96 0 931 945 2022/1441/1155 private
+u32.constant u8.private 2^16+1 _ : 96 0 928 942 2128/1436/1152 private
+u32.constant u8.private 2^31-1 _ : 96 0 931 945 2134/1441/1155 private
+u32.constant u8.private 2^31 _ : 96 0 931 945 2022/1441/1155 private
+u32.constant u8.private 2^31+1 _ : 96 0 928 942 2128/1436/1152 private
+u32.constant u8.private 2^32-2^16 _ : 96 0 931 945 2022/1441/1155 private
+u32.constant u8.private MAX-1 _ : 96 0 931 945 2134/1441/1155 private
+u32.constant u8.private MAX _ : 96 0 931 945 2134/1441/1155 private
+u32.public u8.constant * : 256 0 447 456 1208/546/447 private
+u32.public u8.constant _ 0 : 288 0 392 400 1040/400/392 constant
+u32.public u8.constant _ 1 : 288 0 392 400 1040/400/392 private
+u32.public u8.constant _ 31 : 160 0 612 624 1712/984/612 private
+u32.public u8.constant _ 32 : 128 0 667 680 1880/1130/667 private
+u32.public u8.constant _ MAX : 64 0 777 792 2216/1422/777 private
+u32.public u8.public _ _ : 64 0 1033 1048 2472/1903/1258 private
+u32.public u8.private _ _ : 64 0 1033 1048 2472/1903/1258 private
+u32.private u8.constant * : 256 0 447 456 1208/546/447 private
+u32.private u8.constant _ 0 : 288 0 392 400 1040/400/392 constant
+u32.private u8.constant _ 1 : 288 0 392 400 1040/400/392 private
+u32.private u8.constant _ 31 : 160 0 612 624 1712/984/612 private
+u32.private u8.constant _ 32 : 128 0 667 680 1880/1130/667 private
+u32.private u8.constant _ MAX : 64 0 777 792 2216/1422/777 private
+u32.private u8.public _ _ : 64 0 1033 1048 2472/1903/1258 private
+u32.private u8.private _ _ : 64 0 1033 1048 2472/1903/1258 private
+u32.constant u16.constant * : 32 0 0 0 0/0/0 constant
+u32.constant u16.public * : 96 0 1993 2023 4617/3134/2473 private
+u32.constant u16.public 0 _ : 831 0 1258 1273 3147/1904/1258 private
+u32.constant u16.public 1 _ : 1056 0 0 0 0/0/0 constant
+u32.constant u16.public 2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+u32.constant u16.public 2^16+1 _ : 96 0 1992 2022 4616/3132/2472 private
+u32.constant u16.public 2^31-1 _ : 96 0 1995 2025 4622/3137/2475 private
+u32.constant u16.public 2^31 _ : 96 0 1995 2025 4382/3137/2475 private
+u32.constant u16.public 2^31+1 _ : 96 0 1992 2022 4616/3132/2472 private
+u32.constant u16.public 2^32-2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+u32.constant u16.public MAX-1 _ : 96 0 1995 2025 4622/3137/2475 private
+u32.constant u16.public MAX _ : 96 0 1995 2025 4622/3137/2475 private
+u32.constant u16.private * : 96 0 1993 2023 4617/3134/2473 private
+u32.constant u16.private 0 _ : 831 0 1258 1273 3147/1904/1258 private
+u32.constant u16.private 1 _ : 1056 0 0 0 0/0/0 constant
+u32.constant u16.private 2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+u32.constant u16.private 2^16+1 _ : 96 0 1992 2022 4616/3132/2472 private
+u32.constant u16.private 2^31-1 _ : 96 0 1995 2025 4622/3137/2475 private
+u32.constant u16.private 2^31 _ : 96 0 1995 2025 4382/3137/2475 private
+u32.constant u16.private 2^31+1 _ : 96 0 1992 2022 4616/3132/2472 private
+u32.constant u16.private 2^32-2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+u32.constant u16.private MAX-1 _ : 96 0 1995 2025 4622/3137/2475 private
+u32.constant u16.private MAX _ : 96 0 1995 2025 4622/3137/2475 private
+u32.public u16.constant * : 512 0 839 856 2248/946/839 private
+u32.public u16.constant _ 0 : 544 0 784 800 2080/800/784 constant
+u32.public u16.constant _ 1 : 544 0 784 800 2080/800/784 private
+u32.public u16.constant _ 31 : 416 0 1004 1024 2752/1384/1004 private
+u32.public u16.constant _ 32 : 384 0 1059 1080 2920/1530/1059 private
+u32.public u16.constant _ MAX : 64 0 1609 1640 4600/2990/1609 private
+u32.public u16.public _ _ : 64 0 2121 2152 5112/3983/2602 private
+u32.public u16.private _ _ : 64 0 2121 2152 5112/3983/2602 private
+u32.private u16.constant * : 512 0 839 856 2248/946/839 private
+u32.private u16.constant _ 0 : 544 0 784 800 2080/800/784 constant
+u32.private u16.constant _ 1 : 544 0 784 800 2080/800/784 private
+u32.private u16.constant _ 31 : 416 0 1004 1024 2752/1384/1004 private
+u32.private u16.constant _ 32 : 384 0 1059 1080 2920/1530/1059 private
+u32.private u16.constant _ MAX : 64 0 1609 1640 4600/2990/1609 private
+u32.private u16.public _ _ : 64 0 2121 2152 5112/3983/2602 private
+u32.private u16.private _ _ : 64 0 2121 2152 5112/3983/2602 private
+u32.constant u32.constant * : 32 0 0 0 0/0/0 constant
+u32.constant u32.public * : 96 0 4121 4183 9593/6526/5113 private
+u32.constant u32.public 0 _ : 1615 0 2602 2633 6555/3984/2602 private
+u32.constant u32.public 1 _ : 2080 0 0 0 0/0/0 constant
+u32.constant u32.public 2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+u32.constant u32.public 2^16+1 _ : 96 0 4120 4182 9592/6524/5112 private
+u32.constant u32.public 2^31-1 _ : 96 0 4123 4185 9598/6529/5115 private
+u32.constant u32.public 2^31 _ : 96 0 4123 4185 9102/6529/5115 private
+u32.constant u32.public 2^31+1 _ : 96 0 4120 4182 9592/6524/5112 private
+u32.constant u32.public 2^32-2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+u32.constant u32.public MAX-1 _ : 96 0 4123 4185 9598/6529/5115 private
+u32.constant u32.public MAX _ : 96 0 4123 4185 9598/6529/5115 private
+u32.constant u32.private * : 96 0 4121 4183 9593/6526/5113 private
+u32.constant u32.private 0 _ : 1615 0 2602 2633 6555/3984/2602 private
+u32.constant u32.private 1 _ : 2080 0 0 0 0/0/0 constant
+u32.constant u32.private 2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+u32.constant u32.private 2^16+1 _ : 96 0 4120 4182 9592/6524/5112 private
+u32.constant u32.private 2^31-1 _ : 96 0 4123 4185 9598/6529/5115 private
+u32.constant u32.private 2^31 _ : 96 0 4123 4185 9102/6529/5115 private
+u32.constant u32.private 2^31+1 _ : 96 0 4120 4182 9592/6524/5112 private
+u32.constant u32.private 2^32-2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+u32.constant u32.private MAX-1 _ : 96 0 4123 4185 9598/6529/5115 private
+u32.constant u32.private MAX _ : 96 0 4123 4185 9598/6529/5115 private
+u32.public u32.constant * : 1024 0 1623 1656 4328/1746/1623 private
+u32.public u32.constant _ 0 : 1056 0 1568 1600 4160/1600/1568 constant
+u32.public u32.constant _ 1 : 1056 0 1568 1600 4160/1600/1568 private
+u32.public u32.constant _ 31 : 928 0 1788 1824 4832/2184/1788 private
+u32.public u32.constant _ 32 : 896 0 1843 1880 5000/2330/1843 private
+u32.public u32.constant _ MAX : 64 0 3273 3336 9368/6126/3273 private
+u32.public u32.public _ _ : 64 0 4297 4360 10392/8143/5290 private
+u32.public u32.private _ _ : 64 0 4297 4360 10392/8143/5290 private
+u32.private u32.constant * : 1024 0 1623 1656 4328/1746/1623 private
+u32.private u32.constant _ 0 : 1056 0 1568 1600 4160/1600/1568 constant
+u32.private u32.constant _ 1 : 1056 0 1568 1600 4160/1600/1568 private
+u32.private u32.constant _ 31 : 928 0 1788 1824 4832/2184/1788 private
+u32.private u32.constant _ 32 : 896 0 1843 1880 5000/2330/1843 private
+u32.private u32.constant _ MAX : 64 0 3273 3336 9368/6126/3273 private
+u32.private u32.public _ _ : 64 0 4297 4360 10392/8143/5290 private
+u32.private u32.private _ _ : 64 0 4297 4360 10392/8143/5290 private
+u64.constant u8.constant * : 64 0 0 0 0/0/0 constant
+u64.constant u8.public * : 192 0 1825 1839 4209/2846/2273 private
+u64.constant u8.public 0 _ : 871 0 1146 1153 2851/1712/1146 private
+u64.constant u8.public 1 _ : 1088 0 0 0 0/0/0 constant
+u64.constant u8.public 2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+u64.constant u8.public 2^32+1 _ : 192 0 1824 1838 4208/2844/2272 private
+u64.constant u8.public 2^63-1 _ : 192 0 1827 1841 4214/2849/2275 private
+u64.constant u8.public 2^63 _ : 192 0 1827 1841 3990/2849/2275 private
+u64.constant u8.public 2^63+1 _ : 192 0 1824 1838 4208/2844/2272 private
+u64.constant u8.public 2^64-2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+u64.constant u8.public MAX-1 _ : 192 0 1827 1841 4214/2849/2275 private
+u64.constant u8.public MAX _ : 192 0 1827 1841 4214/2849/2275 private
+u64.constant u8.private * : 192 0 1825 1839 4209/2846/2273 private
+u64.constant u8.private 0 _ : 871 0 1146 1153 2851/1712/1146 private
+u64.constant u8.private 1 _ : 1088 0 0 0 0/0/0 constant
+u64.constant u8.private 2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+u64.constant u8.private 2^32+1 _ : 192 0 1824 1838 4208/2844/2272 private
+u64.constant u8.private 2^63-1 _ : 192 0 1827 1841 4214/2849/2275 private
+u64.constant u8.private 2^63 _ : 192 0 1827 1841 3990/2849/2275 private
+u64.constant u8.private 2^63+1 _ : 192 0 1824 1838 4208/2844/2272 private
+u64.constant u8.private 2^64-2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+u64.constant u8.private MAX-1 _ : 192 0 1827 1841 4214/2849/2275 private
+u64.constant u8.private MAX _ : 192 0 1827 1841 4214/2849/2275 private
+u64.public u8.constant * : 512 0 879 888 2392/1074/879 private
+u64.public u8.constant _ 0 : 576 0 776 784 2064/784/776 constant
+u64.public u8.constant _ 1 : 576 0 776 784 2064/784/776 private
+u64.public u8.constant _ 63 : 256 0 1291 1304 3704/2234/1291 private
+u64.public u8.constant _ 64 : 192 0 1394 1408 4032/2524/1394 private
+u64.public u8.constant _ MAX : 128 0 1497 1512 4360/2814/1497 private
+u64.public u8.public _ _ : 128 0 2009 2024 4872/3775/2458 private
+u64.public u8.private _ _ : 128 0 2009 2024 4872/3775/2458 private
+u64.private u8.constant * : 512 0 879 888 2392/1074/879 private
+u64.private u8.constant _ 0 : 576 0 776 784 2064/784/776 constant
+u64.private u8.constant _ 1 : 576 0 776 784 2064/784/776 private
+u64.private u8.constant _ 63 : 256 0 1291 1304 3704/2234/1291 private
+u64.private u8.constant _ 64 : 192 0 1394 1408 4032/2524/1394 private
+u64.private u8.constant _ MAX : 128 0 1497 1512 4360/2814/1497 private
+u64.private u8.public _ _ : 128 0 2009 2024 4872/3775/2458 private
+u64.private u8.private _ _ : 128 0 2009 2024 4872/3775/2458 private
+u64.constant u16.constant * : 64 0 0 0 0/0/0 constant
+u64.constant u16.public * : 192 0 3913 3943 9129/6206/4873 private
+u64.constant u16.public 0 _ : 1647 0 2458 2473 6219/3776/2458 private
+u64.constant u16.public 1 _ : 2112 0 0 0 0/0/0 constant
+u64.constant u16.public 2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+u64.constant u16.public 2^32+1 _ : 192 0 3912 3942 9128/6204/4872 private
+u64.constant u16.public 2^63-1 _ : 192 0 3915 3945 9134/6209/4875 private
+u64.constant u16.public 2^63 _ : 192 0 3915 3945 8654/6209/4875 private
+u64.constant u16.public 2^63+1 _ : 192 0 3912 3942 9128/6204/4872 private
+u64.constant u16.public 2^64-2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+u64.constant u16.public MAX-1 _ : 192 0 3915 3945 9134/6209/4875 private
+u64.constant u16.public MAX _ : 192 0 3915 3945 9134/6209/4875 private
+u64.constant u16.private * : 192 0 3913 3943 9129/6206/4873 private
+u64.constant u16.private 0 _ : 1647 0 2458 2473 6219/3776/2458 private
+u64.constant u16.private 1 _ : 2112 0 0 0 0/0/0 constant
+u64.constant u16.private 2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+u64.constant u16.private 2^32+1 _ : 192 0 3912 3942 9128/6204/4872 private
+u64.constant u16.private 2^63-1 _ : 192 0 3915 3945 9134/6209/4875 private
+u64.constant u16.private 2^63 _ : 192 0 3915 3945 8654/6209/4875 private
+u64.constant u16.private 2^63+1 _ : 192 0 3912 3942 9128/6204/4872 private
+u64.constant u16.private 2^64-2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+u64.constant u16.private MAX-1 _ : 192 0 3915 3945 9134/6209/4875 private
+u64.constant u16.private MAX _ : 192 0 3915 3945 9134/6209/4875 private
+u64.public u16.constant * : 1024 0 1655 1672 4456/1858/1655 private
+u64.public u16.constant _ 0 : 1088 0 1552 1568 4128/1568/1552 constant
+u64.public u16.constant _ 1 : 1088 0 1552 1568 4128/1568/1552 private
+u64.public u16.constant _ 63 : 768 0 2067 2088 5768/3018/2067 private
+u64.public u16.constant _ 64 : 704 0 2170 2192 6096/3308/2170 private
+u64.public u16.constant _ MAX : 128 0 3097 3128 9048/5918/3097 private
+u64.public u16.public _ _ : 128 0 4121 4152 10072/7903/5082 private
+u64.public u16.private _ _ : 128 0 4121 4152 10072/7903/5082 private
+u64.private u16.constant * : 1024 0 1655 1672 4456/1858/1655 private
+u64.private u16.constant _ 0 : 1088 0 1552 1568 4128/1568/1552 constant
+u64.private u16.constant _ 1 : 1088 0 1552 1568 4128/1568/1552 private
+u64.private u16.constant _ 63 : 768 0 2067 2088 5768/3018/2067 private
+u64.private u16.constant _ 64 : 704 0 2170 2192 6096/3308/2170 private
+u64.private u16.constant _ MAX : 128 0 3097 3128 9048/5918/3097 private
+u64.private u16.public _ _ : 128 0 4121 4152 10072/7903/5082 private
+u64.private u16.private _ _ : 128 0 4121 4152 10072/7903/5082 private
+u64.constant u32.constant * : 64 0 0 0 0/0/0 constant
+u64.constant u32.public * : 192 0 8089 8151 18969/12926/10073 private
+u64.constant u32.public 0 _ : 3199 0 5082 5113 12955/7904/5082 private
+u64.constant u32.public 1 _ : 4160 0 0 0 0/0/0 constant
+u64.constant u32.public 2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+u64.constant u32.public 2^32+1 _ : 192 0 8088 8150 18968/12924/10072 private
+u64.constant u32.public 2^63-1 _ : 192 0 8091 8153 18974/12929/10075 private
+u64.constant u32.public 2^63 _ : 192 0 8091 8153 17982/12929/10075 private
+u64.constant u32.public 2^63+1 _ : 192 0 8088 8150 18968/12924/10072 private
+u64.constant u32.public 2^64-2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+u64.constant u32.public MAX-1 _ : 192 0 8091 8153 18974/12929/10075 private
+u64.constant u32.public MAX _ : 192 0 8091 8153 18974/12929/10075 private
+u64.constant u32.private * : 192 0 8089 8151 18969/12926/10073 private
+u64.constant u32.private 0 _ : 3199 0 5082 5113 12955/7904/5082 private
+u64.constant u32.private 1 _ : 4160 0 0 0 0/0/0 constant
+u64.constant u32.private 2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+u64.constant u32.private 2^32+1 _ : 192 0 8088 8150 18968/12924/10072 private
+u64.constant u32.private 2^63-1 _ : 192 0 8091 8153 18974/12929/10075 private
+u64.constant u32.private 2^63 _ : 192 0 8091 8153 17982/12929/10075 private
+u64.constant u32.private 2^63+1 _ : 192 0 8088 8150 18968/12924/10072 private
+u64.constant u32.private 2^64-2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+u64.constant u32.private MAX-1 _ : 192 0 8091 8153 18974/12929/10075 private
+u64.constant u32.private MAX _ : 192 0 8091 8153 18974/12929/10075 private
+u64.public u32.constant * : 2048 0 3207 3240 8584/3426/3207 private
+u64.public u32.constant _ 0 : 2112 0 3104 3136 8256/3136/3104 constant
+u64.public u32.constant _ 1 : 2112 0 3104 3136 8256/3136/3104 private
+u64.public u32.constant _ 63 : 1792 0 3619 3656 9896/4586/3619 private
+u64.public u32.constant _ 64 : 1728 0 3722 3760 10224/4876/3722 private
+u64.public u32.constant _ MAX : 128 0 6297 6360 18424/12126/6297 private
+u64.public u32.public _ _ : 128 0 8345 8408 20472/16159/10330 private
+u64.public u32.private _ _ : 128 0 8345 8408 20472/16159/10330 private
+u64.private u32.constant * : 2048 0 3207 3240 8584/3426/3207 private
+u64.private u32.constant _ 0 : 2112 0 3104 3136 8256/3136/3104 constant
+u64.private u32.constant _ 1 : 2112 0 3104 3136 8256/3136/3104 private
+u64.private u32.constant _ 63 : 1792 0 3619 3656 9896/4586/3619 private
+u64.private u32.constant _ 64 : 1728 0 3722 3760 10224/4876/3722 private
+u64.private u32.constant _ MAX : 128 0 6297 6360 18424/12126/6297 private
+u64.private u32.public _ _ : 128 0 8345 8408 20472/16159/10330 private
+u64.private u32.private _ _ : 128 0 8345 8408 20472/16159/10330 private
+u128.constant u8.constant * : 128 0 0 0 0/0/0 constant
+u128.constant u8.public * : 384 0 3617 3631 8369/5662/4513 private
+u128.constant u8.public 0 _ : 1735 0 2266 2273 5667/3408/2266 private
+u128.constant u8.public 1 _ : 2176 0 0 0 0/0/0 constant
+u128.constant u8.public 2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+u128.constant u8.public 2^64+1 _ : 384 0 3616 3630 8368/5660/4512 private
+u128.constant u8.public 2^127-1 _ : 384 0 3619 3633 8374/5665/4515 private
+u128.constant u8.public 2^127 _ : 384 0 3619 3633 7926/5665/4515 private
+u128.constant u8.public 2^127+1 _ : 384 0 3616 3630 8368/5660/4512 private
+u128.constant u8.public 2^128-2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+u128.constant u8.public MAX-1 _ : 384 0 3619 3633 8374/5665/4515 private
+u128.constant u8.public MAX _ : 384 0 3619 3633 8374/5665/4515 private
+u128.constant u8.private * : 384 0 3617 3631 8369/5662/4513 private
+u128.constant u8.private 0 _ : 1735 0 2266 2273 5667/3408/2266 private
+u128.constant u8.private 1 _ : 2176 0 0 0 0/0/0 constant
+u128.constant u8.private 2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+u128.constant u8.private 2^64+1 _ : 384 0 3616 3630 8368/5660/4512 private
+u128.constant u8.private 2^127-1 _ : 384 0 3619 3633 8374/5665/4515 private
+u128.constant u8.private 2^127 _ : 384 0 3619 3633 7926/5665/4515 private
+u128.constant u8.private 2^127+1 _ : 384 0 3616 3630 8368/5660/4512 private
+u128.constant u8.private 2^128-2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+u128.constant u8.private MAX-1 _ : 384 0 3619 3633 8374/5665/4515 private
+u128.constant u8.private MAX _ : 384 0 3619 3633 8374/5665/4515 private
+u128.public u8.constant * : 1024 0 1743 1752 4760/2130/1743 private
+u128.public u8.constant _ 0 : 1152 0 1544 1552 4112/1552/1544 constant
+u128.public u8.constant _ 1 : 1152 0 1544 1552 4112/1552/1544 private
+u128.public u8.constant _ 127 : 384 0 2738 2752 8000/5020/2738 private
+u128.public u8.constant _ 128 : 256 0 2937 2952 8648/5598/2937 private
+u128.public u8.constant _ MAX : 256 0 2937 2952 8648/5598/2937 private
+u128.public u8.public _ _ : 256 0 3961 3976 9672/7519/4858 private
+u128.public u8.private _ _ : 256 0 3961 3976 9672/7519/4858 private
+u128.private u8.constant * : 1024 0 1743 1752 4760/2130/1743 private
+u128.private u8.constant _ 0 : 1152 0 1544 1552 4112/1552/1544 constant
+u128.private u8.constant _ 1 : 1152 0 1544 1552 4112/1552/1544 private
+u128.private u8.constant _ 127 : 384 0 2738 2752 8000/5020/2738 private
+u128.private u8.constant _ 128 : 256 0 2937 2952 8648/5598/2937 private
+u128.private u8.constant _ MAX : 256 0 2937 2952 8648/5598/2937 private
+u128.private u8.public _ _ : 256 0 3961 3976 9672/7519/4858 private
+u128.private u8.private _ _ : 256 0 3961 3976 9672/7519/4858 private
+u128.constant u16.constant * : 128 0 0 0 0/0/0 constant
+u128.constant u16.public * : 384 0 7753 7783 18153/12350/9673 private
+u128.constant u16.public 0 _ : 3279 0 4858 4873 12363/7520/4858 private
+u128.constant u16.public 1 _ : 4224 0 0 0 0/0/0 constant
+u128.constant u16.public 2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+u128.constant u16.public 2^64+1 _ : 384 0 7752 7782 18152/12348/9672 private
+u128.constant u16.public 2^127-1 _ : 384 0 7755 7785 18158/12353/9675 private
+u128.constant u16.public 2^127 _ : 384 0 7755 7785 17198/12353/9675 private
+u128.constant u16.public 2^127+1 _ : 384 0 7752 7782 18152/12348/9672 private
+u128.constant u16.public 2^128-2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+u128.constant u16.public MAX-1 _ : 384 0 7755 7785 18158/12353/9675 private
+u128.constant u16.public MAX _ : 384 0 7755 7785 18158/12353/9675 private
+u128.constant u16.private * : 384 0 7753 7783 18153/12350/9673 private
+u128.constant u16.private 0 _ : 3279 0 4858 4873 12363/7520/4858 private
+u128.constant u16.private 1 _ : 4224 0 0 0 0/0/0 constant
+u128.constant u16.private 2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+u128.constant u16.private 2^64+1 _ : 384 0 7752 7782 18152/12348/9672 private
+u128.constant u16.private 2^127-1 _ : 384 0 7755 7785 18158/12353/9675 private
+u128.constant u16.private 2^127 _ : 384 0 7755 7785 17198/12353/9675 private
+u128.constant u16.private 2^127+1 _ : 384 0 7752 7782 18152/12348/9672 private
+u128.constant u16.private 2^128-2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+u128.constant u16.private MAX-1 _ : 384 0 7755 7785 18158/12353/9675 private
+u128.constant u16.private MAX _ : 384 0 7755 7785 18158/12353/9675 private
+u128.public u16.constant * : 2048 0 3287 3304 8872/3682/3287 private
+u128.public u16.constant _ 0 : 2176 0 3088 3104 8224/3104/3088 constant
+u128.public u16.constant _ 1 : 2176 0 3088 3104 8224/3104/3088 private
+u128.public u16.constant _ 127 : 1408 0 4282 4304 12112/6572/4282 private
+u128.public u16.constant _ 128 : 1280 0 4481 4504 12760/7150/4481 private
+u128.public u16.constant _ MAX : 256 0 6073 6104 17944/11774/6073 private
+u128.public u16.public _ _ : 256 0 8121 8152 19992/15743/10042 private
+u128.public u16.private _ _ : 256 0 8121 8152 19992/15743/10042 private
+u128.private u16.constant * : 2048 0 3287 3304 8872/3682/3287 private
+u128.private u16.constant _ 0 : 2176 0 3088 3104 8224/3104/3088 constant
+u128.private u16.constant _ 1 : 2176 0 3088 3104 8224/3104/3088 private
+u128.private u16.constant _ 127 : 1408 0 4282 4304 12112/6572/4282 private
+u128.private u16.constant _ 128 : 1280 0 4481 4504 12760/7150/4481 private
+u128.private u16.constant _ MAX : 256 0 6073 6104 17944/11774/6073 private
+u128.private u16.public _ _ : 256 0 8121 8152 19992/15743/10042 private
+u128.private u16.private _ _ : 256 0 8121 8152 19992/15743/10042 private
+u128.constant u32.constant * : 128 0 0 0 0/0/0 constant
+u128.constant u32.public * : 384 0 16025 16087 37721/25726/19993 private
+u128.constant u32.public 0 _ : 6367 0 10042 10073 25755/15744/10042 private
+u128.constant u32.public 1 _ : 8320 0 0 0 0/0/0 constant
+u128.constant u32.public 2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+u128.constant u32.public 2^64+1 _ : 384 0 16024 16086 37720/25724/19992 private
+u128.constant u32.public 2^127-1 _ : 384 0 16027 16089 37726/25729/19995 private
+u128.constant u32.public 2^127 _ : 384 0 16027 16089 35742/25729/19995 private
+u128.constant u32.public 2^127+1 _ : 384 0 16024 16086 37720/25724/19992 private
+u128.constant u32.public 2^128-2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+u128.constant u32.public MAX-1 _ : 384 0 16027 16089 37726/25729/19995 private
+u128.constant u32.public MAX _ : 384 0 16027 16089 37726/25729/19995 private
+u128.constant u32.private * : 384 0 16025 16087 37721/25726/19993 private
+u128.constant u32.private 0 _ : 6367 0 10042 10073 25755/15744/10042 private
+u128.constant u32.private 1 _ : 8320 0 0 0 0/0/0 constant
+u128.constant u32.private 2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+u128.constant u32.private 2^64+1 _ : 384 0 16024 16086 37720/25724/19992 private
+u128.constant u32.private 2^127-1 _ : 384 0 16027 16089 37726/25729/19995 private
+u128.constant u32.private 2^127 _ : 384 0 16027 16089 35742/25729/19995 private
+u128.constant u32.private 2^127+1 _ : 384 0 16024 16086 37720/25724/19992 private
+u128.constant u32.private 2^128-2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+u128.constant u32.private MAX-1 _ : 384 0 16027 16089 37726/25729/19995 private
+u128.constant u32.private MAX _ : 384 0 16027 16089 37726/25729/19995 private
+u128.public u32.constant * : 4096 0 6375 6408 17096/6786/6375 private
+u128.public u32.constant _ 0 : 4224 0 6176 6208 16448/6208/6176 constant
+u128.public u32.constant _ 1 : 4224 0 6176 6208 16448/6208/6176 private
+u128.public u32.constant _ 127 : 3456 0 7370 7408 20336/9676/7370 private
+u128.public u32.constant _ 128 : 3328 0 7569 7608 20984/10254/7569 private
+u128.public u32.constant _ MAX : 256 0 12345 12408 36536/24126/12345 private
+u128.public u32.public _ _ : 256 0 16441 16504 40632/32191/20410 private
+u128.public u32.private _ _ : 256 0 16441 16504 40632/32191/20410 private
+u128.private u32.constant * : 4096 0 6375 6408 17096/6786/6375 private
+u128.private u32.constant _ 0 : 4224 0 6176 6208 16448/6208/6176 constant
+u128.private u32.constant _ 1 : 4224 0 6176 6208 16448/6208/6176 private
+u128.private u32.constant _ 127 : 3456 0 7370 7408 20336/9676/7370 private
+u128.private u32.constant _ 128 : 3328 0 7569 7608 20984/10254/7569 private
+u128.private u32.constant _ MAX : 256 0 12345 12408 36536/24126/12345 private
+u128.private u32.public _ _ : 256 0 16441 16504 40632/32191/20410 private
+u128.private u32.private _ _ : 256 0 16441 16504 40632/32191/20410 private
+i8.constant u8.constant * : 8 0 0 0 0/0/0 constant
+i8.constant u8.public * : 24 0 259 273 574/385/315 private
+i8.constant u8.public MIN _ : 24 0 259 273 546/385/315 private
+i8.constant u8.public MIN+1 _ : 24 0 256 270 568/380/312 private
+i8.constant u8.public -2^4 _ : 24 0 259 273 546/385/315 private
+i8.constant u8.public -2^4+1 _ : 24 0 256 270 568/380/312 private
+i8.constant u8.public 0 _ : 115 0 166 173 387/228/166 private
+i8.constant u8.public 1 _ : 136 0 0 0 0/0/0 constant
+i8.constant u8.public 2 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.public 3 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.public 2^3-1 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.public 2^3 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.public 2^3+1 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.public 2^4-1 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.public 2^4 _ : 24 0 259 273 546/385/315 private
+i8.constant u8.public 2^4+1 _ : 24 0 256 270 568/380/312 private
+i8.constant u8.public 2^6 _ : 24 0 259 273 546/385/315 private
+i8.constant u8.public 2^6+1 _ : 24 0 256 270 568/380/312 private
+i8.constant u8.private * : 24 0 259 273 574/385/315 private
+i8.constant u8.private MIN _ : 24 0 259 273 546/385/315 private
+i8.constant u8.private MIN+1 _ : 24 0 256 270 568/380/312 private
+i8.constant u8.private -2^4 _ : 24 0 259 273 546/385/315 private
+i8.constant u8.private -2^4+1 _ : 24 0 256 270 568/380/312 private
+i8.constant u8.private 0 _ : 115 0 166 173 387/228/166 private
+i8.constant u8.private 1 _ : 136 0 0 0 0/0/0 constant
+i8.constant u8.private 2 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.private 3 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.private 2^3-1 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.private 2^3 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.private 2^3+1 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.private 2^4-1 _ : 24 0 257 271 569/382/313 private
+i8.constant u8.private 2^4 _ : 24 0 259 273 546/385/315 private
+i8.constant u8.private 2^4+1 _ : 24 0 256 270 568/380/312 private
+i8.constant u8.private 2^6 _ : 24 0 259 273 546/385/315 private
+i8.constant u8.private 2^6+1 _ : 24 0 256 270 568/380/312 private
+i8.public u8.constant * : 64 0 123 132 320/150/123 private
+i8.public u8.constant _ 0 : 72 0 104 112 272/112/104 constant
+i8.public u8.constant _ 1 : 72 0 104 112 272/112/104 private
+i8.public u8.constant _ 7 : 56 0 142 152 368/188/142 private
+i8.public u8.constant _ 8 : 48 0 161 172 416/226/161 private
+i8.public u8.constant _ MAX : 16 0 237 252 608/378/237 private
+i8.public u8.public _ _ : 16 0 301 316 672/499/358 private
+i8.public u8.private _ _ : 16 0 301 316 672/499/358 private
+i8.private u8.constant * : 64 0 123 132 320/150/123 private
+i8.private u8.constant _ 0 : 72 0 104 112 272/112/104 constant
+i8.private u8.constant _ 1 : 72 0 104 112 272/112/104 private
+i8.private u8.constant _ 7 : 56 0 142 152 368/188/142 private
+i8.private u8.constant _ 8 : 48 0 161 172 416/226/161 private
+i8.private u8.constant _ MAX : 16 0 237 252 608/378/237 private
+i8.private u8.public _ _ : 16 0 301 316 672/499/358 private
+i8.private u8.private _ _ : 16 0 301 316 672/499/358 private
+i8.constant u16.constant * : 8 0 0 0 0/0/0 constant
+i8.constant u16.public * : 24 0 555 585 1238/833/675 private
+i8.constant u16.public MIN _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.public MIN+1 _ : 24 0 552 582 1232/828/672 private
+i8.constant u16.public -2^4 _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.public -2^4+1 _ : 24 0 552 582 1232/828/672 private
+i8.constant u16.public 0 _ : 219 0 358 373 843/500/358 private
+i8.constant u16.public 1 _ : 264 0 0 0 0/0/0 constant
+i8.constant u16.public 2 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.public 3 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.public 2^3-1 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.public 2^3 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.public 2^3+1 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.public 2^4-1 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.public 2^4 _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.public 2^4+1 _ : 24 0 552 582 1232/828/672 private
+i8.constant u16.public 2^6 _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.public 2^6+1 _ : 24 0 552 582 1232/828/672 private
+i8.constant u16.private * : 24 0 555 585 1238/833/675 private
+i8.constant u16.private MIN _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.private MIN+1 _ : 24 0 552 582 1232/828/672 private
+i8.constant u16.private -2^4 _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.private -2^4+1 _ : 24 0 552 582 1232/828/672 private
+i8.constant u16.private 0 _ : 219 0 358 373 843/500/358 private
+i8.constant u16.private 1 _ : 264 0 0 0 0/0/0 constant
+i8.constant u16.private 2 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.private 3 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.private 2^3-1 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.private 2^3 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.private 2^3+1 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.private 2^4-1 _ : 24 0 553 583 1233/830/673 private
+i8.constant u16.private 2^4 _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.private 2^4+1 _ : 24 0 552 582 1232/828/672 private
+i8.constant u16.private 2^6 _ : 24 0 555 585 1178/833/675 private
+i8.constant u16.private 2^6+1 _ : 24 0 552 582 1232/828/672 private
+i8.public u16.constant * : 128 0 227 244 592/262/227 private
+i8.public u16.constant _ 0 : 136 0 208 224 544/224/208 constant
+i8.public u16.constant _ 1 : 136 0 208 224 544/224/208 private
+i8.public u16.constant _ 7 : 120 0 246 264 640/300/246 private
+i8.public u16.constant _ 8 : 112 0 265 284 688/338/265 private
+i8.public u16.constant _ MAX : 16 0 493 524 1264/794/493 private
+i8.public u16.public _ _ : 16 0 621 652 1392/1043/742 private
+i8.public u16.private _ _ : 16 0 621 652 1392/1043/742 private
+i8.private u16.constant * : 128 0 227 244 592/262/227 private
+i8.private u16.constant _ 0 : 136 0 208 224 544/224/208 constant
+i8.private u16.constant _ 1 : 136 0 208 224 544/224/208 private
+i8.private u16.constant _ 7 : 120 0 246 264 640/300/246 private
+i8.private u16.constant _ 8 : 112 0 265 284 688/338/265 private
+i8.private u16.constant _ MAX : 16 0 493 524 1264/794/493 private
+i8.private u16.public _ _ : 16 0 621 652 1392/1043/742 private
+i8.private u16.private _ _ : 16 0 621 652 1392/1043/742 private
+i8.constant u32.constant * : 8 0 0 0 0/0/0 constant
+i8.constant u32.public * : 24 0 1147 1209 2566/1729/1395 private
+i8.constant u32.public MIN _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.public MIN+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.constant u32.public -2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.public -2^4+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.constant u32.public 0 _ : 427 0 742 773 1755/1044/742 private
+i8.constant u32.public 1 _ : 520 0 0 0 0/0/0 constant
+i8.constant u32.public 2 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.public 3 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.public 2^3-1 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.public 2^3 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.public 2^3+1 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.public 2^4-1 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.public 2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.public 2^4+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.constant u32.public 2^6 _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.public 2^6+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.constant u32.private * : 24 0 1147 1209 2566/1729/1395 private
+i8.constant u32.private MIN _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.private MIN+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.constant u32.private -2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.private -2^4+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.constant u32.private 0 _ : 427 0 742 773 1755/1044/742 private
+i8.constant u32.private 1 _ : 520 0 0 0 0/0/0 constant
+i8.constant u32.private 2 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.private 3 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.private 2^3-1 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.private 2^3 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.private 2^3+1 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.private 2^4-1 _ : 24 0 1145 1207 2561/1726/1393 private
+i8.constant u32.private 2^4 _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.private 2^4+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.constant u32.private 2^6 _ : 24 0 1147 1209 2442/1729/1395 private
+i8.constant u32.private 2^6+1 _ : 24 0 1144 1206 2560/1724/1392 private
+i8.public u32.constant * : 256 0 435 468 1136/486/435 private
+i8.public u32.constant _ 0 : 264 0 416 448 1088/448/416 constant
+i8.public u32.constant _ 1 : 264 0 416 448 1088/448/416 private
+i8.public u32.constant _ 7 : 248 0 454 488 1184/524/454 private
+i8.public u32.constant _ 8 : 240 0 473 508 1232/562/473 private
+i8.public u32.constant _ MAX : 16 0 1005 1068 2576/1626/1005 private
+i8.public u32.public _ _ : 16 0 1261 1324 2832/2131/1510 private
+i8.public u32.private _ _ : 16 0 1261 1324 2832/2131/1510 private
+i8.private u32.constant * : 256 0 435 468 1136/486/435 private
+i8.private u32.constant _ 0 : 264 0 416 448 1088/448/416 constant
+i8.private u32.constant _ 1 : 264 0 416 448 1088/448/416 private
+i8.private u32.constant _ 7 : 248 0 454 488 1184/524/454 private
+i8.private u32.constant _ 8 : 240 0 473 508 1232/562/473 private
+i8.private u32.constant _ MAX : 16 0 1005 1068 2576/1626/1005 private
+i8.private u32.public _ _ : 16 0 1261 1324 2832/2131/1510 private
+i8.private u32.private _ _ : 16 0 1261 1324 2832/2131/1510 private
+i16.constant u8.constant * : 16 0 0 0 0/0/0 constant
+i16.constant u8.public * : 48 0 483 497 1094/737/595 private
+i16.constant u8.public MIN _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.public MIN+1 _ : 48 0 480 494 1088/732/592 private
+i16.constant u8.public -2^8 _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.public -2^8+1 _ : 48 0 480 494 1088/732/592 private
+i16.constant u8.public 0 _ : 223 0 306 313 739/440/306 private
+i16.constant u8.public 1 _ : 272 0 0 0 0/0/0 constant
+i16.constant u8.public 2 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.public 3 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.public 2^7-1 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.public 2^7 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.public 2^7+1 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.public 2^8-1 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.public 2^8 _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.public 2^8+1 _ : 48 0 480 494 1088/732/592 private
+i16.constant u8.public 2^14 _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.public 2^14+1 _ : 48 0 480 494 1088/732/592 private
+i16.constant u8.private * : 48 0 483 497 1094/737/595 private
+i16.constant u8.private MIN _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.private MIN+1 _ : 48 0 480 494 1088/732/592 private
+i16.constant u8.private -2^8 _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.private -2^8+1 _ : 48 0 480 494 1088/732/592 private
+i16.constant u8.private 0 _ : 223 0 306 313 739/440/306 private
+i16.constant u8.private 1 _ : 272 0 0 0 0/0/0 constant
+i16.constant u8.private 2 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.private 3 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.private 2^7-1 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.private 2^7 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.private 2^7+1 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.private 2^8-1 _ : 48 0 481 495 1089/734/593 private
+i16.constant u8.private 2^8 _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.private 2^8+1 _ : 48 0 480 494 1088/732/592 private
+i16.constant u8.private 2^14 _ : 48 0 483 497 1038/737/595 private
+i16.constant u8.private 2^14+1 _ : 48 0 480 494 1088/732/592 private
+i16.public u8.constant * : 128 0 231 240 616/282/231 private
+i16.public u8.constant _ 0 : 144 0 200 208 528/208/200 constant
+i16.public u8.constant _ 1 : 144 0 200 208 528/208/200 private
+i16.public u8.constant _ 15 : 96 0 293 304 792/430/293 private
+i16.public u8.constant _ 16 : 80 0 324 336 880/504/324 private
+i16.public u8.constant _ MAX : 32 0 417 432 1144/726/417 private
+i16.public u8.public _ _ : 32 0 545 560 1272/967/658 private
+i16.public u8.private _ _ : 32 0 545 560 1272/967/658 private
+i16.private u8.constant * : 128 0 231 240 616/282/231 private
+i16.private u8.constant _ 0 : 144 0 200 208 528/208/200 constant
+i16.private u8.constant _ 1 : 144 0 200 208 528/208/200 private
+i16.private u8.constant _ 15 : 96 0 293 304 792/430/293 private
+i16.private u8.constant _ 16 : 80 0 324 336 880/504/324 private
+i16.private u8.constant _ MAX : 32 0 417 432 1144/726/417 private
+i16.private u8.public _ _ : 32 0 545 560 1272/967/658 private
+i16.private u8.private _ _ : 32 0 545 560 1272/967/658 private
+i16.constant u16.constant * : 16 0 0 0 0/0/0 constant
+i16.constant u16.public * : 48 0 1035 1065 2366/1601/1275 private
+i16.constant u16.public MIN _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.public MIN+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.constant u16.public -2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.public -2^8+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.constant u16.public 0 _ : 423 0 658 673 1611/968/658 private
+i16.constant u16.public 1 _ : 528 0 0 0 0/0/0 constant
+i16.constant u16.public 2 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.public 3 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.public 2^7-1 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.public 2^7 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.public 2^7+1 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.public 2^8-1 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.public 2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.public 2^8+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.constant u16.public 2^14 _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.public 2^14+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.constant u16.private * : 48 0 1035 1065 2366/1601/1275 private
+i16.constant u16.private MIN _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.private MIN+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.constant u16.private -2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.private -2^8+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.constant u16.private 0 _ : 423 0 658 673 1611/968/658 private
+i16.constant u16.private 1 _ : 528 0 0 0 0/0/0 constant
+i16.constant u16.private 2 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.private 3 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.private 2^7-1 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.private 2^7 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.private 2^7+1 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.private 2^8-1 _ : 48 0 1033 1063 2361/1598/1273 private
+i16.constant u16.private 2^8 _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.private 2^8+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.constant u16.private 2^14 _ : 48 0 1035 1065 2246/1601/1275 private
+i16.constant u16.private 2^14+1 _ : 48 0 1032 1062 2360/1596/1272 private
+i16.public u16.constant * : 256 0 431 448 1144/490/431 private
+i16.public u16.constant _ 0 : 272 0 400 416 1056/416/400 constant
+i16.public u16.constant _ 1 : 272 0 400 416 1056/416/400 private
+i16.public u16.constant _ 15 : 224 0 493 512 1320/638/493 private
+i16.public u16.constant _ 16 : 208 0 524 544 1408/712/524 private
+i16.public u16.constant _ MAX : 32 0 865 896 2376/1526/865 private
+i16.public u16.public _ _ : 32 0 1121 1152 2632/2023/1362 private
+i16.public u16.private _ _ : 32 0 1121 1152 2632/2023/1362 private
+i16.private u16.constant * : 256 0 431 448 1144/490/431 private
+i16.private u16.constant _ 0 : 272 0 400 416 1056/416/400 constant
+i16.private u16.constant _ 1 : 272 0 400 416 1056/416/400 private
+i16.private u16.constant _ 15 : 224 0 493 512 1320/638/493 private
+i16.private u16.constant _ 16 : 208 0 524 544 1408/712/524 private
+i16.private u16.constant _ MAX : 32 0 865 896 2376/1526/865 private
+i16.private u16.public _ _ : 32 0 1121 1152 2632/2023/1362 private
+i16.private u16.private _ _ : 32 0 1121 1152 2632/2023/1362 private
+i16.constant u32.constant * : 16 0 0 0 0/0/0 constant
+i16.constant u32.public * : 48 0 2139 2201 4910/3329/2635 private
+i16.constant u32.public MIN _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.public MIN+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.constant u32.public -2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.public -2^8+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.constant u32.public 0 _ : 823 0 1362 1393 3355/2024/1362 private
+i16.constant u32.public 1 _ : 1040 0 0 0 0/0/0 constant
+i16.constant u32.public 2 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.public 3 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.public 2^7-1 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.public 2^7 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.public 2^7+1 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.public 2^8-1 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.public 2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.public 2^8+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.constant u32.public 2^14 _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.public 2^14+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.constant u32.private * : 48 0 2139 2201 4910/3329/2635 private
+i16.constant u32.private MIN _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.private MIN+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.constant u32.private -2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.private -2^8+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.constant u32.private 0 _ : 823 0 1362 1393 3355/2024/1362 private
+i16.constant u32.private 1 _ : 1040 0 0 0 0/0/0 constant
+i16.constant u32.private 2 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.private 3 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.private 2^7-1 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.private 2^7 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.private 2^7+1 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.private 2^8-1 _ : 48 0 2137 2199 4905/3326/2633 private
+i16.constant u32.private 2^8 _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.private 2^8+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.constant u32.private 2^14 _ : 48 0 2139 2201 4662/3329/2635 private
+i16.constant u32.private 2^14+1 _ : 48 0 2136 2198 4904/3324/2632 private
+i16.public u32.constant * : 512 0 831 864 2200/906/831 private
+i16.public u32.constant _ 0 : 528 0 800 832 2112/832/800 constant
+i16.public u32.constant _ 1 : 528 0 800 832 2112/832/800 private
+i16.public u32.constant _ 15 : 480 0 893 928 2376/1054/893 private
+i16.public u32.constant _ 16 : 464 0 924 960 2464/1128/924 private
+i16.public u32.constant _ MAX : 32 0 1761 1824 4840/3126/1761 private
+i16.public u32.public _ _ : 32 0 2273 2336 5352/4135/2770 private
+i16.public u32.private _ _ : 32 0 2273 2336 5352/4135/2770 private
+i16.private u32.constant * : 512 0 831 864 2200/906/831 private
+i16.private u32.constant _ 0 : 528 0 800 832 2112/832/800 constant
+i16.private u32.constant _ 1 : 528 0 800 832 2112/832/800 private
+i16.private u32.constant _ 15 : 480 0 893 928 2376/1054/893 private
+i16.private u32.constant _ 16 : 464 0 924 960 2464/1128/924 private
+i16.private u32.constant _ MAX : 32 0 1761 1824 4840/3126/1761 private
+i16.private u32.public _ _ : 32 0 2273 2336 5352/4135/2770 private
+i16.private u32.private _ _ : 32 0 2273 2336 5352/4135/2770 private
+i32.constant u8.constant * : 32 0 0 0 0/0/0 constant
+i32.constant u8.public * : 96 0 931 945 2134/1441/1155 private
+i32.constant u8.public MIN _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.public MIN+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.constant u8.public -2^16 _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.public -2^16+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.constant u8.public 0 _ : 439 0 586 593 1443/864/586 private
+i32.constant u8.public 1 _ : 544 0 0 0 0/0/0 constant
+i32.constant u8.public 2 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.public 3 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.public 2^15-1 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.public 2^15 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.public 2^15+1 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.public 2^16-1 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.public 2^16 _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.public 2^16+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.constant u8.public 2^30 _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.public 2^30+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.constant u8.private * : 96 0 931 945 2134/1441/1155 private
+i32.constant u8.private MIN _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.private MIN+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.constant u8.private -2^16 _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.private -2^16+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.constant u8.private 0 _ : 439 0 586 593 1443/864/586 private
+i32.constant u8.private 1 _ : 544 0 0 0 0/0/0 constant
+i32.constant u8.private 2 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.private 3 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.private 2^15-1 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.private 2^15 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.private 2^15+1 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.private 2^16-1 _ : 96 0 929 943 2129/1438/1153 private
+i32.constant u8.private 2^16 _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.private 2^16+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.constant u8.private 2^30 _ : 96 0 931 945 2022/1441/1155 private
+i32.constant u8.private 2^30+1 _ : 96 0 928 942 2128/1436/1152 private
+i32.public u8.constant * : 256 0 447 456 1208/546/447 private
+i32.public u8.constant _ 0 : 288 0 392 400 1040/400/392 constant
+i32.public u8.constant _ 1 : 288 0 392 400 1040/400/392 private
+i32.public u8.constant _ 31 : 160 0 612 624 1712/984/612 private
+i32.public u8.constant _ 32 : 128 0 667 680 1880/1130/667 private
+i32.public u8.constant _ MAX : 64 0 777 792 2216/1422/777 private
+i32.public u8.public _ _ : 64 0 1033 1048 2472/1903/1258 private
+i32.public u8.private _ _ : 64 0 1033 1048 2472/1903/1258 private
+i32.private u8.constant * : 256 0 447 456 1208/546/447 private
+i32.private u8.constant _ 0 : 288 0 392 400 1040/400/392 constant
+i32.private u8.constant _ 1 : 288 0 392 400 1040/400/392 private
+i32.private u8.constant _ 31 : 160 0 612 624 1712/984/612 private
+i32.private u8.constant _ 32 : 128 0 667 680 1880/1130/667 private
+i32.private u8.constant _ MAX : 64 0 777 792 2216/1422/777 private
+i32.private u8.public _ _ : 64 0 1033 1048 2472/1903/1258 private
+i32.private u8.private _ _ : 64 0 1033 1048 2472/1903/1258 private
+i32.constant u16.constant * : 32 0 0 0 0/0/0 constant
+i32.constant u16.public * : 96 0 1995 2025 4622/3137/2475 private
+i32.constant u16.public MIN _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.public MIN+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.constant u16.public -2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.public -2^16+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.constant u16.public 0 _ : 831 0 1258 1273 3147/1904/1258 private
+i32.constant u16.public 1 _ : 1056 0 0 0 0/0/0 constant
+i32.constant u16.public 2 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.public 3 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.public 2^15-1 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.public 2^15 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.public 2^15+1 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.public 2^16-1 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.public 2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.public 2^16+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.constant u16.public 2^30 _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.public 2^30+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.constant u16.private * : 96 0 1995 2025 4622/3137/2475 private
+i32.constant u16.private MIN _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.private MIN+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.constant u16.private -2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.private -2^16+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.constant u16.private 0 _ : 831 0 1258 1273 3147/1904/1258 private
+i32.constant u16.private 1 _ : 1056 0 0 0 0/0/0 constant
+i32.constant u16.private 2 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.private 3 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.private 2^15-1 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.private 2^15 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.private 2^15+1 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.private 2^16-1 _ : 96 0 1993 2023 4617/3134/2473 private
+i32.constant u16.private 2^16 _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.private 2^16+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.constant u16.private 2^30 _ : 96 0 1995 2025 4382/3137/2475 private
+i32.constant u16.private 2^30+1 _ : 96 0 1992 2022 4616/3132/2472 private
+i32.public u16.constant * : 512 0 839 856 2248/946/839 private
+i32.public u16.constant _ 0 : 544 0 784 800 2080/800/784 constant
+i32.public u16.constant _ 1 : 544 0 784 800 2080/800/784 private
+i32.public u16.constant _ 31 : 416 0 1004 1024 2752/1384/1004 private
+i32.public u16.constant _ 32 : 384 0 1059 1080 2920/1530/1059 private
+i32.public u16.constant _ MAX : 64 0 1609 1640 4600/2990/1609 private
+i32.public u16.public _ _ : 64 0 2121 2152 5112/3983/2602 private
+i32.public u16.private _ _ : 64 0 2121 2152 5112/3983/2602 private
+i32.private u16.constant * : 512 0 839 856 2248/946/839 private
+i32.private u16.constant _ 0 : 544 0 784 800 2080/800/784 constant
+i32.private u16.constant _ 1 : 544 0 784 800 2080/800/784 private
+i32.private u16.constant _ 31 : 416 0 1004 1024 2752/1384/1004 private
+i32.private u16.constant _ 32 : 384 0 1059 1080 2920/1530/1059 private
+i32.private u16.constant _ MAX : 64 0 1609 1640 4600/2990/1609 private
+i32.private u16.public _ _ : 64 0 2121 2152 5112/3983/2602 private
+i32.private u16.private _ _ : 64 0 2121 2152 5112/3983/2602 private
+i32.constant u32.constant * : 32 0 0 0 0/0/0 constant
+i32.constant u32.public * : 96 0 4123 4185 9598/6529/5115 private
+i32.constant u32.public MIN _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.public MIN+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.constant u32.public -2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.public -2^16+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.constant u32.public 0 _ : 1615 0 2602 2633 6555/3984/2602 private
+i32.constant u32.public 1 _ : 2080 0 0 0 0/0/0 constant
+i32.constant u32.public 2 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.public 3 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.public 2^15-1 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.public 2^15 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.public 2^15+1 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.public 2^16-1 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.public 2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.public 2^16+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.constant u32.public 2^30 _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.public 2^30+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.constant u32.private * : 96 0 4123 4185 9598/6529/5115 private
+i32.constant u32.private MIN _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.private MIN+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.constant u32.private -2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.private -2^16+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.constant u32.private 0 _ : 1615 0 2602 2633 6555/3984/2602 private
+i32.constant u32.private 1 _ : 2080 0 0 0 0/0/0 constant
+i32.constant u32.private 2 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.private 3 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.private 2^15-1 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.private 2^15 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.private 2^15+1 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.private 2^16-1 _ : 96 0 4121 4183 9593/6526/5113 private
+i32.constant u32.private 2^16 _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.private 2^16+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.constant u32.private 2^30 _ : 96 0 4123 4185 9102/6529/5115 private
+i32.constant u32.private 2^30+1 _ : 96 0 4120 4182 9592/6524/5112 private
+i32.public u32.constant * : 1024 0 1623 1656 4328/1746/1623 private
+i32.public u32.constant _ 0 : 1056 0 1568 1600 4160/1600/1568 constant
+i32.public u32.constant _ 1 : 1056 0 1568 1600 4160/1600/1568 private
+i32.public u32.constant _ 31 : 928 0 1788 1824 4832/2184/1788 private
+i32.public u32.constant _ 32 : 896 0 1843 1880 5000/2330/1843 private
+i32.public u32.constant _ MAX : 64 0 3273 3336 9368/6126/3273 private
+i32.public u32.public _ _ : 64 0 4297 4360 10392/8143/5290 private
+i32.public u32.private _ _ : 64 0 4297 4360 10392/8143/5290 private
+i32.private u32.constant * : 1024 0 1623 1656 4328/1746/1623 private
+i32.private u32.constant _ 0 : 1056 0 1568 1600 4160/1600/1568 constant
+i32.private u32.constant _ 1 : 1056 0 1568 1600 4160/1600/1568 private
+i32.private u32.constant _ 31 : 928 0 1788 1824 4832/2184/1788 private
+i32.private u32.constant _ 32 : 896 0 1843 1880 5000/2330/1843 private
+i32.private u32.constant _ MAX : 64 0 3273 3336 9368/6126/3273 private
+i32.private u32.public _ _ : 64 0 4297 4360 10392/8143/5290 private
+i32.private u32.private _ _ : 64 0 4297 4360 10392/8143/5290 private
+i64.constant u8.constant * : 64 0 0 0 0/0/0 constant
+i64.constant u8.public * : 192 0 1827 1841 4214/2849/2275 private
+i64.constant u8.public MIN _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.public MIN+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.constant u8.public -2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.public -2^32+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.constant u8.public 0 _ : 871 0 1146 1153 2851/1712/1146 private
+i64.constant u8.public 1 _ : 1088 0 0 0 0/0/0 constant
+i64.constant u8.public 2 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.public 3 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.public 2^31-1 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.public 2^31 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.public 2^31+1 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.public 2^32-1 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.public 2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.public 2^32+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.constant u8.public 2^62 _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.public 2^62+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.constant u8.private * : 192 0 1827 1841 4214/2849/2275 private
+i64.constant u8.private MIN _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.private MIN+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.constant u8.private -2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.private -2^32+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.constant u8.private 0 _ : 871 0 1146 1153 2851/1712/1146 private
+i64.constant u8.private 1 _ : 1088 0 0 0 0/0/0 constant
+i64.constant u8.private 2 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.private 3 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.private 2^31-1 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.private 2^31 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.private 2^31+1 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.private 2^32-1 _ : 192 0 1825 1839 4209/2846/2273 private
+i64.constant u8.private 2^32 _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.private 2^32+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.constant u8.private 2^62 _ : 192 0 1827 1841 3990/2849/2275 private
+i64.constant u8.private 2^62+1 _ : 192 0 1824 1838 4208/2844/2272 private
+i64.public u8.constant * : 512 0 879 888 2392/1074/879 private
+i64.public u8.constant _ 0 : 576 0 776 784 2064/784/776 constant
+i64.public u8.constant _ 1 : 576 0 776 784 2064/784/776 private
+i64.public u8.constant _ 63 : 256 0 1291 1304 3704/2234/1291 private
+i64.public u8.constant _ 64 : 192 0 1394 1408 4032/2524/1394 private
+i64.public u8.constant _ MAX : 128 0 1497 1512 4360/2814/1497 private
+i64.public u8.public _ _ : 128 0 2009 2024 4872/3775/2458 private
+i64.public u8.private _ _ : 128 0 2009 2024 4872/3775/2458 private
+i64.private u8.constant * : 512 0 879 888 2392/1074/879 private
+i64.private u8.constant _ 0 : 576 0 776 784 2064/784/776 constant
+i64.private u8.constant _ 1 : 576 0 776 784 2064/784/776 private
+i64.private u8.constant _ 63 : 256 0 1291 1304 3704/2234/1291 private
+i64.private u8.constant _ 64 : 192 0 1394 1408 4032/2524/1394 private
+i64.private u8.constant _ MAX : 128 0 1497 1512 4360/2814/1497 private
+i64.private u8.public _ _ : 128 0 2009 2024 4872/3775/2458 private
+i64.private u8.private _ _ : 128 0 2009 2024 4872/3775/2458 private
+i64.constant u16.constant * : 64 0 0 0 0/0/0 constant
+i64.constant u16.public * : 192 0 3915 3945 9134/6209/4875 private
+i64.constant u16.public MIN _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.public MIN+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.constant u16.public -2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.public -2^32+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.constant u16.public 0 _ : 1647 0 2458 2473 6219/3776/2458 private
+i64.constant u16.public 1 _ : 2112 0 0 0 0/0/0 constant
+i64.constant u16.public 2 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.public 3 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.public 2^31-1 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.public 2^31 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.public 2^31+1 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.public 2^32-1 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.public 2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.public 2^32+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.constant u16.public 2^62 _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.public 2^62+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.constant u16.private * : 192 0 3915 3945 9134/6209/4875 private
+i64.constant u16.private MIN _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.private MIN+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.constant u16.private -2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.private -2^32+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.constant u16.private 0 _ : 1647 0 2458 2473 6219/3776/2458 private
+i64.constant u16.private 1 _ : 2112 0 0 0 0/0/0 constant
+i64.constant u16.private 2 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.private 3 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.private 2^31-1 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.private 2^31 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.private 2^31+1 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.private 2^32-1 _ : 192 0 3913 3943 9129/6206/4873 private
+i64.constant u16.private 2^32 _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.private 2^32+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.constant u16.private 2^62 _ : 192 0 3915 3945 8654/6209/4875 private
+i64.constant u16.private 2^62+1 _ : 192 0 3912 3942 9128/6204/4872 private
+i64.public u16.constant * : 1024 0 1655 1672 4456/1858/1655 private
+i64.public u16.constant _ 0 : 1088 0 1552 1568 4128/1568/1552 constant
+i64.public u16.constant _ 1 : 1088 0 1552 1568 4128/1568/1552 private
+i64.public u16.constant _ 63 : 768 0 2067 2088 5768/3018/2067 private
+i64.public u16.constant _ 64 : 704 0 2170 2192 6096/3308/2170 private
+i64.public u16.constant _ MAX : 128 0 3097 3128 9048/5918/3097 private
+i64.public u16.public _ _ : 128 0 4121 4152 10072/7903/5082 private
+i64.public u16.private _ _ : 128 0 4121 4152 10072/7903/5082 private
+i64.private u16.constant * : 1024 0 1655 1672 4456/1858/1655 private
+i64.private u16.constant _ 0 : 1088 0 1552 1568 4128/1568/1552 constant
+i64.private u16.constant _ 1 : 1088 0 1552 1568 4128/1568/1552 private
+i64.private u16.constant _ 63 : 768 0 2067 2088 5768/3018/2067 private
+i64.private u16.constant _ 64 : 704 0 2170 2192 6096/3308/2170 private
+i64.private u16.constant _ MAX : 128 0 3097 3128 9048/5918/3097 private
+i64.private u16.public _ _ : 128 0 4121 4152 10072/7903/5082 private
+i64.private u16.private _ _ : 128 0 4121 4152 10072/7903/5082 private
+i64.constant u32.constant * : 64 0 0 0 0/0/0 constant
+i64.constant u32.public * : 192 0 8091 8153 18974/12929/10075 private
+i64.constant u32.public MIN _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.public MIN+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.constant u32.public -2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.public -2^32+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.constant u32.public 0 _ : 3199 0 5082 5113 12955/7904/5082 private
+i64.constant u32.public 1 _ : 4160 0 0 0 0/0/0 constant
+i64.constant u32.public 2 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.public 3 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.public 2^31-1 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.public 2^31 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.public 2^31+1 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.public 2^32-1 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.public 2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.public 2^32+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.constant u32.public 2^62 _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.public 2^62+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.constant u32.private * : 192 0 8091 8153 18974/12929/10075 private
+i64.constant u32.private MIN _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.private MIN+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.constant u32.private -2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.private -2^32+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.constant u32.private 0 _ : 3199 0 5082 5113 12955/7904/5082 private
+i64.constant u32.private 1 _ : 4160 0 0 0 0/0/0 constant
+i64.constant u32.private 2 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.private 3 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.private 2^31-1 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.private 2^31 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.private 2^31+1 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.private 2^32-1 _ : 192 0 8089 8151 18969/12926/10073 private
+i64.constant u32.private 2^32 _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.private 2^32+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.constant u32.private 2^62 _ : 192 0 8091 8153 17982/12929/10075 private
+i64.constant u32.private 2^62+1 _ : 192 0 8088 8150 18968/12924/10072 private
+i64.public u32.constant * : 2048 0 3207 3240 8584/3426/3207 private
+i64.public u32.constant _ 0 : 2112 0 3104 3136 8256/3136/3104 constant
+i64.public u32.constant _ 1 : 2112 0 3104 3136 8256/3136/3104 private
+i64.public u32.constant _ 63 : 1792 0 3619 3656 9896/4586/3619 private
+i64.public u32.constant _ 64 : 1728 0 3722 3760 10224/4876/3722 private
+i64.public u32.constant _ MAX : 128 0 6297 6360 18424/12126/6297 private
+i64.public u32.public _ _ : 128 0 8345 8408 20472/16159/10330 private
+i64.public u32.private _ _ : 128 0 8345 8408 20472/16159/10330 private
+i64.private u32.constant * : 2048 0 3207 3240 8584/3426/3207 private
+i64.private u32.constant _ 0 : 2112 0 3104 3136 8256/3136/3104 constant
+i64.private u32.constant _ 1 : 2112 0 3104 3136 8256/3136/3104 private
+i64.private u32.constant _ 63 : 1792 0 3619 3656 9896/4586/3619 private
+i64.private u32.constant _ 64 : 1728 0 3722 3760 10224/4876/3722 private
+i64.private u32.constant _ MAX : 128 0 6297 6360 18424/12126/6297 private
+i64.private u32.public _ _ : 128 0 8345 8408 20472/16159/10330 private
+i64.private u32.private _ _ : 128 0 8345 8408 20472/16159/10330 private
+i128.constant u8.constant * : 128 0 0 0 0/0/0 constant
+i128.constant u8.public * : 384 0 3619 3633 8374/5665/4515 private
+i128.constant u8.public MIN _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.public MIN+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.constant u8.public -2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.public -2^64+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.constant u8.public 0 _ : 1735 0 2266 2273 5667/3408/2266 private
+i128.constant u8.public 1 _ : 2176 0 0 0 0/0/0 constant
+i128.constant u8.public 2 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.public 3 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.public 2^63-1 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.public 2^63 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.public 2^63+1 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.public 2^64-1 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.public 2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.public 2^64+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.constant u8.public 2^126 _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.public 2^126+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.constant u8.private * : 384 0 3619 3633 8374/5665/4515 private
+i128.constant u8.private MIN _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.private MIN+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.constant u8.private -2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.private -2^64+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.constant u8.private 0 _ : 1735 0 2266 2273 5667/3408/2266 private
+i128.constant u8.private 1 _ : 2176 0 0 0 0/0/0 constant
+i128.constant u8.private 2 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.private 3 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.private 2^63-1 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.private 2^63 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.private 2^63+1 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.private 2^64-1 _ : 384 0 3617 3631 8369/5662/4513 private
+i128.constant u8.private 2^64 _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.private 2^64+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.constant u8.private 2^126 _ : 384 0 3619 3633 7926/5665/4515 private
+i128.constant u8.private 2^126+1 _ : 384 0 3616 3630 8368/5660/4512 private
+i128.public u8.constant * : 1024 0 1743 1752 4760/2130/1743 private
+i128.public u8.constant _ 0 : 1152 0 1544 1552 4112/1552/1544 constant
+i128.public u8.constant _ 1 : 1152 0 1544 1552 4112/1552/1544 private
+i128.public u8.constant _ 127 : 384 0 2738 2752 8000/5020/2738 private
+i128.public u8.constant _ 128 : 256 0 2937 2952 8648/5598/2937 private
+i128.public u8.constant _ MAX : 256 0 2937 2952 8648/5598/2937 private
+i128.public u8.public _ _ : 256 0 3961 3976 9672/7519/4858 private
+i128.public u8.private _ _ : 256 0 3961 3976 9672/7519/4858 private
+i128.private u8.constant * : 1024 0 1743 1752 4760/2130/1743 private
+i128.private u8.constant _ 0 : 1152 0 1544 1552 4112/1552/1544 constant
+i128.private u8.constant _ 1 : 1152 0 1544 1552 4112/1552/1544 private
+i128.private u8.constant _ 127 : 384 0 2738 2752 8000/5020/2738 private
+i128.private u8.constant _ 128 : 256 0 2937 2952 8648/5598/2937 private
+i128.private u8.constant _ MAX : 256 0 2937 2952 8648/5598/2937 private
+i128.private u8.public _ _ : 256 0 3961 3976 9672/7519/4858 private
+i128.private u8.private _ _ : 256 0 3961 3976 9672/7519/4858 private
+i128.constant u16.constant * : 128 0 0 0 0/0/0 constant
+i128.constant u16.public * : 384 0 7755 7785 18158/12353/9675 private
+i128.constant u16.public MIN _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.public MIN+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.constant u16.public -2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.public -2^64+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.constant u16.public 0 _ : 3279 0 4858 4873 12363/7520/4858 private
+i128.constant u16.public 1 _ : 4224 0 0 0 0/0/0 constant
+i128.constant u16.public 2 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.public 3 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.public 2^63-1 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.public 2^63 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.public 2^63+1 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.public 2^64-1 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.public 2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.public 2^64+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.constant u16.public 2^126 _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.public 2^126+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.constant u16.private * : 384 0 7755 7785 18158/12353/9675 private
+i128.constant u16.private MIN _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.private MIN+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.constant u16.private -2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.private -2^64+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.constant u16.private 0 _ : 3279 0 4858 4873 12363/7520/4858 private
+i128.constant u16.private 1 _ : 4224 0 0 0 0/0/0 constant
+i128.constant u16.private 2 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.private 3 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.private 2^63-1 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.private 2^63 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.private 2^63+1 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.private 2^64-1 _ : 384 0 7753 7783 18153/12350/9673 private
+i128.constant u16.private 2^64 _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.private 2^64+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.constant u16.private 2^126 _ : 384 0 7755 7785 17198/12353/9675 private
+i128.constant u16.private 2^126+1 _ : 384 0 7752 7782 18152/12348/9672 private
+i128.public u16.constant * : 2048 0 3287 3304 8872/3682/3287 private
+i128.public u16.constant _ 0 : 2176 0 3088 3104 8224/3104/3088 constant
+i128.public u16.constant _ 1 : 2176 0 3088 3104 8224/3104/3088 private
+i128.public u16.constant _ 127 : 1408 0 4282 4304 12112/6572/4282 private
+i128.public u16.constant _ 128 : 1280 0 4481 4504 12760/7150/4481 private
+i128.public u16.constant _ MAX : 256 0 6073 6104 17944/11774/6073 private
+i128.public u16.public _ _ : 256 0 8121 8152 19992/15743/10042 private
+i128.public u16.private _ _ : 256 0 8121 8152 19992/15743/10042 private
+i128.private u16.constant * : 2048 0 3287 3304 8872/3682/3287 private
+i128.private u16.constant _ 0 : 2176 0 3088 3104 8224/3104/3088 constant
+i128.private u16.constant _ 1 : 2176 0 3088 3104 8224/3104/3088 private
+i128.private u16.constant _ 127 : 1408 0 4282 4304 12112/6572/4282 private
+i128.private u16.constant _ 128 : 1280 0 4481 4504 12760/7150/4481 private
+i128.private u16.constant _ MAX : 256 0 6073 6104 17944/11774/6073 private
+i128.private u16.public _ _ : 256 0 8121 8152 19992/15743/10042 private
+i128.private u16.private _ _ : 256 0 8121 8152 19992/15743/10042 private
+i128.constant u32.constant * : 128 0 0 0 0/0/0 constant
+i128.constant u32.public * : 384 0 16027 16089 37726/25729/19995 private
+i128.constant u32.public MIN _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.public MIN+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.constant u32.public -2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.public -2^64+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.constant u32.public 0 _ : 6367 0 10042 10073 25755/15744/10042 private
+i128.constant u32.public 1 _ : 8320 0 0 0 0/0/0 constant
+i128.constant u32.public 2 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.public 3 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.public 2^63-1 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.public 2^63 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.public 2^63+1 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.public 2^64-1 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.public 2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.public 2^64+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.constant u32.public 2^126 _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.public 2^126+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.constant u32.private * : 384 0 16027 16089 37726/25729/19995 private
+i128.constant u32.private MIN _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.private MIN+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.constant u32.private -2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.private -2^64+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.constant u32.private 0 _ : 6367 0 10042 10073 25755/15744/10042 private
+i128.constant u32.private 1 _ : 8320 0 0 0 0/0/0 constant
+i128.constant u32.private 2 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.private 3 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.private 2^63-1 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.private 2^63 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.private 2^63+1 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.private 2^64-1 _ : 384 0 16025 16087 37721/25726/19993 private
+i128.constant u32.private 2^64 _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.private 2^64+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.constant u32.private 2^126 _ : 384 0 16027 16089 35742/25729/19995 private
+i128.constant u32.private 2^126+1 _ : 384 0 16024 16086 37720/25724/19992 private
+i128.public u32.constant * : 4096 0 6375 6408 17096/6786/6375 private
+i128.public u32.constant _ 0 : 4224 0 6176 6208 16448/6208/6176 constant
+i128.public u32.constant _ 1 : 4224 0 6176 6208 16448/6208/6176 private
+i128.public u32.constant _ 127 : 3456 0 7370 7408 20336/9676/7370 private
+i128.public u32.constant _ 128 : 3328 0 7569 7608 20984/10254/7569 private
+i128.public u32.constant _ MAX : 256 0 12345 12408 36536/24126/12345 private
+i128.public u32.public _ _ : 256 0 16441 16504 40632/32191/20410 private
+i128.public u32.private _ _ : 256 0 16441 16504 40632/32191/20410 private
+i128.private u32.constant * : 4096 0 6375 6408 17096/6786/6375 private
+i128.private u32.constant _ 0 : 4224 0 6176 6208 16448/6208/6176 constant
+i128.private u32.constant _ 1 : 4224 0 6176 6208 16448/6208/6176 private
+i128.private u32.constant _ 127 : 3456 0 7370 7408 20336/9676/7370 private
+i128.private u32.constant _ 128 : 3328 0 7569 7608 20984/10254/7569 private
+i128.private u32.constant _ MAX : 256 0 12345 12408 36536/24126/12345 private
+i128.private u32.public _ _ : 256 0 16441 16504 40632/32191/20410 private
+i128.private u32.private _ _ : 256 0 16441 16504 40632/32191/20410 private

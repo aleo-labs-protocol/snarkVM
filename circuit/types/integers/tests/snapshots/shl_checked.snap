@@ -1,0 +1,3023 @@
+# Circuit shape of `shl_checked` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode, or halt.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant u8.constant * : halt
+u8.constant u8.constant 0 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 5 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 6 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 0 7 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 5 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 6 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 1 7 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2 5 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2 6 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 3 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 3 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 3 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 3 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 3 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 3 5 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 3 6 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3-1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3-1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3-1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3-1 5 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3+1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3+1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3+1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^3+1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4-1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4-1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4-1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4+1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4+1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^4+1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^7-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^7-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^7 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^7+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant 2^8-2^4 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant MAX-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.constant MAX 0 : 43 0 0 0 0/0/0 constant
+u8.constant u8.public * : 27 0 18 21 49/21/21 private
+u8.constant u8.public 0 _ : 43 0 0 1 5/1/0 constant
+u8.constant u8.private * : 27 0 18 21 49/21/21 private
+u8.constant u8.private 0 _ : 43 0 0 1 5/1/0 constant
+u8.public u8.constant * : 27 0 16 18 48/18/16 private
+u8.public u8.constant _ 8 : halt
+u8.public u8.constant _ 9 : halt
+u8.public u8.constant _ 16 : halt
+u8.public u8.constant _ MAX : halt
+u8.public u8.public _ _ : 27 0 19 22 56/22/29 private
+u8.public u8.private _ _ : 27 0 19 22 56/22/29 private
+u8.private u8.constant * : 27 0 16 18 48/18/16 private
+u8.private u8.constant _ 8 : halt
+u8.private u8.constant _ 9 : halt
+u8.private u8.constant _ 16 : halt
+u8.private u8.constant _ MAX : halt
+u8.private u8.public _ _ : 27 0 19 22 56/22/29 private
+u8.private u8.private _ _ : 27 0 19 22 56/22/29 private
+u8.constant u16.constant * : halt
+u8.constant u16.constant 0 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 0 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 0 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 0 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 0 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 0 5 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 0 6 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 0 7 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 5 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 6 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 1 7 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2 5 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2 6 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 3 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 3 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 3 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 3 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 3 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 3 5 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 3 6 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3-1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3-1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3-1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3-1 5 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3+1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3+1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3+1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^3+1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4-1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4-1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4-1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4+1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4+1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^4+1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^7-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^7-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^7 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^7+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant 2^8-2^4 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant MAX-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.constant MAX 0 : 43 0 0 0 0/0/0 constant
+u8.constant u16.public * : 27 0 18 21 57/21/21 private
+u8.constant u16.public 0 _ : 43 0 0 1 13/1/0 constant
+u8.constant u16.private * : 27 0 18 21 57/21/21 private
+u8.constant u16.private 0 _ : 43 0 0 1 13/1/0 constant
+u8.public u16.constant * : 27 0 16 18 48/18/16 private
+u8.public u16.constant _ 8 : halt
+u8.public u16.constant _ 9 : halt
+u8.public u16.constant _ 16 : halt
+u8.public u16.constant _ MAX : halt
+u8.public u16.public _ _ : 27 0 19 22 64/22/29 private
+u8.public u16.private _ _ : 27 0 19 22 64/22/29 private
+u8.private u16.constant * : 27 0 16 18 48/18/16 private
+u8.private u16.constant _ 8 : halt
+u8.private u16.constant _ 9 : halt
+u8.private u16.constant _ 16 : halt
+u8.private u16.constant _ MAX : halt
+u8.private u16.public _ _ : 27 0 19 22 64/22/29 private
+u8.private u16.private _ _ : 27 0 19 22 64/22/29 private
+u8.constant u32.constant * : halt
+u8.constant u32.constant 0 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 0 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 0 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 0 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 0 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 0 5 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 0 6 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 0 7 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 5 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 6 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 1 7 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2 5 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2 6 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 3 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 3 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 3 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 3 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 3 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 3 5 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 3 6 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3-1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3-1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3-1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3-1 5 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3+1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3+1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3+1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^3+1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4-1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4-1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4-1 4 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4+1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4+1 2 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^4+1 3 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^7-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^7-1 1 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^7 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^7+1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant 2^8-2^4 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant MAX-1 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.constant MAX 0 : 43 0 0 0 0/0/0 constant
+u8.constant u32.public * : 27 0 18 21 73/21/21 private
+u8.constant u32.public 0 _ : 43 0 0 1 29/1/0 constant
+u8.constant u32.private * : 27 0 18 21 73/21/21 private
+u8.constant u32.private 0 _ : 43 0 0 1 29/1/0 constant
+u8.public u32.constant * : 27 0 16 18 48/18/16 private
+u8.public u32.constant _ 8 : halt
+u8.public u32.constant _ 9 : halt
+u8.public u32.constant _ 16 : halt
+u8.public u32.constant _ MAX : halt
+u8.public u32.public _ _ : 27 0 19 22 80/22/29 private
+u8.public u32.private _ _ : 27 0 19 22 80/22/29 private
+u8.private u32.constant * : 27 0 16 18 48/18/16 private
+u8.private u32.constant _ 8 : halt
+u8.private u32.constant _ 9 : halt
+u8.private u32.constant _ 16 : halt
+u8.private u32.constant _ MAX : halt
+u8.private u32.public _ _ : 27 0 19 22 80/22/29 private
+u8.private u32.private _ _ : 27 0 19 22 80/22/29 private
+u16.constant u8.constant * : halt
+u16.constant u8.constant 0 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 0 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 0 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 0 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 0 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 0 9 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 0 14 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 0 15 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 9 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 14 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 1 15 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2 9 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2 14 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 3 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 3 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 3 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 3 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 3 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 3 9 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 3 14 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7-1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7-1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7-1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7-1 9 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7+1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7+1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7+1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^7+1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8-1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8-1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8-1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8+1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8+1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^8+1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^15-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^15-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^15 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^15+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant 2^16-2^8 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant MAX-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.constant MAX 0 : 84 0 0 0 0/0/0 constant
+u16.constant u8.public * : 52 0 35 38 89/38/39 private
+u16.constant u8.public 0 _ : 84 0 0 1 4/1/0 constant
+u16.constant u8.private * : 52 0 35 38 89/38/39 private
+u16.constant u8.private 0 _ : 84 0 0 1 4/1/0 constant
+u16.public u8.constant * : 52 0 32 34 96/34/32 private
+u16.public u8.constant _ 16 : halt
+u16.public u8.constant _ 17 : halt
+u16.public u8.constant _ 32 : halt
+u16.public u8.constant _ MAX : halt
+u16.public u8.public _ _ : 52 0 36 39 104/39/55 private
+u16.public u8.private _ _ : 52 0 36 39 104/39/55 private
+u16.private u8.constant * : 52 0 32 34 96/34/32 private
+u16.private u8.constant _ 16 : halt
+u16.private u8.constant _ 17 : halt
+u16.private u8.constant _ 32 : halt
+u16.private u8.constant _ MAX : halt
+u16.private u8.public _ _ : 52 0 36 39 104/39/55 private
+u16.private u8.private _ _ : 52 0 36 39 104/39/55 private
+u16.constant u16.constant * : halt
+u16.constant u16.constant 0 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 9 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 14 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 0 15 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 9 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 14 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 1 15 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2 9 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2 14 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 3 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 3 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 3 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 3 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 3 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 3 9 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 3 14 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7-1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7-1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7-1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7-1 9 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7+1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7+1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7+1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^7+1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8-1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8-1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8-1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8+1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8+1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^8+1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^15-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^15-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^15 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^15+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant 2^16-2^8 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant MAX-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.constant MAX 0 : 84 0 0 0 0/0/0 constant
+u16.constant u16.public * : 52 0 35 38 97/38/39 private
+u16.constant u16.public 0 _ : 84 0 0 1 12/1/0 constant
+u16.constant u16.private * : 52 0 35 38 97/38/39 private
+u16.constant u16.private 0 _ : 84 0 0 1 12/1/0 constant
+u16.public u16.constant * : 52 0 32 34 96/34/32 private
+u16.public u16.constant _ 16 : halt
+u16.public u16.constant _ 17 : halt
+u16.public u16.constant _ 32 : halt
+u16.public u16.constant _ MAX : halt
+u16.public u16.public _ _ : 52 0 36 39 112/39/55 private
+u16.public u16.private _ _ : 52 0 36 39 112/39/55 private
+u16.private u16.constant * : 52 0 32 34 96/34/32 private
+u16.private u16.constant _ 16 : halt
+u16.private u16.constant _ 17 : halt
+u16.private u16.constant _ 32 : halt
+u16.private u16.constant _ MAX : halt
+u16.private u16.public _ _ : 52 0 36 39 112/39/55 private
+u16.private u16.private _ _ : 52 0 36 39 112/39/55 private
+u16.constant u32.constant * : halt
+u16.constant u32.constant 0 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 0 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 0 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 0 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 0 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 0 9 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 0 14 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 0 15 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 9 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 14 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 1 15 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2 9 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2 14 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 3 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 3 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 3 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 3 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 3 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 3 9 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 3 14 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7-1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7-1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7-1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7-1 9 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7+1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7+1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7+1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^7+1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8-1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8-1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8-1 8 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8+1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8+1 2 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^8+1 7 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^15-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^15-1 1 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^15 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^15+1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant 2^16-2^8 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant MAX-1 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.constant MAX 0 : 84 0 0 0 0/0/0 constant
+u16.constant u32.public * : 52 0 35 38 113/38/39 private
+u16.constant u32.public 0 _ : 84 0 0 1 28/1/0 constant
+u16.constant u32.private * : 52 0 35 38 113/38/39 private
+u16.constant u32.private 0 _ : 84 0 0 1 28/1/0 constant
+u16.public u32.constant * : 52 0 32 34 96/34/32 private
+u16.public u32.constant _ 16 : halt
+u16.public u32.constant _ 17 : halt
+u16.public u32.constant _ 32 : halt
+u16.public u32.constant _ MAX : halt
+u16.public u32.public _ _ : 52 0 36 39 128/39/55 private
+u16.public u32.private _ _ : 52 0 36 39 128/39/55 private
+u16.private u32.constant * : 52 0 32 34 96/34/32 private
+u16.private u32.constant _ 16 : halt
+u16.private u32.constant _ 17 : halt
+u16.private u32.constant _ 32 : halt
+u16.private u32.constant _ MAX : halt
+u16.private u32.public _ _ : 52 0 36 39 128/39/55 private
+u16.private u32.private _ _ : 52 0 36 39 128/39/55 private
+u32.constant u8.constant * : halt
+u32.constant u8.constant 0 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 0 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 0 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 0 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 0 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 0 17 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 0 30 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 0 31 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 17 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 30 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 1 31 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2 17 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2 30 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 3 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 3 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 3 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 3 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 3 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 3 17 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 3 30 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15-1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15-1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15-1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15-1 17 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15+1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15+1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15+1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^15+1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16-1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16-1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16-1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16+1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16+1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^16+1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^31-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^31-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^31 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^31+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant 2^32-2^16 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant MAX-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.constant MAX 0 : 165 0 0 0 0/0/0 constant
+u32.constant u8.public * : 101 0 68 71 169/71/73 private
+u32.constant u8.public 0 _ : 165 0 0 1 3/1/0 constant
+u32.constant u8.private * : 101 0 68 71 169/71/73 private
+u32.constant u8.private 0 _ : 165 0 0 1 3/1/0 constant
+u32.public u8.constant * : 101 0 64 66 192/66/64 private
+u32.public u8.constant _ 32 : halt
+u32.public u8.constant _ 33 : halt
+u32.public u8.constant _ 64 : halt
+u32.public u8.constant _ MAX : halt
+u32.public u8.public _ _ : 101 0 69 72 200/72/105 private
+u32.public u8.private _ _ : 101 0 69 72 200/72/105 private
+u32.private u8.constant * : 101 0 64 66 192/66/64 private
+u32.private u8.constant _ 32 : halt
+u32.private u8.constant _ 33 : halt
+u32.private u8.constant _ 64 : halt
+u32.private u8.constant _ MAX : halt
+u32.private u8.public _ _ : 101 0 69 72 200/72/105 private
+u32.private u8.private _ _ : 101 0 69 72 200/72/105 private
+u32.constant u16.constant * : halt
+u32.constant u16.constant 0 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 0 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 0 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 0 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 0 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 0 17 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 0 30 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 0 31 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 17 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 30 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 1 31 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2 17 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2 30 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 3 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 3 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 3 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 3 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 3 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 3 17 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 3 30 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15-1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15-1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15-1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15-1 17 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15+1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15+1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15+1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^15+1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16-1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16-1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16-1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16+1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16+1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^16+1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^31-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^31-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^31 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^31+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant 2^32-2^16 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant MAX-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.constant MAX 0 : 165 0 0 0 0/0/0 constant
+u32.constant u16.public * : 101 0 68 71 177/71/73 private
+u32.constant u16.public 0 _ : 165 0 0 1 11/1/0 constant
+u32.constant u16.private * : 101 0 68 71 177/71/73 private
+u32.constant u16.private 0 _ : 165 0 0 1 11/1/0 constant
+u32.public u16.constant * : 101 0 64 66 192/66/64 private
+u32.public u16.constant _ 32 : halt
+u32.public u16.constant _ 33 : halt
+u32.public u16.constant _ 64 : halt
+u32.public u16.constant _ MAX : halt
+u32.public u16.public _ _ : 101 0 69 72 208/72/105 private
+u32.public u16.private _ _ : 101 0 69 72 208/72/105 private
+u32.private u16.constant * : 101 0 64 66 192/66/64 private
+u32.private u16.constant _ 32 : halt
+u32.private u16.constant _ 33 : halt
+u32.private u16.constant _ 64 : halt
+u32.private u16.constant _ MAX : halt
+u32.private u16.public _ _ : 101 0 69 72 208/72/105 private
+u32.private u16.private _ _ : 101 0 69 72 208/72/105 private
+u32.constant u32.constant * : halt
+u32.constant u32.constant 0 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 17 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 30 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 0 31 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 17 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 30 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 1 31 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2 17 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2 30 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 3 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 3 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 3 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 3 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 3 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 3 17 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 3 30 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15-1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15-1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15-1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15-1 17 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15+1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15+1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15+1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^15+1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16-1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16-1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16-1 16 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16+1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16+1 2 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^16+1 15 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^31-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^31-1 1 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^31 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^31+1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant 2^32-2^16 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant MAX-1 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.constant MAX 0 : 165 0 0 0 0/0/0 constant
+u32.constant u32.public * : 101 0 68 71 193/71/73 private
+u32.constant u32.public 0 _ : 165 0 0 1 27/1/0 constant
+u32.constant u32.private * : 101 0 68 71 193/71/73 private
+u32.constant u32.private 0 _ : 165 0 0 1 27/1/0 constant
+u32.public u32.constant * : 101 0 64 66 192/66/64 private
+u32.public u32.constant _ 32 : halt
+u32.public u32.constant _ 33 : halt
+u32.public u32.constant _ 64 : halt
+u32.public u32.constant _ MAX : halt
+u32.public u32.public _ _ : 101 0 69 72 224/72/105 private
+u32.public u32.private _ _ : 101 0 69 72 224/72/105 private
+u32.private u32.constant * : 101 0 64 66 192/66/64 private
+u32.private u32.constant _ 32 : halt
+u32.private u32.constant _ 33 : halt
+u32.private u32.constant _ 64 : halt
+u32.private u32.constant _ MAX : halt
+u32.private u32.public _ _ : 101 0 69 72 224/72/105 private
+u32.private u32.private _ _ : 101 0 69 72 224/72/105 private
+u64.constant u8.constant * : halt
+u64.constant u8.constant 0 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 0 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 0 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 0 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 0 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 0 33 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 0 62 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 0 63 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 33 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 62 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 1 63 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2 33 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2 62 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 3 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 3 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 3 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 3 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 3 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 3 33 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 3 62 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31-1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31-1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31-1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31-1 33 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31+1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31+1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31+1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^31+1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32-1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32-1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32-1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32+1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32+1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^32+1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^63-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^63-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^63 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^63+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant 2^64-2^32 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant MAX-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.constant MAX 0 : 326 0 0 0 0/0/0 constant
+u64.constant u8.public * : 198 0 133 136 329/136/139 private
+u64.constant u8.public 0 _ : 326 0 0 1 2/1/0 constant
+u64.constant u8.private * : 198 0 133 136 329/136/139 private
+u64.constant u8.private 0 _ : 326 0 0 1 2/1/0 constant
+u64.public u8.constant * : 198 0 128 130 384/130/128 private
+u64.public u8.constant _ 64 : halt
+u64.public u8.constant _ 65 : halt
+u64.public u8.constant _ 128 : halt
+u64.public u8.constant _ MAX : halt
+u64.public u8.public _ _ : 198 0 134 137 392/137/203 private
+u64.public u8.private _ _ : 198 0 134 137 392/137/203 private
+u64.private u8.constant * : 198 0 128 130 384/130/128 private
+u64.private u8.constant _ 64 : halt
+u64.private u8.constant _ 65 : halt
+u64.private u8.constant _ 128 : halt
+u64.private u8.constant _ MAX : halt
+u64.private u8.public _ _ : 198 0 134 137 392/137/203 private
+u64.private u8.private _ _ : 198 0 134 137 392/137/203 private
+u64.constant u16.constant * : halt
+u64.constant u16.constant 0 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 0 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 0 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 0 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 0 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 0 33 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 0 62 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 0 63 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 33 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 62 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 1 63 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2 33 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2 62 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 3 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 3 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 3 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 3 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 3 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 3 33 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 3 62 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31-1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31-1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31-1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31-1 33 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31+1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31+1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31+1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^31+1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32-1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32-1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32-1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32+1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32+1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^32+1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^63-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^63-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^63 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^63+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant 2^64-2^32 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant MAX-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.constant MAX 0 : 326 0 0 0 0/0/0 constant
+u64.constant u16.public * : 198 0 133 136 337/136/139 private
+u64.constant u16.public 0 _ : 326 0 0 1 10/1/0 constant
+u64.constant u16.private * : 198 0 133 136 337/136/139 private
+u64.constant u16.private 0 _ : 326 0 0 1 10/1/0 constant
+u64.public u16.constant * : 198 0 128 130 384/130/128 private
+u64.public u16.constant _ 64 : halt
+u64.public u16.constant _ 65 : halt
+u64.public u16.constant _ 128 : halt
+u64.public u16.constant _ MAX : halt
+u64.public u16.public _ _ : 198 0 134 137 400/137/203 private
+u64.public u16.private _ _ : 198 0 134 137 400/137/203 private
+u64.private u16.constant * : 198 0 128 130 384/130/128 private
+u64.private u16.constant _ 64 : halt
+u64.private u16.constant _ 65 : halt
+u64.private u16.constant _ 128 : halt
+u64.private u16.constant _ MAX : halt
+u64.private u16.public _ _ : 198 0 134 137 400/137/203 private
+u64.private u16.private _ _ : 198 0 134 137 400/137/203 private
+u64.constant u32.constant * : halt
+u64.constant u32.constant 0 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 0 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 0 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 0 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 0 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 0 33 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 0 62 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 0 63 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 33 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 62 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 1 63 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2 33 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2 62 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 3 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 3 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 3 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 3 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 3 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 3 33 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 3 62 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31-1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31-1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31-1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31-1 33 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31+1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31+1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31+1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^31+1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32-1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32-1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32-1 32 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32+1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32+1 2 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^32+1 31 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^63-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^63-1 1 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^63 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^63+1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant 2^64-2^32 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant MAX-1 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.constant MAX 0 : 326 0 0 0 0/0/0 constant
+u64.constant u32.public * : 198 0 133 136 353/136/139 private
+u64.constant u32.public 0 _ : 326 0 0 1 26/1/0 constant
+u64.constant u32.private * : 198 0 133 136 353/136/139 private
+u64.constant u32.private 0 _ : 326 0 0 1 26/1/0 constant
+u64.public u32.constant * : 198 0 128 130 384/130/128 private
+u64.public u32.constant _ 64 : halt
+u64.public u32.constant _ 65 : halt
+u64.public u32.constant _ 128 : halt
+u64.public u32.constant _ MAX : halt
+u64.public u32.public _ _ : 198 0 134 137 416/137/203 private
+u64.public u32.private _ _ : 198 0 134 137 416/137/203 private
+u64.private u32.constant * : 198 0 128 130 384/130/128 private
+u64.private u32.constant _ 64 : halt
+u64.private u32.constant _ 65 : halt
+u64.private u32.constant _ 128 : halt
+u64.private u32.constant _ MAX : halt
+u64.private u32.public _ _ : 198 0 134 137 416/137/203 private
+u64.private u32.private _ _ : 198 0 134 137 416/137/203 private
+u128.constant u8.constant * : halt
+u128.constant u8.constant 0 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 0 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 0 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 0 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 0 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 0 65 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 0 126 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 0 127 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 65 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 126 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 1 127 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2 65 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2 126 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 3 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 3 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 3 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 3 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 3 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 3 65 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 3 126 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63-1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63-1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63-1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63-1 65 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63+1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63+1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63+1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^63+1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64-1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64-1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64-1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64+1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64+1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^64+1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^127-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^127-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^127 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^127+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant 2^128-2^64 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant MAX-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.constant MAX 0 : 640 0 0 0 0/0/0 constant
+u128.constant u8.public * : 834 0 3832 3868 10720/6291/4721 private
+u128.constant u8.public 0 _ : 1027 0 3639 3673 10141/6096/4528 constant
+u128.constant u8.public 2^64 _ : 834 0 3832 3869 10720/6292/4721 private
+u128.constant u8.public 2^64+1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.public 2^127-1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.public 2^127 _ : 834 0 3832 3869 10720/6292/4721 private
+u128.constant u8.public 2^127+1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.public 2^128-2^64 _ : 834 0 3832 3869 10720/6292/4721 private
+u128.constant u8.public MAX-1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.public MAX _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.private * : 834 0 3832 3868 10720/6291/4721 private
+u128.constant u8.private 0 _ : 1027 0 3639 3673 10141/6096/4528 constant
+u128.constant u8.private 2^64 _ : 834 0 3832 3869 10720/6292/4721 private
+u128.constant u8.private 2^64+1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.private 2^127-1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.private 2^127 _ : 834 0 3832 3869 10720/6292/4721 private
+u128.constant u8.private 2^127+1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.private 2^128-2^64 _ : 834 0 3832 3869 10720/6292/4721 private
+u128.constant u8.private MAX-1 _ : 834 0 3832 3869 10784/6292/4721 private
+u128.constant u8.private MAX _ : 834 0 3832 3869 10784/6292/4721 private
+u128.public u8.constant * : 512 0 193 195 579/195/193 private
+u128.public u8.constant _ 64 : 512 0 193 196 579/196/193 private
+u128.public u8.constant _ 65 : 512 0 193 196 579/196/193 private
+u128.public u8.constant _ 126 : 512 0 193 196 579/196/193 private
+u128.public u8.constant _ 127 : 512 0 193 196 579/196/193 private
+u128.public u8.constant _ 128 : halt
+u128.public u8.constant _ 129 : halt
+u128.public u8.constant _ MAX : halt
+u128.public u8.public _ _ : 834 0 3835 3872 10852/6548/4724 private
+u128.public u8.private _ _ : 834 0 3835 3872 10852/6548/4724 private
+u128.private u8.constant * : 512 0 193 195 579/195/193 private
+u128.private u8.constant _ 64 : 512 0 193 196 579/196/193 private
+u128.private u8.constant _ 65 : 512 0 193 196 579/196/193 private
+u128.private u8.constant _ 126 : 512 0 193 196 579/196/193 private
+u128.private u8.constant _ 127 : 512 0 193 196 579/196/193 private
+u128.private u8.constant _ 128 : halt
+u128.private u8.constant _ 129 : halt
+u128.private u8.constant _ MAX : halt
+u128.private u8.public _ _ : 834 0 3835 3872 10852/6548/4724 private
+u128.private u8.private _ _ : 834 0 3835 3872 10852/6548/4724 private
+u128.constant u16.constant * : halt
+u128.constant u16.constant 0 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 0 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 0 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 0 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 0 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 0 65 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 0 126 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 0 127 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 65 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 126 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 1 127 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2 65 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2 126 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 3 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 3 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 3 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 3 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 3 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 3 65 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 3 126 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63-1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63-1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63-1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63-1 65 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63+1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63+1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63+1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^63+1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64-1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64-1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64-1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64+1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64+1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^64+1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^127-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^127-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^127 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^127+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant 2^128-2^64 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant MAX-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.constant MAX 0 : 640 0 0 0 0/0/0 constant
+u128.constant u16.public * : 834 0 7992 8068 22600/13547/9897 private
+u128.constant u16.public 0 _ : 1027 0 7799 7873 22021/13352/9704 constant
+u128.constant u16.public 2^64 _ : 834 0 7992 8069 22600/13548/9897 private
+u128.constant u16.public 2^64+1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.public 2^127-1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.public 2^127 _ : 834 0 7992 8069 22600/13548/9897 private
+u128.constant u16.public 2^127+1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.public 2^128-2^64 _ : 834 0 7992 8069 22600/13548/9897 private
+u128.constant u16.public MAX-1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.public MAX _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.private * : 834 0 7992 8068 22600/13547/9897 private
+u128.constant u16.private 0 _ : 1027 0 7799 7873 22021/13352/9704 constant
+u128.constant u16.private 2^64 _ : 834 0 7992 8069 22600/13548/9897 private
+u128.constant u16.private 2^64+1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.private 2^127-1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.private 2^127 _ : 834 0 7992 8069 22600/13548/9897 private
+u128.constant u16.private 2^127+1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.private 2^128-2^64 _ : 834 0 7992 8069 22600/13548/9897 private
+u128.constant u16.private MAX-1 _ : 834 0 7992 8069 22664/13548/9897 private
+u128.constant u16.private MAX _ : 834 0 7992 8069 22664/13548/9897 private
+u128.public u16.constant * : 512 0 193 195 579/195/193 private
+u128.public u16.constant _ 64 : 512 0 193 196 579/196/193 private
+u128.public u16.constant _ 65 : 512 0 193 196 579/196/193 private
+u128.public u16.constant _ 126 : 512 0 193 196 579/196/193 private
+u128.public u16.constant _ 127 : 512 0 193 196 579/196/193 private
+u128.public u16.constant _ 128 : halt
+u128.public u16.constant _ 129 : halt
+u128.public u16.constant _ 256 : halt
+u128.public u16.constant _ MAX : halt
+u128.public u16.public _ _ : 834 0 7995 8072 22732/13804/9900 private
+u128.public u16.private _ _ : 834 0 7995 8072 22732/13804/9900 private
+u128.private u16.constant * : 512 0 193 195 579/195/193 private
+u128.private u16.constant _ 64 : 512 0 193 196 579/196/193 private
+u128.private u16.constant _ 65 : 512 0 193 196 579/196/193 private
+u128.private u16.constant _ 126 : 512 0 193 196 579/196/193 private
+u128.private u16.constant _ 127 : 512 0 193 196 579/196/193 private
+u128.private u16.constant _ 128 : halt
+u128.private u16.constant _ 129 : halt
+u128.private u16.constant _ 256 : halt
+u128.private u16.constant _ MAX : halt
+u128.private u16.public _ _ : 834 0 7995 8072 22732/13804/9900 private
+u128.private u16.private _ _ : 834 0 7995 8072 22732/13804/9900 private
+u128.constant u32.constant * : halt
+u128.constant u32.constant 0 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 0 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 0 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 0 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 0 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 0 65 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 0 126 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 0 127 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 65 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 126 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 1 127 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2 65 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2 126 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 3 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 3 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 3 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 3 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 3 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 3 65 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 3 126 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63-1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63-1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63-1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63-1 65 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63+1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63+1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63+1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^63+1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64-1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64-1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64-1 64 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64+1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64+1 2 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^64+1 63 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^127-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^127-1 1 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^127 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^127+1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant 2^128-2^64 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant MAX-1 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.constant MAX 0 : 640 0 0 0 0/0/0 constant
+u128.constant u32.public * : 834 0 16312 16468 46360/28059/20249 private
+u128.constant u32.public 0 _ : 1027 0 16119 16273 45781/27864/20056 constant
+u128.constant u32.public 2^64 _ : 834 0 16312 16469 46360/28060/20249 private
+u128.constant u32.public 2^64+1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.public 2^127-1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.public 2^127 _ : 834 0 16312 16469 46360/28060/20249 private
+u128.constant u32.public 2^127+1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.public 2^128-2^64 _ : 834 0 16312 16469 46360/28060/20249 private
+u128.constant u32.public MAX-1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.public MAX _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.private * : 834 0 16312 16468 46360/28059/20249 private
+u128.constant u32.private 0 _ : 1027 0 16119 16273 45781/27864/20056 constant
+u128.constant u32.private 2^64 _ : 834 0 16312 16469 46360/28060/20249 private
+u128.constant u32.private 2^64+1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.private 2^127-1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.private 2^127 _ : 834 0 16312 16469 46360/28060/20249 private
+u128.constant u32.private 2^127+1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.private 2^128-2^64 _ : 834 0 16312 16469 46360/28060/20249 private
+u128.constant u32.private MAX-1 _ : 834 0 16312 16469 46424/28060/20249 private
+u128.constant u32.private MAX _ : 834 0 16312 16469 46424/28060/20249 private
+u128.public u32.constant * : 512 0 193 195 579/195/193 private
+u128.public u32.constant _ 64 : 512 0 193 196 579/196/193 private
+u128.public u32.constant _ 65 : 512 0 193 196 579/196/193 private
+u128.public u32.constant _ 126 : 512 0 193 196 579/196/193 private
+u128.public u32.constant _ 127 : 512 0 193 196 579/196/193 private
+u128.public u32.constant _ 128 : halt
+u128.public u32.constant _ 129 : halt
+u128.public u32.constant _ 256 : halt
+u128.public u32.constant _ MAX : halt
+u128.public u32.public _ _ : 834 0 16315 16472 46492/28316/20252 private
+u128.public u32.private _ _ : 834 0 16315 16472 46492/28316/20252 private
+u128.private u32.constant * : 512 0 193 195 579/195/193 private
+u128.private u32.constant _ 64 : 512 0 193 196 579/196/193 private
+u128.private u32.constant _ 65 : 512 0 193 196 579/196/193 private
+u128.private u32.constant _ 126 : 512 0 193 196 579/196/193 private
+u128.private u32.constant _ 127 : 512 0 193 196 579/196/193 private
+u128.private u32.constant _ 128 : halt
+u128.private u32.constant _ 129 : halt
+u128.private u32.constant _ 256 : halt
+u128.private u32.constant _ MAX : halt
+u128.private u32.public _ _ : 834 0 16315 16472 46492/28316/20252 private
+u128.private u32.private _ _ : 834 0 16315 16472 46492/28316/20252 private
+i8.constant u8.constant * : halt
+i8.constant u8.constant MIN 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant MIN+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2^4+1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2 4 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2 5 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -2 6 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 5 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 6 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant -1 7 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 4 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 5 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 6 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 0 7 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 1 5 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 1 6 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2 4 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2 5 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 3 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 3 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 3 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 3 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 3 4 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 3 5 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3-1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3-1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^3+1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4-1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^4+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^6-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^6-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^6 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant 2^6+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant MAX-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.constant MAX 0 : 51 0 0 0 0/0/0 constant
+i8.constant u8.public * : 27 0 26 36 65/36/37 private
+i8.constant u8.public 0 _ : 51 0 0 1 5/1/0 constant
+i8.constant u8.private * : 27 0 26 36 65/36/37 private
+i8.constant u8.private 0 _ : 51 0 0 1 5/1/0 constant
+i8.public u8.constant * : 27 0 24 33 64/33/32 private
+i8.public u8.constant _ 8 : halt
+i8.public u8.constant _ 9 : halt
+i8.public u8.constant _ 16 : halt
+i8.public u8.constant _ MAX : halt
+i8.public u8.public _ _ : 27 0 27 37 72/37/45 private
+i8.public u8.private _ _ : 27 0 27 37 72/37/45 private
+i8.private u8.constant * : 27 0 24 33 64/33/32 private
+i8.private u8.constant _ 8 : halt
+i8.private u8.constant _ 9 : halt
+i8.private u8.constant _ 16 : halt
+i8.private u8.constant _ MAX : halt
+i8.private u8.public _ _ : 27 0 27 37 72/37/45 private
+i8.private u8.private _ _ : 27 0 27 37 72/37/45 private
+i8.constant u16.constant * : halt
+i8.constant u16.constant MIN 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant MIN+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2^4+1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2 4 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2 5 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -2 6 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 5 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 6 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant -1 7 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 4 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 5 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 6 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 0 7 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 1 5 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 1 6 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2 4 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2 5 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 3 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 3 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 3 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 3 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 3 4 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 3 5 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3-1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3-1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^3+1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4-1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^4+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^6-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^6-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^6 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant 2^6+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant MAX-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.constant MAX 0 : 51 0 0 0 0/0/0 constant
+i8.constant u16.public * : 27 0 26 36 73/36/37 private
+i8.constant u16.public 0 _ : 51 0 0 1 13/1/0 constant
+i8.constant u16.private * : 27 0 26 36 73/36/37 private
+i8.constant u16.private 0 _ : 51 0 0 1 13/1/0 constant
+i8.public u16.constant * : 27 0 24 33 64/33/32 private
+i8.public u16.constant _ 8 : halt
+i8.public u16.constant _ 9 : halt
+i8.public u16.constant _ 16 : halt
+i8.public u16.constant _ MAX : halt
+i8.public u16.public _ _ : 27 0 27 37 80/37/45 private
+i8.public u16.private _ _ : 27 0 27 37 80/37/45 private
+i8.private u16.constant * : 27 0 24 33 64/33/32 private
+i8.private u16.constant _ 8 : halt
+i8.private u16.constant _ 9 : halt
+i8.private u16.constant _ 16 : halt
+i8.private u16.constant _ MAX : halt
+i8.private u16.public _ _ : 27 0 27 37 80/37/45 private
+i8.private u16.private _ _ : 27 0 27 37 80/37/45 private
+i8.constant u32.constant * : halt
+i8.constant u32.constant MIN 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant MIN+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2^4+1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2 4 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2 5 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -2 6 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 5 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 6 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant -1 7 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 4 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 5 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 6 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 0 7 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 1 5 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 1 6 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2 4 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2 5 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 3 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 3 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 3 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 3 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 3 4 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 3 5 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3-1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3-1 4 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^3+1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4-1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4-1 3 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4+1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^4+1 2 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^6-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^6-1 1 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^6 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant 2^6+1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant MAX-1 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.constant MAX 0 : 51 0 0 0 0/0/0 constant
+i8.constant u32.public * : 27 0 26 36 89/36/37 private
+i8.constant u32.public 0 _ : 51 0 0 1 29/1/0 constant
+i8.constant u32.private * : 27 0 26 36 89/36/37 private
+i8.constant u32.private 0 _ : 51 0 0 1 29/1/0 constant
+i8.public u32.constant * : 27 0 24 33 64/33/32 private
+i8.public u32.constant _ 8 : halt
+i8.public u32.constant _ 9 : halt
+i8.public u32.constant _ 16 : halt
+i8.public u32.constant _ MAX : halt
+i8.public u32.public _ _ : 27 0 27 37 96/37/45 private
+i8.public u32.private _ _ : 27 0 27 37 96/37/45 private
+i8.private u32.constant * : 27 0 24 33 64/33/32 private
+i8.private u32.constant _ 8 : halt
+i8.private u32.constant _ 9 : halt
+i8.private u32.constant _ 16 : halt
+i8.private u32.constant _ MAX : halt
+i8.private u32.public _ _ : 27 0 27 37 96/37/45 private
+i8.private u32.private _ _ : 27 0 27 37 96/37/45 private
+i16.constant u8.constant * : halt
+i16.constant u8.constant MIN 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant MIN+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2^8+1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2 8 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2 9 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -2 14 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 9 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 14 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant -1 15 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 8 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 9 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 14 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 0 15 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 1 9 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 1 14 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2 8 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2 9 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 3 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 3 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 3 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 3 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 3 8 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 3 9 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7-1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7-1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^7+1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8-1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^8+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^14-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^14-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^14 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant 2^14+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant MAX-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.constant MAX 0 : 100 0 0 0 0/0/0 constant
+i16.constant u8.public * : 52 0 51 69 121/69/71 private
+i16.constant u8.public 0 _ : 100 0 0 1 4/1/0 constant
+i16.constant u8.private * : 52 0 51 69 121/69/71 private
+i16.constant u8.private 0 _ : 100 0 0 1 4/1/0 constant
+i16.public u8.constant * : 52 0 48 65 128/65/64 private
+i16.public u8.constant _ 16 : halt
+i16.public u8.constant _ 17 : halt
+i16.public u8.constant _ 32 : halt
+i16.public u8.constant _ MAX : halt
+i16.public u8.public _ _ : 52 0 52 70 136/70/87 private
+i16.public u8.private _ _ : 52 0 52 70 136/70/87 private
+i16.private u8.constant * : 52 0 48 65 128/65/64 private
+i16.private u8.constant _ 16 : halt
+i16.private u8.constant _ 17 : halt
+i16.private u8.constant _ 32 : halt
+i16.private u8.constant _ MAX : halt
+i16.private u8.public _ _ : 52 0 52 70 136/70/87 private
+i16.private u8.private _ _ : 52 0 52 70 136/70/87 private
+i16.constant u16.constant * : halt
+i16.constant u16.constant MIN 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant MIN+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2^8+1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2 8 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2 9 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -2 14 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 9 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 14 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant -1 15 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 8 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 9 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 14 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 0 15 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 1 9 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 1 14 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2 8 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2 9 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 3 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 3 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 3 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 3 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 3 8 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 3 9 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7-1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7-1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^7+1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8-1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^8+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^14-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^14-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^14 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant 2^14+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant MAX-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.constant MAX 0 : 100 0 0 0 0/0/0 constant
+i16.constant u16.public * : 52 0 51 69 129/69/71 private
+i16.constant u16.public 0 _ : 100 0 0 1 12/1/0 constant
+i16.constant u16.private * : 52 0 51 69 129/69/71 private
+i16.constant u16.private 0 _ : 100 0 0 1 12/1/0 constant
+i16.public u16.constant * : 52 0 48 65 128/65/64 private
+i16.public u16.constant _ 16 : halt
+i16.public u16.constant _ 17 : halt
+i16.public u16.constant _ 32 : halt
+i16.public u16.constant _ MAX : halt
+i16.public u16.public _ _ : 52 0 52 70 144/70/87 private
+i16.public u16.private _ _ : 52 0 52 70 144/70/87 private
+i16.private u16.constant * : 52 0 48 65 128/65/64 private
+i16.private u16.constant _ 16 : halt
+i16.private u16.constant _ 17 : halt
+i16.private u16.constant _ 32 : halt
+i16.private u16.constant _ MAX : halt
+i16.private u16.public _ _ : 52 0 52 70 144/70/87 private
+i16.private u16.private _ _ : 52 0 52 70 144/70/87 private
+i16.constant u32.constant * : halt
+i16.constant u32.constant MIN 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant MIN+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2^8+1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2 8 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2 9 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -2 14 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 9 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 14 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant -1 15 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 8 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 9 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 14 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 0 15 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 1 9 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 1 14 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2 8 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2 9 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 3 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 3 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 3 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 3 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 3 8 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 3 9 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7-1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7-1 8 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^7+1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8-1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8-1 7 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8+1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^8+1 2 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^14-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^14-1 1 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^14 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant 2^14+1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant MAX-1 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.constant MAX 0 : 100 0 0 0 0/0/0 constant
+i16.constant u32.public * : 52 0 51 69 145/69/71 private
+i16.constant u32.public 0 _ : 100 0 0 1 28/1/0 constant
+i16.constant u32.private * : 52 0 51 69 145/69/71 private
+i16.constant u32.private 0 _ : 100 0 0 1 28/1/0 constant
+i16.public u32.constant * : 52 0 48 65 128/65/64 private
+i16.public u32.constant _ 16 : halt
+i16.public u32.constant _ 17 : halt
+i16.public u32.constant _ 32 : halt
+i16.public u32.constant _ MAX : halt
+i16.public u32.public _ _ : 52 0 52 70 160/70/87 private
+i16.public u32.private _ _ : 52 0 52 70 160/70/87 private
+i16.private u32.constant * : 52 0 48 65 128/65/64 private
+i16.private u32.constant _ 16 : halt
+i16.private u32.constant _ 17 : halt
+i16.private u32.constant _ 32 : halt
+i16.private u32.constant _ MAX : halt
+i16.private u32.public _ _ : 52 0 52 70 160/70/87 private
+i16.private u32.private _ _ : 52 0 52 70 160/70/87 private
+i32.constant u8.constant * : halt
+i32.constant u8.constant MIN 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant MIN+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2^16+1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2 16 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2 17 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -2 30 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 17 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 30 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant -1 31 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 16 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 17 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 30 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 0 31 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 1 17 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 1 30 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2 16 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2 17 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 3 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 3 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 3 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 3 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 3 16 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 3 17 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15-1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15-1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^15+1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16-1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^16+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^30-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^30-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^30 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant 2^30+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant MAX-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.constant MAX 0 : 197 0 0 0 0/0/0 constant
+i32.constant u8.public * : 101 0 100 134 233/134/137 private
+i32.constant u8.public 0 _ : 197 0 0 1 3/1/0 constant
+i32.constant u8.private * : 101 0 100 134 233/134/137 private
+i32.constant u8.private 0 _ : 197 0 0 1 3/1/0 constant
+i32.public u8.constant * : 101 0 96 129 256/129/128 private
+i32.public u8.constant _ 32 : halt
+i32.public u8.constant _ 33 : halt
+i32.public u8.constant _ 64 : halt
+i32.public u8.constant _ MAX : halt
+i32.public u8.public _ _ : 101 0 101 135 264/135/169 private
+i32.public u8.private _ _ : 101 0 101 135 264/135/169 private
+i32.private u8.constant * : 101 0 96 129 256/129/128 private
+i32.private u8.constant _ 32 : halt
+i32.private u8.constant _ 33 : halt
+i32.private u8.constant _ 64 : halt
+i32.private u8.constant _ MAX : halt
+i32.private u8.public _ _ : 101 0 101 135 264/135/169 private
+i32.private u8.private _ _ : 101 0 101 135 264/135/169 private
+i32.constant u16.constant * : halt
+i32.constant u16.constant MIN 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant MIN+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2^16+1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2 16 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2 17 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -2 30 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 17 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 30 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant -1 31 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 16 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 17 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 30 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 0 31 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 1 17 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 1 30 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2 16 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2 17 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 3 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 3 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 3 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 3 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 3 16 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 3 17 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15-1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15-1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^15+1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16-1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^16+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^30-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^30-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^30 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant 2^30+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant MAX-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.constant MAX 0 : 197 0 0 0 0/0/0 constant
+i32.constant u16.public * : 101 0 100 134 241/134/137 private
+i32.constant u16.public 0 _ : 197 0 0 1 11/1/0 constant
+i32.constant u16.private * : 101 0 100 134 241/134/137 private
+i32.constant u16.private 0 _ : 197 0 0 1 11/1/0 constant
+i32.public u16.constant * : 101 0 96 129 256/129/128 private
+i32.public u16.constant _ 32 : halt
+i32.public u16.constant _ 33 : halt
+i32.public u16.constant _ 64 : halt
+i32.public u16.constant _ MAX : halt
+i32.public u16.public _ _ : 101 0 101 135 272/135/169 private
+i32.public u16.private _ _ : 101 0 101 135 272/135/169 private
+i32.private u16.constant * : 101 0 96 129 256/129/128 private
+i32.private u16.constant _ 32 : halt
+i32.private u16.constant _ 33 : halt
+i32.private u16.constant _ 64 : halt
+i32.private u16.constant _ MAX : halt
+i32.private u16.public _ _ : 101 0 101 135 272/135/169 private
+i32.private u16.private _ _ : 101 0 101 135 272/135/169 private
+i32.constant u32.constant * : halt
+i32.constant u32.constant MIN 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant MIN+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2^16+1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2 16 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2 17 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -2 30 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 17 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 30 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant -1 31 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 16 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 17 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 30 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 0 31 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 1 17 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 1 30 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2 16 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2 17 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 3 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 3 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 3 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 3 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 3 16 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 3 17 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15-1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15-1 16 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^15+1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16-1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16-1 15 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16+1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^16+1 2 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^30-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^30-1 1 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^30 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant 2^30+1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant MAX-1 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.constant MAX 0 : 197 0 0 0 0/0/0 constant
+i32.constant u32.public * : 101 0 100 134 257/134/137 private
+i32.constant u32.public 0 _ : 197 0 0 1 27/1/0 constant
+i32.constant u32.private * : 101 0 100 134 257/134/137 private
+i32.constant u32.private 0 _ : 197 0 0 1 27/1/0 constant
+i32.public u32.constant * : 101 0 96 129 256/129/128 private
+i32.public u32.constant _ 32 : halt
+i32.public u32.constant _ 33 : halt
+i32.public u32.constant _ 64 : halt
+i32.public u32.constant _ MAX : halt
+i32.public u32.public _ _ : 101 0 101 135 288/135/169 private
+i32.public u32.private _ _ : 101 0 101 135 288/135/169 private
+i32.private u32.constant * : 101 0 96 129 256/129/128 private
+i32.private u32.constant _ 32 : halt
+i32.private u32.constant _ 33 : halt
+i32.private u32.constant _ 64 : halt
+i32.private u32.constant _ MAX : halt
+i32.private u32.public _ _ : 101 0 101 135 288/135/169 private
+i32.private u32.private _ _ : 101 0 101 135 288/135/169 private
+i64.constant u8.constant * : halt
+i64.constant u8.constant MIN 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant MIN+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2^32+1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2 32 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2 33 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -2 62 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 33 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 62 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant -1 63 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 32 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 33 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 62 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 0 63 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 1 33 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 1 62 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2 32 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2 33 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 3 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 3 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 3 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 3 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 3 32 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 3 33 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31-1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31-1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^31+1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32-1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^32+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^62-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^62-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^62 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant 2^62+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant MAX-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.constant MAX 0 : 390 0 0 0 0/0/0 constant
+i64.constant u8.public * : 198 0 197 263 457/263/267 private
+i64.constant u8.public 0 _ : 390 0 0 1 2/1/0 constant
+i64.constant u8.private * : 198 0 197 263 457/263/267 private
+i64.constant u8.private 0 _ : 390 0 0 1 2/1/0 constant
+i64.public u8.constant * : 198 0 192 257 512/257/256 private
+i64.public u8.constant _ 64 : halt
+i64.public u8.constant _ 65 : halt
+i64.public u8.constant _ 128 : halt
+i64.public u8.constant _ MAX : halt
+i64.public u8.public _ _ : 198 0 198 264 520/264/331 private
+i64.public u8.private _ _ : 198 0 198 264 520/264/331 private
+i64.private u8.constant * : 198 0 192 257 512/257/256 private
+i64.private u8.constant _ 64 : halt
+i64.private u8.constant _ 65 : halt
+i64.private u8.constant _ 128 : halt
+i64.private u8.constant _ MAX : halt
+i64.private u8.public _ _ : 198 0 198 264 520/264/331 private
+i64.private u8.private _ _ : 198 0 198 264 520/264/331 private
+i64.constant u16.constant * : halt
+i64.constant u16.constant MIN 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant MIN+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2^32+1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2 32 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2 33 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -2 62 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 33 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 62 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant -1 63 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 32 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 33 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 62 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 0 63 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 1 33 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 1 62 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2 32 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2 33 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 3 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 3 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 3 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 3 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 3 32 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 3 33 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31-1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31-1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^31+1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32-1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^32+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^62-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^62-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^62 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant 2^62+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant MAX-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.constant MAX 0 : 390 0 0 0 0/0/0 constant
+i64.constant u16.public * : 198 0 197 263 465/263/267 private
+i64.constant u16.public 0 _ : 390 0 0 1 10/1/0 constant
+i64.constant u16.private * : 198 0 197 263 465/263/267 private
+i64.constant u16.private 0 _ : 390 0 0 1 10/1/0 constant
+i64.public u16.constant * : 198 0 192 257 512/257/256 private
+i64.public u16.constant _ 64 : halt
+i64.public u16.constant _ 65 : halt
+i64.public u16.constant _ 128 : halt
+i64.public u16.constant _ MAX : halt
+i64.public u16.public _ _ : 198 0 198 264 528/264/331 private
+i64.public u16.private _ _ : 198 0 198 264 528/264/331 private
+i64.private u16.constant * : 198 0 192 257 512/257/256 private
+i64.private u16.constant _ 64 : halt
+i64.private u16.constant _ 65 : halt
+i64.private u16.constant _ 128 : halt
+i64.private u16.constant _ MAX : halt
+i64.private u16.public _ _ : 198 0 198 264 528/264/331 private
+i64.private u16.private _ _ : 198 0 198 264 528/264/331 private
+i64.constant u32.constant * : halt
+i64.constant u32.constant MIN 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant MIN+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2^32+1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2 32 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2 33 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -2 62 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 33 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 62 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant -1 63 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 32 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 33 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 62 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 0 63 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 1 33 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 1 62 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2 32 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2 33 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 3 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 3 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 3 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 3 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 3 32 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 3 33 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31-1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31-1 32 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^31+1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32-1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32-1 31 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32+1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^32+1 2 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^62-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^62-1 1 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^62 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant 2^62+1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant MAX-1 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.constant MAX 0 : 390 0 0 0 0/0/0 constant
+i64.constant u32.public * : 198 0 197 263 481/263/267 private
+i64.constant u32.public 0 _ : 390 0 0 1 26/1/0 constant
+i64.constant u32.private * : 198 0 197 263 481/263/267 private
+i64.constant u32.private 0 _ : 390 0 0 1 26/1/0 constant
+i64.public u32.constant * : 198 0 192 257 512/257/256 private
+i64.public u32.constant _ 64 : halt
+i64.public u32.constant _ 65 : halt
+i64.public u32.constant _ 128 : halt
+i64.public u32.constant _ MAX : halt
+i64.public u32.public _ _ : 198 0 198 264 544/264/331 private
+i64.public u32.private _ _ : 198 0 198 264 544/264/331 private
+i64.private u32.constant * : 198 0 192 257 512/257/256 private
+i64.private u32.constant _ 64 : halt
+i64.private u32.constant _ 65 : halt
+i64.private u32.constant _ 128 : halt
+i64.private u32.constant _ MAX : halt
+i64.private u32.public _ _ : 198 0 198 264 544/264/331 private
+i64.private u32.private _ _ : 198 0 198 264 544/264/331 private
+i128.constant u8.constant * : halt
+i128.constant u8.constant MIN 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant MIN+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2^64+1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -2 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant -1 127 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 0 127 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 1 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 1 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 3 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 3 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 3 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 3 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 3 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 3 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63-1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63-1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^63+1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64-1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^64+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^126-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^126-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^126 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant 2^126+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant MAX-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.constant MAX 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u8.public * : 1602 0 4739 4781 13045/8097/6267 private
+i128.constant u8.public MIN _ : 1730 0 4478 4519 12267/7328/5749 private
+i128.constant u8.public MIN+1 _ : 1602 0 4739 4781 12916/8097/6266 private
+i128.constant u8.public -2^64-1 _ : 1602 0 4739 4781 12916/7972/6141 private
+i128.constant u8.public -2^64 _ : 1602 0 4739 4781 12916/7907/6076 private
+i128.constant u8.public -2^64+1 _ : 1602 0 4739 4781 12916/8034/6203 private
+i128.constant u8.public -2 _ : 1602 0 4739 4781 12916/7970/6139 private
+i128.constant u8.public -1 _ : 1602 0 4739 4781 12916/7971/6140 private
+i128.constant u8.public 0 _ : 2051 0 3898 3933 10914/6485/4914 constant
+i128.constant u8.public 1 _ : 1602 0 4739 4781 13045/8098/6268 private
+i128.constant u8.public 2 _ : 1602 0 4739 4781 13045/8096/6266 private
+i128.constant u8.public 2^63-1 _ : 1602 0 4739 4781 13045/8036/6206 private
+i128.constant u8.public 2^63 _ : 1602 0 4739 4781 13045/7972/6142 private
+i128.constant u8.public 2^64-1 _ : 1602 0 4739 4781 13045/8035/6205 private
+i128.constant u8.public 2^64 _ : 1602 0 4739 4781 13045/7970/6140 private
+i128.constant u8.public 2^126-1 _ : 1602 0 4739 4781 13045/7973/6143 private
+i128.constant u8.public 2^126 _ : 1602 0 4739 4781 13045/7846/6016 private
+i128.constant u8.public MAX-1 _ : 1602 0 4739 4781 13045/7971/6141 private
+i128.constant u8.public MAX _ : 1602 0 4739 4781 13045/7972/6142 private
+i128.constant u8.private * : 1602 0 4739 4781 13045/8097/6267 private
+i128.constant u8.private MIN _ : 1730 0 4478 4519 12267/7328/5749 private
+i128.constant u8.private MIN+1 _ : 1602 0 4739 4781 12916/8097/6266 private
+i128.constant u8.private -2^64-1 _ : 1602 0 4739 4781 12916/7972/6141 private
+i128.constant u8.private -2^64 _ : 1602 0 4739 4781 12916/7907/6076 private
+i128.constant u8.private -2^64+1 _ : 1602 0 4739 4781 12916/8034/6203 private
+i128.constant u8.private -2 _ : 1602 0 4739 4781 12916/7970/6139 private
+i128.constant u8.private -1 _ : 1602 0 4739 4781 12916/7971/6140 private
+i128.constant u8.private 0 _ : 2051 0 3898 3933 10914/6485/4914 constant
+i128.constant u8.private 1 _ : 1602 0 4739 4781 13045/8098/6268 private
+i128.constant u8.private 2 _ : 1602 0 4739 4781 13045/8096/6266 private
+i128.constant u8.private 2^63-1 _ : 1602 0 4739 4781 13045/8036/6206 private
+i128.constant u8.private 2^63 _ : 1602 0 4739 4781 13045/7972/6142 private
+i128.constant u8.private 2^64-1 _ : 1602 0 4739 4781 13045/8035/6205 private
+i128.constant u8.private 2^64 _ : 1602 0 4739 4781 13045/7970/6140 private
+i128.constant u8.private 2^126-1 _ : 1602 0 4739 4781 13045/7973/6143 private
+i128.constant u8.private 2^126 _ : 1602 0 4739 4781 13045/7846/6016 private
+i128.constant u8.private MAX-1 _ : 1602 0 4739 4781 13045/7971/6141 private
+i128.constant u8.private MAX _ : 1602 0 4739 4781 13045/7972/6142 private
+i128.public u8.constant * : 1280 0 966 973 2383/1358/1349 private
+i128.public u8.constant _ 64 : 1280 0 966 974 2383/1359/1349 private
+i128.public u8.constant _ 65 : 1280 0 966 974 2383/1359/1349 private
+i128.public u8.constant _ 126 : 1280 0 966 974 2383/1359/1349 private
+i128.public u8.constant _ 127 : 1280 0 966 974 2255/1359/1349 private
+i128.public u8.constant _ 128 : halt
+i128.public u8.constant _ 129 : halt
+i128.public u8.constant _ MAX : halt
+i128.public u8.public _ _ : 1474 0 4996 5039 13686/8357/6525 private
+i128.public u8.private _ _ : 1474 0 4996 5039 13686/8357/6525 private
+i128.private u8.constant * : 1280 0 966 973 2383/1358/1349 private
+i128.private u8.constant _ 64 : 1280 0 966 974 2383/1359/1349 private
+i128.private u8.constant _ 65 : 1280 0 966 974 2383/1359/1349 private
+i128.private u8.constant _ 126 : 1280 0 966 974 2383/1359/1349 private
+i128.private u8.constant _ 127 : 1280 0 966 974 2255/1359/1349 private
+i128.private u8.constant _ 128 : halt
+i128.private u8.constant _ 129 : halt
+i128.private u8.constant _ MAX : halt
+i128.private u8.public _ _ : 1474 0 4996 5039 13686/8357/6525 private
+i128.private u8.private _ _ : 1474 0 4996 5039 13686/8357/6525 private
+i128.constant u16.constant * : halt
+i128.constant u16.constant MIN 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant MIN+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2^64+1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -2 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant -1 127 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 0 127 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 1 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 1 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 3 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 3 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 3 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 3 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 3 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 3 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63-1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63-1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^63+1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64-1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^64+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^126-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^126-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^126 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant 2^126+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant MAX-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.constant MAX 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u16.public * : 1602 0 8899 8981 24925/15353/11443 private
+i128.constant u16.public MIN _ : 1730 0 8638 8719 24147/14584/10925 private
+i128.constant u16.public MIN+1 _ : 1602 0 8899 8981 24796/15353/11442 private
+i128.constant u16.public -2^64-1 _ : 1602 0 8899 8981 24796/15228/11317 private
+i128.constant u16.public -2^64 _ : 1602 0 8899 8981 24796/15163/11252 private
+i128.constant u16.public -2^64+1 _ : 1602 0 8899 8981 24796/15290/11379 private
+i128.constant u16.public -2 _ : 1602 0 8899 8981 24796/15226/11315 private
+i128.constant u16.public -1 _ : 1602 0 8899 8981 24796/15227/11316 private
+i128.constant u16.public 0 _ : 2051 0 8058 8133 22794/13741/10090 constant
+i128.constant u16.public 1 _ : 1602 0 8899 8981 24925/15354/11444 private
+i128.constant u16.public 2 _ : 1602 0 8899 8981 24925/15352/11442 private
+i128.constant u16.public 2^63-1 _ : 1602 0 8899 8981 24925/15292/11382 private
+i128.constant u16.public 2^63 _ : 1602 0 8899 8981 24925/15228/11318 private
+i128.constant u16.public 2^64-1 _ : 1602 0 8899 8981 24925/15291/11381 private
+i128.constant u16.public 2^64 _ : 1602 0 8899 8981 24925/15226/11316 private
+i128.constant u16.public 2^126-1 _ : 1602 0 8899 8981 24925/15229/11319 private
+i128.constant u16.public 2^126 _ : 1602 0 8899 8981 24925/15102/11192 private
+i128.constant u16.public MAX-1 _ : 1602 0 8899 8981 24925/15227/11317 private
+i128.constant u16.public MAX _ : 1602 0 8899 8981 24925/15228/11318 private
+i128.constant u16.private * : 1602 0 8899 8981 24925/15353/11443 private
+i128.constant u16.private MIN _ : 1730 0 8638 8719 24147/14584/10925 private
+i128.constant u16.private MIN+1 _ : 1602 0 8899 8981 24796/15353/11442 private
+i128.constant u16.private -2^64-1 _ : 1602 0 8899 8981 24796/15228/11317 private
+i128.constant u16.private -2^64 _ : 1602 0 8899 8981 24796/15163/11252 private
+i128.constant u16.private -2^64+1 _ : 1602 0 8899 8981 24796/15290/11379 private
+i128.constant u16.private -2 _ : 1602 0 8899 8981 24796/15226/11315 private
+i128.constant u16.private -1 _ : 1602 0 8899 8981 24796/15227/11316 private
+i128.constant u16.private 0 _ : 2051 0 8058 8133 22794/13741/10090 constant
+i128.constant u16.private 1 _ : 1602 0 8899 8981 24925/15354/11444 private
+i128.constant u16.private 2 _ : 1602 0 8899 8981 24925/15352/11442 private
+i128.constant u16.private 2^63-1 _ : 1602 0 8899 8981 24925/15292/11382 private
+i128.constant u16.private 2^63 _ : 1602 0 8899 8981 24925/15228/11318 private
+i128.constant u16.private 2^64-1 _ : 1602 0 8899 8981 24925/15291/11381 private
+i128.constant u16.private 2^64 _ : 1602 0 8899 8981 24925/15226/11316 private
+i128.constant u16.private 2^126-1 _ : 1602 0 8899 8981 24925/15229/11319 private
+i128.constant u16.private 2^126 _ : 1602 0 8899 8981 24925/15102/11192 private
+i128.constant u16.private MAX-1 _ : 1602 0 8899 8981 24925/15227/11317 private
+i128.constant u16.private MAX _ : 1602 0 8899 8981 24925/15228/11318 private
+i128.public u16.constant * : 1280 0 966 973 2383/1358/1349 private
+i128.public u16.constant _ 64 : 1280 0 966 974 2383/1359/1349 private
+i128.public u16.constant _ 65 : 1280 0 966 974 2383/1359/1349 private
+i128.public u16.constant _ 126 : 1280 0 966 974 2383/1359/1349 private
+i128.public u16.constant _ 127 : 1280 0 966 974 2255/1359/1349 private
+i128.public u16.constant _ 128 : halt
+i128.public u16.constant _ 129 : halt
+i128.public u16.constant _ 256 : halt
+i128.public u16.constant _ MAX : halt
+i128.public u16.public _ _ : 1474 0 9156 9239 25566/15613/11701 private
+i128.public u16.private _ _ : 1474 0 9156 9239 25566/15613/11701 private
+i128.private u16.constant * : 1280 0 966 973 2383/1358/1349 private
+i128.private u16.constant _ 64 : 1280 0 966 974 2383/1359/1349 private
+i128.private u16.constant _ 65 : 1280 0 966 974 2383/1359/1349 private
+i128.private u16.constant _ 126 : 1280 0 966 974 2383/1359/1349 private
+i128.private u16.constant _ 127 : 1280 0 966 974 2255/1359/1349 private
+i128.private u16.constant _ 128 : halt
+i128.private u16.constant _ 129 : halt
+i128.private u16.constant _ 256 : halt
+i128.private u16.constant _ MAX : halt
+i128.private u16.public _ _ : 1474 0 9156 9239 25566/15613/11701 private
+i128.private u16.private _ _ : 1474 0 9156 9239 25566/15613/11701 private
+i128.constant u32.constant * : halt
+i128.constant u32.constant MIN 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant MIN+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2^64+1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -2 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant -1 127 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 0 127 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 1 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 1 126 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 3 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 3 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 3 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 3 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 3 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 3 65 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63-1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63-1 64 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^63+1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64-1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64-1 63 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64+1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^64+1 2 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^126-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^126-1 1 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^126 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant 2^126+1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant MAX-1 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.constant MAX 0 : 1024 0 0 0 0/0/0 constant
+i128.constant u32.public * : 1602 0 17219 17381 48685/29865/21795 private
+i128.constant u32.public MIN _ : 1730 0 16958 17119 47907/29096/21277 private
+i128.constant u32.public MIN+1 _ : 1602 0 17219 17381 48556/29865/21794 private
+i128.constant u32.public -2^64-1 _ : 1602 0 17219 17381 48556/29740/21669 private
+i128.constant u32.public -2^64 _ : 1602 0 17219 17381 48556/29675/21604 private
+i128.constant u32.public -2^64+1 _ : 1602 0 17219 17381 48556/29802/21731 private
+i128.constant u32.public -2 _ : 1602 0 17219 17381 48556/29738/21667 private
+i128.constant u32.public -1 _ : 1602 0 17219 17381 48556/29739/21668 private
+i128.constant u32.public 0 _ : 2051 0 16378 16533 46554/28253/20442 constant
+i128.constant u32.public 1 _ : 1602 0 17219 17381 48685/29866/21796 private
+i128.constant u32.public 2 _ : 1602 0 17219 17381 48685/29864/21794 private
+i128.constant u32.public 2^63-1 _ : 1602 0 17219 17381 48685/29804/21734 private
+i128.constant u32.public 2^63 _ : 1602 0 17219 17381 48685/29740/21670 private
+i128.constant u32.public 2^64-1 _ : 1602 0 17219 17381 48685/29803/21733 private
+i128.constant u32.public 2^64 _ : 1602 0 17219 17381 48685/29738/21668 private
+i128.constant u32.public 2^126-1 _ : 1602 0 17219 17381 48685/29741/21671 private
+i128.constant u32.public 2^126 _ : 1602 0 17219 17381 48685/29614/21544 private
+i128.constant u32.public MAX-1 _ : 1602 0 17219 17381 48685/29739/21669 private
+i128.constant u32.public MAX _ : 1602 0 17219 17381 48685/29740/21670 private
+i128.constant u32.private * : 1602 0 17219 17381 48685/29865/21795 private
+i128.constant u32.private MIN _ : 1730 0 16958 17119 47907/29096/21277 private
+i128.constant u32.private MIN+1 _ : 1602 0 17219 17381 48556/29865/21794 private
+i128.constant u32.private -2^64-1 _ : 1602 0 17219 17381 48556/29740/21669 private
+i128.constant u32.private -2^64 _ : 1602 0 17219 17381 48556/29675/21604 private
+i128.constant u32.private -2^64+1 _ : 1602 0 17219 17381 48556/29802/21731 private
+i128.constant u32.private -2 _ : 1602 0 17219 17381 48556/29738/21667 private
+i128.constant u32.private -1 _ : 1602 0 17219 17381 48556/29739/21668 private
+i128.constant u32.private 0 _ : 2051 0 16378 16533 46554/28253/20442 constant
+i128.constant u32.private 1 _ : 1602 0 17219 17381 48685/29866/21796 private
+i128.constant u32.private 2 _ : 1602 0 17219 17381 48685/29864/21794 private
+i128.constant u32.private 2^63-1 _ : 1602 0 17219 17381 48685/29804/21734 private
+i128.constant u32.private 2^63 _ : 1602 0 17219 17381 48685/29740/21670 private
+i128.constant u32.private 2^64-1 _ : 1602 0 17219 17381 48685/29803/21733 private
+i128.constant u32.private 2^64 _ : 1602 0 17219 17381 48685/29738/21668 private
+i128.constant u32.private 2^126-1 _ : 1602 0 17219 17381 48685/29741/21671 private
+i128.constant u32.private 2^126 _ : 1602 0 17219 17381 48685/29614/21544 private
+i128.constant u32.private MAX-1 _ : 1602 0 17219 17381 48685/29739/21669 private
+i128.constant u32.private MAX _ : 1602 0 17219 17381 48685/29740/21670 private
+i128.public u32.constant * : 1280 0 966 973 2383/1358/1349 private
+i128.public u32.constant _ 64 : 1280 0 966 974 2383/1359/1349 private
+i128.public u32.constant _ 65 : 1280 0 966 974 2383/1359/1349 private
+i128.public u32.constant _ 126 : 1280 0 966 974 2383/1359/1349 private
+i128.public u32.constant _ 127 : 1280 0 966 974 2255/1359/1349 private
+i128.public u32.constant _ 128 : halt
+i128.public u32.constant _ 129 : halt
+i128.public u32.constant _ 256 : halt
+i128.public u32.constant _ MAX : halt
+i128.public u32.public _ _ : 1474 0 17476 17639 49326/30125/22053 private
+i128.public u32.private _ _ : 1474 0 17476 17639 49326/30125/22053 private
+i128.private u32.constant * : 1280 0 966 973 2383/1358/1349 private
+i128.private u32.constant _ 64 : 1280 0 966 974 2383/1359/1349 private
+i128.private u32.constant _ 65 : 1280 0 966 974 2383/1359/1349 private
+i128.private u32.constant _ 126 : 1280 0 966 974 2383/1359/1349 private
+i128.private u32.constant _ 127 : 1280 0 966 974 2255/1359/1349 private
+i128.private u32.constant _ 128 : halt
+i128.private u32.constant _ 129 : halt
+i128.private u32.constant _ 256 : halt
+i128.private u32.constant _ MAX : halt
+i128.private u32.public _ _ : 1474 0 17476 17639 49326/30125/22053 private
+i128.private u32.private _ _ : 1474 0 17476 17639 49326/30125/22053 private
