@@ -80,4 +80,4 @@ features = [ "test-helpers" ]
 save_r1cs_hashes = [ "dep:sha2" ] # used in regression-checking
 dev-print = [ "snarkvm-utilities/dev-print" ]
 test = [ ]
-test-helpers = [ "snarkvm-console-network/test-helpers" ]
+test-helpers = [ "snarkvm-console-network/test-helpers", "dep:sha2" ]

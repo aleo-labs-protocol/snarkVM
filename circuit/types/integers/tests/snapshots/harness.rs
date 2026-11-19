@@ -15,21 +15,22 @@
 
 //! Records the synthesized shape of each case and compares it with a checked-in snapshot file.
 
-use sha2::{Digest, Sha256};
-use snarkvm_circuit_environment::{Circuit, Environment, LinearCombination, Mode, Variable, prelude::PrimeField};
+use snarkvm_circuit_environment::{Circuit, Environment, Mode};
 
 use std::{
     cell::Cell,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_map::Entry},
     fmt::Debug,
     fs,
+    num::NonZeroUsize,
     panic::{self, AssertUnwindSafe},
     path::PathBuf,
-    sync::Once,
+    sync::{Mutex, Once, PoisonError},
+    thread,
 };
 
 /// The variable that makes `assert_snapshot` rewrite the snapshot files.
-pub const UPDATE_VARIABLE: &str = "UPDATE_CIRCUIT_SNAPSHOTS";
+const UPDATE_VARIABLE: &str = "UPDATE_CIRCUIT_SNAPSHOTS";
 
 /// A circuit output whose mode and value the harness records.
 pub trait Output {
@@ -42,32 +43,18 @@ pub trait Output {
     fn value(&self) -> Self::Value;
 }
 
-/// The synthesized result of one case.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Outcome {
-    /// The synthesis halted.
-    Halt,
-    /// The synthesis finished with the given counts and output mode.
-    Done(String),
-}
-
-impl Outcome {
-    fn render(&self) -> &str {
-        match self {
-            Self::Halt => "halt",
-            Self::Done(shape) => shape,
-        }
-    }
-}
-
 /// One case of an op.
 pub struct Case {
     /// The type and mode of each operand, such as `u8.constant u8.private`.
     pub block: String,
     /// The label of each constant operand value, or `_` for a variable operand, such as `MAX _`.
     pub values: String,
-    pub outcome: Outcome,
+    /// The counts, output mode and digest of the synthesized circuit, or `halt`.
+    pub outcome: String,
 }
+
+/// A job that returns the cases of one block.
+pub type Job = Box<dyn FnOnce() -> Vec<Case> + Send>;
 
 /// Returns the label of an operand in `Case::values`.
 pub fn value_label(mode: Mode, label: &str) -> &str {
@@ -112,147 +99,98 @@ fn render_mode<O: Output>(output: &O) -> String {
     }
 }
 
-/// A SHA-256 hash of a stream of little-endian 64-bit words, fed to the hasher in blocks.
-struct WordHasher {
-    hasher: Sha256,
-    buffer: [u8; 8192],
-    length: usize,
-}
-
-impl WordHasher {
-    fn new() -> Self {
-        Self { hasher: Sha256::new(), buffer: [0; 8192], length: 0 }
-    }
-
-    fn write_u64(&mut self, value: u64) {
-        if self.length == self.buffer.len() {
-            self.hasher.update(self.buffer.as_slice());
-            self.length = 0;
-        }
-        self.buffer[self.length..self.length + 8].copy_from_slice(&value.to_le_bytes());
-        self.length += 8;
-    }
-
-    fn write_field(&mut self, value: <Circuit as Environment>::BaseField) {
-        for limb in value.to_bigint().as_ref() {
-            self.write_u64(*limb);
-        }
-    }
-
-    /// Returns the first 8 bytes of the hash, as a big-endian integer.
-    fn finish(mut self) -> u64 {
-        self.hasher.update(&self.buffer[..self.length]);
-        let hash = self.hasher.finalize();
-        let mut first = [0u8; 8];
-        first.copy_from_slice(&hash[..8]);
-        u64::from_be_bytes(first)
-    }
-}
-
-/// Returns the first 64 bits of a SHA-256 digest of the structure of `linear_combinations`: the constant, coefficients and variables
-/// of each one, and its position, which is `3 * constraint + {0, 1, 2}` for A, B and C.
-///
-/// A variable that exists before the operation keeps its index, which depends only on the injected
-/// operands. A variable that the operation allocates gets its index relative to the first public or
-/// private variable of the operation, so the digest does not depend on what precedes the operation.
-fn digest<'a>(
-    linear_combinations: impl Iterator<Item = (&'a LinearCombination<<Circuit as Environment>::BaseField>, usize)>,
-    first_public: u64,
-    first_private: u64,
-) -> u64 {
-    let mut hash = WordHasher::new();
-    for (lc, position) in linear_combinations {
-        let (constant, terms) = lc.to_constant_and_terms();
-        hash.write_u64(position as u64);
-        hash.write_field(constant);
-        hash.write_u64(terms.len() as u64);
-        for (variable, coefficient) in terms {
-            let (tag, index) = match variable {
-                Variable::Constant(_) => (0, 0),
-                Variable::Public(_) if variable.index() < first_public => (1, variable.index()),
-                Variable::Public(_) => (2, variable.index() - first_public),
-                Variable::Private(_) if variable.index() < first_private => (3, variable.index()),
-                Variable::Private(_) => (4, variable.index() - first_private),
-            };
-            hash.write_u64((tag << 56) | index);
-            hash.write_field(*coefficient);
-        }
-    }
-    hash.finish()
-}
-
 /// Synthesizes `operation` in a new scope, then resets the circuit.
 ///
 /// The caller injects the operands before the call, so the counts and the digest cover the operation alone.
 /// `expected` is the console result, or `None` if the operation is undefined for the operands.
 /// Panics if a defined case does not produce `expected` in a satisfied circuit,
 /// or if an undefined case gives a satisfied circuit.
-pub fn measure<O: Output>(label: &str, expected: Option<O::Value>, operation: impl FnOnce() -> O) -> Outcome {
-    let first = (Circuit::num_public(), Circuit::num_private(), Circuit::num_constraints());
+pub fn measure<O: Output>(label: &str, expected: Option<O::Value>, operation: impl FnOnce() -> O) -> String {
     let result = catch_quietly(|| {
         Circuit::scope("snapshot", || {
             let output = operation();
             let (a, b, c) = Circuit::num_nonzeros_in_scope();
+            let (public, private, constraints) =
+                (Circuit::num_public_in_scope(), Circuit::num_private_in_scope(), Circuit::num_constraints_in_scope());
             let shape = format!(
-                "{} {} {} {} {a}/{b}/{c} {}",
+                "{} {public} {private} {constraints} {a}/{b}/{c} {}",
                 Circuit::num_constants_in_scope(),
-                Circuit::num_public_in_scope(),
-                Circuit::num_private_in_scope(),
-                Circuit::num_constraints_in_scope(),
                 render_mode(&output),
             );
-            (shape, Circuit::is_satisfied_in_scope(), output.value())
+            // The in-scope counts exclude any nested scope, so these starts hold only while the
+            // operation opens no scope of its own.
+            let first_public = Circuit::num_public() - public;
+            let first_private = Circuit::num_private() - private;
+            let first_constraint = Circuit::num_constraints() - constraints;
+            (shape, (first_constraint, first_public, first_private), Circuit::is_satisfied_in_scope(), output.value())
         })
     });
     let r1cs = Circuit::eject_r1cs_and_reset();
-    let result = result.map(|(shape, satisfied, value)| {
-        let skip = usize::try_from(first.2).unwrap_or(usize::MAX);
-        let lcs = r1cs.to_constraints().iter().skip(skip).enumerate().flat_map(|(position, constraint)| {
-            let (a, b, c) = constraint.to_terms();
-            [(a, 3 * position), (b, 3 * position + 1), (c, 3 * position + 2)]
-        });
-        (format!("{shape} {:016x}", digest(lcs, first.0, first.1)), satisfied, value)
+    let result = result.map(|(shape, (first_constraint, first_public, first_private), satisfied, value)| {
+        let digest = r1cs.structural_digest(first_constraint, first_public, first_private);
+        let mut prefix = [0u8; 8];
+        prefix.copy_from_slice(&digest[..8]);
+        (format!("{shape} {:016x}", u64::from_be_bytes(prefix)), satisfied, value)
     });
 
     match (result, expected) {
-        (None, None) => Outcome::Halt,
+        (None, None) => "halt".to_string(),
         (None, Some(expected)) => panic!("{label}: halted, expected {expected:?}"),
         (Some((shape, satisfied, value)), Some(expected)) => {
             assert!(satisfied, "{label}: unsatisfied, expected {expected:?}");
             assert_eq!(value, expected, "{label}: wrong value");
-            Outcome::Done(shape)
+            shape
         }
         (Some((shape, satisfied, _)), None) => {
             assert!(!satisfied, "{label}: satisfied, but the operation is undefined");
-            Outcome::Done(shape)
+            shape
         }
     }
 }
 
-/// Runs each closure on its own thread and concatenates the results in order.
+/// Returns one job per combination of `arity` operand modes, in lexicographic order of the modes.
+///
+/// Each job calls `block` with its modes.
+pub fn mode_jobs(arity: u32, block: fn(&[Mode]) -> Vec<Case>) -> impl Iterator<Item = Job> {
+    const MODES: [Mode; 3] = [Mode::Constant, Mode::Public, Mode::Private];
+    (0..MODES.len().pow(arity)).map(move |combination| -> Job {
+        let modes: Vec<Mode> =
+            (0..arity).rev().map(|digit| MODES[combination / MODES.len().pow(digit) % MODES.len()]).collect();
+        Box::new(move || block(&modes))
+    })
+}
+
+/// Runs the jobs on a pool of threads and concatenates their results in the order of the jobs.
 ///
 /// Each thread has its own circuit, as the circuit is thread-local.
-pub fn run_parallel(jobs: Vec<Box<dyn FnOnce() -> Vec<Case> + Send>>) -> Vec<Case> {
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = jobs.into_iter().map(|job| scope.spawn(job)).collect();
+pub fn run_parallel(jobs: Vec<Job>) -> Vec<Case> {
+    let workers = thread::available_parallelism().map_or(1, NonZeroUsize::get).min(jobs.len());
+    let queue = Mutex::new(jobs.into_iter().enumerate());
+    let next = || queue.lock().unwrap_or_else(PoisonError::into_inner).next();
+    let mut results: Vec<(usize, Vec<Case>)> = thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| scope.spawn(|| std::iter::from_fn(next).map(|(index, job)| (index, job())).collect::<Vec<_>>()))
+            .collect();
         handles
             .into_iter()
             .flat_map(|handle| handle.join().unwrap_or_else(|error| panic::resume_unwind(error)))
             .collect()
-    })
+    });
+    results.sort_unstable_by_key(|(index, _)| *index);
+    results.into_iter().flat_map(|(_, cases)| cases).collect()
 }
 
 /// Returns the most frequent outcome of `cases` and its frequency, preferring the first one seen on a tie.
-fn default_outcome(cases: &[Case]) -> (&Outcome, usize) {
-    let mut tally: Vec<(&Outcome, usize)> = Vec::new();
+fn default_outcome(cases: &[Case]) -> Option<(&str, usize)> {
+    let mut tally: Vec<(&str, usize)> = Vec::new();
     for case in cases {
-        match tally.iter_mut().find(|(outcome, _)| **outcome == case.outcome) {
+        match tally.iter_mut().find(|(outcome, _)| *outcome == case.outcome) {
             Some((_, count)) => *count += 1,
             None => tally.push((&case.outcome, 1)),
         }
     }
     // `max_by_key` returns the last maximum, so the tally is reversed to prefer the first.
-    tally.iter().rev().max_by_key(|(_, count)| *count).copied().unwrap_or((&Outcome::Halt, 0))
+    tally.into_iter().rev().max_by_key(|(_, count)| *count)
 }
 
 /// Splits `cases` into runs that share a block.
@@ -278,14 +216,14 @@ fn render(op: &str, cases: &[Case]) -> String {
     for block in blocks(cases) {
         // A `*` line that stands for a single case would hide that case's values.
         let default = match default_outcome(block) {
-            (outcome, count) if count > 1 => {
-                output += &format!("{} * : {}\n", block[0].block, outcome.render());
+            Some((outcome, count)) if count > 1 => {
+                output += &format!("{} * : {outcome}\n", block[0].block);
                 Some(outcome)
             }
             _ => None,
         };
-        for case in block.iter().filter(|case| Some(&case.outcome) != default) {
-            output += &format!("{} {} : {}\n", case.block, case.values, case.outcome.render());
+        for case in block.iter().filter(|case| Some(case.outcome.as_str()) != default) {
+            output += &format!("{} {} : {}\n", case.block, case.values, case.outcome);
         }
     }
     output
@@ -327,7 +265,7 @@ fn compare(stored: &str, arity: usize, cases: &[Case]) -> (usize, Option<String>
     for case in cases {
         seen.insert((case.block.as_str(), "*"));
         seen.insert((case.block.as_str(), case.values.as_str()));
-        let found = case.outcome.render();
+        let found = case.outcome.as_str();
         let expected =
             blocks.get(&case.block).and_then(|block| block.cases.get(case.values.as_str()).copied().or(block.default));
         match expected {
@@ -363,14 +301,16 @@ fn merge(op: &str, cases: Vec<Case>) -> Vec<Case> {
     let mut merged: Vec<Case> = Vec::with_capacity(cases.len());
     let mut index: HashMap<(String, String), usize> = HashMap::with_capacity(cases.len());
     for case in cases {
-        match index.get(&(case.block.clone(), case.values.clone())) {
-            Some(&i) => assert_eq!(
-                merged[i].outcome, case.outcome,
+        match index.entry((case.block.clone(), case.values.clone())) {
+            Entry::Occupied(entry) => assert_eq!(
+                merged[*entry.get()].outcome,
+                case.outcome,
                 "`{op}`: `{} {}` depends on the value of a variable operand",
-                case.block, case.values
+                case.block,
+                case.values
             ),
-            None => {
-                index.insert((case.block.clone(), case.values.clone()), merged.len());
+            Entry::Vacant(entry) => {
+                entry.insert(merged.len());
                 merged.push(case);
             }
         }
