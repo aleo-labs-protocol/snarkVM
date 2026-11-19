@@ -139,7 +139,7 @@ fn render_mode<O: Eject>(output: &O, bit_modes: Option<fn(&O) -> Vec<Mode>>) -> 
 /// `bit_modes`, if given, returns the mode of each bit of the output. It runs after the circuit is reset,
 /// so any constraint it adds does not reach the counts or the digest.
 /// Panics if a defined case does not produce `expected` in a satisfied circuit,
-/// or if an undefined case gives a satisfied circuit.
+/// or if an undefined case gives a satisfied circuit. An undefined case does not eject its output.
 pub fn measure<O: Eject>(
     label: &str,
     expected: Option<O::Primitive>,
@@ -176,7 +176,7 @@ where
         // Note: `expect` is safe as the digest has 32 bytes.
         let prefix = u64::from_be_bytes(digest[..8].try_into().expect("the digest has 32 bytes"));
         let mode = render_mode(&output, bit_modes);
-        (format!("{counts} {mode} {prefix:016x}"), satisfied, output.eject_value())
+        (format!("{counts} {mode} {prefix:016x}"), satisfied, expected.is_some().then(|| output.eject_value()))
     });
     Circuit::reset();
 
@@ -185,7 +185,7 @@ where
         (None, Some(expected)) => panic!("{label}: halted, expected {expected:?}"),
         (Some((shape, satisfied, value)), Some(expected)) => {
             assert!(satisfied, "{label}: unsatisfied, expected {expected:?}");
-            assert_eq!(value, expected, "{label}: wrong value");
+            assert_eq!(value, Some(expected), "{label}: wrong value");
             shape
         }
         (Some((shape, satisfied, _)), None) => {
