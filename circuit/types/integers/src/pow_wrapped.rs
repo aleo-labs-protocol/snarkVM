@@ -39,19 +39,55 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowWrapped<Integer<E, M>> for
 impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn PowWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, Mode, bool, bool);
+    type Case = (CircuitType<Integer<E, I>>, CircuitType<Integer<E, M>>);
 
+    #[rustfmt::skip]
     fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (Mode::Constant, _) | (_, Mode::Constant) => {
-                let mul_count = count!(Integer<E, I>, MulWrapped<Integer<E, I>, Output=Integer<E, I>>, case);
-                (2 * M::BITS * mul_count) + Count::is(2 * I::BITS, 0, I::BITS, I::BITS)
+        let (n, m) = (I::BITS, M::BITS);
+
+        // The cost of one loop iteration with a variable `self`, as `(constants, private, constraints)`:
+        //  - `lead`: `result` is still the constant one.
+        //  - `step`: `result` is a variable and `bit` is a constant.
+        // A variable `bit` adds `n` private variables and `n` constraints to each iteration.
+        let (lead, step) = ((n, (3 * n / 2) + 1, (3 * n / 2) + 2), (0, (3 * n) + 8, (3 * n) + 10));
+
+        match (&case.0, &case.1) {
+            (CircuitType::Constant(_), CircuitType::Constant(_)) => Count::is(n, 0, 0, 0),
+            (_, CircuitType::Constant(exponent)) => {
+                // `result` is the constant one up to and including the iteration of the top set bit, or throughout for zero.
+                let num_lead = m - exponent.eject_value().to_bits_le().iter().rposition(|bit| *bit).unwrap_or(0) as u64;
+                let num_steps = m - num_lead;
+                Count::is(
+                    n + (num_lead * lead.0) + (num_steps * step.0),
+                    0,
+                    (num_lead * lead.1) + (num_steps * step.1),
+                    (num_lead * lead.2) + (num_steps * step.2),
+                )
             }
-            (_, _) => {
-                let mul_count = count!(Integer<E, I>, MulWrapped<Integer<E, I>, Output=Integer<E, I>>, case);
-                (2 * M::BITS * mul_count) + Count::is(2 * I::BITS, 0, I::BITS, I::BITS)
+            (CircuitType::Constant(base), _) => {
+                // After the first iteration, the bits of `result` are constant where `self` and one agree.
+                // A constant half of `result` makes the second squaring cheaper.
+                // A zero `self` makes each product with `self` a constant.
+                let bits = base.eject_value().to_bits_le();
+                let (lower, upper) = bits.split_at(bits.len() / 2);
+                let upper_is_zero = upper.iter().all(|bit| !bit);
+                let lower_is_one = lower.iter().enumerate().all(|(i, bit)| *bit == (i == 0));
+                let is_zero = upper_is_zero && lower.iter().all(|bit| !bit);
+
+                match (lower_is_one, upper_is_zero, is_zero) {
+                    (true, true, _) => Count::is((3 * n) + ((m - 1) * 2 * n), 0, 0, 0),
+                    (_, _, true) => Count::is((3 * n) + ((m - 1) * ((3 * n / 2) + 1)), 0, ((m - 1) * ((5 * n / 2) + 4)) - 2, ((m - 1) * ((5 * n / 2) + 5)) - 2),
+                    (true, false, _) => Count::is(3 * n, 0, ((m - 1) * ((4 * n) + 5)) - 3, ((m - 1) * ((4 * n) + 7)) - 3),
+                    (false, true, _) => Count::is(3 * n, 0, ((m - 1) * ((4 * n) + 5)) - 2, ((m - 1) * ((4 * n) + 7)) - 2),
+                    (false, false, _) => Count::is(3 * n, 0, (m - 1) * ((4 * n) + 5), (m - 1) * ((4 * n) + 7)),
+                }
             }
+            (_, _) => Count::is(
+                n + lead.0 + ((m - 1) * step.0),
+                0,
+                lead.1 + ((m - 1) * step.1) + (m * n),
+                lead.2 + ((m - 1) * step.2) + (m * n),
+            ),
         }
     }
 }
@@ -59,23 +95,14 @@ impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn PowWrapped<Intege
 impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn PowWrapped<Integer<E, M>, Output = Integer<E, I>>>
     for Integer<E, I>
 {
-    type Case = (Mode, CircuitType<Integer<E, M>>);
+    type Case = (CircuitType<Integer<E, I>>, CircuitType<Integer<E, M>>);
 
     fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, (case.1.mode(), &case.1)) {
-            (Mode::Constant, (Mode::Constant, _)) => Mode::Constant,
-            (Mode::Constant, (mode, _)) => match mode {
-                Mode::Constant => Mode::Constant,
-                _ => Mode::Private,
-            },
-            (_, (Mode::Constant, case)) => match case {
-                // Determine if the constant is all zeros.
-                CircuitType::Constant(constant) => match constant.eject_value().is_zero() {
-                    true => Mode::Constant,
-                    false => Mode::Private,
-                },
-                _ => E::halt("The constant is required for the output mode of `pow_wrapped` with a constant."),
-            },
+        match (&case.0, &case.1) {
+            (CircuitType::Constant(_), CircuitType::Constant(_)) => Mode::Constant,
+            // `result` stays the constant one.
+            (CircuitType::Constant(base), _) if base.eject_value().is_one() => Mode::Constant,
+            (_, CircuitType::Constant(exponent)) if exponent.eject_value().is_zero() => Mode::Constant,
             (_, _) => Mode::Private,
         }
     }
@@ -88,7 +115,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    // Lowered to 4; we run (~6 * ITERATIONS) cases for most tests.
+    // Lowered to 4; we run (~7 * ITERATIONS) cases for most tests.
     const ITERATIONS: u64 = 4;
 
     fn check_pow<I: IntegerType + RefUnwindSafe, M: Magnitude + RefUnwindSafe>(
@@ -105,8 +132,8 @@ mod tests {
             let candidate = a.pow_wrapped(&b);
             assert_eq!(expected, *candidate.eject_value());
             assert_eq!(console::Integer::new(expected), candidate.eject_value());
-            // assert_count!(PowWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
-            // assert_output_mode!(PowWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, CircuitType::from(&b)), candidate);
+            assert_count!(PowWrapped(Integer<I>, Integer<M>) => Integer<I>, &(CircuitType::from(&a), CircuitType::from(&b)));
+            assert_output_mode!(PowWrapped(Integer<I>, Integer<M>) => Integer<I>, &(CircuitType::from(&a), CircuitType::from(&b)), candidate);
             assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
         });
         Circuit::reset();
@@ -127,6 +154,12 @@ mod tests {
 
             let name = format!("Pow One: {mode_a} ** {mode_b} {i}");
             check_pow::<I, M>(&name, first, console::Integer::one(), mode_a, mode_b);
+
+            let name = format!("Zero Base: {mode_a} ** {mode_b} {i}");
+            check_pow::<I, M>(&name, console::Integer::zero(), second, mode_a, mode_b);
+
+            let name = format!("One Base: {mode_a} ** {mode_b} {i}");
+            check_pow::<I, M>(&name, console::Integer::one(), second, mode_a, mode_b);
 
             // Check that the square is computed correctly.
             let name = format!("Square: {mode_a} ** {mode_b} {i}");
