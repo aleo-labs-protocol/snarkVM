@@ -936,8 +936,8 @@ public:
             out->inf();
             ret = RustError{cudaErrorUnknown};
         }
-        // A sum at infinity has only Z written, and Rust reads all three
-        // coordinates.
+        // At infinity sppark leaves X and Y unset, or as computed by the
+        // addition that cancelled. Rust reads all three coordinates.
         if (ret.code == cudaSuccess && out->is_inf()) {
             fp_t zero;
             zero.zero();
