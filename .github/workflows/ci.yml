@@ -220,6 +220,14 @@ jobs:
               nextest run -p snarkvm-synthesizer-process
               nextest run -p snarkvm-synthesizer-program --lib --bins
               nextest run -p snarkvm-circuit-program
+          # nextest runs no doctests. The `compile_fail` doctests check that
+          # outside crates cannot implement the sealed traits. This entry is one
+          # workspace build, so it unifies `test` and `rocks`, which no doctest
+          # depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
+          # of the RocksDB maps need `rocks`; the flag enables it even if no
+          # dev-dependency does.
+          - name: doctests
+            runs: test --workspace --exclude snarkvm-wasm --doc --features snarkvm-ledger-store/rocks
     name: test (${{ matrix.name }})
     steps: &test-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
