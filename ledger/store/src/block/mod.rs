@@ -3222,7 +3222,7 @@ mod tests {
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         let fee = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(false, rng);
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng);
         let transactions =
             Transactions::from_iter([
                 ConfirmedTransaction::rejected_execute(0, fee.clone(), rejected.clone(), vec![]).unwrap()

@@ -47,3 +47,7 @@ path = "../../../ledger/block"
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 path = "../../../ledger/test-helpers"
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test-helpers" ]

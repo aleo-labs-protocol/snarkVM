@@ -64,3 +64,4 @@ dev-print = [
   "snarkvm-console-program?/dev-print"
 ]
 dev_skip_checks = [ ]
+test-helpers = [ "snarkvm-console-network/test-helpers" ]

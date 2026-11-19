@@ -43,6 +43,10 @@ features = [ "preserve_order" ]
 [dev-dependencies.tracing-test]
 workspace = true
 
+[dev-dependencies.snarkvm-console-network]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
 default = [
   "compute_key",

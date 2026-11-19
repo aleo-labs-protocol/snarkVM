@@ -84,7 +84,7 @@ features = [ "preserve_order" ]
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "test", "default" ]
+features = [ "test", "default", "test-helpers" ]
 
 [dev-dependencies.criterion]
 workspace = true

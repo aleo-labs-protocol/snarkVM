@@ -17,6 +17,7 @@ wasm = [
 test = [ ]
 test_targets = [ ]
 test_consensus_heights = [ ]
+test-helpers = [ "snarkvm-console-network-environment/test-helpers" ]
 
 [dependencies.snarkvm-algorithms]
 workspace = true
@@ -57,6 +58,10 @@ workspace = true
 
 [dependencies.paste]
 workspace = true
+
+[dev-dependencies.snarkvm-console-network-environment]
+workspace = true
+features = [ "test-helpers" ]
 
 [package.metadata.cargo-machete]
 ignored = ["paste"]

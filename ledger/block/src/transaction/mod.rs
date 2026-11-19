@@ -455,7 +455,7 @@ pub mod test_helpers {
 
     type CurrentNetwork = MainnetV0;
 
-    /// Samples a random deployment and the private key of its program owner.
+    /// Samples a random deployment and the private key that signs its program owner.
     pub(crate) fn sample_deployment_and_private_key(
         version: u8,
         edition: u16,
@@ -525,7 +525,7 @@ pub mod test_helpers {
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> Transaction<CurrentNetwork> {
-        // Sample a deployment and the private key of its program owner.
+        // Sample a deployment and the private key that signs its program owner.
         let (deployment, private_key) = sample_deployment_and_private_key(version, edition, has_translation_keys, rng);
 
         // Compute the deployment ID.
@@ -554,20 +554,29 @@ pub mod test_helpers {
     ) -> Transaction<CurrentNetwork> {
         let name = format!("execute-{index}-private-fee-{is_fee_private}");
         crate::test_helpers::sample_nth_fixture(&name, &crate::test_helpers::genesis_fixture_key(), |rng| {
-            // Sample an execution.
-            let execution = sample_execution(rng, index);
-            // Compute the execution ID.
-            let execution_id = execution.to_execution_id().unwrap();
-
-            // Sample the fee.
-            let fee = match is_fee_private {
-                true => crate::transaction::fee::test_helpers::sample_fee_private(execution_id, rng),
-                false => crate::transaction::fee::test_helpers::sample_fee_public(execution_id, rng),
-            };
-
-            // Construct an execution transaction.
-            Transaction::from_execution(execution, Some(fee)).unwrap()
+            build_execution_transaction_with_fee(is_fee_private, rng, index)
         })
+    }
+
+    /// Builds an execution transaction with a private or public fee.
+    pub(crate) fn build_execution_transaction_with_fee(
+        is_fee_private: bool,
+        rng: &mut TestRng,
+        index: usize,
+    ) -> Transaction<CurrentNetwork> {
+        // Sample an execution.
+        let execution = sample_execution(rng, index);
+        // Compute the execution ID.
+        let execution_id = execution.to_execution_id().unwrap();
+
+        // Sample the fee.
+        let fee = match is_fee_private {
+            true => crate::transaction::fee::test_helpers::sample_fee_private(execution_id, rng),
+            false => crate::transaction::fee::test_helpers::sample_fee_public(execution_id, rng),
+        };
+
+        // Construct an execution transaction.
+        Transaction::from_execution(execution, Some(fee)).unwrap()
     }
 
     /// Returns the fee transaction of `sample_fee_private_hardcoded`.
