@@ -450,6 +450,9 @@ fn retarget(
 ///     `next_cumulative_weight` - The next cumulative weight.
 ///     `next_last_coinbase_target` - The next last coinbase target.
 ///     `next_last_coinbase_timestamp` - The next last coinbase timestamp.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 pub fn to_next_targets<N: Network>(
     consensus_version: ConsensusVersion,
     latest_cumulative_proof_target: u128,
