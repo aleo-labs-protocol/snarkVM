@@ -18,6 +18,8 @@
 //! These are `parking_lot`'s locks and guards. Under `--cfg locktick` they are `locktick`'s
 //! wrappers, which record where each lock is created and acquired. The `locktick-` cargo aliases
 //! in `.cargo/config.toml`, such as `cargo locktick-clippy`, set the cfg.
+//!
+//! `clippy.toml` disallows the `parking_lot` and `locktick` lock types everywhere else.
 
 #![allow(clippy::disallowed_types)]
 

@@ -60,6 +60,7 @@ pub const MAX_OPEN_FILES: u16 = 8192;
 // note: this object can't utilize locktick for lock accounting, but it is only ever accessed
 //       when first creating the database(s), so this is acceptable; this will also no longer
 //       be an issue once the above TODO is complete.
+#[allow(clippy::disallowed_types)]
 static DATABASES: LazyLock<parking_lot::Mutex<HashMap<PathBuf, RocksDB>>> =
     LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 
