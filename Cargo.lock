@@ -3033,6 +3033,7 @@ name = "snarkvm-circuit-types-integers"
 version = "4.13.1"
 dependencies = [
  "paste",
+ "sha2",
  "snarkvm-circuit-environment",
  "snarkvm-circuit-types-boolean",
  "snarkvm-circuit-types-field",

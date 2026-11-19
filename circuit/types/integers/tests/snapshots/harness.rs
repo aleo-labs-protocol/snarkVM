@@ -15,6 +15,7 @@
 
 //! Records the synthesized shape of each case and compares it with a checked-in snapshot file.
 
+use sha2::{Digest, Sha256};
 use snarkvm_circuit_environment::{Circuit, Environment, LinearCombination, Mode, Variable, prelude::PrimeField};
 
 use std::{
@@ -111,19 +112,25 @@ fn render_mode<O: Output>(output: &O) -> String {
     }
 }
 
-/// A 64-bit FNV-1a hash that takes a 64-bit word per step instead of a byte.
-///
-/// Each step is a bijection of the state, so a sequence that differs from another in one word
-/// always gives a different hash.
-struct Fnv1a(u64);
+/// A SHA-256 hash of a stream of little-endian 64-bit words, fed to the hasher in blocks.
+struct WordHasher {
+    hasher: Sha256,
+    buffer: [u8; 8192],
+    length: usize,
+}
 
-impl Fnv1a {
+impl WordHasher {
     fn new() -> Self {
-        Self(0xcbf2_9ce4_8422_2325)
+        Self { hasher: Sha256::new(), buffer: [0; 8192], length: 0 }
     }
 
     fn write_u64(&mut self, value: u64) {
-        self.0 = (self.0 ^ value).wrapping_mul(0x0000_0100_0000_01b3);
+        if self.length == self.buffer.len() {
+            self.hasher.update(self.buffer.as_slice());
+            self.length = 0;
+        }
+        self.buffer[self.length..self.length + 8].copy_from_slice(&value.to_le_bytes());
+        self.length += 8;
     }
 
     fn write_field(&mut self, value: <Circuit as Environment>::BaseField) {
@@ -131,9 +138,18 @@ impl Fnv1a {
             self.write_u64(*limb);
         }
     }
+
+    /// Returns the first 8 bytes of the hash, as a big-endian integer.
+    fn finish(mut self) -> u64 {
+        self.hasher.update(&self.buffer[..self.length]);
+        let hash = self.hasher.finalize();
+        let mut first = [0u8; 8];
+        first.copy_from_slice(&hash[..8]);
+        u64::from_be_bytes(first)
+    }
 }
 
-/// Returns a digest of the structure of `linear_combinations`: the constant, coefficients and variables
+/// Returns the first 64 bits of a SHA-256 digest of the structure of `linear_combinations`: the constant, coefficients and variables
 /// of each one, and its position, which is `3 * constraint + {0, 1, 2}` for A, B and C.
 ///
 /// A variable that exists before the operation keeps its index, which depends only on the injected
@@ -144,7 +160,7 @@ fn digest<'a>(
     first_public: u64,
     first_private: u64,
 ) -> u64 {
-    let mut hash = Fnv1a::new();
+    let mut hash = WordHasher::new();
     for (lc, position) in linear_combinations {
         let (constant, terms) = lc.to_constant_and_terms();
         hash.write_u64(position as u64);
@@ -162,7 +178,7 @@ fn digest<'a>(
             hash.write_field(*coefficient);
         }
     }
-    hash.0
+    hash.finish()
 }
 
 /// Synthesizes `operation` in a new scope, then resets the circuit.
@@ -251,7 +267,7 @@ fn render(op: &str, cases: &[Case]) -> String {
          # Line: <type.mode of each operand> <value of each constant operand, _ for a variable one, or *> : <result>\n\
          # A `_` stands for each value of a variable operand. The test checks that they give one result.\n\
          # Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.\n\
-         # The digest is a hash of the constraint structure: the order of the constraints, and the constant,\n\
+         # The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,\n\
          # coefficients and variables of each linear combination.\n\
          # A mixed output mode counts the constant, public and private bits.\n\
          # The test also checks each case with the console operation. A defined case must give the console\n\

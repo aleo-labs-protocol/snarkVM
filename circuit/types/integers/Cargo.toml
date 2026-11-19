@@ -32,3 +32,6 @@ workspace = true
 
 [dev-dependencies.paste]
 workspace = true
+
+[dev-dependencies.sha2]
+workspace = true
