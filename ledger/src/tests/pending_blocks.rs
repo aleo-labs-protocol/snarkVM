@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_ledger::{
+use crate::{
     CheckBlockError,
     test_helpers::{
         CurrentNetwork,

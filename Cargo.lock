@@ -3319,7 +3319,6 @@ dependencies = [
  "serde_json",
  "snarkvm-circuit",
  "snarkvm-console",
- "snarkvm-ledger",
  "snarkvm-ledger-authority",
  "snarkvm-ledger-block",
  "snarkvm-ledger-committee",
