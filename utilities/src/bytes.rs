@@ -583,6 +583,11 @@ impl<W: Write> LimitedWriter<W> {
     pub fn new(writer: W, limit: usize) -> Self {
         Self { writer, limit, remaining: limit }
     }
+
+    /// Returns the number of bytes written so far.
+    pub fn bytes_written(&self) -> usize {
+        self.limit - self.remaining
+    }
 }
 
 impl<W: Write> Write for LimitedWriter<W> {
