@@ -150,8 +150,108 @@ pub use snarkvm_utilities::storage::{StorageMode, aleo_dir, aleo_ledger_dir, ale
 ///     }
 /// }
 /// ```
+///
+/// ```compile_fail,E0277
+/// use serde::{Deserialize, Deserializer, Serialize, Serializer};
+/// use snarkvm_console::prelude::Result;
+/// use snarkvm_ledger_store::helpers::{MapRead, memory::MemoryMap};
+/// use std::{
+///     borrow::{Borrow, Cow},
+///     hash::Hash,
+///     iter::Empty,
+/// };
+///
+/// #[derive(Clone, PartialEq, Eq, Hash)]
+/// struct Key;
+///
+/// impl Serialize for Key {
+///     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+///         serializer.serialize_unit()
+///     }
+/// }
+///
+/// impl<'de> Deserialize<'de> for Key {
+///     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+///         <()>::deserialize(deserializer).map(|()| Key)
+///     }
+/// }
+///
+/// impl<'a> MapRead<'a, Key, Key> for MemoryMap<u8, u8> {
+///     type PendingIterator = Empty<(Cow<'a, Key>, Option<Cow<'a, Key>>)>;
+///     type Iterator = Empty<(Cow<'a, Key>, Cow<'a, Key>)>;
+///     type Keys = Empty<Cow<'a, Key>>;
+///     type Values = Empty<Cow<'a, Key>>;
+///
+///     fn len_confirmed(&self) -> usize {
+///         0
+///     }
+///
+///     fn contains_key_confirmed<Q>(&self, _key: &Q) -> Result<bool>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(false)
+///     }
+///
+///     fn contains_key_speculative<Q>(&self, _key: &Q) -> Result<bool>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(false)
+///     }
+///
+///     fn get_confirmed<Q>(&'a self, _key: &Q) -> Result<Option<Cow<'a, Key>>>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(None)
+///     }
+///
+///     fn get_pending<Q>(&self, _key: &Q) -> Option<Option<Key>>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         None
+///     }
+///
+///     fn get_floor_confirmed<Q>(&'a self, _key: &Q) -> Result<Option<(Cow<'a, Key>, Cow<'a, Key>)>>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(None)
+///     }
+///
+///     fn iter_pending(&'a self) -> Self::PendingIterator {
+///         std::iter::empty()
+///     }
+///
+///     fn iter_confirmed(&'a self) -> Self::Iterator {
+///         std::iter::empty()
+///     }
+///
+///     fn keys_confirmed(&'a self) -> Self::Keys {
+///         std::iter::empty()
+///     }
+///
+///     fn values_confirmed(&'a self) -> Self::Values {
+///         std::iter::empty()
+///     }
+/// }
+/// ```
 mod sealed {
     pub trait Sealed {}
+
+    /// Seals the map traits for the key and value types of each map, so that an outside crate cannot implement them
+    /// for a map of this crate with its own key or value type.
+    pub trait SealedMap<K, V> {}
+
+    /// Seals the nested map traits for the map, key and value types of each nested map.
+    pub trait SealedNestedMap<M, K, V> {}
 }
 
 use console::prelude::{Result, bail};
