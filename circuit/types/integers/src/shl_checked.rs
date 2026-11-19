@@ -160,19 +160,23 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Shl<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
+impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn Shl<Integer<E, M>, Output = Integer<E, I>>>
+    for Integer<E, I>
+{
+    type Case = (Mode, Mode, bool, bool);
 
     fn count(case: &Self::Case) -> Count {
-        <Self as Metrics<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
+        <Self as Metrics<dyn ShlChecked<Integer<E, M>, Output = Integer<E, I>>>>::count(case)
     }
 }
 
-impl<E: Environment, I: IntegerType> OutputMode<dyn Shl<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
+impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn Shl<Integer<E, M>, Output = Integer<E, I>>>
+    for Integer<E, I>
+{
+    type Case = (Mode, Mode, bool, bool);
 
     fn output_mode(case: &Self::Case) -> Mode {
-        <Self as OutputMode<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
+        <Self as OutputMode<dyn ShlChecked<Integer<E, M>, Output = Integer<E, I>>>>::output_mode(case)
     }
 }
 
