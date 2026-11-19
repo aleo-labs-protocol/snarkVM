@@ -137,6 +137,12 @@ impl<F: PrimeField> LinearCombination<F> {
         &self.terms
     }
 
+    /// Returns the constant value and the terms, for tests that check the structure of a circuit.
+    #[cfg(feature = "test-helpers")]
+    pub fn to_constant_and_terms(&self) -> (F, &[(Variable<F>, F)]) {
+        (self.constant, &self.terms)
+    }
+
     /// Returns the number of nonzeros in the linear combination.
     // This now combines the Public(0) variable with the linear combination's constant, as was
     // always done by generate_constraints at the end of circuit synthesis (and therefore, as
