@@ -377,6 +377,12 @@ public:
             dev = ch.recv();
             point_t::dadd(*out, *out, partial_sums[dev]);
         }
+        // A sum at infinity has only Z written, as with no points above.
+        if (out->is_inf()) {
+            fp_t zero;
+            zero.zero();
+            *out = point_t{zero, fp_t::one(), zero};
+        }
 
         return error;
     }

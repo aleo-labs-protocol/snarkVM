@@ -259,6 +259,24 @@ mod tests {
         assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()));
     }
 
+    /// An MSM that sums to zero returns zero with every coordinate written.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_msm_cuda_summing_to_zero_is_zero() {
+        use snarkvm_curves::bls12_377::G1Projective;
+        use snarkvm_fields::Zero;
+        use snarkvm_utilities::BigInteger256;
+
+        let mut rng = TestRng::default();
+        for i in 11..15 {
+            let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 1 << i);
+            let scalars = vec![BigInteger256::from(0); 1 << i];
+            let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&bases, &scalars)
+                .unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()), "size {}", 1 << i);
+        }
+    }
+
     /// blst's routines run the ADX code only if its CPUID constructor is in the
     /// link.
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
