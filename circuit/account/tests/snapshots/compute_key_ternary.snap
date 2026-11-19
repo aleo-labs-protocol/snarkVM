@@ -1,0 +1,66 @@
+# Circuit shape of `compute_key_ternary` for each operand mode and a fixed set of keys and signatures.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-account --test snapshots
+boolean.constant compute_key.constant compute_key.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.public | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.public | true key-1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.public | true key-2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.public | true key-3 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.private | true key-1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.private | true key-2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.constant compute_key.private | true key-3 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.public compute_key.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.public compute_key.constant | true _ key-1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.public compute_key.constant | true _ key-2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.public compute_key.constant | true _ key-3 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.public compute_key.public | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.public compute_key.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.private compute_key.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant compute_key.private compute_key.constant | true _ key-1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.private compute_key.constant | true _ key-2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.private compute_key.constant | true _ key-3 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.private compute_key.public | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant compute_key.private compute_key.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public compute_key.constant compute_key.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public compute_key.constant compute_key.public | _ key-1 _ : 0 0 5 5 259/5/259 private 88493ffbcaf45dd7
+boolean.public compute_key.constant compute_key.public | _ key-2 _ : 0 0 5 5 259/5/259 private 824bebe29930b4f0
+boolean.public compute_key.constant compute_key.public | _ key-3 _ : 0 0 5 5 259/5/259 private 21068ac3f54f2273
+boolean.public compute_key.constant compute_key.private | _ key-1 _ : 0 0 5 5 259/5/259 private da860f52fa5ad7e1
+boolean.public compute_key.constant compute_key.private | _ key-2 _ : 0 0 5 5 259/5/259 private 160a9630dfc69923
+boolean.public compute_key.constant compute_key.private | _ key-3 _ : 0 0 5 5 259/5/259 private ca4821dbdd824c27
+boolean.public compute_key.public compute_key.constant | _ _ key-1 : 0 0 5 5 259/5/10 private a153cc706edead82
+boolean.public compute_key.public compute_key.constant | _ _ key-2 : 0 0 5 5 259/5/10 private 26d933fd3d67e92b
+boolean.public compute_key.public compute_key.constant | _ _ key-3 : 0 0 5 5 259/5/10 private b6d2ce08d95140f0
+boolean.public compute_key.public compute_key.public | _ _ _ : 0 0 5 5 508/5/259 private 54dbd99a88194071
+boolean.public compute_key.public compute_key.private | _ _ _ : 0 0 5 5 508/5/259 private a85f0fa9957b8fba
+boolean.public compute_key.private compute_key.constant | _ _ key-1 : 0 0 5 5 259/5/10 private 3de2e95c455471c3
+boolean.public compute_key.private compute_key.constant | _ _ key-2 : 0 0 5 5 259/5/10 private ac47d236ee8e5af6
+boolean.public compute_key.private compute_key.constant | _ _ key-3 : 0 0 5 5 259/5/10 private 305e690298a60c74
+boolean.public compute_key.private compute_key.public | _ _ _ : 0 0 5 5 508/5/259 private b46c9b9496d8925c
+boolean.public compute_key.private compute_key.private | _ _ _ : 0 0 5 5 508/5/259 private 10a60916bf24ad27
+boolean.private compute_key.constant compute_key.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.private compute_key.constant compute_key.public | _ key-1 _ : 0 0 5 5 259/5/259 private d6bf6998df2ddf96
+boolean.private compute_key.constant compute_key.public | _ key-2 _ : 0 0 5 5 259/5/259 private c0d5b6fd71304cac
+boolean.private compute_key.constant compute_key.public | _ key-3 _ : 0 0 5 5 259/5/259 private 199ddbffabe266c4
+boolean.private compute_key.constant compute_key.private | _ key-1 _ : 0 0 5 5 259/5/259 private 5ac447a75b555615
+boolean.private compute_key.constant compute_key.private | _ key-2 _ : 0 0 5 5 259/5/259 private e5c34e8f699aca20
+boolean.private compute_key.constant compute_key.private | _ key-3 _ : 0 0 5 5 259/5/259 private 24765e21f7e02167
+boolean.private compute_key.public compute_key.constant | _ _ key-1 : 0 0 5 5 259/5/10 private 9e0a00dfc20eaedd
+boolean.private compute_key.public compute_key.constant | _ _ key-2 : 0 0 5 5 259/5/10 private 2d0ea042b7d183db
+boolean.private compute_key.public compute_key.constant | _ _ key-3 : 0 0 5 5 259/5/10 private 8dcea0a796775909
+boolean.private compute_key.public compute_key.public | _ _ _ : 0 0 5 5 508/5/259 private 8ecd59baf4184c82
+boolean.private compute_key.public compute_key.private | _ _ _ : 0 0 5 5 508/5/259 private 5ffb0b8f09f28621
+boolean.private compute_key.private compute_key.constant | _ _ key-1 : 0 0 5 5 259/5/10 private 4cf76af9a83dfa64
+boolean.private compute_key.private compute_key.constant | _ _ key-2 : 0 0 5 5 259/5/10 private 4582edbadc2946fa
+boolean.private compute_key.private compute_key.constant | _ _ key-3 : 0 0 5 5 259/5/10 private 1a67ee8c6a7d12bd
+boolean.private compute_key.private compute_key.public | _ _ _ : 0 0 5 5 508/5/259 private 4b06af557eb8483b
+boolean.private compute_key.private compute_key.private | _ _ _ : 0 0 5 5 508/5/259 private 8389c0360ca7aafe
