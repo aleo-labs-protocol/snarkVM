@@ -493,7 +493,7 @@ pub trait BlockStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Se
         Ok(())
     }
 
-    /// Returns `true` if the authority map is compacted after pruning.
+    /// Returns `true` if this storage can compact its authority map.
     fn compacts_authority_map(&self) -> bool {
         false
     }
@@ -1475,8 +1475,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Initializes the block storage and its cache. With `authority_retention`, prunes the authority data
     /// older than that many blocks, and keeps pruning as blocks are inserted. A secondary instance does
     /// not prune: its primary does, and the secondary sees the result when it catches up. A pruning
-    /// RocksDB store also compacts its authority map on a background thread, which
-    /// [`Self::stop_background_work`] stops.
+    /// RocksDB store also compacts its authority map on a background thread, at open if it has pruned
+    /// before and then as it prunes, which [`Self::stop_background_work`] stops.
     ///
     /// Whether this store prunes or not, reads report the authorities below its watermark as pruned.
     pub fn open_with_authority_retention<S: Into<StorageMode>>(
@@ -1533,7 +1533,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             authority_retention,
             authority_compaction: Default::default(),
         };
-        store.compact_authorities();
+        if store.authority_pruned_below()?.is_some() {
+            store.compact_authorities();
+        }
         Ok(store)
     }
 
