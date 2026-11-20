@@ -210,6 +210,8 @@ pub trait Environment:
     fn reset();
 
     /// Replaces this thread's circuit state with the given state, and returns the previous one.
+    // Exists for `fresh_circuit` and `CircuitGuard`. A direct call breaks the guards' reverse-order restore.
+    #[doc(hidden)]
     fn swap_circuit_state(state: CircuitState<Self::BaseField>) -> CircuitState<Self::BaseField>;
 
     /// Gives this thread a fresh circuit state until the returned guard drops.
