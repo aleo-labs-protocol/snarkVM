@@ -431,25 +431,24 @@ mod tests {
     fn test_from_outputs_constant() -> Result<()> {
         // With records, the encryption multiplies `G` and the owner by a constant randomizer derived from `tvk`. The
         // multiplication of `G` folds the trailing zero bits of the randomizer, and the multiplication of the owner
-        // folds its leading zero bits. So these counts are upper bounds. A count reaches its bound when the randomizer
-        // is odd and has bit 249 set.
+        // folds its leading zero bits. So the constant, private and constraint counts are upper bounds. A count reaches
+        // its bound when the randomizer is odd and has bit 249 set.
 
         // Static response without records.
         check_from_outputs(Mode::Constant, "test.aleo", "foo", false, false, count_is!(846, 4, 1497, 1505))?;
         check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 1497, 1505))?;
 
         // Static response with records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(5079, 7, 13274, 13300))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(5172, 7, 13376, 13402))?;
-
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, true, count_is!(<=5079, 7, <=13274, <=13300))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_is!(<=5172, 7, <=13376, <=13402))?;
 
         // Dynamic response without records.
         check_from_outputs(Mode::Constant, "test.aleo", "foo", true, false, count_is!(705, 4, 5432, 5446))?;
         check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_is!(707, 4, 5637, 5651))?;
 
         // Dynamic response with records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, true, count_less_than!(4840, 7, 17332, 17364))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_less_than!(4710, 7, 17709, 17741))?;
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, true, count_is!(<=4840, 7, <=17332, <=17364))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_is!(<=4710, 7, <=17709, <=17741))?;
 
         Ok(())
     }

@@ -173,6 +173,14 @@ fn constant_cast_to_group_count<T: console_root::prelude::Zero>(
     }
 }
 
+/// Checks a constant cast to `address` or `group`, asserting `constant_cast_to_group_count` of each value.
+#[cfg(test)]
+macro_rules! check_constant_cast_lossy_to_group {
+    ($circuit_type:ty, $console_type:ty) => {
+        check_cast_lossy_by_value::<$circuit_type, $console_type>(Mode::Constant, constant_cast_to_group_count)
+    };
+}
+
 #[cfg(test)]
 macro_rules! check_cast_lossy {
     ($fun:ident, $circuit_type:ty, $console_type:ty) => {
@@ -227,3 +235,5 @@ macro_rules! check_cast_lossy {
 }
 #[cfg(test)]
 pub(super) use check_cast_lossy;
+#[cfg(test)]
+pub(super) use check_constant_cast_lossy_to_group;

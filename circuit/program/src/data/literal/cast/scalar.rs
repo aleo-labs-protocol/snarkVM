@@ -127,10 +127,7 @@ mod tests {
 
     #[test]
     fn test_scalar_to_address() {
-        check_cast_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
-            Mode::Constant,
-            constant_cast_to_group_count,
-        );
+        check_constant_cast_to_group!(Address<Circuit>, console_root::types::Address<MainnetV0>);
         check_cast::<Address<Circuit>, console_root::types::Address<MainnetV0>>(Mode::Public, count_is!(4, 0, 13, 13));
         check_cast::<Address<Circuit>, console_root::types::Address<MainnetV0>>(Mode::Private, count_is!(4, 0, 13, 13));
     }
@@ -151,10 +148,7 @@ mod tests {
 
     #[test]
     fn test_scalar_to_group() {
-        check_cast_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
-            Mode::Constant,
-            constant_cast_to_group_count,
-        );
+        check_constant_cast_to_group!(Group<Circuit>, console_root::types::Group<MainnetV0>);
         check_cast::<Group<Circuit>, console_root::types::Group<MainnetV0>>(Mode::Public, count_is!(4, 0, 13, 13));
         check_cast::<Group<Circuit>, console_root::types::Group<MainnetV0>>(Mode::Private, count_is!(4, 0, 13, 13));
     }

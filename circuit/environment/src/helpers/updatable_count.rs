@@ -42,29 +42,35 @@ static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 /// To update the arguments to `count_is!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
 /// e.g. `UPDATE_COUNT=boolean cargo test
 /// See <https://github.com/ProvableHQ/snarkVM/pull/1688> for more details.
+///
+/// Each argument is an exact count, or an upper bound if it starts with `<=`, as in `count_is!(<=10, 0, 4, 4)`.
 #[macro_export]
 macro_rules! count_is {
-    ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
+    ($($arguments:tt)*) => {
+        $crate::__count_is!([] $($arguments)*)
+    };
+}
+
+/// Collects the measurements of `count_is!`, one argument at a time.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __count_is {
+    ([$constant:expr, $public:expr, $private:expr, $constraints:expr]) => {
         $crate::UpdatableCount {
-            constant: $crate::Measurement::Exact($num_constants),
-            public: $crate::Measurement::Exact($num_public),
-            private: $crate::Measurement::Exact($num_private),
-            constraints: $crate::Measurement::Exact($num_constraints),
+            constant: $constant,
+            public: $public,
+            private: $private,
+            constraints: $constraints,
             file: file!(),
             line: line!(),
             column: column!(),
         }
     };
-    (<=$num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
-        $crate::UpdatableCount {
-            constant: $crate::Measurement::UpperBound($num_constants),
-            public: $crate::Measurement::Exact($num_public),
-            private: $crate::Measurement::Exact($num_private),
-            constraints: $crate::Measurement::Exact($num_constraints),
-            file: file!(),
-            line: line!(),
-            column: column!(),
-        }
+    ([$($measurement:expr),*] <= $count:literal $(, $($rest:tt)+)?) => {
+        $crate::__count_is!([$($measurement,)* $crate::Measurement::UpperBound($count)] $($($rest)*)?)
+    };
+    ([$($measurement:expr),*] $count:literal $(, $($rest:tt)+)?) => {
+        $crate::__count_is!([$($measurement,)* $crate::Measurement::Exact($count)] $($($rest)*)?)
     };
 }
 
@@ -398,9 +404,9 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
 /// The four arguments of a `count_is!` or `count_less_than!` invocation, located in the source file.
 ///
 /// An update rewrites the integer literals whose values changed and nothing else, so every other byte of the
-/// argument list survives it verbatim: the `<=` of the `count_is!(<=N, ..)` arm, the spacing, and the `_`
-/// separators of any argument that did not change. Regenerating the whole argument list instead would drop the
-/// `<=` and silently rewrite an upper bound into an exact count.
+/// argument list survives it verbatim: each `<=` of `count_is!`, the spacing, and the `_` separators of any
+/// argument that did not change. Regenerating the whole argument list instead would drop the `<=` and silently
+/// rewrite an upper bound into an exact count.
 #[derive(Debug, PartialEq, Eq)]
 struct Arguments {
     /// The value of each argument.
@@ -428,7 +434,7 @@ impl Arguments {
         let mut arguments = inner.split(',');
         for (i, (value, literal)) in values.iter_mut().zip(literals.iter_mut()).enumerate() {
             let argument = arguments.next().unwrap_or_else(|| panic!("Macro argument {i} is missing at {position}."));
-            // Step past the leading whitespace, and past the `<=` of the upper-bound arm of `count_is!`.
+            // Step past the leading whitespace, and past the `<=` of an upper bound.
             let mut start = argument.len() - argument.trim_start().len();
             if let Some(rest) = argument[start..].strip_prefix("<=") {
                 start = argument.len() - rest.trim_start().len();
@@ -543,6 +549,16 @@ mod test {
     }
 
     #[test]
+    fn check_upper_bound_per_argument() {
+        let count = count_is!(<=1, 2, <=3, 4);
+        assert_eq!((count.line, count.column), (line!() - 1, 21));
+        assert!(matches!(count.constant, Measurement::UpperBound(1)));
+        assert!(matches!(count.public, Measurement::Exact(2)));
+        assert!(matches!(count.private, Measurement::UpperBound(3)));
+        assert!(matches!(count.constraints, Measurement::Exact(4)));
+    }
+
+    #[test]
     fn check_locate_finds_the_arguments() {
         let text = "// a\n        let count = count_is!(1, 2, 3, 4);\n";
         assert_eq!(&text[count_at(2, 21).locate(text)], "(1, 2, 3, 4)");
@@ -559,6 +575,7 @@ mod test {
         for (text, values) in [
             ("(1, 2, 3, 4)", [1, 2, 3, 4]),
             ("(<=36085, 8, 24131, 24156)", [36085, 8, 24131, 24156]),
+            ("(<=5079, 7, <=13274, <=13300)", [5079, 7, 13274, 13300]),
             ("(1_000, 2, 3, 4)", [1000, 2, 3, 4]),
             ("(0,0,0,0)", [0, 0, 0, 0]),
         ] {
@@ -573,6 +590,7 @@ mod test {
         for (text, values, expected) in [
             ("(1, 2, 3, 4)", [5, 6, 7, 8], "(5, 6, 7, 8)"),
             ("(<=36085, 8, 24131, 24156)", [5, 6, 7, 8], "(<=5, 6, 7, 8)"),
+            ("(<=5079, 7, <=13274, <=13300)", [5, 6, 7, 8], "(<=5, 6, <=7, <=8)"),
             ("(0,0,0,0)", [5, 6, 7, 8], "(5,6,7,8)"),
             ("( 1 , 2 , 3 , 4 )", [5, 6, 7, 8], "( 5 , 6 , 7 , 8 )"),
             ("(1_000, 2, 3, 4)", [1000, 5, 3, 4], "(1_000, 5, 3, 4)"),

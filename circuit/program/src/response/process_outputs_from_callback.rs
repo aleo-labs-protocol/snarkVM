@@ -497,16 +497,16 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_callback_constant() -> Result<()> {
         // With records, the encryption multiplies the owner by a constant randomizer derived from `tvk`, and the
-        // multiplication folds the leading zero bits of the randomizer. So these counts are upper bounds. A count reaches
-        // its bound when the randomizer has bit 249 set.
+        // multiplication folds the leading zero bits of the randomizer. So the constant, private and constraint counts
+        // are upper bounds. A count reaches its bound when the randomizer has bit 249 set.
 
         // Static response without records.
         check_from_callback(Mode::Constant, "test.aleo", "foo", false, false, count_is!(1366, 4, 2813, 2819))?;
         check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 2813, 2819))?;
 
         // Static response with records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(4206, 5, 10910, 10923))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(4299, 5, 11012, 11025))?;
+        check_from_callback(Mode::Constant, "test.aleo", "foo", false, true, count_is!(<=4206, 5, <=10910, <=10923))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_is!(<=4299, 5, <=11012, <=11025))?;
 
 
         // Dynamic response without records.
@@ -514,8 +514,8 @@ mod tests {
         check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_is!(762, 4, 4108, 4114))?;
 
         // Dynamic response with records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", true, true, count_less_than!(3504, 5, 12328, 12341))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_less_than!(3372, 5, 12500, 12513))?;
+        check_from_callback(Mode::Constant, "test.aleo", "foo", true, true, count_is!(<=3504, 5, <=12328, <=12341))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_is!(<=3372, 5, <=12500, <=12513))?;
 
         Ok(())
     }
