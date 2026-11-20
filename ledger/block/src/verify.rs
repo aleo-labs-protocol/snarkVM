@@ -157,7 +157,6 @@ impl<N: Network> Block<N> {
         current_committee_lookback: &Committee<N>,
     ) -> Result<(u64, u32, i64, Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
         // Note: Do not remove this. This ensures that all blocks after genesis are quorum blocks.
-        #[cfg(not(any(test, feature = "test")))]
         ensure!(self.authority.is_quorum(), "The next block must be a quorum block");
 
         // Determine the expected height.

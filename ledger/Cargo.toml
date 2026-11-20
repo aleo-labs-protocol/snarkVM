@@ -95,7 +95,6 @@ test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-sy
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
 test = [
   "snarkvm-console/test",
-  "snarkvm-ledger-block/test",
   "snarkvm-ledger-store/test",
   "snarkvm-synthesizer/test"
 ]
@@ -197,10 +196,6 @@ workspace = true
 [dev-dependencies.snarkvm-console]
 workspace = true
 features = [ "filesystem", "test-helpers" ]
-
-[dev-dependencies.snarkvm-ledger-block]
-workspace = true
-features = [ "test" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true

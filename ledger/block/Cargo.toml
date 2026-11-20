@@ -26,7 +26,6 @@ wasm = [
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
-test = [ "snarkvm-synthesizer-process/test" ]
 test-helpers = [ ]
 
 [dependencies.snarkvm-console]
