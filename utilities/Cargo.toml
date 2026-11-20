@@ -110,6 +110,7 @@ derive = [ "snarkvm-utilities-derives" ]
 dev-print = [ ]
 storage = [ "dep:dirs", "dep:tempfile" ]
 test-helpers = [ "dep:rand_xorshift" ]
+# No effect: `parallel.rs` gates on `target_family = "wasm"`. Kept for crates that enable it.
 wasm = [ ]
 
 [lints.rust]

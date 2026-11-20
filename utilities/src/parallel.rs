@@ -60,19 +60,20 @@ pub fn max_available_threads() -> usize {
 /// work runs on a new thread with the default stack size (2 MiB unless `RUST_MIN_STACK` is set),
 /// so a caller with deep recursion, such as circuit synthesis, should also set `stack_size`.
 #[inline(always)]
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_family = "wasm"))]
 pub fn execute_with_max_available_threads<T: Sync + Send>(f: impl FnOnce() -> T + Send) -> T {
     execute_with_threads(f, max_available_threads())
 }
 
-/// Runs `f` on the calling thread. wasm cannot build a thread pool.
+/// Runs `f` on the calling thread. On wasm, `ThreadPoolBuilder::build` fails because no thread can be
+/// spawned; only rayon's global pool falls back to the calling thread.
 #[inline(always)]
-#[cfg(feature = "wasm")]
+#[cfg(target_family = "wasm")]
 pub fn execute_with_max_available_threads<T>(f: impl FnOnce() -> T + Send) -> T {
     f()
 }
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_family = "wasm"))]
 #[inline(always)]
 fn execute_with_threads<T: Sync + Send>(f: impl FnOnce() -> T + Send, num_threads: usize) -> T {
     if rayon::current_thread_index().is_none() {
