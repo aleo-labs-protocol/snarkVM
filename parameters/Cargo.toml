@@ -44,7 +44,6 @@ required-features = ["filesystem"]
 # `~/.aleo/resources` and the remote fetch. Without it, the crate does no I/O.
 filesystem = ["snarkvm-utilities/storage", "dep:ureq"]
 large_params = []
-no_std_out = []
 rocks = ["snarkvm-ledger-store/rocks"]
 no-embedded-srs = []
 wasm = ["encoding", "js-sys", "web-sys"]
@@ -60,9 +59,6 @@ workspace = true
 workspace = true
 
 [dependencies.cfg-if]
-workspace = true
-
-[dependencies.colored]
 workspace = true
 
 [dependencies.encoding]
