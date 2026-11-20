@@ -80,11 +80,11 @@ that check for it.
 
 Each line of a `test`, `test-merge` or `test-release` entry's `runs` is one
 cargo build, and the entry runs its lines in order. `cargo test -p a -p b`
-unifies the features of `a` and `b`, and several crates enable `test`, `rocks`
-or `test_consensus_heights` on their dependencies, which changes what those
-dependencies compute. So crates share a line only where that unification
-enables none of those features, nor `wasm` or `large_params`, on any snarkvm
-crate. Helper features such as `test-helpers` can still be unified, so a test
+unifies the features of `a` and `b`, and several crates enable `test`, `rocks`,
+`test_consensus_heights` or `dev_skip_block_checks` on their dependencies,
+which changes what those dependencies compute. So crates share a line only
+where that unification enables none of those features, nor `wasm` or
+`large_params`, on any snarkvm crate. Helper features such as `test-helpers` can still be unified, so a test
 may compile in its line that would not under `cargo test -p <crate>` alone.
 Check this before moving a crate between lines.
 

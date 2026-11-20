@@ -32,7 +32,7 @@ impl<N: Network> Block<N> {
         ensure!(self.aborted_transaction_ids.is_empty(), "Genesis block must not contain aborted transactions");
 
         // Perform additional checks in production
-        #[cfg(not(any(test, feature = "test")))]
+        #[cfg(not(any(test, feature = "dev_skip_block_checks")))]
         {
             ensure!(self.ratifications.len() == 1, "Invalid number of ratifications");
             ensure!(

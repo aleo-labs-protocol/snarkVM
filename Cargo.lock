@@ -3558,13 +3558,13 @@ dependencies = [
 name = "snarkvm-ledger-test-helpers"
 version = "4.13.1"
 dependencies = [
- "anyhow",
  "snarkvm-algorithms",
  "snarkvm-circuit",
  "snarkvm-console",
  "snarkvm-ledger-block",
  "snarkvm-ledger-query",
  "snarkvm-ledger-store",
+ "snarkvm-synthesizer",
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-utilities",
