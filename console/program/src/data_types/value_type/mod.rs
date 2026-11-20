@@ -20,11 +20,9 @@ mod serialize;
 use crate::{EntryType, Identifier, Locator, PlaintextType};
 use snarkvm_console_network::prelude::*;
 
-use enum_index::EnumIndex;
-
 pub type Variant = u8;
 
-#[derive(Clone, PartialEq, Eq, Hash, EnumIndex)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum ValueType<N: Network> {
     /// A constant type.
     Constant(PlaintextType<N>),
