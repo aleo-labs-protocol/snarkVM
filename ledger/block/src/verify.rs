@@ -22,7 +22,6 @@ use snarkvm_synthesizer_program::FinalizeOperation;
 
 use std::collections::HashSet;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 impl<N: Network> Block<N> {

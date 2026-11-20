@@ -109,7 +109,6 @@ use std::{
     thread,
 };
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 // The key for the partially-verified transactions cache.

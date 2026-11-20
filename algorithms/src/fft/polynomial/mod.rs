@@ -23,7 +23,6 @@ use snarkvm_utilities::{SerializationError, cfg_iter_mut, serialize::*};
 use anyhow::{Result, ensure};
 use std::{borrow::Cow, convert::TryInto};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 mod dense;

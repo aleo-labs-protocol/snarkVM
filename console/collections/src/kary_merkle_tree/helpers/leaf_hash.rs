@@ -17,7 +17,6 @@ use snarkvm_console_algorithms::{BHP, Keccak, Poseidon};
 use snarkvm_console_types::prelude::*;
 
 use crate::kary_merkle_tree::BooleanHash;
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// A trait for a Merkle leaf hash function.
