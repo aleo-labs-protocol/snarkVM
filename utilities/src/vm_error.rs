@@ -61,6 +61,8 @@ fn install_vm_runtime_hook() {
 /// Only the current thread is inside the VM runtime, including any rayon job it runs while it waits on others. Code in
 /// `f` that waits on rayon jobs starts them through [`VmScope::parallel`]. Their halting code then runs inside the VM
 /// runtime on any thread, and unrelated jobs that the waiting thread runs stay outside it.
+/// Jobs that `f` starts without it run outside the VM runtime on other threads, so their halts reach the previous
+/// panic hook.
 ///
 /// Panics outside the VM runtime go to the panic hook that was present on the first invocation. Custom panic hooks
 /// should be installed before calling this function for the first time.
