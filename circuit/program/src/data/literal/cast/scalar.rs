@@ -103,7 +103,7 @@ mod tests {
         network::MainnetV0,
         prelude::{One, TestRng, Uniform, Zero},
     };
-    use snarkvm_circuit_types::environment::{Circuit, Eject, Inject, Mode, UpdatableCount, count_is, count_less_than};
+    use snarkvm_circuit_types::environment::{Circuit, Eject, Inject, Mode, UpdatableCount, count_is};
 
     use std::fmt::Debug;
 
@@ -127,9 +127,9 @@ mod tests {
 
     #[test]
     fn test_scalar_to_address() {
-        check_cast::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+        check_cast_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
             Mode::Constant,
-            count_less_than!(11, 0, 0, 0),
+            constant_cast_to_group_count,
         );
         check_cast::<Address<Circuit>, console_root::types::Address<MainnetV0>>(Mode::Public, count_is!(4, 0, 13, 13));
         check_cast::<Address<Circuit>, console_root::types::Address<MainnetV0>>(Mode::Private, count_is!(4, 0, 13, 13));
@@ -151,9 +151,9 @@ mod tests {
 
     #[test]
     fn test_scalar_to_group() {
-        check_cast::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+        check_cast_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
             Mode::Constant,
-            count_less_than!(11, 0, 0, 0),
+            constant_cast_to_group_count,
         );
         check_cast::<Group<Circuit>, console_root::types::Group<MainnetV0>>(Mode::Public, count_is!(4, 0, 13, 13));
         check_cast::<Group<Circuit>, console_root::types::Group<MainnetV0>>(Mode::Private, count_is!(4, 0, 13, 13));

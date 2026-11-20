@@ -118,7 +118,7 @@ fn test_translation_simple() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     print_r1cs_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(<=36085, 8, 24131, 24156);
+    let counts = count_is!(6155, 8, 24131, 24156);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -132,7 +132,7 @@ fn test_translation_simple() {
         translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(<=6160, 8, 24131, 24156);
+    let counts = count_is!(6155, 8, 24131, 24156);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -234,7 +234,7 @@ fn test_translation_recursive() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     print_r1cs_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(<=38785, 8, 32721, 32750);
+    let counts = count_is!(8853, 8, 32721, 32750);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -249,7 +249,7 @@ fn test_translation_recursive() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
-    let counts = count_is!(<=8860, 8, 32721, 32750);
+    let counts = count_is!(8853, 8, 32721, 32750);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -323,7 +323,7 @@ fn test_translation_complex() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     print_r1cs_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(<=41330, 8, 68798, 68844);
+    let counts = count_is!(11398, 8, 68798, 68844);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -337,7 +337,7 @@ fn test_translation_complex() {
         translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(<=11405, 8, 68798, 68844);
+    let counts = count_is!(11398, 8, 68798, 68844);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -463,7 +463,7 @@ fn test_definition_invariance() {
         .0
         .to_circuit_assignment_internal::<CurrentAleo>(translation_assignments[0].1, None, None, None)
         .unwrap();
-    let counts = count_is!(<=37800, 8, 31043, 31070);
+    let counts = count_is!(7868, 8, 31043, 31070);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -713,7 +713,7 @@ fn test_external_translation() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index, None, None, None).unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
-    let counts = count_is!(<=38800, 8, 32562, 32591);
+    let counts = count_is!(8867, 8, 32562, 32591);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),

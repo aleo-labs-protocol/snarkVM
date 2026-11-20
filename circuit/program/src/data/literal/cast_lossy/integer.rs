@@ -97,7 +97,7 @@ mod tests {
         network::MainnetV0,
         prelude::{One, TestRng, Uniform, Zero},
     };
-    use snarkvm_circuit_types::environment::{Circuit, Eject, Inject, Mode, UpdatableCount, count_is, count_less_than};
+    use snarkvm_circuit_types::environment::{Circuit, Eject, Inject, Mode, UpdatableCount, count_is};
 
     use std::fmt::Debug;
 
@@ -131,9 +131,9 @@ mod tests {
 
         #[test]
         fn test_i8_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -179,9 +179,9 @@ mod tests {
 
         #[test]
         fn test_i8_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -331,9 +331,9 @@ mod tests {
 
         #[test]
         fn test_i16_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -379,9 +379,9 @@ mod tests {
 
         #[test]
         fn test_i16_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -531,9 +531,9 @@ mod tests {
 
         #[test]
         fn test_i32_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -579,9 +579,9 @@ mod tests {
 
         #[test]
         fn test_i32_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -731,9 +731,9 @@ mod tests {
 
         #[test]
         fn test_i64_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -779,9 +779,9 @@ mod tests {
 
         #[test]
         fn test_i64_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -931,9 +931,9 @@ mod tests {
 
         #[test]
         fn test_i128_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -979,9 +979,9 @@ mod tests {
 
         #[test]
         fn test_i128_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -1127,9 +1127,9 @@ mod tests {
 
         #[test]
         fn test_u8_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -1175,9 +1175,9 @@ mod tests {
 
         #[test]
         fn test_u8_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -1327,9 +1327,9 @@ mod tests {
 
         #[test]
         fn test_u16_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -1375,9 +1375,9 @@ mod tests {
 
         #[test]
         fn test_u16_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -1527,9 +1527,9 @@ mod tests {
 
         #[test]
         fn test_u32_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -1575,9 +1575,9 @@ mod tests {
 
         #[test]
         fn test_u32_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -1727,9 +1727,9 @@ mod tests {
 
         #[test]
         fn test_u64_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -1775,9 +1775,9 @@ mod tests {
 
         #[test]
         fn test_u64_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,
@@ -1927,9 +1927,9 @@ mod tests {
 
         #[test]
         fn test_u128_to_address() {
-            check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
+            check_cast_lossy_by_value::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
                 Mode::Public,
@@ -1975,9 +1975,9 @@ mod tests {
 
         #[test]
         fn test_u128_to_group() {
-            check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
+            check_cast_lossy_by_value::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Constant,
-                count_less_than!(4303, 0, 0, 0),
+                constant_cast_to_group_count,
             );
             check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
                 Mode::Public,

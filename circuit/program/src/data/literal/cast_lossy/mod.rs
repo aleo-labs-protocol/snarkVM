@@ -158,6 +158,21 @@ fn cast_lossy_scalar_to_type<A: Aleo>(input: &Scalar<A>, to_type: LiteralType) -
     impl_cast_body!(scalar, cast_lossy, input, to_type)
 }
 
+/// Returns the count of a constant cast to an address or a group element.
+///
+/// For a zero input, the candidate points are `(0, 1)` and `(0, -1)`, of order 1 and 2, so the subgroup checks of
+/// both candidates fold their doublings.
+/// `UPDATE_COUNT` locates these counts in this file, not in the file of the calling test.
+#[cfg(test)]
+fn constant_cast_to_group_count<T: console_root::prelude::Zero>(
+    value: &T,
+) -> snarkvm_circuit_types::environment::UpdatableCount {
+    match value.is_zero() {
+        true => snarkvm_circuit_types::environment::count_is!(1199, 0, 0, 0),
+        false => snarkvm_circuit_types::environment::count_is!(4303, 0, 0, 0),
+    }
+}
+
 #[cfg(test)]
 macro_rules! check_cast_lossy {
     ($fun:ident, $circuit_type:ty, $console_type:ty) => {
@@ -169,10 +184,26 @@ macro_rules! check_cast_lossy {
             $console_type: console::CastLossy<ConsoleType>,
             $circuit_type: crate::CastLossy<CircuitType>,
         {
+            check_cast_lossy_by_value::<CircuitType, ConsoleType>(mode, |_| count)
+        }
+
+        /// Checks the cast as `check_cast_lossy` does, asserting the count that `count` returns for each sampled
+        /// value.
+        fn check_cast_lossy_by_value<CircuitType, ConsoleType>(
+            mode: Mode,
+            count: impl Fn(&$console_type) -> UpdatableCount,
+        ) where
+            CircuitType: Eject,
+            <CircuitType as Eject>::Primitive: Debug + PartialEq<ConsoleType>,
+            ConsoleType: Debug,
+            $console_type: console::CastLossy<ConsoleType>,
+            $circuit_type: crate::CastLossy<CircuitType>,
+        {
             let rng = &mut TestRng::default();
             for i in 0..ITERATIONS {
                 // Sample a random value.
                 let (console_value, circuit_value) = sample_values(i, mode, rng);
+                let count = count(&console_value);
 
                 // Compute the expected result.
                 let expected = console_value.$fun();
