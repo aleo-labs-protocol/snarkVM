@@ -445,6 +445,7 @@ jobs:
             runs: |
               nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
+              nextest run -p snarkvm-synthesizer-process --lib --run-ignored ignored-only -E test(test_verifying_keys_match_program)
           - name: synthesizer-integration
             runs: nextest run -p snarkvm-synthesizer --features test -j 4 --test *
           - name: synthesizer-program
