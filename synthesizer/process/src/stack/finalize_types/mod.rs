@@ -61,16 +61,19 @@ use snarkvm_synthesizer_program::{
 };
 
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct FinalizeTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
     /// Note that in a finalize context, all registers are finalize types.
-    inputs: IndexMap<u64, FinalizeType<N>>,
+    inputs: Arc<IndexMap<u64, FinalizeType<N>>>,
     /// The mapping of all destination registers to their defined types.
     /// Note that in a finalize context, all registers are finalize types.
-    destinations: IndexMap<u64, FinalizeType<N>>,
+    destinations: Arc<IndexMap<u64, FinalizeType<N>>>,
 }
 
 impl<N: Network> FinalizeTypes<N> {
