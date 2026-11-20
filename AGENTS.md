@@ -110,7 +110,7 @@ Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --a
 - Match existing file patterns exactly — if the file uses `Self::`, you use `Self::`.
 - Comments must be concise, complete, punctuated sentences.
 - `#![forbid(unsafe_code)]` in all crates unless approved.
-- License header required (enforced by `tests/sources.rs`).
+- License header required (enforced by `scripts/check_sources.py`).
 
 ## Review Checklist
 
