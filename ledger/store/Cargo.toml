@@ -101,6 +101,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
+features = [ "test" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true
