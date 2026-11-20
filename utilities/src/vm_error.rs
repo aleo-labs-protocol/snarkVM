@@ -62,6 +62,9 @@ fn install_vm_runtime_hook() {
 ///
 /// The panic hook present on the first invocation is retained for unrelated panics. Custom panic hooks should be
 /// installed before calling this function for the first time.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 #[inline]
 pub fn try_vm_runtime<R, F: FnOnce() -> R>(f: F) -> std::thread::Result<R> {
     install_vm_runtime_hook();
