@@ -39,6 +39,7 @@ query = [
 
 [dependencies.snarkvm-console]
 workspace = true
+features = ["network", "program", "types"]
 
 [dependencies.snarkvm-ledger-block]
 workspace = true

@@ -110,6 +110,16 @@ fn genesis_fixture() -> &'static (PrivateKey<CurrentNetwork>, Block<CurrentNetwo
         .get_or_init(|| load_or_build_genesis_fixture("ledger-genesis", GENESIS_FIXTURE_SEED, build_genesis_fixture))
 }
 
+/// Returns the private keys of the four validators in the committee of the genesis fixture, and the genesis block.
+///
+/// The first key is the genesis private key. `VM::genesis_beacon` samples the other three keys
+/// from the RNG that sampled the genesis private key.
+pub fn sample_genesis_committee() -> (Vec<PrivateKey<CurrentNetwork>>, Block<CurrentNetwork>) {
+    let rng = &mut TestRng::from_seed(GENESIS_FIXTURE_SEED);
+    let private_keys = (0..4).map(|_| PrivateKey::new(rng).expect("Failed to sample a private key")).collect();
+    (private_keys, genesis_fixture().1.clone())
+}
+
 /// Builds the genesis fixture from an RNG with the given seed.
 fn build_genesis_fixture(seed: u64) -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
     let rng = &mut TestRng::from_seed(seed);
@@ -137,5 +147,21 @@ mod tests {
         let (fixture_private_key, fixture_block) = genesis_fixture();
         assert_eq!(private_key, *fixture_private_key);
         assert_eq!(ledger.get_block(0).expect("Failed to get the genesis block"), *fixture_block);
+    }
+
+    #[test]
+    fn test_sample_genesis_committee_holds_the_committee_keys() {
+        let (private_keys, genesis) = sample_genesis_committee();
+        assert_eq!(private_keys[0], genesis_fixture().0);
+
+        let committee = match genesis.ratifications().iter().next() {
+            Some(crate::Ratify::Genesis(committee, ..)) => committee,
+            _ => panic!("Expected a genesis ratification"),
+        };
+        let addresses = private_keys
+            .iter()
+            .map(|private_key| Address::try_from(private_key).expect("Failed to derive an address"))
+            .collect::<Vec<_>>();
+        assert_eq!(addresses, committee.members().keys().copied().collect::<Vec<_>>());
     }
 }

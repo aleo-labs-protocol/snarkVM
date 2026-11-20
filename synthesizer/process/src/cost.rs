@@ -155,6 +155,9 @@ pub fn execution_cost_for_authorization<N: Network>(
 }
 
 /// Returns the execution cost in microcredits for a call to the given function with the given inputs.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
     process: &Process<A::Network>,
     address: Address<A::Network>,
@@ -242,7 +245,7 @@ pub fn transaction_compute_spend_in_microcredits<N: Network>(
 // behaviour of the deployment_cost_v3 in this regard, in line with the return to
 // variable/constraint-based deployment (and not density-based) deployment limits at consensus
 // version V19.
-pub fn deployment_cost_v5<N: Network>(
+pub(crate) fn deployment_cost_v5<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
@@ -254,7 +257,7 @@ pub fn deployment_cost_v5<N: Network>(
 ///
 /// Identical to V3 except in that it replaces the factor (`num_combined_variables` + `num_combined_constraints`)
 /// of the synthesis cost by the deployment's combined density.
-pub fn deployment_cost_v4<N: Network>(
+pub(crate) fn deployment_cost_v4<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
@@ -396,7 +399,7 @@ fn inner_deployment_cost_v3_v5<N: Network>(
 /// Identical to V2 except that the storage cost scales quadratically for programs larger
 /// than 512 kB (the V14 limit). Programs at or below that threshold are priced identically
 /// to V2, so this function is only routed to at consensus V16+.
-pub fn deployment_cost_v3<N: Network>(
+pub(crate) fn deployment_cost_v3<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
@@ -404,7 +407,7 @@ pub fn deployment_cost_v3<N: Network>(
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment using the ARC_0005_COMPUTE_DISCOUNT.
-pub fn deployment_cost_v2<N: Network>(
+pub(crate) fn deployment_cost_v2<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
@@ -478,6 +481,9 @@ pub fn deployment_cost_v2<N: Network>(
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 pub fn deployment_cost_v1<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
@@ -736,6 +742,9 @@ fn cost_in_size<'a, N: Network>(
 }
 
 /// Returns the the cost of a command in a finalize scope.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 pub fn cost_per_command<N: Network>(
     stack: &Stack<N>,
     finalize_types: &FinalizeTypes<N>,
@@ -1197,7 +1206,7 @@ pub fn cost_per_command<N: Network>(
 
 /// Returns the minimum number of microcredits required to run the constructor in the given stack.
 /// If a constructor does not exist, no cost is incurred.
-pub fn constructor_cost_in_microcredits_v2<N: Network>(
+pub(crate) fn constructor_cost_in_microcredits_v2<N: Network>(
     stack: &Stack<N>,
     consensus_version: Option<ConsensusVersion>,
 ) -> Result<u64> {
@@ -1227,7 +1236,7 @@ pub fn constructor_cost_in_microcredits_v2<N: Network>(
 
 /// Returns the minimum number of microcredits required to run the constructor in the given stack.
 /// If a constructor does not exist, no cost is incurred.
-pub fn constructor_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>) -> Result<u64> {
+pub(crate) fn constructor_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>) -> Result<u64> {
     match stack.program().constructor() {
         Some(constructor) => {
             // Get the constructor types.
