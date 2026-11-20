@@ -24,6 +24,11 @@
 
 #![allow(clippy::disallowed_types)]
 
+#[cfg(all(locktick, target_arch = "wasm32", target_os = "unknown"))]
+compile_error!(
+    "`--cfg locktick` is unsupported on wasm32-unknown-unknown, where locktick's calls to `Instant::now` panic"
+);
+
 #[cfg(locktick)]
 use locktick::parking_lot as backend;
 #[cfg(not(locktick))]
