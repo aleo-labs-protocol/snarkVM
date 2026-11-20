@@ -33,25 +33,6 @@ impl<E: Environment> Neg for &Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Neg<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn count(_case: &Self::Case) -> Count {
-        Count::is(0, 0, 0, 0)
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Neg<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,8 +50,7 @@ mod tests {
             Circuit::scope(name, || {
                 let result = candidate.neg();
                 assert_eq!(expected, result.eject_value());
-                assert_count!(Neg(Field) => Field, &mode);
-                assert_output_mode!(Neg(Field) => Field, &mode, result);
+                assert_scope!();
             });
         };
 

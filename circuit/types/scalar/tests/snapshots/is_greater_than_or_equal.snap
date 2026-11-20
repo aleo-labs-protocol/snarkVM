@@ -1,0 +1,44 @@
+# Circuit shape of `is_greater_than_or_equal` for each operand mode and a fixed set of scalars.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-scalar --test snapshots
+scalar.constant scalar.constant | * : 1 0 0 0 0/0/0 constant e3b0c44298fc1c14
+scalar.constant scalar.public | 0 _ : 0 0 505 507 926/672/671 private a7dcc99db0b08186
+scalar.constant scalar.public | 1 _ : 0 0 505 507 927/672/671 private f1bca9d19b8a8da2
+scalar.constant scalar.public | 2 _ : 0 0 505 507 927/672/671 private 842ae11941429482
+scalar.constant scalar.public | (r-1)/2 _ : 0 0 505 507 927/672/671 private 9fe2bef226f66300
+scalar.constant scalar.public | (r+1)/2 _ : 0 0 505 507 927/672/671 private 5405a171cc333dc0
+scalar.constant scalar.public | -2 _ : 0 0 505 507 927/672/671 private ba7f951e02988084
+scalar.constant scalar.public | -1 _ : 0 0 505 507 927/672/671 private 9747e7a9529e475c
+scalar.constant scalar.private | 0 _ : 0 0 505 507 926/672/671 private 3eace467755e4b6e
+scalar.constant scalar.private | 1 _ : 0 0 505 507 927/672/671 private 1e46d3849335d1d6
+scalar.constant scalar.private | 2 _ : 0 0 505 507 927/672/671 private 5e4d3eef5efdccb0
+scalar.constant scalar.private | (r-1)/2 _ : 0 0 505 507 927/672/671 private acb23fa9b4edb2bd
+scalar.constant scalar.private | (r+1)/2 _ : 0 0 505 507 927/672/671 private 9bec85c26ff2fd00
+scalar.constant scalar.private | -2 _ : 0 0 505 507 927/672/671 private 2ae6d38648751a04
+scalar.constant scalar.private | -1 _ : 0 0 505 507 927/672/671 private d82e71c0ae74458d
+scalar.public scalar.constant | _ 0 : 0 0 505 507 926/672/671 private d5ad7fb748aaf9e6
+scalar.public scalar.constant | _ 1 : 0 0 505 507 927/672/671 private 2a16e4c8f85441d6
+scalar.public scalar.constant | _ 2 : 0 0 505 507 927/672/671 private a6095d6feb35c4e2
+scalar.public scalar.constant | _ (r-1)/2 : 0 0 505 507 927/672/671 private c6cdb126e5bfa0d6
+scalar.public scalar.constant | _ (r+1)/2 : 0 0 505 507 927/672/671 private 3196ce9de619d7e7
+scalar.public scalar.constant | _ -2 : 0 0 505 507 927/672/671 private 6129dd5e13e2be5b
+scalar.public scalar.constant | _ -1 : 0 0 505 507 927/672/671 private cd7da5c07485ea50
+scalar.public scalar.public | _ _ : 0 0 505 507 927/672/671 private 2ccdeb428d86a0dd
+scalar.public scalar.private | _ _ : 0 0 505 507 927/672/671 private 7904b9963efd1fea
+scalar.private scalar.constant | _ 0 : 0 0 505 507 926/672/671 private a06de535adbb83b7
+scalar.private scalar.constant | _ 1 : 0 0 505 507 927/672/671 private 4b8129b07f777081
+scalar.private scalar.constant | _ 2 : 0 0 505 507 927/672/671 private 32cd7be893f01790
+scalar.private scalar.constant | _ (r-1)/2 : 0 0 505 507 927/672/671 private 39ff6148820c5760
+scalar.private scalar.constant | _ (r+1)/2 : 0 0 505 507 927/672/671 private 8a12051b4fac42d0
+scalar.private scalar.constant | _ -2 : 0 0 505 507 927/672/671 private 24734c58a8cd25ea
+scalar.private scalar.constant | _ -1 : 0 0 505 507 927/672/671 private c4389a7682538016
+scalar.private scalar.public | _ _ : 0 0 505 507 927/672/671 private 3ff2aa785ffcaceb
+scalar.private scalar.private | _ _ : 0 0 505 507 927/672/671 private 21733e0daff0f28a

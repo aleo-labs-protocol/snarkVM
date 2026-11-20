@@ -25,36 +25,6 @@ impl<E: Environment> Ternary for Address<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Ternary<Boolean = Boolean<E>, Output = Address<E>>> for Address<E> {
-    type Case = (Mode, Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            (Mode::Constant, _, _)
-            | (Mode::Public, Mode::Constant, Mode::Constant)
-            | (Mode::Private, Mode::Constant, Mode::Constant) => Count::is(0, 0, 0, 0),
-            _ => Count::is(0, 0, 2, 2),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Ternary<Boolean = Boolean<E>, Output = Self>> for Address<E> {
-    type Case = (CircuitType<Boolean<E>>, Mode, Mode);
-
-    fn output_mode(parameter: &Self::Case) -> Mode {
-        match parameter.0.mode().is_constant() {
-            true => match &parameter.0 {
-                CircuitType::Constant(constant) => match constant.eject_value() {
-                    true => parameter.1,
-                    false => parameter.2,
-                },
-                _ => E::halt("The constant condition is required to determine output mode."),
-            },
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,8 +41,7 @@ mod tests {
             let case = format!("({} ? {} : {})", condition.eject_value(), a.eject_value(), b.eject_value());
             let candidate = Address::ternary(&condition, &a, &b);
             assert_eq!(expected, candidate.eject_value(), "{case}");
-            assert_count!(Ternary(Boolean, Address, Address) => Address, &(condition.eject_mode(), a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Ternary(Boolean, Address, Address) => Address, &(CircuitType::from(&condition), a.eject_mode(), b.eject_mode()), candidate);
+            assert_scope!();
         });
     }
 

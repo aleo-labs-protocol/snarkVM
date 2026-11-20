@@ -57,42 +57,6 @@ impl<E: Environment> Nor<Self> for Boolean<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Nor<Boolean<E>, Output = Boolean<E>>> for Boolean<E> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match case.0.is_constant() || case.1.is_constant() {
-            true => Count::is(0, 0, 0, 0),
-            false => Count::is(0, 0, 1, 1),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Nor<Boolean<E>, Output = Boolean<E>>> for Boolean<E> {
-    type Case = (CircuitType<Boolean<E>>, CircuitType<Boolean<E>>);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0.mode(), case.1.mode()) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, Mode::Constant) => match &case.1 {
-                CircuitType::Constant(constant) => match constant.eject_value() {
-                    true => Mode::Constant,
-                    false => Mode::Private,
-                },
-                _ => E::halt("The constant is required to determine the output mode of Public NOR Constant"),
-            },
-            (Mode::Constant, _) => match &case.0 {
-                CircuitType::Constant(constant) => match constant.eject_value() {
-                    true => Mode::Constant,
-                    false => Mode::Private,
-                },
-                _ => E::halt("The constant is required to determine the output mode of Constant NOR Public"),
-            },
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,8 +66,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.nor(&b);
             assert_eq!(expected, candidate.eject_value(), "({} NOR {})", a.eject_value(), b.eject_value());
-            assert_count!(Nor(Boolean, Boolean) => Boolean, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Nor(Boolean, Boolean) => Boolean, &(CircuitType::from(&a), CircuitType::from(&b)), candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

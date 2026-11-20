@@ -34,34 +34,6 @@ impl<E: Environment, I: IntegerType> AbsChecked for &Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn AbsChecked<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn count(case: &Self::Case) -> Count {
-        match I::is_signed() {
-            true => match case {
-                Mode::Constant => Count::is(2 * I::BITS, 0, 0, 0),
-                _ => Count::is(I::BITS, 0, (2 * I::BITS) + 3, (2 * I::BITS) + 5),
-            },
-            false => Count::is(0, 0, 0, 0),
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn AbsChecked<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match I::is_signed() {
-            true => match case.is_constant() {
-                true => Mode::Constant,
-                false => Mode::Private,
-            },
-            false => *case,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,14 +56,13 @@ mod tests {
                 let candidate = a.abs_checked();
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                assert_count!(AbsChecked(Integer<I>) => Integer<I>, &mode);
-                assert_output_mode!(AbsChecked(Integer<I>) => Integer<I>, &mode, candidate);
+                assert_scope!();
             }),
             None => match mode {
                 Mode::Constant => check_unary_operation_halts(a, |a: Integer<Circuit, I>| a.abs_checked()),
                 _ => Circuit::scope(name, || {
                     let _candidate = a.abs_checked();
-                    assert_count_fails!(AbsChecked(Integer<I>) => Integer<I>, &mode);
+                    assert_scope_fails!();
                 }),
             },
         }

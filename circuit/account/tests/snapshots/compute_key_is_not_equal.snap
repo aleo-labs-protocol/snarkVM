@@ -1,0 +1,28 @@
+# Circuit shape of `compute_key_is_not_equal` for each operand mode and a fixed set of keys and signatures.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-account --test snapshots
+compute_key.constant compute_key.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+compute_key.constant compute_key.public | key-1 _ : 0 0 14 14 524/22/9 private 0bc24ca6b7c29719
+compute_key.constant compute_key.public | key-2 _ : 0 0 14 14 524/22/9 private a21a99737e213306
+compute_key.constant compute_key.public | key-3 _ : 0 0 14 14 524/22/9 private 80a41659912a3a4f
+compute_key.constant compute_key.private | key-1 _ : 0 0 14 14 524/22/9 private 6cb30f56b6c80c69
+compute_key.constant compute_key.private | key-2 _ : 0 0 14 14 524/22/9 private 7527924f5977cbac
+compute_key.constant compute_key.private | key-3 _ : 0 0 14 14 524/22/9 private 8f101aa012895655
+compute_key.public compute_key.constant | _ key-1 : 0 0 14 14 524/22/9 private eed49905ba266ca1
+compute_key.public compute_key.constant | _ key-2 : 0 0 14 14 524/22/9 private 58d786cb06494601
+compute_key.public compute_key.constant | _ key-3 : 0 0 14 14 524/22/9 private dd7be26d3d1e238f
+compute_key.public compute_key.public | _ _ : 0 0 14 14 1022/22/9 private 4aa61fcb307a3b9c
+compute_key.public compute_key.private | _ _ : 0 0 14 14 1022/22/9 private 3ff6c9a5d16cb0d8
+compute_key.private compute_key.constant | _ key-1 : 0 0 14 14 524/22/9 private 86703c20b0e712af
+compute_key.private compute_key.constant | _ key-2 : 0 0 14 14 524/22/9 private b7b846efc3bb204c
+compute_key.private compute_key.constant | _ key-3 : 0 0 14 14 524/22/9 private 0289308364e722c1
+compute_key.private compute_key.public | _ _ : 0 0 14 14 1022/22/9 private f2d44f763dfeb634
+compute_key.private compute_key.private | _ _ : 0 0 14 14 1022/22/9 private 451f907c84242cff

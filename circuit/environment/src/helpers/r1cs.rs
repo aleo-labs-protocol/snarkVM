@@ -19,7 +19,7 @@ use crate::{
 };
 use snarkvm_fields::PrimeField;
 
-#[cfg(feature = "save_r1cs_hashes")]
+#[cfg(any(feature = "save_r1cs_hashes", feature = "test-helpers"))]
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 #[cfg(feature = "save_r1cs_hashes")]
@@ -256,6 +256,50 @@ impl<F: PrimeField> R1CS<F> {
     pub(crate) fn save_hash(&self) {
         let r1cs_hash = hash_to_sha256(self);
         R1CS_HASHES.lock().unwrap().push(r1cs_hash);
+    }
+
+    /// Returns a SHA-256 digest of the structure of the constraints from `first_constraint` on.
+    ///
+    /// The digest covers the order of the linear combinations A, B and C of each constraint, and the
+    /// constant, variables and coefficients of each one. It excludes values and scope names.
+    /// A variable below `first_public` or `first_private` keeps its index. A later variable is indexed
+    /// from `first_public` or `first_private`.
+    #[cfg(feature = "test-helpers")]
+    pub fn structural_digest(&self, first_constraint: u64, first_public: u64, first_private: u64) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        let skip = usize::try_from(first_constraint).unwrap_or(usize::MAX);
+        let linear_combinations = self.constraints.iter().skip(skip).flat_map(|constraint| {
+            let (a, b, c) = constraint.to_terms();
+            [a, b, c]
+        });
+        for (position, linear_combination) in linear_combinations.enumerate() {
+            let terms = linear_combination.to_terms();
+            hasher.update((position as u64).to_le_bytes());
+            write_field(&mut hasher, linear_combination.to_constant());
+            hasher.update((terms.len() as u64).to_le_bytes());
+            for (variable, coefficient) in terms {
+                let (tag, index) = match variable {
+                    Variable::Constant(_) => {
+                        panic!("malformed linear combination: a constant variable among its terms")
+                    }
+                    Variable::Public(_) if variable.index() < first_public => (1, variable.index()),
+                    Variable::Public(_) => (2, variable.index() - first_public),
+                    Variable::Private(_) if variable.index() < first_private => (3, variable.index()),
+                    Variable::Private(_) => (4, variable.index() - first_private),
+                };
+                hasher.update(((tag << 56) | index).to_le_bytes());
+                write_field(&mut hasher, *coefficient);
+            }
+        }
+        hasher.finalize().into()
+    }
+}
+
+/// Hashes the limbs of the canonical integer of `value`, least significant first, as little-endian words.
+#[cfg(feature = "test-helpers")]
+fn write_field<F: PrimeField>(hasher: &mut Sha256, value: F) {
+    for limb in AsRef::<[u64]>::as_ref(&value.to_bigint()) {
+        hasher.update(limb.to_le_bytes());
     }
 }
 

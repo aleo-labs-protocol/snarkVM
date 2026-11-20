@@ -80,40 +80,6 @@ impl<E: Environment> ToUpperBits for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn ToUpperBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = (Mode, u64);
-
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            (Mode::Constant, k) => Count::is(*k, 0, 0, 0),
-            // `to_upper_bits_be` returns at most `E::BaseField::size_in_bits()` bits, which bounds `k`.
-            #[allow(clippy::cast_possible_truncation)]
-            (_, k) => {
-                // The range check is free up to and including the first zero bit of its constant. Each later bit
-                // costs one private variable and one constraint, and the final assertion costs one constraint.
-                let size_in_bits = E::BaseField::size_in_bits();
-                let constant_bits_le = &(-E::BaseField::one()).to_bits_le()[size_in_bits - *k as usize..];
-                let (num_private, num_constraints) = match constant_bits_le.iter().position(|bit| !bit) {
-                    Some(index) => (k - 1 - index as u64, k - index as u64),
-                    None => (0, 0),
-                };
-                Count::is(0, 0, k + num_private, k + 1 + num_constraints)
-            }
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn ToUpperBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,8 +133,7 @@ mod tests {
                 for (i, (expected_bit, candidate_bit)) in expected.iter().zip_eq(candidate.iter().skip(1)).enumerate() {
                     assert_eq!(*expected_bit, candidate_bit.eject_value(), "MSB-{i}");
                 }
-                assert_count!(ToUpperBits<Boolean>() => Field, &(mode, num_bits_with_capacity));
-                assert_output_mode!(ToUpperBits<Boolean>() => Field, &mode, candidate);
+                assert_scope!();
             });
         }
     }
@@ -186,8 +151,7 @@ mod tests {
             Circuit::scope(format!("{mode} {k}"), || {
                 let candidate = candidate.to_upper_bits_be(k);
                 assert_eq!(modulus_minus_one_bits_be[..k], candidate.eject_value());
-                assert_count!(ToUpperBits<Boolean>() => Field, &(mode, k as u64));
-                assert_output_mode!(ToUpperBits<Boolean>() => Field, &mode, candidate);
+                assert_scope!();
             });
         }
     }

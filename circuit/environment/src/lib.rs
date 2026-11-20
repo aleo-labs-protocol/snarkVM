@@ -55,18 +55,13 @@ pub mod sealed_circuit_environment {
 
 pub mod prelude {
     pub use crate::{
-        CircuitType,
         ConstraintUnsatisfied,
-        Count,
         Environment,
         LinearCombination,
         Mode,
-        OutputMode,
         Variable,
-        count,
         count_is,
         count_less_than,
-        output_mode,
         rename_selfs,
         traits::*,
         witness,

@@ -34,34 +34,6 @@ impl<E: Environment, I: IntegerType> AbsWrapped for &Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn AbsWrapped<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn count(case: &Self::Case) -> Count {
-        match I::is_signed() {
-            true => match case {
-                Mode::Constant => Count::is(2 * I::BITS, 0, 0, 0),
-                _ => Count::is(I::BITS, 0, (2 * I::BITS) + 1, (2 * I::BITS) + 2),
-            },
-            false => Count::is(0, 0, 0, 0),
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn AbsWrapped<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match I::is_signed() {
-            true => match case.is_constant() {
-                true => Mode::Constant,
-                false => Mode::Private,
-            },
-            false => *case,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,8 +54,7 @@ mod tests {
             let candidate = a.abs_wrapped();
             assert_eq!(expected, *candidate.eject_value());
             assert_eq!(console::Integer::new(expected), candidate.eject_value());
-            assert_count!(AbsWrapped(Integer<I>) => Integer<I>, &mode);
-            assert_output_mode!(AbsWrapped(Integer<I>) => Integer<I>, &mode, candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }
