@@ -422,3 +422,16 @@ impl<E: Environment, I: IntegerType> Square for Integer<E, I> {
         }
     }
 }
+
+impl<E: Environment, I: IntegerType> SquareRoot for Integer<E, I> {
+    type Output = Integer<E, I>;
+
+    /// Returns the `square_root` of `self`.
+    #[inline]
+    fn square_root(&self) -> Result<Self::Output> {
+        match self.integer.checked_isqrt() {
+            Some(integer) => Ok(Integer::new(integer)),
+            None => bail!("Integer square failed on: {self}"),
+        }
+    }
+}
