@@ -757,6 +757,35 @@ pub fn cost_per_command<N: Network>(
         ConsensusFeeVersion::V2 | ConsensusFeeVersion::V3 => MAPPING_BASE_COST_V2,
     };
 
+    let cost_for_hash_input = |operands: &[Operand<N>], byte_multiplier: u64, base_cost: u64| {
+        if consensus_version.is_none_or(|version| version < ConsensusVersion::V23) {
+            return cost_in_size(stack, finalize_types, operands, byte_multiplier, base_cost);
+        }
+        let (input, remaining_operands) = match command {
+            // Signature verification hashes the message after the signature and address.
+            Command::Instruction(Instruction::SignVerify(_)) => operands.split_last(),
+            _ => operands.split_first(),
+        }
+        .ok_or_else(|| anyhow!("Missing hash input"))?;
+        let FinalizeType::Plaintext(plaintext_type) = finalize_types.get_type_from_operand(stack, input)? else {
+            bail!("Expected a plaintext hash input");
+        };
+        let encoded_bits = plaintext_type.size_in_bits_with_context(
+            &StackRef::Internal(stack),
+            &|context| *context.program_id(),
+            &|context, name| context.program().get_struct(name).cloned(),
+            &|context, locator| {
+                let external = context.get_external_stack(locator.program_id())?;
+                let definition = external.program().get_struct(locator.resource())?.clone();
+                Ok((StackRef::External(external), definition))
+            },
+        )?;
+        let encoded_bytes = u64::try_from(encoded_bits.div_ceil(8))?;
+        let input_cost =
+            encoded_bytes.checked_mul(byte_multiplier).ok_or_else(|| anyhow!("Hash input cost overflowed"))?;
+        cost_in_size(stack, finalize_types, remaining_operands, byte_multiplier, base_cost.saturating_add(input_cost))
+    };
+
     match command {
         Command::Instruction(Instruction::Abs(_)) => Ok(500),
         Command::Instruction(Instruction::AbsWrapped(_)) => Ok(500),
@@ -817,22 +846,22 @@ pub fn cost_per_command<N: Network>(
             CastType::DynamicRecord => bail!("'cast.lossy' to a dynamic record is not supported in finalize"),
         },
         Command::Instruction(Instruction::CommitBHP256(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::CommitBHP512(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::CommitBHP768(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::CommitBHP1024(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::CommitPED64(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::CommitPED128(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::CommitBHP256Raw(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
@@ -941,127 +970,127 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::GreaterThan(_)) => Ok(500),
         Command::Instruction(Instruction::GreaterThanOrEqual(_)) => Ok(500),
         Command::Instruction(Instruction::HashBHP256(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP256Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP512(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP512Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP768(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP768Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP1024(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP1024Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak256(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak256Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak256Native(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak256NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak384(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak384Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak384Native(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak384NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak512(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak512Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak512Native(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak512NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashPED64(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashPED64Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashPED128(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashPED128Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashPSD2(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashPSD2Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashPSD4(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashPSD4Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashPSD8(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashPSD8Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_256(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_256Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_256Native(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_256NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_384(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_384Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_384Native(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_384NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_512(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_512Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_512Native(hash)) => {
-            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_512NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
@@ -1132,7 +1161,7 @@ pub fn cost_per_command<N: Network>(
                 .saturating_add(CAST_BASE_COST))
         }
         Command::Instruction(Instruction::SignVerify(sign)) => {
-            cost_in_size(stack, finalize_types, sign.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+            cost_for_hash_input(sign.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::Shl(_)) => Ok(500),
         Command::Instruction(Instruction::ShlWrapped(_)) => Ok(500),
@@ -1482,6 +1511,117 @@ function over_five_thousand:
     const V1_STORAGE_COST_MAX: u64 = 3_276_800;
     const V14_STORAGE_COST_MAX: u64 = 117_964_800;
     const V16_STORAGE_COST_MAX: u64 = 1_061_683_200;
+
+    #[test]
+    fn test_finalize_hash_preimage_cost() -> Result<()> {
+        let types = Program::from_str(
+            r"
+program shapes.aleo;
+
+struct item:
+    enabled as boolean;
+
+struct wrapper:
+    member as item;
+
+function identity:
+    input r0 as wrapper.public;
+    output r0 as wrapper.public;
+",
+        )?;
+        let program = Program::from_str(
+            r"
+import shapes.aleo;
+program preimage.aleo;
+
+struct item:
+    magnitude as field;
+
+function price:
+    input r0 as [shapes.aleo/wrapper; 3u32].public;
+    input r1 as signature.public;
+    input r2 as address.public;
+    async price r0 r1 r2 into r3;
+    output r3 as preimage.aleo/price.future;
+
+finalize price:
+    input r0 as [shapes.aleo/wrapper; 3u32].public;
+    input r1 as signature.public;
+    input r2 as address.public;
+    hash.bhp256 r0 into r3 as field;
+    hash.bhp256 r0 into r4 as field;
+    hash.psd2 r0 into r5 as field;
+    commit.bhp256 r0 1scalar into r6 as field;
+    hash.bhp256.raw r0 into r7 as field;
+    hash.psd2.raw r0 into r8 as field;
+    commit.bhp256.raw r0 1scalar into r9 as field;
+    hash.ped64 1u8 into r10 as field;
+    commit.ped64 1u8 1scalar into r11 as field;
+    hash.ped128 1u8 into r12 as field;
+    commit.ped128 1u8 1scalar into r13 as field;
+    commit.ped64.raw 1u8 1scalar into r14 as field;
+    commit.ped128.raw 1u8 1scalar into r15 as field;
+    sign.verify r1 r2 r0 into r16;
+",
+        )?;
+        let process = Process::<MainnetV0>::load()?;
+        process.lock().add_program(&types)?;
+        let stack = Stack::new(&process, &program)?;
+        let function_name = Identifier::from_str("price")?;
+        let input = Value::<MainnetV0>::from_str(
+            "[{ member: { enabled: true } }, { member: { enabled: false } }, { member: { enabled: true } }]",
+        )?;
+        let encoded_bits = input.to_bits_le().len();
+        assert_ne!(encoded_bits % 8, 0);
+        let encoded_bytes = encoded_bits.div_ceil(8) as u64;
+        // Each element costs one length byte per struct name, the two names, and one boolean byte.
+        let legacy_bytes = 3 * (1 + "wrapper".len() + 1 + "item".len() + 1) as u64;
+        let randomizer_bytes = u64::from(LiteralType::Scalar.size_in_bytes::<MainnetV0>());
+        let signer_bytes = u64::from(LiteralType::Signature.size_in_bytes::<MainnetV0>())
+            + u64::from(LiteralType::Address.size_in_bytes::<MainnetV0>());
+        let bhp_cost = |bytes| HASH_BHP_BASE_COST + HASH_BHP_PER_BYTE_COST * bytes;
+        let poseidon_cost = |bytes| HASH_PSD_BASE_COST + HASH_PSD_PER_BYTE_COST * bytes;
+        let pedersen_cost = |bytes| HASH_BASE_COST + HASH_PER_BYTE_COST * bytes;
+        let pedersen_bits = Value::<MainnetV0>::from_str("1u8")?.to_bits_le().len();
+        assert!(pedersen_bits <= 64);
+
+        let finalize = stack.get_function_ref(&function_name)?.finalize_logic().expect("price has a finalize block");
+        let finalize_types = stack.get_finalize_types(&function_name)?;
+        for (version, preimage_bytes, pedersen_bytes) in [
+            (None, legacy_bytes, 1),
+            (Some(ConsensusVersion::V22), legacy_bytes, 1),
+            (Some(ConsensusVersion::V23), encoded_bytes, pedersen_bits.div_ceil(8) as u64),
+        ] {
+            let expected = [
+                bhp_cost(preimage_bytes),
+                bhp_cost(preimage_bytes),
+                poseidon_cost(preimage_bytes),
+                bhp_cost(preimage_bytes + randomizer_bytes),
+                bhp_cost(legacy_bytes),
+                poseidon_cost(legacy_bytes),
+                bhp_cost(legacy_bytes + randomizer_bytes),
+                pedersen_cost(pedersen_bytes),
+                pedersen_cost(pedersen_bytes + randomizer_bytes),
+                pedersen_cost(pedersen_bytes),
+                pedersen_cost(pedersen_bytes + randomizer_bytes),
+                pedersen_cost(1 + randomizer_bytes),
+                pedersen_cost(1 + randomizer_bytes),
+                poseidon_cost(signer_bytes + preimage_bytes),
+            ];
+            for (command, expected_cost) in finalize.commands().iter().zip_eq(expected) {
+                assert_eq!(
+                    cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V3, version)?,
+                    expected_cost,
+                    "{command} at {version:?}",
+                );
+            }
+            assert_eq!(
+                finalize_cost_for_single_function_raw(&stack, &function_name, ConsensusFeeVersion::V3, version)?,
+                expected.into_iter().sum::<u64>(),
+            );
+        }
+        Ok(())
+    }
 
     fn test_storage_cost_bounds<N: Network>() {
         // Calculate the bounds directly above and below the size threshold.
