@@ -147,14 +147,6 @@ parameters = [ "snarkvm-parameters" ]
 synthesizer = [ "snarkvm-synthesizer" ]
 utilities = [ "snarkvm-utilities" ]
 wasm = [ "snarkvm-wasm" ]
-serial = [
-  "snarkvm-algorithms?/serial",
-  "snarkvm-console?/serial",
-  "snarkvm-curves?/serial",
-  "snarkvm-fields?/serial",
-  "snarkvm-utilities/serial",
-  "snarkvm-ledger?/serial"
-]
 snark-print = [ "snarkvm-algorithms?/snark-print" ]
 
 dev-print = [ 

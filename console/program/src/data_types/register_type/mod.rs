@@ -21,6 +21,9 @@ mod size_in_bits;
 use crate::{FinalizeType, Identifier, Locator, PlaintextType, ProgramID, ValueType, Variant};
 use snarkvm_console_network::prelude::*;
 
+/// Minor releases add variants to this enum, and snarkVM does not treat this as a breaking change.
+/// An exhaustive match must be updated for each new variant, so that each new variant is handled
+/// explicitly.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum RegisterType<N: Network> {
     /// A plaintext type.

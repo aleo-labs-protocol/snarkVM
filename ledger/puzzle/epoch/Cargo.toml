@@ -24,10 +24,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "synthesis", "rayon" ]
-# Enables nothing; `rayon` is a required dependency.
-rayon = [ ]
-serial = [ "snarkvm-console/serial", "snarkvm-ledger-puzzle/serial" ]
+default = [ "synthesis" ]
 merkle = [ ]
 synthesis = [
   "snarkvm-circuit",

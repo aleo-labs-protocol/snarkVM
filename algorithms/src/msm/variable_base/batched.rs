@@ -21,7 +21,6 @@ use snarkvm_utilities::{BigInteger, cfg_into_iter};
 
 use itertools::Itertools;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[cfg(target_arch = "x86_64")]

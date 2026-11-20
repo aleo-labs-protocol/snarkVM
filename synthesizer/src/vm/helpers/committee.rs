@@ -28,7 +28,6 @@ use anyhow::{Result, bail, ensure};
 use indexmap::{IndexMap, indexmap};
 use std::str::FromStr;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Returns the committee given the committee map from finalize storage.

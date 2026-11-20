@@ -144,10 +144,5 @@ features = [ "env-filter" ]
 cuda = [ "snarkvm-algorithms-cuda" ]
 filesystem = [ "snarkvm-parameters/filesystem" ]
 test-helpers = [ ]
-serial = [
-  "snarkvm-curves/serial",
-  "snarkvm-fields/serial",
-  "snarkvm-utilities/serial"
-]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 snark-print = [ ]

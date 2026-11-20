@@ -20,7 +20,6 @@ use snarkvm_utilities::locks::Mutex;
 use indexmap::IndexMap;
 use std::sync::atomic::AtomicU64;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// A safety bound (sanity-check) for the coinbase reward.

@@ -15,7 +15,6 @@
 
 use super::*;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 mod ensure_records_exist;

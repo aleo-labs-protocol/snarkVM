@@ -93,17 +93,6 @@ metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 bench-prove = [ "test_consensus_heights" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-authority/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-ledger-narwhal/serial",
-  "snarkvm-ledger-puzzle/serial",
-  "snarkvm-ledger-query/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer/serial"
-]
 test = [
   "snarkvm-console/test",
   "snarkvm-ledger-block/test",
