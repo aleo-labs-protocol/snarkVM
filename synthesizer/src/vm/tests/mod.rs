@@ -31,5 +31,8 @@ mod test_v20;
 mod test_v22;
 mod test_v23;
 
+// Tests for the deployment freeze, enforced from `DEPLOYMENT_FREEZE_CONSENSUS_VERSION`.
+mod test_deployment_freeze;
+
 use super::*;
 use crate::vm::test_helpers::*;
