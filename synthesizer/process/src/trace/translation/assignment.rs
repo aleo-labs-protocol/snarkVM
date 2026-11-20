@@ -131,6 +131,8 @@ impl<N: Network> TranslationAssignment<N> {
     // circuit in `A`. The publicly exposed function `to_circuit_assignment`
     // ejects the resulting `Assignment` from the R1CS, but having direct access
     // to `A` while the constraint system is still loaded facilitates testing.
+    // It resets the circuit of the current thread, so a caller that is part way
+    // through its own synthesis calls `to_circuit_assignment` instead.
     pub(crate) fn to_circuit_assignment_internal<A: Aleo<Network = N>>(
         &self,
         translation_index: u16,
