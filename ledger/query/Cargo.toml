@@ -20,11 +20,6 @@ edition = "2024"
 [features]
 default = ["query"]
 async = ["dep:reqwest"]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer-program/serial",
-]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-store/wasm",

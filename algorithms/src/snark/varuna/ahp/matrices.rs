@@ -30,7 +30,6 @@ use snarkvm_utilities::{cfg_into_iter, serialize::*, timing_span};
 use anyhow::{Result, anyhow, ensure};
 
 use itertools::Itertools;
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 // This function converts a matrix output by Zexe's constraint infrastructure to

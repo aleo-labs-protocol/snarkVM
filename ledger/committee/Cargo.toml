@@ -25,7 +25,6 @@ edition = "2024"
 
 [features]
 default = [ ]
-serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
 test-helpers = [
@@ -82,9 +81,6 @@ workspace = true
 [dev-dependencies.bincode]
 workspace = true
 
-[dev-dependencies.parking_lot]
-workspace = true
-
 [dev-dependencies.rand_distr]
 version = "0.6"
 
@@ -94,3 +90,6 @@ workspace = true
 [dev-dependencies.snarkvm-ledger-committee]
 path = "."
 features = [ "test-helpers" ]
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true

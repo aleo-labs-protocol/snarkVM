@@ -68,5 +68,4 @@ workspace = true
 features = [ "test-helpers" ]
 
 [features]
-serial = [ "snarkvm-fields/serial" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]

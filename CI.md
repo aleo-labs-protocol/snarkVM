@@ -21,7 +21,7 @@ Jobs run in one of two places:
 
 | Event | Runs |
 |---|---|
-| Pull request | `fmt`, `deny`, `wasm`, `lint`, `test`, `ci-ok` |
+| Pull request | `fmt`, `deny`, `wasm`, `lint`, `lint-locktick`, `test`, `ci-ok` |
 | Push to `staging`, or manual dispatch | the above, plus `test-merge`, `each-feature`, `machete` |
 | Push to or pull request into `release/**`, or manual dispatch | the above, plus `test-release`, `windows` |
 
@@ -40,6 +40,7 @@ on every event.
 | `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
 | `wasm` | hosted | all | | `wasm-pack test --node` in `wasm` | `wasm` |
 | `lint` | `cpu` | all | 90 | clippy, default and `--all-features`; `cargo doc --all-features`; on release, also `cargo check --release --workspace --all-targets` | `check-clippy`, `check-all-targets`, `parameters-large` |
+| `lint-locktick` | `cpu` | all | 90 | clippy `--all-features` under `--cfg locktick` (`locktick-clippy` alias) | |
 | `test (console)` | hosted | all | 90 | `snarkvm-console` and its sub-crates, except `-collections` | `console`, `console-account`, `console-algorithms`, `console-network`, `console-network-environment`, `console-program`, `console-types`, `console-types-address`, `console-types-boolean`, `console-types-field`, `console-types-group`, `console-types-integers`, `console-types-scalar`, `console-types-string` |
 | `test (circuit)` | hosted | all | 90 | `snarkvm-circuit` and its sub-crates, except `-collections`, `-types-integers` and `-program`; then `snarkvm-circuit-environment` | `circuit`, `circuit-account`, `circuit-algorithms`, `circuit-network`, `circuit-types`, `circuit-types-address`, `circuit-types-boolean`, `circuit-types-field`, `circuit-types-group`, `circuit-types-scalar`, `circuit-types-string`, `circuit-environment` |
 | `test (narwhal)` | hosted | all | 90 | `snarkvm-ledger-authority`, `-ledger-committee`, `-ledger-narwhal` and its sub-crates except `-data`, `-ledger-query`, `-synthesizer-snark`, `-curves`, `-fields`, `-utilities`, `-utilities-derives` | `ledger-authority`, `ledger-committee`, `ledger-narwhal`, `ledger-narwhal-batch-certificate`, `ledger-narwhal-batch-header`, `ledger-narwhal-subdag`, `ledger-narwhal-transmission`, `ledger-narwhal-transmission-id`, `ledger-query`, `synthesizer-snark`, `curves`, `fields`, `utilities`, `utilities-derives` |
@@ -56,7 +57,7 @@ on every event.
 | `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
 | `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests with `test,dev-print` | `synthesizer-integration` |
 | `test-merge (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
-| `each-feature` | `cpu` | merge | 90 | `cargo hack clippy --each-feature` on each crate, without `cuda`, `no-embedded-srs`, `dev_skip_checks` and `rayon`: each crate with no features and with each feature alone | |
+| `each-feature` | `cpu` | merge | 90 | `cargo hack clippy --each-feature` on each crate, without `cuda`, `no-embedded-srs` and `dev_skip_checks`: each crate with no features and with each feature alone | |
 | `test-release (old-consensus-versions-1)` to `-3` | `cpu` | release | 120 | one third each of the V8 to V14 tests of `snarkvm-synthesizer`, ignored ones included, with `test-old-consensus-versions`, release | |
 | `test-release (integers-exhaustive)` | `cpu` | release | 120 | the ignored tests of `snarkvm-circuit-types-integers`, which check every 8-bit input | |
 | `test-release (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks`, release; again with `test,rocks`, then the ignored tests; then `test_vm_execute_and_finalize` with `test,rocks` | |

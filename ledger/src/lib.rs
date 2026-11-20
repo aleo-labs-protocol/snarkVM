@@ -77,21 +77,20 @@ use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
 };
-use snarkvm_utilities::{timing_event, timing_span};
+use snarkvm_utilities::{
+    locks::{Mutex, RwLock},
+    timing_event,
+    timing_span,
+};
 
 use anyhow::{Context, Result};
 use core::ops::Range;
 use indexmap::IndexMap;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use rand::prelude::IteratorRandom;
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use time::OffsetDateTime;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;

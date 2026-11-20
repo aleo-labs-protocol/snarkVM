@@ -22,7 +22,6 @@ use anyhow::{Result, ensure};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Precompute a batch of selectors at challenges. We batch:

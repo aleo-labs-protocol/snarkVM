@@ -74,12 +74,6 @@ async = [
   "snarkvm-ledger-query/async",
   "snarkvm-synthesizer/async"
 ]
-locktick = [
-  "dep:locktick",
-  "snarkvm-ledger-puzzle/locktick",
-  "snarkvm-ledger-store/locktick",
-  "snarkvm-synthesizer/locktick"
-]
 metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 # Enables the proving benchmarks in `benches/transaction.rs`.
 #
@@ -99,17 +93,6 @@ metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 bench-prove = [ "test_consensus_heights" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-authority/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-ledger-narwhal/serial",
-  "snarkvm-ledger-puzzle/serial",
-  "snarkvm-ledger-query/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer/serial"
-]
 test = [
   "snarkvm-console/test",
   "snarkvm-ledger-block/test",
@@ -181,15 +164,7 @@ workspace = true
 workspace = true
 features = [ "serde" ]
 
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
 [dependencies.lru]
-workspace = true
-
-[dependencies.parking_lot]
 workspace = true
 
 [dependencies.rand]

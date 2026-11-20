@@ -36,7 +36,6 @@ use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// The minimum self bond for a validator to join the committee
@@ -408,7 +407,7 @@ mod tests {
     use super::*;
     use console::prelude::TestRng;
 
-    use parking_lot::RwLock;
+    use snarkvm_utilities::locks::RwLock;
     use std::sync::Arc;
 
     type CurrentNetwork = console::network::MainnetV0;

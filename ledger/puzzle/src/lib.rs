@@ -50,21 +50,16 @@ use console::{
     },
     types::U64,
 };
-use snarkvm_utilities::{ensure_equals, timing_event, timing_span};
+use snarkvm_utilities::{ensure_equals, locks::RwLock, timing_event, timing_span};
 
 use anyhow::Context;
 use core::num::NonZeroUsize;
 use indexmap::IndexMap;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
 use lru::LruCache;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 use std::sync::Arc;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// The arity of the Merkle tree.

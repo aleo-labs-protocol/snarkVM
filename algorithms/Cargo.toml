@@ -143,12 +143,6 @@ features = [ "env-filter" ]
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
 filesystem = [ "snarkvm-parameters/filesystem" ]
-locktick = [ "snarkvm-parameters/locktick" ]
 test-helpers = [ ]
-serial = [
-  "snarkvm-curves/serial",
-  "snarkvm-fields/serial",
-  "snarkvm-utilities/serial"
-]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 snark-print = [ ]

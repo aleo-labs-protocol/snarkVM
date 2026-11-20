@@ -18,14 +18,6 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-authority/serial",
-  "snarkvm-ledger-puzzle/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-authority/wasm",

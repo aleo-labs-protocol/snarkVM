@@ -22,7 +22,6 @@ a number of instances of the large one_to_many_records transaction.
    cargo bench --bench prepare_advance_multirecord -- --clean
  - Obtain time measurements with:
    cargo bench --bench prepare_advance_multirecord
-   The --serial feature can be added to deactivate parallelism.
  - In order to run any of the above on a number of transfer_public instead, pass --transfer_public.
 */
 

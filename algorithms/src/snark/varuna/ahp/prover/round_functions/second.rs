@@ -32,9 +32,6 @@ use rand::Rng;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter, cfg_reduce, timing_span};
 
-#[cfg(feature = "serial")]
-use itertools::Itertools;
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {

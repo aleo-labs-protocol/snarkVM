@@ -49,22 +49,18 @@ use snarkvm_ledger_puzzle::{Solution, SolutionID};
 use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 #[cfg(feature = "rocks")]
 use snarkvm_utilities::aleo_ledger_dir;
-use snarkvm_utilities::{StorageMode, aleo_secondary_ledger_dir};
+use snarkvm_utilities::{
+    StorageMode,
+    aleo_secondary_ledger_dir,
+    locks::{Mutex, RwLock, RwLockReadGuard},
+};
 
 use anyhow::{Context, Result};
-#[cfg(feature = "locktick")]
-use locktick::{
-    LockGuard,
-    parking_lot::{Mutex, RwLock},
-};
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
 use tracing::{debug, info};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Separates the confirmed transaction into a tuple.
@@ -1855,15 +1851,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     ///
     /// This may return `None` due to lock contention, even if the cache is enabled.
     #[inline]
-    #[cfg(feature = "locktick")]
-    fn get_block_cache(&self) -> Option<LockGuard<parking_lot::RwLockReadGuard<'_, BlockCache<N>>>> {
-        // This uses `try_read` to avoid deadlocks or prologned blocking of a thread in rayon: https://github.com/rayon-rs/rayon/issues/1205
-        if let Some(cache) = &*self.block_cache { cache.try_read() } else { None }
-    }
-
-    #[inline]
-    #[cfg(not(feature = "locktick"))]
-    fn get_block_cache(&self) -> Option<parking_lot::RwLockReadGuard<'_, BlockCache<N>>> {
+    fn get_block_cache(&self) -> Option<RwLockReadGuard<'_, BlockCache<N>>> {
         // This uses `try_read` to avoid deadlocks or prologned blocking of a thread in rayon: https://github.com/rayon-rs/rayon/issues/1205
         if let Some(cache) = &*self.block_cache { cache.try_read() } else { None }
     }

@@ -40,6 +40,8 @@ pub use vm_error::*;
 pub mod iterator;
 pub use iterator::*;
 
+pub mod locks;
+
 #[macro_use]
 pub mod parallel;
 pub use parallel::*;

@@ -24,26 +24,9 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-locktick = [
-  "dep:locktick",
-  "snarkvm-ledger-puzzle/locktick",
-  "snarkvm-ledger-puzzle-epoch/locktick",
-  "snarkvm-ledger-store/locktick",
-  "snarkvm-synthesizer-process/locktick"
-]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-ledger-query/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer-process/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
 wasm = [
@@ -141,15 +124,7 @@ features = [ "serde", "rayon" ]
 [dependencies.itertools]
 workspace = true
 
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
 [dependencies.lru]
-workspace = true
-
-[dependencies.parking_lot]
 workspace = true
 
 [dependencies.rand]

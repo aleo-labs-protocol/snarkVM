@@ -21,11 +21,8 @@ use console::{
     program::{Address, ArrayType, Identifier, LiteralType, Locator, PlaintextType, RegisterType, U32, Value},
 };
 use snarkvm_synthesizer_program::{Program, StackTrait};
+use snarkvm_utilities::locks::RwLock;
 
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rayon::prelude::*;
 use std::sync::Arc;
 

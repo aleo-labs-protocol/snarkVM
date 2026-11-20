@@ -18,15 +18,14 @@
 use crate::helpers::{Map, MapRead};
 use console::network::prelude::*;
 
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::{
+    bytes::unchecked_deserialize,
+    locks::{Mutex, RwLock},
+};
 
 use indexmap::IndexMap;
 
 use core::{borrow::Borrow, hash::Hash};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, btree_map},
