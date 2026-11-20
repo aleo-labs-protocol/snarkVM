@@ -44,6 +44,27 @@ impl<N: Network> PlaintextType<N> {
         Ok(self.size_in_bits_internal(get_struct, get_external_struct, 0, &mut memoized)?.0)
     }
 
+    /// Returns the encoded bit size, resolving each member in the program that defines its struct.
+    /// String literals contribute their maximum size.
+    pub fn size_in_bits_with_context<C>(
+        &self,
+        context: &C,
+        program_id: &impl Fn(&C) -> ProgramID<N>,
+        get_struct: &impl Fn(&C, &Identifier<N>) -> Result<StructType<N>>,
+        get_external_struct: &impl Fn(&C, &Locator<N>) -> Result<(C, StructType<N>)>,
+    ) -> Result<usize> {
+        Ok(self
+            .size_in_bits_scoped(
+                context,
+                &|ctx| Some(program_id(ctx)),
+                get_struct,
+                get_external_struct,
+                0,
+                &mut HashMap::new(),
+            )?
+            .0)
+    }
+
     /// A helper function to determine the `(size, height)` of a plaintext type, while tracking the depth of the data.
     ///
     /// `memoized` is keyed on the struct type itself rather than its name, since an external struct resolves
@@ -61,11 +82,31 @@ impl<N: Network> PlaintextType<N> {
         F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
         F1: Fn(&Locator<N>) -> Result<StructType<N>>,
     {
+        self.size_in_bits_scoped(
+            &(),
+            &|_| None,
+            &|_, identifier| get_struct(identifier),
+            &|_, locator| Ok(((), get_external_struct(locator)?)),
+            depth,
+            memoized,
+        )
+    }
+
+    fn size_in_bits_scoped<C>(
+        &self,
+        context: &C,
+        program_id: &impl Fn(&C) -> Option<ProgramID<N>>,
+        get_struct: &impl Fn(&C, &Identifier<N>) -> Result<StructType<N>>,
+        get_external_struct: &impl Fn(&C, &Locator<N>) -> Result<(C, StructType<N>)>,
+        depth: usize,
+        memoized: &mut HashMap<PlaintextType<N>, (usize, usize)>,
+    ) -> Result<(usize, usize)> {
         // Ensure that the depth is within the maximum limit.
         ensure!(depth <= N::MAX_DATA_DEPTH, "Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
 
         // Computes the `(size, height)` in bits of a resolved struct definition.
-        let compute_struct_size = |struct_: &StructType<N>,
+        let compute_struct_size = |context: &C,
+                                   struct_: &StructType<N>,
                                    memoized: &mut HashMap<PlaintextType<N>, (usize, usize)>|
          -> Result<(usize, usize)> {
             // Account for the plaintext variant bits.
@@ -85,8 +126,14 @@ impl<N: Network> PlaintextType<N> {
                 // Account for the size of the member.
                 total = total.checked_add(16).ok_or(anyhow!("`size_in_bits` overflowed"))?;
                 // Account for the member itself.
-                let (member_size, subtree_height) =
-                    member_type.size_in_bits_internal(get_struct, get_external_struct, depth + 1, memoized)?;
+                let (member_size, subtree_height) = member_type.size_in_bits_scoped(
+                    context,
+                    program_id,
+                    get_struct,
+                    get_external_struct,
+                    depth + 1,
+                    memoized,
+                )?;
                 total = total.checked_add(member_size).ok_or(anyhow!("`size_in_bits` overflowed"))?;
                 member_height = member_height.max(subtree_height);
             }
@@ -117,13 +164,17 @@ impl<N: Network> PlaintextType<N> {
             }
             PlaintextType::Struct(identifier) => {
                 // If this struct has already been sized in the current traversal, reuse that result.
-                if let Some(&result) = memoized.get(self) {
+                let key = match program_id(context) {
+                    Some(id) => Self::ExternalStruct(Locator::new(id, *identifier)),
+                    None => Self::Struct(*identifier),
+                };
+                if let Some(&result) = memoized.get(&key) {
                     return memoized_size::<N>(depth, result);
                 }
                 // Look up the struct.
-                let struct_ = get_struct(identifier)?;
-                let result = compute_struct_size(&struct_, memoized)?;
-                memoized.insert(self.clone(), result);
+                let struct_ = get_struct(context, identifier)?;
+                let result = compute_struct_size(context, &struct_, memoized)?;
+                memoized.insert(key, result);
                 Ok(result)
             }
             PlaintextType::ExternalStruct(locator) => {
@@ -132,8 +183,8 @@ impl<N: Network> PlaintextType<N> {
                     return memoized_size::<N>(depth, result);
                 }
                 // Look up the struct
-                let struct_ = get_external_struct(locator)?;
-                let result = compute_struct_size(&struct_, memoized)?;
+                let (external_context, struct_) = get_external_struct(context, locator)?;
+                let result = compute_struct_size(&external_context, &struct_, memoized)?;
                 memoized.insert(self.clone(), result);
                 Ok(result)
             }
@@ -143,7 +194,9 @@ impl<N: Network> PlaintextType<N> {
                 // Account for the size of the array length.
                 total = total.checked_add(32).ok_or(anyhow!("`size_in_bits` overflowed"))?;
                 // Get the size of the element type.
-                let (element_size, element_height) = array_type.next_element_type().size_in_bits_internal(
+                let (element_size, element_height) = array_type.next_element_type().size_in_bits_scoped(
+                    context,
+                    program_id,
                     get_struct,
                     get_external_struct,
                     depth + 1,
