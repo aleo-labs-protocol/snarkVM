@@ -97,6 +97,13 @@ mod tests {
     }
 
     #[test]
+    fn test_genesis_header_without_ratification_is_rejected() {
+        let ratifications = Ratifications::<CurrentNetwork>::try_from(vec![]).unwrap();
+        let error = Header::genesis(&ratifications, &Transactions::from(&[]), vec![]).unwrap_err();
+        assert!(error.to_string().contains("exactly 1 ratification"), "{error}");
+    }
+
+    #[test]
     fn test_genesis_header() {
         let rng = &mut TestRng::default();
 

@@ -57,4 +57,12 @@ mod tests {
         let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
         assert!(genesis_block.is_genesis().unwrap());
     }
+
+    #[test]
+    fn test_genesis_without_ratification_is_rejected() {
+        let block = crate::test_helpers::sample_genesis_block(&mut TestRng::default());
+        assert!(block.header().is_genesis().unwrap());
+        let error = block.is_genesis().unwrap_err();
+        assert!(error.to_string().contains("Invalid number of ratifications"), "{error}");
+    }
 }

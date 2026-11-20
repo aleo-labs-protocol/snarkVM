@@ -92,9 +92,10 @@ pub fn sample_test_env(_rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
     TestEnv { ledger, private_key, validators, view_key, address }
 }
 
-/// Returns the next block on `ledger`: a quorum block whose subdag the committee members among `validators` certify.
+/// Returns the next block on `ledger`: a quorum block whose subdag the `validators` certify.
 ///
-/// The leader certificate of the block holds the transmissions, so the block keeps their order.
+/// `validators` must hold the key of every committee member. The leader certificate holds the transmissions,
+/// so the block keeps their order, and at most `BatchHeader::MAX_TRANSMISSIONS_PER_BATCH` of them.
 pub fn prepare_quorum_block<N: Network, C: ConsensusStorage<N>>(
     ledger: &Ledger<N, C>,
     validators: &[PrivateKey<N>],
@@ -106,15 +107,18 @@ pub fn prepare_quorum_block<N: Network, C: ConsensusStorage<N>>(
     let checksum = |transmission: &Transmission<N>| {
         transmission.to_checksum()?.ok_or_else(|| anyhow!("A transmission object has no checksum"))
     };
-    let mut transmissions = IndexMap::new();
+    let mut transmissions = IndexMap::with_capacity(transactions.len() + solutions.len());
     for transaction in transactions {
         let id = transaction.id();
         let transmission = Transmission::from(transaction);
-        transmissions.insert(TransmissionID::Transaction(id, checksum(&transmission)?), transmission);
+        let previous = transmissions.insert(TransmissionID::Transaction(id, checksum(&transmission)?), transmission);
+        ensure!(previous.is_none(), "Duplicate transaction {id}");
     }
     for solution in solutions {
         let transmission = Transmission::from(solution);
-        transmissions.insert(TransmissionID::Solution(solution.id(), checksum(&transmission)?), transmission);
+        let previous =
+            transmissions.insert(TransmissionID::Solution(solution.id(), checksum(&transmission)?), transmission);
+        ensure!(previous.is_none(), "Duplicate solution {}", solution.id());
     }
 
     // The subdag spans the round of the previous leader certificate up to the next anchor round.

@@ -166,6 +166,15 @@ fn test_load_dev_genesis_state_root() {
 }
 
 #[test]
+fn test_check_next_block_rejects_a_beacon_block() {
+    let rng = &mut TestRng::default();
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+    let error = ledger.check_next_block(&block, rng).unwrap_err();
+    assert!(format!("{error:#}").contains("must be a quorum block"), "{error:#}");
+}
+
+#[test]
 fn test_get_block() {
     let rng = &mut TestRng::default();
 
