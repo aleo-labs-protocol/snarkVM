@@ -35,6 +35,30 @@ pub mod srs;
 pub mod errors;
 pub use errors::*;
 
+/// Seals [`EvaluationsProvider`](snark::varuna::EvaluationsProvider). Only this
+/// crate implements it.
+///
+/// ```compile_fail,E0277
+/// use snarkvm_algorithms::{polycommit::sonic_pc::LinearCombination, snark::varuna::EvaluationsProvider};
+/// use snarkvm_curves::bls12_377::Fr;
+///
+/// #[derive(Debug)]
+/// struct Evaluations;
+///
+/// impl EvaluationsProvider<Fr> for Evaluations {
+///     fn get_lc_eval(&self, _: &LinearCombination<Fr>, _: Fr) -> anyhow::Result<Fr> {
+///         unimplemented!()
+///     }
+///
+///     fn has_lc_eval(&self, _: &LinearCombination<Fr>, _: Fr) -> bool {
+///         unimplemented!()
+///     }
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// Whether this crate's `cuda` feature is enabled.
 ///
 /// A consumer's own `cfg!(feature = "cuda")` does not answer this, because
