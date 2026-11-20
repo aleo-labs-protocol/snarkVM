@@ -2281,8 +2281,8 @@ function compute:
         let fee = vm.execute_fee_authorization(auth, None, rng).expect("valid test fixture");
         let bad_tx = Transaction::from_deployment(owner, bad_deployment, fee).expect("valid test fixture");
 
-        // Two threads, so the halt and the later verification share a worker whatever the host's core count.
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().expect("valid test fixture");
+        // One thread, so every synthesis below runs on the worker that halts.
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().expect("valid test fixture");
         let check = |tx: &Transaction<CurrentNetwork>| {
             vm.partially_verified_transactions().write().clear();
             pool.install(|| vm.check_transaction(tx, None, &mut TestRng::default()))
@@ -2295,6 +2295,14 @@ function compute:
             bad.as_ref().err().is_some_and(|e| e.to_string().contains("VM safely halted")),
             "the under-reported deployment must halt: {bad:?}"
         );
+        // A deployment check synthesizes its functions before its translations, and each function resets the
+        // circuit, so only a translation synthesized directly observes the state that the halt leaves.
+        let stack = Stack::new(vm.process(), &good_program).expect("valid test fixture");
+        let record_name = Identifier::from_str("tok0").expect("valid test fixture");
+        let translation = pool.install(|| {
+            stack.synthesize_translation_key::<test_helpers::CurrentAleo, _>(&record_name, &mut TestRng::default())
+        });
+        assert!(translation.is_ok(), "a translation must synthesize after a halt: {translation:?}");
         let after = check(&good_tx);
         assert!(after.is_ok(), "a valid deployment must still verify after a halt: {after:?}");
     }

@@ -320,7 +320,7 @@ impl Environment for CanaryCircuit {
 
     /// Returns the R1CS circuit, resetting the circuit.
     fn eject_r1cs_and_reset() -> R1CS<Self::BaseField> {
-        Self::swap_circuit_state(CircuitState::default()).r1cs
+        Self::swap_circuit_state(CircuitState::fresh()).r1cs
     }
 
     /// Returns the R1CS assignment of the circuit, resetting the circuit.
@@ -330,7 +330,7 @@ impl Environment for CanaryCircuit {
 
     /// Clears the circuit and initializes an empty environment.
     fn reset() {
-        Self::swap_circuit_state(CircuitState::default());
+        Self::swap_circuit_state(CircuitState::fresh());
     }
 
     /// Replaces this thread's circuit state with the given state, and returns the previous one.

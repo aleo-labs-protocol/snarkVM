@@ -210,14 +210,16 @@ pub trait Environment:
     fn reset();
 
     /// Replaces this thread's circuit state with the given state, and returns the previous one.
-    // Only `with_fresh_circuit` may swap a returned state back in. Swapping one back anywhere else
-    // breaks the LIFO restore of nested `with_fresh_circuit` calls.
+    // Code outside this crate cannot construct a `CircuitState`, so it can only pass on a state this
+    // crate gives it. Only `with_fresh_circuit` may swap a returned state back in. Swapping one back
+    // anywhere else breaks the LIFO restore of nested `with_fresh_circuit` calls.
     #[doc(hidden)]
     fn swap_circuit_state(state: CircuitState<Self::BaseField>) -> CircuitState<Self::BaseField>;
 
     /// Runs `logic` on a fresh circuit state for this thread, then restores the previous state, also when `logic` unwinds.
+    /// `logic` must return only console or ejected values, since circuit values refer to variables of the discarded circuit.
     fn with_fresh_circuit<T>(logic: impl FnOnce() -> T) -> T {
-        let _guard = CircuitGuard::<Self> { outer: Some(Self::swap_circuit_state(CircuitState::default())) };
+        let _guard = CircuitGuard::<Self> { outer: Some(Self::swap_circuit_state(CircuitState::fresh())) };
         logic()
     }
 }
@@ -231,8 +233,9 @@ pub struct CircuitState<F: PrimeField> {
     pub(crate) in_witness: bool,
 }
 
-impl<F: PrimeField> Default for CircuitState<F> {
-    fn default() -> Self {
+impl<F: PrimeField> CircuitState<F> {
+    /// Returns an empty circuit state with no limits, outside of witness mode.
+    pub(crate) fn fresh() -> Self {
         Self {
             r1cs: R1CS::new(),
             variable_limit: None,
