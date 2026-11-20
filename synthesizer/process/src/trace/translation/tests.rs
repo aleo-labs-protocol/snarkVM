@@ -22,7 +22,7 @@ use console::{
 use crate::{
     TranslationAssignment,
     compute_console_dynamic_or_external_record_id,
-    tests::test_utils::{CurrentAleo, CurrentNetwork},
+    tests::test_utils::{CurrentAleo, CurrentNetwork, circuit_snapshot, start_callers_synthesis},
 };
 
 use super::*;
@@ -831,31 +831,16 @@ fn test_to_circuit_assignment_leaves_the_callers_circuit() {
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
 
-    // A caller part way through its own synthesis on this thread.
-    CurrentAleo::reset();
-    let a = circuit::Field::<CurrentAleo>::new(circuit::Mode::Private, Field::from_u64(3));
-    CurrentAleo::assert_eq(&a, &a).unwrap();
-    CurrentAleo::set_variable_limit(Some(1 << 30));
-    CurrentAleo::set_constraint_limit(Some(1 << 31));
-    CurrentAleo::set_non_zero_limit(Some((1 << 32, 1 << 33, 1 << 34)));
-    let state = || {
-        (
-            CurrentAleo::count(),
-            CurrentAleo::get_variable_limit(),
-            CurrentAleo::get_constraint_limit(),
-            CurrentAleo::get_non_zero_limit(),
-        )
-    };
-    let callers = state();
+    CurrentAleo::with_fresh_circuit(|| {
+        let callers = start_callers_synthesis();
 
-    translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, None, None).unwrap();
-    assert_eq!(state(), callers);
+        translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, None, None).unwrap();
+        assert_eq!(circuit_snapshot(), callers);
 
-    let halted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, Some(1), None)
-    }));
-    assert!(halted.is_err(), "the constraint limit must halt synthesis");
-    assert_eq!(state(), callers);
-
-    CurrentAleo::reset();
+        let halted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, Some(1), None)
+        }));
+        assert!(halted.is_err(), "the constraint limit must halt synthesis");
+        assert_eq!(circuit_snapshot(), callers);
+    });
 }

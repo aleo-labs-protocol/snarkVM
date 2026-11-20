@@ -197,6 +197,17 @@ impl<N: Network> Stack<N> {
     /// This method will halt if the given inputs are not the same length as the input statements.
     pub fn execute_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
+        call_stack: CallStack<N>,
+        console_caller: Option<ProgramID<N>>,
+        console_root_tvk: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Option<Response<N>>, StackExecError> {
+        A::with_fresh_circuit(|| self.execute_function_inner::<A, R>(call_stack, console_caller, console_root_tvk, rng))
+    }
+
+    /// Executes a program function on the given inputs, in the current circuit state.
+    fn execute_function_inner<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
+        &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
@@ -204,7 +215,6 @@ impl<N: Network> Stack<N> {
     ) -> Result<Option<Response<N>>, StackExecError> {
         let timer = timing_span!("Stack::execute_function").entered();
 
-        let _circuit = A::fresh_circuit();
         // Ensure the global constants for the Aleo environment are initialized.
         A::initialize_global_constants();
         // Discard the constants that the first initialization on a thread adds to the circuit.

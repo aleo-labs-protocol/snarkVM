@@ -18,6 +18,14 @@ use super::*;
 impl<N: Network> EpochProgram<N> {
     /// Synthesizes the R1CS for a program function on the given inputs.
     pub fn to_r1cs<A: circuit::Aleo<Network = N>>(&self, console_inputs: Vec<Value<N>>) -> Result<R1CS<A::BaseField>> {
+        A::with_fresh_circuit(|| self.to_r1cs_inner::<A>(console_inputs))
+    }
+
+    /// Synthesizes the R1CS for a program function on the given inputs, in the current circuit state.
+    fn to_r1cs_inner<A: circuit::Aleo<Network = N>>(
+        &self,
+        console_inputs: Vec<Value<N>>,
+    ) -> Result<R1CS<A::BaseField>> {
         let timer = timing_span!("synthesize_r1cs").entered();
 
         // Declare the function name.
@@ -36,8 +44,6 @@ impl<N: Network> EpochProgram<N> {
         let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::rng())?, Default::default());
         let mut registers = Registers::<N, A>::new(call_stack, register_types);
         timing_event!("Initialize the registers");
-
-        let _circuit = A::fresh_circuit();
 
         // Inject the circuit inputs.
         let mut circuit_inputs = Vec::with_capacity(console_inputs.len());

@@ -176,17 +176,16 @@ mod tests {
         let program = puzzle.get_epoch_program(epoch_hash).unwrap();
         let inputs = program.construct_inputs(&mut ChaChaRng::seed_from_u64(0)).unwrap();
 
-        // A caller part way through its own synthesis on this thread.
-        CurrentAleo::reset();
-        let a = circuit::Field::<CurrentAleo>::new(circuit::Mode::Private, console::types::Field::from_u64(3));
-        CurrentAleo::assert_eq(&a, &a).unwrap();
-        CurrentAleo::set_constraint_limit(Some(1 << 31));
-        let callers = (CurrentAleo::count(), CurrentAleo::get_constraint_limit());
+        CurrentAleo::with_fresh_circuit(|| {
+            // A caller part way through its own synthesis on this thread.
+            let a = circuit::Field::<CurrentAleo>::new(circuit::Mode::Private, console::types::Field::from_u64(3));
+            CurrentAleo::assert_eq(&a, &a).unwrap();
+            CurrentAleo::set_constraint_limit(Some(1 << 31));
+            let callers = (CurrentAleo::count(), CurrentAleo::get_constraint_limit());
 
-        program.to_leaves::<CurrentAleo>(inputs).unwrap();
-        assert_eq!((CurrentAleo::count(), CurrentAleo::get_constraint_limit()), callers);
-
-        CurrentAleo::reset();
+            program.to_leaves::<CurrentAleo>(inputs).unwrap();
+            assert_eq!((CurrentAleo::count(), CurrentAleo::get_constraint_limit()), callers);
+        });
     }
 
     #[test]

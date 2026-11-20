@@ -52,9 +52,12 @@ impl<N: Network> InclusionV0Assignment<N> {
     /// [[ serial_number ]] := Commit( commitment || Hash( COFACTOR * gamma ) )
     /// ```
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
-        use circuit::Inject;
+        A::with_fresh_circuit(|| self.to_circuit_assignment_inner::<A>())
+    }
 
-        let _circuit = A::fresh_circuit();
+    /// Synthesizes the circuit for state path verification in the current circuit state, and ejects its assignment.
+    fn to_circuit_assignment_inner<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
+        use circuit::Inject;
 
         // Inject the state path as `Mode::Private` (with a global state root as `Mode::Public`).
         let state_path = circuit::StatePath::<A>::new(circuit::Mode::Private, self.state_path.clone());

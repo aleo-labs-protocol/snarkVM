@@ -293,12 +293,18 @@ impl<N: Network> TranslationAssignment<N> {
         constraint_limit: Option<u64>,
         non_zero_limit: Option<(u64, u64, u64)>,
     ) -> Result<circuit::Assignment<N::Field>> {
-        let _circuit = A::fresh_circuit();
-        self.to_circuit_assignment_internal::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)?;
-        Stack::log_circuit::<A>(
-            format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
-            "TranslationAssignment",
-        );
-        Ok(A::eject_assignment_and_reset())
+        A::with_fresh_circuit(|| {
+            self.to_circuit_assignment_internal::<A>(
+                translation_index,
+                variable_limit,
+                constraint_limit,
+                non_zero_limit,
+            )?;
+            Stack::log_circuit::<A>(
+                format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
+                "TranslationAssignment",
+            );
+            Ok(A::eject_assignment_and_reset())
+        })
     }
 }

@@ -320,80 +320,27 @@ impl Environment for TestnetCircuit {
 
     /// Returns the R1CS circuit, resetting the circuit.
     fn eject_r1cs_and_reset() -> R1CS<Self::BaseField> {
-        TESTNET_CIRCUIT.with(|circuit| {
-            // Reset the witness mode.
-            IN_WITNESS.with(|in_witness| in_witness.replace(false));
-            // Reset the variable limit.
-            Self::set_variable_limit(None);
-            // Reset the constraint limit.
-            Self::set_constraint_limit(None);
-            // Reset the density limit.
-            Self::set_non_zero_limit(None);
-            // Eject the R1CS instance.
-            let r1cs = circuit.replace(R1CS::<<Self as Environment>::BaseField>::new());
-            // Ensure the circuit is now empty.
-            assert_eq!(0, circuit.borrow().num_constants());
-            assert_eq!(1, circuit.borrow().num_public());
-            assert_eq!(0, circuit.borrow().num_private());
-            assert_eq!(1, circuit.borrow().num_variables());
-            assert_eq!(0, circuit.borrow().num_constraints());
-            // Return the R1CS instance.
-            r1cs
-        })
+        Self::swap_circuit_state(CircuitState::default()).r1cs
     }
 
     /// Returns the R1CS assignment of the circuit, resetting the circuit.
     fn eject_assignment_and_reset() -> Assignment<<Self::Network as console::Environment>::Field> {
-        TESTNET_CIRCUIT.with(|circuit| {
-            // Reset the witness mode.
-            IN_WITNESS.with(|in_witness| in_witness.replace(false));
-            // Reset the variable limit.
-            Self::set_variable_limit(None);
-            // Reset the constraint limit.
-            Self::set_constraint_limit(None);
-            // Reset the density limit.
-            Self::set_non_zero_limit(None);
-            // Eject the R1CS instance.
-            let r1cs = circuit.replace(R1CS::<<Self as Environment>::BaseField>::new());
-            assert_eq!(0, circuit.borrow().num_constants());
-            assert_eq!(1, circuit.borrow().num_public());
-            assert_eq!(0, circuit.borrow().num_private());
-            assert_eq!(1, circuit.borrow().num_variables());
-            assert_eq!(0, circuit.borrow().num_constraints());
-            // Convert the R1CS instance to an assignment.
-            Assignment::from(r1cs)
-        })
+        Assignment::from(Self::eject_r1cs_and_reset())
     }
 
     /// Clears the circuit and initializes an empty environment.
     fn reset() {
-        TESTNET_CIRCUIT.with(|circuit| {
-            // Reset the witness mode.
-            IN_WITNESS.with(|in_witness| in_witness.replace(false));
-            // Reset the variable limit.
-            Self::set_variable_limit(None);
-            // Reset the constraint limit.
-            Self::set_constraint_limit(None);
-            // Reset the density limit.
-            Self::set_non_zero_limit(None);
-            // Reset the circuit.
-            *circuit.borrow_mut() = R1CS::<<Self as Environment>::BaseField>::new();
-            assert_eq!(0, circuit.borrow().num_constants());
-            assert_eq!(1, circuit.borrow().num_public());
-            assert_eq!(0, circuit.borrow().num_private());
-            assert_eq!(1, circuit.borrow().num_variables());
-            assert_eq!(0, circuit.borrow().num_constraints());
-        });
+        Self::swap_circuit_state(CircuitState::default());
     }
 
     /// Replaces this thread's circuit state with the given state, and returns the previous one.
     fn swap_circuit_state(state: CircuitState<Self::BaseField>) -> CircuitState<Self::BaseField> {
         CircuitState {
-            r1cs: TESTNET_CIRCUIT.with(|circuit| circuit.replace(state.r1cs)),
+            in_witness: IN_WITNESS.with(|in_witness| in_witness.replace(state.in_witness)),
             variable_limit: VARIABLE_LIMIT.with(|limit| limit.replace(state.variable_limit)),
             constraint_limit: CONSTRAINT_LIMIT.with(|limit| limit.replace(state.constraint_limit)),
             non_zero_limit: NON_ZERO_LIMIT.with(|limit| limit.replace(state.non_zero_limit)),
-            in_witness: IN_WITNESS.with(|in_witness| in_witness.replace(state.in_witness)),
+            r1cs: TESTNET_CIRCUIT.with(|circuit| circuit.replace(state.r1cs)),
         }
     }
 }
