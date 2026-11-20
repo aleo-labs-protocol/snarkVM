@@ -261,31 +261,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         Ok(ratified_finalize_operations)
     }
 
-    /// Committee lookback for `block.round()` semantics matching `Ledger::get_committee_lookback_for_round`.
-    #[cfg(any(test, feature = "test"))]
-    fn committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
-        let previous_round = match round.is_multiple_of(2) {
-            true => round.saturating_sub(1),
-            false => round.saturating_sub(2),
-        };
-        let committee_lookback_round = previous_round.saturating_sub(Committee::<N>::COMMITTEE_LOOKBACK_RANGE);
-        self.finalize_store().committee_store().get_committee_for_round(committee_lookback_round)
-    }
-
-    /// Epoch hash at `block_height`, matching `Ledger::get_epoch_hash`.
-    #[cfg(any(test, feature = "test"))]
-    fn epoch_hash_for_height(&self, block_height: u32) -> Result<N::BlockHash> {
-        let epoch_number = block_height.saturating_div(N::NUM_BLOCKS_PER_EPOCH);
-        let epoch_starting_height = epoch_number.saturating_mul(N::NUM_BLOCKS_PER_EPOCH);
-        if epoch_starting_height == 0 {
-            return Ok(N::BlockHash::default());
-        }
-        match self.block_store().get_previous_block_hash(epoch_starting_height)? {
-            Some(hash) => Ok(hash),
-            None => bail!("Missing previous block hash for epoch boundary height {epoch_starting_height}"),
-        }
-    }
-
     /// Runs `check_speculate` and [`Block::verify`] for a candidate next block. Caller supplies
     /// committee lookbacks and related ledger-derived inputs (see `Ledger::check_block_content_inner`).
     ///
@@ -350,83 +325,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 ratified_finalize_operations,
             )
             .map_err(VmCheckBlockContentError::Verification)
-    }
-
-    /// Like [`Self::check_block_content_inner`], loading the block tip and committee lookbacks from this VM.
-    ///
-    /// Note: this duplicates the lookups that `Ledger` performs before calling
-    /// [`Self::check_block_content_inner`], so that a test holding only a [`VM`] can run the same
-    /// check. Production callers go through `Ledger::check_next_block`; if this is ever needed
-    /// outside of tests, the two copies should be unified rather than both being maintained.
-    ///
-    /// # Panics
-    /// This function panics if called from an async context.
-    #[cfg(any(test, feature = "test"))]
-    #[inline]
-    pub fn check_block_content_from_tip<R: Rng + CryptoRng>(
-        &self,
-        block: &Block<N>,
-        rng: &mut R,
-    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
-        let max_height = self
-            .block_store()
-            .max_height()
-            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("empty block store")))?;
-        let latest_hash = self
-            .block_store()
-            .get_block_hash(max_height)
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("missing tip block hash")))?;
-        let latest_block = self
-            .block_store()
-            .get_block(&latest_hash)
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("missing tip block")))?;
-        let latest_block_timestamp = latest_block.timestamp();
-        let latest_state_root = self.block_store().current_state_root();
-
-        let committee_lookback = self
-            .committee_lookback_for_round(block.round())
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| {
-                VmCheckBlockContentError::Verification(anyhow!(
-                    "missing committee lookback for block round {}",
-                    block.round()
-                ))
-            })?;
-        let previous_committee_lookback = self
-            .committee_lookback_for_round(block.round().saturating_sub(1))
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| {
-                VmCheckBlockContentError::Verification(anyhow!(
-                    "missing previous committee lookback for block round {}",
-                    block.round()
-                ))
-            })?;
-
-        let latest_epoch_hash =
-            self.epoch_hash_for_height(latest_block.height()).map_err(VmCheckBlockContentError::Verification)?;
-
-        let current_timestamp = i64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| VmCheckBlockContentError::Verification(anyhow!(e)))?
-                .as_secs(),
-        )
-        .map_err(|e| VmCheckBlockContentError::Verification(anyhow!(e)))?;
-
-        self.check_block_content_inner(
-            block,
-            &latest_block,
-            latest_block_timestamp,
-            latest_state_root,
-            &previous_committee_lookback,
-            &committee_lookback,
-            self.puzzle(),
-            latest_epoch_hash,
-            current_timestamp,
-            rng,
-        )
     }
 
     /// Finalizes the given transactions into the VM.
