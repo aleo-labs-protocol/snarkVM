@@ -35,7 +35,7 @@ features = [ "network", "types", "test-helpers" ]
 
 [dev-dependencies.snarkvm-console-program]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-console-account]
 workspace = true

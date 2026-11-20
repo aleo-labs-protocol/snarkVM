@@ -92,7 +92,7 @@ impl<N: Network> TypeName for Signature<N> {
 
 impl<N: Network> Signature<N> {
     /// Initializes a `zero` signature.
-    #[cfg(any(test, feature = "test"))]
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn zero() -> Self {
         Self::from((
             Scalar::zero(),
@@ -102,7 +102,7 @@ impl<N: Network> Signature<N> {
     }
 
     /// Initializes a "random" signature.
-    #[cfg(any(test, feature = "test"))]
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn rand<R: Rng>(rng: &mut R) -> Self {
         Self::from((
             Scalar::rand(rng),
