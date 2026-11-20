@@ -78,6 +78,9 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
     }
 
     /// Initializes a new set of registers, given the call stack.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>) -> Self {
         Self {
