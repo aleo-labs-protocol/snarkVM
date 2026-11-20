@@ -118,6 +118,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
+features = [ "dev_skip_block_checks" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true
