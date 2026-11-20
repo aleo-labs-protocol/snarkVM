@@ -117,7 +117,6 @@ impl UpdatableCount {
     /// Returns `true` if the values matches the `Measurement`s in `UpdatableCount`.
     ///
     /// For an `Exact` metric, `value` must be equal to the exact value defined by the metric.
-    /// For a `Range` metric, `value` must be satisfy lower bound and the upper bound.
     /// For an `UpperBound` metric, `value` must be satisfy the upper bound.
     pub fn matches(&self, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) -> bool {
         self.constant.matches(num_constants)
@@ -147,8 +146,7 @@ impl UpdatableCount {
     /// Implements `assert_matches` for a given `UPDATE_COUNT` query string, where `None` stands for an unset
     /// `UPDATE_COUNT`, under which nothing is updated.
     ///
-    /// The values are assumed not to match; `assert_matches` checks that before calling in, and `Measurement::matches`
-    /// reports each mismatching measurement on stderr, so checking again would report every one of them twice.
+    /// The values are assumed not to match; `assert_matches` checks that before calling in.
     fn assert_matches_with_query(
         &self,
         query_string: Option<&str>,
@@ -266,7 +264,6 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
     fn values(&self) -> [u64; 4] {
         let value = |measurement| match measurement {
             Measurement::Exact(value) | Measurement::UpperBound(value) => value,
-            Measurement::Range(..) => panic!("`UpdatableCount` does not support `Measurement::Range`."),
         };
         [value(self.constant), value(self.public), value(self.private), value(self.constraints)]
     }
@@ -281,7 +278,6 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
         let updated = |measurement, on_disk, measured| match measurement {
             Measurement::Exact(..) => Measurement::Exact(measured),
             Measurement::UpperBound(..) => Measurement::UpperBound(std::cmp::max(measured, on_disk)),
-            Measurement::Range(..) => panic!("`UpdatableCount` does not support `Measurement::Range`."),
         };
         Self {
             constant: updated(self.constant, on_disk[0], measured[0]),
@@ -388,9 +384,7 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
                 // Note: This assumes that the number of constants, public, private, and constraints do not exceed `i64::MAX`.
                 (self_value as i64) - (other_value as i64)
             }
-            _ => panic!(
-                "Cannot compute difference for `Measurement::Range` or if both measurements are of different types."
-            ),
+            _ => panic!("Cannot compute the difference between two measurements of different types."),
         };
         (
             difference(self.constant, other.constant),

@@ -44,28 +44,6 @@ impl<A: Aleo> Equal<Self> for ComputeKey<A> {
     }
 }
 
-impl<A: Aleo> Metrics<dyn Equal<ComputeKey<A>, Output = Boolean<A>>> for ComputeKey<A> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match case.0.is_constant() && case.1.is_constant() {
-            true => Count::is(0, 0, 0, 0),
-            false => Count::is(0, 0, 14, 19),
-        }
-    }
-}
-
-impl<A: Aleo> OutputMode<dyn Equal<ComputeKey<A>, Output = Boolean<A>>> for ComputeKey<A> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case.0.is_constant() && case.1.is_constant() {
-            true => Mode::Constant,
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

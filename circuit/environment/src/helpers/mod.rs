@@ -16,9 +16,6 @@
 mod assignment;
 pub use assignment::*;
 
-pub mod circuit_type;
-pub use circuit_type::*;
-
 pub mod constraint;
 pub use constraint::*;
 

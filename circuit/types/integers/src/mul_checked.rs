@@ -62,22 +62,6 @@ impl<E: Environment, I: IntegerType> MulAssign<&Integer<E, I>> for Integer<E, I>
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Mul<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        <Self as Metrics<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Mul<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        <Self as OutputMode<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
-    }
-}
-
 impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
     type Output = Self;
 
@@ -216,64 +200,6 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn MulChecked<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        // Case 1 - 2 integers fit in 1 field element (u8, u16, u32, u64, i8, i16, i32, i64).
-        if 2 * I::BITS < (E::BaseField::size_in_bits() - 1) as u64 {
-            match I::is_signed() {
-                // Signed case
-                true => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => {
-                        Count::is(4 * I::BITS, 0, (6 * I::BITS) + 4, (6 * I::BITS) + 9)
-                    }
-                    (_, _) => Count::is(3 * I::BITS, 0, (8 * I::BITS) + 6, (8 * I::BITS) + 12),
-                },
-                // Unsigned case
-                false => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => Count::is(0, 0, I::BITS, I::BITS + 1),
-                    (_, _) => Count::is(0, 0, I::BITS, I::BITS + 1),
-                },
-            }
-        }
-        // Case 2 - 1.5 integers fit in 1 field element (u128, i128).
-        else if (I::BITS + I::BITS / 2) < (E::BaseField::size_in_bits() - 1) as u64 {
-            match I::is_signed() {
-                // Signed case
-                true => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => Count::less_than(833, 0, 837, 844),
-                    (_, _) => Count::is(3 * I::BITS, 0, 1098, 1106),
-                },
-                // Unsigned case
-                false => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => Count::less_than(193, 0, 193, 199),
-                    (_, _) => Count::is(0, 0, 196, 199),
-                },
-            }
-        } else {
-            E::halt(format!("Multiplication of integers of size {} is not supported", I::BITS))
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn MulChecked<Integer<E, I>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,14 +225,13 @@ mod tests {
                 let candidate = a.mul_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                assert_count!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                // assert_output_mode!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
+                assert_scope!();
             }),
             None => match (mode_a, mode_b) {
                 (Mode::Constant, Mode::Constant) => check_operation_halts(&a, &b, Integer::mul_checked),
                 _ => Circuit::scope(name, || {
                     let _candidate = a.mul_checked(&b);
-                    assert_count_fails!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
+                    assert_scope_fails!();
                 }),
             },
         }
