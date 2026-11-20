@@ -65,7 +65,14 @@ use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore, StorageMode};
+use snarkvm_ledger_store::{
+    BlockAuthority,
+    ConsensusStorage,
+    ConsensusStore,
+    IncompatibleStore,
+    StorageMode,
+    check_authority_retention_blocks,
+};
 use snarkvm_synthesizer::{
     program::{FinalizeGlobalState, Program},
     vm::VM,
@@ -73,7 +80,6 @@ use snarkvm_synthesizer::{
 use snarkvm_utilities::{timing_event, timing_span};
 
 use anyhow::{Context, Result};
-use cfg_if::cfg_if;
 use core::ops::Range;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -118,6 +124,33 @@ pub struct DevCommitteeOptions {
     /// committees won't match. Callers can pass a project-wide constant such
     /// as `snarkos_utilities::DEVELOPMENT_MODE_RNG_SEED`.
     pub seed: u64,
+}
+
+/// Options for [`Ledger::load_with_options`]. The default loads like [`Ledger::load`].
+#[derive(Clone, Copy, Debug, Default)]
+#[non_exhaustive]
+pub struct LoadOptions {
+    /// Prunes the authority data older than this many blocks. See
+    /// [`BlockStore::open_with_authority_retention`](snarkvm_ledger_store::BlockStore::open_with_authority_retention).
+    pub authority_retention: Option<u32>,
+    /// Installs a dev committee override. See [`Ledger::load_with_dev_committee`].
+    #[cfg(feature = "dev-committee")]
+    pub dev_committee: Option<DevCommitteeOptions>,
+}
+
+impl LoadOptions {
+    /// Sets the authority retention window.
+    pub fn with_authority_retention(mut self, authority_retention: Option<u32>) -> Self {
+        self.authority_retention = authority_retention;
+        self
+    }
+
+    /// Sets the dev committee override.
+    #[cfg(feature = "dev-committee")]
+    pub fn with_dev_committee(mut self, dev_committee: DevCommitteeOptions) -> Self {
+        self.dev_committee = Some(dev_committee);
+        self
+    }
 }
 
 /// Deterministically builds the dev committee from the given parameters.
@@ -225,48 +258,69 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     dev_committee: Option<Committee<N>>,
 }
 
+/// Wraps a failure to open the consensus store. The `snarkos clean` advice is left out for an
+/// [`IncompatibleStore`] (a store with a newer schema): nothing is wrong with it.
+fn store_open_error(error: anyhow::Error) -> anyhow::Error {
+    if error.chain().any(|cause| cause.is::<IncompatibleStore>()) {
+        anyhow::anyhow!("Failed to load ledger\n\n{error:#}\n")
+    } else {
+        anyhow::anyhow!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{error:#}\n")
+    }
+}
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Loads the ledger from storage.
     pub fn load(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
+        Self::load_with_options(genesis_block, storage_mode, LoadOptions::default())
+    }
+
+    /// Like [`Self::load`], with the given options.
+    pub fn load_with_options(genesis_block: Block<N>, storage_mode: StorageMode, options: LoadOptions) -> Result<Self> {
         let timer = timing_span!("Ledger::load").entered();
 
         // Retrieve the genesis hash.
         let genesis_hash = genesis_block.hash();
         // Initialize the ledger.
-        let ledger = Self::load_unchecked(genesis_block, storage_mode)?;
+        let ledger = Self::load_unchecked_inner(genesis_block, storage_mode, options)?;
 
         // Ensure the ledger contains the correct genesis block.
         if !ledger.contains_block_hash(&genesis_hash)? {
             bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
         }
 
-        // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
-        const NUM_BLOCKS: usize = 10;
-        // Retrieve the latest height.
-        let latest_height = ledger.current_block.read().height();
-        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        // Sample random block heights.
-        let block_heights: Vec<u32> =
-            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
-        cfg_into_iter!(block_heights).try_for_each(|height| {
-            ledger.get_block(height)?;
-            Ok::<_, Error>(())
-        })?;
-        timing_event!("Check existence of {NUM_BLOCKS} random blocks");
+        // Spot check the integrity of random blocks upon bootup.
+        ledger.check_random_blocks()?;
 
         drop(timer);
         Ok(ledger)
     }
 
+    /// Spot checks the integrity of random blocks. For a block whose authority has been pruned, only
+    /// the remaining block data is checked.
+    fn check_random_blocks(&self) -> Result<()> {
+        const NUM_BLOCKS: usize = 10;
+        let latest_height = self.current_block.read().height();
+        // The callers have checked that the ledger contains the genesis block, so `max_height` is `Some`.
+        debug_assert_eq!(latest_height, self.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
+        let num_blocks = usize::try_from(latest_height)?.min(NUM_BLOCKS);
+        let block_heights: Vec<u32> = (0..=latest_height).sample(&mut rand::rng(), num_blocks);
+        cfg_into_iter!(block_heights).try_for_each(|height| {
+            // The stored watermark, not the window computed from the latest height, marks the pruned
+            // blocks: removing blocks lowers the latest height but not the watermark.
+            if self.vm.block_store().is_authority_pruned_at(height)? {
+                self.vm.block_store().check_block_data_without_authority(&self.get_hash(height)?)?;
+            } else {
+                self.get_block(height)?;
+            }
+            Ok::<_, Error>(())
+        })?;
+        timing_event!("Check existence of {num_blocks} random blocks");
+        Ok(())
+    }
+
     /// Loads the ledger from storage, without performing integrity checks.
     pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
-        cfg_if! {
-            if #[cfg(feature="dev-committee")] {
-                Self::load_unchecked_inner(genesis_block, storage_mode, None)
-            } else {
-                Self::load_unchecked_inner(genesis_block, storage_mode)
-            }
-        }
+        Self::load_unchecked_inner(genesis_block, storage_mode, LoadOptions::default())
     }
 
     /// Like [`Self::load`], but installs a dev committee override that is
@@ -279,32 +333,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        let timer = timing_span!("Ledger::load_with_dev_committee").entered();
-
-        // Retrieve the genesis hash.
-        let genesis_hash = genesis_block.hash();
-        // Initialize the ledger.
-        let ledger = Self::load_unchecked_with_dev_committee(genesis_block, storage_mode, dev_committee_opts)?;
-
-        // Ensure the ledger contains the correct genesis block.
-        if !ledger.contains_block_hash(&genesis_hash)? {
-            bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
-        }
-
-        // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
-        const NUM_BLOCKS: usize = 10;
-        let latest_height = ledger.current_block.read().height();
-        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        let block_heights: Vec<u32> =
-            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
-        cfg_into_iter!(block_heights).try_for_each(|height| {
-            ledger.get_block(height)?;
-            Ok::<_, Error>(())
-        })?;
-        timing_event!("Check existence of {NUM_BLOCKS} random blocks");
-
-        drop(timer);
-        Ok(ledger)
+        let _timer = timing_span!("Ledger::load_with_dev_committee").entered();
+        let options = LoadOptions::default().with_dev_committee(dev_committee_opts);
+        Self::load_with_options(genesis_block, storage_mode, options)
     }
 
     /// Like [`Self::load_unchecked`], but installs a dev committee override.
@@ -314,22 +345,24 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         storage_mode: StorageMode,
         dev_committee_opts: DevCommitteeOptions,
     ) -> Result<Self> {
-        Self::load_unchecked_inner(genesis_block, storage_mode, Some(dev_committee_opts))
+        let options = LoadOptions::default().with_dev_committee(dev_committee_opts);
+        Self::load_unchecked_inner(genesis_block, storage_mode, options)
     }
 
-    fn load_unchecked_inner(
-        genesis_block: Block<N>,
-        storage_mode: StorageMode,
-        #[cfg(feature = "dev-committee")] dev_committee_opts: Option<DevCommitteeOptions>,
-    ) -> Result<Self> {
+    fn load_unchecked_inner(genesis_block: Block<N>, storage_mode: StorageMode, options: LoadOptions) -> Result<Self> {
         let timer = timing_span!("Ledger::load_unchecked").entered();
+
+        // A bad window is a configuration error, not a damaged store, so check it before the open error
+        // can attach the `snarkos clean` advice.
+        if let Some(retention_blocks) = options.authority_retention {
+            check_authority_retention_blocks::<N>(retention_blocks)
+                .map_err(|error| anyhow::anyhow!("Failed to load ledger: {error}"))?;
+        }
 
         info!("Loading the ledger from storage...");
         // Initialize the consensus store.
-        let store = match ConsensusStore::<N, C>::open(storage_mode) {
-            Ok(store) => store,
-            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
-        };
+        let store = ConsensusStore::<N, C>::open_with_authority_retention(storage_mode, options.authority_retention)
+            .map_err(store_open_error)?;
         timing_event!("Load consensus store");
 
         // Initialize a new VM.
@@ -346,7 +379,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // genesis round when storage is empty) and build the committee now,
         // before the `InnerLedger` is constructed.
         #[cfg(feature = "dev-committee")]
-        let dev_committee = match dev_committee_opts {
+        let dev_committee = match options.dev_committee {
             Some(opts) => {
                 let start_round = if let Some(round) = opts.start_round {
                     round

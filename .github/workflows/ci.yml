@@ -374,6 +374,7 @@ jobs:
           - name: ledger-merge
             runs: |
               nextest run -p snarkvm-ledger --features test --run-ignored all -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
+              nextest run -p snarkvm-ledger --features test,rocks -E test(/^tests::test_pruned_authority_/)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
               nextest run -p snarkvm-ledger --features dev_genesis_state_root,test -E test(test_load_dev_genesis_state_root)

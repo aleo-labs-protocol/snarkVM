@@ -178,9 +178,6 @@ workspace = true
 [dependencies.anyhow]
 workspace = true
 
-[dependencies.cfg-if]
-workspace = true
-
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]

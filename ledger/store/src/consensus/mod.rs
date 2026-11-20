@@ -43,7 +43,16 @@ pub trait ConsensusStorage<N: Network>: crate::sealed::Sealed + 'static + Clone 
     type TransitionStorage: TransitionStorage<N>;
 
     /// Initializes the consensus storage.
-    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        Self::open_with_authority_retention(storage, None)
+    }
+
+    /// Initializes the consensus storage, pruning authority data older than `authority_retention`
+    /// blocks if it is set. See [`BlockStore::open_with_authority_retention`].
+    fn open_with_authority_retention<S: Into<StorageMode>>(
+        storage: S,
+        authority_retention: Option<u32>,
+    ) -> Result<Self>;
 
     /// Returns the finalize storage.
     fn finalize_store(&self) -> &FinalizeStore<N, Self::FinalizeStorage>;
@@ -118,8 +127,17 @@ pub struct ConsensusStore<N: Network, C: ConsensusStorage<N>> {
 impl<N: Network, C: ConsensusStorage<N>> ConsensusStore<N, C> {
     /// Initializes the consensus store.
     pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        Self::open_with_authority_retention(storage, None)
+    }
+
+    /// Initializes the consensus store, pruning authority data older than `authority_retention` blocks
+    /// if it is set.
+    pub fn open_with_authority_retention<S: Into<StorageMode>>(
+        storage: S,
+        authority_retention: Option<u32>,
+    ) -> Result<Self> {
         // Initialize the consensus storage.
-        let storage = C::open(storage.into())?;
+        let storage = C::open_with_authority_retention(storage, authority_retention)?;
         // Return the consensus store.
         Ok(Self { storage, _phantom: PhantomData })
     }

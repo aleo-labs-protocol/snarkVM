@@ -88,6 +88,7 @@ pub enum BlockMap {
     RejectedOrAbortedTransactionID = DataID::BlockRejectedOrAbortedTransactionIDMap as u16,
     ConfirmedTransactions = DataID::BlockConfirmedTransactionsMap as u16,
     RejectedDeploymentOrExecution = DataID::BlockRejectedDeploymentOrExecutionMap as u16,
+    Metadata = DataID::BlockMetadataMap as u16,
 }
 
 /// The RocksDB map prefix for committee-related entries.
@@ -222,7 +223,8 @@ pub enum ProgramMap {
 
 /// The RocksDB map prefix for storage metadata.
 ///
-/// One map holds the well-known metadata keys, so later metadata does not need another `DataID`.
+/// Schema-level metadata (the storage version and migration state) lives here. Block-store state
+/// that must share the block store's atomic batches lives in `BlockMap::Metadata` instead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum MetadataMap {
@@ -358,6 +360,9 @@ enum DataID {
 
     // Storage metadata: the schema version and the history sync cursor.
     StorageMetadataMap,
+
+    // Block-store metadata that shares the block store's atomic batches.
+    BlockMetadataMap,
 
     // Testing
     #[cfg(test)]

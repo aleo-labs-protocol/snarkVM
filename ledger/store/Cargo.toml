@@ -37,6 +37,7 @@ wasm = [
   "snarkvm-ledger-puzzle/wasm",
   "snarkvm-ledger-committee/wasm",
   "snarkvm-ledger-narwhal-batch-certificate/wasm",
+  "snarkvm-ledger-narwhal-batch-header/wasm",
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
@@ -59,6 +60,9 @@ workspace = true
 workspace = true
 
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
+workspace = true
+
+[dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 
 [dependencies.snarkvm-ledger-puzzle]
@@ -115,6 +119,10 @@ optional = true
 
 [dependencies.tracing]
 workspace = true
+
+[dev-dependencies.snarkvm-ledger-authority]
+workspace = true
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
