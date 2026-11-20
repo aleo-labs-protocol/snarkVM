@@ -1235,7 +1235,7 @@ constructor:
         let Err(error) = Stack::new(&process, &program("dangling_local.aleo/missing.future")?) else {
             bail!("Expected `Stack::new` to reject the program")
         };
-        assert_eq!(format!("{error:#}"), "Function 'dangling_local.aleo/missing' is not defined.");
+        assert_eq!(error.root_cause().to_string(), "Function 'dangling_local.aleo/missing' is not defined.");
         Ok(())
     }
 
@@ -1272,7 +1272,7 @@ constructor:
         let Err(error) = Stack::new(&process, &program("credits.aleo/missing.future")?) else {
             bail!("Expected `Stack::new` to reject the program")
         };
-        assert_eq!(format!("{error:#}"), "Function 'credits.aleo/missing' is not defined.");
+        assert_eq!(error.root_cause().to_string(), "Function 'credits.aleo/missing' is not defined.");
         Ok(())
     }
 }

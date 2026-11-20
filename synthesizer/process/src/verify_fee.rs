@@ -360,7 +360,6 @@ mod tests {
     fn test_verify_fee_rejects_undefined_function() -> Result<()> {
         let fee = sample_proofless_fee("fee_missing", vec![], vec![])?;
 
-        // Construct a new process.
         let process = Process::load()?;
 
         // The function lookup rejects the fee before the fee-shape and proof checks.
@@ -407,7 +406,6 @@ mod tests {
             ),
         ];
 
-        // Construct a new process.
         let process = Process::load()?;
 
         for (function_name, inputs, outputs, expected) in cases {
@@ -418,6 +416,35 @@ mod tests {
                 bail!("Expected `verify_fee` to reject the fee with '{expected}'")
             };
             assert_eq!(error.to_string(), expected);
+        }
+        Ok(())
+    }
+
+    /// A `fee_public` or `fee_private` transition with the wrong number of inputs or outputs fails the fee-shape check.
+    /// `is_fee_public` and `is_fee_private` fix the counts, so such a fee never reaches the input and output count checks.
+    #[test]
+    fn test_verify_fee_rejects_wrong_counts() -> Result<()> {
+        let public = || Input::Public(Field::zero(), None);
+        let record = || Input::Record(Field::zero(), Field::zero());
+        let future = || Output::Future(Field::zero(), None);
+        let record_output = || Output::Record(Field::zero(), Field::zero(), None, None);
+        let cases = [
+            ("fee_public", vec![public(), public()], vec![future()]),
+            ("fee_public", vec![public(), public(), public()], vec![]),
+            ("fee_private", vec![record(), public(), public()], vec![record_output()]),
+            ("fee_private", vec![record(), public(), public(), public()], vec![]),
+        ];
+
+        let process = Process::load()?;
+
+        for (function_name, inputs, outputs) in cases {
+            let fee = sample_proofless_fee(function_name, inputs, outputs)?;
+            let Err(error) =
+                process.verify_fee(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &fee, Field::zero())
+            else {
+                bail!("Expected `verify_fee` to reject the '{function_name}' fee")
+            };
+            assert_eq!(error.to_string(), "Incorrect program ID or function name for fee transition");
         }
         Ok(())
     }
