@@ -1,0 +1,32 @@
+# Circuit shape of `is_equal` for each operand mode and a fixed set of addresses.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-address --test snapshots
+address.constant address.constant | * : 2 0 0 0 0/0/0 constant e3b0c44298fc1c14
+address.constant address.public | zero _ : 0 0 5 5 8/8/3 private d29b7e9b842729f4
+address.constant address.public | generator _ : 0 0 5 5 10/8/3 private 0059f42961f7fa4d
+address.constant address.public | sampled-1 _ : 0 0 5 5 10/8/3 private 46fd389f22fa19f2
+address.constant address.public | sampled-2 _ : 0 0 5 5 10/8/3 private 7420233d044cbe4f
+address.constant address.private | zero _ : 0 0 5 5 8/8/3 private 2a6fc469d808e7c3
+address.constant address.private | generator _ : 0 0 5 5 10/8/3 private a010dd1b80181faa
+address.constant address.private | sampled-1 _ : 0 0 5 5 10/8/3 private e7e9d2766986da08
+address.constant address.private | sampled-2 _ : 0 0 5 5 10/8/3 private e1837733bd08f799
+address.public address.constant | _ zero : 0 0 5 5 8/8/3 private fde4b667c56120be
+address.public address.constant | _ generator : 0 0 5 5 10/8/3 private 9cdb02f8c5329d2a
+address.public address.constant | _ sampled-1 : 0 0 5 5 10/8/3 private 554db8602a553dcb
+address.public address.constant | _ sampled-2 : 0 0 5 5 10/8/3 private 0584d4ace9dfa422
+address.public address.public | _ _ : 0 0 5 5 10/8/3 private 73c654183da65621
+address.public address.private | _ _ : 0 0 5 5 10/8/3 private 41469f075487fd15
+address.private address.constant | _ zero : 0 0 5 5 8/8/3 private d5e19b41f3e223ee
+address.private address.constant | _ generator : 0 0 5 5 10/8/3 private 11b8200b18ca56a9
+address.private address.constant | _ sampled-1 : 0 0 5 5 10/8/3 private 3b991a3889640491
+address.private address.constant | _ sampled-2 : 0 0 5 5 10/8/3 private 4a2604f6bd7c0e45
+address.private address.public | _ _ : 0 0 5 5 10/8/3 private 7a2b6a2f8d288e7d
+address.private address.private | _ _ : 0 0 5 5 10/8/3 private 809c5b25160d3eeb

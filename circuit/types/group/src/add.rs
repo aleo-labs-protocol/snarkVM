@@ -109,40 +109,6 @@ impl<E: Environment> AddAssign<&Self> for Group<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Add<Group<E>, Output = Group<E>>> for Group<E> {
-    /// `(mode of self, mode of other, self is zero, other is zero)`.
-    type Case = (Mode, Mode, bool, bool);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1, case.2, case.3) {
-            // A constant zero operand: `add` returns the other operand.
-            (Mode::Constant, _, true, _) | (_, Mode::Constant, _, true) => Count::is(0, 0, 0, 0),
-            // Both constant: the sum is a new constant.
-            (Mode::Constant, Mode::Constant, _, _) => Count::less_than(4, 0, 0, 0),
-            // One constant operand: the products with it need no constraints.
-            (Mode::Constant, _, _, _) | (_, Mode::Constant, _, _) => Count::is(2, 0, 3, 3),
-            // Both variable.
-            (_, _, _, _) => Count::is(2, 0, 6, 6),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Add<Group<E>, Output = Group<E>>> for Group<E> {
-    /// `(mode of self, mode of other, self is zero, other is zero)`.
-    type Case = (Mode, Mode, bool, bool);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1, case.2, case.3) {
-            // A constant zero operand: `add` returns the other operand.
-            (Mode::Constant, mode_b, true, _) => mode_b,
-            (mode_a, Mode::Constant, _, true) => mode_a,
-            (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
-            // Otherwise, `add` witnesses a new point.
-            (_, _, _, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,9 +125,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a + b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            let case = (a.eject_mode(), b.eject_mode(), a.eject_value().is_zero(), b.eject_value().is_zero());
-            assert_count!(Add(Group, Group) => Group, &case);
-            assert_output_mode!(Add(Group, Group) => Group, &case, candidate);
+            assert_scope!();
         });
     }
 
@@ -175,9 +139,7 @@ mod tests {
             let mut candidate = a.clone();
             candidate += b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            let case = (a.eject_mode(), b.eject_mode(), a.eject_value().is_zero(), b.eject_value().is_zero());
-            assert_count!(Add(Group, Group) => Group, &case);
-            assert_output_mode!(Add(Group, Group) => Group, &case, candidate);
+            assert_scope!();
         });
     }
 

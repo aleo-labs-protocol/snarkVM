@@ -31,6 +31,8 @@ required-features = [ "setup" ]
 
 [features]
 default = [ "indexmap/rayon", "rayon" ]
+# Enables nothing; `rayon` is a required dependency.
+rayon = [ ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 locktick = [ "dep:locktick", "snarkvm-algorithms/locktick" ]
 serial = [ "snarkvm-console/serial", "snarkvm-algorithms/serial" ]
@@ -76,7 +78,6 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true

@@ -24,22 +24,6 @@ impl<E: Environment> FromBoolean for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn FromBoolean<Boolean = Boolean<E>>> for Field<E> {
-    type Case = ();
-
-    fn count(_case: &Self::Case) -> Count {
-        Count::is(0, 0, 0, 0)
-    }
-}
-
-impl<E: Environment> OutputMode<dyn FromBoolean<Boolean = Boolean<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        *case
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,8 +44,7 @@ mod tests {
                         assert_eq!(console::Field::<<Circuit as Environment>::Network>::zero(), candidate.eject_value())
                     }
                 }
-                assert_count!(FromBoolean(Boolean) => Field, &());
-                assert_output_mode!(FromBoolean(Boolean) => Field, &mode, candidate);
+                assert_scope!();
             });
         }
     }

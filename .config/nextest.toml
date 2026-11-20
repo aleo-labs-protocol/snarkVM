@@ -5,3 +5,10 @@ status-level = "fail"
 
 [profile.ci.junit]
 path = "junit.xml"
+
+# Each test in a `snapshots` test target runs its jobs on `WORKERS` threads in
+# `circuit/environment/src/helpers/snapshot.rs`.
+# Keep the two equal. Other profiles apply these overrides after their own.
+[[profile.default.overrides]]
+filter = 'binary(snapshots)'
+threads-required = 8

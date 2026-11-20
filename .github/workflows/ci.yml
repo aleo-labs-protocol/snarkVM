@@ -404,6 +404,35 @@ jobs:
     name: test-merge
     steps: *test-steps
 
+  # Each crate alone, with no features and with each feature on its own. The
+  # workspace builds in `lint` unify features across crates, so they miss a
+  # feature that does not enable what its code uses, and they never build the
+  # side of a `cfg(not(feature = ...))` that a unified feature turns off.
+  # `lint` builds `cuda` with `--all-features`. `no-embedded-srs` is a
+  # `compile_error!` without `filesystem` or `wasm`. `dev_skip_checks` is a
+  # `compile_error!` without `test_consensus_heights`. Each `rayon` feature is
+  # empty, so its build repeats the crate's build with no features. Too slow
+  # for every pull request, so on every push, on pull requests to a release
+  # branch, and on demand.
+  each-feature:
+    needs: [check-shared-refs, start-cpu-runners]
+    runs-on: [self-hosted, linux, x64, cpu]
+    timeout-minutes: 90
+    if: >-
+      !cancelled() && needs.check-shared-refs.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      github.repository == 'aleo-labs-protocol/snarkVM' &&
+      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with: { tool: cargo-hack@0.6.46 }
+      # No `--no-dev-deps`: it rewrites the manifests, which breaks `--locked`.
+      - run: cargo hack clippy --workspace --each-feature --exclude-features cuda,no-embedded-srs,dev_skip_checks,rayon --locked -- -D warnings
+
   # Suites that take too long for every push. On a release branch, on pull
   # requests to one, and on demand.
   test-release:
@@ -519,7 +548,7 @@ jobs:
   # release branch, where it is not meant to run.
   ci-ok:
     if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, test-release-arm, machete, windows]
+    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -529,4 +558,4 @@ jobs:
             startsWith(github.ref, 'refs/heads/release/') ||
             startsWith(github.base_ref, 'release/') }}
         run: |
-          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "each-feature", "test-release", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"

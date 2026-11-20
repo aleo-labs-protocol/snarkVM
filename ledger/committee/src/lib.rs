@@ -23,7 +23,7 @@ mod serialize;
 mod string;
 mod to_id;
 
-#[cfg(any(test, feature = "prop-tests"))]
+#[cfg(any(test, feature = "test-helpers"))]
 pub mod prop_tests;
 
 use console::{

@@ -92,21 +92,23 @@ impl<N: Network> TypeName for Signature<N> {
 
 impl<N: Network> Signature<N> {
     /// Initializes a `zero` signature.
-    #[cfg(any(test, feature = "test"))]
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn zero() -> Self {
         Self::from((
             Scalar::zero(),
             Scalar::zero(),
+            // `ComputeKey::try_from` accepts any group pair: Poseidon `hash_to_scalar` always returns `Ok`.
             ComputeKey::try_from((crate::Group::zero(), crate::Group::zero())).unwrap(),
         ))
     }
 
     /// Initializes a "random" signature.
-    #[cfg(any(test, feature = "test"))]
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn rand<R: Rng>(rng: &mut R) -> Self {
         Self::from((
             Scalar::rand(rng),
             Scalar::rand(rng),
+            // `ComputeKey::try_from` accepts any group pair: Poseidon `hash_to_scalar` always returns `Ok`.
             ComputeKey::try_from((crate::Group::rand(rng), crate::Group::rand(rng))).unwrap(),
         ))
     }

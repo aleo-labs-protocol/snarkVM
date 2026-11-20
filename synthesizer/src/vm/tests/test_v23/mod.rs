@@ -13,20 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Count, Mode};
+// Tests on static calls to functions with constant outputs.
+mod static_call_constant_output;
 
-/// Trait for determining the number of constants, public input, private inputs, and constraints for an operation.
-pub trait Metrics<Op: ?Sized> {
-    type Case: ?Sized;
-
-    /// Returns the number of constants, public inputs, private inputs, and constraints.
-    fn count(parameter: &Self::Case) -> Count;
-}
-
-/// Trait for determining the mode of the output of an operation.
-pub trait OutputMode<Op: ?Sized> {
-    type Case: ?Sized;
-
-    /// Returns the mode of the output.
-    fn output_mode(input: &Self::Case) -> Mode;
-}
+use super::*;

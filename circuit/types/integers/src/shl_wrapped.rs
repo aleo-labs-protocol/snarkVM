@@ -84,87 +84,6 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlWrapped<Integer<E, M>> for
     }
 }
 
-impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlWrapped<Integer<E, M>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
-    type Case = (Mode, Mode, bool, bool);
-
-    fn count(case: &Self::Case) -> Count {
-        // A quick hack that matches `(u8 -> 0, u16 -> 1, u32 -> 2, u64 -> 3, u128 -> 4)`.
-        let index = |num_bits: u64| match [8, 16, 32, 64, 128].iter().position(|&bits| bits == num_bits) {
-            Some(index) => index as u64,
-            None => E::halt(format!("Integer of {num_bits} bits is not supported")),
-        };
-
-        // `2 * I::BITS < size_in_data_bits` holds for integers of up to 64 bits.
-        // `shl_wrapped` shifts those inside one field element. At 128 bits, it multiplies `self` by `2^rhs`.
-        match (case.0, case.1, case.2, case.3) {
-            // Both constant: the output is a new constant.
-            (Mode::Constant, Mode::Constant, _, _) => Count::is(I::BITS, 0, 0, 0),
-            // Constant `rhs`: the output is the bits of `self` behind constant zero bits.
-            (_, Mode::Constant, _, _) => Count::less_than(2 * I::BITS + 3, 0, 0, 0),
-            // Constant zero `self`: the output is a constant zero.
-            // At 128 bits, computing `2^rhs` still allocates variables.
-            (Mode::Constant, _, true, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
-                true => Count::is((2 * I::BITS) + index(I::BITS) + 3, 0, 0, 0),
-                false => Count::is(
-                    I::BITS + (I::BITS / 2) + 1,
-                    0,
-                    I::BITS + (2 * index(I::BITS)) + 4,
-                    I::BITS + (2 * index(I::BITS)) + 5,
-                ),
-            },
-            // Other constant `self`: up to 64 bits, the count depends on the value of `self`.
-            (Mode::Constant, _, false, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
-                true => Count::less_than(
-                    (2 * I::BITS) + index(I::BITS) + 3,
-                    0,
-                    (2 * I::BITS) + index(I::BITS) + 2,
-                    (2 * I::BITS) + index(I::BITS) + 3,
-                ),
-                false => Count::is(
-                    0,
-                    0,
-                    (2 * I::BITS) + (I::BITS / 2) + (2 * index(I::BITS)) + 5,
-                    (2 * I::BITS) + (I::BITS / 2) + (2 * index(I::BITS)) + 7,
-                ),
-            },
-            // Variable `self` and `rhs`.
-            (_, _, _, _) => match 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
-                true => Count::is(
-                    3 + index(I::BITS),
-                    0,
-                    (2 * I::BITS) + index(I::BITS) + 3,
-                    (2 * I::BITS) + index(I::BITS) + 4,
-                ),
-                false => Count::is(
-                    0,
-                    0,
-                    (2 * I::BITS) + (I::BITS / 2) + (2 * index(I::BITS)) + 8,
-                    (2 * I::BITS) + (I::BITS / 2) + (2 * index(I::BITS)) + 10,
-                ),
-            },
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn ShlWrapped<Integer<E, M>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`. `rhs is zero` is unused.
-    type Case = (Mode, Mode, bool, bool);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1, case.2, case.3) {
-            (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
-            (Mode::Constant, _, true, _) => Mode::Constant,
-            (mode_a, Mode::Constant, _, _) => mode_a,
-            (_, _, _, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,14 +103,11 @@ mod tests {
         let expected = first.wrapping_shl(second.to_u32().unwrap());
         let a = Integer::<Circuit, I>::new(mode_a, first);
         let b = Integer::<Circuit, M>::new(mode_b, second);
-        let a_is_zero = a.is_zero().eject_value();
-        let b_is_zero = b.is_zero().eject_value();
         Circuit::scope(name, || {
             let candidate = a.shl_wrapped(&b);
             assert_eq!(expected, *candidate.eject_value());
             assert_eq!(console::Integer::new(expected), candidate.eject_value());
-            assert_count!(ShlWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
-            assert_output_mode!(ShlWrapped(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero), candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

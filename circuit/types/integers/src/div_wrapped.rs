@@ -87,43 +87,6 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn DivWrapped<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (Mode::Constant, _) | (_, Mode::Constant) => {
-                match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
-                    (true, true) => Count::less_than(5 * I::BITS + 1, 0, (9 * I::BITS) + 6, (9 * I::BITS) + 12),
-                    (true, false) => Count::less_than(6 * I::BITS + 1, 0, 1481, 1491),
-                    (false, true) => Count::less_than(2 * I::BITS + 1, 0, (3 * I::BITS) + 2, (3 * I::BITS) + 5),
-                    (false, false) => Count::less_than(2 * I::BITS + 1, 0, 839, 839),
-                }
-            }
-            (_, _) => match (I::is_signed(), 2 * I::BITS < E::BaseField::size_in_data_bits() as u64) {
-                (true, true) => Count::is(4 * I::BITS, 0, (9 * I::BITS) + 6, (9 * I::BITS) + 12),
-                (true, false) => Count::is(4 * I::BITS, 0, 1481, 1491),
-                (false, true) => Count::is(I::BITS, 0, (3 * I::BITS) + 2, (3 * I::BITS) + 5),
-                (false, false) => Count::less_than(2 * I::BITS, 0, 839, 839),
-            },
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn DivWrapped<Integer<E, I>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,7 +112,7 @@ mod tests {
                 Mode::Constant => check_operation_halts(&a, &b, Integer::div_wrapped),
                 _ => Circuit::scope(name, || {
                     let _candidate = a.div_wrapped(&b);
-                    assert_count_fails!(DivWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
+                    assert_scope_fails!();
                 }),
             }
         } else {
@@ -158,8 +121,7 @@ mod tests {
                 let candidate = a.div_wrapped(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                assert_count!(DivWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                assert_output_mode!(DivWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
+                assert_scope!();
             })
         }
         Circuit::reset();
