@@ -69,3 +69,9 @@ workspace = true
 [dev-dependencies.snarkvm-console-network]
 workspace = true
 features = [ "test-helpers" ]
+
+# Minor releases add variants to `Literal`, `Value`, `LiteralType`, `PlaintextType`, `ValueType`,
+# `RegisterType`, and `FinalizeType`; see their documentation. The setting covers every public enum
+# of this crate, including enums that are not expected to gain variants.
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_added = "allow"

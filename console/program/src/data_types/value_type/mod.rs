@@ -22,6 +22,9 @@ use snarkvm_console_network::prelude::*;
 
 pub type Variant = u8;
 
+/// Minor releases add variants to this enum, and snarkVM does not treat this as a breaking change.
+/// An exhaustive match must be updated for each new variant, so that each new variant is handled
+/// explicitly.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum ValueType<N: Network> {
     /// A constant type.
