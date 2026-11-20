@@ -58,7 +58,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-algorithms]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-circuit]
 path = "../../circuit"

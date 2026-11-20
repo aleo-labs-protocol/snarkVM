@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(any(test, feature = "test-helpers"))]
 mod varuna {
     use crate::{
         snark::varuna::{
@@ -581,7 +581,7 @@ mod varuna {
     }
 }
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(any(test, feature = "test-helpers"))]
 mod varuna_hiding {
     use crate::{
         crypto_hash::PoseidonSponge,
