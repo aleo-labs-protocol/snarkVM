@@ -84,21 +84,29 @@ fn lower_values(k: usize) -> Vec<(Console, String)> {
     dedup_and_sort(candidates)
 }
 
-/// Returns 0, 1, -1, the least nonzero value with zero lower `n-k` bits if `k` is positive, and the greatest one,
-/// with their labels.
+/// Returns the greatest value with zero lower `n-k` bits, which is `p-1` with those bits cleared, with its label.
 ///
-/// `n` is the size of a field element. The greatest value is `p-1` with its lower `n-k` bits cleared.
-fn upper_values(k: usize) -> Vec<(Console, String)> {
+/// `n` is the size of a field element.
+fn greatest_upper_value(k: usize) -> (Console, String) {
     let shift = Console::SIZE_IN_BITS.saturating_sub(k);
     let mut bits_le = (-Console::one()).to_bits_le();
     bits_le[..shift].fill(false);
     // Note: `expect` is safe as the bits are at most the bits of `p-1`.
     let greatest = Console::from_bits_le(&bits_le).expect("the bits are less than the modulus");
+    (greatest, format!("(p-1)>>{shift}<<{shift}"))
+}
+
+/// Returns 0, 1, -1, the least nonzero value with zero lower `n-k` bits if `k` is positive, and the greatest one,
+/// with their labels.
+///
+/// `n` is the size of a field element.
+fn upper_values(k: usize) -> Vec<(Console, String)> {
+    let shift = Console::SIZE_IN_BITS.saturating_sub(k);
     let mut candidates = vec![
         (Console::zero(), "0".to_string()),
         (Console::one(), "1".to_string()),
         (-Console::one(), "-1".to_string()),
-        (greatest, format!("(p-1)>>{shift}<<{shift}")),
+        greatest_upper_value(k),
     ];
     if shift < Console::SIZE_IN_BITS {
         candidates.push((power(shift), format!("2^{shift}")));
@@ -311,6 +319,21 @@ bit_count_snapshot!(to_lower_bits_le, [0, 8, 16, 32, 64, 128, 251, 252, 253, 254
 bit_count_snapshot!(to_lower_bits_be, [0, 8, 16, 32, 64, 128, 251, 252, 253, 254], lower_values, lower_bits_be);
 bit_count_snapshot!(to_upper_bits_le, [0, 1, 9, 17, 33, 65, 129, 251, 252, 253, 254], upper_values, upper_bits_le);
 bit_count_snapshot!(to_upper_bits_be, [0, 1, 9, 17, 33, 65, 129, 251, 252, 253, 254], upper_values, upper_bits_be);
+
+/// Covers `to_upper_bits_be` of the greatest value for each bit count `k` from 1 to the size of a field element.
+/// The cost of the range check depends on the bits of `p-1` that `k` keeps.
+#[test]
+fn to_upper_bits_be_greatest() {
+    fn cases(modes: [Mode; 1]) -> Vec<Case> {
+        let operation = |a: &Field<Circuit>, k| a.to_upper_bits_be(k);
+        (1..=Console::SIZE_IN_BITS)
+            .flat_map(|k| bit_count_cases(k, operation, upper_bits_be, |k| vec![greatest_upper_value(k)], modes))
+            .collect()
+    }
+    let jobs = mode_jobs(Console::SIZE_IN_BITS as u64, cases);
+    assert_snapshot(&FILES, "to_upper_bits_be_greatest", run_parallel(jobs));
+}
+
 from_bits_snapshot!(from_bits_le, [8, 252, 253, 254], |bits| bits);
 from_bits_snapshot!(from_bits_be, [8, 252, 253, 254], reversed);
 
