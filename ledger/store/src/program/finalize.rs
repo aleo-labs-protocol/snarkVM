@@ -603,8 +603,6 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     history_programs: Arc<RwLock<Vec<ProgramID<N>>>>,
     /// Whether canonical finalize retains mapping history for every program.
     archival: Arc<AtomicBool>,
-    /// Whether an explicit configuration change may start or close indexed ranges.
-    allow_history_configuration_change: Arc<AtomicBool>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -623,7 +621,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             record_history_json: Arc::new(AtomicBool::new(false)),
             history_programs: Arc::new(RwLock::new(Vec::new())),
             archival: Arc::new(AtomicBool::new(false)),
-            allow_history_configuration_change: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -652,23 +649,59 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.archival.store(enabled, Ordering::SeqCst);
     }
 
-    /// Configures recording against persisted metadata. `allow_change` permits a coverage boundary.
-    pub fn configure_history(&self, programs: Vec<ProgramID<N>>, archival: bool, allow_change: bool) -> Result<()> {
+    /// Configures program history recording and returns any coverage warning.
+    pub fn configure_history(&self, programs: Vec<ProgramID<N>>, archival: bool) -> Result<Option<String>> {
         let selected: Vec<_> =
             if archival { Vec::new() } else { programs.iter().copied().collect::<IndexSet<_>>().into_iter().collect() };
-        if let Some(metadata) = self.storage.history_metadata_map().get_confirmed(&HISTORY_METADATA_KEY)? {
-            ensure!(
-                allow_change
-                    || (metadata.0 == archival
-                        && metadata.1.len() == selected.len()
-                        && metadata.1.iter().all(|program| selected.contains(program))),
-                "Program history configuration changed; restore the previous mode or explicitly override it"
-            );
-        }
+        let warning = if let Some(metadata) =
+            self.storage.history_metadata_map().get_confirmed(&HISTORY_METADATA_KEY)?
+        {
+            let changed = metadata.0 != archival
+                || metadata.1.len() != selected.len()
+                || !metadata.1.iter().all(|program| selected.contains(program));
+            if changed {
+                let old_mode = if metadata.0 {
+                    "all programs".to_string()
+                } else if metadata.1.is_empty() {
+                    "off".to_string()
+                } else {
+                    format!(
+                        "selected programs: {}",
+                        metadata.1.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+                    )
+                };
+                let previous = if old_mode == "off" {
+                    old_mode
+                } else {
+                    format!("{old_mode}; latest indexed block {}", metadata.2)
+                };
+                let new_mode = if archival {
+                    "all programs".to_string()
+                } else if selected.is_empty() {
+                    "off".to_string()
+                } else {
+                    format!(
+                        "selected programs: {}",
+                        selected.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+                    )
+                };
+                Some(format!(
+                    "Mapping history settings changed. Previous coverage: {previous}. New coverage: {new_mode} from the next imported block. Existing ranges remain available; missing blocks will not be backfilled."
+                ))
+            } else {
+                None
+            }
+        } else if archival || !selected.is_empty() {
+            Some(
+                "Mapping history recording starts with the next imported block. Earlier blocks will not be backfilled."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
         self.set_history_programs(selected);
         self.set_archival(archival);
-        self.allow_history_configuration_change.store(allow_change, Ordering::SeqCst);
-        Ok(())
+        Ok(warning)
     }
 
     /// Queues program history in the current canonical finalize batch.
@@ -685,10 +718,15 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
                 || metadata.1.len() != selected.len()
                 || !metadata.1.iter().all(|program| selected.contains(program))
         });
-        ensure!(
-            self.allow_history_configuration_change.load(Ordering::SeqCst) || !mode_changed,
-            "Program history configuration changed; restore the previous mode or explicitly override it"
-        );
+        if (archival || !selected.is_empty())
+            && let Some(metadata) = metadata.as_ref()
+            && let Some(first_missing) = metadata.2.checked_add(1).filter(|next| *next < height)
+        {
+            tracing::warn!(
+                "Mapping history gap: blocks {first_missing} through {} have no recorded history. New coverage starts at block {height}; missing blocks will not be backfilled.",
+                height.saturating_sub(1)
+            );
+        }
         let continuing_archival = archival
             && metadata.as_ref().is_some_and(|metadata| metadata.0 && metadata.2.checked_add(1) == Some(height));
         let programs: IndexSet<_> = if archival {
@@ -2045,7 +2083,7 @@ mod tests {
         for height in 0..25 {
             let recorded = !(10..15).contains(&height);
             finalize_store
-                .configure_history(if recorded { vec![program_id] } else { vec![] }, false, true)
+                .configure_history(if recorded { vec![program_id] } else { vec![] }, false)
                 .expect("The test explicitly changes history coverage");
             finalize_random_history_block(&finalize_store, height, &mappings, &keys, rng);
             snapshots.insert(height, snapshot_mappings(&finalize_store, &mappings));
@@ -2084,7 +2122,7 @@ mod tests {
     }
 
     #[test]
-    fn test_history_configuration_change_requires_override() -> Result<()> {
+    fn test_history_configuration_change_preserves_coverage() -> Result<()> {
         let finalize_store = sample_memory_finalize_store();
         let program_id = ProgramID::from_str("hello.aleo")?;
         finalize_store.set_history_programs(vec![program_id]);
@@ -2093,9 +2131,12 @@ mod tests {
         finalize_store.finish_atomic()?;
 
         let reopened = FinalizeStore::from(finalize_store.storage.clone())?;
+        let warning = reopened.configure_history(Vec::new(), false)?;
+        assert!(warning.as_deref().is_some_and(|message| message.contains("New coverage: off")));
         reopened.start_atomic();
-        assert!(reopened.record_program_history(1).is_err());
-        reopened.abort_atomic();
+        reopened.record_program_history(1)?;
+        reopened.finish_atomic()?;
+        assert_eq!(reopened.get_program_history_range(&program_id, 0)?, Some((0, 0)));
         assert_eq!(reopened.get_program_history_range(&program_id, 1)?, None);
         Ok(())
     }
@@ -2105,27 +2146,32 @@ mod tests {
     fn test_history_configuration_persists_rocksdb() -> Result<()> {
         let finalize_store = sample_rocksdb_finalize_store();
         let program_id = ProgramID::from_str("hello.aleo")?;
-        finalize_store.configure_history(vec![program_id], false, false)?;
+        finalize_store.configure_history(vec![program_id], false)?;
         finalize_store.start_atomic();
         finalize_store.record_program_history(0)?;
         finalize_store.finish_atomic()?;
 
         let reopened = FinalizeStore::from(finalize_store.storage.clone())?;
-        assert!(reopened.configure_history(Vec::new(), false, false).is_err());
-        reopened.configure_history(vec![program_id], false, false)?;
+        let warning = reopened.configure_history(Vec::new(), false)?;
+        assert!(warning.as_deref().is_some_and(|message| message.contains("New coverage: off")));
         reopened.start_atomic();
         reopened.record_program_history(1)?;
         reopened.finish_atomic()?;
-        assert_eq!(reopened.get_program_history_range(&program_id, 1)?, Some((0, 1)));
+        reopened.configure_history(vec![program_id], false)?;
+        reopened.start_atomic();
+        reopened.record_program_history(2)?;
+        reopened.finish_atomic()?;
+        assert_eq!(reopened.get_program_history_ranges(&program_id)?, vec![(0, 0), (2, 2)]);
+        assert_eq!(reopened.get_program_history_range(&program_id, 1)?, None);
         Ok(())
     }
 
     #[test]
-    fn test_archival_override_closes_and_restarts_coverage() -> Result<()> {
+    fn test_archival_mode_change_closes_and_restarts_coverage() -> Result<()> {
         let finalize_store = sample_memory_finalize_store();
         let program_id = ProgramID::from_str("hello.aleo")?;
         let mapping = Identifier::from_str("records")?;
-        finalize_store.configure_history(Vec::new(), true, false)?;
+        finalize_store.configure_history(Vec::new(), true)?;
 
         finalize_store.start_atomic();
         finalize_store.initialize_mapping(program_id, mapping)?;
@@ -2136,15 +2182,14 @@ mod tests {
         finalize_store.record_program_history(1)?;
         finalize_store.finish_atomic()?;
 
-        assert!(finalize_store.configure_history(Vec::new(), false, false).is_err());
-        finalize_store.configure_history(Vec::new(), false, true)?;
+        finalize_store.configure_history(Vec::new(), false)?;
         finalize_store.start_atomic();
         finalize_store.record_program_history(2)?;
         finalize_store.finish_atomic()?;
         assert_eq!(finalize_store.get_program_history_ranges(&program_id)?, vec![(0, 1)]);
         assert_eq!(finalize_store.get_program_history_range(&program_id, 2)?, None);
 
-        finalize_store.configure_history(Vec::new(), true, true)?;
+        finalize_store.configure_history(Vec::new(), true)?;
         finalize_store.start_atomic();
         finalize_store.record_program_history(3)?;
         finalize_store.finish_atomic()?;
