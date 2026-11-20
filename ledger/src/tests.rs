@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod pending_blocks;
+
 use crate::{
     Ledger,
     RecordsFilter,
@@ -851,7 +853,7 @@ fn test_aborted_transaction_indexing() {
 #[test]
 fn test_aborted_solution_ids() -> Result<()> {
     let rng = &mut TestRng::default();
-    let mut builder = TestChainBuilder::<CurrentNetwork>::new(rng)?;
+    let mut builder = TestChainBuilder::<CurrentNetwork>::new()?;
     let ledger = builder.instantiate_ledger();
     let private_key = builder.validator_key(0);
     let address = builder.validator_address(0);
@@ -1763,7 +1765,7 @@ function empty_function:
 #[test]
 fn test_abort_fee_transaction() {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
+    let mut chain_builder = TestChainBuilder::new().unwrap();
 
     let private_key = chain_builder.private_keys()[0];
     let address = Address::try_from(&private_key).unwrap();
@@ -2921,7 +2923,7 @@ mod valid_solutions {
     fn test_solution_limits() -> Result<()> {
         let rng = &mut TestRng::default();
         let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
-        let mut chain_builder = TestChainBuilder::new(rng)?;
+        let mut chain_builder = TestChainBuilder::new()?;
 
         let private_key = chain_builder.private_keys()[0];
         let validator_address = Address::try_from(&private_key).unwrap();
@@ -3487,7 +3489,7 @@ mod valid_solutions {
 #[test]
 fn test_forged_block_subdags() -> Result<()> {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new_with_quorum_size(10, rng)?;
+    let mut chain_builder = TestChainBuilder::new()?;
     // Construct 3 quorum blocks.
     let mut quorum_blocks = chain_builder.generate_blocks(3, rng)?;
 
@@ -3606,7 +3608,7 @@ fn test_forged_block_subdags() -> Result<()> {
 #[test]
 fn test_subdag_with_long_branch() -> Result<()> {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new(rng)?;
+    let mut chain_builder = TestChainBuilder::new()?;
 
     let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 4,
@@ -3635,7 +3637,7 @@ fn test_subdag_with_long_branch() -> Result<()> {
 #[test]
 fn test_subdag_with_gc_length() -> Result<()> {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
+    let mut chain_builder = TestChainBuilder::new().unwrap();
 
     let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 2,

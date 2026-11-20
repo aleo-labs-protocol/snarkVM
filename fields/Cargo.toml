@@ -64,6 +64,10 @@ workspace = true
 path = "../curves"
 default-features = false
 
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
 serial = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]

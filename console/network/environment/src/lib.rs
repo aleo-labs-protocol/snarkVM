@@ -111,6 +111,8 @@ pub mod prelude {
 
     pub use snarkvm_curves::{AffineCurve, MontgomeryParameters, ProjectiveCurve, TwistedEdwardsParameters};
     pub use snarkvm_fields::{Field as _, PrimeField as _, SquareRootField as _, Zero as _};
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub use snarkvm_utilities::TestRng;
     pub use snarkvm_utilities::{
         DeserializeExt,
         FromBits as _,
@@ -118,7 +120,6 @@ pub mod prelude {
         FromBytesDeserializer,
         FromBytesUncheckedDeserializer,
         LimitedWriter,
-        TestRng,
         ToBits as _,
         ToBitsRaw as _,
         ToBytes,
@@ -149,8 +150,10 @@ pub mod prelude {
         timing_span,
     };
 
+    #[doc(no_inline)]
     pub use std::io::{Read, Result as IoResult, Write};
 
+    #[doc(no_inline)]
     pub use core::{
         cmp::Ordering,
         fmt::{self, Debug, Display, Formatter},
@@ -185,9 +188,12 @@ pub mod prelude {
         str::{self, FromStr},
     };
 
+    #[doc(no_inline)]
     pub use anyhow::{Error, Result, anyhow, bail, ensure};
     pub use bech32;
+    #[doc(no_inline)]
     pub use itertools::Itertools;
+    #[doc(no_inline)]
     pub use nom::{
         Err,
         branch::alt,
@@ -198,12 +204,15 @@ pub mod prelude {
         multi::{count, many_m_n, many0, many0_count, many1, separated_list0, separated_list1},
         sequence::{delimited, pair, terminated},
     };
+    #[doc(no_inline)]
     pub use num_traits::{AsPrimitive, One, Pow, Zero};
+    #[doc(no_inline)]
     pub use rand::{
         CryptoRng,
         RngExt as Rng,
         distr::{Alphanumeric, Distribution, StandardUniform},
     };
+    #[doc(no_inline)]
     pub use serde::{
         Deserialize,
         Deserializer,

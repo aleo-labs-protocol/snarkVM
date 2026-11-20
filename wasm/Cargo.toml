@@ -94,7 +94,7 @@ version = "0.3.37"
 
 [dev-dependencies.snarkvm-utilities]
 workspace = true
-features = [ "wasm" ]
+features = [ "wasm", "test-helpers" ]
 
 [package.metadata.cargo-machete]
 ignored = [

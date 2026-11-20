@@ -118,7 +118,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-utilities]
 workspace = true
-features = [ "storage" ]
+features = [ "storage", "test-helpers" ]
 
 [dev-dependencies.expect-test]
 workspace = true

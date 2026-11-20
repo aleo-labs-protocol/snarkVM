@@ -25,3 +25,7 @@ workspace = true
 
 [dependencies.snarkvm-circuit-types-scalar]
 workspace = true
+
+[dev-dependencies.snarkvm-circuit-environment]
+workspace = true
+features = [ "test-helpers" ]

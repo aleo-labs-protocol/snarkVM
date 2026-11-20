@@ -109,7 +109,7 @@ pub mod test_helpers {
         has_translation_keys: bool,
         rng: &mut TestRng,
     ) -> Rejected<CurrentNetwork> {
-        // Sample a deployment and the private key of its program owner.
+        // Sample a deployment and the private key that signs its program owner.
         let (deployment, private_key) = crate::transaction::test_helpers::sample_deployment_and_private_key(
             version,
             edition,

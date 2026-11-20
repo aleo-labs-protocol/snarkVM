@@ -57,5 +57,6 @@ pub mod traits {
 
 pub mod prelude {
     pub use crate::modules::*;
+    #[doc(no_inline)]
     pub use snarkvm_circuit_environment::prelude::*;
 }
