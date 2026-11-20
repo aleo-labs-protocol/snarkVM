@@ -63,5 +63,5 @@ dev-print = [
   "snarkvm-console-network?/dev-print",
   "snarkvm-console-program?/dev-print"
 ]
-dev_skip_checks = [ ]
+dev_skip_checks = [ "test_consensus_heights" ]
 test-helpers = [ "snarkvm-console-network/test-helpers" ]
