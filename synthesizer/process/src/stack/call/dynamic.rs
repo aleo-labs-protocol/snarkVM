@@ -720,13 +720,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             A::inject_r1cs(r1cs);
 
             // Restore the caller's synthesis limits, which the ejection cleared, if they hold after calls.
-            if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit, non_zero_limit, true) =
-                registers.call_stack_ref()
-            {
-                A::set_constraint_limit(*constraint_limit);
-                A::set_variable_limit(*variable_limit);
-                A::set_non_zero_limit(*non_zero_limit);
-            }
+            registers.call_stack_ref().set_synthesis_limits::<A>(true);
 
             use circuit::Inject;
 

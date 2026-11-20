@@ -186,6 +186,18 @@ impl<N: Network> CallStack<N> {
 }
 
 impl<N: Network> CallStack<N> {
+    /// In `CheckDeployment` mode, sets the synthesis limits of the current circuit. After a `call`, sets them only if
+    /// the limits hold after calls.
+    pub(crate) fn set_synthesis_limits<A: circuit::Aleo<Network = N>>(&self, after_call: bool) {
+        if let CallStack::CheckDeployment(.., constraint_limit, variable_limit, non_zero_limit, hold_after_calls) = self
+            && (!after_call || *hold_after_calls)
+        {
+            A::set_constraint_limit(*constraint_limit);
+            A::set_variable_limit(*variable_limit);
+            A::set_non_zero_limit(*non_zero_limit);
+        }
+    }
+
     /// Returns a new and independent replica of the call stack.
     pub fn replicate(&self) -> Self {
         match self {

@@ -234,8 +234,8 @@ mod tests {
         bail!("\n\nRemember to #[ignore] this test!\n\n")
     }
 
-    /// Inflates the claimed variable count on the first verifying key of `deployment`.
-    fn with_inflated_variables<N: Network>(deployment: &Deployment<N>, num_variables: u64) -> Deployment<N> {
+    /// Sets the claimed variable count on the first verifying key of `deployment`.
+    fn with_claimed_variables<N: Network>(deployment: &Deployment<N>, num_variables: u64) -> Deployment<N> {
         let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
         let tampered_vks =
             vec![(*function_id, (VerifyingKey::new(Arc::new(vk.deref().clone()), num_variables), certificate.clone()))];
@@ -249,8 +249,8 @@ mod tests {
         .unwrap()
     }
 
-    /// Inflates the claimed constraint count on the first verifying key of `deployment`.
-    fn with_inflated_constraints<N: Network>(deployment: &Deployment<N>, num_constraints: usize) -> Deployment<N> {
+    /// Sets the claimed constraint count on the first verifying key of `deployment`.
+    fn with_claimed_constraints<N: Network>(deployment: &Deployment<N>, num_constraints: usize) -> Deployment<N> {
         let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
         let mut circuit_vk = vk.deref().clone();
         circuit_vk.circuit_info.num_constraints = num_constraints;
@@ -386,12 +386,12 @@ function foo:
         )?;
         let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
 
-        let over_v1_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
-        let over_v2_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
+        let over_v1_variables = with_claimed_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
+        let over_v2_variables = with_claimed_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
         let over_v1_constraints =
-            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1)?);
+            with_claimed_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1)?);
         let over_v2_constraints =
-            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1)?);
+            with_claimed_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1)?);
 
         // V16 enforces the original per-transaction limits.
         assert!(
@@ -441,25 +441,8 @@ function f:
     input r0 as field.private;
     output r0 as field.private;";
 
-    /// Returns a program whose function `foo` makes a `call` of the given kind to `limits_callee.aleo/f`, if any, and
-    /// then hashes eight times.
-    fn program_hashing(call: Option<&str>) -> Result<Program<CurrentNetwork>> {
-        let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name)?.to_field();
-        let (import, first) = match call {
-            None => ("", "add r0 1field into r1;".to_string()),
-            Some("static") => ("import limits_callee.aleo;\n\n", "call limits_callee.aleo/f r0 into r1;".to_string()),
-            Some("dynamic") => (
-                "",
-                format!(
-                    "call.dynamic {} {} {} with r0 (as field.private) into r1 (as field.private);",
-                    field("limits_callee")?,
-                    field("aleo")?,
-                    field("f")?
-                ),
-            ),
-            Some(kind) => bail!("unknown call kind '{kind}'"),
-        };
-        let name = format!("hashes_after_{}_call", call.unwrap_or("no"));
+    /// Returns a program whose function `foo` runs `first` and then hashes eight times.
+    fn program_hashing(name: &str, import: &str, first: &str) -> Result<Program<CurrentNetwork>> {
         let hashes: String = (1..9).map(|i| format!("    hash.bhp256 r{i} into r{} as field;\n", i + 1)).collect();
         Program::from_str(&format!(
             "{import}program {name}.aleo;\n\nfunction foo:\n    input r0 as field.private;\n    {first}\n{hashes}    output r9 as field.private;\n"
@@ -480,8 +463,7 @@ function f:
             Err(payload) => Err(payload
                 .downcast_ref::<String>()
                 .cloned()
-                .or_else(|| payload.downcast_ref::<&str>().map(|message| message.to_string()))
-                .unwrap_or_default()),
+                .unwrap_or_else(|| format!("unexpected panic payload: {payload:?}"))),
         }
     }
 
@@ -492,28 +474,50 @@ function f:
         let process = Process::load()?;
         process.lock().add_program(&Program::from_str(LIMITS_CALLEE)?)?;
 
-        let halts_on = |outcome: Result<(), String>, limit: &str| {
-            assert!(matches!(&outcome, Err(error) if error.contains(limit)), "expected a halt on {limit}: {outcome:?}")
-        };
+        let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name)?.to_field();
+        let dynamic_call = format!(
+            "call.dynamic {} {} {} with r0 (as field.private) into r1 (as field.private);",
+            field("limits_callee")?,
+            field("aleo")?,
+            field("f")?
+        );
+        let programs = [
+            (false, program_hashing("hashes_without_call", "", "add r0 1field into r1;")?),
+            (
+                true,
+                program_hashing(
+                    "hashes_after_static_call",
+                    "import limits_callee.aleo;\n\n",
+                    "call limits_callee.aleo/f r0 into r1;",
+                )?,
+            ),
+            (true, program_hashing("hashes_after_dynamic_call", "", &dynamic_call)?),
+        ];
 
-        for call in [None, Some("static"), Some("dynamic")] {
-            let deployment = process.deploy::<CurrentAleo, _>(&program_hashing(call)?, rng)?;
+        for (calls, program) in programs {
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
             let vk = &deployment.verifying_keys()[0].1.0;
-            let fewer_variables = with_inflated_variables(&deployment, vk.num_variables() / 2);
-            let fewer_constraints = with_inflated_constraints(&deployment, vk.circuit_info.num_constraints / 2);
+            let fewer_variables = with_claimed_variables(&deployment, vk.num_variables() / 2);
+            let fewer_constraints = with_claimed_constraints(&deployment, vk.circuit_info.num_constraints / 2);
 
-            for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23, ConsensusVersion::latest()] {
+            for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23] {
                 verify_deployment_outcome(&process, consensus_version, &deployment).map_err(|error| anyhow!(error))?;
 
                 let variables = verify_deployment_outcome(&process, consensus_version, &fewer_variables);
                 let constraints = verify_deployment_outcome(&process, consensus_version, &fewer_constraints);
-                if call.is_some() && consensus_version < ConsensusVersion::V23 {
+                if calls && consensus_version < ConsensusVersion::V23 {
                     // Before V23, the limits stop at the call.
                     assert_eq!(variables, Ok(()));
                     assert!(matches!(&constraints, Err(error) if error.contains("certificate")), "{constraints:?}");
                 } else {
-                    halts_on(variables, "Surpassed the variable limit");
-                    halts_on(constraints, "Surpassed the constraint limit");
+                    assert!(
+                        matches!(&variables, Err(error) if error.contains("Surpassed the variable limit")),
+                        "{variables:?}"
+                    );
+                    assert!(
+                        matches!(&constraints, Err(error) if error.contains("Surpassed the constraint limit")),
+                        "{constraints:?}"
+                    );
                 }
             }
         }
