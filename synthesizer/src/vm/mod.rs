@@ -18,6 +18,7 @@ pub use helpers::*;
 
 mod authorize;
 mod deploy;
+mod deployment_freeze;
 mod execute;
 mod finalize;
 mod verify;

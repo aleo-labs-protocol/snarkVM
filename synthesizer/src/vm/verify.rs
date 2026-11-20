@@ -14,6 +14,12 @@
 // limitations under the License.
 
 use console::network::varuna_version_from_consensus;
+use snarkvm_synthesizer_process::deployment_freeze::{
+    DEPLOYMENT_FREEZE_CONSENSUS_VERSION,
+    DEPLOYMENT_FREEZE_PROGRAM_ID,
+    deployment_freeze_program_id,
+    is_built_in_program,
+};
 
 use super::*;
 
@@ -94,6 +100,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
+    /// Ensures that the transaction is well formed and serializes to at most `max_transaction_size` bytes.
+    pub(super) fn ensure_transaction_size(transaction: &Transaction<N>, max_transaction_size: usize) -> Result<()> {
+        // Count the bytes without storing them: the sink accepts every byte, so the writer fails only
+        // when the limit is exceeded, as it would when writing into a buffer.
+        if let Err(error) = transaction.write_le(LimitedWriter::new(std::io::sink(), max_transaction_size)) {
+            bail!("Transaction '{}' is not well-formed: {error}", transaction.id())
+        }
+        Ok(())
+    }
+
     /// Verifies the transaction in the VM. On failure, returns an error.
     #[inline]
     pub fn check_transaction<R: CryptoRng + Rng>(
@@ -112,12 +128,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Get the maximum transaction size for the current consensus version.
         let max_transaction_size = consensus_config_value!(N, MAX_TRANSACTION_SIZE, current_block_height)
             .ok_or(anyhow!("Failed to fetch maximum transaction size"))?;
-        // Allocate a buffer to write the transaction.
-        let mut buffer = Vec::with_capacity(max_transaction_size);
         // Ensure that the transaction is well formed and does not exceed the maximum size.
-        if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, max_transaction_size)) {
-            bail!("Transaction '{}' is not well-formed: {error}", transaction.id())
-        }
+        Self::ensure_transaction_size(transaction, max_transaction_size)?;
 
         // Ensure the transaction ID is unique.
         if self.block_store().contains_transaction_id(&transaction.id())? {
@@ -172,6 +184,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
 
+        // The built-in freeze program is loaded by every process, but before the deployment freeze
+        // version a node must behave as one without it: refuse any transition of it, including a
+        // nested or dynamic call. Like the other version gates in this function, this uses the version
+        // at the current tip, so the program is usable from the block after the activation block, by
+        // which time the VM has initialized its mappings.
+        if consensus_version < DEPLOYMENT_FREEZE_CONSENSUS_VERSION {
+            let program_id = deployment_freeze_program_id::<N>();
+            ensure!(
+                transaction.transitions().all(|transition| transition.program_id() != &program_id),
+                "Transaction '{}' executes '{DEPLOYMENT_FREEZE_PROGRAM_ID}' before it is active",
+                transaction.id()
+            );
+        }
+
         // Fetch all required stacks for transition checks once, and reuse them for static import checks.
         // This is just a partial performance optimization, dynamic calls will fetch fresh Stacks.
         // Starting at ConsensusVersion::V18, we also include first-level imports for the record-existance
@@ -185,12 +211,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let program_id = stack.program_id();
             // Get the program edition.
             let edition = stack.program_edition();
-            // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
+            // If the consensus version is V8 or greater and any of the component programs (except for the built-in programs)
             //   - have edition 0
             //   - and the program does not have a constructor.
             // then fail.
             if consensus_version >= ConsensusVersion::V8
-                && *program_id != ProgramID::from_str("credits.aleo")?
+                && !is_built_in_program(program_id)
                 && edition.is_zero()
                 && !stack.program().contains_constructor()
             {
@@ -219,6 +245,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Transaction::Deploy(id, deployment_id, owner, deployment, _) => {
                 // Sanity check that the program is not `credits.aleo`.
                 ensure!(deployment.program_id() != &ProgramID::credits(), "Cannot deploy 'credits.aleo'");
+                // The built-in freeze program, like `credits.aleo`, cannot be deployed, upgraded or amended.
+                // Its name contains "aleo", so a deployment of it at edition 0 is refused anyway.
+                ensure!(
+                    deployment.program_id() != &deployment_freeze_program_id::<N>(),
+                    "Cannot deploy, upgrade or amend '{DEPLOYMENT_FREEZE_PROGRAM_ID}'"
+                );
+                // Before the deployment freeze version, a program cannot import the freeze program,
+                // as on a node without it.
+                if consensus_version < DEPLOYMENT_FREEZE_CONSENSUS_VERSION {
+                    ensure!(
+                        !deployment.program().imports().contains_key(&deployment_freeze_program_id::<N>()),
+                        "Invalid deployment transaction '{id}' - '{DEPLOYMENT_FREEZE_PROGRAM_ID}' cannot be imported before it is active"
+                    );
+                }
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
 
@@ -922,7 +962,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Note: This is an internal check only. To ensure all components of the fee are checked,
     /// use `VM::check_fee` instead.
     #[inline]
-    fn check_fee_internal(
+    pub(super) fn check_fee_internal(
         &self,
         fee: &Fee<N>,
         deployment_or_execution_id: Field<N>,
