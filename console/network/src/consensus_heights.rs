@@ -93,6 +93,8 @@ pub enum ConsensusVersion {
     ///      Rejects deployments with a static `call` to a function that has a constant output.
     ///      Prices non-raw hash and commitment inputs by their encoded size in finalize.
     ///      Prices the message in `sign.verify` by its encoded size in finalize.
+    ///      Activates the deployment freeze: while `aleo_deployment_freeze.aleo/freeze[0u8]` is in force,
+    ///      every deployment is rejected with its fee charged, without being verified.
     V23 = 23,
 }
 
