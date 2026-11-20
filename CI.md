@@ -21,7 +21,7 @@ Jobs run in one of two places:
 
 | Event | Runs |
 |---|---|
-| Pull request | `fmt`, `deny`, `wasm`, `lint`, `lint-locktick`, `test`, `ci-ok` |
+| Pull request | `fmt`, `deny`, `source-checks`, `wasm`, `lint`, `lint-locktick`, `test`, `ci-ok` |
 | Push to `staging`, or manual dispatch | the above, plus `test-merge`, `each-feature`, `machete` |
 | Push to or pull request into `release/**`, or manual dispatch | the above, plus `test-release`, `windows` |
 
@@ -38,6 +38,7 @@ on every event.
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag, and that each matrix `name` axis lists the same names as its `include` | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
 | `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
+| `source-checks` | hosted | all | | `scripts/check_sources.py`: the license header in each tracked `.rs` file, and on Linux the header's year | |
 | `wasm` | hosted | all | | `wasm-pack test --node` in `wasm` | `wasm` |
 | `lint` | `cpu` | all | 90 | clippy, default and `--all-features`; `cargo doc --all-features`; on release, also `cargo check --release --workspace --all-targets` | `check-clippy`, `check-all-targets`, `parameters-large` |
 | `lint-locktick` | `cpu` | all | 90 | clippy `--all-features` under `--cfg locktick` (`locktick-clippy` alias) | |
