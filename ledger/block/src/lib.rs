@@ -760,8 +760,17 @@ pub mod test_helpers {
         // Construct the ratifications.
         let ratifications = Ratifications::try_from(vec![]).unwrap();
 
-        // Prepare the block header.
-        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
+        // Prepare the block header. The block is not a valid genesis block, which `Header::genesis` would reject.
+        let header = Header::from(
+            Field::<CurrentNetwork>::zero().into(),
+            transactions.to_transactions_root().unwrap(),
+            transactions.to_finalize_root(vec![]).unwrap(),
+            ratifications.to_ratifications_root().unwrap(),
+            Field::zero(),
+            Field::zero(),
+            Metadata::genesis().unwrap(),
+        )
+        .unwrap();
         // Prepare the previous block hash.
         let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
 

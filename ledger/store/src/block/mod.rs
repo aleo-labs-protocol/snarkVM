@@ -1902,9 +1902,9 @@ mod tests {
     fn test_rejected_transaction() {
         let rng = &mut TestRng::default();
 
-        let private_key = snarkvm_ledger_test_helpers::sample_genesis_private_key(rng);
-
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        let genesis = snarkvm_ledger_test_helpers::sample_genesis_block(rng);
+        block_store.insert(&genesis).unwrap();
 
         let fee = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
         let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng);
@@ -1912,28 +1912,11 @@ mod tests {
             Transactions::from_iter([
                 ConfirmedTransaction::rejected_execute(0, fee.clone(), rejected.clone(), vec![]).unwrap()
             ]);
-        let ratifications = Ratifications::try_from(vec![]).unwrap();
-
-        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
-        let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
 
         let fee_id = fee.id();
         let unconfirmed_id = rejected.to_unconfirmed_id(&fee.fee_transition()).unwrap().into();
 
-        // Construct the block.
-        let block = Block::new_beacon(
-            &private_key,
-            previous_hash,
-            header,
-            ratifications,
-            None.into(),
-            vec![],
-            transactions,
-            vec![unconfirmed_id],
-            rng,
-        )
-        .unwrap();
-
+        let block = sample_successor_block_with_transactions(&genesis, transactions, vec![unconfirmed_id], rng);
         block_store.insert(&block).unwrap();
 
         let txn1 = block_store.get_unconfirmed_transaction(&unconfirmed_id).unwrap().unwrap();
@@ -1958,25 +1941,7 @@ mod tests {
     fn test_dev_genesis_state_root() {
         let rng = &mut TestRng::default();
 
-        let private_key = snarkvm_ledger_test_helpers::sample_genesis_private_key(rng);
-        let transactions = Transactions::from_iter(Vec::<ConfirmedTransaction<CurrentNetwork>>::new());
-        let ratifications = Ratifications::try_from(vec![]).unwrap();
-        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
-        let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
-
-        // Construct the genesis block.
-        let block = Block::new_beacon(
-            &private_key,
-            previous_hash,
-            header,
-            ratifications,
-            None.into(),
-            vec![],
-            transactions,
-            vec![],
-            rng,
-        )
-        .unwrap();
+        let block = snarkvm_ledger_test_helpers::sample_genesis_block(rng);
 
         // Initialize a new block store.
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2028,12 +1993,21 @@ mod tests {
 
     /// Builds a block at `previous.height() + 1`. The block is not a valid successor.
     fn sample_successor_block(previous: &Block<CurrentNetwork>, rng: &mut TestRng) -> Block<CurrentNetwork> {
+        sample_successor_block_with_transactions(previous, Transactions::from(&[]), vec![], rng)
+    }
+
+    /// Builds a block at `previous.height() + 1` with the given transactions. The block is not a valid successor.
+    fn sample_successor_block_with_transactions(
+        previous: &Block<CurrentNetwork>,
+        transactions: Transactions<CurrentNetwork>,
+        aborted_transaction_ids: Vec<<CurrentNetwork as Network>::TransactionID>,
+        rng: &mut TestRng,
+    ) -> Block<CurrentNetwork> {
         use snarkvm_console::{account::PrivateKey, prelude::Rng};
         use snarkvm_ledger_block::Metadata;
 
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let height = previous.height() + 1;
-        let transactions = Transactions::from(&[]);
         let ratifications = Ratifications::try_from(vec![]).unwrap();
         let metadata = Metadata::new(
             CurrentNetwork::ID,
@@ -2069,7 +2043,7 @@ mod tests {
             None.into(),
             vec![],
             transactions,
-            vec![],
+            aborted_transaction_ids,
         )
         .unwrap()
     }
