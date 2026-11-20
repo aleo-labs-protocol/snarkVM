@@ -116,6 +116,21 @@ pub type MintedRecordTracker<N> = HashMap<Field<N>, (usize, u64)>;
 /// receiving the value and the input index `j`.
 pub type InputRecordLikeTracker<N> = HashMap<Field<N>, Vec<(usize, usize)>>;
 
+/// The synthesis settings of a `CallStack::CheckDeployment`.
+/// Outside this crate, start from `CheckDeploymentSettings::default()` and set the fields.
+#[derive(Copy, Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct CheckDeploymentSettings {
+    /// The constraint limit of the function circuit.
+    pub constraint_limit: Option<u64>,
+    /// The variable limit of the function circuit.
+    pub variable_limit: Option<u64>,
+    /// The limits on the non-zero entries of A, B and C of the function circuit.
+    pub non_zero_limit: Option<(u64, u64, u64)>,
+    /// Whether the limits also hold after a `call`.
+    pub limits_hold_after_calls: bool,
+}
+
 /// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
@@ -134,17 +149,8 @@ pub enum CallStack<N: Network> {
     AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
-    /// Validate a `Deploy` transaction's function circuit, with its constraint, variable and non-zero limits.
-    /// If the flag is set, the limits also hold after a `call`.
-    CheckDeployment(
-        Vec<Request<N>>,
-        PrivateKey<N>,
-        Assignments<N>,
-        Option<u64>,
-        Option<u64>,
-        Option<(u64, u64, u64)>,
-        bool,
-    ),
+    /// Validate a `Deploy` transaction's function circuit.
+    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, CheckDeploymentSettings),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
@@ -189,12 +195,12 @@ impl<N: Network> CallStack<N> {
     /// In `CheckDeployment` mode, sets the synthesis limits of the current circuit. After a `call`, sets them only if
     /// the limits hold after calls.
     pub(crate) fn set_synthesis_limits<A: circuit::Aleo<Network = N>>(&self, after_call: bool) {
-        if let CallStack::CheckDeployment(.., constraint_limit, variable_limit, non_zero_limit, hold_after_calls) = self
-            && (!after_call || *hold_after_calls)
+        if let CallStack::CheckDeployment(.., settings) = self
+            && (!after_call || settings.limits_hold_after_calls)
         {
-            A::set_constraint_limit(*constraint_limit);
-            A::set_variable_limit(*variable_limit);
-            A::set_non_zero_limit(*non_zero_limit);
+            A::set_constraint_limit(settings.constraint_limit);
+            A::set_variable_limit(settings.variable_limit);
+            A::set_non_zero_limit(settings.non_zero_limit);
         }
     }
 
@@ -221,22 +227,11 @@ impl<N: Network> CallStack<N> {
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
-            CallStack::CheckDeployment(
-                requests,
-                private_key,
-                assignments,
-                constraint_limit,
-                variable_limit,
-                non_zero_limit,
-                limits_hold_after_calls,
-            ) => CallStack::CheckDeployment(
+            CallStack::CheckDeployment(requests, private_key, assignments, settings) => CallStack::CheckDeployment(
                 requests.clone(),
                 *private_key,
                 Arc::new(RwLock::new(assignments.read().clone())),
-                *constraint_limit,
-                *variable_limit,
-                *non_zero_limit,
-                *limits_hold_after_calls,
+                *settings,
             ),
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(

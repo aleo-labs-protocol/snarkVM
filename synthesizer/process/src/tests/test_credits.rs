@@ -2846,6 +2846,7 @@ mod sanity_checks {
     use crate::{
         Assignments,
         CallStack,
+        CheckDeploymentSettings,
         Stack,
         tests::test_utils::{circuit_snapshot, shared_process, start_callers_synthesis},
     };
@@ -2894,15 +2895,12 @@ mod sanity_checks {
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.
-        let call_stack = CallStack::CheckDeployment(
-            vec![request],
-            *private_key,
-            assignments.clone(),
-            constraint_limit,
-            None,
-            None,
-            true,
-        );
+        let call_stack =
+            CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), CheckDeploymentSettings {
+                constraint_limit,
+                limits_hold_after_calls: true,
+                ..Default::default()
+            });
         (call_stack, assignments)
     }
 
