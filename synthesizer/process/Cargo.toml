@@ -25,6 +25,8 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon", "rayon" ]
+# Enables nothing; `rayon` is a required dependency.
+rayon = [ ]
 async = [ "snarkvm-ledger-query/async" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-store/locktick" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
@@ -43,7 +45,7 @@ wasm = [
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
-test = [ "snarkvm-console/test", "snarkvm-circuit/test" ]
+test = [ "snarkvm-console/test" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ ]
 test_consensus_heights = [ ]
@@ -116,7 +118,6 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true
@@ -141,7 +142,7 @@ features = [ "test" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 path = "../../ledger/test-helpers"
