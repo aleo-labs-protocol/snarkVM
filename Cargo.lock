@@ -2783,7 +2783,6 @@ dependencies = [
  "snarkvm-wasm",
  "tempfile",
  "ureq",
- "walkdir",
 ]
 
 [[package]]
