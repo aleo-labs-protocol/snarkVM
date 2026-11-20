@@ -22,9 +22,9 @@ mod circuit_info;
 pub(crate) use circuit_info::*;
 
 mod constraint_system;
-#[cfg(feature = "test")]
+#[cfg(feature = "test-helpers")]
 pub use constraint_system::*;
-#[cfg(not(feature = "test"))]
+#[cfg(not(feature = "test-helpers"))]
 pub(crate) use constraint_system::*;
 
 mod indexer;

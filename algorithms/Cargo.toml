@@ -43,13 +43,13 @@ bench = false
 name = "varuna"
 path = "benches/snark/varuna.rs"
 harness = false
-required-features = [ "test", "filesystem" ]
+required-features = [ "test-helpers", "filesystem" ]
 
 [[bench]]
 name = "varuna_verifier"
 path = "benches/snark/varuna_verifier.rs"
 harness = false
-required-features = [ "test", "filesystem" ]
+required-features = [ "test-helpers", "filesystem" ]
 
 [dependencies.snarkvm-curves]
 workspace = true
@@ -144,12 +144,11 @@ features = [ "env-filter" ]
 cuda = [ "snarkvm-algorithms-cuda" ]
 filesystem = [ "snarkvm-parameters/filesystem" ]
 locktick = [ "snarkvm-parameters/locktick" ]
-test = [ ]
+test-helpers = [ ]
 serial = [
   "snarkvm-curves/serial",
   "snarkvm-fields/serial",
   "snarkvm-utilities/serial"
 ]
-test_exports = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 snark-print = [ ]

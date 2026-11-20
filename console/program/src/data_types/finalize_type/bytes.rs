@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> ToBytes for FinalizeType<N> {
     /// Writes the finalize type to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        u8::try_from(self.enum_index()).map_err(error)?.write_le(&mut writer)?;
+        self.variant().write_le(&mut writer)?;
         match self {
             Self::Plaintext(plaintext_type) => plaintext_type.write_le(&mut writer),
             Self::Future(locator) => locator.write_le(&mut writer),
@@ -98,5 +98,20 @@ mod tests {
             let candidate = FinalizeType::read_le(&expected_bytes[..]).unwrap();
             assert_eq!(expected, candidate);
         }
+    }
+
+    #[test]
+    fn test_bytes_variant_tags() -> Result<()> {
+        // Each FinalizeType variant, with the tag byte it writes first.
+        let cases = [("field.public", 0), ("credits.aleo/mint_public.future", 1), ("dynamic.future", 2)];
+        for (string, tag) in cases {
+            let expected = FinalizeType::<CurrentNetwork>::from_str(string)?;
+            let bytes = expected.to_bytes_le()?;
+            assert_eq!(bytes[0], tag, "{string}");
+            assert_eq!(expected, FinalizeType::read_le(&bytes[..])?);
+        }
+        // Variants without a payload write only the tag.
+        assert_eq!(FinalizeType::<CurrentNetwork>::DynamicFuture.to_bytes_le()?, [2]);
+        Ok(())
     }
 }

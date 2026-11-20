@@ -65,3 +65,8 @@ features = [ "test-helpers" ]
 
 [package.metadata.cargo-machete]
 ignored = ["paste"]
+
+# Minor releases add `ConsensusVersion` variants; see its documentation. The setting covers every
+# public enum of this crate. Today `ConsensusVersion` is the only one.
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_added = "allow"

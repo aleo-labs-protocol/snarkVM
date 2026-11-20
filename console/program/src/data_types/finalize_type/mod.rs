@@ -18,13 +18,11 @@ mod parse;
 mod serialize;
 mod size_in_bits;
 
-use crate::{Locator, PlaintextType};
+use crate::{Locator, PlaintextType, Variant};
 
 use snarkvm_console_network::prelude::*;
 
-use enum_index::EnumIndex;
-
-#[derive(Clone, PartialEq, Eq, Hash, EnumIndex)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum FinalizeType<N: Network> {
     /// A plaintext type.
     Plaintext(PlaintextType<N>),
@@ -32,4 +30,15 @@ pub enum FinalizeType<N: Network> {
     Future(Locator<N>),
     /// A dynamic future.
     DynamicFuture,
+}
+
+impl<N: Network> FinalizeType<N> {
+    /// Returns the variant of the finalize type.
+    pub const fn variant(&self) -> Variant {
+        match self {
+            FinalizeType::Plaintext(..) => 0,
+            FinalizeType::Future(..) => 1,
+            FinalizeType::DynamicFuture => 2,
+        }
+    }
 }
