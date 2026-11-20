@@ -83,5 +83,4 @@ string = [
   "snarkvm-console-types-field",
   "snarkvm-console-types-integers"
 ]
-serial = [ "snarkvm-console-network-environment/serial" ]
 test-helpers = [ "snarkvm-console-network-environment/test-helpers" ]

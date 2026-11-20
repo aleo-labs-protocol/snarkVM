@@ -425,10 +425,9 @@ jobs:
   # side of a `cfg(not(feature = ...))` that a unified feature turns off.
   # `lint` builds `cuda` with `--all-features`. `no-embedded-srs` is a
   # `compile_error!` without `filesystem` or `wasm`. `dev_skip_checks` is a
-  # `compile_error!` without `test_consensus_heights`. Each `rayon` feature is
-  # empty, so its build repeats the crate's build with no features. Too slow
-  # for every pull request, so on every push, on pull requests to a release
-  # branch, and on demand.
+  # `compile_error!` without `test_consensus_heights`. Too slow for every pull
+  # request, so on every push, on pull requests to a release branch, and on
+  # demand.
   each-feature:
     needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
@@ -446,7 +445,7 @@ jobs:
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: cargo-hack@0.6.46 }
       # No `--no-dev-deps`: it rewrites the manifests, which breaks `--locked`.
-      - run: cargo hack clippy --workspace --each-feature --exclude-features cuda,no-embedded-srs,dev_skip_checks,rayon --locked -- -D warnings
+      - run: cargo hack clippy --workspace --each-feature --exclude-features cuda,no-embedded-srs,dev_skip_checks --locked -- -D warnings
 
   # Suites that take too long for every push. On a release branch, on pull
   # requests to one, and on demand.

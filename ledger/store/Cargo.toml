@@ -21,14 +21,6 @@ default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-puzzle/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-authority/wasm",

@@ -27,16 +27,6 @@ edition = "2024"
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-ledger-query/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer-process/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
 wasm = [

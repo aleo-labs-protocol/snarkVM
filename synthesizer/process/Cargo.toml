@@ -24,19 +24,9 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "indexmap/rayon", "rayon" ]
-# Enables nothing; `rayon` is a required dependency.
-rayon = [ ]
+default = [ "indexmap/rayon" ]
 async = [ "snarkvm-ledger-query/async" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-query/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
 wasm = [
   "snarkvm-console/wasm",
   "snarkvm-ledger-block/wasm",
