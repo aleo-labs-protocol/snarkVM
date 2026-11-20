@@ -52,5 +52,9 @@ mod test_v22;
 #[cfg(feature = "test")]
 mod test_v23;
 
+// Tests for the deployment freeze, enforced from `DEPLOYMENT_FREEZE_CONSENSUS_VERSION`.
+#[cfg(feature = "test")]
+mod test_deployment_freeze;
+
 use super::*;
 use crate::vm::test_helpers::*;
