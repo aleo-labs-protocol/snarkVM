@@ -33,6 +33,7 @@ type GenesisFixture = (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>);
 /// If the file cannot be used, every process builds its own fixture.
 /// `build` must return the same fixture for the same seed in every process,
 /// and its genesis block must be a beacon block.
+#[inline]
 pub fn load_or_build_genesis_fixture(
     extension: &str,
     seed: u64,
@@ -42,6 +43,7 @@ pub fn load_or_build_genesis_fixture(
 }
 
 /// Returns `true` if the private key signed the block as a beacon.
+#[inline]
 fn is_signed_beacon((private_key, block): &GenesisFixture) -> bool {
     let authority = block.authority();
     authority.is_beacon() && Address::try_from(private_key).is_ok_and(|address| address == authority.to_address())

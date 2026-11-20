@@ -22,6 +22,7 @@
 pub use snarkvm_console_types::environment::prelude::*;
 pub use snarkvm_console_types::{Address, Field, Group, Scalar};
 
+#[cfg(any(feature = "compute_key", feature = "private_key", feature = "view_key"))]
 mod address;
 
 #[cfg(feature = "compute_key")]

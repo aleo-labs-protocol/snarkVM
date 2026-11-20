@@ -14,9 +14,12 @@
 // limitations under the License.
 
 /// The RocksDB map prefix broken down into the entry category and the specific type of the entry.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum MapID {
     BFT(BFTMap),
     Block(BlockMap),
@@ -56,20 +59,26 @@ impl From<MapID> for u16 {
 }
 
 /// The RocksDB map prefix for BFT-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum BFTMap {
     Transmissions = DataID::BFTTransmissionsMap as u16,
     AbortedTransmissionIDs = DataID::BFTAbortedTransmissionIDsMap as u16,
 }
 
 /// The RocksDB map prefix for block-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum BlockMap {
     StateRoot = DataID::BlockStateRootMap as u16,
     ReverseStateRoot = DataID::BlockReverseStateRootMap as u16,
@@ -91,10 +100,13 @@ pub enum BlockMap {
 }
 
 /// The RocksDB map prefix for committee-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum CommitteeMap {
     CurrentRound = DataID::CurrentRoundMap as u16,
     RoundToHeight = DataID::RoundToHeightMap as u16,
@@ -102,10 +114,13 @@ pub enum CommitteeMap {
 }
 
 /// The RocksDB map prefix for deployment-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum DeploymentMap {
     ID = DataID::DeploymentIDMap as u16,
     IDEdition = DataID::IDEditionMap as u16,
@@ -125,10 +140,13 @@ pub enum DeploymentMap {
 }
 
 /// The RocksDB map prefix for execution-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum ExecutionMap {
     ID = DataID::ExecutionIDMap as u16,
     ReverseID = DataID::ExecutionReverseIDMap as u16,
@@ -136,20 +154,26 @@ pub enum ExecutionMap {
 }
 
 /// The RocksDB map prefix for fee-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum FeeMap {
     Fee = DataID::FeeFeeMap as u16,
     ReverseFee = DataID::FeeReverseFeeMap as u16,
 }
 
 /// The RocksDB map prefix for transition input entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum TransitionInputMap {
     ID = DataID::InputIDMap as u16,
     ReverseID = DataID::InputReverseIDMap as u16,
@@ -164,10 +188,13 @@ pub enum TransitionInputMap {
 }
 
 /// The RocksDB map prefix for transition output entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum TransitionOutputMap {
     ID = DataID::OutputIDMap as u16,
     ReverseID = DataID::OutputReverseIDMap as u16,
@@ -184,19 +211,25 @@ pub enum TransitionOutputMap {
 }
 
 /// The RocksDB map prefix for transaction-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum TransactionMap {
     ID = DataID::TransactionIDMap as u16,
 }
 
 /// The RocksDB map prefix for transition-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum TransitionMap {
     Locator = DataID::TransitionLocatorMap as u16,
     TPK = DataID::TransitionTPKMap as u16,
@@ -207,10 +240,13 @@ pub enum TransitionMap {
 }
 
 /// The RocksDB map prefix for program-related entries.
+///
+/// New variants may be added in minor releases.
 // Note: the order of these variants can be changed at any point in time,
 // as long as the corresponding DataID values remain the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum ProgramMap {
     ProgramID = DataID::ProgramIDMap as u16,
     KeyValueID = DataID::KeyValueMap as u16,
@@ -223,8 +259,11 @@ pub enum ProgramMap {
 /// The RocksDB map prefix for storage metadata.
 ///
 /// One map holds the well-known metadata keys, so later metadata does not need another `DataID`.
+///
+/// New variants may be added in minor releases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum MetadataMap {
     Metadata = DataID::StorageMetadataMap as u16,
 }

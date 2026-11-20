@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> ToBytes for RegisterType<N> {
     /// Writes the register type to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        u8::try_from(self.enum_index()).map_err(error)?.write_le(&mut writer)?;
+        self.variant().write_le(&mut writer)?;
         match self {
             Self::Plaintext(plaintext_type) => plaintext_type.write_le(&mut writer),
             Self::Record(identifier) => identifier.write_le(&mut writer),
@@ -43,5 +43,36 @@ impl<N: Network> FromBytes for RegisterType<N> {
             5 => Ok(Self::DynamicFuture),
             6.. => Err(error(format!("Failed to deserialize register type variant {variant}"))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_bytes_variant_tags() -> Result<()> {
+        // Each RegisterType variant, with the tag byte it writes first.
+        let cases = [
+            ("field", 0),
+            ("token.record", 1),
+            ("credits.aleo/credits.record", 2),
+            ("credits.aleo/mint_public.future", 3),
+            ("dynamic.record", 4),
+            ("dynamic.future", 5),
+        ];
+        for (string, tag) in cases {
+            let expected = RegisterType::<CurrentNetwork>::from_str(string)?;
+            let bytes = expected.to_bytes_le()?;
+            assert_eq!(bytes[0], tag, "{string}");
+            assert_eq!(expected, RegisterType::read_le(&bytes[..])?);
+        }
+        // Variants without a payload write only the tag.
+        assert_eq!(RegisterType::<CurrentNetwork>::DynamicRecord.to_bytes_le()?, [4]);
+        assert_eq!(RegisterType::<CurrentNetwork>::DynamicFuture.to_bytes_le()?, [5]);
+        Ok(())
     }
 }

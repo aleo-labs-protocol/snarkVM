@@ -28,14 +28,14 @@ pub use linear_combination::*;
 mod namespace;
 pub use namespace::*;
 
-#[cfg(feature = "test")]
+#[cfg(feature = "test-helpers")]
 mod optional_vec;
-#[cfg(feature = "test")]
+#[cfg(feature = "test-helpers")]
 pub use optional_vec::*;
 
-#[cfg(feature = "test")]
+#[cfg(feature = "test-helpers")]
 mod test_constraint_system;
-#[cfg(feature = "test")]
+#[cfg(feature = "test-helpers")]
 pub use test_constraint_system::{Fr, TestConstraintSystem};
 
 use snarkvm_utilities::serialize::*;
