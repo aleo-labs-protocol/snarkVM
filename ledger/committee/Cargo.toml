@@ -33,7 +33,7 @@ test-helpers = [
   "dep:proptest",
   "dep:rand",
   "dep:rand_chacha",
-  "rand_distr",
+  "dep:rand_distr",
   "snarkvm-console/test-helpers"
 ]
 
