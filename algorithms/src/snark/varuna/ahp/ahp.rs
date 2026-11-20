@@ -478,7 +478,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 /// Intended to provide a common interface for both the prover and the verifier
 /// when constructing linear combinations via
 /// `AHPForR1CS::construct_linear_combinations`.
-pub trait EvaluationsProvider<F: PrimeField>: core::fmt::Debug {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait EvaluationsProvider<F: PrimeField>: crate::sealed::Sealed + core::fmt::Debug {
     /// Get the evaluation of linear combination `lc` at `point`.
     fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F>;
 
@@ -494,6 +496,8 @@ pub trait EvaluationsProvider<F: PrimeField>: core::fmt::Debug {
     fn has_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> bool;
 }
 
+impl<F: PrimeField> crate::sealed::Sealed for crate::polycommit::sonic_pc::Evaluations<F> {}
+
 /// The `EvaluationsProvider` used by the verifier
 impl<F: PrimeField> EvaluationsProvider<F> for crate::polycommit::sonic_pc::Evaluations<F> {
     fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F> {
@@ -505,6 +509,8 @@ impl<F: PrimeField> EvaluationsProvider<F> for crate::polycommit::sonic_pc::Eval
         self.get(&(lc.label.clone(), point)).is_some()
     }
 }
+
+impl<T> crate::sealed::Sealed for Vec<T> {}
 
 /// The `EvaluationsProvider` used by the prover
 impl<F, T> EvaluationsProvider<F> for Vec<T>

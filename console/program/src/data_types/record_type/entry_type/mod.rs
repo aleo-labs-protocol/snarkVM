@@ -17,12 +17,10 @@ mod bytes;
 mod parse;
 mod serialize;
 
-use crate::PlaintextType;
+use crate::{PlaintextType, Variant};
 use snarkvm_console_network::prelude::*;
 
-use enum_index::EnumIndex;
-
-#[derive(Clone, PartialEq, Eq, Hash, EnumIndex)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum EntryType<N: Network> {
     /// A constant type.
     Constant(PlaintextType<N>),
@@ -33,6 +31,15 @@ pub enum EntryType<N: Network> {
 }
 
 impl<N: Network> EntryType<N> {
+    /// Returns the variant of the entry type.
+    pub const fn variant(&self) -> Variant {
+        match self {
+            EntryType::Constant(..) => 0,
+            EntryType::Public(..) => 1,
+            EntryType::Private(..) => 2,
+        }
+    }
+
     /// Returns the plaintext type.
     pub const fn plaintext_type(&self) -> &PlaintextType<N> {
         match self {

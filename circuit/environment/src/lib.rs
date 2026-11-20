@@ -67,24 +67,25 @@ pub mod prelude {
         witness,
         witness_mode,
     };
+    #[doc(no_inline)]
+    pub use console::prelude::{
+        Debug,
+        Display,
+        Error,
+        Formatter,
+        FromStr,
+        One as _,
+        Result,
+        Zero as _,
+        bail,
+        ensure,
+        fmt,
+    };
     pub use console::{
         Parser,
         ParserResult,
         TypeName,
-        prelude::{
-            Debug,
-            Display,
-            Error,
-            Formatter,
-            FromStr,
-            One as _,
-            Result,
-            Zero as _,
-            bail,
-            ensure,
-            fmt,
-            has_duplicates,
-        },
+        prelude::has_duplicates,
         traits::{
             Double as _,
             FromBits as _,
@@ -105,6 +106,7 @@ pub mod prelude {
     #[cfg(debug_assertions)]
     pub use snarkvm_curves::AffineCurve as _;
 
+    #[doc(no_inline)]
     pub use core::ops::{
         Add,
         AddAssign,
@@ -130,8 +132,11 @@ pub mod prelude {
         Sub,
         SubAssign,
     };
+    #[doc(no_inline)]
     pub use indexmap::IndexMap;
+    #[doc(no_inline)]
     pub use itertools::Itertools;
+    #[doc(no_inline)]
     pub use nom::{
         branch::alt,
         bytes::complete::tag,
@@ -140,5 +145,6 @@ pub mod prelude {
         multi::{many0, many1},
         sequence::{pair, terminated},
     };
+    #[doc(no_inline)]
     pub use num_traits::{self, Inv, One as NumOne, Pow, Unsigned};
 }

@@ -22,7 +22,7 @@ Jobs run in one of two places:
 | Event | Runs |
 |---|---|
 | Pull request | `fmt`, `deny`, `wasm`, `lint`, `test`, `ci-ok` |
-| Push to `staging`, or manual dispatch | the above, plus `test-merge`, `machete` |
+| Push to `staging`, or manual dispatch | the above, plus `test-merge`, `each-feature`, `machete` |
 | Push to or pull request into `release/**`, or manual dispatch | the above, plus `test-release`, `windows` |
 
 ## Jobs
@@ -44,18 +44,19 @@ on every event.
 | `test (circuit)` | hosted | all | 90 | `snarkvm-circuit` and its sub-crates, except `-collections`, `-types-integers` and `-program`; then `snarkvm-circuit-environment` | `circuit`, `circuit-account`, `circuit-algorithms`, `circuit-network`, `circuit-types`, `circuit-types-address`, `circuit-types-boolean`, `circuit-types-field`, `circuit-types-group`, `circuit-types-scalar`, `circuit-types-string`, `circuit-environment` |
 | `test (narwhal)` | hosted | all | 90 | `snarkvm-ledger-authority`, `-ledger-committee`, `-ledger-narwhal` and its sub-crates except `-data`, `-ledger-query`, `-synthesizer-snark`, `-curves`, `-fields`, `-utilities`, `-utilities-derives` | `ledger-authority`, `ledger-committee`, `ledger-narwhal`, `ledger-narwhal-batch-certificate`, `ledger-narwhal-batch-header`, `ledger-narwhal-subdag`, `ledger-narwhal-transmission`, `ledger-narwhal-transmission-id`, `ledger-query`, `synthesizer-snark`, `curves`, `fields`, `utilities`, `utilities-derives` |
 | `test (crates)` | `cpu` | all | 90 | `snarkvm`, `-algorithms`, `-circuit-collections`, `-circuit-types-integers`, `-console-collections` | `snarkvm`, `algorithms`, `circuit-collections`, `circuit-types-integers`, `console-collections` |
-| `test (ledger)` | `cpu` | all | 90 | `snarkvm-ledger`; then its `valid_solutions` tests with `test` | `ledger`, `ledger-with-valid-solutions` |
-| `test (ledger-store)` | `cpu` | all | 90 | `snarkvm-ledger-store` with `rocks`; then its genesis commitment test with `dev_genesis_state_root,test`; then `-ledger-narwhal-data` and `-ledger-test-helpers`; then `-ledger-puzzle` and `-ledger-puzzle-epoch` | `ledger-store`, `ledger-narwhal-data`, `ledger-test-helpers`, `ledger-puzzle`, `ledger-puzzle-epoch` |
+| `test (ledger)` | `cpu` | all | 90 | `snarkvm-ledger` | `ledger` |
+| `test (ledger-store)` | `cpu` | all | 90 | `snarkvm-ledger-store` with `rocks`; then `-ledger-narwhal-data` and `-ledger-test-helpers`; then `-ledger-puzzle` and `-ledger-puzzle-epoch` | `ledger-store`, `ledger-narwhal-data`, `ledger-test-helpers`, `ledger-puzzle`, `ledger-puzzle-epoch` |
 | `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins | `synthesizer` |
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`; then `-synthesizer-program` lib and bins; then `-circuit-program` | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
-| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the ignored `valid_solutions` tests of `snarkvm-ledger`; the ignored tests of `-ledger-store`; `-ledger-block` | `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
+| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `test`, ignored ones included, except `test_cumulative_proof_target_correctness`; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root,test`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block` | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
 | `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
 | `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
-| `test-merge (synthesizer-release)` | `cpu` | merge | 90 | `snarkvm-synthesizer` lib and bins with `test`, release | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
+| `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the `snarkvm-synthesizer` lib and bins tests, with `test` | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
 | `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
 | `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests with `test,dev-print` | `synthesizer-integration` |
 | `test-merge (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
+| `each-feature` | `cpu` | merge | 90 | `cargo hack clippy --each-feature` on each crate, without `cuda`, `no-embedded-srs`, `dev_skip_checks` and `rayon`: each crate with no features and with each feature alone | |
 | `test-release (old-consensus-versions-1)` to `-3` | `cpu` | release | 120 | one third each of the V8 to V14 tests of `snarkvm-synthesizer`, ignored ones included, with `test-old-consensus-versions`, release | |
 | `test-release (integers-exhaustive)` | `cpu` | release | 120 | the ignored tests of `snarkvm-circuit-types-integers`, which check every 8-bit input | |
 | `test-release (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks`, release; again with `test,rocks`, then the ignored tests; then `test_vm_execute_and_finalize` with `test,rocks` | |

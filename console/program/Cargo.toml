@@ -15,7 +15,7 @@ harness = false
 
 [features]
 default = [ ]
-test = [ "snarkvm-console-network/test-helpers" ]
+test-helpers = [ "snarkvm-console-network/test-helpers" ]
 dev-print = [
   "snarkvm-utilities/dev-print",
   "snarkvm-console-algorithms/dev-print",
@@ -40,12 +40,6 @@ features = [ "string" ]
 
 [dependencies.snarkvm-utilities]
 workspace = true
-
-[dependencies.enum_index]
-version = "0.2"
-
-[dependencies.enum_index_derive]
-version = "0.2"
 
 [dependencies.enum-iterator]
 workspace = true

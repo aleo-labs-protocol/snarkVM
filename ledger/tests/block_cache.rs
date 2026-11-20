@@ -15,14 +15,16 @@
 
 //! Integration tests for the ledger block cache functionality.
 
-use snarkvm_ledger::{
-    Ledger,
-    test_helpers::{CurrentConsensusStore, CurrentLedger, CurrentNetwork, LedgerType},
-};
-use snarkvm_ledger_store::StorageMode;
+use snarkvm_ledger::Ledger;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode, helpers::rocksdb::ConsensusDB};
 
-use snarkvm_console::{account::PrivateKey, prelude::*};
+use snarkvm_console::{account::PrivateKey, network::MainnetV0, prelude::*};
 use snarkvm_synthesizer::vm::VM;
+
+type CurrentNetwork = MainnetV0;
+type LedgerType = ConsensusDB<CurrentNetwork>;
+type CurrentLedger = Ledger<CurrentNetwork, LedgerType>;
+type CurrentConsensusStore = ConsensusStore<CurrentNetwork, LedgerType>;
 
 /// Tests that the block cache is properly initialized with existing blocks from storage.
 #[test]

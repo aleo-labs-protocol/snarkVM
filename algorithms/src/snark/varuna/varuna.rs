@@ -1139,6 +1139,8 @@ struct MemoizedEvaluations<'a, F: PrimeField, E> {
     memo: std::cell::RefCell<Evaluations<F>>,
 }
 
+impl<F: PrimeField, E> crate::sealed::Sealed for MemoizedEvaluations<'_, F, E> {}
+
 impl<F: PrimeField, E: EvaluationsProvider<F>> EvaluationsProvider<F> for MemoizedEvaluations<'_, F, E> {
     fn get_lc_eval(&self, lc: &crate::polycommit::sonic_pc::LinearCombination<F>, point: F) -> Result<F> {
         let key = (lc.label.clone(), point);
