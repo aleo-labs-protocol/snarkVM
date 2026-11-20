@@ -31,17 +31,14 @@ use snarkvm_circuit_types::{
     Field,
     environment::{
         prelude::*,
-        snapshot::{self, Array, Case, OperandName, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+        snapshot::{self, Array, Case, OperandName, SnapshotFiles, assert_snapshot, mode_jobs, run_parallel},
+        snapshot_files,
     },
 };
 use snarkvm_console_account as console;
 use snarkvm_utilities::TestRng;
 
-const FILES: SnapshotFiles = SnapshotFiles {
-    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
-    coverage: "each operand mode and a fixed set of keys and signatures",
-    command: "cargo test -p snarkvm-circuit-account --test snapshots",
-};
+const FILES: SnapshotFiles = snapshot_files!("each operand mode and a fixed set of keys and signatures");
 
 type Network = <AleoV0 as Environment>::Network;
 
@@ -145,34 +142,31 @@ fn signatures() -> Vec<(console::Signature<Network>, String)> {
     SIGNATURES.clone()
 }
 
+/// Builds the network constants on the calling thread, then returns `values()`.
+///
+/// The constants are thread-local and built on first use. A job that calls this first keeps them out of its counts.
+fn with_constants<T>(values: impl FnOnce() -> Vec<T>) -> Vec<T> {
+    AleoV0::initialize_global_constants();
+    values()
+}
+
 #[test]
 fn from_private_key() {
-    fn cases(modes: [Mode; 1]) -> Vec<Case> {
-        AleoV0::initialize_global_constants();
-        snapshot::unary(
-            |a: &NamedPrivateKey| ComputeKey::from_private_key(&a.0),
-            |x| console::ComputeKey::try_from(&x).ok(),
-            None,
-            &private_keys(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "from_private_key", run_parallel(mode_jobs(1, cases)));
+    let operation = |a: &NamedPrivateKey| ComputeKey::from_private_key(&a.0);
+    let oracle = |x| console::ComputeKey::try_from(&x).ok();
+    snapshot::assert_unary(&FILES, "from_private_key", || with_constants(private_keys), operation, oracle);
 }
 
 #[test]
 fn to_address() {
-    fn cases(modes: [Mode; 1]) -> Vec<Case> {
-        AleoV0::initialize_global_constants();
-        snapshot::unary(
-            |a: &NamedComputeKey| a.0.to_address(),
-            |x| console::Address::try_from(&x).ok(),
-            None,
-            &compute_keys(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "to_address", run_parallel(mode_jobs(1, cases)));
+    let oracle = |x| console::Address::try_from(&x).ok();
+    snapshot::assert_unary(
+        &FILES,
+        "to_address",
+        || with_constants(compute_keys),
+        |a: &NamedComputeKey| a.0.to_address(),
+        oracle,
+    );
 }
 
 /// Defines a snapshot test of a binary operation on two operands of the same type that returns a boolean.
@@ -180,19 +174,10 @@ macro_rules! binary_snapshot {
     ($op:ident, $type:ty, $values:expr, |$a:ident, $b:ident| $circuit:expr, |$x:ident, $y:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 2]) -> Vec<Case> {
-                AleoV0::initialize_global_constants();
-                let values = Values::same($values);
-                snapshot::binary(
-                    |$a: &$type, $b: &$type| -> Boolean<AleoV0> { $circuit },
-                    |$x, $y| Some($console),
-                    None,
-                    &values,
-                    &values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let operation = |$a: &$type, $b: &$type| -> Boolean<AleoV0> { $circuit };
+            let oracle = |$x: <$type as Inject>::Primitive, $y: <$type as Inject>::Primitive| Some($console);
+            let values = || with_constants(|| $values);
+            snapshot::assert_binary(&FILES, stringify!($op), values, values, operation, oracle);
         }
     };
 }
@@ -205,32 +190,16 @@ binary_snapshot!(signature_is_not_equal, Signature<AleoV0>, signatures(), |a, b|
 
 #[test]
 fn compute_key_ternary() {
-    fn cases(modes: [Mode; 3]) -> Vec<Case> {
-        AleoV0::initialize_global_constants();
-        snapshot::ternary(
-            |c: &Boolean<AleoV0>, a: &NamedComputeKey, b: &NamedComputeKey| {
-                NamedComputeKey(ComputeKey::ternary(c, &a.0, &b.0))
-            },
-            None,
-            &compute_keys(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "compute_key_ternary", run_parallel(mode_jobs(1, cases)));
+    let operation = |c: &Boolean<AleoV0>, a: &NamedComputeKey, b: &NamedComputeKey| {
+        NamedComputeKey(ComputeKey::ternary(c, &a.0, &b.0))
+    };
+    snapshot::assert_ternary(&FILES, "compute_key_ternary", || with_constants(compute_keys), operation);
 }
 
 #[test]
 fn signature_ternary() {
-    fn cases(modes: [Mode; 3]) -> Vec<Case> {
-        AleoV0::initialize_global_constants();
-        snapshot::ternary(
-            |c: &Boolean<AleoV0>, a: &Signature<AleoV0>, b: &Signature<AleoV0>| Signature::ternary(c, a, b),
-            None,
-            &signatures(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "signature_ternary", run_parallel(mode_jobs(1, cases)));
+    let operation = |c: &Boolean<AleoV0>, a: &Signature<AleoV0>, b: &Signature<AleoV0>| Signature::ternary(c, a, b);
+    snapshot::assert_ternary(&FILES, "signature_ternary", || with_constants(signatures), operation);
 }
 
 /// A message of two field elements.
@@ -242,24 +211,23 @@ fn verify() {
     fn cases([mode_s, mode_a, mode_m]: [Mode; 3]) -> Vec<Case> {
         AleoV0::initialize_global_constants();
         let (signatures, addresses, messages) = (signatures(), addresses(), messages());
-        let block = format!(
-            "{}.{mode_s} {}.{mode_a} {}.{mode_m}",
-            Signature::<AleoV0>::operand_name(),
-            Address::<AleoV0>::operand_name(),
-            Message::operand_name(),
-        );
+        let names = (Signature::<AleoV0>::operand_name(), Address::<AleoV0>::operand_name(), Message::operand_name());
         let mut cases = Vec::with_capacity(signatures.len() * addresses.len() * messages.len());
         for (signature, label_s) in &signatures {
             for (address, label_a) in &addresses {
                 for (message, label_m) in &messages {
-                    let operands = [(mode_s, label_s.as_str()), (mode_a, label_a.as_str()), (mode_m, label_m.as_str())];
+                    let operands = [
+                        (names.0.as_str(), mode_s, label_s.as_str()),
+                        (&names.1, mode_a, label_a),
+                        (&names.2, mode_m, label_m),
+                    ];
                     let inject = || {
                         let s = Signature::<AleoV0>::new(mode_s, *signature);
                         let a = Address::<AleoV0>::new(mode_a, *address);
                         (s, a, Message::new(mode_m, message.clone()))
                     };
                     let expected = Some(signature.verify(address, message));
-                    cases.push(snapshot::case(&block, &operands, expected, None, inject, |(s, a, m)| s.verify(&a, &m)));
+                    cases.push(snapshot::case(&operands, None, expected, None, inject, |(s, a, m)| s.verify(&a, &m)));
                 }
             }
         }

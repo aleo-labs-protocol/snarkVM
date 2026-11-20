@@ -22,6 +22,7 @@ use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
     snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+    snapshot_files,
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_integers::Integer;
@@ -29,11 +30,7 @@ use snarkvm_console_types_integers::Integer as ConsoleInteger;
 
 use num_traits::NumCast;
 
-const FILES: SnapshotFiles = SnapshotFiles {
-    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
-    coverage: "each integer type, operand mode and edge value",
-    command: "cargo test -p snarkvm-circuit-types-integers --test snapshots",
-};
+const FILES: SnapshotFiles = snapshot_files!("each integer type, operand mode and edge value");
 
 /// Returns the mode of each bit of `output`.
 fn bit_modes<O: ToBits<Boolean = Boolean<Circuit>>>(output: &O) -> Vec<Mode> {

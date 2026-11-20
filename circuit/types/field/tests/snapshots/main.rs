@@ -22,16 +22,13 @@ use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
     snapshot::{self, Array, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+    snapshot_files,
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_field::Field;
 use snarkvm_console_types_field::Field as ConsoleField;
 
-const FILES: SnapshotFiles = SnapshotFiles {
-    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
-    coverage: "each operand mode and a fixed set of field elements",
-    command: "cargo test -p snarkvm-circuit-types-field --test snapshots",
-};
+const FILES: SnapshotFiles = snapshot_files!("each operand mode and a fixed set of field elements");
 
 /// A console field element.
 type Console = ConsoleField<<Circuit as Environment>::Network>;
@@ -171,16 +168,8 @@ macro_rules! unary_snapshot {
     ($op:ident, $input:ty, $values:expr, |$a:ident| $circuit:expr, |$x:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 1]) -> Vec<Case> {
-                snapshot::unary(
-                    |$a: &$input| $circuit,
-                    |$x: <$input as Inject>::Primitive| $console,
-                    None,
-                    &$values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let oracle = |$x: <$input as Inject>::Primitive| $console;
+            snapshot::assert_unary(&FILES, stringify!($op), || $values, |$a: &$input| $circuit, oracle);
         }
     };
 }
@@ -190,18 +179,10 @@ macro_rules! binary_snapshot {
     ($op:ident, |$a:ident, $b:ident| $circuit:expr, |$x:ident, $y:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 2]) -> Vec<Case> {
-                let values = Values::same(values());
-                snapshot::binary(
-                    |$a: &Field<Circuit>, $b: &Field<Circuit>| $circuit,
-                    |$x: Console, $y: Console| $console,
-                    None,
-                    &values,
-                    &values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let operation = |$a: &Field<Circuit>, $b: &Field<Circuit>| $circuit;
+            snapshot::assert_binary(&FILES, stringify!($op), values, values, operation, |$x: Console, $y: Console| {
+                $console
+            });
         }
     };
 }
@@ -214,12 +195,13 @@ fn bit_count_cases(
     values: fn(usize) -> Vec<(Console, String)>,
     [mode]: [Mode; 1],
 ) -> Vec<Case> {
-    let block = format!("{}.{mode} k={k}", Field::<Circuit>::type_name());
+    let (name, parameter) = (Field::<Circuit>::type_name(), format!("k={k}"));
     values(k)
         .into_iter()
         .map(|(x, label)| {
             let inject = || Field::<Circuit>::new(mode, x);
-            snapshot::case(&block, &[(mode, &label)], oracle(x, k), None, inject, |a| operation(&a, k))
+            let operands = [(name, mode, label.as_str())];
+            snapshot::case(&operands, Some(&parameter), oracle(x, k), None, inject, |a| operation(&a, k))
         })
         .collect()
 }
@@ -261,17 +243,6 @@ macro_rules! from_bits_snapshot {
             }
             let jobs = [$(mode_jobs($n, cases::<$n>)),+];
             assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
-        }
-    };
-}
-
-/// Defines a snapshot test of an operation that takes no operands and returns a constant.
-macro_rules! nullary_snapshot {
-    ($op:ident, $expected:expr) => {
-        #[test]
-        fn $op() {
-            let case = snapshot::case("()", &[], Some($expected), None, || (), |()| Field::<Circuit>::$op());
-            assert_snapshot(&FILES, stringify!($op), vec![case]);
         }
     };
 }
@@ -328,15 +299,9 @@ unary_snapshot!(is_one, Field<Circuit>, values(), |a| a.is_one(), |x| Some(x.is_
 
 #[test]
 fn ternary() {
-    fn cases(modes: [Mode; 3]) -> Vec<Case> {
-        snapshot::ternary(
-            |c: &Boolean<Circuit>, a: &Field<Circuit>, b: &Field<Circuit>| Field::ternary(c, a, b),
-            None,
-            &values(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "ternary", run_parallel(mode_jobs(1, cases)));
+    snapshot::assert_ternary(&FILES, "ternary", values, |c: &Boolean<Circuit>, a: &Field<Circuit>, b| {
+        Field::ternary(c, a, b)
+    });
 }
 
 // Bits.
@@ -352,11 +317,18 @@ from_bits_snapshot!(from_bits_be, [8, 252, 253, 254], reversed);
 unary_snapshot!(
     from_boolean,
     Boolean<Circuit>,
-    [(false, "false".to_string()), (true, "true".to_string())],
+    vec![(false, "false".to_string()), (true, "true".to_string())],
     |a| Field::from_boolean(a),
     |x| Some(if x { Console::one() } else { Console::zero() })
 );
 
 // Constants.
-nullary_snapshot!(one, Console::one());
-nullary_snapshot!(zero, Console::zero());
+#[test]
+fn one() {
+    snapshot::assert_nullary(&FILES, "one", Console::one(), Field::<Circuit>::one);
+}
+
+#[test]
+fn zero() {
+    snapshot::assert_nullary(&FILES, "zero", Console::zero(), Field::<Circuit>::zero);
+}

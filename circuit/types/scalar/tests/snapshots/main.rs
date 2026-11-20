@@ -21,18 +21,15 @@
 use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
-    snapshot::{self, Array, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+    snapshot::{self, Array, Case, SnapshotFiles, assert_snapshot, mode_jobs, run_parallel},
+    snapshot_files,
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_field::Field;
 use snarkvm_circuit_types_scalar::Scalar;
 use snarkvm_console_types_scalar::{Field as ConsoleField, FromField as _, Scalar as ConsoleScalar};
 
-const FILES: SnapshotFiles = SnapshotFiles {
-    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
-    coverage: "each operand mode and a fixed set of scalars",
-    command: "cargo test -p snarkvm-circuit-types-scalar --test snapshots",
-};
+const FILES: SnapshotFiles = snapshot_files!("each operand mode and a fixed set of scalars");
 
 /// A console scalar.
 type Console = ConsoleScalar<<Circuit as Environment>::Network>;
@@ -115,16 +112,8 @@ macro_rules! unary_snapshot {
     ($op:ident, $input:ty, $values:expr, |$a:ident| $circuit:expr, |$x:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 1]) -> Vec<Case> {
-                snapshot::unary(
-                    |$a: &$input| $circuit,
-                    |$x: <$input as Inject>::Primitive| $console,
-                    None,
-                    &$values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let oracle = |$x: <$input as Inject>::Primitive| $console;
+            snapshot::assert_unary(&FILES, stringify!($op), || $values, |$a: &$input| $circuit, oracle);
         }
     };
 }
@@ -134,18 +123,10 @@ macro_rules! binary_snapshot {
     ($op:ident, |$a:ident, $b:ident| $circuit:expr, |$x:ident, $y:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 2]) -> Vec<Case> {
-                let values = Values::same(values());
-                snapshot::binary(
-                    |$a: &Scalar<Circuit>, $b: &Scalar<Circuit>| $circuit,
-                    |$x: Console, $y: Console| $console,
-                    None,
-                    &values,
-                    &values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let operation = |$a: &Scalar<Circuit>, $b: &Scalar<Circuit>| $circuit;
+            snapshot::assert_binary(&FILES, stringify!($op), values, values, operation, |$x: Console, $y: Console| {
+                $console
+            });
         }
     };
 }
@@ -174,17 +155,6 @@ macro_rules! from_bits_snapshot {
     };
 }
 
-/// Defines a snapshot test of an operation that takes no operands and returns a constant.
-macro_rules! nullary_snapshot {
-    ($op:ident, $expected:expr) => {
-        #[test]
-        fn $op() {
-            let case = snapshot::case("()", &[], Some($expected), None, || (), |()| Scalar::<Circuit>::$op());
-            assert_snapshot(&FILES, stringify!($op), vec![case]);
-        }
-    };
-}
-
 // Arithmetic.
 binary_snapshot!(add, |a, b| a + b, |x, y| Some(x + y));
 
@@ -202,15 +172,9 @@ unary_snapshot!(is_one, Scalar<Circuit>, values(), |a| a.is_one(), |x| Some(x.is
 
 #[test]
 fn ternary() {
-    fn cases(modes: [Mode; 3]) -> Vec<Case> {
-        snapshot::ternary(
-            |c: &Boolean<Circuit>, a: &Scalar<Circuit>, b: &Scalar<Circuit>| Scalar::ternary(c, a, b),
-            None,
-            &values(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "ternary", run_parallel(mode_jobs(1, cases)));
+    snapshot::assert_ternary(&FILES, "ternary", values, |c: &Boolean<Circuit>, a: &Scalar<Circuit>, b| {
+        Scalar::ternary(c, a, b)
+    });
 }
 
 // Bits.
@@ -228,5 +192,12 @@ unary_snapshot!(from_field_lossy, Field<Circuit>, field_values(), |a| Scalar::fr
 ));
 
 // Constants.
-nullary_snapshot!(one, Console::one());
-nullary_snapshot!(zero, Console::zero());
+#[test]
+fn one() {
+    snapshot::assert_nullary(&FILES, "one", Console::one(), Scalar::<Circuit>::one);
+}
+
+#[test]
+fn zero() {
+    snapshot::assert_nullary(&FILES, "zero", Console::zero(), Scalar::<Circuit>::zero);
+}

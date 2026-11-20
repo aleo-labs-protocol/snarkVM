@@ -19,7 +19,6 @@
 //! structural digest of the constraints, and compares them with a checked-in snapshot file.
 
 use std::{
-    cell::Cell,
     collections::{HashMap, HashSet, hash_map::Entry},
     fmt::Debug,
     fs,
@@ -28,16 +27,30 @@ use std::{
     ops::Deref,
     panic::{self, AssertUnwindSafe},
     path::Path,
-    sync::{Condvar, Mutex, Once, OnceLock, PoisonError},
+    sync::{Condvar, Mutex, OnceLock, PoisonError},
     thread,
 };
 
 use itertools::Itertools;
+use snarkvm_utilities::try_vm_runtime;
 
 use crate::{Circuit, Eject, Environment, Inject, Mode, prelude::TypeName};
 
 /// The variable that makes `assert_snapshot` rewrite the snapshot files.
 const UPDATE_VARIABLE: &str = "UPDATE_CIRCUIT_SNAPSHOTS";
+
+/// Returns the `SnapshotFiles` of the calling test target: its `tests/snapshots` directory, the given coverage,
+/// and a command that runs the `snapshots` test of its package.
+#[macro_export]
+macro_rules! snapshot_files {
+    ($coverage:literal) => {
+        $crate::snapshot::SnapshotFiles {
+            directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
+            coverage: $coverage,
+            command: concat!("cargo test -p ", env!("CARGO_PKG_NAME"), " --test snapshots"),
+        }
+    };
+}
 
 /// The snapshot files of a test target.
 pub struct SnapshotFiles {
@@ -140,28 +153,6 @@ impl<A: OperandName, const N: usize> OperandName for Array<A, N> {
     }
 }
 
-thread_local! {
-    /// `true` while `catch_quietly` runs on this thread.
-    static QUIET: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Runs `logic` and returns `None` if it panics. The panic message is not printed.
-fn catch_quietly<T>(logic: impl FnOnce() -> T) -> Option<T> {
-    static HOOK: Once = Once::new();
-    HOOK.call_once(|| {
-        let previous = panic::take_hook();
-        panic::set_hook(Box::new(move |info| {
-            if !QUIET.with(Cell::get) {
-                previous(info)
-            }
-        }));
-    });
-    QUIET.with(|quiet| quiet.set(true));
-    let result = panic::catch_unwind(AssertUnwindSafe(logic));
-    QUIET.with(|quiet| quiet.set(false));
-    result.ok()
-}
-
 /// Returns the mode of `output`, with a count per mode if `bit_modes` gives bits that differ in mode.
 fn render_mode<O: Eject>(output: &O, bit_modes: Option<fn(&O) -> Vec<Mode>>) -> String {
     let Some(modes) = bit_modes.map(|bit_modes| bit_modes(output)) else {
@@ -197,7 +188,7 @@ where
     let first_private = Circuit::num_private();
     let first_constraint = Circuit::num_constraints();
     let first_nonzeros = Circuit::num_nonzeros();
-    let result = catch_quietly(operation).map(|output| {
+    let result = try_vm_runtime(operation).ok().map(|output| {
         let nonzeros = Circuit::num_nonzeros();
         let counts = format!(
             "{} {} {} {} {}/{}/{}",
@@ -238,18 +229,19 @@ where
     }
 }
 
-/// Returns a case of `block` for one value of each operand.
+/// Returns a case for one value of each operand.
 ///
-/// `operands` gives the mode and value label of each operand, in the order that `inject` injects them.
+/// `operands` gives the type name, mode and value label of each operand, in the order that `inject` injects them.
+/// The block of the case is the `{name}.{mode}` of each operand, then `parameter`, such as `k=8`.
 /// `inject` runs on a reset circuit and returns the operands. The counts and the digest cover `operation` alone.
 /// `expected` is the console result, or `None` if the operation is undefined for the operands.
 /// `bit_modes`, if given, returns the mode of each bit of the output. It runs after the circuit is reset,
 /// so any constraint it adds does not reach the counts or the digest.
-/// A failure names `block` and the label of each operand.
-/// An operation with no operands has the values `()`, and its block is `()` by convention.
+/// A failure names the block and the label of each operand.
+/// A case with no operands and no parameter has the block `()`. A case with no operands has the values `()`.
 pub fn case<I, O>(
-    block: &str,
-    operands: &[(Mode, &str)],
+    operands: &[(&str, Mode, &str)],
+    parameter: Option<&str>,
     expected: Option<O::Primitive>,
     bit_modes: Option<fn(&O) -> Vec<Mode>>,
     inject: impl FnOnce() -> I,
@@ -259,15 +251,20 @@ where
     O: Eject,
     O::Primitive: Debug + PartialEq,
 {
+    let mut block =
+        operands.iter().map(|(name, mode, _)| format!("{name}.{mode}")).chain(parameter.map(str::to_string)).join(" ");
+    if block.is_empty() {
+        block = "()".to_string();
+    }
     Circuit::reset();
     let inputs = inject();
-    let label = iter::once(block).chain(operands.iter().map(|(_, value)| *value)).join(" ");
+    let label = iter::once(block.as_str()).chain(operands.iter().map(|(_, _, value)| *value)).join(" ");
     let outcome = measure(&label, expected, bit_modes, || operation(inputs));
     let values = match operands.is_empty() {
         true => "()".to_string(),
-        false => operands.iter().map(|(mode, value)| value_label(*mode, value)).join(" "),
+        false => operands.iter().map(|(_, mode, value)| value_label(*mode, value)).join(" "),
     };
-    Case { block: block.to_string(), values, outcome }
+    Case { block, values, outcome }
 }
 
 /// Returns the cases of a unary operation on an operand of the given mode, one per value.
@@ -284,12 +281,12 @@ where
     O: Eject,
     O::Primitive: Debug + PartialEq,
 {
-    let block = format!("{}.{mode}", A::operand_name());
+    let name = A::operand_name();
     values
         .iter()
         .map(|(x, label)| {
             let inject = || A::new(mode, x.clone());
-            case(&block, &[(mode, label.as_str())], oracle(x.clone()), bit_modes, inject, |a| operation(&a))
+            case(&[(&name, mode, label)], None, oracle(x.clone()), bit_modes, inject, |a| operation(&a))
         })
         .collect()
 }
@@ -311,15 +308,15 @@ where
     O: Eject,
     O::Primitive: Debug + PartialEq,
 {
-    let block = format!("{}.{mode_a} {}.{mode_b}", A::operand_name(), B::operand_name());
+    let (name_a, name_b) = (A::operand_name(), B::operand_name());
     let (lhs, rhs) = (lhs.for_mode(mode_a), rhs.for_mode(mode_b));
     let mut cases = Vec::with_capacity(lhs.len() * rhs.len());
     for (x, label_x) in lhs {
         for (y, label_y) in rhs {
-            let operands = [(mode_a, label_x.as_str()), (mode_b, label_y.as_str())];
+            let operands = [(name_a.as_str(), mode_a, label_x.as_str()), (&name_b, mode_b, label_y)];
             let inject = || (A::new(mode_a, x.clone()), B::new(mode_b, y.clone()));
             let expected = oracle(x.clone(), y.clone());
-            cases.push(case(&block, &operands, expected, bit_modes, inject, |(a, b)| operation(&a, &b)));
+            cases.push(case(&operands, None, expected, bit_modes, inject, |(a, b)| operation(&a, &b)));
         }
     }
     cases
@@ -338,16 +335,20 @@ where
     A: Inject + Eject<Primitive = <A as Inject>::Primitive> + OperandName,
     <A as Inject>::Primitive: Clone + Debug + PartialEq,
 {
-    let block = format!("{}.{mode_c} {}.{mode_a} {}.{mode_b}", C::operand_name(), A::operand_name(), A::operand_name());
+    let (name_c, name_a) = (C::operand_name(), A::operand_name());
     let mut cases = Vec::with_capacity(2 * values.len() * values.len());
     for condition in [false, true] {
         let label_c = condition.to_string();
         for (x, label_x) in values {
             for (y, label_y) in values {
-                let operands = [(mode_c, label_c.as_str()), (mode_a, label_x.as_str()), (mode_b, label_y.as_str())];
+                let operands = [
+                    (name_c.as_str(), mode_c, label_c.as_str()),
+                    (&name_a, mode_a, label_x),
+                    (&name_a, mode_b, label_y),
+                ];
                 let inject = || (C::new(mode_c, condition), A::new(mode_a, x.clone()), A::new(mode_b, y.clone()));
                 let expected = Some(if condition { x.clone() } else { y.clone() });
-                cases.push(case(&block, &operands, expected, bit_modes, inject, |(c, a, b)| operation(&c, &a, &b)));
+                cases.push(case(&operands, None, expected, bit_modes, inject, |(c, a, b)| operation(&c, &a, &b)));
             }
         }
     }
@@ -357,13 +358,20 @@ where
 /// Returns one job per combination of `N` operand modes, in lexicographic order of the modes.
 ///
 /// Each job calls `block` with its modes. Its cost is `cost`, doubled for each variable operand.
-pub fn mode_jobs<const N: usize>(cost: u64, block: fn([Mode; N]) -> Vec<Case>) -> impl Iterator<Item = Job> {
-    (0..N).map(|_| [Mode::Constant, Mode::Public, Mode::Private]).multi_cartesian_product().map(move |modes| {
-        // Note: `expect` is safe as each combination has one mode per operand.
-        let modes: [Mode; N] = modes.try_into().expect("each combination has `N` modes");
-        let variables = modes.iter().filter(|mode| !mode.is_constant()).count();
-        Job { cost: cost << variables, run: Box::new(move || block(modes)) }
-    })
+pub fn mode_jobs<const N: usize>(
+    cost: u64,
+    block: impl Fn([Mode; N]) -> Vec<Case> + Copy + Send + 'static,
+) -> Vec<Job> {
+    (0..N)
+        .map(|_| [Mode::Constant, Mode::Public, Mode::Private])
+        .multi_cartesian_product()
+        .map(|modes| {
+            // Note: `expect` is safe as each combination has one mode per operand.
+            let modes: [Mode; N] = modes.try_into().expect("each combination has `N` modes");
+            let variables = modes.iter().filter(|mode| !mode.is_constant()).count();
+            Job { cost: cost << variables, run: Box::new(move || block(modes)) }
+        })
+        .collect()
 }
 
 /// The most threads that run the jobs of one test.
@@ -561,7 +569,7 @@ fn compare(stored: &str, cases: &[Case]) -> Vec<String> {
 
 /// Returns a block that two lists of cases share, or that is not contiguous within one list.
 ///
-/// Two operand types with the same name, or a block string without the mode of an operand, give such a block.
+/// Two operand types with the same name, or two jobs with the same operands and parameter, give such a block.
 fn shared_block<'a>(lists: impl IntoIterator<Item = &'a [Case]>) -> Option<&'a str> {
     lists.into_iter().flat_map(|cases| cases.iter().map(|case| case.block.as_str()).dedup()).duplicates().next()
 }
@@ -633,4 +641,70 @@ pub fn assert_snapshot(files: &SnapshotFiles, op: &str, cases: Vec<Case>) {
             path.display()
         ),
     }
+}
+
+/// Asserts the snapshot of `op`, a unary operation, for each mode of the operand and each of `values`.
+///
+/// `oracle` returns the console result, or `None` if the operation is undefined for the value.
+pub fn assert_unary<A, O>(
+    files: &SnapshotFiles,
+    op: &str,
+    values: impl Fn() -> Vec<(A::Primitive, String)> + Copy + Send + 'static,
+    operation: impl Fn(&A) -> O + Copy + Send + 'static,
+    oracle: impl Fn(A::Primitive) -> Option<O::Primitive> + Copy + Send + 'static,
+) where
+    A: Inject + OperandName + 'static,
+    A::Primitive: Clone,
+    O: Eject + 'static,
+    O::Primitive: Debug + PartialEq,
+{
+    let block = move |modes| unary(operation, oracle, None, &values(), modes);
+    assert_snapshot(files, op, run_parallel(mode_jobs(1, block)));
+}
+
+/// Asserts the snapshot of `op`, a binary operation, for each mode of each operand and each pair of `lhs` and `rhs`.
+///
+/// `oracle` returns the console result, or `None` if the operation is undefined for the values.
+pub fn assert_binary<A, B, O>(
+    files: &SnapshotFiles,
+    op: &str,
+    lhs: impl Fn() -> Vec<(A::Primitive, String)> + Copy + Send + 'static,
+    rhs: impl Fn() -> Vec<(B::Primitive, String)> + Copy + Send + 'static,
+    operation: impl Fn(&A, &B) -> O + Copy + Send + 'static,
+    oracle: impl Fn(A::Primitive, B::Primitive) -> Option<O::Primitive> + Copy + Send + 'static,
+) where
+    A: Inject + OperandName + 'static,
+    A::Primitive: Clone,
+    B: Inject + OperandName + 'static,
+    B::Primitive: Clone,
+    O: Eject + 'static,
+    O::Primitive: Debug + PartialEq,
+{
+    let block = move |modes| binary(operation, oracle, None, &Values::same(lhs()), &Values::same(rhs()), modes);
+    assert_snapshot(files, op, run_parallel(mode_jobs(1, block)));
+}
+
+/// Asserts the snapshot of `op`, a ternary operation, for each mode of each operand, each condition and each pair of
+/// `values`.
+pub fn assert_ternary<C, A>(
+    files: &SnapshotFiles,
+    op: &str,
+    values: impl Fn() -> Vec<(<A as Inject>::Primitive, String)> + Copy + Send + 'static,
+    operation: impl Fn(&C, &A, &A) -> A + Copy + Send + 'static,
+) where
+    C: Inject<Primitive = bool> + OperandName + 'static,
+    A: Inject + Eject<Primitive = <A as Inject>::Primitive> + OperandName + 'static,
+    <A as Inject>::Primitive: Clone + Debug + PartialEq,
+{
+    let block = move |modes| ternary(operation, None, &values(), modes);
+    assert_snapshot(files, op, run_parallel(mode_jobs(1, block)));
+}
+
+/// Asserts the snapshot of `op`, an operation with no operands that returns `expected`.
+pub fn assert_nullary<O>(files: &SnapshotFiles, op: &str, expected: O::Primitive, operation: impl FnOnce() -> O)
+where
+    O: Eject,
+    O::Primitive: Debug + PartialEq,
+{
+    assert_snapshot(files, op, vec![case(&[], None, Some(expected), None, || (), |()| operation())]);
 }

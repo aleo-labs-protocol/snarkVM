@@ -22,6 +22,7 @@ use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
     snapshot::{self, Array, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+    snapshot_files,
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_field::Field;
@@ -36,11 +37,7 @@ use snarkvm_console_types_group::{
     Uniform,
 };
 
-const FILES: SnapshotFiles = SnapshotFiles {
-    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
-    coverage: "each operand mode and a fixed set of group elements",
-    command: "cargo test -p snarkvm-circuit-types-group --test snapshots",
-};
+const FILES: SnapshotFiles = snapshot_files!("each operand mode and a fixed set of group elements");
 
 /// A console group element.
 type Console = ConsoleGroup<<Circuit as Environment>::Network>;
@@ -166,16 +163,8 @@ macro_rules! unary_snapshot {
     ($op:ident, $input:ty, $values:expr, |$a:ident| $circuit:expr, |$x:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 1]) -> Vec<Case> {
-                snapshot::unary(
-                    |$a: &$input| $circuit,
-                    |$x: <$input as Inject>::Primitive| $console,
-                    None,
-                    &$values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let oracle = |$x: <$input as Inject>::Primitive| $console;
+            snapshot::assert_unary(&FILES, stringify!($op), || $values, |$a: &$input| $circuit, oracle);
         }
     };
 }
@@ -185,18 +174,10 @@ macro_rules! binary_snapshot {
     ($op:ident, |$a:ident, $b:ident| $circuit:expr, |$x:ident, $y:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 2]) -> Vec<Case> {
-                let values = Values::same(values());
-                snapshot::binary(
-                    |$a: &Group<Circuit>, $b: &Group<Circuit>| $circuit,
-                    |$x: Console, $y: Console| $console,
-                    None,
-                    &values,
-                    &values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let operation = |$a: &Group<Circuit>, $b: &Group<Circuit>| $circuit;
+            snapshot::assert_binary(&FILES, stringify!($op), values, values, operation, |$x: Console, $y: Console| {
+                $console
+            });
         }
     };
 }
@@ -212,13 +193,13 @@ where
     O: Eject,
     O::Primitive: Debug + PartialEq,
 {
-    let block = format!("{}.{mode_x} {}.{mode_y}", Field::<Circuit>::type_name(), Field::<Circuit>::type_name());
+    let name = Field::<Circuit>::type_name();
     points
         .iter()
         .map(|(x, y, label_x, label_y)| {
-            let operands = [(mode_x, label_x.as_str()), (mode_y, label_y.as_str())];
+            let operands = [(name, mode_x, label_x.as_str()), (name, mode_y, label_y.as_str())];
             let inject = || (Field::<Circuit>::new(mode_x, *x), Field::<Circuit>::new(mode_y, *y));
-            snapshot::case(&block, &operands, oracle(*x, *y), None, inject, |(a, b)| operation(&a, &b))
+            snapshot::case(&operands, None, oracle(*x, *y), None, inject, |(a, b)| operation(&a, &b))
         })
         .collect()
 }
@@ -261,17 +242,6 @@ macro_rules! from_bits_snapshot {
     };
 }
 
-/// Defines a snapshot test of an operation that takes no operands and returns a constant.
-macro_rules! nullary_snapshot {
-    ($op:ident, $expected:expr) => {
-        #[test]
-        fn $op() {
-            let case = snapshot::case("()", &[], Some($expected), None, || (), |()| Group::<Circuit>::$op());
-            assert_snapshot(&FILES, stringify!($op), vec![case]);
-        }
-    };
-}
-
 // Arithmetic.
 binary_snapshot!(add, |a, b| a + b, |x, y| Some(x + y));
 binary_snapshot!(sub, |a, b| a - b, |x, y| Some(x - y));
@@ -281,17 +251,10 @@ unary_snapshot!(mul_by_cofactor, Group<Circuit>, values(), |a| a.mul_by_cofactor
 
 #[test]
 fn mul() {
-    fn cases(modes: [Mode; 2]) -> Vec<Case> {
-        snapshot::binary(
-            |a: &Group<Circuit>, b: &Scalar<Circuit>| a * b,
-            |x: Console, y: ConsoleScalar| Some(x * y),
-            None,
-            &Values::same(values()),
-            &Values::same(scalar_values()),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "mul", run_parallel(mode_jobs(1, cases)));
+    let operation = |a: &Group<Circuit>, b: &Scalar<Circuit>| a * b;
+    snapshot::assert_binary(&FILES, "mul", values, scalar_values, operation, |x: Console, y: ConsoleScalar| {
+        Some(x * y)
+    });
 }
 
 /// Covers the product of a group element and 8 or 251 big-endian bits. Every bit has the same mode.
@@ -324,15 +287,9 @@ unary_snapshot!(is_zero, Group<Circuit>, values(), |a| a.is_zero(), |x| Some(x.i
 
 #[test]
 fn ternary() {
-    fn cases(modes: [Mode; 3]) -> Vec<Case> {
-        snapshot::ternary(
-            |c: &Boolean<Circuit>, a: &Group<Circuit>, b: &Group<Circuit>| Group::ternary(c, a, b),
-            None,
-            &values(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "ternary", run_parallel(mode_jobs(1, cases)));
+    snapshot::assert_ternary(&FILES, "ternary", values, |c: &Boolean<Circuit>, a: &Group<Circuit>, b| {
+        Group::ternary(c, a, b)
+    });
 }
 
 // Coordinates.
@@ -387,5 +344,12 @@ from_bits_snapshot!(from_bits_le, [8, 253], |bits| bits);
 from_bits_snapshot!(from_bits_be, [8, 253], reversed);
 
 // Constants.
-nullary_snapshot!(zero, Console::zero());
-nullary_snapshot!(generator, Console::generator());
+#[test]
+fn zero() {
+    snapshot::assert_nullary(&FILES, "zero", Console::zero(), Group::<Circuit>::zero);
+}
+
+#[test]
+fn generator() {
+    snapshot::assert_nullary(&FILES, "generator", Console::generator(), Group::<Circuit>::generator);
+}

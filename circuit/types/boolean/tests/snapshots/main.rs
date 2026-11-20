@@ -21,16 +21,13 @@
 use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
-    snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+    snapshot::{self, SnapshotFiles},
+    snapshot_files,
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_console_types_boolean::Boolean as ConsoleBoolean;
 
-const FILES: SnapshotFiles = SnapshotFiles {
-    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
-    coverage: "each operand mode and value",
-    command: "cargo test -p snarkvm-circuit-types-boolean --test snapshots",
-};
+const FILES: SnapshotFiles = snapshot_files!("each operand mode and value");
 
 /// A console boolean.
 type Console = ConsoleBoolean<<Circuit as Environment>::Network>;
@@ -45,21 +42,12 @@ macro_rules! binary_snapshot {
     ($op:ident, |$a:ident, $b:ident| $circuit:expr, |$x:ident, $y:ident| $console:expr) => {
         #[test]
         fn $op() {
-            fn cases(modes: [Mode; 2]) -> Vec<Case> {
-                let values = Values::same(values());
-                snapshot::binary(
-                    |$a: &Boolean<Circuit>, $b: &Boolean<Circuit>| $circuit,
-                    |$x: bool, $y: bool| {
-                        let ($x, $y) = (Console::new($x), Console::new($y));
-                        Some(*$console)
-                    },
-                    None,
-                    &values,
-                    &values,
-                    modes,
-                )
-            }
-            assert_snapshot(&FILES, stringify!($op), run_parallel(mode_jobs(1, cases)));
+            let operation = |$a: &Boolean<Circuit>, $b: &Boolean<Circuit>| $circuit;
+            let oracle = |$x: bool, $y: bool| {
+                let ($x, $y) = (Console::new($x), Console::new($y));
+                Some(*$console)
+            };
+            snapshot::assert_binary(&FILES, stringify!($op), values, values, operation, oracle);
         }
     };
 }
@@ -74,21 +62,12 @@ binary_snapshot!(is_not_equal, |a, b| a.is_not_equal(b), |x, y| x.is_not_equal(&
 
 #[test]
 fn not() {
-    fn cases(modes: [Mode; 1]) -> Vec<Case> {
-        snapshot::unary(|a: &Boolean<Circuit>| !a, |x: bool| Some(*!Console::new(x)), None, &values(), modes)
-    }
-    assert_snapshot(&FILES, "not", run_parallel(mode_jobs(1, cases)));
+    snapshot::assert_unary(&FILES, "not", values, |a: &Boolean<Circuit>| !a, |x: bool| Some(*!Console::new(x)));
 }
 
 #[test]
 fn ternary() {
-    fn cases(modes: [Mode; 3]) -> Vec<Case> {
-        snapshot::ternary(
-            |c: &Boolean<Circuit>, a: &Boolean<Circuit>, b: &Boolean<Circuit>| Boolean::ternary(c, a, b),
-            None,
-            &values(),
-            modes,
-        )
-    }
-    assert_snapshot(&FILES, "ternary", run_parallel(mode_jobs(1, cases)));
+    snapshot::assert_ternary(&FILES, "ternary", values, |c: &Boolean<Circuit>, a: &Boolean<Circuit>, b| {
+        Boolean::ternary(c, a, b)
+    });
 }
