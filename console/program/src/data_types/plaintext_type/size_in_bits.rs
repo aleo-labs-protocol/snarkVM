@@ -53,24 +53,19 @@ impl<N: Network> PlaintextType<N> {
         get_struct: &impl Fn(&C, &Identifier<N>) -> Result<StructType<N>>,
         get_external_struct: &impl Fn(&C, &Locator<N>) -> Result<(C, StructType<N>)>,
     ) -> Result<usize> {
-        Ok(self
-            .size_in_bits_scoped(
-                context,
-                &|ctx| Some(program_id(ctx)),
-                get_struct,
-                get_external_struct,
-                0,
-                &mut HashMap::new(),
-            )?
-            .0)
+        let mut memoized = HashMap::new();
+        let (size, _) = self.size_in_bits_scoped(
+            context,
+            &|context| Some(program_id(context)),
+            get_struct,
+            get_external_struct,
+            0,
+            &mut memoized,
+        )?;
+        Ok(size)
     }
 
-    /// A helper function to determine the `(size, height)` of a plaintext type, while tracking the depth of the data.
-    ///
-    /// `memoized` is keyed on the struct type itself rather than its name, since an external struct resolves
-    /// through a different lookup whose struct names may collide with the current program's. It holds
-    /// `(size, height)`, where `height` is the number of levels below a type at which its deepest node sits (a
-    /// literal is `0`); see [`memoized_size`] for why the height is tracked.
+    /// Returns the encoded size and nesting height using the caller's struct lookups.
     pub(crate) fn size_in_bits_internal<F0, F1>(
         &self,
         get_struct: &F0,
@@ -92,6 +87,10 @@ impl<N: Network> PlaintextType<N> {
         )
     }
 
+    /// Returns the encoded size and nesting height. Each cached struct size includes its subtree height
+    /// so that a lookup at a deeper nesting level still enforces the depth limit.
+    /// With a program ID, local and imported references to the same struct share its fully qualified key.
+    /// Without a program ID, the declared type is the cache key.
     fn size_in_bits_scoped<C>(
         &self,
         context: &C,

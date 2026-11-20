@@ -761,11 +761,16 @@ pub fn cost_per_command<N: Network>(
         if consensus_version.is_none_or(|version| version < ConsensusVersion::V23) {
             return cost_in_size(stack, finalize_types, operands, byte_multiplier, base_cost);
         }
-        let (input, remaining) = operands.split_first().ok_or_else(|| anyhow!("Missing hash input"))?;
+        let (input, remaining_operands) = match command {
+            // Signature verification hashes the message after the signature and address.
+            Command::Instruction(Instruction::SignVerify(_)) => operands.split_last(),
+            _ => operands.split_first(),
+        }
+        .ok_or_else(|| anyhow!("Missing hash input"))?;
         let FinalizeType::Plaintext(plaintext_type) = finalize_types.get_type_from_operand(stack, input)? else {
             bail!("Expected a plaintext hash input");
         };
-        let bits = plaintext_type.size_in_bits_with_context(
+        let encoded_bits = plaintext_type.size_in_bits_with_context(
             &StackRef::Internal(stack),
             &|context| *context.program_id(),
             &|context, name| context.program().get_struct(name).cloned(),
@@ -775,11 +780,10 @@ pub fn cost_per_command<N: Network>(
                 Ok((StackRef::External(external), definition))
             },
         )?;
-        let input_cost = u64::try_from(bits.div_ceil(8))?
-            .checked_mul(byte_multiplier)
-            .ok_or_else(|| anyhow!("Hash input cost overflowed"))?;
-        // Commitments pass the randomizer as a scalar outside the encoded input.
-        cost_in_size(stack, finalize_types, remaining, byte_multiplier, base_cost.saturating_add(input_cost))
+        let encoded_bytes = u64::try_from(encoded_bits.div_ceil(8))?;
+        let input_cost =
+            encoded_bytes.checked_mul(byte_multiplier).ok_or_else(|| anyhow!("Hash input cost overflowed"))?;
+        cost_in_size(stack, finalize_types, remaining_operands, byte_multiplier, base_cost.saturating_add(input_cost))
     };
 
     match command {
@@ -1157,7 +1161,7 @@ pub fn cost_per_command<N: Network>(
                 .saturating_add(CAST_BASE_COST))
         }
         Command::Instruction(Instruction::SignVerify(sign)) => {
-            cost_in_size(stack, finalize_types, sign.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+            cost_for_hash_input(sign.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::Shl(_)) => Ok(500),
         Command::Instruction(Instruction::ShlWrapped(_)) => Ok(500),
@@ -1535,24 +1539,29 @@ struct item:
 
 function price:
     input r0 as [shapes.aleo/wrapper; 3u32].public;
-    async price r0 into r1;
-    output r1 as preimage.aleo/price.future;
+    input r1 as signature.public;
+    input r2 as address.public;
+    async price r0 r1 r2 into r3;
+    output r3 as preimage.aleo/price.future;
 
 finalize price:
     input r0 as [shapes.aleo/wrapper; 3u32].public;
-    hash.bhp256 r0 into r1 as field;
-    hash.bhp256 r0 into r2 as field;
-    hash.psd2 r0 into r3 as field;
-    commit.bhp256 r0 1scalar into r4 as field;
-    hash.bhp256.raw r0 into r5 as field;
-    hash.psd2.raw r0 into r6 as field;
-    commit.bhp256.raw r0 1scalar into r7 as field;
-    hash.ped64 1u8 into r8 as field;
-    commit.ped64 1u8 1scalar into r9 as field;
-    hash.ped128 1u8 into r10 as field;
-    commit.ped128 1u8 1scalar into r11 as field;
-    commit.ped64.raw 1u8 1scalar into r12 as field;
-    commit.ped128.raw 1u8 1scalar into r13 as field;
+    input r1 as signature.public;
+    input r2 as address.public;
+    hash.bhp256 r0 into r3 as field;
+    hash.bhp256 r0 into r4 as field;
+    hash.psd2 r0 into r5 as field;
+    commit.bhp256 r0 1scalar into r6 as field;
+    hash.bhp256.raw r0 into r7 as field;
+    hash.psd2.raw r0 into r8 as field;
+    commit.bhp256.raw r0 1scalar into r9 as field;
+    hash.ped64 1u8 into r10 as field;
+    commit.ped64 1u8 1scalar into r11 as field;
+    hash.ped128 1u8 into r12 as field;
+    commit.ped128 1u8 1scalar into r13 as field;
+    commit.ped64.raw 1u8 1scalar into r14 as field;
+    commit.ped128.raw 1u8 1scalar into r15 as field;
+    sign.verify r1 r2 r0 into r16;
 ",
         )?;
         let process = Process::<MainnetV0>::load()?;
@@ -1568,13 +1577,16 @@ finalize price:
         // Each element costs one length byte per struct name, the two names, and one boolean byte.
         let legacy_bytes = 3 * (1 + "wrapper".len() + 1 + "item".len() + 1) as u64;
         let randomizer_bytes = u64::from(LiteralType::Scalar.size_in_bytes::<MainnetV0>());
+        let signer_bytes = u64::from(LiteralType::Signature.size_in_bytes::<MainnetV0>())
+            + u64::from(LiteralType::Address.size_in_bytes::<MainnetV0>());
         let bhp_cost = |bytes| HASH_BHP_BASE_COST + HASH_BHP_PER_BYTE_COST * bytes;
         let poseidon_cost = |bytes| HASH_PSD_BASE_COST + HASH_PSD_PER_BYTE_COST * bytes;
-
         let pedersen_cost = |bytes| HASH_BASE_COST + HASH_PER_BYTE_COST * bytes;
         let pedersen_bits = Value::<MainnetV0>::from_str("1u8")?.to_bits_le().len();
         assert!(pedersen_bits <= 64);
 
+        let finalize = stack.get_function_ref(&function_name)?.finalize_logic().expect("price has a finalize block");
+        let finalize_types = stack.get_finalize_types(&function_name)?;
         for (version, preimage_bytes, pedersen_bytes) in [
             (None, legacy_bytes, 1),
             (Some(ConsensusVersion::V22), legacy_bytes, 1),
@@ -1594,10 +1606,8 @@ finalize price:
                 pedersen_cost(pedersen_bytes + randomizer_bytes),
                 pedersen_cost(1 + randomizer_bytes),
                 pedersen_cost(1 + randomizer_bytes),
+                poseidon_cost(signer_bytes + preimage_bytes),
             ];
-            let finalize =
-                stack.get_function_ref(&function_name)?.finalize_logic().expect("price has a finalize block");
-            let finalize_types = stack.get_finalize_types(&function_name)?;
             for (command, expected_cost) in finalize.commands().iter().zip_eq(expected) {
                 assert_eq!(
                     cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V3, version)?,
