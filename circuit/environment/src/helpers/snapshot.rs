@@ -23,7 +23,9 @@ use std::{
     collections::{HashMap, HashSet, hash_map::Entry},
     fmt::Debug,
     fs,
+    iter,
     num::NonZeroUsize,
+    ops::Deref,
     panic::{self, AssertUnwindSafe},
     path::Path,
     sync::{Condvar, Mutex, Once, OnceLock, PoisonError},
@@ -50,11 +52,11 @@ pub struct SnapshotFiles {
 /// One case of an operation.
 pub struct Case {
     /// The type and mode of each operand, such as `u8.constant u8.private`.
-    pub block: String,
+    block: String,
     /// The label of each constant operand value, or `_` for a variable operand, such as `MAX _`.
-    pub values: String,
+    values: String,
     /// The counts, output mode and digest of the synthesized circuit, or `halt`.
-    pub outcome: String,
+    outcome: String,
 }
 
 /// A job that returns the cases of one block.
@@ -88,10 +90,53 @@ impl<P> Values<P> {
 }
 
 /// Returns the label of an operand in `Case::values`: `label` for a constant, `_` for a variable.
-pub fn value_label(mode: Mode, label: &str) -> &str {
+fn value_label(mode: Mode, label: &str) -> &str {
     match mode {
         Mode::Constant => label,
         _ => "_",
+    }
+}
+
+/// The name of an operand type in `Case::block`, such as `u8` or `boolean[8]`.
+///
+/// A type that implements `TypeName` has its type name.
+pub trait OperandName {
+    /// Returns the name of the operand type.
+    fn operand_name() -> String;
+}
+
+impl<T: TypeName> OperandName for T {
+    fn operand_name() -> String {
+        T::type_name().to_string()
+    }
+}
+
+/// An operand of `N` elements of `A`, such as the bits that an operation takes. It is named `{A}[{N}]`.
+///
+/// Every element has the mode of the operand.
+pub struct Array<A, const N: usize>(Vec<A>);
+
+impl<A: Inject, const N: usize> Inject for Array<A, N> {
+    type Primitive = Vec<A::Primitive>;
+
+    /// Injects each element of `value` in `mode`. Panics if `value` does not have `N` elements.
+    fn new(mode: Mode, value: Self::Primitive) -> Self {
+        assert_eq!(value.len(), N, "an `Array<_, {N}>` operand takes {N} elements");
+        Self(Inject::new(mode, value))
+    }
+}
+
+impl<A, const N: usize> Deref for Array<A, N> {
+    type Target = [A];
+
+    fn deref(&self) -> &[A] {
+        &self.0
+    }
+}
+
+impl<A: OperandName, const N: usize> OperandName for Array<A, N> {
+    fn operand_name() -> String {
+        format!("{}[{N}]", A::operand_name())
     }
 }
 
@@ -135,12 +180,10 @@ fn render_mode<O: Eject>(output: &O, bit_modes: Option<fn(&O) -> Vec<Mode>>) -> 
 /// Synthesizes `operation`, then resets the circuit.
 ///
 /// The caller injects the operands before the call, so the counts and the digest cover the operation alone.
-/// `expected` is the console result, or `None` if the operation is undefined for the operands.
-/// `bit_modes`, if given, returns the mode of each bit of the output. It runs after the circuit is reset,
-/// so any constraint it adds does not reach the counts or the digest.
+/// `expected` and `bit_modes` are as in `case`.
 /// Panics if a defined case does not produce `expected` in a satisfied circuit,
 /// or if an undefined case gives a satisfied circuit. An undefined case does not eject its output.
-pub fn measure<O: Eject>(
+fn measure<O: Eject>(
     label: &str,
     expected: Option<O::Primitive>,
     bit_modes: Option<fn(&O) -> Vec<Mode>>,
@@ -195,6 +238,38 @@ where
     }
 }
 
+/// Returns a case of `block` for one value of each operand.
+///
+/// `operands` gives the mode and value label of each operand, in the order that `inject` injects them.
+/// `inject` runs on a reset circuit and returns the operands. The counts and the digest cover `operation` alone.
+/// `expected` is the console result, or `None` if the operation is undefined for the operands.
+/// `bit_modes`, if given, returns the mode of each bit of the output. It runs after the circuit is reset,
+/// so any constraint it adds does not reach the counts or the digest.
+/// A failure names `block` and the label of each operand.
+/// An operation with no operands has the values `()`, and its block is `()` by convention.
+pub fn case<I, O>(
+    block: &str,
+    operands: &[(Mode, &str)],
+    expected: Option<O::Primitive>,
+    bit_modes: Option<fn(&O) -> Vec<Mode>>,
+    inject: impl FnOnce() -> I,
+    operation: impl FnOnce(I) -> O,
+) -> Case
+where
+    O: Eject,
+    O::Primitive: Debug + PartialEq,
+{
+    Circuit::reset();
+    let inputs = inject();
+    let label = iter::once(block).chain(operands.iter().map(|(_, value)| *value)).join(" ");
+    let outcome = measure(&label, expected, bit_modes, || operation(inputs));
+    let values = match operands.is_empty() {
+        true => "()".to_string(),
+        false => operands.iter().map(|(mode, value)| value_label(*mode, value)).join(" "),
+    };
+    Case { block: block.to_string(), values, outcome }
+}
+
 /// Returns the cases of a unary operation on an operand of the given mode, one per value.
 pub fn unary<A, O>(
     operation: impl Fn(&A) -> O,
@@ -204,19 +279,17 @@ pub fn unary<A, O>(
     [mode]: [Mode; 1],
 ) -> Vec<Case>
 where
-    A: Inject + TypeName,
+    A: Inject + OperandName,
     A::Primitive: Clone,
     O: Eject,
     O::Primitive: Debug + PartialEq,
 {
-    let block = format!("{}.{mode}", A::type_name());
+    let block = format!("{}.{mode}", A::operand_name());
     values
         .iter()
         .map(|(x, label)| {
-            Circuit::reset();
-            let a = A::new(mode, x.clone());
-            let outcome = measure(&format!("{block} {label}"), oracle(x.clone()), bit_modes, || operation(&a));
-            Case { block: block.clone(), values: value_label(mode, label).to_string(), outcome }
+            let inject = || A::new(mode, x.clone());
+            case(&block, &[(mode, label.as_str())], oracle(x.clone()), bit_modes, inject, |a| operation(&a))
         })
         .collect()
 }
@@ -231,25 +304,22 @@ pub fn binary<A, B, O>(
     [mode_a, mode_b]: [Mode; 2],
 ) -> Vec<Case>
 where
-    A: Inject + TypeName,
+    A: Inject + OperandName,
     A::Primitive: Clone,
-    B: Inject + TypeName,
+    B: Inject + OperandName,
     B::Primitive: Clone,
     O: Eject,
     O::Primitive: Debug + PartialEq,
 {
-    let block = format!("{}.{mode_a} {}.{mode_b}", A::type_name(), B::type_name());
+    let block = format!("{}.{mode_a} {}.{mode_b}", A::operand_name(), B::operand_name());
     let (lhs, rhs) = (lhs.for_mode(mode_a), rhs.for_mode(mode_b));
     let mut cases = Vec::with_capacity(lhs.len() * rhs.len());
     for (x, label_x) in lhs {
         for (y, label_y) in rhs {
-            Circuit::reset();
-            let a = A::new(mode_a, x.clone());
-            let b = B::new(mode_b, y.clone());
-            let label = format!("{block} {label_x} {label_y}");
-            let outcome = measure(&label, oracle(x.clone(), y.clone()), bit_modes, || operation(&a, &b));
-            let values = format!("{} {}", value_label(mode_a, label_x), value_label(mode_b, label_y));
-            cases.push(Case { block: block.clone(), values, outcome });
+            let operands = [(mode_a, label_x.as_str()), (mode_b, label_y.as_str())];
+            let inject = || (A::new(mode_a, x.clone()), B::new(mode_b, y.clone()));
+            let expected = oracle(x.clone(), y.clone());
+            cases.push(case(&block, &operands, expected, bit_modes, inject, |(a, b)| operation(&a, &b)));
         }
     }
     cases
@@ -264,29 +334,20 @@ pub fn ternary<C, A>(
     [mode_c, mode_a, mode_b]: [Mode; 3],
 ) -> Vec<Case>
 where
-    C: Inject<Primitive = bool> + TypeName,
-    A: Inject + Eject<Primitive = <A as Inject>::Primitive> + TypeName,
+    C: Inject<Primitive = bool> + OperandName,
+    A: Inject + Eject<Primitive = <A as Inject>::Primitive> + OperandName,
     <A as Inject>::Primitive: Clone + Debug + PartialEq,
 {
-    let block = format!("{}.{mode_c} {}.{mode_a} {}.{mode_b}", C::type_name(), A::type_name(), A::type_name());
+    let block = format!("{}.{mode_c} {}.{mode_a} {}.{mode_b}", C::operand_name(), A::operand_name(), A::operand_name());
     let mut cases = Vec::with_capacity(2 * values.len() * values.len());
     for condition in [false, true] {
+        let label_c = condition.to_string();
         for (x, label_x) in values {
             for (y, label_y) in values {
-                Circuit::reset();
-                let c = C::new(mode_c, condition);
-                let a = A::new(mode_a, x.clone());
-                let b = A::new(mode_b, y.clone());
-                let label = format!("{block} {condition} {label_x} {label_y}");
+                let operands = [(mode_c, label_c.as_str()), (mode_a, label_x.as_str()), (mode_b, label_y.as_str())];
+                let inject = || (C::new(mode_c, condition), A::new(mode_a, x.clone()), A::new(mode_b, y.clone()));
                 let expected = Some(if condition { x.clone() } else { y.clone() });
-                let outcome = measure(&label, expected, bit_modes, || operation(&c, &a, &b));
-                let values = format!(
-                    "{} {} {}",
-                    value_label(mode_c, &condition.to_string()),
-                    value_label(mode_a, label_x),
-                    value_label(mode_b, label_y)
-                );
-                cases.push(Case { block: block.clone(), values, outcome });
+                cases.push(case(&block, &operands, expected, bit_modes, inject, |(c, a, b)| operation(&c, &a, &b)));
             }
         }
     }
@@ -379,6 +440,11 @@ pub fn run_parallel(jobs: impl IntoIterator<Item = Job>) -> Vec<Case> {
             .collect()
     });
     results.sort_unstable_by_key(|(index, _)| *index);
+    if let Some(block) = shared_block(results.iter().map(|(_, cases)| cases.as_slice())) {
+        panic!(
+            "The cases of block `{block}` come from two jobs or are not contiguous. Each block needs a unique string."
+        );
+    }
     results.into_iter().flat_map(|(_, cases)| cases).collect()
 }
 
@@ -493,6 +559,13 @@ fn compare(stored: &str, cases: &[Case]) -> Vec<String> {
     differences
 }
 
+/// Returns a block that two lists of cases share, or that is not contiguous within one list.
+///
+/// Two operand types with the same name, or a block string without the mode of an operand, give such a block.
+fn shared_block<'a>(lists: impl IntoIterator<Item = &'a [Case]>) -> Option<&'a str> {
+    lists.into_iter().flat_map(|cases| cases.iter().map(|case| case.block.as_str()).dedup()).duplicates().next()
+}
+
 /// Merges the cases that differ only in the values of variable operands.
 ///
 /// Panics if such cases differ in outcome, as the shape of a circuit must not depend on a witness.
@@ -501,13 +574,21 @@ fn merge(op: &str, cases: Vec<Case>) -> Vec<Case> {
     let mut index: HashMap<(String, String), usize> = HashMap::with_capacity(cases.len());
     for case in cases {
         match index.entry((case.block.clone(), case.values.clone())) {
-            Entry::Occupied(entry) => assert_eq!(
-                merged[*entry.get()].outcome,
-                case.outcome,
-                "`{op}`: `{} | {}` depends on the value of a variable operand",
-                case.block,
-                case.values
-            ),
+            Entry::Occupied(entry) => {
+                assert!(
+                    case.values.split(' ').any(|value| value == "_"),
+                    "`{op}`: `{} | {}` is listed twice. Each constant value needs a unique label.",
+                    case.block,
+                    case.values
+                );
+                assert_eq!(
+                    merged[*entry.get()].outcome,
+                    case.outcome,
+                    "`{op}`: `{} | {}` depends on the value of a variable operand",
+                    case.block,
+                    case.values
+                )
+            }
             Entry::Vacant(entry) => {
                 entry.insert(merged.len());
                 merged.push(case);
@@ -519,8 +600,11 @@ fn merge(op: &str, cases: Vec<Case>) -> Vec<Case> {
 
 /// Compares the cases of `op` with `{op}.snap` in `files.directory`, or rewrites the file if `UPDATE_VARIABLE` is `1`.
 ///
-/// `cases` must list the cases of each block together.
+/// Panics if `cases` does not list the cases of each block together.
 pub fn assert_snapshot(files: &SnapshotFiles, op: &str, cases: Vec<Case>) {
+    if let Some(block) = shared_block([cases.as_slice()]) {
+        panic!("`{op}`: the cases of block `{block}` are not contiguous. Each block needs a unique string.");
+    }
     let cases = &merge(op, cases);
     let rendered = render(files, op, cases);
     let path = Path::new(files.directory).join(format!("{op}.snap"));

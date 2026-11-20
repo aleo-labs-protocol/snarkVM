@@ -21,7 +21,7 @@
 use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
-    snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel, value_label},
+    snapshot::{self, Array, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_field::Field;
@@ -157,19 +157,16 @@ macro_rules! from_bits_snapshot {
     ($op:ident, [$($n:literal),+], $order:expr) => {
         #[test]
         fn $op() {
-            fn cases<const N: usize>([mode]: [Mode; 1]) -> Vec<Case> {
-                let block = format!("{}[{N}].{mode}", Boolean::<Circuit>::type_name());
-                bits_values(N)
-                    .into_iter()
-                    .map(|(bits_le, label)| {
-                        Circuit::reset();
-                        let expected = Console::from_bits_le(&bits_le).ok();
-                        let bits: Vec<Boolean<Circuit>> = Inject::new(mode, $order(bits_le));
-                        let outcome =
-                            snapshot::measure(&format!("{block} {label}"), expected, None, || Scalar::$op(&bits));
-                        Case { block: block.clone(), values: value_label(mode, &label).to_string(), outcome }
-                    })
-                    .collect()
+            fn cases<const N: usize>(modes: [Mode; 1]) -> Vec<Case> {
+                let values: Vec<_> =
+                    bits_values(N).into_iter().map(|(bits_le, label)| ($order(bits_le), label)).collect();
+                snapshot::unary(
+                    |bits: &Array<Boolean<Circuit>, N>| Scalar::$op(bits),
+                    |bits| Console::$op(&bits).ok(),
+                    None,
+                    &values,
+                    modes,
+                )
             }
             let jobs = [$(mode_jobs($n, cases::<$n>)),+];
             assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
@@ -182,13 +179,8 @@ macro_rules! nullary_snapshot {
     ($op:ident, $expected:expr) => {
         #[test]
         fn $op() {
-            Circuit::reset();
-            let outcome = snapshot::measure(stringify!($op), Some($expected), None, Scalar::<Circuit>::$op);
-            assert_snapshot(&FILES, stringify!($op), vec![Case {
-                block: "()".to_string(),
-                values: "()".to_string(),
-                outcome,
-            }]);
+            let case = snapshot::case("()", &[], Some($expected), None, || (), |()| Scalar::<Circuit>::$op());
+            assert_snapshot(&FILES, stringify!($op), vec![case]);
         }
     };
 }

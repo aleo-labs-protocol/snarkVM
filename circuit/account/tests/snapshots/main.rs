@@ -31,7 +31,7 @@ use snarkvm_circuit_types::{
     Field,
     environment::{
         prelude::*,
-        snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel, value_label},
+        snapshot::{self, Array, Case, OperandName, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
     },
 };
 use snarkvm_console_account as console;
@@ -233,6 +233,9 @@ fn signature_ternary() {
     assert_snapshot(&FILES, "signature_ternary", run_parallel(mode_jobs(1, cases)));
 }
 
+/// A message of two field elements.
+type Message = Array<Field<AleoV0>, 2>;
+
 /// Covers each signature, address and message. A signature is valid only for its own address and the first message.
 #[test]
 fn verify() {
@@ -240,30 +243,23 @@ fn verify() {
         AleoV0::initialize_global_constants();
         let (signatures, addresses, messages) = (signatures(), addresses(), messages());
         let block = format!(
-            "{}.{mode_s} {}.{mode_a} {}[{}].{mode_m}",
-            Signature::<AleoV0>::type_name(),
-            Address::<AleoV0>::type_name(),
-            Field::<AleoV0>::type_name(),
-            messages[0].0.len()
+            "{}.{mode_s} {}.{mode_a} {}.{mode_m}",
+            Signature::<AleoV0>::operand_name(),
+            Address::<AleoV0>::operand_name(),
+            Message::operand_name(),
         );
         let mut cases = Vec::with_capacity(signatures.len() * addresses.len() * messages.len());
         for (signature, label_s) in &signatures {
             for (address, label_a) in &addresses {
                 for (message, label_m) in &messages {
-                    AleoV0::reset();
-                    let s = Signature::<AleoV0>::new(mode_s, *signature);
-                    let a = Address::<AleoV0>::new(mode_a, *address);
-                    let m: Vec<Field<AleoV0>> = Inject::new(mode_m, message.clone());
-                    let label = format!("{block} {label_s} {label_a} {label_m}");
+                    let operands = [(mode_s, label_s.as_str()), (mode_a, label_a.as_str()), (mode_m, label_m.as_str())];
+                    let inject = || {
+                        let s = Signature::<AleoV0>::new(mode_s, *signature);
+                        let a = Address::<AleoV0>::new(mode_a, *address);
+                        (s, a, Message::new(mode_m, message.clone()))
+                    };
                     let expected = Some(signature.verify(address, message));
-                    let outcome = snapshot::measure(&label, expected, None, || s.verify(&a, &m));
-                    let values = format!(
-                        "{} {} {}",
-                        value_label(mode_s, label_s),
-                        value_label(mode_a, label_a),
-                        value_label(mode_m, label_m)
-                    );
-                    cases.push(Case { block: block.clone(), values, outcome });
+                    cases.push(snapshot::case(&block, &operands, expected, None, inject, |(s, a, m)| s.verify(&a, &m)));
                 }
             }
         }

@@ -21,7 +21,7 @@
 use snarkvm_circuit_environment::{
     Circuit,
     prelude::*,
-    snapshot::{self, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel, value_label},
+    snapshot::{self, Array, Case, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
 };
 use snarkvm_circuit_types_boolean::Boolean;
 use snarkvm_circuit_types_field::Field;
@@ -216,13 +216,9 @@ where
     points
         .iter()
         .map(|(x, y, label_x, label_y)| {
-            Circuit::reset();
-            let a = Field::<Circuit>::new(mode_x, *x);
-            let b = Field::<Circuit>::new(mode_y, *y);
-            let label = format!("{block} {label_x} {label_y}");
-            let outcome = snapshot::measure(&label, oracle(*x, *y), None, || operation(&a, &b));
-            let values = format!("{} {}", value_label(mode_x, label_x), value_label(mode_y, label_y));
-            Case { block: block.clone(), values, outcome }
+            let operands = [(mode_x, label_x.as_str()), (mode_y, label_y.as_str())];
+            let inject = || (Field::<Circuit>::new(mode_x, *x), Field::<Circuit>::new(mode_y, *y));
+            snapshot::case(&block, &operands, oracle(*x, *y), None, inject, |(a, b)| operation(&a, &b))
         })
         .collect()
 }
@@ -248,19 +244,16 @@ macro_rules! from_bits_snapshot {
     ($op:ident, [$($n:literal),+], $order:expr) => {
         #[test]
         fn $op() {
-            fn cases<const N: usize>([mode]: [Mode; 1]) -> Vec<Case> {
-                let block = format!("{}[{N}].{mode}", Boolean::<Circuit>::type_name());
-                x_bits_values(N)
-                    .into_iter()
-                    .map(|(bits_le, label)| {
-                        Circuit::reset();
-                        let expected = Console::from_bits_le(&bits_le).ok();
-                        let bits: Vec<Boolean<Circuit>> = Inject::new(mode, $order(bits_le));
-                        let outcome =
-                            snapshot::measure(&format!("{block} {label}"), expected, None, || Group::$op(&bits));
-                        Case { block: block.clone(), values: value_label(mode, &label).to_string(), outcome }
-                    })
-                    .collect()
+            fn cases<const N: usize>(modes: [Mode; 1]) -> Vec<Case> {
+                let values: Vec<_> =
+                    x_bits_values(N).into_iter().map(|(bits_le, label)| ($order(bits_le), label)).collect();
+                snapshot::unary(
+                    |bits: &Array<Boolean<Circuit>, N>| Group::$op(bits),
+                    |bits| Console::$op(&bits).ok(),
+                    None,
+                    &values,
+                    modes,
+                )
             }
             let jobs = [$(mode_jobs($n, cases::<$n>)),+];
             assert_snapshot(&FILES, stringify!($op), run_parallel(jobs.into_iter().flatten()));
@@ -273,13 +266,8 @@ macro_rules! nullary_snapshot {
     ($op:ident, $expected:expr) => {
         #[test]
         fn $op() {
-            Circuit::reset();
-            let outcome = snapshot::measure(stringify!($op), Some($expected), None, Group::<Circuit>::$op);
-            assert_snapshot(&FILES, stringify!($op), vec![Case {
-                block: "()".to_string(),
-                values: "()".to_string(),
-                outcome,
-            }]);
+            let case = snapshot::case("()", &[], Some($expected), None, || (), |()| Group::<Circuit>::$op());
+            assert_snapshot(&FILES, stringify!($op), vec![case]);
         }
     };
 }
@@ -309,27 +297,21 @@ fn mul() {
 /// Covers the product of a group element and 8 or 251 big-endian bits. Every bit has the same mode.
 #[test]
 fn mul_bits() {
-    fn cases<const N: usize>([mode_a, mode_b]: [Mode; 2]) -> Vec<Case> {
-        let block =
-            format!("{}.{mode_a} {}[{N}].{mode_b}", Group::<Circuit>::type_name(), Boolean::<Circuit>::type_name());
-        let (values, bits_values) = (values(), bits_be_values(N));
-        let mut cases = Vec::with_capacity(values.len() * bits_values.len());
-        for (x, label_x) in &values {
-            for (bits_be, label_y) in &bits_values {
-                Circuit::reset();
-                let a = Group::<Circuit>::new(mode_a, *x);
-                let b: Vec<Boolean<Circuit>> = Inject::new(mode_b, bits_be.clone());
+    fn cases<const N: usize>(modes: [Mode; 2]) -> Vec<Case> {
+        snapshot::binary(
+            |a: &Group<Circuit>, b: &Array<Boolean<Circuit>, N>| a * &b[..],
+            |x: Console, bits_be: Vec<bool>| {
                 let scalar = bits_be.iter().fold(ConsoleScalar::zero(), |scalar, bit| match bit {
                     true => scalar.double() + ConsoleScalar::one(),
                     false => scalar.double(),
                 });
-                let label = format!("{block} {label_x} {label_y}");
-                let outcome = snapshot::measure(&label, Some(*x * scalar), None, || &a * b.as_slice());
-                let values = format!("{} {}", value_label(mode_a, label_x), value_label(mode_b, label_y));
-                cases.push(Case { block: block.clone(), values, outcome });
-            }
-        }
-        cases
+                Some(x * scalar)
+            },
+            None,
+            &Values::same(values()),
+            &Values::same(bits_be_values(N)),
+            modes,
+        )
     }
     let jobs = [mode_jobs(8, cases::<8>), mode_jobs(251, cases::<251>)];
     assert_snapshot(&FILES, "mul_bits", run_parallel(jobs.into_iter().flatten()));
