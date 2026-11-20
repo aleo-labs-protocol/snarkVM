@@ -136,7 +136,6 @@ locktick = [
   "snarkvm-parameters?/locktick",
   "snarkvm-synthesizer?/locktick"
 ]
-prop-tests = [ "snarkvm-ledger?/prop-tests" ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
 test = [ "snarkvm-ledger/test" ]
 test-helpers = [ "snarkvm-algorithms?/test-helpers", "snarkvm-ledger/test-helpers" ]

@@ -28,8 +28,14 @@ default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
-prop-tests = [ "dep:rand", "dep:rand_chacha", "dep:anyhow", "dep:proptest" ]
-test-helpers = [ "prop-tests", "rand_distr", "snarkvm-console/test-helpers" ]
+test-helpers = [
+  "dep:anyhow",
+  "dep:proptest",
+  "dep:rand",
+  "dep:rand_chacha",
+  "rand_distr",
+  "snarkvm-console/test-helpers"
+]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -87,4 +93,4 @@ workspace = true
 
 [dev-dependencies.snarkvm-ledger-committee]
 path = "."
-features = [ "prop-tests", "test-helpers" ]
+features = [ "test-helpers" ]
