@@ -232,6 +232,23 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.certificate_map.compact()
     }
 
+    fn compacts_authority_map(&self) -> bool {
+        true
+    }
+
+    fn authority_compaction_plan(&self) -> Result<Vec<bool>> {
+        self.authority_map.compaction_plan()
+    }
+
+    fn compact_authority_slice(&self, i: usize, slices: usize) -> Result<()> {
+        self.authority_map.compact_slice(i, slices)
+    }
+
+    /// Keeps only the certificate rows whose value `retain` accepts. See `DataMap::retain_all`.
+    fn retain_certificate_indexes(&self, retain: impl Fn(&(u32, u64)) -> bool + Sync) -> Result<(usize, usize)> {
+        self.certificate_map.retain_all(retain)
+    }
+
     /// Returns the block metadata map.
     fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
         &self.block_metadata_map
