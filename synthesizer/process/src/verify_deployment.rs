@@ -213,6 +213,76 @@ mod tests {
             .unwrap();
     }
 
+    /// A halt in deployment synthesis on a rayon worker does not reach the host's panic hook.
+    #[cfg(not(feature = "serial"))]
+    #[test]
+    fn test_verify_deployment_halt_on_worker_skips_host_hook() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        const CHILD_PROCESS_ENV: &str = "SNARKVM_DEPLOYMENT_HALT_HOOK_CHILD";
+        const TEST_NAME: &str = "verify_deployment::tests::test_verify_deployment_halt_on_worker_skips_host_hook";
+
+        if std::env::var_os(CHILD_PROCESS_ENV).is_none() {
+            // Run this test in a fresh process because panic hooks are process-global.
+            let output =
+                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
+                    .args([TEST_NAME, "--exact", "--nocapture"])
+                    .env(CHILD_PROCESS_ENV, "1")
+                    .output()
+                    .expect("Failed to launch the child test process");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "Child test failed.\nstdout:\n{stdout}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let host_hook_calls = Arc::new(AtomicUsize::new(0));
+        let host_hook_calls_ = host_hook_calls.clone();
+        std::panic::set_hook(Box::new(move |_| {
+            host_hook_calls_.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // Returns a program with two functions that cast `x` to a group. Rayon runs a loop over one item on the caller.
+        let two_casts = |x: &str| {
+            let function = |name: &str| {
+                format!(
+                    "function {name}:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    cast r2 into r3 as group;\n    output r3 as group.private;\n\n"
+                )
+            };
+            Program::<CurrentNetwork>::from_str(&format!(
+                "program halt_on_worker.aleo;\n\n{}{}constructor:\n    assert.eq edition 0u16;\n",
+                function("f"),
+                function("g")
+            ))
+            .unwrap()
+        };
+
+        let rng = &mut TestRng::default();
+        let program = two_casts("7647702037709885229845698841124471395615470129800647510314961670563126650261");
+        // `deploy` panics on this value, so the deployment takes its keys from the program for `2`.
+        let keys = Process::load().unwrap().deploy::<CurrentAleo, _>(&two_casts("2"), rng).unwrap();
+        let deployment = Deployment::new(
+            0,
+            program.clone(),
+            keys.verifying_keys().clone(),
+            Some(program.to_checksum()),
+            Some(console::types::Address::zero()),
+        )
+        .unwrap();
+        let process = Process::load().unwrap();
+
+        // This thread is not a rayon worker, so the synthesis jobs run on workers of the global pool.
+        assert!(rayon::current_thread_index().is_none());
+        let result = try_vm_runtime(|| {
+            process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+        });
+        assert!(result.is_err(), "the deployment must be rejected by a panic during synthesis");
+        assert_eq!(host_hook_calls.load(Ordering::SeqCst), 0, "the halt must not reach the host hook");
+    }
+
     /// Use `cargo test profiler --features timer` to run this test.
     #[ignore]
     #[test]
