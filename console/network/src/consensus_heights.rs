@@ -91,7 +91,7 @@ pub enum ConsensusVersion {
     V22 = 22,
     /// V23: Adds explicit availability status to block responses (snarkOS message version 34).
     ///      Rejects deployments with a static `call` to a function that has a constant output.
-    ///      Prices non-raw hash and BHP commitment inputs by their encoded size in finalize.
+    ///      Prices non-raw hash and commitment inputs by their encoded size in finalize.
     V23 = 23,
 }
 

@@ -778,7 +778,7 @@ pub fn cost_per_command<N: Network>(
         let input_cost = u64::try_from(bits.div_ceil(8))?
             .checked_mul(byte_multiplier)
             .ok_or_else(|| anyhow!("Hash input cost overflowed"))?;
-        // BHP commitments pass the randomizer as a scalar outside the encoded input.
+        // Commitments pass the randomizer as a scalar outside the encoded input.
         cost_in_size(stack, finalize_types, remaining, byte_multiplier, base_cost.saturating_add(input_cost))
     };
 
@@ -854,10 +854,10 @@ pub fn cost_per_command<N: Network>(
             cost_for_hash_input(commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::CommitPED64(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::CommitPED128(commit)) => {
-            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+            cost_for_hash_input(commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::CommitBHP256Raw(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
@@ -1547,6 +1547,12 @@ finalize price:
     hash.bhp256.raw r0 into r5 as field;
     hash.psd2.raw r0 into r6 as field;
     commit.bhp256.raw r0 1scalar into r7 as field;
+    hash.ped64 1u8 into r8 as field;
+    commit.ped64 1u8 1scalar into r9 as field;
+    hash.ped128 1u8 into r10 as field;
+    commit.ped128 1u8 1scalar into r11 as field;
+    commit.ped64.raw 1u8 1scalar into r12 as field;
+    commit.ped128.raw 1u8 1scalar into r13 as field;
 ",
         )?;
         let process = Process::<MainnetV0>::load()?;
@@ -1565,10 +1571,14 @@ finalize price:
         let bhp_cost = |bytes| HASH_BHP_BASE_COST + HASH_BHP_PER_BYTE_COST * bytes;
         let poseidon_cost = |bytes| HASH_PSD_BASE_COST + HASH_PSD_PER_BYTE_COST * bytes;
 
-        for (version, preimage_bytes) in [
-            (None, legacy_bytes),
-            (Some(ConsensusVersion::V22), legacy_bytes),
-            (Some(ConsensusVersion::V23), encoded_bytes),
+        let pedersen_cost = |bytes| HASH_BASE_COST + HASH_PER_BYTE_COST * bytes;
+        let pedersen_bits = Value::<MainnetV0>::from_str("1u8")?.to_bits_le().len();
+        assert!(pedersen_bits <= 64);
+
+        for (version, preimage_bytes, pedersen_bytes) in [
+            (None, legacy_bytes, 1),
+            (Some(ConsensusVersion::V22), legacy_bytes, 1),
+            (Some(ConsensusVersion::V23), encoded_bytes, pedersen_bits.div_ceil(8) as u64),
         ] {
             let expected = [
                 bhp_cost(preimage_bytes),
@@ -1578,6 +1588,12 @@ finalize price:
                 bhp_cost(legacy_bytes),
                 poseidon_cost(legacy_bytes),
                 bhp_cost(legacy_bytes + randomizer_bytes),
+                pedersen_cost(pedersen_bytes),
+                pedersen_cost(pedersen_bytes + randomizer_bytes),
+                pedersen_cost(pedersen_bytes),
+                pedersen_cost(pedersen_bytes + randomizer_bytes),
+                pedersen_cost(1 + randomizer_bytes),
+                pedersen_cost(1 + randomizer_bytes),
             ];
             let finalize =
                 stack.get_function_ref(&function_name)?.finalize_logic().expect("price has a finalize block");
