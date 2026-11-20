@@ -19,7 +19,7 @@ use crate::{
     CommitteeStorage,
     CommitteeStore,
     FinalizeStorage,
-    helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, NestedDataMap, ProgramMap},
+    helpers::rocksdb::{self, CommitteeMap, DataMap, Database, MapID, MetadataMap, NestedDataMap, ProgramMap},
 };
 
 use console::{
@@ -42,9 +42,14 @@ pub struct FinalizeDB<N: Network> {
     program_id_map: DataMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    /// Inclusive coverage ranges keyed by program and big-endian start height.
     program_history_map: DataMap<(ProgramID<N>, [u8; 4]), u32>,
+    /// Mapping events keyed by program, range start, mapping, and big-endian event height.
     mapping_history_map: DataMap<(ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>,
+    /// Key versions keyed by program, range start, mapping, key, and big-endian version height.
     key_history_map: DataMap<(ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>,
+    /// Recording mode and last indexed height in the existing storage metadata prefix.
+    history_metadata_map: DataMap<u8, (bool, Vec<ProgramID<N>>, u32)>,
     /// The rejection reason map.
     rejected_reason_map: DataMap<Field<N>, RejectedReason<N>>,
 
@@ -60,6 +65,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type ProgramHistoryMap = DataMap<(ProgramID<N>, [u8; 4]), u32>;
     type MappingHistoryMap = DataMap<(ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>;
     type KeyHistoryMap = DataMap<(ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>;
+    type HistoryMetadataMap = DataMap<u8, (bool, Vec<ProgramID<N>>, u32)>;
     type RejectedReasonMap = DataMap<Field<N>, RejectedReason<N>>;
 
     /// Initializes the finalize storage.
@@ -76,6 +82,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             program_history_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramHistory))?,
             mapping_history_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingHistory))?,
             key_history_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyHistory))?,
+            history_metadata_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Metadata(MetadataMap::Metadata))?,
             rejected_reason_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::RejectedReason))?,
 
             storage_mode: storage,
@@ -100,6 +107,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     fn program_history_map(&self) -> &Self::ProgramHistoryMap { &self.program_history_map }
     fn mapping_history_map(&self) -> &Self::MappingHistoryMap { &self.mapping_history_map }
     fn key_history_map(&self) -> &Self::KeyHistoryMap { &self.key_history_map }
+    fn history_metadata_map(&self) -> &Self::HistoryMetadataMap { &self.history_metadata_map }
 
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap {

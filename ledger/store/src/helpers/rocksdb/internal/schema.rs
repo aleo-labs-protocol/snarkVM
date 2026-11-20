@@ -41,6 +41,7 @@ pub enum StorageVersion {
 pub const STORAGE_VERSION: StorageVersion = StorageVersion::V0;
 
 /// The well-known keys of the storage metadata map.
+/// Key 1 holds program history configuration and its last indexed height.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum MetadataKey {

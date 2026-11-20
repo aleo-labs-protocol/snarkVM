@@ -1181,6 +1181,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Start the commit process. */
 
+            // Program history and finalize state share this atomic batch. An error aborts both.
             if let Err(error) = store.record_program_history(state.block_height()) {
                 return Err(format!("Failed to record program history - {error}"));
             }
