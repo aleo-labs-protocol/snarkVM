@@ -251,9 +251,17 @@ mod tests {
 
     /// Sets the claimed constraint count on the first verifying key of `deployment`.
     fn with_claimed_constraints<N: Network>(deployment: &Deployment<N>, num_constraints: usize) -> Deployment<N> {
+        with_claimed_circuit_vk(deployment, |vk| vk.circuit_info.num_constraints = num_constraints)
+    }
+
+    /// Edits the circuit verifying key, and so the claimed counts, on the first verifying key of `deployment`.
+    fn with_claimed_circuit_vk<N: Network>(
+        deployment: &Deployment<N>,
+        edit: impl FnOnce(&mut snarkvm_algorithms::snark::varuna::CircuitVerifyingKey<N::PairingCurve>),
+    ) -> Deployment<N> {
         let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
         let mut circuit_vk = vk.deref().clone();
-        circuit_vk.circuit_info.num_constraints = num_constraints;
+        edit(&mut circuit_vk);
         let tampered_vks =
             vec![(*function_id, (VerifyingKey::new(Arc::new(circuit_vk), vk.num_variables()), certificate.clone()))];
         Deployment::new(
@@ -545,16 +553,20 @@ finalize foo:
             let vk = &deployment.verifying_keys()[0].1.0;
             let fewer_variables = with_claimed_variables(&deployment, vk.num_variables() / 2);
             let fewer_constraints = with_claimed_constraints(&deployment, vk.circuit_info.num_constraints / 2);
+            let fewer_non_zeros = with_claimed_circuit_vk(&deployment, |vk| vk.circuit_info.num_non_zero_a /= 2);
 
             for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23] {
                 verify_deployment_outcome(&process, consensus_version, &deployment).map_err(|error| anyhow!(error))?;
 
                 let variables = verify_deployment_outcome(&process, consensus_version, &fewer_variables);
                 let constraints = verify_deployment_outcome(&process, consensus_version, &fewer_constraints);
+                let non_zeros = verify_deployment_outcome(&process, consensus_version, &fewer_non_zeros);
                 if calls && consensus_version < ConsensusVersion::V23 {
-                    // Before V23, the limits stop at the call.
+                    // Before V23, the limits stop at the call. The eight hashes after the call use more than half of
+                    // the variables, so the halved variable count is reached only after the call.
                     assert_eq!(variables, Ok(()));
                     assert!(matches!(&constraints, Err(error) if error.contains("certificate")), "{constraints:?}");
+                    assert!(matches!(&non_zeros, Err(error) if error.contains("certificate")), "{non_zeros:?}");
                 } else {
                     assert!(
                         matches!(&variables, Err(error) if error.contains("Surpassed the variable limit")),
@@ -563,6 +575,10 @@ finalize foo:
                     assert!(
                         matches!(&constraints, Err(error) if error.contains("Surpassed the constraint limit")),
                         "{constraints:?}"
+                    );
+                    assert!(
+                        matches!(&non_zeros, Err(error) if error.contains("Surpassed the circuit density limit")),
+                        "{non_zeros:?}"
                     );
                 }
             }
