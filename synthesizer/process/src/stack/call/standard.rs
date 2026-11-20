@@ -561,6 +561,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 // In Synthesize and CheckDeployment modes, `response` is None at this point. Only its outputs
                 // are used in the remainder of this function, and only their types (and not specific values)
                 // are relevant, so we sample them instead.
+                // Hazard: a `.constant` output enters the caller's circuit by value, so the sampled value
+                // changes the circuit. `Process::verify_deployment` rejects such calls from `ConsensusVersion::V23`.
                 CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                     if response.is_some() {
                         return Err(
