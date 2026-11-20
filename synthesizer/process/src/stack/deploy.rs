@@ -274,35 +274,30 @@ impl<N: Network> Stack<N> {
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.random())).collect::<Vec<_>>();
-        // Each job enters the VM scope of this thread around synthesis, so that a halt there is a VM halt. The entered
-        // scope must not cover a rayon wait, such as `certificate.verify`: a waiting thread can run unrelated jobs.
-        let vm_scope = VmScope::current();
-        // This thread leaves the VM scope while it waits on the jobs.
-        let waiting = VmScope::default().enter();
-        cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
-            |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
-                // Synthesize the circuit.
-                let synthesis = {
-                    let _vm = vm_scope.enter();
-                    self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng)
-                };
-                if let Err(err) = synthesis {
-                    bail!("Failed to synthesize the circuit for '{function_name}': {err}")
-                }
-                // Check the certificate.
-                match assignments.read().last() {
-                    None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
-                    Some((assignment, _metrics)) => {
-                        // Ensure the certificate is valid.
-                        if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
-                            bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
-                        }
+        // Each job synthesizes in the VM scope of this thread. `certificate.verify` waits on rayon, so it runs outside.
+        VmScope::parallel(|vm_scope| {
+            cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
+                |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
+                    // Synthesize the circuit.
+                    if let Err(err) =
+                        vm_scope.run(|| self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng))
+                    {
+                        bail!("Failed to synthesize the circuit for '{function_name}': {err}")
                     }
-                };
-                Ok(())
-            },
-        )?;
-        drop(waiting);
+                    // Check the certificate.
+                    match assignments.read().last() {
+                        None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
+                        Some((assignment, _metrics)) => {
+                            // Ensure the certificate is valid.
+                            if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
+                                bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
+                            }
+                        }
+                    };
+                    Ok(())
+                },
+            )
+        })?;
 
         // If the deployment contains translation verifying keys, verify them.
         if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
@@ -373,11 +368,9 @@ impl<N: Network> Stack<N> {
             // Note: `Deployment::check_is_ordered` (called above) ensures that the translation
             // verifying keys appear in the same order as the program's record definitions, so
             // `zip_eq` correctly pairs each record assignment with its corresponding key.
-            // As above, each job enters the VM scope of this thread around synthesis only.
-            let vm_scope = VmScope::current();
-            // This thread leaves the VM scope while it waits on the jobs.
-            let waiting = VmScope::default().enter();
-            cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
+            // As above, each job synthesizes in the VM scope of this thread.
+            VmScope::parallel(|vm_scope| {
+                cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
             |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Construct the variable, constraint and non-zero element counts to pass to the translation-circuit
                 // synthesizer as bounds. These are only enforced in ConsensusVersion::V18 and later.
@@ -416,11 +409,7 @@ impl<N: Network> Stack<N> {
                 };
 
                 // Synthesize the circuit.
-                let synthesis = {
-                    let _vm = vm_scope.enter();
-                    translation_assignment.to_circuit_assignment::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)
-                };
-                match synthesis {
+                match vm_scope.run(|| translation_assignment.to_circuit_assignment::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)) {
                     Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
                     Ok(circuit_assignment) => {
                         // Ensure the certificate is valid.
@@ -431,8 +420,8 @@ impl<N: Network> Stack<N> {
                         Ok(())
                     },
                 }
+            })
             })?;
-            drop(waiting);
         }
 
         drop(timer);

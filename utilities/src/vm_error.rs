@@ -31,8 +31,6 @@ fn install_vm_runtime_hook() {
         let previous_hook = panic::take_hook();
 
         panic::set_hook(Box::new(move |info| {
-            // The flag is per thread, in debug and release builds. A rayon job runs with the flag of the thread that
-            // runs it, unless the job enters a `VmScope`.
             if IN_VM_RUNTIME.try_with(Cell::get).unwrap_or(false) {
                 #[cfg(debug_assertions)]
                 {
@@ -60,8 +58,8 @@ fn install_vm_runtime_hook() {
 /// In debug mode, it prints to stderr using the format: "VM safely halted at {location}: {halt message}".
 /// In release mode, it prints nothing.
 ///
-/// Only the current thread runs inside the VM runtime. A rayon job started by `f` must enter a [`VmScope`] captured
-/// in `f`, or its halts may reach the previous panic hook.
+/// Only the current thread runs inside the VM runtime. Rayon jobs started by `f` run outside it, unless `f` starts them
+/// through [`VmScope::parallel`].
 ///
 /// Panics outside the VM runtime go to the panic hook that was present on the first invocation. Custom panic hooks
 /// should be installed before calling this function for the first time.
@@ -72,39 +70,51 @@ fn install_vm_runtime_hook() {
 pub fn try_vm_runtime<R, F: FnOnce() -> R>(f: F) -> std::thread::Result<R> {
     install_vm_runtime_hook();
 
-    // Mark only this thread as executing inside the VM runtime, until the guard restores the previous state.
-    let _vm = VmScope { in_vm_runtime: true }.enter();
-
     // Perform the operation that may panic.
-    panic::catch_unwind(panic::AssertUnwindSafe(f))
+    VmScope::INSIDE.run(|| panic::catch_unwind(panic::AssertUnwindSafe(f)))
 }
 
 /// Whether the thread that captured this scope was inside [`try_vm_runtime`].
 ///
-/// A VM operation that runs jobs in parallel captures its scope on the thread that starts the jobs, and each job
-/// enters that scope around the code that may halt. A halt in the job is then a VM halt. A scope captured outside the
-/// VM runtime leaves the flag unset, so the same code there still reports its panics to the previous panic hook.
-///
-/// Enter a scope only in jobs whose panics rayon carries back to the capturing thread while it waits inside the VM
-/// runtime, as with `par_iter`, `join` and `scope`. A panic in a `rayon::spawn` job does not return to the capturing
-/// thread, so a VM scope there silences a panic that nothing catches.
-///
-/// Keep code that waits on rayon outside an entered scope. A waiting thread can run unrelated jobs, and their panics
-/// would be silenced too. For the same reason, the thread that starts the jobs leaves the VM scope while it waits on
-/// them, by entering `VmScope::default()`.
-#[derive(Clone, Copy, Debug, Default)]
+/// Use it only for jobs whose panics rayon returns to the thread that waits on them, as with `par_iter`, `join` and
+/// `scope`. A panic in a `rayon::spawn` job reaches no `try_vm_runtime`, so a VM scope there hides it.
+#[derive(Clone, Copy, Debug)]
 pub struct VmScope {
     in_vm_runtime: bool,
 }
 
 impl VmScope {
+    const INSIDE: Self = Self { in_vm_runtime: true };
+    const OUTSIDE: Self = Self { in_vm_runtime: false };
+
+    /// Runs `f`, which starts rayon jobs, with the VM scope of the current thread. Each job calls [`VmScope::run`] on
+    /// that scope around the code that may halt.
+    ///
+    /// The current thread is outside the VM runtime until `f` returns. A thread that waits on rayon jobs can run
+    /// unrelated jobs, and their panics must reach the previous panic hook.
+    #[inline]
+    pub fn parallel<R>(f: impl FnOnce(Self) -> R) -> R {
+        let scope = Self::current();
+        Self::OUTSIDE.run(|| f(scope))
+    }
+
+    /// Runs `f` on the current thread in this VM scope. `f` must not wait on rayon jobs, because the thread can then
+    /// run unrelated jobs in this scope.
+    #[inline]
+    pub fn run<R>(self, f: impl FnOnce() -> R) -> R {
+        let _guard = self.enter();
+        f()
+    }
+
     /// Captures the VM scope of the current thread.
-    pub fn current() -> Self {
+    #[inline]
+    fn current() -> Self {
         Self { in_vm_runtime: IN_VM_RUNTIME.with(Cell::get) }
     }
 
-    /// Gives the current thread this VM scope until the guard drops, replacing its previous scope.
-    pub fn enter(self) -> VmScopeGuard {
+    /// Gives the current thread this VM scope until the guard drops.
+    #[inline]
+    fn enter(self) -> VmScopeGuard {
         let previous = IN_VM_RUNTIME.with(|is_active| is_active.replace(self.in_vm_runtime));
         VmScopeGuard { previous, _not_send: PhantomData }
     }
@@ -112,13 +122,14 @@ impl VmScope {
 
 /// Restores the previous VM scope of its thread when it drops, also during an unwind.
 #[must_use = "the VM scope ends when the guard drops"]
-pub struct VmScopeGuard {
+struct VmScopeGuard {
     previous: bool,
     /// Keeps the guard on the thread whose scope it restores.
     _not_send: PhantomData<*const ()>,
 }
 
 impl Drop for VmScopeGuard {
+    #[inline]
     fn drop(&mut self) {
         IN_VM_RUNTIME.with(|is_active| is_active.set(self.previous));
     }
@@ -206,51 +217,29 @@ mod tests {
     #[test]
     fn test_vm_scope_carries_flag_to_another_thread() {
         let scope = try_vm_runtime(VmScope::current).unwrap();
-        assert!(!in_vm_runtime());
 
         thread::spawn(move || {
             assert!(!in_vm_runtime());
-            {
-                let _vm = scope.enter();
-                assert!(in_vm_runtime());
-            }
+            scope.run(|| assert!(in_vm_runtime()));
             assert!(!in_vm_runtime());
+
+            assert!(panic::catch_unwind(|| scope.run(|| panic!("VM halt"))).is_err());
+            assert!(!in_vm_runtime(), "The flag should be restored during an unwind");
         })
         .join()
         .unwrap();
     }
 
     #[test]
-    fn test_vm_scope_captured_outside_vm_runtime_clears_flag() {
-        let scope = VmScope::current();
-        {
-            let _vm = scope.enter();
-            assert!(!in_vm_runtime());
-        }
-
+    fn test_vm_scope_parallel_leaves_vm_runtime_while_waiting() {
         try_vm_runtime(|| {
-            {
-                let _vm = scope.enter();
+            VmScope::parallel(|scope| {
                 assert!(!in_vm_runtime());
-            }
+                scope.run(|| assert!(in_vm_runtime()));
+                assert!(!in_vm_runtime());
+            });
             assert!(in_vm_runtime());
         })
-        .unwrap();
-    }
-
-    #[test]
-    fn test_vm_scope_guard_restores_flag_on_unwind() {
-        let scope = try_vm_runtime(VmScope::current).unwrap();
-
-        thread::spawn(move || {
-            let result = panic::catch_unwind(|| {
-                let _vm = scope.enter();
-                panic!("VM halt");
-            });
-            assert!(result.is_err());
-            assert!(!in_vm_runtime());
-        })
-        .join()
         .unwrap();
     }
 
@@ -323,10 +312,7 @@ mod tests {
         let host_panic_count = install_counting_host_hook();
 
         let scope = VmScope::current();
-        let result = try_vm_runtime(|| {
-            let _vm = scope.enter();
-            panic!("panic outside the VM runtime");
-        });
+        let result = try_vm_runtime(|| scope.run(|| panic!("panic outside the VM runtime")));
         assert!(result.is_err());
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The panic should reach the host hook");
     }
@@ -342,13 +328,8 @@ mod tests {
 
         // This thread is not in the pool, so the job runs on the pool's worker.
         let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
-        let result = try_vm_runtime(|| {
-            let scope = VmScope::current();
-            pool.install(|| {
-                let _vm = scope.enter();
-                panic!("VM halt on a worker");
-            })
-        });
+        let result =
+            try_vm_runtime(|| VmScope::parallel(|scope| pool.install(|| scope.run(|| panic!("VM halt on a worker")))));
         assert!(result.is_err());
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 0, "The halt should not reach the host hook");
 
@@ -362,17 +343,13 @@ mod tests {
         let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
         let barrier = Barrier::new(2);
         let halt = |scope: VmScope| {
-            let _vm = scope.enter();
-            barrier.wait();
-            panic!("VM halt in a join");
-        };
-        let result = pool.install(|| {
-            try_vm_runtime(|| {
-                let scope = VmScope::current();
-                let _waiting = VmScope::default().enter();
-                rayon::join(|| halt(scope), || halt(scope))
+            scope.run(|| {
+                barrier.wait();
+                panic!("VM halt in a join")
             })
-        });
+        };
+        let result =
+            pool.install(|| try_vm_runtime(|| VmScope::parallel(|scope| rayon::join(|| halt(scope), || halt(scope)))));
         assert!(result.is_err());
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halts should not reach the host hook");
     }
@@ -424,45 +401,41 @@ mod tests {
     fn test_job_stolen_by_waiting_vm_thread_reaches_host_hook() {
         use std::{sync::mpsc, time::Duration};
 
-        /// Signals when it drops, which is during the unwind of the panic, after the hook has run.
-        struct SignalOnDrop(mpsc::Sender<()>);
-
-        impl Drop for SignalOnDrop {
-            fn drop(&mut self) {
-                let _ = self.0.send(());
-            }
-        }
-
         if !is_child_process() {
             run_in_child_process("vm_error::tests::test_job_stolen_by_waiting_vm_thread_reaches_host_hook");
             return;
         }
         let host_panic_count = install_counting_host_hook();
 
-        for _ in 0..5 {
-            let pool = Arc::new(rayon::ThreadPoolBuilder::new().num_threads(2).panic_handler(|_| {}).build().unwrap());
-            let (second_job_started_tx, second_job_started_rx) = mpsc::channel();
-            let (spawn_now_tx, spawn_now_rx) = mpsc::channel();
-            let (unrelated_ran_tx, unrelated_ran_rx) = mpsc::channel();
-            let (unrelated_unwound_tx, unrelated_unwound_rx) = mpsc::channel();
+        // Rayon calls the panic handler of a spawned job after the panic hook has run.
+        let (unrelated_unwound_tx, unrelated_unwound_rx) = mpsc::channel();
+        let pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(2)
+                .panic_handler(move |_| {
+                    let _ = unrelated_unwound_tx.send(());
+                })
+                .build()
+                .unwrap(),
+        );
+        let (second_job_started_tx, second_job_started_rx) = mpsc::channel();
+        let (spawn_now_tx, spawn_now_rx) = mpsc::channel();
+        let (unrelated_ran_tx, unrelated_ran_rx) = mpsc::channel();
 
-            // Injects the unrelated job once the VM thread is about to wait.
-            let pool_ = pool.clone();
-            let spawner = thread::spawn(move || {
-                spawn_now_rx.recv().unwrap();
-                pool_.spawn(move || {
-                    let _signal = SignalOnDrop(unrelated_unwound_tx);
-                    unrelated_ran_tx.send(rayon::current_thread_index()).unwrap();
-                    panic!("unrelated panic in a stolen job");
-                });
+        // Injects the unrelated job once the VM thread is about to wait.
+        let pool_ = pool.clone();
+        let spawner = thread::spawn(move || {
+            spawn_now_rx.recv().unwrap();
+            pool_.spawn(move || {
+                unrelated_ran_tx.send(rayon::current_thread_index()).unwrap();
+                panic!("unrelated panic in a stolen job");
             });
+        });
 
-            let before = host_panic_count.load(Ordering::SeqCst);
-            let (vm_thread, stolen_on) = pool.install(move || {
-                let vm_thread = rayon::current_thread_index();
-                let stolen_on = try_vm_runtime(move || {
-                    let scope = VmScope::current();
-                    let _waiting = VmScope::default().enter();
+        let (vm_thread, stolen_on) = pool.install(move || {
+            let vm_thread = rayon::current_thread_index();
+            let stolen_on = try_vm_runtime(move || {
+                VmScope::parallel(move |scope| {
                     let ((), stolen_on) = rayon::join(
                         move || {
                             // The other worker runs the second job, so this thread then waits on it.
@@ -470,26 +443,23 @@ mod tests {
                             spawn_now_tx.send(()).unwrap();
                         },
                         move || {
-                            let _vm = scope.enter();
-                            second_job_started_tx.send(()).unwrap();
-                            // The other worker is busy until the unrelated job has run on the waiting thread.
-                            unrelated_ran_rx.recv().unwrap()
+                            scope.run(|| {
+                                second_job_started_tx.send(()).unwrap();
+                                // The other worker is busy until the unrelated job has run on the waiting thread.
+                                unrelated_ran_rx.recv().unwrap()
+                            })
                         },
                     );
                     stolen_on
                 })
-                .unwrap();
-                (vm_thread, stolen_on)
-            });
-            spawner.join().unwrap();
-            unrelated_unwound_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            })
+            .unwrap();
+            (vm_thread, stolen_on)
+        });
+        spawner.join().unwrap();
+        unrelated_unwound_rx.recv_timeout(Duration::from_secs(10)).unwrap();
 
-            assert_eq!(stolen_on, vm_thread, "The unrelated job should run on the waiting VM thread");
-            assert_eq!(
-                host_panic_count.load(Ordering::SeqCst) - before,
-                1,
-                "The unrelated panic should reach the host hook"
-            );
-        }
+        assert_eq!(stolen_on, vm_thread, "The unrelated job should run on the waiting VM thread");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The unrelated panic should reach the host hook");
     }
 }

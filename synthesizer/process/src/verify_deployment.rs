@@ -133,11 +133,40 @@ mod tests {
     type CurrentAleo = circuit::network::AleoV0;
     type CurrentNetwork = console::network::MainnetV0;
 
-    /// Returns a program that casts `x` to a group with `op`, as a non-constant value, for every sampled input.
+    /// Returns a program whose functions cast `x` to a group with `op`, as a non-constant value, for every sampled input.
+    fn cast_program_with(name: &str, functions: &[&str], op: &str, x: &str) -> Program<CurrentNetwork> {
+        let functions = functions
+            .iter()
+            .map(|function| {
+                format!(
+                    "function {function}:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\n"
+                )
+            })
+            .collect::<String>();
+        Program::from_str(&format!("program {name}.aleo;\n\n{functions}constructor:\n    assert.eq edition 0u16;\n"))
+            .unwrap()
+    }
+
+    /// Returns a program with one function that casts `x` to a group with `op`.
     fn cast_program(op: &str, index: usize, x: &str) -> Program<CurrentNetwork> {
-        Program::from_str(&format!(
-            "program off_curve_cast_{index}.aleo;\n\nfunction f:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\nconstructor:\n    assert.eq edition 0u16;\n"
-        ))
+        cast_program_with(&format!("off_curve_cast_{index}"), &["f"], op, x)
+    }
+
+    /// Returns a deployment of `program` with the keys of `keys_program`, for a `program` on which `deploy` panics.
+    fn deployment_with_keys_of(
+        process: &Process<CurrentNetwork>,
+        program: &Program<CurrentNetwork>,
+        keys_program: &Program<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> Deployment<CurrentNetwork> {
+        let keys = process.deploy::<CurrentAleo, _>(keys_program, rng).unwrap();
+        Deployment::new(
+            0,
+            program.clone(),
+            keys.verifying_keys().clone(),
+            Some(program.to_checksum()),
+            Some(console::types::Address::zero()),
+        )
         .unwrap()
     }
 
@@ -177,16 +206,7 @@ mod tests {
             let process = Process::load().unwrap();
             assert!(try_vm_runtime(|| process.deploy::<CurrentAleo, _>(&program, &mut TestRng::default())).is_err());
 
-            // `deploy` panics on this value, so the deployment takes its keys from the program for `2`.
-            let keys = process.deploy::<CurrentAleo, _>(&cast_program(op, index, "2"), rng).unwrap();
-            let deployment = Deployment::new(
-                0,
-                program.clone(),
-                keys.verifying_keys().clone(),
-                Some(program.to_checksum()),
-                Some(console::types::Address::zero()),
-            )
-            .unwrap();
+            let deployment = deployment_with_keys_of(&process, &program, &cast_program(op, index, "2"), rng);
             let process = Process::load().unwrap();
             let result = try_vm_runtime(|| {
                 process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
@@ -245,34 +265,13 @@ mod tests {
             host_hook_calls_.fetch_add(1, Ordering::SeqCst);
         }));
 
-        // Returns a program with two functions that cast `x` to a group. Rayon runs a loop over one item on the caller.
-        let two_casts = |x: &str| {
-            let function = |name: &str| {
-                format!(
-                    "function {name}:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    cast r2 into r3 as group;\n    output r3 as group.private;\n\n"
-                )
-            };
-            Program::<CurrentNetwork>::from_str(&format!(
-                "program halt_on_worker.aleo;\n\n{}{}constructor:\n    assert.eq edition 0u16;\n",
-                function("f"),
-                function("g")
-            ))
-            .unwrap()
-        };
-
+        // Rayon runs a loop over one item on the calling thread, so the program has two functions.
+        let x = "7647702037709885229845698841124471395615470129800647510314961670563126650261";
+        let program = cast_program_with("halt_on_worker", &["f", "g"], "cast", x);
         let rng = &mut TestRng::default();
-        let program = two_casts("7647702037709885229845698841124471395615470129800647510314961670563126650261");
-        // `deploy` panics on this value, so the deployment takes its keys from the program for `2`.
-        let keys = Process::load().unwrap().deploy::<CurrentAleo, _>(&two_casts("2"), rng).unwrap();
-        let deployment = Deployment::new(
-            0,
-            program.clone(),
-            keys.verifying_keys().clone(),
-            Some(program.to_checksum()),
-            Some(console::types::Address::zero()),
-        )
-        .unwrap();
         let process = Process::load().unwrap();
+        let keys_program = cast_program_with("halt_on_worker", &["f", "g"], "cast", "2");
+        let deployment = deployment_with_keys_of(&process, &program, &keys_program, rng);
 
         // This thread is not a rayon worker, so the synthesis jobs run on workers of the global pool.
         assert!(rayon::current_thread_index().is_none());
