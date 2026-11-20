@@ -34,7 +34,6 @@ use core::hash::{Hash, Hasher};
 use indexmap::IndexSet;
 use std::{collections::HashSet, sync::OnceLock};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Clone)]

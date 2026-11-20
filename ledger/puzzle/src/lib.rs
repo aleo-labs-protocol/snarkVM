@@ -60,7 +60,6 @@ use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 use std::sync::Arc;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// The arity of the Merkle tree.

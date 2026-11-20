@@ -96,7 +96,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;

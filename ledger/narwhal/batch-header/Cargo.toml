@@ -25,7 +25,6 @@ edition = "2024"
 
 [features]
 default = [ ]
-serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers", "snarkvm-console/test-helpers" ]
 

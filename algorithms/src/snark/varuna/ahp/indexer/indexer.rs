@@ -35,7 +35,6 @@ use core::marker::PhantomData;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 use super::Matrix;

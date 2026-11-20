@@ -21,9 +21,8 @@ Performs time measurements on the verification of test circuits with selected ba
    cargo bench --bench varuna_verifier --features test-helpers,filesystem -- --clean
  - Obtain time measurements (using previously generated artifacts) with:
    cargo bench --bench varuna_verifier --features test-helpers,filesystem
-   The --serial feature can be added to deactivate parallelism.
  - Flamegraph (on previously generated artifacts) with:
-   cargo flamegraph --bench varuna_verifier --features="test-helpers, filesystem, serial"
+   cargo flamegraph --bench varuna_verifier --features="test-helpers, filesystem"
 */
 
 use snarkvm_algorithms::{

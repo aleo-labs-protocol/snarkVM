@@ -24,10 +24,6 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "rayon" ]
-# Enables nothing; `rayon` is a required dependency.
-rayon = [ ]
-serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-batch-header/test-helpers", "snarkvm-console/test-helpers" ]
 

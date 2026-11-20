@@ -58,7 +58,6 @@ use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Separates the confirmed transaction into a tuple.

@@ -151,7 +151,6 @@ enum ProgramLabel<N: Network> {
     Identifier(Identifier<N>),
 }
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]

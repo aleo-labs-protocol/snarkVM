@@ -85,7 +85,6 @@ use rand::prelude::IteratorRandom;
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use time::OffsetDateTime;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;

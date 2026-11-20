@@ -36,7 +36,6 @@ use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// The minimum self bond for a validator to join the committee

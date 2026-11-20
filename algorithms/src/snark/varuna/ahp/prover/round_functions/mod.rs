@@ -30,7 +30,6 @@ use std::collections::BTreeMap;
 
 use snarkvm_utilities::{cfg_into_iter, cfg_iter, dev_println, timing_span};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 mod fifth;
