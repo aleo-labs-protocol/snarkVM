@@ -97,7 +97,8 @@ pub enum ConsensusVersion {
     ///      Applies the plaintext size limit to instruction destinations during deployment verification.
     ///      Keeps the synthesis limits of a deployment check after a `call`.
     V23 = 23,
-    /// V24: Unscheduled. No rule gates on it yet.
+    /// V24: Activates the deployment freeze: while `aleo_deployment_freeze.aleo/freeze[0u8]` is in force,
+    ///      every deployment is rejected with its fee charged, without being verified.
     V24 = 24,
 }
 

@@ -168,8 +168,8 @@ impl<N: Network> Authorization<N> {
         let transitions = self.transitions.read();
         let program_ids = transitions.iter().map(|(_, t)| t.program_id());
         for program_id in program_ids {
-            // There is only one credits.aleo edition, so we can safely skip this case.
-            if program_id.to_string() != "credits.aleo" {
+            // The built-in programs have one edition and no constructor, so skip them.
+            if !crate::deployment_freeze::is_built_in_program(program_id) {
                 // Get the stack.
                 let stack = process.get_stack(program_id)?;
                 // Get the program edition.
