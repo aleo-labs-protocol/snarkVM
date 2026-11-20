@@ -15,7 +15,7 @@ harness = false
 
 [features]
 default = [ ]
-test = [ "snarkvm-console-network/test-helpers" ]
+test-helpers = [ "snarkvm-console-network/test-helpers" ]
 dev-print = [
   "snarkvm-utilities/dev-print",
   "snarkvm-console-algorithms/dev-print",
