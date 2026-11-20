@@ -57,6 +57,8 @@ use indexmap::{IndexMap, IndexSet};
 
 use std::collections::HashSet;
 
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegisterTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
