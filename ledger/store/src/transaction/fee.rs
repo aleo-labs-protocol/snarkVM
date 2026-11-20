@@ -242,7 +242,7 @@ impl<N: Network, F: FeeStorage<N>> FeeStore<N, F> {
 
 impl<N: Network, F: FeeStorage<N>> FeeStore<N, F> {
     /// Returns the fee for the given `transaction ID`.
-    pub fn get_fee(&self, transaction_id: &N::TransactionID) -> Result<Option<Fee<N>>> {
+    pub(crate) fn get_fee(&self, transaction_id: &N::TransactionID) -> Result<Option<Fee<N>>> {
         self.storage.get_fee(transaction_id)
     }
 }
