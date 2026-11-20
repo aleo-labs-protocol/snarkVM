@@ -31,7 +31,7 @@ impl<E: Environment> Group<E> {
     /// Initializes an affine group element from a given x-coordinate field element.
     /// Additionally, returns an error flag.
     /// If the error flag is set, there is **no** group element with the given x-coordinate.
-    /// If the error flag is set, the returned point is `(0, 0)`.
+    /// If the error flag is set, the returned point is `(x, 0)`.
     pub fn from_x_coordinate_flagged(x: Field<E>) -> (Self, Boolean<E>) {
         // Obtain the A and D coefficients of the elliptic curve.
         let a = Field::constant(console::Field::new(E::EDWARDS_A));

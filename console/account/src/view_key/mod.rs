@@ -17,6 +17,7 @@ mod bytes;
 mod serialize;
 mod string;
 mod to_address;
+#[cfg(feature = "private_key")]
 mod try_from;
 
 #[cfg(feature = "compute_key")]

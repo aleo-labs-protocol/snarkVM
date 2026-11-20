@@ -40,10 +40,10 @@ use console::{
 use rand::{CryptoRng, Rng};
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 
-/// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.
+/// This trait is sealed. Only `snarkvm_synthesizer_process::Stack` implements it.
 ///
-/// We make it a trait only to avoid circular dependencies.
-pub trait StackTrait<N: Network> {
+/// It is a trait only to avoid circular dependencies.
+pub trait StackTrait<N: Network>: crate::sealed_execution::Sealed {
     /// Returns `true` if the proving key for the given name exists.
     /// The name can be a function name or a record name (for translation keys).
     fn contains_proving_key(&self, function_or_record_name: &Identifier<N>) -> bool;
@@ -373,7 +373,8 @@ fn structs_equivalent_inner<N: Network>(
     Ok(true)
 }
 
-pub trait FinalizeRegistersState<N: Network>: RegistersTrait<N> {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FinalizeRegistersState<N: Network>: crate::sealed_execution::Sealed + RegistersTrait<N> {
     /// Returns the global state for the finalize scope.
     fn state(&self) -> &FinalizeGlobalState;
 
@@ -390,7 +391,8 @@ pub trait FinalizeRegistersState<N: Network>: RegistersTrait<N> {
     fn nonce(&self) -> Option<u64>;
 }
 
-pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait RegistersSigner<N: Network>: crate::sealed_execution::Sealed + RegistersTrait<N> {
     /// Returns the transition signer.
     fn signer(&self) -> Result<Address<N>>;
 
@@ -422,7 +424,30 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
     fn set_request(&mut self, request: Request<N>);
 }
 
-pub trait RegistersTrait<N: Network> {
+/// This trait is sealed. Only snarkVM implements it. Code outside snarkVM that implements it does
+/// not compile:
+///
+/// ```compile_fail,E0277
+/// use snarkvm_console::{
+///     network::MainnetV0,
+///     prelude::Result,
+///     program::{Register, Value},
+/// };
+/// use snarkvm_synthesizer_program::{Operand, RegistersTrait, StackTrait};
+///
+/// struct Registers;
+///
+/// impl RegistersTrait<MainnetV0> for Registers {
+///     fn load(&self, _: &impl StackTrait<MainnetV0>, _: &Operand<MainnetV0>) -> Result<Value<MainnetV0>> {
+///         unimplemented!()
+///     }
+///
+///     fn store(&mut self, _: &impl StackTrait<MainnetV0>, _: &Register<MainnetV0>, _: Value<MainnetV0>) -> Result<()> {
+///         unimplemented!()
+///     }
+/// }
+/// ```
+pub trait RegistersTrait<N: Network>: crate::sealed_execution::Sealed {
     /// Loads the value of a given operand.
     ///
     /// # Errors
@@ -484,10 +509,10 @@ pub trait RegistersTrait<N: Network> {
     }
 }
 
-/// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Registers`.
+/// This trait is sealed. Only `snarkvm_synthesizer_process::Registers` implements it.
 ///
-/// We make it a trait only to avoid circular dependencies.
-pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>> {
+/// It is a trait only to avoid circular dependencies.
+pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>>: crate::sealed_execution::Sealed {
     /// Returns the transition signer, as a circuit.
     fn signer_circuit(&self) -> Result<circuit::Address<A>>;
 

@@ -13,31 +13,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod helpers;
-use helpers::{BlockOptions, CurrentNetwork, LedgerType, TestChainBuilder};
-
-use snarkvm_ledger::{CheckBlockError, Ledger};
-use snarkvm_ledger_store::StorageMode;
-
+use crate::{
+    CheckBlockError,
+    test_helpers::{
+        CurrentNetwork,
+        TestChainBuilder,
+        chain_builder::{GenerateBlockOptions, GenerateBlocksOptions},
+    },
+};
 use snarkvm_utilities::TestRng;
 
 #[test]
 fn test_preprocess_block() {
     let rng = &mut TestRng::default();
 
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new().unwrap();
 
     // Construct the ledger.
-    let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
-        builder.genesis_block().clone(),
-        StorageMode::new_test(None),
-    )
-    .unwrap();
+    let ledger = builder.instantiate_ledger();
 
     // Generate a bunch of blocks that do not contain votes
     let mut pending_blocks = vec![];
 
-    for block in builder.generate_blocks_with_opts(5, &BlockOptions { skip_votes: true, ..Default::default() }, rng) {
+    for block in builder
+        .generate_blocks_with_opts(5, GenerateBlocksOptions { skip_votes: true, ..Default::default() }, rng)
+        .unwrap()
+    {
         if !pending_blocks.is_empty() {
             // We shoud only be able to pre-process a pending block if the previous
             // blocks are applied to the ledger or in the pending set
@@ -49,7 +50,7 @@ fn test_preprocess_block() {
     }
 
     // Now, create a "vote block" that contains sufficient votes to the previous leader block
-    let vote_block = builder.generate_block(rng);
+    let vote_block = builder.generate_block(rng).unwrap();
     assert!(ledger.check_next_block(&vote_block, rng).is_err());
 
     for pending in pending_blocks.into_iter() {
@@ -78,28 +79,24 @@ fn test_check_block_error_display() {
 #[test]
 fn test_prefix_with_duplicate_block_error() {
     let rng = &mut TestRng::default();
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new().unwrap();
 
     // Construct the ledger.
-    let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
-        builder.genesis_block().clone(),
-        StorageMode::new_test(None),
-    )
-    .unwrap();
+    let ledger = builder.instantiate_ledger();
 
     // Generate a block
-    let block1 = builder.generate_block(rng);
+    let block1 = builder.generate_block(rng).unwrap();
 
     // Add block1 to ledger
     ledger.advance_to_next_block(&block1).unwrap();
 
     // Generate another block
-    let block2 = builder.generate_block(rng);
+    let block2 = builder.generate_block(rng).unwrap();
 
     // So instead, test that we can't check a block with empty prefix when it's not the next block
 
     // Generate one more block to skip block2
-    let block3 = builder.generate_block(rng);
+    let block3 = builder.generate_block(rng).unwrap();
 
     // Try to check block3 without having block2 in prefix
     // This will fail with InvalidHeight
@@ -117,7 +114,7 @@ fn test_prefix_with_duplicate_block_error() {
     let block3 = ledger.check_block_subdag(block3, std::slice::from_ref(&block2)).unwrap();
 
     // Create a forth block
-    let block4 = builder.generate_block(rng);
+    let block4 = builder.generate_block(rng).unwrap();
 
     // Test a prefix that contains block2 twice.
     let result = ledger.check_block_subdag(block4.clone(), &[block2.clone(), block2.clone(), block3.clone()]);
@@ -138,21 +135,21 @@ fn test_prefix_with_duplicate_block_error() {
 #[test]
 fn test_atomicity_check_uses_prefix_latest_block() {
     let rng = &mut TestRng::default();
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new().unwrap();
 
     // External ledger starts at genesis and is never explicitly advanced in this test.
-    let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
-        builder.genesis_block().clone(),
-        StorageMode::new_test(None),
-    )
-    .unwrap();
+    let ledger = builder.instantiate_ledger();
 
     // Identify the elected leader at round 2 and exclude them from block 1.
     // This guarantees their certificate at round 2 is absent from block 1's subdag,
     // making it a late-arriving *leader* certificate that will appear in block 2's subdag.
-    let skip_idx = builder.get_leader_index(2).expect("Leader not found for round 2");
-    let block1 =
-        builder.generate_block_with_opts(&BlockOptions { skip_nodes: vec![skip_idx], ..Default::default() }, rng);
+    let leader = builder.ledger().get_committee_lookback_for_round(2).unwrap().unwrap().get_leader(2).unwrap();
+    let skip_idx = (0..builder.private_keys().len())
+        .find(|&idx| builder.validator_address(idx) == leader)
+        .expect("Leader not found for round 2");
+    let block1 = builder
+        .generate_block_with_opts(GenerateBlockOptions { skip_nodes: vec![skip_idx], ..Default::default() }, rng)
+        .unwrap();
 
     // Pre-process block 1 against the external ledger (still at genesis) so it can
     // be used as a prefix when validating block 2.
@@ -161,7 +158,7 @@ fn test_atomicity_check_uses_prefix_latest_block() {
     // Generate block 2 with all validators participating.  The previously skipped
     // validator's certificates for rounds ≤ block1.anchor_round are now included in
     // block 2's subdag as late-arriving entries.
-    let block2 = builder.generate_block(rng);
+    let block2 = builder.generate_block(rng).unwrap();
 
     // Block 2 must be accepted with block 1 as the prefix while the external ledger
     // is still at genesis.  This would fail before the fix because the atomicity check
@@ -173,17 +170,15 @@ fn test_atomicity_check_uses_prefix_latest_block() {
 #[test]
 fn test_check_block_content_invalid_height() {
     let rng = &mut TestRng::default();
-    let mut builder = TestChainBuilder::new(4, rng);
+    let mut builder = TestChainBuilder::new().unwrap();
 
     // Construct the ledger.
-    let ledger = Ledger::<CurrentNetwork, LedgerType<CurrentNetwork>>::load(
-        builder.genesis_block().clone(),
-        StorageMode::new_test(None),
-    )
-    .unwrap();
+    let ledger = builder.instantiate_ledger();
 
     // Generate two blocks
-    let blocks = builder.generate_blocks_with_opts(2, &BlockOptions { skip_votes: true, ..Default::default() }, rng);
+    let blocks = builder
+        .generate_blocks_with_opts(2, GenerateBlocksOptions { skip_votes: true, ..Default::default() }, rng)
+        .unwrap();
     let block1 = blocks[0].clone();
 
     // Check block1 and get pending block
