@@ -544,7 +544,7 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
 
 impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
     /// Returns the output IDs for the given `transition ID`.
-    pub fn get_output_ids(&self, transition_id: &N::TransitionID) -> Result<Vec<Field<N>>> {
+    pub(crate) fn get_output_ids(&self, transition_id: &N::TransitionID) -> Result<Vec<Field<N>>> {
         self.storage.get_ids(transition_id)
     }
 
@@ -615,17 +615,17 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
     }
 
     /// Returns an iterator over the constant output IDs, for all transition outputs that are constant.
-    pub fn constant_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn constant_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.constant.keys_confirmed()
     }
 
     /// Returns an iterator over the public output IDs, for all transition outputs that are public.
-    pub fn public_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn public_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.public.keys_confirmed()
     }
 
     /// Returns an iterator over the private output IDs, for all transition outputs that are private.
-    pub fn private_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn private_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.private.keys_confirmed()
     }
 
@@ -635,7 +635,7 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
     }
 
     /// Returns an iterator over the external record output IDs, for all transition outputs that are external records.
-    pub fn external_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn external_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.external_record.keys_confirmed()
     }
 
@@ -657,7 +657,7 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
 
 impl<N: Network, I: OutputStorage<N>> OutputStore<N, I> {
     /// Returns an iterator over the constant outputs, for all transitions.
-    pub fn constant_outputs(&self) -> impl '_ + Iterator<Item = Cow<'_, Plaintext<N>>> {
+    pub(crate) fn constant_outputs(&self) -> impl '_ + Iterator<Item = Cow<'_, Plaintext<N>>> {
         self.constant.values_confirmed().flat_map(|output| match output {
             Cow::Borrowed(Some(output)) => Some(Cow::Borrowed(output)),
             Cow::Owned(Some(output)) => Some(Cow::Owned(output)),
@@ -675,7 +675,7 @@ impl<N: Network, I: OutputStorage<N>> OutputStore<N, I> {
     }
 
     /// Returns an iterator over the private outputs, for all transitions.
-    pub fn private_outputs(&self) -> impl '_ + Iterator<Item = Cow<'_, Ciphertext<N>>> {
+    pub(crate) fn private_outputs(&self) -> impl '_ + Iterator<Item = Cow<'_, Ciphertext<N>>> {
         self.private.values_confirmed().flat_map(|output| match output {
             Cow::Borrowed(Some(output)) => Some(Cow::Borrowed(output)),
             Cow::Owned(Some(output)) => Some(Cow::Owned(output)),
