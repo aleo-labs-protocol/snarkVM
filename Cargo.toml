@@ -111,6 +111,7 @@ full = [
   "fields",
 ]
 file = [
+  "circuit",
   "console",
   "synthesizer",
   "dep:serde_json"
@@ -120,6 +121,7 @@ package = [
   "circuit",
   "file",
   "ledger",
+  "utilities",
   "snarkvm-console/filesystem",
   "dep:ureq"
 ]

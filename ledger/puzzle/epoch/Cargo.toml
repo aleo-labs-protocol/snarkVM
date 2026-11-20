@@ -25,6 +25,8 @@ edition = "2024"
 
 [features]
 default = [ "synthesis", "rayon" ]
+# Enables nothing; `rayon` is a required dependency.
+rayon = [ ]
 serial = [ "snarkvm-console/serial", "snarkvm-ledger-puzzle/serial" ]
 locktick = [
   "dep:locktick",
@@ -94,7 +96,6 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true

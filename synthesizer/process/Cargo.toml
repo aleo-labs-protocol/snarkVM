@@ -25,6 +25,8 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon", "rayon" ]
+# Enables nothing; `rayon` is a required dependency.
+rayon = [ ]
 async = [ "snarkvm-ledger-query/async" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-store/locktick" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
@@ -116,7 +118,6 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true
