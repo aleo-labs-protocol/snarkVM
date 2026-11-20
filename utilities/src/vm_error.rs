@@ -58,8 +58,9 @@ fn install_vm_runtime_hook() {
 /// In debug mode, it prints to stderr using the format: "VM safely halted at {location}: {halt message}".
 /// In release mode, it prints nothing.
 ///
-/// Only the current thread runs inside the VM runtime. Rayon jobs started by `f` run outside it, unless `f` starts them
-/// through [`VmScope::parallel`].
+/// Only the current thread is inside the VM runtime, including any rayon job it runs while it waits on others. Code in
+/// `f` that waits on rayon jobs starts them through [`VmScope::parallel`]. Their halting code then runs inside the VM
+/// runtime on any thread, and unrelated jobs that the waiting thread runs stay outside it.
 ///
 /// Panics outside the VM runtime go to the panic hook that was present on the first invocation. Custom panic hooks
 /// should be installed before calling this function for the first time.
@@ -76,9 +77,9 @@ pub fn try_vm_runtime<R, F: FnOnce() -> R>(f: F) -> std::thread::Result<R> {
 
 /// Whether the thread that captured this scope was inside [`try_vm_runtime`].
 ///
-/// Use it only for jobs whose panics rayon returns to the thread that waits on them, as with `par_iter`, `join` and
-/// `scope`. A panic in a `rayon::spawn` job reaches no `try_vm_runtime`, so a VM scope there hides it.
-#[derive(Clone, Copy, Debug)]
+/// Jobs borrow the scope from [`VmScope::parallel`], so they can use it with `par_iter`, `join` and `scope`, whose panics
+/// return to the waiting thread. It cannot move into a `rayon::spawn` job, whose panic reaches no `try_vm_runtime`.
+#[derive(Debug)]
 pub struct VmScope {
     in_vm_runtime: bool,
 }
@@ -93,15 +94,15 @@ impl VmScope {
     /// The current thread is outside the VM runtime until `f` returns. A thread that waits on rayon jobs can run
     /// unrelated jobs, and their panics must reach the previous panic hook.
     #[inline]
-    pub fn parallel<R>(f: impl FnOnce(Self) -> R) -> R {
+    pub fn parallel<R>(f: impl FnOnce(&Self) -> R) -> R {
         let scope = Self::current();
-        Self::OUTSIDE.run(|| f(scope))
+        Self::OUTSIDE.run(|| f(&scope))
     }
 
     /// Runs `f` on the current thread in this VM scope. `f` must not wait on rayon jobs, because the thread can then
     /// run unrelated jobs in this scope.
     #[inline]
-    pub fn run<R>(self, f: impl FnOnce() -> R) -> R {
+    pub fn run<R>(&self, f: impl FnOnce() -> R) -> R {
         let _guard = self.enter();
         f()
     }
@@ -114,7 +115,7 @@ impl VmScope {
 
     /// Gives the current thread this VM scope until the guard drops.
     #[inline]
-    fn enter(self) -> VmScopeGuard {
+    fn enter(&self) -> VmScopeGuard {
         let previous = IN_VM_RUNTIME.with(|is_active| is_active.replace(self.in_vm_runtime));
         VmScopeGuard { previous, _not_send: PhantomData }
     }
@@ -342,7 +343,7 @@ mod tests {
         // runs on the other worker.
         let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
         let barrier = Barrier::new(2);
-        let halt = |scope: VmScope| {
+        let halt = |scope: &VmScope| {
             scope.run(|| {
                 barrier.wait();
                 panic!("VM halt in a join")
@@ -354,7 +355,7 @@ mod tests {
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halts should not reach the host hook");
     }
 
-    /// An unrelated panic on a rayon worker while a VM operation is active, as in #3804.
+    /// An unrelated panic on a rayon worker reaches the host hook while another thread is inside the VM runtime.
     #[cfg(not(feature = "serial"))]
     #[test]
     fn test_unrelated_rayon_panic_during_vm_runtime_reaches_host_hook() {

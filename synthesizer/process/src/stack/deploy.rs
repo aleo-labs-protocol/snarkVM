@@ -274,7 +274,7 @@ impl<N: Network> Stack<N> {
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.random())).collect::<Vec<_>>();
-        // Each job synthesizes in the VM scope of this thread. `certificate.verify` waits on rayon, so it runs outside.
+        // Each job synthesizes in the VM scope of this thread. `certificate.verify` may wait on rayon, so it runs outside.
         VmScope::parallel(|vm_scope| {
             cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
                 |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
