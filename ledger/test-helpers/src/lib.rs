@@ -809,14 +809,14 @@ mod tests {
 
     #[test]
     fn test_genesis_block_passes_production_checks() {
-        assert!(sample_genesis_block(&mut TestRng::default()).is_genesis().unwrap());
+        assert!(sample_genesis_block(&mut TestRng::default()).is_genesis().expect("Malformed genesis block"));
     }
 
     #[tokio::test]
     async fn test_genesis_builds_inside_a_tokio_runtime() {
         let rng = &mut TestRng::default();
-        let private_key = PrivateKey::new(rng).unwrap();
+        let private_key = PrivateKey::new(rng).expect("Failed to sample a private key");
         let (block, _) = build_genesis_block_and_transactions(&private_key, rng);
-        assert!(block.is_genesis().unwrap());
+        assert!(block.is_genesis().expect("Malformed genesis block"));
     }
 }
