@@ -432,4 +432,91 @@ function foo:
 
         Ok(())
     }
+
+    /// A program whose function returns its input.
+    const LIMITS_CALLEE: &str = r"
+program limits_callee.aleo;
+
+function f:
+    input r0 as field.private;
+    output r0 as field.private;";
+
+    /// Returns a program whose function `foo` makes a `call` of the given kind to `limits_callee.aleo/f`, if any, and
+    /// then hashes eight times.
+    fn program_hashing(call: Option<&str>) -> Result<Program<CurrentNetwork>> {
+        let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name)?.to_field();
+        let (import, first) = match call {
+            None => ("", "add r0 1field into r1;".to_string()),
+            Some("static") => ("import limits_callee.aleo;\n\n", "call limits_callee.aleo/f r0 into r1;".to_string()),
+            Some("dynamic") => (
+                "",
+                format!(
+                    "call.dynamic {} {} {} with r0 (as field.private) into r1 (as field.private);",
+                    field("limits_callee")?,
+                    field("aleo")?,
+                    field("f")?
+                ),
+            ),
+            Some(kind) => bail!("unknown call kind '{kind}'"),
+        };
+        let name = format!("hashes_after_{}_call", call.unwrap_or("no"));
+        let hashes: String = (1..9).map(|i| format!("    hash.bhp256 r{i} into r{} as field;\n", i + 1)).collect();
+        Program::from_str(&format!(
+            "{import}program {name}.aleo;\n\nfunction foo:\n    input r0 as field.private;\n    {first}\n{hashes}    output r9 as field.private;\n"
+        ))
+    }
+
+    /// Returns the outcome of `verify_deployment`, with a halt as `Err`.
+    fn verify_deployment_outcome(
+        process: &Process<CurrentNetwork>,
+        consensus_version: ConsensusVersion,
+        deployment: &Deployment<CurrentNetwork>,
+    ) -> Result<(), String> {
+        match try_vm_runtime(|| {
+            process.verify_deployment::<CurrentAleo, _>(consensus_version, deployment, &mut TestRng::default())
+        }) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(payload) => Err(payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|message| message.to_string()))
+                .unwrap_or_default()),
+        }
+    }
+
+    /// From V23, a function's synthesis limits hold after it calls another function.
+    #[test]
+    fn test_synthesis_limits_after_call_by_consensus_version() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::load()?;
+        process.lock().add_program(&Program::from_str(LIMITS_CALLEE)?)?;
+
+        let halts_on = |outcome: Result<(), String>, limit: &str| {
+            assert!(matches!(&outcome, Err(error) if error.contains(limit)), "expected a halt on {limit}: {outcome:?}")
+        };
+
+        for call in [None, Some("static"), Some("dynamic")] {
+            let deployment = process.deploy::<CurrentAleo, _>(&program_hashing(call)?, rng)?;
+            let vk = &deployment.verifying_keys()[0].1.0;
+            let fewer_variables = with_inflated_variables(&deployment, vk.num_variables() / 2);
+            let fewer_constraints = with_inflated_constraints(&deployment, vk.circuit_info.num_constraints / 2);
+
+            for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23, ConsensusVersion::latest()] {
+                verify_deployment_outcome(&process, consensus_version, &deployment).map_err(|error| anyhow!(error))?;
+
+                let variables = verify_deployment_outcome(&process, consensus_version, &fewer_variables);
+                let constraints = verify_deployment_outcome(&process, consensus_version, &fewer_constraints);
+                if call.is_some() && consensus_version < ConsensusVersion::V23 {
+                    // Before V23, the limits stop at the call.
+                    assert_eq!(variables, Ok(()));
+                    assert!(matches!(&constraints, Err(error) if error.contains("certificate")), "{constraints:?}");
+                } else {
+                    halts_on(variables, "Surpassed the variable limit");
+                    halts_on(constraints, "Surpassed the constraint limit");
+                }
+            }
+        }
+        Ok(())
+    }
 }

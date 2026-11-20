@@ -2894,8 +2894,15 @@ mod sanity_checks {
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.
-        let call_stack =
-            CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), constraint_limit, None, None);
+        let call_stack = CallStack::CheckDeployment(
+            vec![request],
+            *private_key,
+            assignments.clone(),
+            constraint_limit,
+            None,
+            None,
+            true,
+        );
         (call_stack, assignments)
     }
 

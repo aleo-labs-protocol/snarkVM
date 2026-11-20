@@ -134,8 +134,17 @@ pub enum CallStack<N: Network> {
     AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
-    /// Validate a `Deploy` transaction's function circuit.
-    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>, Option<(u64, u64, u64)>),
+    /// Validate a `Deploy` transaction's function circuit, with its constraint, variable and non-zero limits.
+    /// If the flag is set, the limits also hold after a `call`.
+    CheckDeployment(
+        Vec<Request<N>>,
+        PrivateKey<N>,
+        Assignments<N>,
+        Option<u64>,
+        Option<u64>,
+        Option<(u64, u64, u64)>,
+        bool,
+    ),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
@@ -207,6 +216,7 @@ impl<N: Network> CallStack<N> {
                 constraint_limit,
                 variable_limit,
                 non_zero_limit,
+                limits_hold_after_calls,
             ) => CallStack::CheckDeployment(
                 requests.clone(),
                 *private_key,
@@ -214,6 +224,7 @@ impl<N: Network> CallStack<N> {
                 *constraint_limit,
                 *variable_limit,
                 *non_zero_limit,
+                *limits_hold_after_calls,
             ),
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
