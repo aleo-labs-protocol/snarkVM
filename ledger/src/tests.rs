@@ -2591,9 +2591,9 @@ mod valid_solutions {
             .unwrap();
 
         // Check that block creation fails when duplicate solution IDs are provided.
-        let result = prepare_quorum_block(
-            &ledger,
-            &validators,
+        let result = ledger.prepare_advance_to_next_beacon_block(
+            &private_key,
+            vec![],
             vec![valid_solution, valid_solution],
             vec![transfer_transaction.clone()],
             rng,
