@@ -17,13 +17,12 @@
 
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::network::prelude::*;
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::{
+    bytes::unchecked_deserialize,
+    locks::{Mutex, RwLock},
+};
 
 use anyhow::Context;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, btree_map},

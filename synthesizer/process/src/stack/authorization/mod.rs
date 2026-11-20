@@ -26,12 +26,9 @@ use console::{
 };
 use snarkvm_ledger_block::{Input, Transaction, Transition};
 use snarkvm_synthesizer_program::StackTrait;
+use snarkvm_utilities::locks::RwLock;
 
 use indexmap::IndexMap;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,

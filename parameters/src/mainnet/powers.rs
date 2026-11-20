@@ -16,13 +16,9 @@
 use super::*;
 use crate::errors::ParameterError;
 use snarkvm_curves::traits::{PairingCurve, PairingEngine};
-use snarkvm_utilities::CanonicalDeserialize;
+use snarkvm_utilities::{CanonicalDeserialize, locks::RwLock};
 
 use anyhow::{Result, anyhow, bail, ensure};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
