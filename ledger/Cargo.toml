@@ -113,7 +113,6 @@ serial = [
 ]
 test = [
   "snarkvm-console/test",
-  "snarkvm-ledger-block/test",
   "snarkvm-ledger-store/test",
   "snarkvm-synthesizer/test"
 ]
@@ -223,10 +222,6 @@ workspace = true
 [dev-dependencies.snarkvm-console]
 workspace = true
 features = [ "filesystem", "test-helpers" ]
-
-[dev-dependencies.snarkvm-ledger-block]
-workspace = true
-features = [ "test" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true

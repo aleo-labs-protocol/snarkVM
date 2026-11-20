@@ -22,9 +22,7 @@ impl<N: Network> Header<N> {
         transactions: &Transactions<N>,
         ratified_finalize_operations: Vec<FinalizeOperation<N>>,
     ) -> Result<Self> {
-        #[cfg(not(any(debug_assertions, feature = "test")))]
         ensure!(ratifications.len() == 1, "The genesis block must contain exactly 1 ratification");
-        #[cfg(not(any(debug_assertions, feature = "test")))]
         ensure!(!ratified_finalize_operations.is_empty(), "The genesis block must contain ratify-finalize operations");
 
         // Prepare a genesis block header.

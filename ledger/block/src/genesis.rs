@@ -30,20 +30,15 @@ impl<N: Network> Block<N> {
         ensure!(self.solutions.is_empty(), "Invalid solutins");
         ensure!(self.transactions.num_rejected() == 0, "Invalid number of rejected transactions");
         ensure!(self.aborted_transaction_ids.is_empty(), "Genesis block must not contain aborted transactions");
-
-        // Perform additional checks in production
-        #[cfg(not(any(test, feature = "test")))]
-        {
-            ensure!(self.ratifications.len() == 1, "Invalid number of ratifications");
-            ensure!(
-                self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS,
-                "Invalid number of accepted transactions"
-            );
-            ensure!(
-                self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS,
-                "Invalid number of finalized transactions"
-            );
-        }
+        ensure!(self.ratifications.len() == 1, "Invalid number of ratifications");
+        ensure!(
+            self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS,
+            "Invalid number of accepted transactions"
+        );
+        ensure!(
+            self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS,
+            "Invalid number of finalized transactions"
+        );
 
         Ok(true)
     }
