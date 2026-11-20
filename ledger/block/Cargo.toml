@@ -35,7 +35,6 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 test = [ "snarkvm-synthesizer-process/test" ]
-dev_skip_block_checks = [ ]
 test-helpers = [ ]
 
 [dependencies.snarkvm-console]

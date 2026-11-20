@@ -774,13 +774,22 @@ fn build_genesis_block_and_transactions(
     private_key: &PrivateKey<CurrentNetwork>,
     rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>) {
-    let store = ConsensusStore::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::open(StorageMode::new_test(None))
-        .expect("Failed to open the consensus store");
-    let vm = VM::from(store).expect("Failed to initialize the VM");
-    let block = vm.genesis_beacon(private_key, rng).expect("Failed to build the genesis block");
-    let transactions = block.transactions().clone();
-    // Return the block and transactions.
-    (block, transactions)
+    // `VM::speculate` blocks on a channel, which panics on a thread that runs a tokio runtime.
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let store = ConsensusStore::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::open(
+                    StorageMode::new_test(None),
+                )
+                .expect("Failed to open the consensus store");
+                let vm = VM::from(store).expect("Failed to initialize the VM");
+                let block = vm.genesis_beacon(private_key, rng).expect("Failed to build the genesis block");
+                let transactions = block.transactions().clone();
+                (block, transactions)
+            })
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
 }
 
 #[cfg(test)]
@@ -801,5 +810,13 @@ mod tests {
     #[test]
     fn test_genesis_block_passes_production_checks() {
         assert!(sample_genesis_block(&mut TestRng::default()).is_genesis().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_genesis_builds_inside_a_tokio_runtime() {
+        let rng = &mut TestRng::default();
+        let private_key = PrivateKey::new(rng).unwrap();
+        let (block, _) = build_genesis_block_and_transactions(&private_key, rng);
+        assert!(block.is_genesis().unwrap());
     }
 }

@@ -113,7 +113,7 @@ serial = [
 ]
 test = [
   "snarkvm-console/test",
-  "snarkvm-ledger-block/dev_skip_block_checks",
+  "snarkvm-ledger-block/test",
   "snarkvm-ledger-store/test",
   "snarkvm-synthesizer/test"
 ]
@@ -226,7 +226,7 @@ features = [ "filesystem", "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
-features = [ "dev_skip_block_checks" ]
+features = [ "test" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true

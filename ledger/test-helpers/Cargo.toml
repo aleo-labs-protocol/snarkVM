@@ -49,3 +49,6 @@ workspace = true
 workspace = true
 features = [ "test-helpers" ]
 
+[dev-dependencies.tokio]
+version = "1"
+features = [ "macros", "rt" ]
