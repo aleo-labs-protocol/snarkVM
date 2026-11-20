@@ -97,6 +97,7 @@ impl<N: Network> Signature<N> {
         Self::from((
             Scalar::zero(),
             Scalar::zero(),
+            // `ComputeKey::try_from` accepts any group pair: Poseidon `hash_to_scalar` always returns `Ok`.
             ComputeKey::try_from((crate::Group::zero(), crate::Group::zero())).unwrap(),
         ))
     }
@@ -107,6 +108,7 @@ impl<N: Network> Signature<N> {
         Self::from((
             Scalar::rand(rng),
             Scalar::rand(rng),
+            // `ComputeKey::try_from` accepts any group pair: Poseidon `hash_to_scalar` always returns `Ok`.
             ComputeKey::try_from((crate::Group::rand(rng), crate::Group::rand(rng))).unwrap(),
         ))
     }
