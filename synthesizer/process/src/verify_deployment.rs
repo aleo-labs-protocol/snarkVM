@@ -433,13 +433,52 @@ function foo:
         Ok(())
     }
 
-    /// A program whose function returns its input.
+    /// A program whose functions return a field, a record and a future.
     const LIMITS_CALLEE: &str = r"
 program limits_callee.aleo;
 
+record token:
+    owner as address.private;
+    amount as u64.private;
+
 function f:
     input r0 as field.private;
-    output r0 as field.private;";
+    output r0 as field.private;
+
+function mint:
+    input r0 as u64.private;
+    cast self.caller r0 into r1 as token.record;
+    output r1 as token.record;
+
+function bump:
+    input r0 as u64.public;
+    async bump r0 into r1;
+    output r1 as limits_callee.aleo/bump.future;
+
+finalize bump:
+    input r0 as u64.public;
+    assert.eq r0 r0;";
+
+    /// A program whose function synthesizes after calls that return a record, a future and a field.
+    const CALLS_RETURNING_RECORDS_AND_FUTURES: &str = r"
+import limits_callee.aleo;
+
+program calls_records_and_futures.aleo;
+
+function foo:
+    input r0 as u64.private;
+    call limits_callee.aleo/mint r0 into r1;
+    call limits_callee.aleo/bump 1u64 into r2;
+    call limits_callee.aleo/f 1field into r3;
+    hash.bhp256 r3 into r4 as field;
+    async foo r2 r4 into r5;
+    output r1 as limits_callee.aleo/token.record;
+    output r5 as calls_records_and_futures.aleo/foo.future;
+
+finalize foo:
+    input r0 as limits_callee.aleo/bump.future;
+    input r1 as field.public;
+    await r0;";
 
     /// Returns a program whose function `foo` runs `first` and then hashes eight times.
     fn program_hashing(name: &str, import: &str, first: &str) -> Result<Program<CurrentNetwork>> {
@@ -493,6 +532,13 @@ function f:
             ),
             (true, program_hashing("hashes_after_dynamic_call", "", &dynamic_call)?),
         ];
+
+        // An honest deployment whose function makes several calls, with record and future outputs, is accepted.
+        let deployment =
+            process.deploy::<CurrentAleo, _>(&Program::from_str(CALLS_RETURNING_RECORDS_AND_FUTURES)?, rng)?;
+        for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23] {
+            verify_deployment_outcome(&process, consensus_version, &deployment).map_err(|error| anyhow!(error))?;
+        }
 
         for (calls, program) in programs {
             let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;

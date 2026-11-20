@@ -220,7 +220,8 @@ impl<N: Network> Stack<N> {
         // Discard the constants that the first initialization on a thread adds to the circuit.
         A::reset();
 
-        // If in 'CheckDeployment' mode, set the synthesis limits. A `call` ejects the circuit, which clears them.
+        // If in 'CheckDeployment' mode, set the synthesis limits. A `call` ejects the circuit, which clears them, and
+        // restores them if the call stack says that the limits hold after calls.
         call_stack.set_synthesis_limits::<A>(false);
 
         // Retrieve the next request.
