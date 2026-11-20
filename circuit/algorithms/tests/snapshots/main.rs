@@ -32,6 +32,7 @@ use snarkvm_circuit_types::{
         Circuit,
         prelude::*,
         snapshot::{self, Array, Case, OperandName, SnapshotFiles, Values, assert_snapshot, mode_jobs, run_parallel},
+        snapshot_files,
     },
 };
 use snarkvm_console_algorithms::{
@@ -44,11 +45,7 @@ use snarkvm_console_algorithms::{
 use snarkvm_utilities::{TestRng, Uniform};
 
 /// The snapshot files of the hashes.
-const HASH_FILES: SnapshotFiles = SnapshotFiles {
-    directory: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots"),
-    coverage: "each operand mode, input length and a fixed set of inputs",
-    command: "cargo test -p snarkvm-circuit-algorithms --test snapshots",
-};
+const HASH_FILES: SnapshotFiles = snapshot_files!("each operand mode, input length and a fixed set of inputs");
 
 /// The snapshot files of the commitments.
 const COMMIT_FILES: SnapshotFiles = SnapshotFiles {
@@ -122,25 +119,17 @@ fn mixed_inputs() -> Vec<Vec<bool>> {
         .collect()
 }
 
-/// Returns the mode and the label `0` or `1` of each bit of a mixed input.
+/// Returns the operand name `name`, the mode and the label `0` or `1` of each bit of a mixed input.
 ///
 /// Each bit is an operand of its case, so the values of the case show each constant bit as `0` or `1` and each
 /// variable bit as `_`. The two mixed inputs with the same constant bits then merge into one line.
-fn mixed_operands(bits: &[bool]) -> Vec<(Mode, &'static str)> {
-    bits.iter().enumerate().map(|(j, bit)| (mixed_mode(j), if *bit { "1" } else { "0" })).collect()
+fn mixed_operands<'a>(name: &'a str, bits: &[bool]) -> Vec<(&'a str, Mode, &'static str)> {
+    bits.iter().enumerate().map(|(j, bit)| (name, mixed_mode(j), if *bit { "1" } else { "0" })).collect()
 }
 
 /// Injects each bit of a mixed input in its mode.
 fn inject_mixed(bits: &[bool]) -> Vec<Boolean<Circuit>> {
     bits.iter().enumerate().map(|(j, bit)| Boolean::new(mixed_mode(j), *bit)).collect()
-}
-
-/// Returns the name and mode of each bit of a mixed input in a block.
-fn mixed_block() -> String {
-    (0..MIXED_BITS)
-        .map(|j| format!("{}.{}", Boolean::<Circuit>::operand_name(), mixed_mode(j)))
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Defines a snapshot test of `$method` of `$native`, a Pedersen instance of `$size` bits, for inputs of 0, 1, 8,
@@ -161,13 +150,14 @@ macro_rules! hash_snapshot {
             }
             fn mixed([]: [Mode; 0]) -> Vec<Case> {
                 let pedersen = Pedersen::<Circuit, $size>::constant($native.clone());
-                let block = mixed_block();
+                let name = Boolean::<Circuit>::operand_name();
                 mixed_inputs()
                     .iter()
                     .map(|bits| {
                         let expected = $native.$method(bits).ok();
                         let inject = || inject_mixed(bits);
-                        snapshot::case(&block, &mixed_operands(bits), expected, None, inject, |a| pedersen.$method(&a))
+                        let operands = mixed_operands(&name, bits);
+                        snapshot::case(&operands, None, expected, None, inject, |a| pedersen.$method(&a))
                     })
                     .collect()
             }
@@ -203,16 +193,16 @@ macro_rules! commit_snapshot {
             }
             fn mixed([mode_r]: [Mode; 1]) -> Vec<Case> {
                 let pedersen = Pedersen::<Circuit, $size>::constant($native.clone());
-                let block = format!("{} {}.{mode_r}", mixed_block(), Scalar::<Circuit>::operand_name());
+                let (name, name_r) = (Boolean::<Circuit>::operand_name(), Scalar::<Circuit>::operand_name());
                 let (inputs, randomizers) = (mixed_inputs(), randomizer_values());
                 let mut cases = Vec::with_capacity(inputs.len() * randomizers.len());
                 for bits in &inputs {
                     for (r, label_r) in &randomizers {
-                        let mut operands = mixed_operands(bits);
-                        operands.push((mode_r, label_r.as_str()));
+                        let mut operands = mixed_operands(&name, bits);
+                        operands.push((&name_r, mode_r, label_r));
                         let inject = || (inject_mixed(bits), Scalar::new(mode_r, *r));
                         let expected = $native.$method(bits, r).ok();
-                        cases.push(snapshot::case(&block, &operands, expected, None, inject, |(a, r)| {
+                        cases.push(snapshot::case(&operands, None, expected, None, inject, |(a, r)| {
                             pedersen.$method(&a, &r)
                         }));
                     }
