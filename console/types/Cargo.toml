@@ -62,26 +62,26 @@ default = [
   "string"
 ]
 address = [
-  "snarkvm-console-types-address",
-  "snarkvm-console-types-field",
-  "snarkvm-console-types-group"
+  "dep:snarkvm-console-types-address",
+  "dep:snarkvm-console-types-field",
+  "dep:snarkvm-console-types-group"
 ]
-boolean = [ "snarkvm-console-types-boolean" ]
-field = [ "snarkvm-console-types-field" ]
+boolean = [ "dep:snarkvm-console-types-boolean" ]
+field = [ "dep:snarkvm-console-types-field" ]
 group = [
-  "snarkvm-console-types-group",
-  "snarkvm-console-types-field",
-  "snarkvm-console-types-scalar"
+  "dep:snarkvm-console-types-group",
+  "dep:snarkvm-console-types-field",
+  "dep:snarkvm-console-types-scalar"
 ]
-integers = [ "snarkvm-console-types-integers" ]
+integers = [ "dep:snarkvm-console-types-integers" ]
 scalar = [
-  "snarkvm-console-types-scalar",
-  "snarkvm-console-types-field"
+  "dep:snarkvm-console-types-scalar",
+  "dep:snarkvm-console-types-field"
 ]
 string = [
-  "snarkvm-console-types-string",
-  "snarkvm-console-types-field",
-  "snarkvm-console-types-integers"
+  "dep:snarkvm-console-types-string",
+  "dep:snarkvm-console-types-field",
+  "dep:snarkvm-console-types-integers"
 ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-console-network-environment/test-helpers" ]

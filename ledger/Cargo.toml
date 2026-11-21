@@ -102,7 +102,7 @@ test = [
 # Keep the [dev-dependencies] in sync with this list: the unit tests build `test_helpers` through
 # `cfg(test)`, without this feature.
 test-helpers = [
-  "snarkvm-ledger-test-helpers",
+  "dep:snarkvm-ledger-test-helpers",
   "snarkvm-ledger-committee/test-helpers",
   "snarkvm-ledger-narwhal/test-helpers",
   "dep:snarkvm-circuit",

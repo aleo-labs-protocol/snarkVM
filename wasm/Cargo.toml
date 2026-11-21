@@ -35,15 +35,15 @@ full = [
   "synthesizer",
   "utilities"
 ]
-curves = [ "snarkvm-curves" ]
-fields = [ "snarkvm-fields" ]
+curves = [ "dep:snarkvm-curves" ]
+fields = [ "dep:snarkvm-fields" ]
 ledger = [
-  "snarkvm-ledger-block",
-  "snarkvm-ledger-query",
-  "snarkvm-ledger-store"
+  "dep:snarkvm-ledger-block",
+  "dep:snarkvm-ledger-query",
+  "dep:snarkvm-ledger-store"
 ]
-synthesizer = [ "snarkvm-synthesizer" ]
-utilities = [ "snarkvm-utilities" ]
+synthesizer = [ "dep:snarkvm-synthesizer" ]
+utilities = [ "dep:snarkvm-utilities" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 
 [dependencies.snarkvm-console]
