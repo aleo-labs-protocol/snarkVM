@@ -26,39 +26,13 @@ env:
   RUST_MIN_STACK: 67108864
 
 # GitHub holds an outside contributor's pull request run until a maintainer
-# approves it. A fork's run gets no secrets, so start-cpu-runners is skipped and
-# fork-pr-runners.yml starts the boxes. The fleet jobs therefore accept a
-# skipped start-cpu-runners, and run only in this repository, which alone may
-# use the fleet.
-#
-# The fleet jobs also wait for check-shared-refs, a hosted job. GitHub reports
-# a run as `in_progress`, and fires the `workflow_run` event that starts the
-# boxes, only once none of its ready jobs is waiting for a runner. With no
-# hosted job ahead of them, a fork's fleet jobs would wait for boxes that only
-# that event starts.
+# approves it. The org's fleet starter boots the boxes when GitHub queues a
+# fleet job, from any run, a fork's included, so no job here starts them. The
+# fleet jobs run only in this repository, which alone may use the fleet.
 #
 # A push runs CI only in this repository. A mirror receives this branch by
 # push, with this file, and would otherwise rerun CI on its own runners.
 jobs:
-  start-cpu-runners:
-    # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
-    uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
-    permissions: { id-token: write, contents: read, actions: read }
-    secrets:
-      runner_app_key: ${{ secrets.RUNNER_APP_KEY }}
-    with:
-      role-to-assume: ${{ vars.RUNNER_ROLE_ARN }}
-      label: cpu
-      # Below the default of 3: snarkVM's jobs run ten minutes or more, so a
-      # box absorbs fewer of them within the critical path. fork-pr-runners.yml
-      # repeats this.
-      jobs-per-box: 2
-      runner-app-id: ${{ vars.RUNNER_APP_ID }}
-    if: >-
-      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
-      (github.event.pull_request == null ||
-       github.event.pull_request.head.repo.full_name == github.repository)
-
   check-shared-refs:
     runs-on: ubuntu-latest
     if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
@@ -148,12 +122,9 @@ jobs:
         working-directory: wasm
 
   lint:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: &fleet-if >-
-      !cancelled() && needs.check-shared-refs.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
       github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -203,7 +174,6 @@ jobs:
           overwrite: true
 
   lint-locktick:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: *fleet-if
@@ -228,7 +198,6 @@ jobs:
   #
   # Cheap entries run on free hosted runners, the rest on the fleet.
   test:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: *fleet-if
@@ -400,12 +369,9 @@ jobs:
   # Slower suites that rarely fail where the PR set passed. On every push, on
   # pull requests to a release branch, and on demand.
   test-merge:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: >-
-      !cancelled() && needs.check-shared-refs.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
       github.repository == 'aleo-labs-protocol/snarkVM' &&
       (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     strategy:
@@ -462,12 +428,9 @@ jobs:
   # request, so on every push, on pull requests to a release branch, and on
   # demand.
   each-feature:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
     if: >-
-      !cancelled() && needs.check-shared-refs.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
       github.repository == 'aleo-labs-protocol/snarkVM' &&
       (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
     steps:
@@ -483,12 +446,9 @@ jobs:
   # Suites that take too long for every push. On a release branch, on pull
   # requests to one, and on demand.
   test-release:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 120
     if: >-
-      !cancelled() && needs.check-shared-refs.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
       github.repository == 'aleo-labs-protocol/snarkVM' &&
       (github.event_name == 'workflow_dispatch' ||
        startsWith(github.ref, 'refs/heads/release/') ||
@@ -589,10 +549,9 @@ jobs:
       - run: cargo check --examples --benches --tests
         working-directory: ${{ matrix.dir }}
 
-  # The one check to require. A skipped job counts as passing a required check,
-  # and a fleet job is skipped when the boxes fail to start; here anything but
-  # success fails. The exception is a merge or release job skipped outside a
-  # release branch, where it is not meant to run.
+  # The one check to require. A skipped job counts as passing a required check;
+  # here anything but success fails. The exception is a merge or release job
+  # skipped outside a release branch, where it is not meant to run.
   ci-ok:
     if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     needs: [check-shared-refs, fmt, deny, source-checks, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]

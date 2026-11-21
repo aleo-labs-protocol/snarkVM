@@ -13,8 +13,8 @@ Jobs run in one of two places:
   These restore `~/.cargo` and `target/` with `Swatinem/rust-cache`, saved
   only from `staging`.
 - **The aleo-labs-protocol `cpu` fleet** for heavy jobs: clippy, release checks
-  and the heavier crates' tests. `start-cpu-runners` starts the 32-vCPU boxes
-  the run needs; they stop themselves when idle. Each box keeps a persistent
+  and the heavier crates' tests. The org's fleet starter starts the 32-vCPU
+  boxes when GitHub queues their jobs; they stop themselves when idle. Each box keeps a persistent
   `target/` and sccache, so builds there are incremental.
 
 ## Triggers
@@ -33,7 +33,6 @@ on every event.
 
 | Job | Runner | Trigger | Timeout (min) | What it runs | CircleCI job |
 |---|---|---|---|---|---|
-| `start-cpu-runners` | hosted | all | | starts fleet boxes | |
 | `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; the check to require | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag, and that each matrix `name` axis lists the same names as its `include` | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
