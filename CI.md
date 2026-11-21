@@ -101,7 +101,8 @@ cancelled, and it waits for the scheduled run before it to end.
 `notify` reports each scheduled run to the Slack channel in the
 `CI_SLACK_CHANNEL` variable, `#ci` by default. It posts only when the run turns
 red, and once when it turns green again. A run that `schedule-due` skips posts
-nothing.
+nothing. Its token, `CI_SLACK_TOKEN`, is a secret of the `ci-notify`
+environment, which admits only `staging`.
 
 The schedule fires on the default branch of every copy of this repository.
 `schedule-due` and `notify` run only in this repository, and every other job

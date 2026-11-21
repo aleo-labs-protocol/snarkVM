@@ -671,6 +671,9 @@ jobs:
     needs: [schedule-due, check-shared-refs, fmt, deny, source-checks, cuda-package-files, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows, ci-ok]
     runs-on: ubuntu-latest
     permissions: { actions: read }
+    # CI_SLACK_TOKEN lives in the ci-notify environment, which admits only
+    # staging.
+    environment: ci-notify
     steps:
       # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/notify-ci-state@v2
