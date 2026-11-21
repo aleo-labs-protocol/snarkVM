@@ -2219,6 +2219,93 @@ function compute:
         assert!(vm.block_store().get_confirmed_transaction(&valid_tx_id).unwrap().unwrap().is_accepted());
         assert!(vm.block_store().get_confirmed_transaction(&invalid_tx_id).unwrap().unwrap().is_rejected());
     }
+
+    #[test]
+    #[cfg(feature = "test")]
+    fn test_halted_deployment_does_not_reject_later_deployments() {
+        use snarkvm_synthesizer_snark::VerifyingKey;
+        use std::{ops::Deref, sync::Arc};
+
+        let rng = &mut TestRng::default();
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).expect("valid test fixture");
+        let vm = test_helpers::sample_vm_at_height(height, rng);
+        let private_key = test_helpers::sample_genesis_private_key();
+
+        // Records make verification synthesize translation circuits.
+        let mut good_src = String::from("program dirty_good.aleo;\n\n");
+        for i in 0..8 {
+            good_src
+                .push_str(&format!("record tok{i}:\n    owner as address.private;\n    amount as u64.private;\n\n"));
+        }
+        good_src.push_str("constructor:\n    assert.eq true true;\n\n");
+        good_src.push_str(
+            "function foo:\n    input r0 as u32.private;\n    add r0 r0 into r1;\n    output r1 as u32.private;\n",
+        );
+        let good_program = Program::<CurrentNetwork>::from_str(&good_src).expect("valid test fixture");
+        let good_tx = vm.deploy(&private_key, &good_program, None, 0, None, rng).expect("valid test fixture");
+
+        let mut halt_src = String::from("program dirty_halt.aleo;\n\nconstructor:\n    assert.eq true true;\n\n");
+        for i in 0..8 {
+            halt_src.push_str(&format!(
+                "function f{i}:\n    input r0 as u32.private;\n    add r0 r0 into r1;\n    output r1 as u32.private;\n\n"
+            ));
+        }
+        let halt_program = Program::<CurrentNetwork>::from_str(&halt_src).expect("valid test fixture");
+        let honest_tx = vm.deploy(&private_key, &halt_program, None, 0, None, rng).expect("valid test fixture");
+        let Transaction::Deploy(_, _, _, honest_deployment, _) = &honest_tx else {
+            panic!("expected a deployment transaction")
+        };
+
+        // Under-reported constraint counts make every function's synthesis halt.
+        let tampered = honest_deployment
+            .verifying_keys()
+            .iter()
+            .map(|(id, (vk, cert))| {
+                let mut vk_deref = vk.deref().clone();
+                vk_deref.circuit_info.num_constraints -= 2;
+                (*id, (VerifyingKey::new(Arc::new(vk_deref), vk.num_variables()), cert.clone()))
+            })
+            .collect();
+        let bad_deployment = Deployment::new(
+            honest_deployment.edition(),
+            honest_deployment.program().clone(),
+            tampered,
+            honest_deployment.program_checksum(),
+            honest_deployment.program_owner(),
+        )
+        .expect("valid test fixture");
+        let deployment_id = bad_deployment.to_deployment_id().expect("valid test fixture");
+        let owner = ProgramOwner::new(&private_key, deployment_id, rng).expect("valid test fixture");
+        let base_fee = *honest_tx.base_fee_amount().expect("valid test fixture");
+        let auth = vm.authorize_fee_public(&private_key, base_fee, 0, deployment_id, rng).expect("valid test fixture");
+        let fee = vm.execute_fee_authorization(auth, None, rng).expect("valid test fixture");
+        let bad_tx = Transaction::from_deployment(owner, bad_deployment, fee).expect("valid test fixture");
+
+        // One thread, so every synthesis below runs on the worker that halts.
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().expect("valid test fixture");
+        let check = |tx: &Transaction<CurrentNetwork>| {
+            vm.partially_verified_transactions().write().clear();
+            pool.install(|| vm.check_transaction(tx, None, &mut TestRng::default()))
+        };
+
+        let control = check(&good_tx);
+        assert!(control.is_ok(), "a valid deployment must verify on clean threads: {control:?}");
+        let bad = check(&bad_tx);
+        assert!(
+            bad.as_ref().err().is_some_and(|e| e.to_string().contains("VM safely halted")),
+            "the under-reported deployment must halt: {bad:?}"
+        );
+        // A deployment check synthesizes its functions before its translations, and each function resets the
+        // circuit, so only a translation synthesized directly observes the state that the halt leaves.
+        let stack = Stack::new(vm.process(), &good_program).expect("valid test fixture");
+        let record_name = Identifier::from_str("tok0").expect("valid test fixture");
+        let translation = pool.install(|| {
+            stack.synthesize_translation_key::<test_helpers::CurrentAleo, _>(&record_name, &mut TestRng::default())
+        });
+        assert!(translation.is_ok(), "a translation must synthesize after a halt: {translation:?}");
+        let after = check(&good_tx);
+        assert!(after.is_ok(), "a valid deployment must still verify after a halt: {after:?}");
+    }
 }
 
 #[cfg(feature = "test")]

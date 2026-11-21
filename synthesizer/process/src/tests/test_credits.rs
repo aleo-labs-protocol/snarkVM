@@ -2843,18 +2843,25 @@ fn test_bond_validator_with_different_commission_fails() {
 
 mod sanity_checks {
     use super::*;
-    use crate::{Assignments, CallStack, Stack, tests::test_utils::shared_process};
+    use crate::{
+        Assignments,
+        CallStack,
+        Stack,
+        tests::test_utils::{circuit_snapshot, shared_process, start_callers_synthesis},
+    };
     use circuit::Assignment;
     use console::{program::Request, types::Field};
     use snarkvm_synthesizer_program::StackTrait;
 
-    fn get_assignment<N: Network, A: circuit::Aleo<Network = N>>(
+    /// Returns a `CheckDeployment` call stack for one root call to the given function, and its assignments.
+    fn check_deployment_call_stack<N: Network>(
         stack: &Stack<N>,
         private_key: &PrivateKey<N>,
         function_name: Identifier<N>,
         inputs: &[Value<N>],
+        constraint_limit: Option<u64>,
         rng: &mut TestRng,
-    ) -> Assignment<<N as Environment>::Field> {
+    ) -> (CallStack<N>, Assignments<N>) {
         // Retrieve the program.
         let program = stack.program();
         // Get the program ID.
@@ -2887,11 +2894,52 @@ mod sanity_checks {
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.
-        let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), None, None, None);
+        let call_stack =
+            CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), constraint_limit, None, None);
+        (call_stack, assignments)
+    }
+
+    fn get_assignment<N: Network, A: circuit::Aleo<Network = N>>(
+        stack: &Stack<N>,
+        private_key: &PrivateKey<N>,
+        function_name: Identifier<N>,
+        inputs: &[Value<N>],
+        rng: &mut TestRng,
+    ) -> Assignment<<N as Environment>::Field> {
+        let (call_stack, assignments) =
+            check_deployment_call_stack(stack, private_key, function_name, inputs, None, rng);
         // Synthesize the circuit.
         let _response = stack.execute_function::<A, _>(call_stack, None, None, rng).unwrap();
         // Retrieve the assignment.
         assignments.read().last().unwrap().0.clone()
+    }
+
+    #[test]
+    fn test_execute_function_leaves_the_callers_circuit() {
+        use circuit::Environment;
+
+        let rng = &mut TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let caller = Address::try_from(&private_key).unwrap();
+        let stack = shared_process().get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
+        let function_name = Identifier::from_str("transfer_public").unwrap();
+        let inputs =
+            [Value::<CurrentNetwork>::from_str(&format!("{caller}")).unwrap(), Value::from_str("1u64").unwrap()];
+        let (succeeds, _) = check_deployment_call_stack(&stack, &private_key, function_name, &inputs, None, rng);
+        let (halts, _) = check_deployment_call_stack(&stack, &private_key, function_name, &inputs, Some(1), rng);
+
+        CurrentAleo::with_fresh_circuit(|| {
+            let callers = start_callers_synthesis();
+
+            stack.execute_function::<CurrentAleo, _>(succeeds, None, None, rng).unwrap();
+            assert_eq!(circuit_snapshot(), callers);
+
+            let halted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                stack.execute_function::<CurrentAleo, _>(halts, None, None, rng)
+            }));
+            assert!(halted.is_err(), "the constraint limit must halt synthesis");
+            assert_eq!(circuit_snapshot(), callers);
+        });
     }
 
     #[test]

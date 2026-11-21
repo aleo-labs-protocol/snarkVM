@@ -197,6 +197,17 @@ impl<N: Network> Stack<N> {
     /// This method will halt if the given inputs are not the same length as the input statements.
     pub fn execute_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
+        call_stack: CallStack<N>,
+        console_caller: Option<ProgramID<N>>,
+        console_root_tvk: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Option<Response<N>>, StackExecError> {
+        A::with_fresh_circuit(|| self.execute_function_inner::<A, R>(call_stack, console_caller, console_root_tvk, rng))
+    }
+
+    /// Executes a program function on the given inputs, in the current circuit state.
+    fn execute_function_inner<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
+        &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
@@ -206,11 +217,11 @@ impl<N: Network> Stack<N> {
 
         // Ensure the global constants for the Aleo environment are initialized.
         A::initialize_global_constants();
-        // Ensure the circuit environment is clean.
+        // Discard the constants that the first initialization on a thread adds to the circuit.
         A::reset();
 
         // If in 'CheckDeployment' mode, set the constraint limit and variable limit.
-        // We do not have to reset it after function calls because `CheckDeployment` mode does not execute those.
+        // A `call` ejects the circuit, which clears these limits for the rest of the function.
         if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit, non_zero_limit) = &call_stack {
             A::set_constraint_limit(*constraint_limit);
             A::set_variable_limit(*variable_limit);
