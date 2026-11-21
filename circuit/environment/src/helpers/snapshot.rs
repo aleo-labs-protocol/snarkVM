@@ -42,6 +42,7 @@ const UPDATE_VARIABLE: &str = "UPDATE_CIRCUIT_SNAPSHOTS";
 /// Returns the `SnapshotFiles` of the calling test target: its `tests/snapshots` directory, the given coverage,
 /// and a command that runs the `snapshots` test of its package.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! snapshot_files {
     ($coverage:literal) => {
         $crate::snapshot::SnapshotFiles {

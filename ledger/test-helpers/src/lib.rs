@@ -13,6 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Test helpers that build ledger data structures.
+//!
+//! This crate is for tests of snarkVM and of the crates that depend on it. Its API is not covered by semantic
+//! versioning: it may change in any release.
+
 // Every helper in this crate is `#[inline]`, so the crate that calls it compiles it.
 // A helper without `#[inline]` is compiled here, and every test binary that uses this crate waits for it.
 // Clippy enforces this for public helpers only.

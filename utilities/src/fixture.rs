@@ -30,6 +30,7 @@ use crate::{FromBytes, ToBytes};
 /// A fixture in the file that `is_valid` rejects is built again.
 /// If the file cannot be used, every process builds its own fixture.
 /// `build` must return the same fixture for the same key in every process.
+#[doc(hidden)]
 pub fn load_or_build_fixture<T: FromBytes + ToBytes>(
     extension: &str,
     key: &[u8],

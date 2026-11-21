@@ -26,6 +26,7 @@ edition = "2024"
 [features]
 save_r1cs_hashes = [ "snarkvm-circuit-environment/save_r1cs_hashes" ]
 dev-print = ["snarkvm-circuit-environment/dev-print"]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-circuit-environment/test-helpers" ]
 
 [dependencies.snarkvm-circuit-account]

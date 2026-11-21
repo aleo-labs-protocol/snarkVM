@@ -480,6 +480,7 @@ fn ensure_request_and_transition_matches<N: Network>(
 impl<N: Network> Authorization<N> {
     /// Initialize an `Authorization` instance with the given requests and
     /// transitions without performing any consistency checks between them.
+    #[doc(hidden)]
     pub fn from_unchecked((requests, transitions): (Vec<Request<N>>, Vec<Transition<N>>)) -> Self {
         Authorization {
             requests: Arc::new(RwLock::new(VecDeque::from(requests))),

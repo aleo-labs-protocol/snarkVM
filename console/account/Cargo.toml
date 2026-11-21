@@ -60,4 +60,5 @@ graph_key = [ "private_key" ]
 private_key = [ "compute_key" ]
 signature = [ "compute_key" ]
 view_key = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ ]

@@ -27,6 +27,7 @@ edition = "2024"
 default = [ ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-console/test-helpers", "snarkvm-console/types" ]
 
 [dependencies.snarkvm-circuit]

@@ -44,6 +44,7 @@ mod verifying_key;
 pub use verifying_key::VerifyingKey;
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use circuit::{

@@ -21,6 +21,7 @@ use anyhow::Result;
 use itertools::Itertools;
 
 /// Stores constraints during index generation.
+#[doc(hidden)]
 pub struct ConstraintSystem<F: Field> {
     pub a: Vec<Vec<(F, VarIndex)>>,
     pub b: Vec<Vec<(F, VarIndex)>>,

@@ -265,6 +265,7 @@ impl<F: PrimeField> R1CS<F> {
     /// A variable below `first_public` or `first_private` keeps its index. A later variable is indexed
     /// from `first_public` or `first_private`.
     #[cfg(feature = "test-helpers")]
+    #[doc(hidden)]
     pub fn structural_digest(&self, first_constraint: u64, first_public: u64, first_private: u64) -> [u8; 32] {
         let mut hasher = Sha256::new();
         let skip = usize::try_from(first_constraint).unwrap_or(usize::MAX);

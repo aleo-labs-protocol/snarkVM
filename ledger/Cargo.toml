@@ -98,6 +98,7 @@ test = [
   "snarkvm-ledger-store/test",
   "snarkvm-synthesizer/test"
 ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 # Keep the [dev-dependencies] in sync with this list: the unit tests build `test_helpers` through
 # `cfg(test)`, without this feature.
 test-helpers = [

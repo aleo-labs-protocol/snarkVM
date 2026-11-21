@@ -30,6 +30,7 @@ pub use snarkvm_ledger_query as query;
 pub use snarkvm_ledger_store as store;
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers;
 
 mod error;

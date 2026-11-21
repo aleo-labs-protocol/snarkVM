@@ -24,6 +24,7 @@ mod string;
 mod to_id;
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod prop_tests;
 
 use console::{
@@ -254,6 +255,7 @@ impl<N: Network> Committee<N> {
 }
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use console::{
