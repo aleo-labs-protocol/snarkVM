@@ -2166,6 +2166,7 @@ mod credits_migration_tests {
     use console::account::{Address, ViewKey};
     use snarkvm_ledger_block::Transition;
 
+    type CurrentAleo = test_helpers::CurrentAleo;
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     const TOTAL_UPGRADE_LIMIT: u64 = 4_000_000_000_000u64;
@@ -2323,9 +2324,9 @@ mod credits_migration_tests {
     #[cfg(feature = "test")]
     #[test]
     fn test_inclusion_local_records() {
-        // 1. Check that records that have not been upgraded can't be spent via calls
-        // 2. Check that `credits.aleo/upgrade` can be called invoked directly.
-        // 3. Check that local records can be spent and checked properly.
+        // 1. Check that `credits.aleo/upgrade` can be called invoked directly.
+        // 2. Check that local records can be spent and checked properly.
+        // 3. Check that records that have not been upgraded can't be spent via calls
         let rng = &mut TestRng::default();
 
         // Initialize the VM on a genesis block whose records `upgrade` accepts.
@@ -2380,21 +2381,7 @@ function local_transfer:
         }
 
         // ----------------------------------------------------------------------------------------
-        // 1. Check that records that have not been upgraded can't be spent via calls
-        // ----------------------------------------------------------------------------------------
-
-        let inputs = [
-            Value::<CurrentNetwork>::Record(old_records[0].clone()),
-            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
-        ]
-        .into_iter();
-        assert!(
-            vm.execute(&private_key, ("test_local_calls.aleo", "proxy_transfer"), inputs, None, 0, None, rng).is_err()
-        );
-
-        // ----------------------------------------------------------------------------------------
-        // 2. Check that `credits.aleo/upgrade` can be invoked by a user.
+        // 1. Check that `credits.aleo/upgrade` can be invoked by a user.
         // ----------------------------------------------------------------------------------------
 
         // Upgrade an old record
@@ -2419,7 +2406,7 @@ function local_transfer:
         assert!(vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).is_err());
 
         // ----------------------------------------------------------------------------------------
-        // 3. Check that local transfers cannot be invoked until the program is re-deployed.
+        // 2. Check that local transfers cannot be invoked until the program is re-deployed.
         //    After the program is re-deployed, local transfers should work.
         // ----------------------------------------------------------------------------------------
 
@@ -2430,8 +2417,8 @@ function local_transfer:
             Value::<CurrentNetwork>::from_str("10u64").unwrap(),
         ];
 
-        // Create a transaction with local transfers, which should fail, because the program has not been re-deployed.
-        let local_transfer = vm
+        // The prover rejects the local transfer, because the program has not been re-deployed.
+        let error = vm
             .execute(
                 &private_key,
                 ("test_local_calls.aleo", "local_transfer"),
@@ -2441,7 +2428,29 @@ function local_transfer:
                 None,
                 rng,
             )
+            .unwrap_err();
+        assert!(error.to_string().contains("Cannot execute test_local_calls.aleo on edition 0"), "{error}");
+
+        // Prove the local transfer without the VM's edition check, to check that the verifier rejects it too.
+        let authorization =
+            vm.authorize(&private_key, "test_local_calls.aleo", "local_transfer", inputs.clone(), rng).unwrap();
+        let (_, mut trace) = vm.process().execute::<CurrentAleo, _>(authorization, rng).unwrap();
+        trace.prepare(&Query::VM(vm.block_store().clone())).unwrap();
+        let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
+        let execution = trace
+            .prove_execution::<CurrentAleo, _>(
+                "test_local_calls.aleo/local_transfer",
+                varuna_version_from_consensus(consensus_version),
+                rng,
+            )
             .unwrap();
+        let (base_fee, _) = execution_cost(vm.process(), &execution, consensus_version).unwrap();
+        let fee_authorization =
+            vm.authorize_fee_public(&private_key, base_fee, 0, execution.to_execution_id().unwrap(), rng).unwrap();
+        let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
+        let local_transfer = Transaction::from_execution(execution, Some(fee)).unwrap();
+        let error = vm.check_transaction(&local_transfer, None, rng).unwrap_err();
+        assert!(error.to_string().contains("cannot be zero for `ConsensusVersion::V8` or greater"), "{error}");
         let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[local_transfer], rng).unwrap();
         assert_eq!(next_block.transactions().num_accepted(), 0);
         assert_eq!(next_block.transactions().num_rejected(), 0);
@@ -2465,5 +2474,22 @@ function local_transfer:
         assert_eq!(next_block.transactions().num_accepted(), 1);
         assert_eq!(next_block.transactions().num_rejected(), 0);
         assert_eq!(next_block.aborted_transaction_ids().len(), 0);
+
+        // ----------------------------------------------------------------------------------------
+        // 3. Check that records that have not been upgraded can't be spent via calls
+        // ----------------------------------------------------------------------------------------
+
+        let mut proxy_transfer = |record: &Record<CurrentNetwork, Plaintext<CurrentNetwork>>| {
+            let inputs = [
+                Value::<CurrentNetwork>::Record(record.clone()),
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ]
+            .into_iter();
+            vm.execute(&private_key, ("test_local_calls.aleo", "proxy_transfer"), inputs, None, 0, None, rng)
+        };
+        assert!(proxy_transfer(&upgraded_records[0]).is_ok());
+        let error = proxy_transfer(&old_records[1]).unwrap_err();
+        assert!(error.to_string().contains("does not satisfy the circuit's constraints"), "{error}");
     }
 }

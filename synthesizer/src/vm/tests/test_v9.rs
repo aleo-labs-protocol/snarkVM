@@ -3056,7 +3056,7 @@ constructor:
     vm.add_next_block(&block).unwrap();
 
     // Attempt to execute the upgradable program.
-    let transaction = vm
+    let error = vm
         .execute(
             &caller_private_key,
             ("upgradable_program.aleo", "bar"),
@@ -3066,11 +3066,9 @@ constructor:
             None,
             rng,
         )
-        .unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+        .unwrap_err();
+    assert!(error.to_string().contains("Cannot execute pre_v9_program.aleo on edition 0"), "{error}");
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
     vm.add_next_block(&block).unwrap();
 
     let execution = vm

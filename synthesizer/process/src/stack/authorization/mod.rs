@@ -163,8 +163,8 @@ impl<N: Network> Authorization<N> {
     }
 
     /// Checks whether the authorization is for a valid program edition.
-    pub fn check_valid_edition(&self, process: &crate::Process<N>, _consensus_version: ConsensusVersion) -> Result<()> {
-        // Determine the root transition's program ID.
+    pub fn check_valid_edition(&self, process: &crate::Process<N>, consensus_version: ConsensusVersion) -> Result<()> {
+        // Determine the program ID of each transition.
         let transitions = self.transitions.read();
         let program_ids = transitions.iter().map(|(_, t)| t.program_id());
         for program_id in program_ids {
@@ -173,15 +173,14 @@ impl<N: Network> Authorization<N> {
                 // Get the stack.
                 let stack = process.get_stack(program_id)?;
                 // Get the program edition.
-                let _program_edition = *stack.program_edition();
-                // If we're past `ConsensusVersion::V8` but before `ConsensusVersion::V9`, ensure new stacks are not on edition 0.
-                // Note. This check does not apply to programs with constructors.
-                #[cfg(not(any(test, feature = "test")))]
-                if _consensus_version >= ConsensusVersion::V8
-                    && _program_edition == 0
+                let program_edition = *stack.program_edition();
+                // From `ConsensusVersion::V8`, a transition of a program on edition 0 needs a constructor.
+                // The verifier also checks the direct imports from `ConsensusVersion::V18`; see `VM::check_transaction`.
+                if consensus_version >= ConsensusVersion::V8
+                    && program_edition == 0
                     && !stack.program().contains_constructor()
                 {
-                    bail!("Cannot execute {program_id} on edition {_program_edition}");
+                    bail!("Cannot execute {program_id} on edition {program_edition}");
                 }
             }
         }
