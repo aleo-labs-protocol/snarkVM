@@ -151,19 +151,19 @@ function dummy2:
     assert_eq!(consensus_version, ConsensusVersion::V8);
 
     // Attempt to execute the program after `ConsensusVersion::V8`.
-    let execute = vm.execute(
-        &caller_private_key,
-        ("test_redeployment.aleo", "dummy"),
-        Vec::<Value<CurrentNetwork>>::new().iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    let error = vm
+        .execute(
+            &caller_private_key,
+            ("test_redeployment.aleo", "dummy"),
+            Vec::<Value<CurrentNetwork>>::new().iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("Cannot execute test_redeployment.aleo on edition 0"), "{error}");
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
     vm.add_next_block(&block)?;
 
     // Attempt to redeploy the program with different code after `ConsensusVersion::V8`.
@@ -440,19 +440,19 @@ function dummy:
     assert_eq!(edition, 0);
 
     // Attempt to execute the program immediately after deployment.
-    let execute = vm.execute(
-        &caller_private_key,
-        ("test_deploy_and_redeploy.aleo", "dummy"),
-        Vec::<Value<CurrentNetwork>>::new().iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    let error = vm
+        .execute(
+            &caller_private_key,
+            ("test_deploy_and_redeploy.aleo", "dummy"),
+            Vec::<Value<CurrentNetwork>>::new().iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("Cannot execute test_deploy_and_redeploy.aleo on edition 0"), "{error}");
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
     vm.add_next_block(&block)?;
 
     // Redeploy the program with the other private key, using the original deployment.
