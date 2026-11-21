@@ -94,6 +94,12 @@ jobs:
 
   check-shared-refs:
     runs-on: ubuntu-latest
+    # Every job waits for `schedule-due`, which is skipped on every event but
+    # the schedule. `!cancelled()` replaces the implicit `success()`, which
+    # would skip the job whenever `schedule-due` is skipped. A scheduled run
+    # runs the job only when `schedule-due` says the head is due. A push, which
+    # is to a release branch, runs it only in this repository, not in a mirror.
+    # The other hosted jobs reuse this condition as `*hosted-if`.
     needs: schedule-due
     if: &hosted-if >-
       !cancelled() &&
@@ -193,6 +199,9 @@ jobs:
   lint:
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
+    # As `hosted-if` on check-shared-refs, except that a fleet job runs only in
+    # this repository on every event. The other fleet jobs reuse this condition
+    # as `*fleet-if`.
     needs: schedule-due
     if: &fleet-if >-
       !cancelled() &&
