@@ -387,14 +387,10 @@ jobs:
               -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-synthesizer-snark
               -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
           # What differs off x86-64: the bigint carry arithmetic, and the
-          # batched MSM's batch size and prefetching.
+          # batched MSM's batch size and prefetching. macOS runs only in
+          # test-release-arm.
           - name: arithmetic-linux-arm64
             os: ubuntu-24.04-arm
-            runs: |
-              nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
-              nextest run -p snarkvm-algorithms
-          - name: arithmetic-macos-arm64
-            os: macos-15
             runs: |
               nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
               nextest run -p snarkvm-algorithms
