@@ -24,7 +24,6 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-async = [ "snarkvm-ledger-narwhal-data/async" ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [
   "snarkvm-ledger-narwhal-batch-certificate/test-helpers",

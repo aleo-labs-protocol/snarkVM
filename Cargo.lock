@@ -3418,7 +3418,6 @@ dependencies = [
  "snarkvm-console",
  "snarkvm-ledger-block",
  "snarkvm-ledger-test-helpers",
- "tokio",
 ]
 
 [[package]]
