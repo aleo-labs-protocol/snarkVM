@@ -145,6 +145,9 @@ void round4_sub_device(const stream_t& stream, int sm_count, fr_t* d_out,
 void round4_vanishing_device(const stream_t& stream, int sm_count,
                              fr_t* d_q, unsigned* d_nonzero, const fr_t* d_p,
                              size_t n, size_t q_len, size_t total, fr_t mult);
+void round4_scale_device(const stream_t& stream, int sm_count, fr_t* d_q,
+                         unsigned* d_nonzero, const fr_t* d_p, size_t n,
+                         size_t q_len, fr_t mult);
 void trimmed_len_device(const stream_t& stream, int sm_count,
                         unsigned long long* d_lens, const fr_t* const* ps,
                         const size_t* ns, int count);
@@ -354,7 +357,8 @@ public:
     // The fourth round's chain, from row/col/rcv to the selector's output,
     // without the polynomials leaving the device. After FourthRoundPolys's
     // interpolations it runs the shift into g, the b*f multiply, the
-    // subtraction and the vanishing divide with its scaling.
+    // subtraction, and the vanishing divide or, at the half size, the coset's
+    // constant, with the selector's scaling.
     //
     // a, b and g come back, because they are committed and opened, as do the
     // selector's quotient and f's constant term. `g = f.coeffs[1..]` is a
@@ -365,9 +369,14 @@ public:
     // - `selector_mult` is `combiner * src_domain.size_as_field_element *
     //   target_domain.size_inv`, not the combiner. A wrong value is not
     //   detected.
-    // - `q_len` is an upper bound on the quotient's length; the caller passes
-    //   `domain_size - 1`, which always holds. Too small a bound strands
-    //   quotient coefficients, which `d_vanishing_scaled` refuses.
+    // - `lg_mul_domain` equal to `lg_domain_size` multiplies on the coset with
+    //   shift `g` and skips the division, so `selector_mult` must also carry
+    //   `1 / (g^n - 1)`, and only the quotient's top coefficient is checked.
+    // - `q_len` is an upper bound on the quotient's length, below
+    //   `domain_size` at the half size; the caller passes `domain_size - 1`,
+    //   which always holds. Too small a bound strands
+    //   quotient coefficients, which `d_vanishing_scaled` and
+    //   `d_scale_checked` refuse.
     // - `g_out` receives `domain_size - 1` untrimmed coefficients, and
     //   `check_degrees_and_bounds` rejects `g` above its degree bound, so the
     //   caller must build `g` through something that trims, such as
@@ -400,11 +409,14 @@ public:
 
         size_t domain_size = (size_t)1 << lg_domain_size;
         size_t mul_domain = (size_t)1 << lg_mul_domain;
-        if (len > domain_size || mul_domain < 2 * domain_size)
+        const bool half = mul_domain == domain_size;
+        if (len > domain_size || (!half && mul_domain < 2 * domain_size))
             return RustError{cudaErrorInvalidValue};
         // Only the single-step branch of `divide_by_vanishing_poly`, which
-        // needs `q_len <= n`, is implemented. Any other shape is refused.
-        if (q_len > domain_size || q_len + domain_size > mul_domain)
+        // needs `q_len <= n`, is implemented. Any other shape is refused. At
+        // the half size, the check needs a term above `q_len`.
+        if (q_len > domain_size || (half && q_len == domain_size) ||
+            (!half && q_len + domain_size > mul_domain))
             return RustError{cudaErrorInvalidValue};
 
         slot_t slot(resources);
@@ -466,7 +478,7 @@ public:
                                   NTT::InputOutputOrder::NN, NTT::Direction::inverse,
                                   NTT::Type::standard);
 
-                // b and f, zero-padded into the multiply's larger domain. Both
+                // b and f, zero-padded to the multiply's domain. Both
                 // are consumed by MulDev, which is why they are copies rather
                 // than the buffers above -- a and b are still wanted intact.
                 dev_ptr_t<fr_t> d_m0{mul_domain, stream}, d_m1{mul_domain, stream},
@@ -480,22 +492,29 @@ public:
                 CUDA_OK(cudaMemsetAsync(&d_m1[domain_size], 0, pad, stream));
 
                 Polynomial::MulDev(stream, &d_prod[0], &d_m0[0], &d_m1[0],
-                                   lg_mul_domain);
+                                   lg_mul_domain,
+                                   half ? NTT::Type::coset : NTT::Type::standard);
 
                 // h = a - b*f, in place over the product. a is the shorter, and
                 // its tail is zeros rather than absent.
                 round4_sub_device(stream, gpu.sm_count(), &d_prod[0],
                                   &d_a[0], domain_size, &d_prod[0], mul_domain);
 
-                // The vanishing divide and the selector's scaling, with the
-                // remainder checked rather than built.
-                // The remainder flag, then the four trimmed lengths.
+                // The vanishing divide, or at the half size the coset's
+                // constant, with the selector's scaling. The first flag reports
+                // a quotient that is not exact, and the other four are the
+                // trimmed lengths.
                 dev_ptr_t<unsigned long long> d_flags{5, stream};
                 CUDA_OK(cudaMemsetAsync(&d_flags[0], 0, 5 * sizeof(unsigned long long), stream));
-                round4_vanishing_device(stream, gpu.sm_count(), d_lhs,
+                if (half)
+                    round4_scale_device(stream, gpu.sm_count(), d_lhs,
                                         (unsigned*)&d_flags[0], &d_prod[0],
-                                        domain_size, q_len, mul_domain,
-                                        *selector_mult);
+                                        domain_size, q_len, *selector_mult);
+                else
+                    round4_vanishing_device(stream, gpu.sm_count(), d_lhs,
+                                            (unsigned*)&d_flags[0], &d_prod[0],
+                                            domain_size, q_len, mul_domain,
+                                            *selector_mult);
 
                 unsigned long long flags[5] = {};
                 if (keep) {
@@ -513,9 +532,9 @@ public:
                 stream.DtoH(f0_out, &d_f[0], 1);
                 stream.sync();
 
-                // A non-zero remainder means a wrong proof. `cudaErrorAssert`,
-                // not the shape guards' `cudaErrorInvalidValue`, so the caller
-                // can tell the two apart.
+                // A quotient that is not exact means a wrong proof.
+                // `cudaErrorAssert`, not the shape guards'
+                // `cudaErrorInvalidValue`, so the caller can tell the two apart.
                 if (flags[0])
                     ret = RustError{cudaErrorAssert};
                 else if (keep)
@@ -609,6 +628,68 @@ public:
             ret = RustError{e.code(), e.what()};
 #else
             ret = RustError{e.code()};
+#endif
+        } catch (...) {
+            // Nothing may cross `extern "C"`: the wrappers in `snarkvm_api.cu`
+            // have no handler.
+            ret = RustError{cudaErrorUnknown};
+        }
+        return ret;
+    }
+
+    // The product of two polynomials on the coset with the NTT's shift `g`: for
+    // `a * b = L + X^n H`, `out` receives the `n` coefficients of `L + g^n H`.
+    RustError MulCoset(fr_t* out, const fr_t* a, size_t a_len,
+                       const fr_t* b, size_t b_len, uint32_t lg_domain_size)
+    {
+        // `Base_dev_ptr` does not special-case a one-element domain, and a
+        // release build compiles out sppark's `MAX_LG_DOMAIN_SIZE` assert.
+        if (lg_domain_size == 0 || lg_domain_size > MAX_LG_DOMAIN_SIZE)
+            return RustError{cudaErrorInvalidValue};
+        size_t domain_size = (size_t)1 << lg_domain_size;
+        if (a_len > domain_size || b_len > domain_size)
+            return RustError{cudaErrorInvalidValue};
+
+        slot_t slot(resources);
+        RustError ret = RustError{cudaSuccess};
+        try {
+            auto& gpu = select_gpu(slot.dev());
+            stream_t& stream = gpu[slot.stream()];
+            try {
+                dev_ptr_t<fr_t> d_a{domain_size, stream}, d_b{domain_size, stream},
+                                d_prod{domain_size, stream};
+
+                stream.HtoD(&d_a[0], a, a_len);
+                CUDA_OK(cudaMemsetAsync(&d_a[a_len], 0,
+                                        (domain_size - a_len) * sizeof(fr_t), stream));
+                stream.HtoD(&d_b[0], b, b_len);
+                CUDA_OK(cudaMemsetAsync(&d_b[b_len], 0,
+                                        (domain_size - b_len) * sizeof(fr_t), stream));
+
+                Polynomial::MulDev(stream, &d_prod[0], &d_a[0], &d_b[0],
+                                   lg_domain_size, NTT::Type::coset);
+
+                stream.DtoH(out, &d_prod[0], domain_size);
+                stream.sync();
+            } catch (...) {
+                // After a fault the drain fails too, and its error must not
+                // replace the cause.
+                try {
+                    stream.sync();
+                } catch (...) {
+                }
+                throw;
+            }
+        } catch (const cuda_error& e) {
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+            ret = RustError{e.code(), e.what()};
+#else
+            ret = RustError{e.code()};
+#endif
+#ifdef TAKE_RESPONSIBILITY_FOR_ERROR_MESSAGE
+        } catch (const std::exception& e) {
+            // Ahead of the catch-all, so a `std::bad_alloc` keeps its message.
+            ret = RustError{cudaErrorUnknown, e.what()};
 #endif
         } catch (...) {
             // Nothing may cross `extern "C"`: the wrappers in `snarkvm_api.cu`

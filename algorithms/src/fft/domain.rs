@@ -309,11 +309,19 @@ impl<F: FftField> EvaluationDomain<F> {
         Elements { cur_elem: F::one(), cur_pow: 0, domain: *self }
     }
 
+    /// Returns `1 / (g^n - 1)`, the inverse of the vanishing polynomial at the
+    /// shift `g` of the host's and the device's coset transforms.
+    pub(crate) fn coset_vanishing_inv(&self) -> F {
+        // `g` generates the multiplicative group, whose order does not divide `n`, so
+        // `g^n != 1`.
+        self.evaluate_vanishing_polynomial(F::multiplicative_generator()).inverse().unwrap()
+    }
+
     /// The target polynomial is the zero polynomial in our
     /// evaluation domain, so we must perform division over
     /// a coset.
     pub fn divide_by_vanishing_poly_on_coset_in_place(&self, evals: &mut [F]) {
-        let i = self.evaluate_vanishing_polynomial(F::multiplicative_generator()).inverse().unwrap();
+        let i = self.coset_vanishing_inv();
 
         cfg_iter_mut!(evals).for_each(|eval| *eval *= &i);
     }
@@ -361,6 +369,12 @@ impl<F: FftField> EvaluationDomain<F> {
 }
 
 impl<F: FftField> EvaluationDomain<F> {
+    /// The smallest domain that `ntt_on_device` and
+    /// `divide_product_by_vanishing_poly` send to the device.
+    // SNP TODO: how to set threshold
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    const MIN_DEVICE_SIZE: u64 = 32;
+
     pub fn precompute_fft(&self) -> FFTPrecomputation<F> {
         execute_with_max_available_threads(|| FFTPrecomputation {
             roots: self.roots_of_unity(self.group_gen),
@@ -395,8 +409,7 @@ impl<F: FftField> EvaluationDomain<F> {
         direction: snarkvm_algorithms_cuda::NTTDirection,
         ntt_type: snarkvm_algorithms_cuda::NTTType,
     ) -> bool {
-        // SNP TODO: how to set threshold
-        if self.size < 32 || !super::is_cuda_field::<T>() || !super::is_cuda_field::<F>() {
+        if self.size < Self::MIN_DEVICE_SIZE || !super::is_cuda_field::<T>() || !super::is_cuda_field::<F>() {
             return false;
         }
         let result = snarkvm_algorithms_cuda::NTT(
@@ -486,7 +499,7 @@ impl<F: FftField> EvaluationDomain<F> {
     /// domain.
     ///
     /// All three operands must have degree below `n`, and `c` must agree with
-    /// the product on this domain. The host path checks only the quotient's top
+    /// the product on this domain. Both paths check only the quotient's top
     /// coefficient. That catches a disagreement on one point, but not every
     /// disagreement, and the result is not the quotient without agreement.
     /// Callers that cannot guarantee agreement must check each point
@@ -506,21 +519,21 @@ impl<F: FftField> EvaluationDomain<F> {
         let n = self.size();
         ensure!(a.coeffs.len() <= n && b.coeffs.len() <= n && c.coeffs.len() <= n, "An operand exceeds the domain");
 
-        // The host path's out-of-order transforms have no device arm, and the
-        // device multiplies at size `2n` through `polymul`.
+        // On the device's coset with shift `g`, the product is `L + g^n H`, so
+        // `H = (product - c) / (g^n - 1)`.
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-        if super::is_cuda_field::<F>() {
-            let mut multiplier = crate::fft::polynomial::PolyMultiplier::new();
-            multiplier.add_polynomial_ref(&a, "a");
-            multiplier.add_polynomial_ref(&b, "b");
-            let mut product =
-                multiplier.multiply().ok_or_else(|| anyhow!("The product exceeds the field's domains"))?;
+        if super::is_cuda_field::<F>() && self.size >= Self::MIN_DEVICE_SIZE {
+            let mut h = vec![F::zero(); n];
+            let result = snarkvm_algorithms_cuda::mul_coset(&mut h, &a.coeffs, &b.coeffs, self.log_size_of_group);
+            crate::cuda_must_succeed!(result, "mul_coset");
             drop((a, b));
-            product -= c;
-            let (mut quotient, remainder) = product.divide_by_vanishing_poly(*self)?;
-            ensure!(remainder.is_zero(), "The product does not agree with `c` on the domain");
-            cfg_iter_mut!(quotient.coeffs).for_each(|x| *x *= scale);
-            return Ok(quotient);
+            let scale = scale * self.coset_vanishing_inv();
+            cfg_iter_mut!(h, 1_000)
+                .enumerate()
+                .for_each(|(i, x)| *x = (*x - c.coeffs.get(i).copied().unwrap_or_default()) * scale);
+            // `a * b` has degree at most `2n - 2`, so `H` has no term of degree `n - 1`.
+            ensure!(h[n - 1].is_zero(), "The product does not agree with `c` on the domain");
+            return Ok(DensePolynomial::from_coefficients_vec(h));
         }
 
         self.divide_product_by_vanishing_poly_on_host(a, b, c, scale, fft_pc, ifft_pc)

@@ -166,6 +166,20 @@ __global__ void d_vanishing_scaled(T* q, unsigned* nonzero, const T* p,
     }
 }
 
+// The quotient of the half-size fourth round: `q = p[..q_len]`, scaled. A
+// thread sets `nonzero` if `p` has a term above `q_len`, which `q` would drop.
+__global__ void d_scale_checked(fr_t* q, unsigned* nonzero, const fr_t* p,
+                                size_t n, size_t q_len, fr_t mult)
+{
+    size_t stride = (size_t)gridDim.x * blockDim.x;
+    for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride) {
+        if (i < q_len)
+            q[i] = p[i] * mult;
+        else if (!p[i].is_zero())
+            *nonzero = 1;
+    }
+}
+
 // a_evals for the fourth round: row_col_val scaled, here because `rcv` is
 // already on the device.
 template<class T>
@@ -339,6 +353,16 @@ void round4_vanishing_device(const stream_t& stream, int sm_count,
     int grid = (int)std::min((total + block - 1) / block, (size_t)sm_count * 8);
     d_vanishing_scaled<<<grid, block, 0, stream>>>(d_q, d_nonzero, d_p, n, q_len,
                                                    total, mult);
+    CUDA_OK(cudaGetLastError());
+}
+
+void round4_scale_device(const stream_t& stream, int sm_count, fr_t* d_q,
+                         unsigned* d_nonzero, const fr_t* d_p, size_t n,
+                         size_t q_len, fr_t mult)
+{
+    int block = 256;
+    int grid = (int)std::min((n + block - 1) / block, (size_t)sm_count * 8);
+    d_scale_checked<<<grid, block, 0, stream>>>(d_q, d_nonzero, d_p, n, q_len, mult);
     CUDA_OK(cudaGetLastError());
 }
 

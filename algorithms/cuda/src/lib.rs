@@ -60,6 +60,15 @@ unsafe extern "C" {
         lg_mul_domain: u32,
     ) -> cuda::Error;
 
+    fn snarkvm_mul_coset(
+        out: *mut core::ffi::c_void,
+        a: *const core::ffi::c_void,
+        a_len: usize,
+        b: *const core::ffi::c_void,
+        b_len: usize,
+        lg_domain_size: u32,
+    ) -> cuda::Error;
+
     #[allow(clippy::too_many_arguments)]
     fn snarkvm_fourth_round_chain(
         a_out: *mut core::ffi::c_void,
@@ -238,16 +247,13 @@ pub fn device_memory() -> Option<(usize, usize)> {
     unsafe { snarkvm_cuda_device_memory(&mut free, &mut total) }.then_some((free, total))
 }
 
-/// The largest constraint domain a proof can multiply here, as an element
-/// count. Zero means there is no usable pool.
+/// The largest domain over which `PolyMultiplier::multiply` fits the pool, as
+/// an element count. Zero means there is no usable pool.
 ///
 /// Compare `CircuitInfo::num_constraints`, rounded up to a power of two, and
-/// refuse above it. Round two's `z_a * z_b` is over the constraint domain and
-/// always reaches the pool guard, so anything this refuses would have failed.
-///
-/// Passing does not promise the proof fits. Rounds three and four allocate
-/// from the async mempool and do not consult the pool, so the variable and
-/// non-zero domains are not bounded by this number.
+/// refuse above it. The bound is conservative, and passing it does not promise
+/// the proof fits: the prover's multiplies, [`mul_coset`] and the fourth
+/// round's chain, allocate from the async mempool without consulting the pool.
 ///
 /// `snarkvm_t::PolyMul` admits a domain up to a quarter of
 /// [`pool_elements()`], and `PolyMultiplier::multiply` asks for `2n` to
@@ -307,20 +313,52 @@ pub fn lineval_interpolate_mul<T: 'static>(
     if err.code != 0 { Err(err) } else { Ok(()) }
 }
 
+/// The product of two polynomials on the coset with the device NTT's shift `g`:
+/// for `a * b = L + X^n H`, `out` receives the `n` coefficients of `L + g^n H`.
+///
+/// It allocates from the async mempool, not the pool.
+///
+/// # Errors
+///
+/// `cudaErrorInvalidValue` for a domain of one element, or above sppark's
+/// `MAX_LG_DOMAIN_SIZE`.
+pub fn mul_coset<T: 'static>(out: &mut [T], a: &[T], b: &[T], lg_domain_size: u32) -> Result<(), cuda::Error> {
+    assert_type::<T, Fr>();
+    let domain = 1usize << lg_domain_size;
+    assert_eq!(out.len(), domain, "the output is one coefficient per domain element");
+    assert!(a.len() <= domain && b.len() <= domain, "an operand does not fit its domain");
+    // SAFETY: `out` holds the `domain` elements the kernel writes, and the kernel
+    // reads `a` and `b` only up to their lengths.
+    let err = unsafe {
+        snarkvm_mul_coset(
+            out.as_mut_ptr() as *mut core::ffi::c_void,
+            a.as_ptr() as *const core::ffi::c_void,
+            a.len(),
+            b.as_ptr() as *const core::ffi::c_void,
+            b.len(),
+            lg_domain_size,
+        )
+    };
+    if err.code != 0 { Err(err) } else { Ok(()) }
+}
+
 /// The fourth round's chain, from the evaluations to the selector's output,
 /// without the polynomials leaving the device.
 ///
 /// Where [`fourth_round_polys`] returns `a`, `b` and `f`, this continues
-/// through the shift into `g`, the `b*f` multiply, the subtraction and the
-/// vanishing divide with its scaling.
+/// through the shift into `g`, the `b*f` multiply, the subtraction, and the
+/// vanishing divide or, with `lg_mul_domain == lg_domain_size`, the coset's
+/// constant, with the selector's scaling.
 ///
 /// # Contracts
 ///
 /// - `selector_mult` is `combiner * src_domain.size_as_field_element *
-///   target_domain.size_inv`, not the combiner. A wrong value is not detected.
+///   target_domain.size_inv`, not the combiner, and with `lg_mul_domain ==
+///   lg_domain_size` also `1 / (g^n - 1)`. A wrong value is not detected.
 /// - `q_len` is an upper bound on the quotient's length for `h = a_poly - b*f`.
 ///   Pass `domain - 1`, which always holds since `deg(b*f) <= 2 * domain - 2`.
-///   A bound that is too small is refused with `cudaErrorAssert`.
+///   With `lg_mul_domain == lg_domain_size` it must be below `domain`. A bound
+///   that is too small is refused with `cudaErrorAssert`.
 ///
 /// On one GPU, if the resident pool can hold them, the device keeps `a`, `b`,
 /// `g` and `lhs`, returned as `Ok([a, b, g, lhs])` at their trimmed lengths.
@@ -331,7 +369,10 @@ pub fn lineval_interpolate_mul<T: 'static>(
 /// # Errors
 ///
 /// `cudaErrorAssert` means the vanishing polynomial did not divide `h` exactly:
-/// a non-zero remainder, or a quotient with terms above `q_len`.
+/// a non-zero remainder, or a quotient with terms above `q_len`. With
+/// `lg_mul_domain == lg_domain_size` the chain multiplies on the device's coset
+/// and does not divide, so `selector_mult` must also carry `1 / (g^n - 1)`, and
+/// only the terms above `q_len` are checked.
 /// `cudaErrorInvalidValue` means a shape was invalid.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn fourth_round_chain<T: 'static>(
@@ -356,9 +397,11 @@ pub fn fourth_round_chain<T: 'static>(
     let domain = 1usize << lg_domain_size;
     let mul_domain = 1usize << lg_mul_domain;
     assert!(len <= domain, "evaluations do not fit the domain they interpolate over");
-    assert!(mul_domain >= 2 * domain, "the product does not fit its domain");
+    let half = mul_domain == domain;
+    assert!(half || mul_domain >= 2 * domain, "the product does not fit its domain");
     assert!(q_len <= domain, "the single-step branch needs q_len <= domain");
-    assert!(q_len + domain <= mul_domain);
+    assert!(!half || q_len < domain, "the half-size check needs a term above q_len");
+    assert!(half || q_len + domain <= mul_domain);
     let sizes = [domain, domain, domain - 1, q_len];
     let host = || sizes.map(Vec::<T>::with_capacity);
     if len == 0 {
