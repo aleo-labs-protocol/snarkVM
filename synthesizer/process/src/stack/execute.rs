@@ -220,13 +220,9 @@ impl<N: Network> Stack<N> {
         // Discard the constants that the first initialization on a thread adds to the circuit.
         A::reset();
 
-        // If in 'CheckDeployment' mode, set the constraint limit and variable limit.
-        // A `call` ejects the circuit, which clears these limits for the rest of the function.
-        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit, non_zero_limit) = &call_stack {
-            A::set_constraint_limit(*constraint_limit);
-            A::set_variable_limit(*variable_limit);
-            A::set_non_zero_limit(*non_zero_limit);
-        }
+        // If in 'CheckDeployment' mode, set the synthesis limits. A `call` ejects the circuit, which clears them, and
+        // restores them if the call stack says that the limits hold after calls.
+        call_stack.set_synthesis_limits::<A>(false);
 
         // Retrieve the next request.
         let console_request = call_stack.pop()?;
@@ -628,7 +624,7 @@ impl<N: Network> Stack<N> {
             timing_event!("Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, assignments, _, _, _) = registers.call_stack_ref() {
+        else if let CallStack::CheckDeployment(_, _, assignments, ..) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
