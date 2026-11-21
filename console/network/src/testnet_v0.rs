@@ -174,7 +174,6 @@ impl Network for TestnetV0 {
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::testnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(not(any(test, feature = "test")))]
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6] = [
         (ConsensusVersion::V1, 100),
         (ConsensusVersion::V3, 100),
@@ -182,16 +181,6 @@ impl Network for TestnetV0 {
         (ConsensusVersion::V6, 100),
         (ConsensusVersion::V9, 100),
         (ConsensusVersion::V22, 40),
-    ];
-    /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6] = [
-        (ConsensusVersion::V1, 25),
-        (ConsensusVersion::V3, 25),
-        (ConsensusVersion::V5, 25),
-        (ConsensusVersion::V6, 25),
-        (ConsensusVersion::V9, 25),
-        (ConsensusVersion::V20, 25),
     ];
     /// The (long) network name.
     const NAME: &'static str = "Aleo Testnet (v0)";

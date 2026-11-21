@@ -159,18 +159,14 @@ impl Network for MainnetV0 {
     type TransmissionChecksum = u128;
 
     /// The genesis block coinbase target.
-    #[cfg(not(feature = "test"))]
+    #[cfg(not(feature = "test_targets"))]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
-    /// The genesis block coinbase target.
-    /// This is deliberately set to a low value (32) for testing purposes only.
-    #[cfg(feature = "test")]
+    #[cfg(feature = "test_targets")]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 5).saturating_sub(1);
     /// The genesis block proof target.
-    #[cfg(not(feature = "test"))]
+    #[cfg(not(feature = "test_targets"))]
     const GENESIS_PROOF_TARGET: u64 = 1u64 << 27;
-    /// The genesis block proof target.
-    /// This is deliberately set to a low value (8) for testing purposes only.
-    #[cfg(feature = "test")]
+    #[cfg(feature = "test_targets")]
     const GENESIS_PROOF_TARGET: u64 = 1u64 << 3;
     /// The fixed timestamp of the genesis block.
     const GENESIS_TIMESTAMP: i64 = 1725462000 /* 2024-09-04 11:00:00 UTC */;
@@ -179,7 +175,6 @@ impl Network for MainnetV0 {
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::mainnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(not(any(test, feature = "test")))]
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6] = [
         (ConsensusVersion::V1, 16),
         (ConsensusVersion::V3, 25),
@@ -187,16 +182,6 @@ impl Network for MainnetV0 {
         (ConsensusVersion::V6, 35),
         (ConsensusVersion::V9, 40),
         (ConsensusVersion::V20, 40),
-    ];
-    /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 6] = [
-        (ConsensusVersion::V1, 100),
-        (ConsensusVersion::V3, 101),
-        (ConsensusVersion::V5, 102),
-        (ConsensusVersion::V6, 103),
-        (ConsensusVersion::V9, 104),
-        (ConsensusVersion::V20, 105),
     ];
     /// The (long) network name.
     const NAME: &'static str = "Aleo Mainnet (v0)";

@@ -268,7 +268,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
 ///
 /// A height of `u32::MAX` means the version is unscheduled. Scheduled heights strictly increase,
 /// and once a version is unscheduled every later version must also be unscheduled.
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+#[cfg(any(test, feature = "test_consensus_heights", feature = "wasm"))]
 pub(crate) fn verify_consensus_heights(heights: &[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]) {
     assert_eq!(heights[0].1, 0, "Genesis height must be 0.");
     for window in heights.windows(2) {
@@ -287,13 +287,13 @@ pub(crate) fn verify_consensus_heights(heights: &[(ConsensusVersion, u32); NUM_C
     }
 }
 
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
+#[cfg(any(test, feature = "test_consensus_heights"))]
 pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
     // Attempt to read the test consensus heights from the environment variable.
     load_test_consensus_heights_inner(std::env::var("CONSENSUS_VERSION_HEIGHTS").ok())
 }
 
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+#[cfg(any(test, feature = "test_consensus_heights", feature = "wasm"))]
 pub(crate) fn load_test_consensus_heights_inner(
     consensus_version_heights: Option<String>,
 ) -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {

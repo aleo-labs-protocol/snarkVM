@@ -447,6 +447,7 @@ mod tests {
         // Check that a maxed out coinbase reward, returns empty.
         let next_stakers = staking_rewards::<CurrentNetwork>(&stakers, &committee, u64::MAX);
         assert_eq!(stakers, next_stakers);
+        assert_eq!(stakers, staking_rewards::<CurrentNetwork>(&stakers, &committee, 0));
 
         // Ensure a staking reward that is too large, renders no rewards.
         for _ in 0..ITERATIONS {

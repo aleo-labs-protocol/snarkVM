@@ -15,7 +15,7 @@
 
 //! Each network reads its own consensus version heights. The test implementation reads one table for all networks.
 
-#![cfg(not(any(feature = "test", feature = "test_consensus_heights")))]
+#![cfg(not(feature = "test_consensus_heights"))]
 
 use snarkvm_console_network::prelude::*;
 
