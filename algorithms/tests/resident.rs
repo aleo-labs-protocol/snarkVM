@@ -140,7 +140,8 @@ fn accumulate_open_resident_matches_the_host() {
     let key = key(n + 2, 1024);
     let copy = key.powers_of_beta_g.to_vec();
     let polys: Vec<Vec<Fr>> = (0..3).map(|_| (0..n + 1).map(|_| Fr::rand(&mut rng)).collect()).collect();
-    let terms: Vec<(Fr, &[Fr])> = polys.iter().map(|p| (Fr::rand(&mut rng), p.as_slice())).collect();
+    let none = snarkvm_algorithms_cuda::DeviceCopy::default();
+    let terms: Vec<(Fr, &[Fr], _)> = polys.iter().map(|p| (Fr::rand(&mut rng), p.as_slice(), &none)).collect();
     let z = Fr::rand(&mut rng);
     let open = |bases: &[G1Affine]| {
         snarkvm_algorithms::cuda_must_succeed!(
