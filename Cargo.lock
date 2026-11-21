@@ -1635,6 +1635,7 @@ checksum = "27bc3999429dc9e39ac740737d3a58e1297836b38882a7b9f8e9d1af9d4bcdf2"
 dependencies = [
  "parking_lot",
  "simple_moving_average",
+ "tokio",
 ]
 
 [[package]]
