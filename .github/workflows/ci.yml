@@ -45,9 +45,10 @@ env:
 jobs:
   # Whether a scheduled run tests staging's head. It does not when an earlier
   # scheduled run on the same commit has a verdict: that run passed or failed,
-  # and its `fmt` ran. A commit that failed is not tested again until staging
-  # moves or someone reruns that run. A run that was cancelled, that this job
-  # skipped, or whose `schedule-due` failed has no verdict.
+  # and its `fmt` ran. A run that was cancelled, that this job skipped, or whose
+  # `schedule-due` failed has no verdict. A rerun always tests, so a commit that
+  # failed is tested again when staging moves or when someone reruns that run.
+  # If the API cannot be read, the run tests.
   schedule-due:
     if: github.event_name == 'schedule' && github.repository == 'aleo-labs-protocol/snarkVM'
     runs-on: ubuntu-latest
@@ -59,20 +60,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The completed scheduled runs of this workflow on this commit, except this run.
-          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=schedule&head_sha=$GITHUB_SHA&status=completed&per_page=100" \
-            --jq ".workflow_runs[] | select(.id != $GITHUB_RUN_ID) | \"\(.id) \(.conclusion) \(.html_url)\"")
-          due=true
-          while read -r id conclusion url; do
-            case "$conclusion" in success | failure) ;; *) continue ;; esac
-            # A skipped `fmt` means that run tested nothing.
-            fmt=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
-              --jq '.jobs[] | select(.name == "fmt") | .conclusion')
-            case "$fmt" in success | failure) ;; *) continue ;; esac
-            due=false
-            echo "${GITHUB_SHA:0:9} already has a verdict, $conclusion: $url" | tee -a "$GITHUB_STEP_SUMMARY"
-            break
-          done <<< "$runs"
+          set -uo pipefail
+          verdict() {
+            [ "$GITHUB_RUN_ATTEMPT" = 1 ] || return 1
+            local runs id conclusion url fmt
+            # The completed scheduled runs of this workflow on this commit that
+            # started before this one.
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=schedule&head_sha=$GITHUB_SHA&status=completed&per_page=100" \
+              --jq ".workflow_runs[] | select(.id < $GITHUB_RUN_ID) | \"\(.id) \(.conclusion) \(.html_url)\"") || return 2
+            while read -r id conclusion url; do
+              case "$conclusion" in success | failure) ;; *) continue ;; esac
+              # A skipped `fmt` means that run tested nothing.
+              fmt=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
+                --jq '.jobs[] | select(.name == "fmt") | .conclusion') || return 2
+              case "$fmt" in success | failure) ;; *) continue ;; esac
+              echo "${GITHUB_SHA:0:9} already has a verdict, $conclusion: $url" | tee -a "$GITHUB_STEP_SUMMARY"
+              return 0
+            done <<< "$runs"
+            return 1
+          }
+          rc=0
+          verdict || rc=$?
+          case $rc in
+            0) due=false ;;
+            1) due=true ;;
+            *) echo "::warning::Could not read earlier scheduled runs; testing ${GITHUB_SHA:0:9}."
+               due=true ;;
+          esac
           echo "due=$due" >> "$GITHUB_OUTPUT"
 
   check-shared-refs:
@@ -650,8 +664,8 @@ jobs:
             | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
 
   # Posts to Slack when staging's scheduled CI turns red, and once when it turns
-  # green again. `checked` is false only when `schedule-due` found a verdict; a
-  # failed `schedule-due` is reported as a red run.
+  # green again. `checked` is false when `schedule-due` found a verdict or
+  # failed.
   notify:
     if: always() && github.event_name == 'schedule' && github.repository == 'aleo-labs-protocol/snarkVM'
     needs: [schedule-due, check-shared-refs, fmt, deny, source-checks, cuda-package-files, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows, ci-ok]
@@ -664,4 +678,4 @@ jobs:
           slack-token: ${{ secrets.CI_SLACK_TOKEN }}
           channel: ${{ vars.CI_SLACK_CHANNEL || '#ci' }}
           result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
-          checked: ${{ needs.schedule-due.outputs.due != 'false' }}
+          checked: ${{ needs.schedule-due.outputs.due == 'true' && 'true' || 'false' }}

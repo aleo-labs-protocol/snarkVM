@@ -90,10 +90,12 @@ It runs at minute 17 of every sixth hour (UTC), on the head of `staging`.
 
 `schedule-due` first lists the earlier scheduled runs on the same commit. If
 one of them passed or failed, and its `fmt` ran, that commit has a verdict, and
-every other job is skipped. A commit that failed is not tested again on the
-schedule. To test it again, rerun its failed run. A run that was cancelled,
-that `schedule-due` skipped, or whose `schedule-due` failed gives no verdict,
-so the next scheduled run tests the same commit. A scheduled run is never
+every other job is skipped. The step summary links that run. A run that was
+cancelled, that `schedule-due` skipped, or whose `schedule-due` failed gives no
+verdict, so the next scheduled run tests the same commit. A commit that failed
+is not tested again on the schedule. To test it again, rerun its failed run: a
+rerun always tests. If `schedule-due` cannot read the earlier runs, it warns and
+the run tests. A scheduled run is never
 cancelled, and it waits for the scheduled run before it to end.
 
 `notify` reports each scheduled run to the Slack channel in the
