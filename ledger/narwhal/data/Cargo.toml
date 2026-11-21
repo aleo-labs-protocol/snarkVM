@@ -23,9 +23,6 @@ include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
 
-[features]
-async = [ "dep:tokio" ]
-
 [dependencies.snarkvm-console]
 workspace = true
 features = [ "network" ]
@@ -36,11 +33,6 @@ workspace = true
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
-
-[dependencies.tokio]
-optional = true
-version = "1"
-features = [ "rt" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 path = "../../../ledger/block"

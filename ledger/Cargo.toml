@@ -70,7 +70,6 @@ required-features = [ "test_consensus_heights" ]
 [features]
 default = [ "async", "indexmap/rayon", ]
 async = [
-  "snarkvm-ledger-narwhal/async",
   "snarkvm-ledger-query/async",
   "snarkvm-synthesizer/async"
 ]
