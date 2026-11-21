@@ -152,6 +152,36 @@ impl<E: PairingEngine> UniversalParams<E> {
     }
 }
 
+// What the device-resident windows read from the SRS.
+#[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+impl<E: PairingEngine> snarkvm_algorithms_cuda::resident::Srs for UniversalParams<E> {
+    type Point = E::G1Affine;
+
+    fn max_degree(&self) -> usize {
+        self.max_degree()
+    }
+
+    fn fetch(&self, prefix: usize, suffix: usize) -> Result<()> {
+        self.powers.download_powers_for_ends(prefix, suffix)
+    }
+
+    fn shared_powers(
+        &self,
+        ranges: [Range<usize>; 2],
+    ) -> Result<[snarkvm_algorithms_cuda::resident::Snapshot<E::G1Affine>; 2]> {
+        let [prefix, suffix] = ranges.map(|range| {
+            self.powers
+                .held_shared_powers_of_beta_g(range.clone())
+                .ok_or_else(|| anyhow::anyhow!("the SRS does not hold powers {range:?}"))
+        });
+        Ok([prefix?, suffix?])
+    }
+
+    fn instance(&self) -> Arc<dyn std::any::Any + Send + Sync> {
+        self.powers.clone()
+    }
+}
+
 /// `Powers` is used to commit to and create evaluation proofs for a given
 /// polynomial.
 #[derive(Clone, Debug, Default, Hash)]
