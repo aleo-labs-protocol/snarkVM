@@ -135,6 +135,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     sequential_ops_tx: Option<Arc<SequentialOperationQueue<N>>>,
     /// The identity of the thread which processes operations sequentially.
     sequential_ops_thread_id: Arc<OnceLock<thread::ThreadId>>,
+    /// The block transaction cap. Shared, because the sequential worker speculates on its own clone of the VM.
+    #[cfg(any(test, feature = "test-helpers"))]
+    maximum_confirmed_transactions: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -231,6 +234,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             sequential_ops_tx: Default::default(),
             pending_rejected_reasons: Default::default(),
             sequential_ops_thread_id: Default::default(),
+            #[cfg(any(test, feature = "test-helpers"))]
+            maximum_confirmed_transactions: Arc::new(Self::MAXIMUM_CONFIRMED_TRANSACTIONS.into()),
         };
 
         // Spawn a thread for sequential operations.

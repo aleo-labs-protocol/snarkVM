@@ -350,12 +350,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of confirmed transactions allowed in a block.
-    #[cfg(not(any(test, feature = "test")))]
     pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = Transactions::<N>::MAX_TRANSACTIONS;
-    /// The maximum number of confirmed transactions allowed in a block.
-    /// This is deliberately set to a low value (8) for testing purposes only.
-    #[cfg(any(test, feature = "test"))]
-    pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 8;
+
+    /// Replaces `MAXIMUM_CONFIRMED_TRANSACTIONS` for this VM and its clones.
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn set_maximum_confirmed_transactions(&self, maximum: usize) {
+        self.maximum_confirmed_transactions.store(maximum, std::sync::atomic::Ordering::Relaxed);
+    }
 
     /// Performs atomic speculation over a list of transactions.
     ///
@@ -516,12 +517,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
             // Determine the block spend limit.
             let block_spend_limit = state.block_spend_limit();
+            #[cfg(not(any(test, feature = "test-helpers")))]
+            let maximum_confirmed_transactions = Self::MAXIMUM_CONFIRMED_TRANSACTIONS;
+            #[cfg(any(test, feature = "test-helpers"))]
+            let maximum_confirmed_transactions =
+                self.maximum_confirmed_transactions.load(std::sync::atomic::Ordering::Relaxed);
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
                 // Ensure the number of confirmed transactions does not exceed the maximum.
                 // Upon reaching the maximum number of confirmed transactions, all remaining transactions are aborted.
-                if confirmed.len() >= Self::MAXIMUM_CONFIRMED_TRANSACTIONS {
+                if confirmed.len() >= maximum_confirmed_transactions {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), "Exceeds block transaction limit".to_string()));
                     // Continue to the next transaction.
@@ -2967,8 +2973,10 @@ finalize compute:
         let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-        // Initialize the vm.
+        // Initialize the vm, with a cap that a test can fill.
         let (vm, block) = test_helpers::sample_vm_past_v8();
+        let maximum_confirmed_transactions = 8;
+        vm.set_maximum_confirmed_transactions(maximum_confirmed_transactions);
 
         // Get the unspent records.
         let mut unspent_records = block
@@ -2988,7 +2996,7 @@ finalize compute:
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
 
-        for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
+        for _ in 0..maximum_confirmed_transactions + 1 {
             let inputs = vec![
                 Value::<CurrentNetwork>::from_str(&caller_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u64").unwrap(),
@@ -3001,7 +3009,7 @@ finalize compute:
             vm.check_transaction(&transaction, None, rng).unwrap();
 
             // Abort the transaction if the block is full.
-            if transactions.len() >= VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS {
+            if transactions.len() >= maximum_confirmed_transactions {
                 excess_transaction_ids.push(transaction.id());
             }
 
@@ -3015,7 +3023,7 @@ finalize compute:
 
         // Ensure that the excess transactions were aborted.
         assert_eq!(next_block.aborted_transaction_ids(), &excess_transaction_ids);
-        assert_eq!(next_block.transactions().len(), VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS);
+        assert_eq!(next_block.transactions().len(), maximum_confirmed_transactions);
     }
 
     #[test]
@@ -4051,26 +4059,33 @@ finalize compute:
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
 
-        // Create an execution transaction, that will be rejected.
-        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
-        let rejected_tx =
-            create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+        // Adds a block with a transaction that is rejected, and returns the block and whether its reason was stored.
+        let add_rejected_transaction =
+            |previous_block: &Block<CurrentNetwork>, unspent_records: &mut Vec<_>, rng: &mut TestRng| {
+                let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+                let rejected_tx =
+                    create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], unspent_records, rng);
+                let next_block =
+                    sample_next_block(&vm, &private_key, &[rejected_tx], previous_block, unspent_records, rng).unwrap();
+                assert_eq!(next_block.transactions().len(), 1);
+                let rejected_transaction = next_block.transactions().iter().next().unwrap();
+                assert!(rejected_transaction.is_rejected());
+                vm.add_next_block(&next_block).unwrap();
+                let is_stored = vm.finalize_store().get_rejected_reason(&rejected_transaction.id()).unwrap().is_some();
+                (next_block, is_stored)
+            };
 
-        // Construct the next block with the rejected transaction.
-        let next_block =
-            sample_next_block(&vm, &private_key, &[rejected_tx], &deployment_block, &mut unspent_records, rng).unwrap();
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let (mut previous_block, is_stored) = add_rejected_transaction(&deployment_block, &mut unspent_records, rng);
+        assert!(previous_block.height() < v15_height);
+        assert!(!is_stored, "Rejection reason should not be stored before V15");
 
-        // Check that the transaction was rejected.
-        assert_eq!(next_block.transactions().len(), 1);
-        let rejected_transaction = next_block.transactions().iter().next().unwrap();
-        assert!(rejected_transaction.is_rejected());
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Check that the rejection reason was stored.
-        let tx_id = *rejected_transaction.id();
-        let rejection_reason = vm.finalize_store().get_rejected_reason(&tx_id).unwrap();
-        assert!(rejection_reason.is_some(), "Rejection reason should be stored");
+        while previous_block.height() + 1 < v15_height {
+            previous_block =
+                sample_next_block(&vm, &private_key, &[], &previous_block, &mut unspent_records, rng).unwrap();
+            vm.add_next_block(&previous_block).unwrap();
+        }
+        let (_, is_stored) = add_rejected_transaction(&previous_block, &mut unspent_records, rng);
+        assert!(is_stored, "Rejection reason should be stored from V15");
     }
 }
