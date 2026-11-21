@@ -33,13 +33,6 @@ default = [
   "transmission-id"
 ]
 async = [ "snarkvm-ledger-narwhal-data/async" ]
-wasm = [
-  "snarkvm-ledger-narwhal-batch-certificate/wasm",
-  "snarkvm-ledger-narwhal-batch-header/wasm",
-  "snarkvm-ledger-narwhal-subdag/wasm",
-  "snarkvm-ledger-narwhal-transmission/wasm",
-  "snarkvm-ledger-narwhal-transmission-id/wasm"
-]
 test-helpers = [
   "snarkvm-ledger-narwhal-batch-certificate/test-helpers",
   "snarkvm-ledger-narwhal-batch-header/test-helpers",

@@ -25,7 +25,6 @@ edition = "2024"
 
 [features]
 default = [ ]
-wasm = [ "snarkvm-console/wasm" ]
 
 [dependencies.snarkvm-algorithms]
 workspace = true

@@ -24,7 +24,6 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-batch-header/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]

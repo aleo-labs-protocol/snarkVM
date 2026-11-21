@@ -21,16 +21,6 @@ default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "rocksdb", "smallvec" ]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-authority/wasm",
-  "snarkvm-ledger-block/wasm",
-  "snarkvm-ledger-puzzle/wasm",
-  "snarkvm-ledger-committee/wasm",
-  "snarkvm-ledger-narwhal-batch-certificate/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
 test = [ ]
 
 [dependencies.snarkvm-metrics]

@@ -25,7 +25,6 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
-wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]

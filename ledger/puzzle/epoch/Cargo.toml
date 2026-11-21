@@ -32,7 +32,6 @@ synthesis = [
   "snarkvm-synthesizer-process",
   "snarkvm-synthesizer-program"
 ]
-wasm = [ "snarkvm-console/wasm" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 
 [dependencies.snarkvm-circuit]
