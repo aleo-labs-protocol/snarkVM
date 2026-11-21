@@ -251,7 +251,7 @@ fn test_insufficient_private_fees() {
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, view_key, address, .. } =
-        crate::test_helpers::sample_test_env(rng);
+        crate::test_helpers::sample_funded_test_env(ConsensusVersion::V8, rng);
 
     // A helper function to find records.
     let find_records = || {
@@ -326,6 +326,8 @@ fn test_insufficient_private_fees() {
         let program = Program::<CurrentNetwork>::from_str(
             r"
 program dummy.aleo;
+constructor:
+    assert.eq edition 0u16;
 function foo:
     input r0 as u8.private;
     async foo r0 into r1;
@@ -411,12 +413,15 @@ fn test_insufficient_finalize_fees() {
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, view_key, address, validators, .. } =
-        crate::test_helpers::sample_test_env(rng);
+        crate::test_helpers::sample_funded_test_env(ConsensusVersion::V8, rng);
+    let start_height = ledger.latest_height();
 
     // Deploy a test program to the ledger.
     let program = Program::<CurrentNetwork>::from_str(
         r"
 program dummy.aleo;
+constructor:
+    assert.eq edition 0u16;
 function foo:
     input r0 as u8.private;
     async foo r0 into r1;
@@ -454,7 +459,7 @@ finalize foo:
     let block = prepare_quorum_block(&ledger, &validators, vec![], vec![transaction], rng).unwrap();
     // Advance to the next block.
     ledger.advance_to_next_block(&block).unwrap();
-    assert_eq!(ledger.latest_height(), 1);
+    assert_eq!(ledger.latest_height(), start_height + 1);
     assert_eq!(ledger.latest_hash(), block.hash());
 
     // Create a transfer transaction to produce a record with insufficient balance to pay for fees.
@@ -464,7 +469,7 @@ finalize foo:
     let block = prepare_quorum_block(&ledger, &validators, vec![], vec![transfer_transaction.clone()], rng).unwrap();
     // Advance to the next block.
     ledger.advance_to_next_block(&block).unwrap();
-    assert_eq!(ledger.latest_height(), 2);
+    assert_eq!(ledger.latest_height(), start_height + 2);
     assert_eq!(ledger.latest_hash(), block.hash());
 
     // Execute the test program, without providing enough fees for finalize, and ensure that the ledger deems the transaction invalid.
@@ -510,13 +515,16 @@ fn test_rejected_execution() {
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, view_key, validators, .. } =
-        crate::test_helpers::sample_test_env(rng);
+        crate::test_helpers::sample_funded_test_env(ConsensusVersion::V8, rng);
 
     // Deploy a test program to the ledger.
     let program_id = "test_rejected_execute.aleo";
     let program = Program::<CurrentNetwork>::from_str(&format!(
         "
 program {program_id};
+
+constructor:
+    assert.eq edition 0u16;
 
 function failed_assert:
     async failed_assert into r0;
@@ -897,7 +905,7 @@ fn test_execute_duplicate_input_ids() {
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, view_key, address, validators, .. } =
-        crate::test_helpers::sample_test_env(rng);
+        crate::test_helpers::sample_funded_test_env(ConsensusVersion::latest(), rng);
 
     // A helper function to find records.
     let find_records = || {
@@ -947,6 +955,8 @@ fn test_execute_duplicate_input_ids() {
         let program = Program::<CurrentNetwork>::from_str(&format!(
             "
 program {program_id};
+constructor:
+    assert.eq edition 0u16;
 function foo:
     input r0 as u8.private;
     async foo r0 into r1;
@@ -1112,12 +1122,15 @@ fn test_execute_duplicate_output_ids() {
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, view_key, address, validators, .. } =
-        crate::test_helpers::sample_test_env(rng);
+        crate::test_helpers::sample_funded_test_env(ConsensusVersion::latest(), rng);
 
     // Deploy a test program to the ledger.
     let program = Program::<CurrentNetwork>::from_str(
         "
 program dummy_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 record dummy_program:
     owner as address.private;
@@ -1207,6 +1220,9 @@ function create_duplicate_record:
         let program = Program::<CurrentNetwork>::from_str(&format!(
             "
 program dummy_program_{x}.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 record dummy_program:
     owner as address.private;
@@ -1838,7 +1854,7 @@ fn test_deployment_duplicate_program_id() {
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, view_key, validators, .. } =
-        crate::test_helpers::sample_test_env(rng);
+        crate::test_helpers::sample_funded_test_env(ConsensusVersion::V8, rng);
 
     // A helper function to find records.
     let find_records = || {
@@ -1862,6 +1878,8 @@ fn test_deployment_duplicate_program_id() {
     let program_1 = Program::<CurrentNetwork>::from_str(
         r"
 program dummy_program.aleo;
+constructor:
+    assert.eq edition 0u16;
 mapping abcd1:
     key as address.public;
     value as u64.public;
@@ -1878,6 +1896,8 @@ finalize foo:
     let program_2 = Program::<CurrentNetwork>::from_str(
         r"
 program dummy_program.aleo;
+constructor:
+    assert.eq edition 0u16;
 mapping abcd2:
     key as address.public;
     value as u64.public;
@@ -2458,8 +2478,11 @@ function foo:
     )
     .unwrap();
 
-    // Initialize the test environment.
-    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    // Initialize the test environment at `ConsensusVersion::V8`, where deployments verify their certificates.
+    let crate::test_helpers::TestEnv { ledger, private_key, validators, .. } =
+        crate::test_helpers::sample_test_env(rng);
+    let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap();
+    crate::test_helpers::advance_to_height(&ledger, &validators, height, rng);
 
     // Create a helper method to deploy the programs.
     let deploy_program = |program: &Program<CurrentNetwork>, rng: &mut TestRng| {
@@ -3603,7 +3626,7 @@ fn test_record_creation_and_consumption_in_call() {
 
     // Sample the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, view_key, validators, .. } =
-        crate::test_helpers::sample_test_env(rng);
+        crate::test_helpers::sample_funded_test_env(ConsensusVersion::V8, rng);
 
     // A helper function to get the record counts.
     let get_record_counts = || {
@@ -3627,14 +3650,17 @@ fn test_record_creation_and_consumption_in_call() {
     ) = get_record_counts();
     assert_eq!(0, initial_spent_records);
     assert_eq!(0, initial_slow_spent_records);
-    assert_eq!(4, initial_unspent_records);
-    assert_eq!(4, initial_slow_unspent_records);
-    assert_eq!(4, initial_records);
+    assert_eq!(2, initial_unspent_records);
+    assert_eq!(2, initial_slow_unspent_records);
+    assert_eq!(6, initial_records);
 
     // Initialize the two programs.
     let program_0 = Program::from_str(
         r"
 program child.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 record data:
     owner as address.private;
@@ -3655,6 +3681,9 @@ function burn:
 import child.aleo;
 
 program parent.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 function create_without_output:
     call child.aleo/mint into r0;
@@ -3699,6 +3728,33 @@ function create_and_consume:
     ledger.advance_to_next_block(&block).unwrap();
 
     // Check the record counts.
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
+    assert_eq!(num_spent_records, initial_spent_records);
+    assert_eq!(num_slow_spent_records, initial_slow_spent_records);
+    assert_eq!(num_unspent_records, initial_unspent_records + 1);
+    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 1);
+    assert_eq!(num_records, initial_records + 1);
+
+    // Call the `consume_without_call` function, which `ConsensusVersion::V15` and later reject.
+    assert!(CurrentNetwork::CONSENSUS_VERSION(ledger.latest_height()).unwrap() < ConsensusVersion::V15);
+    let transaction = ledger
+        .vm()
+        .execute(
+            &private_key,
+            ("parent.aleo", "consume_without_call"),
+            [Value::Record(mint_record.clone())].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = prepare_quorum_block(&ledger, &validators, vec![], vec![transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    ledger.advance_to_next_block(&block).unwrap();
+
+    // Ensure that no records were created or spent.
     let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
         get_record_counts();
     assert_eq!(num_spent_records, initial_spent_records);
@@ -3771,32 +3827,6 @@ function create_and_consume:
     ledger.advance_to_next_block(&block).unwrap();
 
     // Ensure that a record was created and spent.
-    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
-        get_record_counts();
-    assert_eq!(num_spent_records, initial_spent_records + 1);
-    assert_eq!(num_slow_spent_records, initial_slow_spent_records + 1);
-    assert_eq!(num_unspent_records, initial_unspent_records + 2);
-    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 2);
-    assert_eq!(num_records, initial_records + 3);
-
-    // Call the `consume_without_call` function.
-    let transaction = ledger
-        .vm()
-        .execute(
-            &private_key,
-            ("parent.aleo", "consume_without_call"),
-            [Value::Record(mint_record.clone())].iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
-    let block = prepare_quorum_block(&ledger, &validators, vec![], vec![transaction], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 1);
-    ledger.advance_to_next_block(&block).unwrap();
-
-    // Ensure that no records were created or spent.
     let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
         get_record_counts();
     assert_eq!(num_spent_records, initial_spent_records + 1);

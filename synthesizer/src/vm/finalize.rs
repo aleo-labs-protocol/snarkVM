@@ -1873,6 +1873,9 @@ mod tests {
             "
 program {program_name};
 
+constructor:
+    assert.eq edition 0u16;
+
 mapping account:
     // The token owner.
     key as address.public;
@@ -2534,14 +2537,10 @@ finalize transfer_public:
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let (vm, block) = test_helpers::sample_vm_past_v8();
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -2550,7 +2549,7 @@ finalize transfer_public:
 
         // Construct the deployment block.
         let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
+            new_program_deployment(&vm, &caller_private_key, &block, &mut unspent_records, rng).unwrap();
 
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
@@ -2750,14 +2749,10 @@ finalize transfer_public:
     div r0 0u128 into r1;",
         ] {
             // Initialize the vm.
-            let vm = test_helpers::sample_vm_with_genesis_block();
-
-            // Deploy a new program.
-            let genesis =
-                vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+            let (vm, block) = test_helpers::sample_vm_past_v8();
 
             // Get the unspent records.
-            let mut unspent_records = genesis
+            let mut unspent_records = block
                 .transitions()
                 .cloned()
                 .flat_map(Transition::into_records)
@@ -2769,6 +2764,9 @@ finalize transfer_public:
             let program = Program::<CurrentNetwork>::from_str(&format!(
                 "
 program {program_id};
+
+constructor:
+    assert.eq edition 0u16;
 
 mapping hashes:
     key as u128.public;
@@ -2794,7 +2792,7 @@ function ped_hash:
                 &vm,
                 &caller_private_key,
                 &[deployment_transaction],
-                &genesis,
+                &block,
                 &mut unspent_records,
                 rng,
             )
@@ -2850,14 +2848,10 @@ function ped_hash:
         let address = Address::try_from(&private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let (vm, block) = test_helpers::sample_vm_past_v8();
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -2865,7 +2859,7 @@ function ped_hash:
             .collect::<Vec<_>>();
 
         // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &private_key, &genesis, &mut unspent_records, rng).unwrap();
+        let splits_block = generate_splits(&vm, &private_key, &block, &mut unspent_records, rng).unwrap();
 
         // Add the splits block to the VM.
         vm.add_next_block(&splits_block).unwrap();
@@ -2875,6 +2869,9 @@ function ped_hash:
             let program = Program::<CurrentNetwork>::from_str(
                 "
 program testing.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 mapping entries:
     key as address.public;
@@ -2978,14 +2975,10 @@ finalize compute:
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let (vm, block) = test_helpers::sample_vm_past_v8();
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -2994,7 +2987,7 @@ finalize compute:
 
         // Construct the deployment block.
         let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
+            new_program_deployment(&vm, &caller_private_key, &block, &mut unspent_records, rng).unwrap();
 
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
@@ -4010,14 +4003,10 @@ finalize compute:
         let private_key = test_helpers::sample_genesis_private_key();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let (vm, block) = test_helpers::sample_vm_past_v8();
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -4029,6 +4018,9 @@ finalize compute:
             let program = Program::<CurrentNetwork>::from_str(
                 "
 program testing.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 mapping entries:
     key as address.public;
@@ -4060,7 +4052,7 @@ finalize compute:
             let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
 
             // Construct the new block.
-            sample_next_block(&vm, &private_key, &[transaction], &genesis, &mut unspent_records, rng).unwrap()
+            sample_next_block(&vm, &private_key, &[transaction], &block, &mut unspent_records, rng).unwrap()
         };
 
         // Add the deployment block to the VM.

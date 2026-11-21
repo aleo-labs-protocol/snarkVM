@@ -736,8 +736,9 @@ finalize test:
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
-        // Prepare the VM and records.
-        let (vm, records) = prepare_vm().unwrap();
+        // Prepare the VM and records past `ConsensusVersion::V8`, where `join` can create a record.
+        let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
+        let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
 
         // Fetch the unspent records.
         let mut records = records.values();
