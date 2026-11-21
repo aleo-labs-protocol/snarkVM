@@ -25,7 +25,6 @@ edition = "2024"
 
 [features]
 default = [ ]
-wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
 test-helpers = [
   "dep:anyhow",

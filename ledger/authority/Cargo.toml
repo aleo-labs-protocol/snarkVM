@@ -25,7 +25,6 @@ edition = "2024"
 
 [features]
 default = [ ]
-wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-subdag/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]

@@ -27,7 +27,6 @@ edition = "2024"
 default = [ ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
-wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-console/test-helpers", "snarkvm-console/types" ]
 
 [dependencies.snarkvm-circuit]

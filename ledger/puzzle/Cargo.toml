@@ -31,7 +31,6 @@ harness = false
 [features]
 default = [ "indexmap/rayon" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-wasm = [ "snarkvm-console/wasm" ]
 
 [dependencies.snarkvm-console]
 workspace = true

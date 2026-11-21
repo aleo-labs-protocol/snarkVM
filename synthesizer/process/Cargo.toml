@@ -27,13 +27,7 @@ edition = "2024"
 default = [ "indexmap/rayon" ]
 async = [ "snarkvm-ledger-query/async" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-block/wasm",
-  "snarkvm-ledger-query/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
+wasm = [ "snarkvm-console/wasm" ]
 test = [ "snarkvm-console/test" ]
 test-helpers = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
