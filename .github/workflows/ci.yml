@@ -202,6 +202,88 @@ jobs:
         run: cargo locktick-clippy -q -p snarkvm-utilities --message-format=json | grep '"name":"locktick"' > /dev/null
       - run: cargo locktick-clippy --workspace --all-targets --all-features -- -D warnings
 
+  # The public API of each crate against the newest release tag `vX.Y.Z` in the
+  # history of the base branch, or of the pushed branch. The job summary lists
+  # the failed lints of each crate, and the artifact `semver-checks` holds the
+  # full report. A semver break fails the job only on a release branch, on a
+  # pull request into one, and on demand. A tool error fails it on any event.
+  semver:
+    needs: [check-shared-refs, start-cpu-runners]
+    runs-on: [self-hosted, linux, x64, cpu]
+    timeout-minutes: 90
+    if: *fleet-if
+    steps:
+      # The full history, so that the release tags and their ancestry are here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, fetch-depth: 0 }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
+      # The persistent CARGO_TARGET_DIR it sets also keeps cargo-semver-checks
+      # from making a target dir for each crate.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with: { tool: cargo-semver-checks@0.51.0 }
+      # cargo-semver-checks exits with 100 when a lint fails, and with another
+      # nonzero code when it cannot complete the check. Without
+      # `--default-features` it enables nearly every feature, build-mode ones
+      # such as `serial` and `locktick` included, and some release tags do not
+      # build with them.
+      - name: Check semver against the newest release tag
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.sha }}
+          BLOCKING: >-
+            ${{ github.event_name == 'workflow_dispatch' ||
+            startsWith(github.ref, 'refs/heads/release/') ||
+            startsWith(github.base_ref, 'release/') }}
+          REPORT: ${{ runner.temp }}/semver-checks/report.txt
+        run: |
+          set -o pipefail
+          tag=$(git tag --merged "$BASE" --list 'v*' --sort=-v:refname | grep -xE 'v[0-9]+\.[0-9]+\.[0-9]+' | awk 'NR == 1' || true)
+          if [ -z "$tag" ]; then
+            echo "::error::No release tag vX.Y.Z is an ancestor of $BASE."
+            exit 1
+          fi
+          echo "Baseline: \`$tag\`" | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$(dirname "$REPORT")"
+          rc=0
+          cargo semver-checks --workspace --default-features --baseline-rev "$tag" --color never 2>&1 | tee "$REPORT" || rc=$?
+          case "$rc" in
+            0)
+              echo "No semver breaks." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            100)
+              {
+                echo
+                echo "| Crate | Level | Lint | Items |"
+                echo "|---|---|---|---|"
+                awk '
+                  function emit() { printf "| `%s` | %s | `%s` | %d |\n", crate, level, lint, n; lint = "" }
+                  /^ +Checking .* -> / { crate = $2 }
+                  /^--- (failure|warning) / { if (lint != "") emit(); level = $2; lint = $3; sub(/:$/, "", lint); n = 0; items = 0; next }
+                  /^Failed in:/ { items = 1; next }
+                  items && /^  [^ ]/ { n++; next }
+                  items { items = 0; emit() }
+                  END { if (lint != "") emit() }
+                ' "$REPORT"
+              } >> "$GITHUB_STEP_SUMMARY"
+              if [ "$BLOCKING" = true ]; then
+                echo "::error::Semver breaks against $tag; see the job summary."
+                exit 1
+              fi
+              echo "::warning::Semver breaks against $tag; see the job summary. They fail only on a release branch."
+              ;;
+            *)
+              grep '^error' "$REPORT" >> "$GITHUB_STEP_SUMMARY" || true
+              echo "::error::cargo-semver-checks exited with $rc."
+              exit 1
+              ;;
+          esac
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: semver-checks
+          path: ${{ runner.temp }}/semver-checks
+          overwrite: true
+
   # `cargo test -p a -p b` unifies the features of a and b, and several crates
   # enable `test`, `rocks` or `test_consensus_heights` on their dependencies,
   # which changes what those dependencies compute. Crates share a command only
@@ -570,7 +652,7 @@ jobs:
   # release branch, where it is not meant to run.
   ci-ok:
     if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
-    needs: [check-shared-refs, fmt, deny, source-checks, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
+    needs: [check-shared-refs, fmt, deny, source-checks, wasm, lint, lint-locktick, semver, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
