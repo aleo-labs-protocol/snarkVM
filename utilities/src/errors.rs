@@ -43,17 +43,6 @@ pub fn flatten_error<E: Borrow<anyhow::Error>>(error: E) -> String {
     format!("{error}{}", format!(" — {chain}").dimmed())
 }
 
-/// Displays an `anyhow::Error`'s main error and its error chain to stderr.
-///
-/// This can be used to show a "pretty" error to the end user.
-#[track_caller]
-#[inline]
-pub fn display_error<E: Borrow<anyhow::Error>>(error: E) {
-    let error = error.borrow();
-    eprintln!("⚠️ {error}");
-    error.chain().skip(1).for_each(|cause| eprintln!("     ↳ {cause}"));
-}
-
 /// Ensures that two values are equal, otherwise bails with a formatted error message.
 ///
 /// # Arguments
