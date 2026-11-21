@@ -164,7 +164,7 @@ impl<N: Network> Authorization<N> {
 
     /// Checks whether the authorization is for a valid program edition.
     pub fn check_valid_edition(&self, process: &crate::Process<N>, consensus_version: ConsensusVersion) -> Result<()> {
-        // Determine the root transition's program ID.
+        // Determine the program ID of each transition.
         let transitions = self.transitions.read();
         let program_ids = transitions.iter().map(|(_, t)| t.program_id());
         for program_id in program_ids {
@@ -174,7 +174,8 @@ impl<N: Network> Authorization<N> {
                 let stack = process.get_stack(program_id)?;
                 // Get the program edition.
                 let program_edition = *stack.program_edition();
-                // From `ConsensusVersion::V8`, a program on edition 0 cannot execute unless it has a constructor.
+                // From `ConsensusVersion::V8`, a transition of a program on edition 0 needs a constructor.
+                // The verifier also checks the direct imports from `ConsensusVersion::V18`; see `VM::check_transaction`.
                 if consensus_version >= ConsensusVersion::V8
                     && program_edition == 0
                     && !stack.program().contains_constructor()
