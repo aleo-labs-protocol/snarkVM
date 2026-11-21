@@ -24,13 +24,9 @@ mod to_bits;
 mod to_fields;
 mod verify;
 
-#[cfg(feature = "private_key")]
 mod sign;
 
-#[cfg(feature = "private_key")]
-use crate::PrivateKey;
-#[cfg(feature = "compute_key")]
-use crate::{ComputeKey, ComputeKeyCache};
+use crate::{ComputeKey, ComputeKeyCache, PrivateKey};
 
 use crate::address::Address;
 use snarkvm_console_network::prelude::*;
