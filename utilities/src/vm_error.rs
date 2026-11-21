@@ -81,6 +81,9 @@ pub fn try_vm_runtime<R, F: FnOnce() -> R>(f: F) -> std::thread::Result<R> {
 ///
 /// Jobs borrow the scope from [`VmScope::parallel`], so they can use it with `par_iter`, `join` and `scope`, whose panics
 /// return to the waiting thread. It cannot move into a `rayon::spawn` job, whose panic reaches no `try_vm_runtime`.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct VmScope {
     in_vm_runtime: bool,
@@ -320,7 +323,6 @@ mod tests {
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The panic should reach the host hook");
     }
 
-    #[cfg(not(feature = "serial"))]
     #[test]
     fn test_vm_scope_halt_on_rayon_worker_skips_host_hook() {
         if !is_child_process() {
@@ -358,7 +360,6 @@ mod tests {
     }
 
     /// An unrelated panic on a rayon worker reaches the host hook while another thread is inside the VM runtime.
-    #[cfg(not(feature = "serial"))]
     #[test]
     fn test_unrelated_rayon_panic_during_vm_runtime_reaches_host_hook() {
         use rayon::prelude::*;
@@ -399,7 +400,6 @@ mod tests {
     }
 
     /// A worker that waits on a join inside the VM runtime runs an unrelated job that panics.
-    #[cfg(not(feature = "serial"))]
     #[test]
     fn test_job_stolen_by_waiting_vm_thread_reaches_host_hook() {
         use std::{sync::mpsc, time::Duration};

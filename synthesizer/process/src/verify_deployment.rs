@@ -234,7 +234,6 @@ mod tests {
     }
 
     /// A halt in deployment synthesis on a rayon worker does not reach the host's panic hook.
-    #[cfg(not(feature = "serial"))]
     #[test]
     fn test_verify_deployment_halt_on_worker_skips_host_hook() {
         use std::sync::atomic::{AtomicUsize, Ordering};
