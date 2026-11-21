@@ -98,3 +98,11 @@ mod sealed {
 /// The `tracing` crate, for the expansion of `timing_span!` and `timing_event!`.
 #[doc(hidden)]
 pub use tracing;
+
+/// The `locktick` crate, for dependents that build with `--cfg locktick`.
+///
+/// Hazard: a dependent that depends on `locktick` directly can build a second copy of it, whose
+/// `lock_snapshots` does not list snarkVM's locks.
+#[cfg(locktick)]
+#[doc(hidden)]
+pub use locktick;
