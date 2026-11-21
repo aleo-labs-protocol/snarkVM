@@ -400,7 +400,7 @@ fn read_point_unchecked<E: PairingEngine, R: Read>(reader: &mut R) -> io::Result
     let y = E::Fq::read_le(&mut *reader)?;
     let infinity = bool::read_le(&mut *reader)?;
 
-    if (infinity != x.is_zero()) && y.is_one() {
+    if infinity != (x.is_zero() && y.is_one()) {
         return Err(error("Infinity flag is not valid"));
     }
     Ok(E::G1Affine::from_coordinates_unchecked((x, y, infinity)))
@@ -868,5 +868,27 @@ impl<E: PairingEngine> ToBytes for BatchLCProof<E> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
         CanonicalSerialize::serialize_compressed(self, &mut writer)
             .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not serialize struct")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_curves::bls12_377::{Bls12_377, G1Affine};
+
+    #[test]
+    fn test_read_point_unchecked_checks_the_infinity_flag() {
+        let read = |point: G1Affine, infinity: bool| {
+            let mut bytes = point.to_bytes_le().unwrap();
+            *bytes.last_mut().unwrap() = infinity as u8;
+            read_point_unchecked::<Bls12_377, _>(&mut &bytes[..])
+        };
+        let generator = G1Affine::prime_subgroup_generator();
+        let zero = G1Affine::zero();
+
+        assert_eq!(read(generator, false).unwrap(), generator);
+        assert_eq!(read(zero, true).unwrap(), zero);
+        assert!(read(generator, true).is_err());
+        assert!(read(zero, false).is_err());
     }
 }
