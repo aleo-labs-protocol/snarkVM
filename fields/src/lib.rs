@@ -14,7 +14,7 @@
 // limitations under the License.
 
 #![allow(clippy::module_inception)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 #[macro_use]
 extern crate thiserror;
@@ -38,6 +38,9 @@ pub mod fp6_3over2;
 
 mod fp12_2over3over2;
 pub use fp12_2over3over2::*;
+
+#[doc(hidden)]
+pub mod ifma;
 
 mod legendre;
 pub use legendre::*;
