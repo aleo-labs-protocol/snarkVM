@@ -31,11 +31,21 @@ use snarkvm_utilities::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
 };
+
+// Key 0 in the same storage metadata prefix holds the schema version.
+const HISTORY_METADATA_KEY: u8 = 1;
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -85,6 +95,19 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    /// Inclusive indexed ranges `(program, start_height_be) -> end_height`.
+    /// Each range starts with a baseline. A gap starts a new range.
+    /// `u32::MAX` marks active archival coverage through the last indexed height in metadata.
+    type ProgramHistoryMap: for<'a> Map<'a, (ProgramID<N>, [u8; 4]), u32>;
+    /// Mapping events `(program, range_start_be, mapping, height_be) -> exists`.
+    /// `true` marks creation or reset; `false` marks removal. Range starts isolate gaps.
+    type MappingHistoryMap: for<'a> Map<'a, (ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>;
+    /// Key versions `(program, range_start_be, mapping, key, height_be) -> value`.
+    /// `None` marks deletion. Big-endian heights preserve numeric order for floor lookups.
+    type KeyHistoryMap: for<'a> Map<'a, (ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>;
+    /// Key 1 in the storage metadata prefix maps to `(archival, selected programs, last indexed height)`.
+    /// Archival mode stores an empty selected-program list.
+    type HistoryMetadataMap: for<'a> Map<'a, u8, (bool, Vec<ProgramID<N>>, u32)>;
     /// The mapping of `transaction ID` to `rejection reason`.
     type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
 
@@ -97,6 +120,14 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
     fn program_id_map(&self) -> &Self::ProgramIDMap;
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap;
+    /// Returns the program history map.
+    fn program_history_map(&self) -> &Self::ProgramHistoryMap;
+    /// Returns the mapping history map.
+    fn mapping_history_map(&self) -> &Self::MappingHistoryMap;
+    /// Returns the key history map.
+    fn key_history_map(&self) -> &Self::KeyHistoryMap;
+    /// Returns the recording metadata map.
+    fn history_metadata_map(&self) -> &Self::HistoryMetadataMap;
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap;
 
@@ -108,6 +139,10 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
         self.committee_store().start_atomic();
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
+        self.program_history_map().start_atomic();
+        self.mapping_history_map().start_atomic();
+        self.key_history_map().start_atomic();
+        self.history_metadata_map().start_atomic();
         self.rejected_reason_map().start_atomic();
     }
 
@@ -116,6 +151,10 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
         self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
             || self.key_value_map().is_atomic_in_progress()
+            || self.program_history_map().is_atomic_in_progress()
+            || self.mapping_history_map().is_atomic_in_progress()
+            || self.key_history_map().is_atomic_in_progress()
+            || self.history_metadata_map().is_atomic_in_progress()
             || self.rejected_reason_map().is_atomic_in_progress()
     }
 
@@ -124,6 +163,10 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
         self.committee_store().atomic_checkpoint();
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
+        self.program_history_map().atomic_checkpoint();
+        self.mapping_history_map().atomic_checkpoint();
+        self.key_history_map().atomic_checkpoint();
+        self.history_metadata_map().atomic_checkpoint();
         self.rejected_reason_map().atomic_checkpoint();
     }
 
@@ -132,6 +175,10 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
         self.committee_store().clear_latest_checkpoint();
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
+        self.program_history_map().clear_latest_checkpoint();
+        self.mapping_history_map().clear_latest_checkpoint();
+        self.key_history_map().clear_latest_checkpoint();
+        self.history_metadata_map().clear_latest_checkpoint();
         self.rejected_reason_map().clear_latest_checkpoint();
     }
 
@@ -140,6 +187,10 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
         self.committee_store().atomic_rewind();
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
+        self.program_history_map().atomic_rewind();
+        self.mapping_history_map().atomic_rewind();
+        self.key_history_map().atomic_rewind();
+        self.history_metadata_map().atomic_rewind();
         self.rejected_reason_map().atomic_rewind();
     }
 
@@ -148,6 +199,10 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
         self.committee_store().abort_atomic();
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
+        self.program_history_map().abort_atomic();
+        self.mapping_history_map().abort_atomic();
+        self.key_history_map().abort_atomic();
+        self.history_metadata_map().abort_atomic();
         self.rejected_reason_map().abort_atomic();
     }
 
@@ -156,6 +211,10 @@ pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone +
         self.committee_store().finish_atomic()?;
         self.program_id_map().finish_atomic()?;
         self.key_value_map().finish_atomic()?;
+        self.program_history_map().finish_atomic()?;
+        self.mapping_history_map().finish_atomic()?;
+        self.key_history_map().finish_atomic()?;
+        self.history_metadata_map().finish_atomic()?;
         self.rejected_reason_map().finish_atomic()?;
 
         Ok(())
@@ -542,6 +601,10 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     block_height: Arc<AtomicU32>,
     /// When set, canonical finalize writes credits.aleo history as JSON.
     record_history_json: Arc<AtomicBool>,
+    /// Programs whose mapping writes are retained in the canonical finalize batch.
+    history_programs: Arc<RwLock<Vec<ProgramID<N>>>>,
+    /// Whether canonical finalize retains mapping history for every program.
+    archival: Arc<AtomicBool>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -558,6 +621,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             _phantom: PhantomData,
             block_height: Arc::new(AtomicU32::new(0)),
             record_history_json: Arc::new(AtomicBool::new(false)),
+            history_programs: Arc::new(RwLock::new(Vec::new())),
+            archival: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -569,6 +634,339 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns whether canonical finalize writes JSON history.
     pub fn record_history_json(&self) -> bool {
         self.record_history_json.load(Ordering::SeqCst)
+    }
+
+    /// Selects the programs whose mapping writes are retained as versioned history.
+    pub fn set_history_programs(&self, programs: Vec<ProgramID<N>>) {
+        *self.history_programs.write() = programs;
+    }
+
+    /// Returns the programs selected for mapping history.
+    pub fn history_programs(&self) -> Vec<ProgramID<N>> {
+        self.history_programs.read().clone()
+    }
+
+    /// Enables or disables mapping history for every program, including new deployments.
+    pub fn set_archival(&self, enabled: bool) {
+        self.archival.store(enabled, Ordering::SeqCst);
+    }
+
+    /// Configures program history recording and returns any coverage warning.
+    pub fn configure_history(&self, programs: Vec<ProgramID<N>>, archival: bool) -> Result<Option<String>> {
+        let selected: Vec<_> =
+            if archival { Vec::new() } else { programs.iter().copied().collect::<IndexSet<_>>().into_iter().collect() };
+        let warning = if let Some(metadata) =
+            self.storage.history_metadata_map().get_confirmed(&HISTORY_METADATA_KEY)?
+        {
+            let changed = metadata.0 != archival
+                || metadata.1.len() != selected.len()
+                || !metadata.1.iter().all(|program| selected.contains(program));
+            if changed {
+                let old_mode = if metadata.0 {
+                    "all programs".to_string()
+                } else if metadata.1.is_empty() {
+                    "off".to_string()
+                } else {
+                    format!(
+                        "selected programs: {}",
+                        metadata.1.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+                    )
+                };
+                let previous = if old_mode == "off" {
+                    old_mode
+                } else {
+                    format!("{old_mode}; latest indexed block {}", metadata.2)
+                };
+                let new_mode = if archival {
+                    "all programs".to_string()
+                } else if selected.is_empty() {
+                    "off".to_string()
+                } else {
+                    format!(
+                        "selected programs: {}",
+                        selected.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+                    )
+                };
+                Some(format!(
+                    "Mapping history settings changed. Previous coverage: {previous}. New coverage: {new_mode} from the next imported block. Existing ranges remain available; missing blocks will not be backfilled."
+                ))
+            } else {
+                None
+            }
+        } else if archival || !selected.is_empty() {
+            Some(
+                "Mapping history recording starts with the next imported block. Earlier blocks will not be backfilled."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        self.set_history_programs(selected);
+        self.set_archival(archival);
+        Ok(warning)
+    }
+
+    /// Queues program history in the current canonical finalize batch.
+    pub fn record_program_history(&self, height: u32) -> Result<()> {
+        let archival = self.archival.load(Ordering::SeqCst);
+        let selected: Vec<_> = if archival {
+            Vec::new()
+        } else {
+            self.history_programs().into_iter().collect::<IndexSet<_>>().into_iter().collect()
+        };
+        let metadata = self.storage.history_metadata_map().get_confirmed(&HISTORY_METADATA_KEY)?;
+        let mode_changed = metadata.as_ref().is_some_and(|metadata| {
+            metadata.0 != archival
+                || metadata.1.len() != selected.len()
+                || !metadata.1.iter().all(|program| selected.contains(program))
+        });
+        if (archival || !selected.is_empty())
+            && let Some(metadata) = metadata.as_ref()
+            && let Some(first_missing) = metadata.2.checked_add(1).filter(|next| *next < height)
+        {
+            tracing::warn!(
+                "Mapping history gap: blocks {first_missing} through {} have no recorded history. New coverage starts at block {height}; missing blocks will not be backfilled.",
+                height.saturating_sub(1)
+            );
+        }
+        let continuing_archival = archival
+            && metadata.as_ref().is_some_and(|metadata| metadata.0 && metadata.2.checked_add(1) == Some(height));
+        let programs: IndexSet<_> = if archival {
+            if continuing_archival {
+                self.storage
+                    .program_id_map()
+                    .iter_pending()
+                    .map(|(program, _)| program.into_owned())
+                    .chain(self.storage.key_value_map().iter_pending().map(|(map, _, _)| map.0))
+                    .collect()
+            } else {
+                self.storage
+                    .program_id_map()
+                    .keys_confirmed()
+                    .map(|program| program.into_owned())
+                    .chain(self.storage.program_id_map().iter_pending().map(|(program, _)| program.into_owned()))
+                    .collect()
+            }
+        } else {
+            selected.iter().copied().collect()
+        };
+        if programs.is_empty() && !archival && !mode_changed {
+            return Ok(());
+        }
+        ensure!(self.is_atomic_in_progress(), "Program history requires an atomic finalize batch");
+
+        if metadata.as_ref().is_some_and(|metadata| metadata.0 && !continuing_archival) {
+            let previous_end = metadata.as_ref().map_or(0, |metadata| metadata.2);
+            let active_ranges: Vec<_> = self
+                .storage
+                .program_history_map()
+                .iter_confirmed()
+                .filter(|(_, end)| *end.as_ref() == u32::MAX)
+                .map(|(key, _)| key.into_owned())
+                .collect();
+            for key in active_ranges {
+                self.storage.program_history_map().insert(key, previous_end)?;
+            }
+        }
+
+        let version = height.to_be_bytes();
+        let operations: Vec<_> = self
+            .storage
+            .key_value_map()
+            .iter_pending()
+            .filter(|(map, _, _)| programs.contains(&map.0))
+            .map(|(map, key, value)| (*map, key.map(|key| key.into_owned()), value.map(|value| value.into_owned())))
+            .collect();
+        let mut resets = HashMap::new();
+        for (index, (map, key, _)) in operations.iter().enumerate() {
+            if key.is_none() {
+                resets.insert(*map, index);
+            }
+        }
+
+        let mut ranges = HashMap::with_capacity(programs.len());
+        for program in programs {
+            let previous = match height.checked_sub(1) {
+                Some(previous) => self.get_program_history_range(&program, previous)?,
+                None => None,
+            };
+            let (start, baseline) = match previous {
+                Some((start, end)) => {
+                    ensure!(end.checked_add(1) == Some(height), "Program history must advance in block order");
+                    (start.to_be_bytes(), false)
+                }
+                None => (version, true),
+            };
+            ranges.insert(program, (start, baseline));
+
+            if baseline {
+                if let Some(names) = self.storage.get_mapping_names_speculative(&program)? {
+                    for mapping in names {
+                        self.storage.mapping_history_map().insert((program, start, mapping, version), true)?;
+                        for (key, value) in self.get_mapping_speculative(program, mapping)? {
+                            self.storage
+                                .key_history_map()
+                                .insert((program, start, mapping, key, version), Some(value))?;
+                        }
+                    }
+                }
+            } else if self.storage.program_id_map().get_pending(&program).is_some()
+                || resets.keys().any(|(id, _)| *id == program)
+            {
+                let before = self.storage.get_mapping_names_confirmed(&program)?.unwrap_or_default();
+                let after = self.storage.get_mapping_names_speculative(&program)?.unwrap_or_default();
+                for mapping in &before {
+                    if !after.contains(mapping) {
+                        self.storage.mapping_history_map().insert((program, start, *mapping, version), false)?;
+                    }
+                }
+                for mapping in after {
+                    if !before.contains(&mapping) || resets.contains_key(&(program, mapping)) {
+                        self.storage.mapping_history_map().insert((program, start, mapping, version), true)?;
+                    }
+                }
+            }
+            let end = if archival && self.storage.program_id_map().get_speculative(&program)?.is_some() {
+                u32::MAX
+            } else {
+                height
+            };
+            self.storage.program_history_map().insert((program, start), end)?;
+        }
+
+        for (index, ((program, mapping), key, value)) in operations.into_iter().enumerate() {
+            let (start, baseline) = ranges[&program];
+            if baseline || resets.get(&(program, mapping)).is_some_and(|reset| index < *reset) {
+                continue;
+            }
+            if let Some(key) = key {
+                self.storage.key_history_map().insert((program, start, mapping, key, version), value)?;
+            }
+        }
+        let last_indexed = if archival || !selected.is_empty() {
+            height
+        } else {
+            metadata.as_ref().map_or(height, |metadata| metadata.2)
+        };
+        self.storage.history_metadata_map().insert(HISTORY_METADATA_KEY, (archival, selected, last_indexed))?;
+        Ok(())
+    }
+
+    /// Returns the contiguous indexed range containing `height`, if one exists.
+    pub fn get_program_history_range(&self, program: &ProgramID<N>, height: u32) -> Result<Option<(u32, u32)>> {
+        let Some((key, end)) =
+            self.storage.program_history_map().get_floor_confirmed(&(*program, height.to_be_bytes()))?
+        else {
+            return Ok(None);
+        };
+        let (found, start) = key.into_owned();
+        let end = if *end == u32::MAX {
+            self.storage
+                .history_metadata_map()
+                .get_confirmed(&HISTORY_METADATA_KEY)?
+                .ok_or_else(|| anyhow!("Missing archival history cursor"))?
+                .2
+        } else {
+            *end
+        };
+        Ok((found == *program && height <= end).then_some((u32::from_be_bytes(start), end)))
+    }
+
+    /// Returns the confirmed indexed ranges for a program in start-height order.
+    pub fn get_program_history_ranges(&self, program: &ProgramID<N>) -> Result<Vec<(u32, u32)>> {
+        let keys = self.storage.program_history_map().get_keys_confirmed_with_prefix(program)?;
+        let mut ranges = Vec::with_capacity(keys.len());
+        for key in keys {
+            if key.0 == *program {
+                let end = self
+                    .storage
+                    .program_history_map()
+                    .get_confirmed(&key)?
+                    .ok_or_else(|| anyhow!("Missing program history range for '{program}'"))?;
+                let end = if *end == u32::MAX {
+                    self.storage
+                        .history_metadata_map()
+                        .get_confirmed(&HISTORY_METADATA_KEY)?
+                        .ok_or_else(|| anyhow!("Missing archival history cursor"))?
+                        .2
+                } else {
+                    *end
+                };
+                ranges.push((u32::from_be_bytes(key.1), end));
+            }
+        }
+        ranges.sort_unstable_by_key(|(start, _)| *start);
+        Ok(ranges)
+    }
+
+    /// Returns the most recent mapping creation, reset or removal within an indexed range.
+    fn mapping_history_at_height(
+        &self,
+        program: ProgramID<N>,
+        start: [u8; 4],
+        mapping: Identifier<N>,
+        height: u32,
+    ) -> Result<Option<(u32, bool)>> {
+        let Some((key, exists)) =
+            self.storage.mapping_history_map().get_floor_confirmed(&(program, start, mapping, height.to_be_bytes()))?
+        else {
+            return Ok(None);
+        };
+        let (found_program, found_start, found_mapping, version) = key.into_owned();
+        Ok((found_program == program && found_start == start && found_mapping == mapping)
+            .then_some((u32::from_be_bytes(version), *exists)))
+    }
+
+    /// Returns whether a mapping exists at a covered historical height.
+    pub fn contains_mapping_at_height(
+        &self,
+        program: ProgramID<N>,
+        mapping: Identifier<N>,
+        height: u32,
+    ) -> Result<bool> {
+        let Some((start, _)) = self.get_program_history_range(&program, height)? else {
+            return Ok(false);
+        };
+        Ok(self
+            .mapping_history_at_height(program, start.to_be_bytes(), mapping, height)?
+            .is_some_and(|(_, exists)| exists))
+    }
+
+    /// Reads the last key version at or before a covered height, including deletion markers.
+    pub fn get_value_at_height(
+        &self,
+        program: ProgramID<N>,
+        mapping: Identifier<N>,
+        key: &Plaintext<N>,
+        height: u32,
+    ) -> Result<Option<Value<N>>> {
+        let (start, _) = self
+            .get_program_history_range(&program, height)?
+            .ok_or_else(|| anyhow!("Program history for '{program}' is unavailable at block {height}"))?;
+        let start = start.to_be_bytes();
+        let Some((created, true)) = self.mapping_history_at_height(program, start, mapping, height)? else {
+            return Ok(None);
+        };
+        let Some((stored_key, value)) = self.storage.key_history_map().get_floor_confirmed(&(
+            program,
+            start,
+            mapping,
+            key.clone(),
+            height.to_be_bytes(),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let (found_program, found_start, found_mapping, found_key, version) = stored_key.into_owned();
+        if found_program != program
+            || found_start != start
+            || found_mapping != mapping
+            || found_key != *key
+            || u32::from_be_bytes(version) < created
+        {
+            return Ok(None);
+        }
+        Ok(value.into_owned())
     }
 
     /// Starts an atomic batch write operation.
@@ -839,7 +1237,10 @@ mod tests {
     use console::network::MainnetV0;
     use snarkvm_utilities::StorageMode;
 
-    use console::{program::Literal, types::U64};
+    use console::{
+        program::Literal,
+        types::{U8, U64},
+    };
 
     type CurrentNetwork = MainnetV0;
 
@@ -1458,5 +1859,415 @@ mod tests {
         let timer = std::time::Instant::now();
         finalize_store.remove_program(&program_id).unwrap();
         println!("FinalizeStore::remove_program - {} μs", timer.elapsed().as_micros());
+    }
+
+    /// The number of blocks in each randomized program history test.
+    const NUM_HISTORY_BLOCKS: u32 = 40;
+
+    /// The confirmed entries of each mapping, or `None` for a mapping that does not exist.
+    type MappingSnapshot = Vec<Option<Vec<(Plaintext<CurrentNetwork>, Value<CurrentNetwork>)>>>;
+
+    /// Returns a new in-memory finalize store.
+    fn sample_memory_finalize_store() -> FinalizeStore<CurrentNetwork, FinalizeMemory<CurrentNetwork>> {
+        FinalizeStore::from(FinalizeMemory::open(StorageMode::Test(None)).unwrap()).unwrap()
+    }
+
+    /// Returns a new RocksDB finalize store.
+    #[cfg(feature = "rocks")]
+    fn sample_rocksdb_finalize_store()
+    -> FinalizeStore<CurrentNetwork, crate::helpers::rocksdb::FinalizeDB<CurrentNetwork>> {
+        FinalizeStore::from(crate::helpers::rocksdb::FinalizeDB::open(StorageMode::new_test(None)).unwrap()).unwrap()
+    }
+
+    /// Returns `(program, mapping)` pairs whose program IDs share a prefix and whose mapping names
+    /// differ in encoded length, so that a floor lookup that crosses into a neighbouring entry fails.
+    fn sample_history_mappings() -> Vec<(ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>)> {
+        ["hello.aleo", "hello_world.aleo", "other.aleo"]
+            .into_iter()
+            .cartesian_product(["a", "ab", "b"])
+            .map(|(program, mapping)| (ProgramID::from_str(program).unwrap(), Identifier::from_str(mapping).unwrap()))
+            .collect()
+    }
+
+    /// Returns keys of different literal types, so that their encodings differ in length.
+    fn sample_history_keys() -> Vec<Plaintext<CurrentNetwork>> {
+        (0..4u8)
+            .map(|i| Plaintext::from(Literal::U8(U8::new(i))))
+            .chain((0..4u64).map(|i| Plaintext::from(Literal::U64(U64::new(i)))))
+            .collect()
+    }
+
+    /// Returns the confirmed entries of each given mapping.
+    fn snapshot_mappings<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+        mappings: &[(ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>)],
+    ) -> MappingSnapshot {
+        mappings
+            .iter()
+            .map(|(program_id, mapping)| {
+                let exists = finalize_store
+                    .get_mapping_names_confirmed(program_id)
+                    .unwrap()
+                    .is_some_and(|names| names.contains(mapping));
+                exists.then(|| finalize_store.get_mapping_confirmed(*program_id, *mapping).unwrap())
+            })
+            .collect()
+    }
+
+    /// Applies one random mapping operation. An operation that is illegal in the current state fails
+    /// before it writes, and is ignored.
+    fn apply_random_mapping_operation<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+        mappings: &[(ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>)],
+        keys: &[Plaintext<CurrentNetwork>],
+        rng: &mut TestRng,
+    ) {
+        let (program_id, mapping) = mappings[rng.random_range(0..mappings.len())];
+        let key = keys[rng.random_range(0..keys.len())].clone();
+        let value = Value::from(Literal::U64(U64::new(rng.random_range(0..1000))));
+        let result = match rng.random_range(0..11) {
+            0..=1 => finalize_store.initialize_mapping(program_id, mapping).map(drop),
+            2..=5 => finalize_store.update_key_value(program_id, mapping, key, value).map(drop),
+            6..=7 => finalize_store.remove_key_value(program_id, mapping, &key).map(drop),
+            8..=9 => {
+                let mut entries = Vec::with_capacity(keys.len());
+                for key in keys {
+                    if rng.random_range(0..2) == 0 {
+                        entries.push((key.clone(), Value::from(Literal::U64(U64::new(rng.random_range(0..1000))))));
+                    }
+                }
+                finalize_store.replace_mapping(program_id, mapping, entries).map(drop)
+            }
+            _ => finalize_store.remove_mapping(program_id, mapping).map(drop),
+        };
+        drop(result);
+    }
+
+    /// Finalizes one block of random mapping operations and records its history.
+    /// About one in four operations is rewound, as finalize does for a rejected transaction.
+    fn finalize_random_history_block<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+        height: u32,
+        mappings: &[(ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>)],
+        keys: &[Plaintext<CurrentNetwork>],
+        rng: &mut TestRng,
+    ) {
+        finalize_store.start_atomic();
+        for _ in 0..rng.random_range(0..8) {
+            finalize_store.atomic_checkpoint();
+            apply_random_mapping_operation(finalize_store, mappings, keys, rng);
+            match rng.random_range(0..4) {
+                0 => finalize_store.atomic_rewind(),
+                _ => finalize_store.clear_latest_checkpoint(),
+            }
+        }
+        finalize_store.record_program_history(height).unwrap();
+        finalize_store.finish_atomic().unwrap();
+    }
+
+    /// Checks that each mapping of `program_id` at each height in `heights` matches the snapshot
+    /// taken after that height, for every key in `keys`.
+    fn check_history_matches_snapshots<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+        program_id: ProgramID<CurrentNetwork>,
+        heights: core::ops::RangeInclusive<u32>,
+        mappings: &[(ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>)],
+        keys: &[Plaintext<CurrentNetwork>],
+        snapshots: &HashMap<u32, MappingSnapshot>,
+    ) {
+        for height in heights {
+            let snapshot = &snapshots[&height];
+            for ((_, mapping), entries) in
+                mappings.iter().zip_eq(snapshot).filter(|((program, _), _)| *program == program_id)
+            {
+                let exists = finalize_store.contains_mapping_at_height(program_id, *mapping, height).unwrap();
+                assert_eq!(exists, entries.is_some(), "'{program_id}/{mapping}' existence at height {height}");
+                for key in keys {
+                    let expected = entries
+                        .as_ref()
+                        .and_then(|entries| entries.iter().find(|(entry_key, _)| entry_key == key))
+                        .map(|(_, value)| value.clone());
+                    let found = finalize_store.get_value_at_height(program_id, *mapping, key, height).unwrap();
+                    assert_eq!(found, expected, "'{program_id}/{mapping}[{key}]' at height {height}");
+                }
+            }
+        }
+    }
+
+    /// Runs random mapping operations over many blocks, then checks every height of history against
+    /// the state that was confirmed after that height.
+    ///
+    /// In selective mode, `hello.aleo` and `hello_world.aleo` are selected and `other.aleo` is not.
+    /// In archival mode, each program is covered from the first block in which it exists.
+    fn check_program_history_random<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+        archival: bool,
+    ) {
+        let rng = &mut TestRng::default();
+        let mappings = sample_history_mappings();
+        let keys = sample_history_keys();
+        let programs: IndexSet<_> = mappings.iter().map(|(program_id, _)| *program_id).collect();
+
+        match archival {
+            true => finalize_store.set_archival(true),
+            false => finalize_store.set_history_programs(programs.iter().take(2).copied().collect()),
+        }
+
+        let mut snapshots = HashMap::new();
+        let mut first_seen = HashMap::new();
+        for height in 0..NUM_HISTORY_BLOCKS {
+            finalize_random_history_block(finalize_store, height, &mappings, &keys, rng);
+            snapshots.insert(height, snapshot_mappings(finalize_store, &mappings));
+            for program_id in &programs {
+                if finalize_store.contains_program_confirmed(program_id).unwrap() {
+                    first_seen.entry(*program_id).or_insert(height);
+                }
+            }
+        }
+
+        let last = NUM_HISTORY_BLOCKS - 1;
+        for (index, program_id) in programs.iter().enumerate() {
+            let start = match archival {
+                true => first_seen.get(program_id).copied(),
+                false => (index < 2).then_some(0),
+            };
+            assert_eq!(
+                finalize_store.get_program_history_ranges(program_id).unwrap(),
+                start.map(|start| vec![(start, last)]).unwrap_or_default(),
+            );
+            for height in 0..NUM_HISTORY_BLOCKS {
+                let expected = start.filter(|start| *start <= height).map(|start| (start, last));
+                assert_eq!(finalize_store.get_program_history_range(program_id, height).unwrap(), expected);
+            }
+            if let Some(start) = start {
+                check_history_matches_snapshots(
+                    finalize_store,
+                    *program_id,
+                    start..=last,
+                    &mappings,
+                    &keys,
+                    &snapshots,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_program_history_selected_memory() {
+        check_program_history_random(&sample_memory_finalize_store(), false);
+    }
+
+    #[test]
+    fn test_program_history_archival_memory() {
+        check_program_history_random(&sample_memory_finalize_store(), true);
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_program_history_selected_rocksdb() {
+        check_program_history_random(&sample_rocksdb_finalize_store(), false);
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_program_history_archival_rocksdb() {
+        check_program_history_random(&sample_rocksdb_finalize_store(), true);
+    }
+
+    #[test]
+    fn test_program_history_gap_starts_new_range() {
+        let rng = &mut TestRng::default();
+        let finalize_store = sample_memory_finalize_store();
+        let mappings = sample_history_mappings();
+        let keys = sample_history_keys();
+        let program_id = mappings[0].0;
+
+        // Record heights 0 to 9, skip heights 10 to 14, and record heights 15 to 24.
+        let mut snapshots = HashMap::new();
+        for height in 0..25 {
+            let recorded = !(10..15).contains(&height);
+            finalize_store
+                .configure_history(if recorded { vec![program_id] } else { vec![] }, false)
+                .expect("The test explicitly changes history coverage");
+            finalize_random_history_block(&finalize_store, height, &mappings, &keys, rng);
+            snapshots.insert(height, snapshot_mappings(&finalize_store, &mappings));
+        }
+
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 9).unwrap(), Some((0, 9)));
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 12).unwrap(), None);
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 15).unwrap(), Some((15, 24)));
+        assert_eq!(finalize_store.get_program_history_ranges(&program_id).unwrap(), vec![(0, 9), (15, 24)]);
+        assert!(!finalize_store.contains_mapping_at_height(program_id, mappings[0].1, 12).unwrap());
+        assert!(finalize_store.get_value_at_height(program_id, mappings[0].1, &keys[0], 12).is_err());
+
+        // The new range starts with a baseline of the state that existed when recording resumed.
+        check_history_matches_snapshots(&finalize_store, program_id, 0..=9, &mappings, &keys, &snapshots);
+        check_history_matches_snapshots(&finalize_store, program_id, 15..=24, &mappings, &keys, &snapshots);
+    }
+
+    #[test]
+    fn test_archival_untouched_program_has_no_range_write() -> Result<()> {
+        let finalize_store = sample_memory_finalize_store();
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        let mapping = Identifier::from_str("records")?;
+        finalize_store.set_archival(true);
+
+        finalize_store.start_atomic();
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(1)?;
+        assert!(finalize_store.storage.program_history_map().iter_pending().next().is_none());
+        finalize_store.finish_atomic()?;
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 1)?, Some((0, 1)));
+        Ok(())
+    }
+
+    #[test]
+    fn test_history_configuration_change_preserves_coverage() -> Result<()> {
+        let finalize_store = sample_memory_finalize_store();
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        finalize_store.set_history_programs(vec![program_id]);
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        let reopened = FinalizeStore::from(finalize_store.storage.clone())?;
+        let warning = reopened.configure_history(Vec::new(), false)?;
+        assert!(warning.as_deref().is_some_and(|message| message.contains("New coverage: off")));
+        reopened.start_atomic();
+        reopened.record_program_history(1)?;
+        reopened.finish_atomic()?;
+        assert_eq!(reopened.get_program_history_range(&program_id, 0)?, Some((0, 0)));
+        assert_eq!(reopened.get_program_history_range(&program_id, 1)?, None);
+        Ok(())
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_history_configuration_persists_rocksdb() -> Result<()> {
+        let finalize_store = sample_rocksdb_finalize_store();
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        finalize_store.configure_history(vec![program_id], false)?;
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        let reopened = FinalizeStore::from(finalize_store.storage.clone())?;
+        let warning = reopened.configure_history(Vec::new(), false)?;
+        assert!(warning.as_deref().is_some_and(|message| message.contains("New coverage: off")));
+        reopened.start_atomic();
+        reopened.record_program_history(1)?;
+        reopened.finish_atomic()?;
+        reopened.configure_history(vec![program_id], false)?;
+        reopened.start_atomic();
+        reopened.record_program_history(2)?;
+        reopened.finish_atomic()?;
+        assert_eq!(reopened.get_program_history_ranges(&program_id)?, vec![(0, 0), (2, 2)]);
+        assert_eq!(reopened.get_program_history_range(&program_id, 1)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_archival_mode_change_closes_and_restarts_coverage() -> Result<()> {
+        let finalize_store = sample_memory_finalize_store();
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        let mapping = Identifier::from_str("records")?;
+        finalize_store.configure_history(Vec::new(), true)?;
+
+        finalize_store.start_atomic();
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(1)?;
+        finalize_store.finish_atomic()?;
+
+        finalize_store.configure_history(Vec::new(), false)?;
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(2)?;
+        finalize_store.finish_atomic()?;
+        assert_eq!(finalize_store.get_program_history_ranges(&program_id)?, vec![(0, 1)]);
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 2)?, None);
+
+        finalize_store.configure_history(Vec::new(), true)?;
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(3)?;
+        finalize_store.finish_atomic()?;
+        assert_eq!(finalize_store.get_program_history_ranges(&program_id)?, vec![(0, 1), (3, 3)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_archival_removed_program_does_not_extend_coverage() -> Result<()> {
+        let finalize_store = sample_memory_finalize_store();
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        let mapping = Identifier::from_str("records")?;
+        finalize_store.set_archival(true);
+
+        finalize_store.start_atomic();
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        finalize_store.start_atomic();
+        finalize_store.remove_program(&program_id)?;
+        finalize_store.record_program_history(1)?;
+        finalize_store.finish_atomic()?;
+
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(2)?;
+        finalize_store.finish_atomic()?;
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 2)?, None);
+        assert_eq!(finalize_store.get_program_history_ranges(&program_id)?, vec![(0, 1)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_archival_skipped_height_starts_new_range() -> Result<()> {
+        let finalize_store = sample_memory_finalize_store();
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        let mapping = Identifier::from_str("records")?;
+        finalize_store.set_archival(true);
+
+        finalize_store.start_atomic();
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(2)?;
+        finalize_store.finish_atomic()?;
+        assert_eq!(finalize_store.get_program_history_ranges(&program_id)?, vec![(0, 0), (2, 2)]);
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 1)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_history_disabled_records_nothing() {
+        let rng = &mut TestRng::default();
+        let finalize_store = sample_memory_finalize_store();
+        let mappings = sample_history_mappings();
+        let keys = sample_history_keys();
+
+        for height in 0..10 {
+            finalize_random_history_block(&finalize_store, height, &mappings, &keys, rng);
+        }
+        // Recording is skipped without an atomic batch when nothing is selected.
+        finalize_store.record_program_history(10).unwrap();
+
+        assert!(finalize_store.storage.program_history_map().iter_confirmed().next().is_none());
+        assert!(finalize_store.storage.mapping_history_map().iter_confirmed().next().is_none());
+        assert!(finalize_store.storage.key_history_map().iter_confirmed().next().is_none());
+    }
+
+    #[test]
+    fn test_program_history_requires_atomic_batch() {
+        let finalize_store = sample_memory_finalize_store();
+        finalize_store.set_history_programs(vec![ProgramID::from_str("hello.aleo").unwrap()]);
+        assert!(finalize_store.record_program_history(0).is_err());
     }
 }

@@ -42,6 +42,14 @@ pub struct FinalizeMemory<N: Network> {
     program_id_map: MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    /// Inclusive coverage ranges keyed by program and big-endian start height.
+    program_history_map: MemoryMap<(ProgramID<N>, [u8; 4]), u32>,
+    /// Mapping events keyed by program, range start, mapping, and big-endian event height.
+    mapping_history_map: MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>,
+    /// Key versions keyed by program, range start, mapping, key, and big-endian version height.
+    key_history_map: MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>,
+    /// Recording mode and last indexed height.
+    history_metadata_map: MemoryMap<u8, (bool, Vec<ProgramID<N>>, u32)>,
     /// The rejection reason map.
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
 
@@ -56,6 +64,10 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type CommitteeStorage = CommitteeMemory<N>;
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    type ProgramHistoryMap = MemoryMap<(ProgramID<N>, [u8; 4]), u32>;
+    type MappingHistoryMap = MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, [u8; 4]), bool>;
+    type KeyHistoryMap = MemoryMap<(ProgramID<N>, [u8; 4], Identifier<N>, Plaintext<N>, [u8; 4]), Option<Value<N>>>;
+    type HistoryMetadataMap = MemoryMap<u8, (bool, Vec<ProgramID<N>>, u32)>;
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
 
     /// Initializes the finalize storage.
@@ -69,6 +81,10 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
+            program_history_map: MemoryMap::default(),
+            mapping_history_map: MemoryMap::default(),
+            key_history_map: MemoryMap::default(),
+            history_metadata_map: MemoryMap::default(),
             rejected_reason_map: MemoryMap::default(),
 
             storage_mode: storage,
@@ -89,6 +105,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     fn key_value_map(&self) -> &Self::KeyValueMap {
         &self.key_value_map
     }
+
+    fn program_history_map(&self) -> &Self::ProgramHistoryMap { &self.program_history_map }
+    fn mapping_history_map(&self) -> &Self::MappingHistoryMap { &self.mapping_history_map }
+    fn key_history_map(&self) -> &Self::KeyHistoryMap { &self.key_history_map }
+    fn history_metadata_map(&self) -> &Self::HistoryMetadataMap { &self.history_metadata_map }
 
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap {
