@@ -10,9 +10,6 @@ name: gpu-test
 # A separate workflow because path filters are per workflow, and GPU minutes are
 # serialized behind one runner.
 on:
-  # The two path lists are duplicated because the workflow parser does not
-  # support YAML anchors. Keep them in sync by hand.
-  #
   # Directories, not files with a device call site: `srs` and `r1cs` decide the
   # inputs a kernel is handed, and `prepare_third.rs` reaches
   # `lineval_interpolate_mul` without naming a kernel. `cargo test` runs neither
@@ -41,19 +38,6 @@ on:
       # Exclusions are evaluated last, so a change to both a doc and code still
       # runs.
       - '!**/*.md'
-  push:
-    branches: [staging]
-    # Same as pull_request.
-    paths:
-      - 'algorithms/cuda/**'
-      - 'algorithms/src/**'
-      - 'algorithms/Cargo.toml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.cargo/config.toml'
-      - '.github/workflows/gpu-test.yml'
-      - '.github/workflows/**'
-      - '!**/*.md'
   # Catches changes that reach the kernels from outside the paths above.
   schedule:
     - cron: '0 7 * * *'
@@ -72,8 +56,8 @@ jobs:
   # referenced branch runs code in this repository's jobs.
   check-shared-refs:
     runs-on: ubuntu-latest
-    # A push runs only in this repository; see ci.yml.
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    # A scheduled run runs only in this repository; see ci.yml.
+    if: github.event_name != 'schedule' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }

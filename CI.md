@@ -3,8 +3,8 @@
 CI runs on GitHub Actions, in [`ci.yml`](.github/workflows/ci.yml). Benchmarks
 run from [`benchmarks.yml`](.github/workflows/benchmarks.yml).
 [`gpu-test.yml`](.github/workflows/gpu-test.yml) runs the CUDA kernels on a
-`gpu` fleet box, built for `sm_86`, when a pull request or a push to `staging`
-changes `algorithms/` or the manifests, and nightly.
+`gpu` fleet box, built for `sm_86`, when a pull request changes `algorithms/` or
+the manifests, and nightly on `staging`.
 
 Jobs run in one of two places:
 
@@ -22,18 +22,22 @@ Jobs run in one of two places:
 | Event | Runs |
 |---|---|
 | Pull request | `fmt`, `deny`, `source-checks`, `wasm`, `lint`, `lint-locktick`, `test`, `ci-ok` |
-| Push to `staging`, or manual dispatch | the above, plus `test-merge`, `each-feature`, `machete` |
-| Push to or pull request into `release/**`, or manual dispatch | the above, plus `test-release`, `windows` |
+| Schedule, every 6 hours, on the head of `staging` | `schedule-due`; unless it finds a verdict, the above plus `test-merge`, `each-feature`, `machete`; then `notify` |
+| Push to or pull request into `release/**`, or manual dispatch | the pull request set, plus `test-merge`, `each-feature`, `machete`, `test-release`, `windows` |
+| Push to `staging` | nothing |
 
 ## Jobs
 
 A job marked "merge" runs only on the second and third rows of the table
-above. A job marked "release" runs only on the third row. The other jobs run
-on every event.
+above. A job marked "release" runs only on the third row. A job marked
+"schedule" runs only on the second row. The other jobs run on the first three
+rows.
 
 | Job | Runner | Trigger | Timeout (min) | What it runs | CircleCI job |
 |---|---|---|---|---|---|
-| `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; the check to require | |
+| `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; on a scheduled run that `schedule-due` lets through, also fails if a merge job was skipped; the check to require | |
+| `schedule-due` | hosted | schedule | | decides whether the scheduled run tests the head of `staging`; see [Schedule](#schedule) | |
+| `notify` | hosted | schedule | | posts to Slack when the scheduled run turns red, and once when it turns green again | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag, and that each matrix `name` axis lists the same names as its `include` | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
 | `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
@@ -73,9 +77,34 @@ have none, and a hosted job holds no fleet box.
 
 A pull request that changes only Markdown files starts no run, so it gets no
 `ci-ok` check. The files under `curves/documentation` do not count: they are
-compiled into `snarkvm-curves`. A push runs everything. If a branch rule ever
-requires `ci-ok`, such a pull request cannot merge until a workflow reports
-that check for it.
+compiled into `snarkvm-curves`. A push to a release branch runs everything. If
+a branch rule ever requires `ci-ok`, such a pull request cannot merge until a
+workflow reports that check for it.
+
+## Schedule
+
+A push to `staging` starts no run. A branch rule does not require a pull
+request to be up to date with `staging`, so two pull requests that each pass
+can still fail together once both are merged. The scheduled run catches that.
+It runs at minute 17 of every sixth hour (UTC), on the head of `staging`.
+
+`schedule-due` first lists the earlier scheduled runs on the same commit. If
+one of them passed or failed, and its `fmt` ran, that commit has a verdict, and
+every other job is skipped. A commit that failed is not tested again on the
+schedule. To test it again, rerun its failed run. A run that was cancelled,
+that `schedule-due` skipped, or whose `schedule-due` failed gives no verdict,
+so the next scheduled run tests the same commit. A scheduled run is never
+cancelled, and it waits for the scheduled run before it to end.
+
+`notify` reports each scheduled run to the Slack channel in the
+`CI_SLACK_CHANNEL` variable, `#ci` by default. It posts only when the run turns
+red, and once when it turns green again. A run that `schedule-due` skips posts
+nothing.
+
+The schedule fires on the default branch of every copy of this repository.
+`schedule-due` and `notify` run only in this repository, and every other job
+of a scheduled run needs `schedule-due`, so a scheduled run in a mirror, such
+as snarkVM-internal, runs nothing.
 
 ## Test groups
 
