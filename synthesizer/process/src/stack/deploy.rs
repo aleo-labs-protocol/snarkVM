@@ -159,7 +159,6 @@ impl<N: Network> Stack<N> {
             "The number of functions in the program does not match the number of function verifying keys"
         );
 
-        #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
         // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
         if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {

@@ -156,7 +156,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Retrieve the block store.
         let block_store = store.block_store();
 
-        #[cfg(not(any(test, feature = "test")))]
         let process = {
             // Determine the latest block height.
             let latest_block_height = block_store.current_block_height();
@@ -169,9 +168,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Process::load()?
             }
         };
-        #[cfg(any(test, feature = "test"))]
-        // Initialize a new process.
-        let process = Process::load()?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -608,6 +604,7 @@ pub(crate) mod test_helpers {
     use serde_json::json;
     use snarkvm_ledger_test_helpers::load_or_build_genesis_fixture;
     use snarkvm_synthesizer_snark::{Proof, VerifyingKey};
+    use snarkvm_utilities::load_or_build_fixture;
     use std::{ffi::OsStr, sync::OnceLock};
 
     pub(crate) type CurrentNetwork = MainnetV0;
@@ -628,7 +625,6 @@ pub(crate) mod test_helpers {
         VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap()
     }
 
-    #[cfg(feature = "test")]
     pub(crate) fn sample_vm_at_height(height: u32, rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM with a genesis block.
         let mut vm = sample_vm_with_genesis_block();
@@ -640,7 +636,6 @@ pub(crate) mod test_helpers {
         vm
     }
 
-    #[cfg(feature = "test")]
     pub(crate) fn advance_vm_to_height(
         vm: &mut VM<CurrentNetwork, LedgerType>,
         genesis_private_key: PrivateKey<CurrentNetwork>,
@@ -652,6 +647,100 @@ pub(crate) mod test_helpers {
             let block = sample_next_block(vm, &genesis_private_key, &[], rng).unwrap();
             vm.add_next_block(&block).unwrap();
         }
+    }
+
+    /// The seed of the RNG that builds the chain of `sample_vm_past_v8`.
+    const PAST_V8_SEED: u64 = 8;
+
+    /// Returns a VM one block past `ConsensusVersion::V8`, and that block, which gives the genesis key four records.
+    ///
+    /// Every call builds the same chain, so a transaction built on one of these VMs verifies on another.
+    /// After V8 a credits record from below `INCLUSION_UPGRADE_HEIGHT + 1` can only be upgraded, so tests that spend
+    /// credits records past V8 need these records instead of the genesis records.
+    /// The test processes of one binary share the last block through a file beside the binary.
+    pub(crate) fn sample_vm_past_v8() -> (VM<CurrentNetwork, LedgerType>, Block<CurrentNetwork>) {
+        let private_key = sample_genesis_private_key();
+        let rng = &mut TestRng::fixed(PAST_V8_SEED);
+        let mut vm = sample_vm_with_genesis_block();
+        advance_vm_to_height(
+            &mut vm,
+            private_key,
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
+        let tip = vm.block_store().get_block_hash(vm.block_store().current_block_height()).unwrap().unwrap();
+        let block = load_or_build_fixture(
+            "past-v8",
+            &[genesis_fixture_seed(), PAST_V8_SEED].map(u64::to_le_bytes).concat(),
+            |block: &Block<CurrentNetwork>| block.previous_hash() == tip,
+            || {
+                let address = Address::try_from(&private_key).unwrap();
+                let inputs = [
+                    Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                    Value::from_str("1_000_000_000_000u64").unwrap(),
+                ];
+                let mints = (0..4)
+                    .map(|_| {
+                        vm.execute(
+                            &private_key,
+                            ("credits.aleo", "transfer_public_to_private"),
+                            inputs.iter(),
+                            None,
+                            0,
+                            None,
+                            rng,
+                        )
+                        .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+                let block = sample_next_block(&vm, &private_key, &mints, rng).unwrap();
+                assert_eq!(block.transactions().num_accepted(), mints.len());
+                block
+            },
+        );
+        vm.add_next_block(&block).unwrap();
+        (vm, block)
+    }
+
+    /// The amount of each record of `sample_vm_with_upgradable_records`, the most that `credits.aleo/upgrade` accepts.
+    pub(crate) const UPGRADABLE_RECORD_AMOUNT: u64 = 1_000_000_000_000;
+
+    /// Returns a VM on a genesis block, its private key, and the block, which gives that key records of `UPGRADABLE_RECORD_AMOUNT`.
+    ///
+    /// Below `ConsensusVersion::V8` only the genesis block can create a record that the current prover writes, and the
+    /// records of `sample_genesis_block` are too large for `credits.aleo/upgrade`.
+    pub(crate) fn sample_vm_with_upgradable_records()
+    -> (VM<CurrentNetwork, LedgerType>, PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
+        static INSTANCE: OnceLock<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> = OnceLock::new();
+        let (private_key, genesis) = INSTANCE.get_or_init(|| {
+            load_or_build_genesis_fixture("upgradable-genesis", genesis_fixture_seed(), |seed| {
+                let rng = &mut TestRng::from_seed(seed);
+                let stake = snarkvm_ledger_committee::MIN_VALIDATOR_STAKE;
+                let private_keys = (0..4).map(|_| PrivateKey::new(rng).unwrap()).collect::<Vec<_>>();
+                let addresses = private_keys.iter().map(|key| Address::try_from(key).unwrap()).collect::<Vec<_>>();
+                let committee =
+                    Committee::new_genesis(addresses.iter().map(|address| (*address, (stake, true, 0u8))).collect())
+                        .unwrap();
+                let bonded_balances = addresses.iter().map(|address| (*address, (*address, *address, stake))).collect();
+                // `genesis_quorum` moves `1 / (2 * NUM_GENESIS_TRANSACTIONS)` of the caller's public balance into each record.
+                let caller_balance =
+                    2 * Block::<CurrentNetwork>::NUM_GENESIS_TRANSACTIONS as u64 * UPGRADABLE_RECORD_AMOUNT;
+                let remaining = CurrentNetwork::STARTING_SUPPLY - 4 * stake - caller_balance;
+                let public_balances = IndexMap::from([
+                    (addresses[0], caller_balance),
+                    (addresses[1], remaining - 2 * (remaining / 3)),
+                    (addresses[2], remaining / 3),
+                    (addresses[3], remaining / 3),
+                ]);
+                let block = sample_vm()
+                    .genesis_quorum(&private_keys[0], committee, public_balances, bonded_balances, rng)
+                    .unwrap();
+                (private_keys[0], block)
+            })
+        });
+        let vm = sample_vm();
+        vm.add_next_block(genesis).unwrap();
+        (vm, *private_key, genesis.clone())
     }
 
     /// The default seed of the RNG that builds the genesis fixture.
@@ -729,6 +818,9 @@ pub(crate) mod test_helpers {
                     r"
 program testing.aleo;
 
+constructor:
+    assert.eq edition 0u16;
+
 struct message:
     amount as u128;
 
@@ -772,21 +864,16 @@ function compute:
                 let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
                 let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
+                // Initialize the VM.
+                let (vm, block) = sample_vm_past_v8();
 
                 // Fetch the unspent records.
                 let records =
-                    genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+                    block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
                 trace!("Unspent Records:\n{:#?}", records);
 
                 // Prepare the fee.
                 let credits = Some(records.values().next().unwrap().decrypt(&caller_view_key).unwrap());
-
-                // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
 
                 // Deploy.
                 let transaction = vm.deploy(&caller_private_key, &program, credits, 10, None, rng).unwrap();
@@ -806,21 +893,16 @@ function compute:
                 let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
                 let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
+                // Initialize the VM.
+                let (vm, block) = sample_vm_past_v8();
 
                 // Fetch the unspent records.
                 let records =
-                    genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+                    block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
                 trace!("Unspent Records:\n{:#?}", records);
 
                 // Select a record to spend.
                 let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
-
-                // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
 
                 // Prepare the inputs.
                 let inputs =
@@ -850,21 +932,16 @@ function compute:
                 let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
                 let address = Address::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
+                // Initialize the VM.
+                let (vm, block) = sample_vm_past_v8();
 
                 // Fetch the unspent records.
                 let records =
-                    genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+                    block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
                 trace!("Unspent Records:\n{:#?}", records);
 
                 // Select a record to spend.
                 let record = Some(records.values().next().unwrap().decrypt(&caller_view_key).unwrap());
-
-                // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
 
                 // Prepare the inputs.
                 let inputs = [
@@ -893,13 +970,8 @@ function compute:
                 let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
                 let address = Address::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
-
                 // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
+                let (vm, _) = sample_vm_past_v8();
 
                 // Prepare the inputs.
                 let inputs = [
@@ -1494,20 +1566,15 @@ function compute:
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
+        // Initialize the VM.
+        let (vm, block) = sample_vm_past_v8();
 
         // Fetch the unspent records.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+        let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
         trace!("Unspent Records:\n{:#?}", records);
 
         // Select a record to spend.
         let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
 
         // Split once.
         let transaction = vm
@@ -1567,6 +1634,8 @@ function compute:
         // Deploy the programs.
         let first_program = r"
 program test_program_1.aleo;
+constructor:
+    assert.eq edition 0u16;
 mapping map_0:
     key as field.public;
     value as field.public;
@@ -1583,6 +1652,8 @@ finalize getter:
         ";
         let second_program = r"
 program test_program_2.aleo;
+constructor:
+    assert.eq edition 0u16;
 mapping map_0:
     key as field.public;
     value as field.public;
@@ -1642,18 +1713,14 @@ finalize getter:
         let rng = &mut TestRng::fixed(123456789);
 
         // Initialize a new caller.
-        let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = vm.genesis_beacon(&caller_private_key, rng).unwrap();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
 
         // Fetch the unspent records.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<Vec<(_, _)>>();
+        let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<Vec<(_, _)>>();
         trace!("Unspent Records:\n{:#?}", records);
         let record_0 = records[0].1.decrypt(&caller_view_key).unwrap();
         let record_1 = records[1].1.decrypt(&caller_view_key).unwrap();
@@ -1663,6 +1730,9 @@ finalize getter:
         // Create the deployment for the first program.
         let program_1 = r"
 program first_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 function c:
     input r0 as u8.private;
@@ -1685,6 +1755,9 @@ import first_program.aleo;
 
 program second_program.aleo;
 
+constructor:
+    assert.eq edition 0u16;
+
 function b:
     input r0 as u8.private;
     input r1 as u8.private;
@@ -1706,6 +1779,9 @@ import second_program.aleo;
 
 program third_program.aleo;
 
+constructor:
+    assert.eq edition 0u16;
+
 function a:
     input r0 as u8.private;
     input r1 as u8.private;
@@ -1722,6 +1798,9 @@ import second_program.aleo;
 import first_program.aleo;
 
 program fourth_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 function a:
     input r0 as u8.private;
@@ -1751,21 +1830,16 @@ function a:
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let address = Address::try_from(&caller_private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
+        // Initialize the VM.
+        let (vm, block) = sample_vm_past_v8();
 
         // Fetch the unspent records.
         let records =
-            genesis.transitions().cloned().flat_map(Transition::into_records).take(3).collect::<IndexMap<_, _>>();
+            block.transitions().cloned().flat_map(Transition::into_records).take(3).collect::<IndexMap<_, _>>();
         trace!("Unspent Records:\n{:#?}", records);
         let record_0 = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
         let record_1 = records.values().nth(1).unwrap().decrypt(&caller_view_key).unwrap();
         let record_2 = records.values().nth(2).unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
 
         // Deploy the program.
         let program = Program::from_str(
@@ -1773,6 +1847,9 @@ function a:
 import credits.aleo;
 
 program test_multiple_external_calls.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 function multitransfer:
     input r0 as credits.aleo/credits.record;
@@ -2076,13 +2153,11 @@ function do2:
         // Initialize a private key.
         let private_key = sample_genesis_private_key();
 
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
         // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Deploy the base program.
         let program = Program::from_str(
@@ -2146,13 +2221,11 @@ function do:
         let private_key = sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
         // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Deploy the base program.
         let program = Program::from_str(
@@ -2230,13 +2303,11 @@ function do:
         let private_key = sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
         // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Deploy the base program.
         let program = Program::from_str(
@@ -2824,14 +2895,11 @@ finalize transfer_public_as_signer:
         let recipient_private_key = PrivateKey::new(rng).unwrap();
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
-
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(),
+            rng,
+        );
 
         // Check the balance of the caller.
         let credits_program_id = ProgramID::from_str("credits.aleo").unwrap();
@@ -2867,6 +2935,9 @@ finalize transfer_public_as_signer:
 import credits.aleo;
 
 program credits_wrapper.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 function transfer_public_to_private:
     input r0 as address.private;
@@ -2915,7 +2986,7 @@ finalize transfer_public_to_private:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_995_767_962, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_995_640_937, "Update me if the initial balance changes.");
 
         // Call the wrapper program to transfer credits from the caller to the recipient.
         let transaction = vm
@@ -2953,7 +3024,7 @@ finalize transfer_public_to_private:
             _ => panic!("Expected a valid balance"),
         };
 
-        assert_eq!(balance, 182_499_995_667_116, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_995_635_007, "Update me if the initial balance changes.");
 
         // Check that the `credits_wrapper` program has a balance of 0.
         let balance = match vm
@@ -3020,14 +3091,11 @@ finalize transfer_public_to_private:
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
-
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Initialize a new private key.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -3144,14 +3212,11 @@ finalize transfer_public_to_private:
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
-
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Initialize a new private key.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();

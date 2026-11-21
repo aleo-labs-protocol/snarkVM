@@ -147,13 +147,7 @@ impl<N: Network> Process<N> {
                 // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
                 if let Some((_, record)) = output.record() {
                     if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-                        #[cfg(not(any(test, feature = "test")))]
                         ensure!(record.version().is_zero(), "Output record must be Version 0 before Consensus V8");
-                        #[cfg(any(test, feature = "test"))]
-                        ensure!(
-                            record.version().is_one(),
-                            "Output record must be Version 1 before Consensus V8 in tests."
-                        );
                     } else {
                         ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
                     }
