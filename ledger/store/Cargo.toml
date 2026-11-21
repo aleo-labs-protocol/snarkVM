@@ -20,7 +20,7 @@ edition = "2024"
 default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
-rocks = [ "rocksdb", "smallvec" ]
+rocks = [ "dep:rocksdb", "dep:smallvec" ]
 test = [ ]
 
 [dependencies.snarkvm-metrics]

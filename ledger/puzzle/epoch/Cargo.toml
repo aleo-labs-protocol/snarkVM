@@ -27,10 +27,10 @@ edition = "2024"
 default = [ "synthesis" ]
 merkle = [ ]
 synthesis = [
-  "snarkvm-circuit",
-  "lru",
-  "snarkvm-synthesizer-process",
-  "snarkvm-synthesizer-program"
+  "dep:snarkvm-circuit",
+  "dep:lru",
+  "dep:snarkvm-synthesizer-process",
+  "dep:snarkvm-synthesizer-program"
 ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 

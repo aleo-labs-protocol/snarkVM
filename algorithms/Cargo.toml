@@ -141,7 +141,7 @@ workspace = true
 features = [ "env-filter" ]
 
 [features]
-cuda = [ "snarkvm-algorithms-cuda" ]
+cuda = [ "dep:snarkvm-algorithms-cuda" ]
 filesystem = [ "snarkvm-parameters/filesystem" ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ ]
