@@ -173,10 +173,6 @@ jobs:
       # crate slower, and the crates wait on each other.
       - name: cargo doc
         run: |
-          doc="${CARGO_TARGET_DIR:-target}/doc"
-          if [ -d "$doc" ]; then
-            echo "$doc: $(du -sh "$doc" | cut -f1), $(find "$doc" -type f | wc -l) files"
-          fi
           cargo clean --doc
           cargo doc --workspace --no-deps --all-features --timings
         env:
