@@ -24,6 +24,14 @@ the ADX instructions at run time, from CPUID, so one binary runs on any x86_64 C
   constraint, variable and per-matrix non-zero counts are each at most 2^22, and costs 3 GiB of device memory and 3 GiB
   of pinned host memory per GPU.
 
+## Runtime Settings
+
+- `SNARKVM_MSM_WBITS` sets the MSM window: 10 to 18, or `auto` for sppark's heuristic. The default, 14, was fitted on an
+  H100 at the proof's MSM sizes.
+- `SNARKVM_MSM_THREADS` sets the MSM worker threads: 1 to 1024. The default, two per GPU, was fitted on an L4.
+
+A value that does not parse aborts the process at the first device call, so a typo cannot run as the default.
+
 ## GPU Failures
 
 A build with `cuda` does not fall back to the CPU. A failed device call panics, and the message carries the CUDA error
