@@ -133,11 +133,40 @@ mod tests {
     type CurrentAleo = circuit::network::AleoV0;
     type CurrentNetwork = console::network::MainnetV0;
 
-    /// Returns a program that casts `x` to a group with `op`, as a non-constant value, for every sampled input.
+    /// Returns a program whose functions cast `x` to a group with `op`, as a non-constant value, for every sampled input.
+    fn cast_program_with(name: &str, functions: &[&str], op: &str, x: &str) -> Program<CurrentNetwork> {
+        let functions = functions
+            .iter()
+            .map(|function| {
+                format!(
+                    "function {function}:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\n"
+                )
+            })
+            .collect::<String>();
+        Program::from_str(&format!("program {name}.aleo;\n\n{functions}constructor:\n    assert.eq edition 0u16;\n"))
+            .unwrap()
+    }
+
+    /// Returns a program with one function that casts `x` to a group with `op`.
     fn cast_program(op: &str, index: usize, x: &str) -> Program<CurrentNetwork> {
-        Program::from_str(&format!(
-            "program off_curve_cast_{index}.aleo;\n\nfunction f:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\nconstructor:\n    assert.eq edition 0u16;\n"
-        ))
+        cast_program_with(&format!("off_curve_cast_{index}"), &["f"], op, x)
+    }
+
+    /// Returns a deployment of `program` with the keys of `keys_program`, for a `program` on which `deploy` panics.
+    fn deployment_with_keys_of(
+        process: &Process<CurrentNetwork>,
+        program: &Program<CurrentNetwork>,
+        keys_program: &Program<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> Deployment<CurrentNetwork> {
+        let keys = process.deploy::<CurrentAleo, _>(keys_program, rng).unwrap();
+        Deployment::new(
+            0,
+            program.clone(),
+            keys.verifying_keys().clone(),
+            Some(program.to_checksum()),
+            Some(console::types::Address::zero()),
+        )
         .unwrap()
     }
 
@@ -177,16 +206,7 @@ mod tests {
             let process = Process::load().unwrap();
             assert!(try_vm_runtime(|| process.deploy::<CurrentAleo, _>(&program, &mut TestRng::default())).is_err());
 
-            // `deploy` panics on this value, so the deployment takes its keys from the program for `2`.
-            let keys = process.deploy::<CurrentAleo, _>(&cast_program(op, index, "2"), rng).unwrap();
-            let deployment = Deployment::new(
-                0,
-                program.clone(),
-                keys.verifying_keys().clone(),
-                Some(program.to_checksum()),
-                Some(console::types::Address::zero()),
-            )
-            .unwrap();
+            let deployment = deployment_with_keys_of(&process, &program, &cast_program(op, index, "2"), rng);
             let process = Process::load().unwrap();
             let result = try_vm_runtime(|| {
                 process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
@@ -211,6 +231,54 @@ mod tests {
             .unwrap()
             .verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
             .unwrap();
+    }
+
+    /// A halt in deployment synthesis on a rayon worker does not reach the host's panic hook.
+    #[test]
+    fn test_verify_deployment_halt_on_worker_skips_host_hook() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        const CHILD_PROCESS_ENV: &str = "SNARKVM_DEPLOYMENT_HALT_HOOK_CHILD";
+        const TEST_NAME: &str = "verify_deployment::tests::test_verify_deployment_halt_on_worker_skips_host_hook";
+
+        if std::env::var_os(CHILD_PROCESS_ENV).is_none() {
+            // Run this test in a fresh process because panic hooks are process-global.
+            let output =
+                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
+                    .args([TEST_NAME, "--exact", "--nocapture"])
+                    .env(CHILD_PROCESS_ENV, "1")
+                    .output()
+                    .expect("Failed to launch the child test process");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "Child test failed.\nstdout:\n{stdout}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let host_hook_calls = Arc::new(AtomicUsize::new(0));
+        let host_hook_calls_ = host_hook_calls.clone();
+        std::panic::set_hook(Box::new(move |_| {
+            host_hook_calls_.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // Rayon runs a loop over one item on the calling thread, so the program has two functions.
+        let x = "7647702037709885229845698841124471395615470129800647510314961670563126650261";
+        let program = cast_program_with("halt_on_worker", &["f", "g"], "cast", x);
+        let rng = &mut TestRng::default();
+        let process = Process::load().unwrap();
+        let keys_program = cast_program_with("halt_on_worker", &["f", "g"], "cast", "2");
+        let deployment = deployment_with_keys_of(&process, &program, &keys_program, rng);
+
+        // This thread is not a rayon worker, so the synthesis jobs run on workers of the global pool.
+        assert!(rayon::current_thread_index().is_none());
+        let result = try_vm_runtime(|| {
+            process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+        });
+        assert!(result.is_err(), "the deployment must be rejected by a panic during synthesis");
+        assert_eq!(host_hook_calls.load(Ordering::SeqCst), 0, "the halt must not reach the host hook");
     }
 
     /// Use `cargo test profiler --features timer` to run this test.
