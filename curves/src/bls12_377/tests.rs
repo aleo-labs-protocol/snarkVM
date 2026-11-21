@@ -44,7 +44,10 @@ use crate::{
             field_serialization_test,
             field_test,
             fp256_inverse_test,
+            fp256_scalar_path_test,
+            fp384_edge_values,
             fp384_inverse_test,
+            fp384_scalar_path_test,
             frobenius_test,
             primefield_test,
             random_sqrt_tonelli_tests,
@@ -102,6 +105,11 @@ fn test_bls12_377_fr() {
 #[test]
 fn test_bls12_377_fr_inverse() {
     fp256_inverse_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
+fn test_bls12_377_fr_scalar_path() {
+    fp256_scalar_path_test::<FrParameters>(&mut TestRng::default());
 }
 
 #[test]
@@ -840,4 +848,88 @@ fn test_bilinearity() {
     assert_eq!(ans1.pow(Fr::characteristic()), Fq12::one());
     assert_eq!(ans2.pow(Fr::characteristic()), Fq12::one());
     assert_eq!(ans3.pow(Fr::characteristic()), Fq12::one());
+}
+
+/// Returns one of `edges` or a random element.
+fn fq_edge_or_random(rng: &mut TestRng, edges: &[Fq]) -> Fq {
+    if rng.random_bool(0.5) { edges[rng.random_range(0..edges.len())] } else { Fq::rand(rng) }
+}
+
+/// Returns the `Fq` whose Montgomery limbs are `limbs`, which must be below the modulus.
+fn fq_from_limbs(limbs: [u64; 6]) -> Fq {
+    let fq = snarkvm_fields::field!(Fq, BigInteger384(limbs));
+    assert!(fq.is_valid());
+    fq
+}
+
+/// Returns `Fq` values at the edges of the Montgomery limbs.
+fn fq_limb_edges() -> [Fq; 9] {
+    let p = FqParameters::MODULUS.0;
+    let mut below_p = p;
+    below_p[0] -= 1;
+    [
+        Fq::zero(),
+        Fq::one(),
+        -Fq::one(),
+        fq_from_limbs([1, 0, 0, 0, 0, 0]),
+        fq_from_limbs([2, 0, 0, 0, 0, 0]),
+        fq_from_limbs(below_p),
+        fq_from_limbs([u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX, p[5] - 1]),
+        fq_from_limbs([0, 0, 0, 0, 0, p[5] - 1]),
+        fq_from_limbs([u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX, 0]),
+    ]
+}
+
+#[test]
+fn test_bls12_377_fq_scalar_path() {
+    fp384_scalar_path_test::<FqParameters>(&mut TestRng::default());
+}
+
+/// Checks that `Fq::sum_of_products` of `N` terms returns the limbs of the Rust body.
+fn fq_sum_of_products_matches_scalar<const N: usize>() {
+    let check = |a: [Fq; N], b: [Fq; N]| {
+        let sum = Fq::sum_of_products(&a, &b);
+        let scalar = Fq::sum_of_products_scalar(&a, &b);
+        assert_eq!((sum.0).0, (scalar.0).0, "{a:?} . {b:?}");
+    };
+    // Every choice of limb edges for the `2 N` operands, as the base-9 digits of `i`.
+    let edges = fq_limb_edges();
+    for i in 0..edges.len().pow(2 * N as u32) {
+        let digit = |k: usize| edges[i / edges.len().pow(k as u32) % edges.len()];
+        check(std::array::from_fn(digit), std::array::from_fn(|k| digit(N + k)));
+    }
+    let mut rng = TestRng::default();
+    let edges = fp384_edge_values::<FqParameters>();
+    for _ in 0..400_000 {
+        let mut pick = || fq_edge_or_random(&mut rng, &edges);
+        check(std::array::from_fn(|_| pick()), std::array::from_fn(|_| pick()));
+    }
+    for _ in 0..200_000 {
+        let mut pick = || Fq::rand(&mut rng);
+        check(std::array::from_fn(|_| pick()), std::array::from_fn(|_| pick()));
+    }
+}
+
+#[test]
+fn test_fq_sum_of_products_takes_the_shorter_length() {
+    let mut rng = TestRng::default();
+    let a: [Fq; 4] = std::array::from_fn(|_| Fq::rand(&mut rng));
+    let b: [Fq; 4] = std::array::from_fn(|_| Fq::rand(&mut rng));
+    for i in 0..=4 {
+        for j in 0..=4 {
+            let terms = i.min(j);
+            let expected = Fq::sum_of_products_scalar(&a[..terms], &b[..terms]);
+            assert_eq!(Fq::sum_of_products(&a[..i], &b[..j]), expected, "{i} and {j} elements");
+        }
+    }
+}
+
+#[test]
+fn test_fq_sum_of_products_matches_scalar() {
+    fq_sum_of_products_matches_scalar::<2>();
+}
+
+#[test]
+fn test_fq_sum_of_three_products_matches_scalar() {
+    fq_sum_of_products_matches_scalar::<3>();
 }
