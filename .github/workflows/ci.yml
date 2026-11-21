@@ -223,7 +223,10 @@ jobs:
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: cargo-semver-checks@0.51.0 }
       # cargo-semver-checks exits with 100 when a lint fails, and with another
-      # nonzero code when it cannot complete the check.
+      # nonzero code when it cannot complete the check. Without
+      # `--default-features` it enables nearly every feature, build-mode ones
+      # such as `serial` and `locktick` included, and some release tags do not
+      # build with them.
       - name: Check semver against the newest release tag
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.sha }}
@@ -242,7 +245,7 @@ jobs:
           echo "Baseline: \`$tag\`" | tee -a "$GITHUB_STEP_SUMMARY"
           mkdir -p "$(dirname "$REPORT")"
           rc=0
-          cargo semver-checks --workspace --baseline-rev "$tag" --color never 2>&1 | tee "$REPORT" || rc=$?
+          cargo semver-checks --workspace --default-features --baseline-rev "$tag" --color never 2>&1 | tee "$REPORT" || rc=$?
           case "$rc" in
             0)
               echo "No semver breaks." >> "$GITHUB_STEP_SUMMARY"
@@ -269,6 +272,7 @@ jobs:
               echo "::warning::Semver breaks against $tag; see the job summary. They fail only on a release branch."
               ;;
             *)
+              grep '^error' "$REPORT" >> "$GITHUB_STEP_SUMMARY" || true
               echo "::error::cargo-semver-checks exited with $rc."
               exit 1
               ;;
