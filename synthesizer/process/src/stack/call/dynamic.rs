@@ -589,11 +589,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Ensure the values are equal.
                         if console_callee_response.outputs() != callee_response.outputs() {
-                            dev_eprintln!(
-                                "\n{:#?} != {:#?}\n",
-                                console_callee_response.outputs(),
-                                callee_response.outputs()
-                            );
+                            debug!("{:#?} != {:#?}", console_callee_response.outputs(), callee_response.outputs());
                             return Err(anyhow!(
                                 "Function '{}' outputs do not match in a 'call.dynamic' instruction.",
                                 callee_function.name()

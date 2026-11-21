@@ -51,7 +51,7 @@ use snarkvm_synthesizer_program::{
     register_types_equivalent,
     types_equivalent,
 };
-use snarkvm_utilities::dev_eprintln;
+use snarkvm_utilities::tracing::debug;
 
 use indexmap::{IndexMap, IndexSet};
 

@@ -47,7 +47,6 @@ large_params = []
 rocks = ["snarkvm-ledger-store/rocks"]
 no-embedded-srs = []
 wasm = ["dep:encoding", "dep:js-sys", "dep:web-sys"]
-dev-print = ["snarkvm-utilities/dev-print"]
 
 [dependencies.snarkvm-curves]
 workspace = true

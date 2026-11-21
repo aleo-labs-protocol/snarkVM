@@ -307,6 +307,8 @@ jobs:
           # Exercises the download path, which a box's persistent
           # ~/.aleo/resources would otherwise skip.
           FRESH_HOME: ${{ matrix.name == 'parameters-uncached' }}
+          # The synthesizer integration tests print the events that `RUST_LOG` enables.
+          RUST_LOG: ${{ matrix.name == 'synthesizer-integration' && 'snarkvm=debug' || '' }}
           NEXTEST_PROFILE: ci
           NEXTEST_NO_TESTS: fail
         run: |
@@ -444,7 +446,7 @@ jobs:
               nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
           - name: synthesizer-integration
-            runs: nextest run -p snarkvm-synthesizer --features test,dev-print -j 4 --test *
+            runs: nextest run -p snarkvm-synthesizer --features test -j 4 --test *
           - name: synthesizer-program
             runs: |
               nextest run -p snarkvm-synthesizer-program --test lib -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)

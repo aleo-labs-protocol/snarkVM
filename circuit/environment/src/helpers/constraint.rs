@@ -15,7 +15,7 @@
 
 use crate::{prelude::*, *};
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::dev_eprintln;
+use snarkvm_utilities::tracing::debug;
 
 #[derive(Clone, Debug, Hash)]
 pub struct Constraint<F: PrimeField>(
@@ -40,7 +40,7 @@ impl<F: PrimeField> Constraint<F> {
 
         let satisfied = a * b == c;
         if !satisfied {
-            dev_eprintln!("Failed constraint at {scope}:\n\t({a} * {b}) != {c}", scope = self.0);
+            debug!("Failed constraint at {scope}:\n\t({a} * {b}) != {c}", scope = self.0);
         }
         satisfied
     }

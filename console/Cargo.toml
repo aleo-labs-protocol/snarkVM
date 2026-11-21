@@ -53,11 +53,6 @@ program = [ "network", "dep:snarkvm-console-program" ]
 types = [ "dep:snarkvm-console-types" ]
 test_targets = [ "snarkvm-console-network/test_targets" ]
 test_consensus_heights = [ "snarkvm-console-network/test_consensus_heights" ]
-dev-print = [
-  "snarkvm-console-algorithms?/dev-print",
-  "snarkvm-console-network?/dev-print",
-  "snarkvm-console-program?/dev-print"
-]
 dev_skip_checks = [ ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [

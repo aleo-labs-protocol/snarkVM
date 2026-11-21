@@ -68,12 +68,12 @@ do or how language constructs work are unhelpful.
 ## Testing
 
 **Synthesizer tests are slow** — run only the specific test function.
-Use `--features test,dev-print` for integration tests.
+Use `--features test` for integration tests. Set `RUST_LOG` (e.g. `snarkvm=debug,timing=trace`) to print their events and timings.
 
 ```bash
 cargo test -p <crate>                                           # Run crate tests
 cargo test -p <crate> -- test_name                              # Run specific test
-cargo test -p snarkvm-synthesizer --features test,dev-print     # Integration tests
+cargo test -p snarkvm-synthesizer --features test               # Integration tests
 ```
 
 ## Validation

@@ -25,7 +25,7 @@ use snarkvm_synthesizer_error::{
     VmCheckBlockContentError,
     indexed_finalize_bail,
 };
-use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
+use snarkvm_utilities::{cfg_sort_by_cached_key, defer};
 
 /// Uniqueness tracking accumulated while assembling a candidate block's transactions.
 struct CandidateTransactionDetails<N: Network> {
@@ -172,7 +172,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .filter_map(|tx_id| {
                 unordered_aborted_transaction_ids.get(&tx_id).map(|error| {
                     warn!("Speculation safely aborted a transaction - {error} ({tx_id})");
-                    dev_eprintln!("Speculation safely aborted a transaction - {error} ({tx_id})");
                     tx_id
                 })
             })
@@ -613,7 +612,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     Ok(result) => result,
                                     Err(error) => {
                                         // Note: On failure, skip this transaction, and continue speculation.
-                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        debug!("Failed to finalize the fee in a rejected deploy - {error}");
                                         // Store the aborted transaction.
                                         aborted.push((transaction.clone(), error.to_string()));
                                         // Continue to the next transaction.
@@ -632,14 +631,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 }
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
-                                    dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                     match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
-                                            dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                            debug!("Failed to finalize the fee in a rejected deploy - {error}");
                                             // Store the aborted transaction.
                                             aborted.push((transaction.clone(), error.to_string()));
                                             // Continue to the next transaction.
@@ -665,7 +663,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             }
                             // Construct the rejected execute transaction.
                             Err(error) => {
-                                dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                 match fee {
@@ -698,9 +695,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                             }
                                             Err(error) => {
                                                 // Note: On failure, skip this transaction, and continue speculation.
-                                                dev_eprintln!(
-                                                    "Failed to finalize the fee in a rejected execute - {error}"
-                                                );
+                                                debug!("Failed to finalize the fee in a rejected execute - {error}");
                                                 // Store the aborted transaction.
                                                 aborted.push((transaction.clone(), error.to_string()));
                                                 // Continue to the next transaction.
@@ -750,7 +745,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction failed, abort the entire batch.
                     Err(error) => {
                         error!("Critical bug in speculate: {error}\n\n{transaction}");
-                        dev_eprintln!("Critical bug in speculate: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to speculate on transaction - {error}"));
                     }
@@ -1054,7 +1048,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction failed to finalize, abort and continue to the next transaction.
                     Err(error) => {
                         error!("Critical bug in finalize: {error}\n\n{transaction}");
-                        dev_eprintln!("Critical bug in finalize: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to finalize on transaction - {error}"));
                     }
