@@ -340,8 +340,11 @@ impl<N: Network> Stack<N> {
 
         // If the program exists in the process, check that the new program is valid.
         if let Ok(existing_stack) = process.get_stack(program_id) {
-            // Ensure the program is not `credits.aleo`.
-            ensure!(program_id != &ProgramID::from_str("credits.aleo")?, "Cannot re-initialize the 'credits.aleo'.");
+            // Ensure the program is not built in (`credits.aleo` or the freeze program).
+            ensure!(
+                !crate::deployment_freeze::is_built_in_program(program_id),
+                "Cannot re-initialize the built-in program '{program_id}'."
+            );
             // Get the existing program.
             let existing_program = existing_stack.program();
             // If the existing program does not have a constructor, check that the new program matches the existing program.

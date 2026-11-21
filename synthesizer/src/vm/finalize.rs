@@ -17,6 +17,7 @@ use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 use snarkvm_ledger_puzzle::SolutionID;
+use snarkvm_synthesizer_process::deployment_freeze::MAX_FROZEN_DEPLOYMENTS_PER_BLOCK;
 
 use snarkvm_synthesizer_error::{
     FinalizeError,
@@ -47,12 +48,16 @@ struct CandidateTransactionDetails<N: Network> {
     tpks: IndexSet<Group<N>>,
     /// The transition commitments (`tcm`) in this block.
     tcms: IndexSet<Field<N>>,
-    /// The public fee payers of the deployments in this block.
+    /// The public fee payers of the deployments in this block, including frozen deployments.
     deployment_payers: IndexSet<Address<N>>,
-    /// The IDs of the programs deployed or upgraded in this block.
+    /// The IDs of the programs deployed or upgraded in this block. A frozen deployment deploys nothing,
+    /// so its program ID is not recorded.
     deployments: IndexSet<ProgramID<N>>,
-    /// The combined density (variables and constraints) of the deployments in this block.
+    /// The combined density (variables and constraints) of the deployments in this block, excluding
+    /// frozen deployments.
     block_combined_density: u64,
+    /// The number of frozen deployments in this block.
+    frozen_deployments: usize,
 }
 
 impl<N: Network> Default for CandidateTransactionDetails<N> {
@@ -70,13 +75,39 @@ impl<N: Network> Default for CandidateTransactionDetails<N> {
             deployment_payers: IndexSet::new(),
             deployments: IndexSet::new(),
             block_combined_density: 0,
+            frozen_deployments: 0,
         }
     }
 }
 
 impl<N: Network> CandidateTransactionDetails<N> {
     /// Records a transaction: extends uniqueness sets and updates counters.
+    ///
+    /// A frozen deployment is recorded with `record_frozen_deployment` instead.
     fn record_transaction(&mut self, transaction: &Transaction<N>) {
+        self.record_uniqueness(transaction);
+        if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
+            fee.payer().map(|payer| self.deployment_payers.insert(payer));
+            self.deployments.insert(*deployment.program_id());
+            self.block_combined_density = self.block_combined_density.saturating_add(deployment.combined_density());
+        }
+    }
+
+    /// Records a deployment frozen by the deployment freeze: extends uniqueness sets, records its
+    /// public fee payer, and counts it. Its program ID and density are not recorded, because it
+    /// deploys nothing.
+    ///
+    /// Call it with the deploy transaction, not the fee transaction of its `RejectedDeploy`.
+    fn record_frozen_deployment(&mut self, transaction: &Transaction<N>) {
+        self.record_uniqueness(transaction);
+        if let Transaction::Deploy(_, _, _, _, fee) = transaction {
+            fee.payer().map(|payer| self.deployment_payers.insert(payer));
+        }
+        self.frozen_deployments = self.frozen_deployments.saturating_add(1);
+    }
+
+    /// Extends the uniqueness sets with the transaction's elements.
+    fn record_uniqueness(&mut self, transaction: &Transaction<N>) {
         self.transition_ids.extend(transaction.transition_ids());
         self.input_ids.extend(transaction.input_ids());
         self.output_ids.extend(transaction.output_ids());
@@ -86,11 +117,6 @@ impl<N: Network> CandidateTransactionDetails<N> {
         self.nonces.extend(transaction.nonces().copied());
         self.tpks.extend(transaction.transition_public_keys());
         self.tcms.extend(transaction.transition_commitments().copied());
-        if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
-            fee.payer().map(|payer| self.deployment_payers.insert(payer));
-            self.deployments.insert(*deployment.program_id());
-            self.block_combined_density = self.block_combined_density.saturating_add(deployment.combined_density());
-        }
     }
 }
 
@@ -101,6 +127,9 @@ type ComputeSpend = u64;
 enum ShouldAbortResult {
     Abort(AbortReason),
     Finalize(ComputeSpend),
+    /// The transaction is a deployment frozen by the deployment freeze, and it passed the
+    /// fee-only checks. It is rejected with its fee charged, without being verified.
+    RejectFrozen,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -141,12 +170,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine if the vm is currently processing the genesis block.
         let is_genesis =
             self.block_store().find_block_height_from_state_root(self.block_store().current_state_root())?.is_none();
+        // Read the deployment freeze once for this block, from committed state, and pass it to every check.
+        let deployments_frozen = !is_genesis && self.deployments_frozen_at(state.block_height())?;
         // If the transactions are not part of the genesis block, ensure each transaction is well-formed and unique. Abort any transactions that are not.
         let (verified_transactions, verification_aborted_transactions) = match is_genesis {
             // If the current state root does not exist in the block store, then the genesis block has not been introduced yet.
             true => (candidate_transactions, vec![]),
             // Verify transactions for all non-genesis cases.
-            false => self.prepare_for_speculate(&candidate_transactions, state, rng)?,
+            false => self.prepare_for_speculate(&candidate_transactions, state, deployments_frozen, rng)?,
         };
 
         // Performs a **dry-run** over the list of ratifications, solutions, and transactions.
@@ -158,6 +189,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 candidate_ratifications,
                 candidate_solutions.clone(),
                 verified_transactions.into_iter().cloned().collect(),
+                deployments_frozen,
             )?;
 
         // Get the aborted transaction ids.
@@ -208,6 +240,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ) -> Result<Vec<FinalizeOperation<N>>> {
         let timer = timing_span!("VM::check_speculate").entered();
 
+        // Read the deployment freeze once for this block, from committed state, and pass it to every check.
+        let deployments_frozen = self.deployments_frozen_at(state.block_height())?;
+        // While deployments are frozen, a block may not accept a deployment. This is checked before
+        // `check_transactions`, so that a frozen deployment is never verified.
+        // A frozen deployment that is rejected needs no new check here: `check_transactions` verifies only
+        // its fee and rejected ID, and `atomic_speculate` below must reproduce the rejection.
+        if deployments_frozen
+            && let Some(transaction) =
+                transactions.iter().find(|transaction| matches!(transaction, ConfirmedTransaction::AcceptedDeploy(..)))
+        {
+            bail!(
+                "Block {} accepts deployment '{}' while deployments are frozen",
+                state.block_height(),
+                transaction.id()
+            );
+        }
+
         // Retrieve the transactions and their rejected IDs.
         let transactions_and_rejected_ids = cfg_iter!(transactions)
             .map(|transaction| transaction.to_rejected_id().map(|rejected_id| (transaction.deref(), rejected_id)))
@@ -233,6 +282,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 candidate_ratifications,
                 solutions.clone(),
                 candidate_transactions,
+                deployments_frozen,
             )?;
 
         // Ensure the ratifications after speculation match.
@@ -363,7 +413,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// and finalize operations from pre-ratify and post-ratify.
     ///
     /// # Note
-    /// This method is used by `VM::speculate` and `VM::check_speculate`.
+    /// This method is used by `VM::speculate` and `VM::check_speculate`, and by the VM tests to build a
+    /// block from transactions that were not verified.
     ///   - If `coinbase_reward = None`, then the `ratifications` will not be modified.
     ///   - If `coinbase_reward = Some(coinbase_reward)`, then the method will append a
     ///     `Ratify::BlockReward(block_reward)` and `Ratify::PuzzleReward(puzzle_reward)`
@@ -371,7 +422,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///
     /// # Panics
     /// This function panics if called from an async context.
-    fn atomic_speculate(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn atomic_speculate(
         &self,
         state: FinalizeGlobalState,
         time_since_last_block: i64,
@@ -379,6 +431,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         ratifications: Vec<Ratify<N>>,
         solutions: Solutions<N>,
         transactions: Vec<Transaction<N>>,
+        deployments_frozen: bool,
     ) -> Result<(
         Ratifications<N>,
         Vec<ConfirmedTransaction<N>>,
@@ -392,6 +445,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             ratifications,
             solutions,
             transactions,
+            deployments_frozen,
         );
         let Some(SequentialOperationResult::AtomicSpeculate(ret)) = self.run_sequential_operation(sequential_op) else {
             bail!("Already shutting down");
@@ -407,6 +461,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///
     /// # Panics
     /// This function panics if not called from the sequential operation thread.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn atomic_speculate_inner(
         &self,
         state: FinalizeGlobalState,
@@ -415,6 +470,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         ratifications: Vec<Ratify<N>>,
         solutions: Solutions<N>,
         transactions: Vec<Transaction<N>>,
+        deployments_frozen: bool,
     ) -> Result<(
         Ratifications<N>,
         Vec<ConfirmedTransaction<N>>,
@@ -486,6 +542,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(e) => return Err(format!("Failed to pre-ratify - {e}")),
             }
 
+            // In the first block of the deployment freeze version, initialize the freeze program's mappings.
+            match Self::initialize_deployment_freeze_mappings(store, state) {
+                Ok(operations) => ratified_finalize_operations.extend(operations),
+                // Note: This will abort the entire atomic batch.
+                Err(e) => return Err(format!("Failed to initialize the deployment freeze mappings - {e}")),
+            }
+
             /* Perform the atomic finalize over the transactions. */
 
             // Acquire a guard on the contents of the process.
@@ -529,13 +592,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
 
                 // Determine whether to skip this transaction.
-                match self.should_abort_transaction(
+                let is_frozen_deployment = match self.should_abort_transaction(
                     &transaction,
                     &candidate_transaction_details,
                     transaction_spend_limit,
                     None,
                     consensus_version,
+                    deployments_frozen,
                 ) {
+                    // A frozen deployment is rejected below, ahead of `finalize_deployment`.
+                    // It runs no finalize logic besides its fee, so it adds no compute spend.
+                    ShouldAbortResult::RejectFrozen => true,
                     ShouldAbortResult::Abort(abort_reason) => {
                         // Store the aborted transaction.
                         aborted.push((transaction.clone(), abort_reason));
@@ -564,8 +631,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             // Track the compute_spend used so far.
                             block_spend = block_spend.saturating_add(compute_spend);
                         }
+                        false
                     }
-                }
+                };
 
                 // Process the transaction in an isolated atomic batch.
                 // - If the transaction succeeds, the finalize operations are stored.
@@ -603,11 +671,39 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     })
                             };
 
-                        // Check if the program has already been deployed in this block.
-                        match candidate_transaction_details.deployments.contains(deployment.program_id()) {
-                            // If the program has already been deployed, construct the rejected deploy transaction.
-                            true => {
-                                let rejected_reason = RejectedReason::DuplicateProgramID(*deployment.program_id());
+                        // Determine whether the deployment is rejected without running `finalize_deployment`.
+                        let rejected_reason = if is_frozen_deployment {
+                            // A frozen deployment is rejected with its fee charged. It is never verified,
+                            // and `finalize_deployment` does not run.
+                            // The rejection reason of a frozen deployment is `VM` with its program ID and
+                            // edition, and no resource.
+                            Some(RejectedReason::VM(Some((*deployment.program_id(), deployment.edition())), None))
+                        } else if candidate_transaction_details.deployments.contains(deployment.program_id()) {
+                            // The program has already been deployed in this block.
+                            Some(RejectedReason::DuplicateProgramID(*deployment.program_id()))
+                        } else {
+                            None
+                        };
+
+                        // If the deployment is not rejected yet, attempt to deploy it.
+                        let deployed = match rejected_reason {
+                            Some(rejected_reason) => Err(rejected_reason),
+                            None => process.finalize_deployment(state, store, deployment, fee).map_err(|error| {
+                                trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
+                                RejectedReason::from_indexed_finalize_error(error)
+                            }),
+                        };
+
+                        match deployed {
+                            // Construct the accepted deploy transaction.
+                            Ok((stack, finalize)) => {
+                                // Add the stack to the process with the option to be reverted.
+                                process.stage_stack(stack);
+                                ConfirmedTransaction::accepted_deploy(counter, transaction.clone(), finalize)
+                                    .map_err(|e| e.to_string())
+                            }
+                            // Construct the rejected deploy transaction.
+                            Err(rejected_reason) => {
                                 match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                     Ok(result) => result,
                                     Err(error) => {
@@ -620,32 +716,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     }
                                 }
                             }
-                            // If the program has not yet been deployed, attempt to deploy it.
-                            false => match process.finalize_deployment(state, store, deployment, fee) {
-                                // Construct the accepted deploy transaction.
-                                Ok((stack, finalize)) => {
-                                    // Add the stack to the process with the option to be reverted.
-                                    process.stage_stack(stack);
-                                    ConfirmedTransaction::accepted_deploy(counter, transaction.clone(), finalize)
-                                        .map_err(|e| e.to_string())
-                                }
-                                // Construct the rejected deploy transaction.
-                                Err(error) => {
-                                    trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
-                                    match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
-                                        Ok(result) => result,
-                                        Err(error) => {
-                                            // Note: On failure, skip this transaction, and continue speculation.
-                                            debug!("Failed to finalize the fee in a rejected deploy - {error}");
-                                            // Store the aborted transaction.
-                                            aborted.push((transaction.clone(), error.to_string()));
-                                            // Continue to the next transaction.
-                                            continue 'outer;
-                                        }
-                                    }
-                                }
-                            },
                         }
                     }
                     // The finalize operation here involves calling 'update_key_value',
@@ -735,8 +805,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
                     Ok(confirmed_transaction) => {
-                        // Track the accepted transaction details.
-                        candidate_transaction_details.record_transaction(confirmed_transaction.transaction());
+                        // Track the accepted transaction details. A frozen deployment is recorded from the
+                        // deploy transaction, because its confirmed transaction holds only the fee.
+                        if is_frozen_deployment {
+                            candidate_transaction_details.record_frozen_deployment(&transaction);
+                        } else {
+                            candidate_transaction_details.record_transaction(confirmed_transaction.transaction());
+                        }
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
                         // Increment the transaction index counter.
@@ -864,6 +939,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
                 Err(e) => return Err(format!("Failed to pre-ratify - {e}")),
+            }
+
+            // In the first block of the deployment freeze version, initialize the freeze program's mappings.
+            match Self::initialize_deployment_freeze_mappings(store, state) {
+                Ok(operations) => ratified_finalize_operations.extend(operations),
+                // Note: This will abort the entire atomic batch.
+                Err(e) => return Err(format!("Failed to initialize the deployment freeze mappings - {e}")),
             }
 
             /* Perform the atomic finalize over the transactions. */
@@ -1096,11 +1178,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate nonce
     /// - The transaction is producing a duplicate transition commitment
     /// - The transaction is another deployment in the block from the same public fee payer.
+    /// - The transaction is a frozen deployment, and the block already has `MAX_FROZEN_DEPLOYMENTS_PER_BLOCK`.
     /// - The transaction contains a transition that has been deployed or upgraded in this block.
     /// - The transaction surpasses the spend limits.
     ///
     /// - Note: If a transaction is a deployment for a program following its deployment or redeployment in this block,
     ///   it is not aborted. Instead, it will be rejected and its fee will be consumed.
+    /// - Note: If `deployments_frozen` is set (the deployment freeze is in force in this block), a deployment that
+    ///   passes the per-block rules and the fee-only checks returns `RejectFrozen`, and one that fails them is aborted.
+    ///   This happens before the compute-spend check, which would price the deployment and so build its stack.
     fn should_abort_transaction(
         &self,
         transaction: &Transaction<N>,
@@ -1108,6 +1194,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transaction_spend_limit: u64,
         block_synthesis_limit: Option<u64>,
         consensus_version: ConsensusVersion,
+        deployments_frozen: bool,
     ) -> ShouldAbortResult {
         // Ensure that the transaction is not a fee transaction.
         if let Transaction::Fee(..) = transaction {
@@ -1259,6 +1346,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
+        // If the deployment freeze is in force, a deployment gets only the fee-only checks, and is then rejected.
+        if deployments_frozen && transaction.is_deploy() {
+            // Ensure the block does not exceed the maximum number of frozen deployments.
+            if candidate_transaction_details.frozen_deployments >= MAX_FROZEN_DEPLOYMENTS_PER_BLOCK {
+                return ShouldAbortResult::Abort(format!(
+                    "Too many frozen deployments in this block (max: {MAX_FROZEN_DEPLOYMENTS_PER_BLOCK})"
+                ));
+            }
+            return match self.check_frozen_deployment_cheap(transaction, consensus_version) {
+                Ok(()) => ShouldAbortResult::RejectFrozen,
+                Err(error) => {
+                    ShouldAbortResult::Abort(format!("Frozen deployment failed the fee-only checks - {error}"))
+                }
+            };
+        }
+
         // Before V16, we return without tracking any compute spend and checking deployment limits.
         if consensus_version < ConsensusVersion::V16 {
             ShouldAbortResult::Finalize(0)
@@ -1305,6 +1408,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         &self,
         transactions: &[&'a Transaction<N>],
         state: FinalizeGlobalState,
+        deployments_frozen: bool,
         rng: &mut R,
     ) -> Result<(Vec<&'a Transaction<N>>, Vec<(&'a Transaction<N>, String)>)> {
         // Construct the list of transactions that need to verified.
@@ -1328,12 +1432,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 transaction_spend_limit,
                 state.block_synthesis_limit(),
                 consensus_version,
+                deployments_frozen,
             ) {
                 ShouldAbortResult::Abort(abort_reason) => {
                     // Store the aborted transaction.
                     aborted_transactions.push((*transaction, abort_reason));
                 }
-                ShouldAbortResult::Finalize(_compute_spend) => {
+                // A frozen deployment is tracked as `atomic_speculate` tracks it, so the per-block rules agree.
+                ShouldAbortResult::RejectFrozen => {
+                    // Track the frozen deployment details.
+                    candidate_transaction_details.record_frozen_deployment(transaction);
+                    // Mark the transaction ready to verify.
+                    transactions_to_verify.push(transaction);
+                }
+                ShouldAbortResult::Finalize(_) => {
                     // Track the accepted transaction details.
                     candidate_transaction_details.record_transaction(transaction);
                     // Mark the transaction ready to verify.
@@ -1342,9 +1454,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
+        // A frozen deployment gets only the fee check: `Process::verify_deployment` never runs on it.
+        // While deployments are frozen, every deployment that reaches this point is frozen.
+        let is_frozen_deployment = |transaction: &Transaction<N>| deployments_frozen && transaction.is_deploy();
+
         // Separate the transactions into deploys and executions.
+        // Frozen deployments are as cheap to check as a fee, so they are batched with the executions.
         let (deployments, executions): (Vec<&Transaction<N>>, Vec<&Transaction<N>>) =
-            transactions_to_verify.into_iter().partition(|tx| tx.is_deploy());
+            transactions_to_verify.into_iter().partition(|tx| tx.is_deploy() && !deployments_frozen);
         // Chunk the deploys and executions into groups for parallel verification.
         let deployments_for_verification = deployments.chunks(Self::MAX_PARALLEL_DEPLOY_VERIFICATIONS);
         let executions_for_verification = executions.chunks(Self::MAX_PARALLEL_EXECUTE_VERIFICATIONS);
@@ -1355,6 +1472,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Verify the transactions and collect the error message if there is one.
             let (valid, invalid): (Vec<_>, Vec<_>) =
                 cfg_into_iter!(transactions).zip(rngs).partition_map(|(transaction, mut rng)| {
+                    // Verify the fee of a frozen deployment.
+                    if is_frozen_deployment(transaction) {
+                        return match self.check_frozen_deployment_fee(transaction) {
+                            Ok(()) => Either::Left(*transaction),
+                            Err(e) => {
+                                Either::Right((*transaction, format!("Frozen deployment failed the fee check - {e}")))
+                            }
+                        };
+                    }
                     // Verify the transaction.
                     match self.check_transaction(transaction, None, &mut rng) {
                         // If the transaction is valid, add it to the list of valid transactions.
@@ -2261,6 +2387,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 vec![deployment_transaction],
+                false,
             )
             .unwrap();
         assert_eq!(candidate_transactions.len(), 1);
@@ -2357,6 +2484,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 transactions,
+                false,
             )
             .unwrap();
 
@@ -2482,6 +2610,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 transactions,
+                false,
             )
             .unwrap();
 
@@ -2502,6 +2631,7 @@ finalize transfer_public:
                 vec![],
                 None.into(),
                 transactions,
+                false,
             )
             .unwrap();
 
@@ -2614,6 +2744,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    false,
                 )
                 .unwrap();
 
@@ -2642,6 +2773,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    false,
                 )
                 .unwrap();
 
@@ -2670,6 +2802,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    false,
                 )
                 .unwrap();
 
@@ -2702,6 +2835,7 @@ finalize transfer_public:
                     vec![],
                     None.into(),
                     transactions,
+                    false,
                 )
                 .unwrap();
 
