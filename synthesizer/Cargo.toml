@@ -180,7 +180,7 @@ features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-synthesizer-process]
 workspace = true
-features = [ "test" ]
+features = [ "test", "test-helpers" ]
 
 [dev-dependencies.snarkvm-synthesizer-snark]
 workspace = true
