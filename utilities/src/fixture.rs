@@ -80,7 +80,7 @@ fn load_or_build<T: FromBytes + ToBytes>(
         .open(path.with_added_extension("lock"))
         .and_then(|file| file.lock().map(|()| file));
     // Without the lock, the fixture is built but not written.
-    let Ok(lock) = lock else {
+    let Ok(_lock) = lock else {
         return build();
     };
     // Another process may have written the fixture while this process waited for the lock.
@@ -92,7 +92,6 @@ fn load_or_build<T: FromBytes + ToBytes>(
     if let Err(error) = write(path, stamp, &fixture) {
         eprintln!("Failed to write the test fixture '{}': {error}", path.display());
     }
-    drop(lock);
     fixture
 }
 
