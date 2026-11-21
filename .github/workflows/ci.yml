@@ -13,6 +13,9 @@ on:
   # see `schedule-due`.
   push:
     branches: ['release/**']
+  # GitHub runs `schedule` only on the default branch, staging, and ignores
+  # `branches` for it. `schedule-due` and `notify` check the repository, so the
+  # schedule runs nothing in snarkVM-internal.
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
