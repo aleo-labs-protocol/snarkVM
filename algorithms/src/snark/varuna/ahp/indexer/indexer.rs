@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_into_iter, dev_println, timing_span};
+use snarkvm_utilities::{cfg_into_iter, timing_span, tracing::trace};
 
 use anyhow::{Result, anyhow, ensure};
 use core::marker::PhantomData;
@@ -160,12 +160,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // witness is not.
         let num_variables = num_padded_public_variables + num_private_variables;
 
-        dev_println!("Number of padded public variables: {num_padded_public_variables}");
-        dev_println!("Number of private variables: {num_private_variables}");
-        dev_println!("Number of num_constraints: {num_constraints}");
-        dev_println!("Number of non-zero entries in A: {num_non_zero_a}");
-        dev_println!("Number of non-zero entries in B: {num_non_zero_b}");
-        dev_println!("Number of non-zero entries in C: {num_non_zero_c}");
+        trace!("Number of padded public variables: {num_padded_public_variables}");
+        trace!("Number of private variables: {num_private_variables}");
+        trace!("Number of num_constraints: {num_constraints}");
+        trace!("Number of non-zero entries in A: {num_non_zero_a}");
+        trace!("Number of non-zero entries in B: {num_non_zero_b}");
+        trace!("Number of non-zero entries in C: {num_non_zero_c}");
 
         Self::num_formatted_public_inputs_is_admissible(num_padded_public_variables)?;
 

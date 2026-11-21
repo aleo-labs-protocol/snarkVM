@@ -103,7 +103,7 @@ impl<N: Network> Process<N> {
 
         // Verify each transition.
         for transition in execution.transitions() {
-            dev_println!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
+            trace!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
             #[cfg(debug_assertions)]
             {
@@ -636,7 +636,7 @@ impl<N: Network> Process<N> {
         // [Outputs] Extend the verifier inputs with the output IDs.
         verifier_inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
 
-        dev_println!("Transition public inputs ({} elements): {:#?}", verifier_inputs.len(), verifier_inputs);
+        trace!("Transition public inputs ({} elements): {:#?}", verifier_inputs.len(), verifier_inputs);
         Ok(verifier_inputs)
     }
 }

@@ -301,14 +301,11 @@ impl<N: Network> RegisterTypes<N> {
         match operand {
             // Inform the user the output operand is an input register, to ensure this is intended behavior.
             Operand::Register(register) if self.is_input(register) => {
-                dev_eprintln!(
-                    "Output {operand} in '{}' is an input register, ensure this is intended",
-                    stack.program_id()
-                );
+                debug!("Output {operand} in '{}' is an input register, ensure this is intended", stack.program_id());
             }
             // Inform the user the output operand is a literal, to ensure this is intended behavior.
             Operand::Literal(..) => {
-                dev_eprintln!("Output {operand} in '{}' is a literal, ensure this is intended", stack.program_id());
+                debug!("Output {operand} in '{}' is a literal, ensure this is intended", stack.program_id());
             }
             // Otherwise, do nothing.
             _ => (),

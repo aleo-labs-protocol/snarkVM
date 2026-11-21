@@ -243,7 +243,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
 #[test]
 fn test_universal_swap() {
     // Turn on trace logging.
-    tracing_subscriber::fmt::init();
+    let _ = tracing_subscriber::fmt::try_init();
     // Define a mint_private function and constructor.
     let mint_private_function = r"
         function mint_private:

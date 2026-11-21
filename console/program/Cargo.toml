@@ -17,11 +17,6 @@ harness = false
 default = [ ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-console-network/test-helpers" ]
-dev-print = [
-  "snarkvm-utilities/dev-print",
-  "snarkvm-console-algorithms/dev-print",
-  "snarkvm-console-network/dev-print"
-]
 
 [dependencies.snarkvm-console-account]
 workspace = true

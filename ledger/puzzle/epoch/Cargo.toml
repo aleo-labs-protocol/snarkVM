@@ -32,7 +32,6 @@ synthesis = [
   "dep:snarkvm-synthesizer-process",
   "dep:snarkvm-synthesizer-program"
 ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
 
 [dependencies.snarkvm-circuit]
 workspace = true

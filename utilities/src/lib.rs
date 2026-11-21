@@ -46,9 +46,6 @@ pub mod locks;
 pub mod parallel;
 pub use parallel::*;
 
-#[macro_use]
-mod print;
-
 pub mod rand;
 pub use self::rand::*;
 

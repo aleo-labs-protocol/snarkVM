@@ -145,16 +145,6 @@ synthesizer = [ "dep:snarkvm-synthesizer" ]
 utilities = [ "dep:snarkvm-utilities" ]
 wasm = [ "dep:snarkvm-wasm" ]
 
-dev-print = [ 
-  "snarkvm-utilities/dev-print",
-  "snarkvm-algorithms/dev-print",
-  "snarkvm-circuit/dev-print",
-  "snarkvm-console/dev-print",
-  "snarkvm-curves/dev-print",
-  "snarkvm-fields/dev-print",
-  "snarkvm-parameters/dev-print",
-  "snarkvm-synthesizer/dev-print",
-]
 dev_skip_checks = [
   "snarkvm-console/dev_skip_checks",
   "snarkvm-synthesizer/dev_skip_checks"

@@ -44,7 +44,6 @@ ledger = [
 ]
 synthesizer = [ "dep:snarkvm-synthesizer" ]
 utilities = [ "dep:snarkvm-utilities" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
 
 [dependencies.snarkvm-console]
 workspace = true

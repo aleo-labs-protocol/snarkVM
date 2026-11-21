@@ -30,12 +30,6 @@ rocks = [ "snarkvm-ledger-store/rocks" ]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 test-old-consensus-versions = [ "test" ]
 wasm = [ "snarkvm-console/wasm", "snarkvm-synthesizer-process/wasm" ]
-dev-print = [
-  "snarkvm-algorithms/dev-print",
-  "snarkvm-console/dev-print",
-  "snarkvm-synthesizer-snark/dev-print",
-  "snarkvm-utilities/dev-print"
-]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
 test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
 

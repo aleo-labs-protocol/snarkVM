@@ -88,4 +88,3 @@ workspace = true
 features = [ "test-helpers" ]
 
 [features]
-dev-print = [ "snarkvm-utilities/dev-print" ]

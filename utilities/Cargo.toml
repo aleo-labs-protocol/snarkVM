@@ -107,7 +107,6 @@ features = [ "env-filter" ]
 [features]
 default = [ "derive" ]
 derive = [ "dep:snarkvm-utilities-derives" ]
-dev-print = [ ]
 storage = [ "dep:dirs", "dep:tempfile" ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "dep:rand_xorshift" ]

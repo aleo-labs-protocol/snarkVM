@@ -84,10 +84,10 @@ use snarkvm_synthesizer_program::{
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{
     defer,
-    dev_println,
     locks::{Mutex, MutexGuard, RwLock},
     timing_event,
     timing_span,
+    tracing::trace,
 };
 
 use indexmap::{IndexMap, IndexSet};

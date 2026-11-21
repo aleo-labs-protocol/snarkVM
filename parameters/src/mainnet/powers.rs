@@ -521,7 +521,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         // A file that fails leaves the ones before it appended, so a retry
         // resumes from them rather than fetching them again.
         for file in files {
-            snarkvm_utilities::dev_println!("Loading {}", file.name());
+            snarkvm_utilities::tracing::trace!("Loading {}", file.name());
             let powers = file.read_powers::<E>(&*default_load_powers_file_sync(&file)?)?;
             self.extend(&file, powers)?;
         }

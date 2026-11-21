@@ -34,7 +34,7 @@ impl<N: Network> Process<N> {
         // Retrieve the function from the stack.
         let function = stack.get_function(fee.function_name())?;
 
-        dev_println!("Verifying fee from {}/{}...", fee.program_id(), fee.function_name());
+        trace!("Verifying fee from {}/{}...", fee.program_id(), fee.function_name());
 
         #[cfg(debug_assertions)]
         {
@@ -185,7 +185,7 @@ impl<N: Network> Process<N> {
         inputs.extend(fee.outputs().iter().flat_map(|output| output.verifier_inputs()));
         timing_event!("Construct the verifier inputs");
 
-        dev_println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
+        trace!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
         // Retrieve the verifying key.
         let verifying_key = stack.get_verifying_key(fee.function_name())?;
@@ -263,7 +263,7 @@ impl<N: Network> Process<N> {
         inputs.extend(fee.outputs().iter().flat_map(|output| output.verifier_inputs()));
         timing_event!("Construct the verifier inputs");
 
-        dev_println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
+        trace!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
         // Retrieve the verifying key.
         let verifying_key = stack.get_verifying_key(fee.function_name())?;

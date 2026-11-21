@@ -66,18 +66,17 @@ impl<N: Network> EpochProgram<N> {
             }
 
             #[cfg(debug_assertions)]
-            #[allow(unused_variables)]
-            {
+            if snarkvm_utilities::tracing::enabled!(snarkvm_utilities::tracing::Level::TRACE) {
                 use circuit::Eject;
                 use snarkvm_synthesizer_program::RegistersCircuit;
-                use snarkvm_utilities::dev_println;
+                use snarkvm_utilities::tracing::trace;
 
                 let is_satisfied = A::is_satisfied();
-                dev_println!("Executing instruction ({instruction}) ({})", if is_satisfied { "✅" } else { "❌" });
+                trace!("Executing instruction ({instruction}) ({})", if is_satisfied { "✅" } else { "❌" });
                 if !is_satisfied {
                     for operand in instruction.operands() {
                         let value = registers.load_circuit(&self.stack, operand)?.eject_value();
-                        dev_println!("    {operand} = {}", value);
+                        trace!("    {operand} = {}", value);
                     }
                 }
             }
@@ -107,8 +106,8 @@ impl<N: Network> EpochProgram<N> {
 #[allow(unused_variables)]
 pub(crate) fn log_circuit<N: Network, A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
     #[cfg(debug_assertions)]
-    {
-        use snarkvm_utilities::dev_println;
+    if snarkvm_utilities::tracing::enabled!(snarkvm_utilities::tracing::Level::TRACE) {
+        use snarkvm_utilities::tracing::trace;
 
         use colored::Colorize as _;
 
@@ -120,7 +119,7 @@ pub(crate) fn log_circuit<N: Network, A: circuit::Aleo<Network = N>>(scope: impl
         let scope = scope.to_string().bold();
 
         // Print the log.
-        dev_println!(
+        trace!(
             "{is_satisfied} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
             width = 20
         );

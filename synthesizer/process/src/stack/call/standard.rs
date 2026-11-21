@@ -479,7 +479,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
                         // Ensure the values are equal.
                         if console_response.outputs() != response.outputs() {
-                            dev_eprintln!("\n{:#?} != {:#?}\n", console_response.outputs(), response.outputs());
+                            debug!("{:#?} != {:#?}", console_response.outputs(), response.outputs());
                             return Err(anyhow!(
                                 "Function '{}' outputs do not match in a 'call' instruction.",
                                 function.name()

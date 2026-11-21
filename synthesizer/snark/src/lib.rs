@@ -22,7 +22,7 @@ extern crate snarkvm_console as console;
 
 use console::network::{FiatShamir, prelude::*};
 use snarkvm_algorithms::{snark::varuna, traits::SNARK};
-use snarkvm_utilities::dev_println;
+use snarkvm_utilities::{timing_event, timing_span, tracing::debug};
 
 use std::sync::{Arc, OnceLock};
 
