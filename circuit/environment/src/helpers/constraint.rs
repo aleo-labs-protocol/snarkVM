@@ -40,7 +40,7 @@ impl<F: PrimeField> Constraint<F> {
 
         let satisfied = a * b == c;
         if !satisfied {
-            debug!("Failed constraint at {scope}:\n\t({a} * {b}) != {c}", scope = self.0);
+            debug!("Failed constraint at {scope}", scope = self.0);
         }
         satisfied
     }
