@@ -2614,7 +2614,7 @@ finalize transfer_public:
             let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2642,7 +2642,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2670,7 +2670,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2702,7 +2702,7 @@ finalize transfer_public:
             let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2809,7 +2809,7 @@ function ped_hash:
             // Speculatively execute the transaction. Ensure that this call does not panic and returns a rejected transaction.
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],

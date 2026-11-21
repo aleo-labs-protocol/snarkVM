@@ -2183,13 +2183,11 @@ mod credits_migration_tests {
         let rng = &mut TestRng::default();
 
         // Initialize the VM on a genesis block whose records `upgrade` accepts.
-        let (vm, private_key) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
+        let (vm, private_key, genesis) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
         let view_key = ViewKey::try_from(&private_key).unwrap();
         let address = Address::try_from(&private_key).unwrap();
 
         // Fetch the unspent records, which predate the migration.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
         let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
         let old_records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
 
@@ -2275,13 +2273,11 @@ mod credits_migration_tests {
         let rng = &mut TestRng::default();
 
         // Initialize the VM past the migration, on a genesis block whose records `upgrade` accepts.
-        let (mut vm, private_key) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
+        let (mut vm, private_key, genesis) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
         let height = CurrentNetwork::INCLUSION_UPGRADE_HEIGHT().unwrap() + 1;
         crate::vm::test_helpers::advance_vm_to_height(&mut vm, private_key, height, rng);
         let view_key = ViewKey::try_from(&private_key).unwrap();
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
-        let record = genesis.records().next().unwrap().1.decrypt(&view_key).unwrap();
+        let records = genesis.records().map(|(_, record)| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
 
         let credits = ProgramID::from_str("credits.aleo").unwrap();
         let pool = Identifier::from_str("pool").unwrap();
@@ -2290,28 +2286,38 @@ mod credits_migration_tests {
             let value = Value::from_str(&format!("{amount}u64")).unwrap();
             vm.finalize_store().update_key_value(credits, pool, pool_key.clone(), value).unwrap();
         };
-        let upgrade = |rng: &mut TestRng| {
+        let get_pool = || vm.finalize_store().get_value_confirmed(credits, pool, &pool_key).unwrap();
+        let upgrade = |record: &Record<CurrentNetwork, Plaintext<CurrentNetwork>>, rng: &mut TestRng| {
             let inputs = [Value::<CurrentNetwork>::Record(record.clone())].into_iter();
-            let transaction =
-                vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap();
-            crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[transaction], rng).unwrap()
+            vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap()
         };
         let amount = crate::vm::test_helpers::UPGRADABLE_RECORD_AMOUNT;
 
         // An upgrade that takes the pool one microcredit past the limit is aborted.
         set_pool(TOTAL_UPGRADE_LIMIT - amount + 1);
-        let block = upgrade(rng);
+        let transaction = upgrade(&records[0], rng);
+        let block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
         assert_eq!(block.transactions().len(), 0);
         assert_eq!(block.aborted_transaction_ids().len(), 1);
         vm.add_next_block(&block).unwrap();
 
+        // The upgrades in one block add up, and the one that passes the limit is aborted.
+        set_pool(1);
+        let transactions = records.iter().map(|record| upgrade(record, rng)).collect::<Vec<_>>();
+        let block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), transactions.len() - 1);
+        assert_eq!(block.aborted_transaction_ids(), &vec![transactions.last().unwrap().id()]);
+        vm.add_next_block(&block).unwrap();
+        let filled = 1 + (transactions.len() as u64 - 1) * amount;
+        assert_eq!(get_pool(), Some(Value::from_str(&format!("{filled}u64")).unwrap()));
+
         // An upgrade that fills the pool to the limit is accepted.
         set_pool(TOTAL_UPGRADE_LIMIT - amount);
-        let block = upgrade(rng);
+        let transaction = upgrade(records.last().unwrap(), rng);
+        let block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         vm.add_next_block(&block).unwrap();
-        let value = vm.finalize_store().get_value_confirmed(credits, pool, &pool_key).unwrap();
-        assert_eq!(value, Some(Value::from_str(&format!("{TOTAL_UPGRADE_LIMIT}u64")).unwrap()));
+        assert_eq!(get_pool(), Some(Value::from_str(&format!("{TOTAL_UPGRADE_LIMIT}u64")).unwrap()));
     }
 
     #[cfg(feature = "test")]
@@ -2323,13 +2329,11 @@ mod credits_migration_tests {
         let rng = &mut TestRng::default();
 
         // Initialize the VM on a genesis block whose records `upgrade` accepts.
-        let (vm, private_key) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
+        let (vm, private_key, genesis) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
         let view_key = ViewKey::try_from(&private_key).unwrap();
         let address = Address::try_from(&private_key).unwrap();
 
         // Fetch the unspent records, which predate the migration.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
         let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
         let old_records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
 

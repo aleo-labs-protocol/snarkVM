@@ -224,8 +224,8 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    /// Returns `true` if the inclusion circuit accepts a `credits.aleo` record from block `height`, spent by `function`.
-    fn accepts(function: &str, height: u32, rng: &mut TestRng) -> Result<bool> {
+    /// Returns `true` if the inclusion circuit accepts a record from block `height`, spent by `program`/`function`.
+    fn accepts(program: &str, function: &str, height: u32, rng: &mut TestRng) -> Result<bool> {
         let commitment = Field::rand(rng);
         let gamma = Group::rand(rng);
         let serial_number =
@@ -264,7 +264,7 @@ mod tests {
         // `Transition::is_upgrade` requires two outputs.
         let transition = Transition::new_unchecked(
             Field::<CurrentNetwork>::rand(rng).into(),
-            ProgramID::from_str("credits.aleo")?,
+            ProgramID::from_str(program)?,
             Identifier::from_str(function)?,
             vec![Input::Record(serial_number, Field::rand(rng))],
             vec![Output::Constant(Field::rand(rng), None), Output::Constant(Field::rand(rng), None)],
@@ -308,12 +308,14 @@ mod tests {
     #[test]
     fn test_upgrade_height_boundary() -> Result<()> {
         let rng = &mut TestRng::default();
-        // A record from the block at `INCLUSION_UPGRADE_HEIGHT` or below can only be spent by `upgrade`.
+        // A `credits.aleo` record from the block at `INCLUSION_UPGRADE_HEIGHT` or below can only be spent by `upgrade`.
         let upgrade_height = CurrentNetwork::INCLUSION_UPGRADE_HEIGHT()?;
         for (height, needs_upgrade) in [(upgrade_height - 1, true), (upgrade_height, true), (upgrade_height + 1, false)]
         {
-            assert_eq!(accepts("transfer_private", height, rng)?, !needs_upgrade, "height {height}");
-            assert_eq!(accepts("upgrade", height, rng)?, needs_upgrade, "height {height}");
+            assert_eq!(accepts("credits.aleo", "transfer_private", height, rng)?, !needs_upgrade, "height {height}");
+            assert_eq!(accepts("credits.aleo", "upgrade", height, rng)?, needs_upgrade, "height {height}");
+            // Other programs' records carry no height check.
+            assert!(accepts("token.aleo", "transfer", height, rng)?, "height {height}");
         }
         Ok(())
     }

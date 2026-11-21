@@ -278,7 +278,7 @@ fn test_credits_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize the VM on a genesis block whose records `upgrade` accepts.
-    let (mut vm, caller_private_key) = sample_vm_with_upgradable_records();
+    let (mut vm, caller_private_key, genesis_block) = sample_vm_with_upgradable_records();
     advance_vm_to_height(&mut vm, caller_private_key, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? - 2, rng);
 
     // A helper closure to create a program with an upgrade call.
@@ -312,8 +312,6 @@ finalize run:
     vm.add_next_block(&block)?;
 
     // Extract a record from the genesis block.
-    let genesis_hash = vm.store.block_store().get_block_hash(0)?.unwrap();
-    let genesis_block = vm.store.block_store().get_block(&genesis_hash)?.unwrap();
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
     let record = genesis_block.transactions().records().next().unwrap().1.decrypt(&caller_view_key)?;
 

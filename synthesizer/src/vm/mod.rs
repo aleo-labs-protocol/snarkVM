@@ -705,11 +705,12 @@ pub(crate) mod test_helpers {
     /// The amount of each record of `sample_vm_with_upgradable_records`, the most that `credits.aleo/upgrade` accepts.
     pub(crate) const UPGRADABLE_RECORD_AMOUNT: u64 = 1_000_000_000_000;
 
-    /// Returns a VM on a genesis block, and its private key, which owns four records of `UPGRADABLE_RECORD_AMOUNT`.
+    /// Returns a VM on a genesis block, its private key, and the block, which gives that key records of `UPGRADABLE_RECORD_AMOUNT`.
     ///
     /// Below `ConsensusVersion::V8` only the genesis block can create a record that the current prover writes, and the
     /// records of `sample_genesis_block` are too large for `credits.aleo/upgrade`.
-    pub(crate) fn sample_vm_with_upgradable_records() -> (VM<CurrentNetwork, LedgerType>, PrivateKey<CurrentNetwork>) {
+    pub(crate) fn sample_vm_with_upgradable_records()
+    -> (VM<CurrentNetwork, LedgerType>, PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
         static INSTANCE: OnceLock<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> = OnceLock::new();
         let (private_key, genesis) = INSTANCE.get_or_init(|| {
             load_or_build_genesis_fixture("upgradable-genesis", genesis_fixture_seed(), |seed| {
@@ -721,8 +722,9 @@ pub(crate) mod test_helpers {
                     Committee::new_genesis(addresses.iter().map(|address| (*address, (stake, true, 0u8))).collect())
                         .unwrap();
                 let bonded_balances = addresses.iter().map(|address| (*address, (*address, *address, stake))).collect();
-                // `genesis_quorum` moves an eighth of the caller's public balance into each of its four records.
-                let caller_balance = 8 * UPGRADABLE_RECORD_AMOUNT;
+                // `genesis_quorum` moves `1 / (2 * NUM_GENESIS_TRANSACTIONS)` of the caller's public balance into each record.
+                let caller_balance =
+                    2 * Block::<CurrentNetwork>::NUM_GENESIS_TRANSACTIONS as u64 * UPGRADABLE_RECORD_AMOUNT;
                 let remaining = CurrentNetwork::STARTING_SUPPLY - 4 * stake - caller_balance;
                 let public_balances = IndexMap::from([
                     (addresses[0], caller_balance),
@@ -738,7 +740,7 @@ pub(crate) mod test_helpers {
         });
         let vm = sample_vm();
         vm.add_next_block(genesis).unwrap();
-        (vm, *private_key)
+        (vm, *private_key, genesis.clone())
     }
 
     /// The default seed of the RNG that builds the genesis fixture.
