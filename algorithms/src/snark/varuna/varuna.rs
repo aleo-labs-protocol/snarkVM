@@ -378,7 +378,7 @@ where
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
 
-        #[cfg(feature = "snark-print")]
+        #[cfg(feature = "dev-print")]
         {
             // Display the batch sizes and (padded) public inputs
             let batch_sizes = keys_to_constraints
@@ -788,7 +788,7 @@ where
         let mut circuit_infos = BTreeMap::new();
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
 
-        #[cfg(feature = "snark-print")]
+        #[cfg(feature = "dev-print")]
         {
             // Display the batch sizes and (padded) public inputs
             println!(

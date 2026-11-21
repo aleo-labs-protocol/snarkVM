@@ -1990,7 +1990,6 @@ function call_fee_private:
     }
 
     #[test]
-    #[cfg(feature = "memory-intensive")]
     #[ignore = "memory-intensive"]
     fn test_deployment_synthesis_overload() {
         let rng = &mut TestRng::default();

@@ -27,12 +27,10 @@ edition = "2024"
 name = "puzzle"
 path = "benches/puzzle.rs"
 harness = false
-required-features = [ "setup" ]
 
 [features]
 default = [ "indexmap/rayon" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-setup = [ ]
 wasm = [ "snarkvm-console/wasm" ]
 
 [dependencies.snarkvm-console]
