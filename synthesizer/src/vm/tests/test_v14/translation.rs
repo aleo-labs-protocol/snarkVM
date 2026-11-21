@@ -1369,7 +1369,7 @@ fn test_malicious_external_record_dynamic_id_tampering() {
 }
 
 // Checks that translation keys for the same record name but different programs are different and vice versa.
-// Run with `snark-print` feature to explore Varuna batch sizes and locate translation keys in verification batches.
+// Run with `dev-print` feature to explore Varuna batch sizes and locate translation keys in verification batches.
 #[test]
 fn test_differing_keys() {
     // Parameters for dynamic calls
@@ -1459,7 +1459,7 @@ fn test_differing_keys() {
     add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_b], rng);
 
     // Displaying the keys associated to each translation circuit for easier
-    // identification with snark-print
+    // identification with dev-print
     for program_name in ["program_a.aleo", "program_b.aleo"] {
         let stack = vm.process().get_stack(program_name).unwrap();
         println!("{program_name} translation keys:");

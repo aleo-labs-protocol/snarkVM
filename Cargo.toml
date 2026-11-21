@@ -146,7 +146,6 @@ parameters = [ "snarkvm-parameters" ]
 synthesizer = [ "snarkvm-synthesizer" ]
 utilities = [ "snarkvm-utilities" ]
 wasm = [ "snarkvm-wasm" ]
-snark-print = [ "snarkvm-algorithms?/snark-print" ]
 
 dev-print = [ 
   "snarkvm-utilities/dev-print",

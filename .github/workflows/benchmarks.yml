@@ -119,8 +119,8 @@ jobs:
           # Puzzle::prove is high-variance at the crate's 10-sample default; the
           # bencher median then trips the 200% alert. Collect it separately with
           # more samples and longer windows. Filter so check_solutions stays cheap.
-          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::prove --output-format bencher --sample-size 100 --warm-up-time 3 --measurement-time 10 | tee -a output.txt
-          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::check_solutions --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle -- Puzzle::prove --output-format bencher --sample-size 100 --warm-up-time 3 --measurement-time 10 | tee -a output.txt
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle -- Puzzle::check_solutions --output-format bencher | tee -a output.txt
 
       # Clean benchmark output to remove unnecessary lines
       - name: Clean benchmark output
