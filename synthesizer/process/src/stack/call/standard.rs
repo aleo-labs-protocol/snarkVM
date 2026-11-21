@@ -489,6 +489,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
                                 outputs.len(),
                                 index.and_then(|i| function.outputs().get_index(i)).map(|output| output.value_type())
                             );
+                            // Uncomment to also log the outputs when debugging locally. They can be private, so keep it commented out.
+                            // debug!("{:#?} != {:#?}", console_response.outputs(), response.outputs());
                             return Err(anyhow!(
                                 "Function '{}' outputs do not match in a 'call' instruction.",
                                 function.name()

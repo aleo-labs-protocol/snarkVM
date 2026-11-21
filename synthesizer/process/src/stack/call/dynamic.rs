@@ -602,6 +602,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     .and_then(|i| callee_function.outputs().get_index(i))
                                     .map(|output| output.value_type())
                             );
+                            // Uncomment to also log the outputs when debugging locally. They can be private, so keep it commented out.
+                            // debug!("{:#?} != {:#?}", console_callee_response.outputs(), callee_response.outputs());
                             return Err(anyhow!(
                                 "Function '{}' outputs do not match in a 'call.dynamic' instruction.",
                                 callee_function.name()
