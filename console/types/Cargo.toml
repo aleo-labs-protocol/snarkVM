@@ -83,4 +83,5 @@ string = [
   "snarkvm-console-types-field",
   "snarkvm-console-types-integers"
 ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-console-network-environment/test-helpers" ]

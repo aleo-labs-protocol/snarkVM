@@ -26,6 +26,7 @@ edition = "2024"
 [features]
 default = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [
   "dep:anyhow",
   "dep:proptest",

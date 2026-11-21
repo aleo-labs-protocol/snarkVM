@@ -59,6 +59,7 @@ dev-print = [
   "snarkvm-console-program?/dev-print"
 ]
 dev_skip_checks = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [
   "snarkvm-console-account?/test-helpers",
   "snarkvm-console-network/test-helpers",
