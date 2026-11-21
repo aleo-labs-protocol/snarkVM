@@ -29,14 +29,12 @@ crate-type = [ "cdylib", "rlib" ]
 [features]
 default = [ "full" ]
 full = [
-  "circuit",
   "curves",
   "fields",
   "ledger",
   "synthesizer",
   "utilities"
 ]
-circuit = [ ]
 curves = [ "snarkvm-curves" ]
 fields = [ "snarkvm-fields" ]
 ledger = [

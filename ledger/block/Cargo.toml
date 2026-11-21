@@ -18,7 +18,6 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
-test-helpers = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true
