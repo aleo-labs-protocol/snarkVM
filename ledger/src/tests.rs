@@ -2531,9 +2531,8 @@ function foo:
     }
 }
 
-// These tests require the proof targets to be low enough to be able to generate **valid** solutions.
-// This requires the 'test' feature to be enabled for the `console` dependency.
-#[cfg(feature = "test")]
+// At the production proof target these tests do not finish.
+#[cfg(all(feature = "test", feature = "test_targets"))]
 mod valid_solutions {
     use super::*;
     use crate::is_solution_limit_reached::stake_requirements_per_solution;
