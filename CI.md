@@ -47,12 +47,12 @@ rows.
 | `lint-locktick` | `cpu` | all | 90 | clippy `--all-features` under `--cfg locktick` (`locktick-clippy` alias) | |
 | `test (console)` | hosted | all | 90 | `snarkvm-console` and its sub-crates, except `-collections` | `console`, `console-account`, `console-algorithms`, `console-network`, `console-network-environment`, `console-program`, `console-types`, `console-types-address`, `console-types-boolean`, `console-types-field`, `console-types-group`, `console-types-integers`, `console-types-scalar`, `console-types-string` |
 | `test (circuit)` | hosted | all | 90 | `snarkvm-circuit` and its sub-crates, except `-collections`, `-types-integers` and `-program`; then `snarkvm-circuit-environment` | `circuit`, `circuit-account`, `circuit-algorithms`, `circuit-network`, `circuit-types`, `circuit-types-address`, `circuit-types-boolean`, `circuit-types-field`, `circuit-types-group`, `circuit-types-scalar`, `circuit-types-string`, `circuit-environment` |
-| `test (narwhal)` | hosted | all | 90 | `snarkvm-ledger-authority`, `-ledger-committee`, `-ledger-narwhal` and its sub-crates except `-data`, `-ledger-query`, `-synthesizer-snark`, `-curves`, `-fields`, `-utilities`, `-utilities-derives` | `ledger-authority`, `ledger-committee`, `ledger-narwhal`, `ledger-narwhal-batch-certificate`, `ledger-narwhal-batch-header`, `ledger-narwhal-subdag`, `ledger-narwhal-transmission`, `ledger-narwhal-transmission-id`, `ledger-query`, `synthesizer-snark`, `curves`, `fields`, `utilities`, `utilities-derives` |
+| `test (narwhal)` | hosted | all | 90 | `snarkvm-ledger-authority`, `-ledger-committee`, `-ledger-narwhal` and its sub-crates except `-data`, `-synthesizer-snark`, `-curves`, `-fields`, `-utilities`, `-utilities-derives` | `ledger-authority`, `ledger-committee`, `ledger-narwhal`, `ledger-narwhal-batch-certificate`, `ledger-narwhal-batch-header`, `ledger-narwhal-subdag`, `ledger-narwhal-transmission`, `ledger-narwhal-transmission-id`, `synthesizer-snark`, `curves`, `fields`, `utilities`, `utilities-derives` |
 | `test (crates)` | `cpu` | all | 90 | `snarkvm`, `-algorithms`, `-circuit-collections`, `-circuit-types-integers`, `-console-collections` | `snarkvm`, `algorithms`, `circuit-collections`, `circuit-types-integers`, `console-collections` |
 | `test (ledger)` | `cpu` | all | 90 | `snarkvm-ledger` | `ledger` |
-| `test (ledger-store)` | `cpu` | all | 90 | `snarkvm-ledger-store` with `rocks`; then `-ledger-narwhal-data` and `-ledger-test-helpers`; then `-ledger-puzzle` and `-ledger-puzzle-epoch` | `ledger-store`, `ledger-narwhal-data`, `ledger-test-helpers`, `ledger-puzzle`, `ledger-puzzle-epoch` |
+| `test (ledger-store)` | `cpu` | all | 90 | `snarkvm-ledger-store` with `rocks`; then `-ledger-narwhal-data` and `-ledger-test-helpers`, and then `-ledger-puzzle` and `-ledger-puzzle-epoch`, from one build; then `-ledger-query` with `async` | `ledger-store`, `ledger-narwhal-data`, `ledger-test-helpers`, `ledger-puzzle`, `ledger-puzzle-epoch`, `ledger-query` |
 | `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins, the fast tier | `synthesizer` |
-| `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`; then `-synthesizer-program` lib and bins; then `-circuit-program` | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
+| `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`; then `-synthesizer-program` lib and bins, and then `-circuit-program`, from one build | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
 | `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `dev-network`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block` | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
 | `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
@@ -112,14 +112,17 @@ as snarkVM-internal, runs nothing.
 ## Test groups
 
 Each line of a `test`, `test-merge` or `test-release` entry's `runs` is one
-cargo build, and the entry runs its lines in order. `cargo test -p a -p b`
-unifies the features of `a` and `b`, and several crates enable `rocks` or
-`dev-network` on their dependencies, which changes what those
-dependencies compute. So crates share a line only where that unification
+cargo command, and the entry runs its lines in order. Lines with the same `-p`
+set and cargo flags share one build, and nextest's `-E` filters split its tests
+between them, as in `test (ledger-store)` and `test (synthesizer-process)`.
+`cargo test -p a -p b` unifies the features of `a` and `b`, and several crates
+enable `rocks` or `dev-network` on their dependencies, which changes what those
+dependencies compute. So crates share a build only where that unification
 enables none of those features, nor `wasm` or `large_params`, on any snarkvm
 crate. Helper features such as `test-helpers` can still be unified, so a test
-may compile in its line that would not under `cargo test -p <crate>` alone.
-Check this before moving a crate between lines.
+may compile in its build that would not under `cargo test -p <crate>` alone.
+Check this before moving a crate between builds, for example by comparing
+`cargo +nightly test --no-run --unit-graph -Z unstable-options` before and after.
 
 `dev-network` lowers network parameters (consensus heights, genesis targets)
 for local test and development networks; never enable it to join a public
