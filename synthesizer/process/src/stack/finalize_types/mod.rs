@@ -63,6 +63,8 @@ use snarkvm_synthesizer_program::{
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct FinalizeTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
@@ -129,7 +131,7 @@ impl<N: Network> FinalizeTypes<N> {
             Operand::AleoGeneratorPowers(index) => match index {
                 None => FinalizeType::Plaintext(PlaintextType::Array(ArrayType::new(
                     PlaintextType::Literal(LiteralType::Group),
-                    vec![U32::new(N::Scalar::SIZE_IN_BITS as u32)],
+                    vec![U32::new(u32::try_from(N::Scalar::SIZE_IN_BITS)?)],
                 )?)),
                 Some(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
             },

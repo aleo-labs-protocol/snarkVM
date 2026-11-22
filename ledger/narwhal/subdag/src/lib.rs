@@ -36,7 +36,6 @@ use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 use indexmap::IndexSet;
 use std::collections::BTreeMap;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Returns `true` if the rounds are sequential.
@@ -118,10 +117,7 @@ fn weighted_median(timestamps_and_stake: Vec<(i64, u64)>) -> i64 {
     let mut timestamps_and_stake = timestamps_and_stake;
 
     // Sort the timestamps.
-    #[cfg(not(feature = "serial"))]
     timestamps_and_stake.par_sort_unstable_by_key(|(timestamp, _)| *timestamp);
-    #[cfg(feature = "serial")]
-    timestamps_and_stake.sort_unstable_by_key(|(timestamp, _)| *timestamp);
 
     // Calculate the total stake of the authors.
     let total_stake = timestamps_and_stake.iter().map(|(_, stake)| *stake).sum::<u64>();
@@ -373,6 +369,7 @@ impl<N: Network> Deref for Subdag<N> {
 }
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use console::{network::MainnetV0, prelude::TestRng};

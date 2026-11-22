@@ -28,12 +28,9 @@ pub use schema::{STORAGE_VERSION, StorageVersion};
 #[cfg(test)]
 mod tests;
 
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::{StorageMode, locks::Mutex};
+
 use anyhow::{Result, bail, ensure};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::Mutex;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::Mutex;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
     borrow::Borrow,
@@ -61,11 +58,7 @@ pub const MAX_OPEN_FILES: u16 = 8192;
 // A static map of database paths to their objects; it's needed in order to facilitate concurrent
 // tests involving persistent storage, but it only ever has a single member outside of them.
 // TODO: remove the static in favor of improved `open` methods.
-// note: this object can't utilize locktick for lock accounting, but it is only ever accessed
-//       when first creating the database(s), so this is acceptable; this will also no longer
-//       be an issue once the above TODO is complete.
-static DATABASES: LazyLock<parking_lot::Mutex<HashMap<PathBuf, DatabaseEntry>>> =
-    LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
+static DATABASES: LazyLock<Mutex<HashMap<PathBuf, DatabaseEntry>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// A database in `DATABASES`.
 enum DatabaseEntry {
@@ -155,7 +148,10 @@ impl DatabaseEntry {
     }
 }
 
-pub trait Database {
+/// A trait for opening the database and its maps.
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait Database: crate::sealed::Sealed {
     /// Opens the database.
     fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self>
     where
@@ -254,6 +250,8 @@ impl RocksDB {
     }
 }
 
+impl crate::sealed::Sealed for RocksDB {}
+
 impl Database for RocksDB {
     /// Opens the database.
     ///
@@ -265,9 +263,9 @@ impl Database for RocksDB {
         let storage = storage.into();
 
         // Obtain the path to the primary instance.
-        let primary_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        let primary_path = snarkvm_utilities::aleo_ledger_dir(network_id, &storage);
         // Obtain the path to the secondary instance, if applicable.
-        let secondary_path = aleo_std_storage::aleo_secondary_ledger_dir(network_id, &storage);
+        let secondary_path = snarkvm_utilities::aleo_secondary_ledger_dir(network_id, &storage);
         // A secondary instance is registered under its own path.
         let db_path = secondary_path.as_ref().unwrap_or(&primary_path);
 

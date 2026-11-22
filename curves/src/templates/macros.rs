@@ -19,51 +19,6 @@
 #[macro_export]
 macro_rules! impl_sw_curve_serializer {
     ($params: ident) => {
-        // Projective Group point implementations delegate to the Affine version
-        impl<P: $params> CanonicalSerialize for Projective<P> {
-            #[allow(unused_qualifications)]
-            #[inline]
-            fn serialize_with_mode<W: std::io::Write>(
-                &self,
-                writer: W,
-                compress: Compress,
-            ) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
-                CanonicalSerialize::serialize_with_mode(&Affine::<P>::from(*self), writer, compress)
-            }
-
-            #[inline]
-            fn serialized_size(&self, compress: Compress) -> usize {
-                Affine::<P>::from(*self).serialized_size(compress)
-            }
-
-            #[inline]
-            fn uncompressed_size(&self) -> usize {
-                Affine::<P>::from(*self).uncompressed_size()
-            }
-        }
-
-        impl<P: $params> Valid for Projective<P> {
-            fn check(&self) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
-                let point = Affine::<P>::from(*self);
-                if point.is_on_curve() & point.is_in_correct_subgroup_assuming_on_curve() {
-                    Ok(())
-                } else {
-                    Err(snarkvm_utilities::serialize::SerializationError::InvalidData)
-                }
-            }
-        }
-
-        impl<P: $params> CanonicalDeserialize for Projective<P> {
-            #[allow(unused_qualifications)]
-            fn deserialize_with_mode<R: std::io::Read>(
-                reader: R,
-                compress: Compress,
-                validate: Validate,
-            ) -> Result<Self, snarkvm_utilities::serialize::SerializationError> {
-                Affine::<P>::deserialize_with_mode(reader, compress, validate).map(Into::into)
-            }
-        }
-
         impl<P: $params> CanonicalSerialize for Affine<P> {
             #[allow(unused_qualifications)]
             #[inline]
@@ -163,45 +118,6 @@ macro_rules! impl_sw_curve_serializer {
 #[macro_export]
 macro_rules! impl_edwards_curve_serializer {
     ($params: ident) => {
-        impl<P: $params> CanonicalSerialize for Projective<P> {
-            #[allow(unused_qualifications)]
-            #[inline]
-            fn serialize_with_mode<W: std::io::Write>(
-                &self,
-                writer: W,
-                compress: Compress,
-            ) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
-                Affine::<P>::from(*self).serialize_with_mode(writer, compress)
-            }
-
-            #[inline]
-            fn serialized_size(&self, compress: Compress) -> usize {
-                Affine::<P>::from(*self).serialized_size(compress)
-            }
-        }
-
-        impl<P: $params> Valid for Projective<P> {
-            fn check(&self) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
-                let point = Affine::<P>::from(*self);
-                if point.is_on_curve() & point.is_in_correct_subgroup_assuming_on_curve() {
-                    Ok(())
-                } else {
-                    Err(snarkvm_utilities::serialize::SerializationError::InvalidData)
-                }
-            }
-        }
-
-        impl<P: $params> CanonicalDeserialize for Projective<P> {
-            #[allow(unused_qualifications)]
-            fn deserialize_with_mode<R: std::io::Read>(
-                reader: R,
-                compress: Compress,
-                validate: Validate,
-            ) -> Result<Self, snarkvm_utilities::serialize::SerializationError> {
-                Affine::<P>::deserialize_with_mode(reader, compress, validate).map(Into::into)
-            }
-        }
-
         impl<P: $params> CanonicalSerialize for Affine<P> {
             #[allow(unused_qualifications)]
             #[inline]

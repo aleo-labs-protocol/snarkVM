@@ -33,12 +33,11 @@ impl<N: Network> Certificate<N> {
 
     /// Returns the certificate from the proving and verifying key.
     pub fn certify(
-        _function_name: &str,
+        function_name: &str,
         proving_key: &ProvingKey<N>,
         verifying_key: &VerifyingKey<N>,
     ) -> Result<Certificate<N>> {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
+        let _timer = timing_span!("Certify", function_name).entered();
 
         // Retrieve the proving parameters.
         let universal_prover = N::varuna_universal_prover();
@@ -47,24 +46,17 @@ impl<N: Network> Certificate<N> {
         // Compute the certificate.
         let certificate = Varuna::<N>::prove_vk(universal_prover, fiat_shamir, verifying_key, proving_key)?;
 
-        #[cfg(feature = "dev-print")]
-        {
-            let _elapsed = timer.elapsed().as_millis();
-            dev_println!(" • Certified '{_function_name}' (in {_elapsed} ms)");
-        }
-
         Ok(Self::new(certificate))
     }
 
     /// Returns the certificate from the proving and verifying key.
     pub fn verify(
         &self,
-        _function_name: &str,
+        function_name: &str,
         assignment: &circuit::Assignment<N::Field>,
         verifying_key: &VerifyingKey<N>,
     ) -> bool {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
+        let _timer = timing_span!("Verify certificate", function_name).entered();
 
         // Retrieve the verification parameters.
         let universal_verifier = N::varuna_universal_verifier();
@@ -73,16 +65,9 @@ impl<N: Network> Certificate<N> {
         // Verify the certificate.
         #[allow(clippy::manual_unwrap_or_default)]
         match Varuna::<N>::verify_vk(universal_verifier, fiat_shamir, assignment, verifying_key, self) {
-            Ok(is_valid) => {
-                #[cfg(feature = "dev-print")]
-                {
-                    let _elapsed = timer.elapsed().as_millis();
-                    dev_println!(" • Verified certificate for '{_function_name}' (in {_elapsed} ms)");
-                }
-                is_valid
-            }
-            Err(_error) => {
-                dev_println!(" • Certificate verification on network {} failed: {_error}", N::NAME);
+            Ok(is_valid) => is_valid,
+            Err(error) => {
+                debug!("Certificate verification on network {} failed: {error}", N::NAME);
                 false
             }
         }

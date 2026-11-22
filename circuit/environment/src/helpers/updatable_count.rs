@@ -42,29 +42,35 @@ static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 /// To update the arguments to `count_is!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
 /// e.g. `UPDATE_COUNT=boolean cargo test
 /// See <https://github.com/ProvableHQ/snarkVM/pull/1688> for more details.
+///
+/// Each argument is an exact count, or an upper bound if it starts with `<=`, as in `count_is!(<=10, 0, 4, 4)`.
 #[macro_export]
 macro_rules! count_is {
-    ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
+    ($($arguments:tt)*) => {
+        $crate::__count_is!([] $($arguments)*)
+    };
+}
+
+/// Collects the measurements of `count_is!`, one argument at a time.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __count_is {
+    ([$constant:expr, $public:expr, $private:expr, $constraints:expr]) => {
         $crate::UpdatableCount {
-            constant: $crate::Measurement::Exact($num_constants),
-            public: $crate::Measurement::Exact($num_public),
-            private: $crate::Measurement::Exact($num_private),
-            constraints: $crate::Measurement::Exact($num_constraints),
+            constant: $constant,
+            public: $public,
+            private: $private,
+            constraints: $constraints,
             file: file!(),
             line: line!(),
             column: column!(),
         }
     };
-    (<=$num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
-        $crate::UpdatableCount {
-            constant: $crate::Measurement::UpperBound($num_constants),
-            public: $crate::Measurement::Exact($num_public),
-            private: $crate::Measurement::Exact($num_private),
-            constraints: $crate::Measurement::Exact($num_constraints),
-            file: file!(),
-            line: line!(),
-            column: column!(),
-        }
+    ([$($measurement:expr),*] <= $count:literal $(, $($rest:tt)+)?) => {
+        $crate::__count_is!([$($measurement,)* $crate::Measurement::UpperBound($count)] $($($rest)*)?)
+    };
+    ([$($measurement:expr),*] $count:literal $(, $($rest:tt)+)?) => {
+        $crate::__count_is!([$($measurement,)* $crate::Measurement::Exact($count)] $($($rest)*)?)
     };
 }
 
@@ -117,7 +123,6 @@ impl UpdatableCount {
     /// Returns `true` if the values matches the `Measurement`s in `UpdatableCount`.
     ///
     /// For an `Exact` metric, `value` must be equal to the exact value defined by the metric.
-    /// For a `Range` metric, `value` must be satisfy lower bound and the upper bound.
     /// For an `UpperBound` metric, `value` must be satisfy the upper bound.
     pub fn matches(&self, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) -> bool {
         self.constant.matches(num_constants)
@@ -147,8 +152,7 @@ impl UpdatableCount {
     /// Implements `assert_matches` for a given `UPDATE_COUNT` query string, where `None` stands for an unset
     /// `UPDATE_COUNT`, under which nothing is updated.
     ///
-    /// The values are assumed not to match; `assert_matches` checks that before calling in, and `Measurement::matches`
-    /// reports each mismatching measurement on stderr, so checking again would report every one of them twice.
+    /// The values are assumed not to match; `assert_matches` checks that before calling in.
     fn assert_matches_with_query(
         &self,
         query_string: Option<&str>,
@@ -266,7 +270,6 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
     fn values(&self) -> [u64; 4] {
         let value = |measurement| match measurement {
             Measurement::Exact(value) | Measurement::UpperBound(value) => value,
-            Measurement::Range(..) => panic!("`UpdatableCount` does not support `Measurement::Range`."),
         };
         [value(self.constant), value(self.public), value(self.private), value(self.constraints)]
     }
@@ -281,7 +284,6 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
         let updated = |measurement, on_disk, measured| match measurement {
             Measurement::Exact(..) => Measurement::Exact(measured),
             Measurement::UpperBound(..) => Measurement::UpperBound(std::cmp::max(measured, on_disk)),
-            Measurement::Range(..) => panic!("`UpdatableCount` does not support `Measurement::Range`."),
         };
         Self {
             constant: updated(self.constant, on_disk[0], measured[0]),
@@ -388,9 +390,7 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
                 // Note: This assumes that the number of constants, public, private, and constraints do not exceed `i64::MAX`.
                 (self_value as i64) - (other_value as i64)
             }
-            _ => panic!(
-                "Cannot compute difference for `Measurement::Range` or if both measurements are of different types."
-            ),
+            _ => panic!("Cannot compute the difference between two measurements of different types."),
         };
         (
             difference(self.constant, other.constant),
@@ -404,9 +404,9 @@ Constants: {}, Public: {}, Private: {}, Constraints: {}
 /// The four arguments of a `count_is!` or `count_less_than!` invocation, located in the source file.
 ///
 /// An update rewrites the integer literals whose values changed and nothing else, so every other byte of the
-/// argument list survives it verbatim: the `<=` of the `count_is!(<=N, ..)` arm, the spacing, and the `_`
-/// separators of any argument that did not change. Regenerating the whole argument list instead would drop the
-/// `<=` and silently rewrite an upper bound into an exact count.
+/// argument list survives it verbatim: each `<=` of `count_is!`, the spacing, and the `_` separators of any
+/// argument that did not change. Regenerating the whole argument list instead would drop the `<=` and silently
+/// rewrite an upper bound into an exact count.
 #[derive(Debug, PartialEq, Eq)]
 struct Arguments {
     /// The value of each argument.
@@ -434,7 +434,7 @@ impl Arguments {
         let mut arguments = inner.split(',');
         for (i, (value, literal)) in values.iter_mut().zip(literals.iter_mut()).enumerate() {
             let argument = arguments.next().unwrap_or_else(|| panic!("Macro argument {i} is missing at {position}."));
-            // Step past the leading whitespace, and past the `<=` of the upper-bound arm of `count_is!`.
+            // Step past the leading whitespace, and past the `<=` of an upper bound.
             let mut start = argument.len() - argument.trim_start().len();
             if let Some(rest) = argument[start..].strip_prefix("<=") {
                 start = argument.len() - rest.trim_start().len();
@@ -469,29 +469,31 @@ impl Arguments {
 mod test {
     use super::*;
 
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    /// A source file that only these tests write to, holding one macro invocation per line and deleted when the
+    /// A source file in a private temporary directory, holding one macro invocation per line and deleted when the
     /// test ends.
     ///
     /// The update path resolves an absolute `UpdatableCount::file` as-is, so a count pointed at this file rewrites
     /// it instead of the test's own source. `line` is 1-based, as in `UpdatableCount`.
     struct Fixture {
+        _directory: tempfile::TempDir,
         path: &'static str,
         column: u32,
     }
 
     impl Fixture {
         fn new(macro_name: &str, arguments: &[&str]) -> Self {
-            let path = fixture_path();
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("fixture.rs");
             let prefix = "        let count = ";
             let text: String =
                 arguments.iter().map(|arguments| format!("{prefix}{macro_name}!{arguments};\n")).collect();
             fs::write(&path, text).unwrap();
             Self {
+                _directory: directory,
                 // `UpdatableCount::file` is `&'static str`, which a path built at runtime is not.
                 path: path.into_os_string().into_string().unwrap().leak(),
-                column: (prefix.len() + 1) as u32,
+                // Note: `unwrap()` is safe as `prefix` is a short literal.
+                column: u32::try_from(prefix.len() + 1).unwrap(),
             }
         }
 
@@ -514,22 +516,6 @@ mod test {
             let line = text.lines().nth(line as usize - 1).unwrap();
             line[line.find('(').unwrap()..=line.rfind(')').unwrap()].to_string()
         }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = fs::remove_file(self.path);
-        }
-    }
-
-    /// Returns a path in the temporary directory that no other test uses.
-    fn fixture_path() -> PathBuf {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        env::temp_dir().join(format!(
-            "snarkvm_updatable_count_{}_{}.rs",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed)
-        ))
     }
 
     fn exact(values: [u64; 4]) -> [Measurement<u64>; 4] {
@@ -563,6 +549,16 @@ mod test {
     }
 
     #[test]
+    fn check_upper_bound_per_argument() {
+        let count = count_is!(<=1, 2, <=3, 4);
+        assert_eq!((count.line, count.column), (line!() - 1, 21));
+        assert!(matches!(count.constant, Measurement::UpperBound(1)));
+        assert!(matches!(count.public, Measurement::Exact(2)));
+        assert!(matches!(count.private, Measurement::UpperBound(3)));
+        assert!(matches!(count.constraints, Measurement::Exact(4)));
+    }
+
+    #[test]
     fn check_locate_finds_the_arguments() {
         let text = "// a\n        let count = count_is!(1, 2, 3, 4);\n";
         assert_eq!(&text[count_at(2, 21).locate(text)], "(1, 2, 3, 4)");
@@ -579,6 +575,7 @@ mod test {
         for (text, values) in [
             ("(1, 2, 3, 4)", [1, 2, 3, 4]),
             ("(<=36085, 8, 24131, 24156)", [36085, 8, 24131, 24156]),
+            ("(<=5079, 7, <=13274, <=13300)", [5079, 7, 13274, 13300]),
             ("(1_000, 2, 3, 4)", [1000, 2, 3, 4]),
             ("(0,0,0,0)", [0, 0, 0, 0]),
         ] {
@@ -593,6 +590,7 @@ mod test {
         for (text, values, expected) in [
             ("(1, 2, 3, 4)", [5, 6, 7, 8], "(5, 6, 7, 8)"),
             ("(<=36085, 8, 24131, 24156)", [5, 6, 7, 8], "(<=5, 6, 7, 8)"),
+            ("(<=5079, 7, <=13274, <=13300)", [5, 6, 7, 8], "(<=5, 6, <=7, <=8)"),
             ("(0,0,0,0)", [5, 6, 7, 8], "(5,6,7,8)"),
             ("( 1 , 2 , 3 , 4 )", [5, 6, 7, 8], "( 5 , 6 , 7 , 8 )"),
             ("(1_000, 2, 3, 4)", [1000, 5, 3, 4], "(1_000, 5, 3, 4)"),

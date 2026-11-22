@@ -30,20 +30,15 @@ impl<N: Network> Block<N> {
         ensure!(self.solutions.is_empty(), "Invalid solutins");
         ensure!(self.transactions.num_rejected() == 0, "Invalid number of rejected transactions");
         ensure!(self.aborted_transaction_ids.is_empty(), "Genesis block must not contain aborted transactions");
-
-        // Perform additional checks in production
-        #[cfg(not(any(test, feature = "test")))]
-        {
-            ensure!(self.ratifications.len() == 1, "Invalid number of ratifications");
-            ensure!(
-                self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS,
-                "Invalid number of accepted transactions"
-            );
-            ensure!(
-                self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS,
-                "Invalid number of finalized transactions"
-            );
-        }
+        ensure!(self.ratifications.len() == 1, "Invalid number of ratifications");
+        ensure!(
+            self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS,
+            "Invalid number of accepted transactions"
+        );
+        ensure!(
+            self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS,
+            "Invalid number of finalized transactions"
+        );
 
         Ok(true)
     }
@@ -52,14 +47,19 @@ impl<N: Network> Block<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::MainnetV0;
-
-    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_genesis() {
         // Load the genesis block.
-        let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
+        let Some(genesis_block) = crate::test_helpers::shipped_genesis_block() else { return };
         assert!(genesis_block.is_genesis().unwrap());
+    }
+
+    #[test]
+    fn test_genesis_without_ratification_is_rejected() {
+        let block = crate::test_helpers::sample_genesis_block(&mut TestRng::default());
+        assert!(block.header().is_genesis().unwrap());
+        let error = block.is_genesis().unwrap_err();
+        assert!(error.to_string().contains("Invalid number of ratifications"), "{error}");
     }
 }

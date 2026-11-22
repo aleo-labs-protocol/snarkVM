@@ -27,22 +27,6 @@ impl<E: Environment, I: IntegerType> Zero for Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Zero<Boolean = Boolean<E>>> for Integer<E, I> {
-    type Case = ();
-
-    fn count(_case: &Self::Case) -> Count {
-        Count::is(I::BITS, 0, 0, 0)
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Zero<Boolean = Boolean<E>>> for Integer<E, I> {
-    type Case = ();
-
-    fn output_mode(_case: &Self::Case) -> Mode {
-        Mode::Constant
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,8 +37,8 @@ mod tests {
             assert_scope!(0, 0, 0, 0);
             let candidate = Integer::<Circuit, I>::zero();
             assert_eq!(console::Integer::zero(), candidate.eject_value());
-            assert_count!(Zero<Boolean>() => Integer<I>, &());
-            assert_output_mode!(Zero<Boolean>() => Integer<I>, &(), candidate);
+            assert!(candidate.is_constant());
+            assert_scope!(I::BITS, 0, 0, 0);
         });
         // Should equal 0.
         assert!(Integer::<Circuit, I>::zero().is_zero().eject_value());

@@ -1,0 +1,54 @@
+# Circuit shape of `signature_ternary` for each operand mode and a fixed set of keys and signatures.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-account --test snapshots
+boolean.constant signature.constant signature.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant signature.constant signature.public | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.constant signature.public | true sig-1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant signature.constant signature.public | true sig-2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant signature.constant signature.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.constant signature.private | true sig-1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant signature.constant signature.private | true sig-2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant signature.public signature.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant signature.public signature.constant | true _ sig-1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.public signature.constant | true _ sig-2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.public signature.public | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.public signature.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.private signature.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant signature.private signature.constant | true _ sig-1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.private signature.constant | true _ sig-2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.private signature.public | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant signature.private signature.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public signature.constant signature.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public signature.constant signature.public | _ sig-1 _ : 0 0 7 7 263/7/263 private 0b415dad705dabe8
+boolean.public signature.constant signature.public | _ sig-2 _ : 0 0 7 7 263/7/263 private 230c8d6fd5084f9f
+boolean.public signature.constant signature.private | _ sig-1 _ : 0 0 7 7 263/7/263 private 909ac0f567beee74
+boolean.public signature.constant signature.private | _ sig-2 _ : 0 0 7 7 263/7/263 private d8bdf0da28a049d8
+boolean.public signature.public signature.constant | _ _ sig-1 : 0 0 7 7 263/7/14 private e3d23d7edd612a90
+boolean.public signature.public signature.constant | _ _ sig-2 : 0 0 7 7 263/7/14 private a4d299c3c2ba5617
+boolean.public signature.public signature.public | _ _ _ : 0 0 7 7 512/7/263 private 70dc66d02e5d3ca3
+boolean.public signature.public signature.private | _ _ _ : 0 0 7 7 512/7/263 private 5ae2e04c593ae962
+boolean.public signature.private signature.constant | _ _ sig-1 : 0 0 7 7 263/7/14 private 3f1863889b25613d
+boolean.public signature.private signature.constant | _ _ sig-2 : 0 0 7 7 263/7/14 private 1766b36b29eb1d7f
+boolean.public signature.private signature.public | _ _ _ : 0 0 7 7 512/7/263 private 79352c1d2f2df387
+boolean.public signature.private signature.private | _ _ _ : 0 0 7 7 512/7/263 private 0cab63cbfe67655a
+boolean.private signature.constant signature.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.private signature.constant signature.public | _ sig-1 _ : 0 0 7 7 263/7/263 private c929ea922b5301d4
+boolean.private signature.constant signature.public | _ sig-2 _ : 0 0 7 7 263/7/263 private c1e6ca5f7dcacd9f
+boolean.private signature.constant signature.private | _ sig-1 _ : 0 0 7 7 263/7/263 private 89f18fe54561438a
+boolean.private signature.constant signature.private | _ sig-2 _ : 0 0 7 7 263/7/263 private 52891325e488737d
+boolean.private signature.public signature.constant | _ _ sig-1 : 0 0 7 7 263/7/14 private 6eed56bb07466138
+boolean.private signature.public signature.constant | _ _ sig-2 : 0 0 7 7 263/7/14 private 83c29d4c2a4cbf62
+boolean.private signature.public signature.public | _ _ _ : 0 0 7 7 512/7/263 private 24b2d7f869465fb4
+boolean.private signature.public signature.private | _ _ _ : 0 0 7 7 512/7/263 private c08ede8c6af791ad
+boolean.private signature.private signature.constant | _ _ sig-1 : 0 0 7 7 263/7/14 private 7eddbfe3b509da77
+boolean.private signature.private signature.constant | _ _ sig-2 : 0 0 7 7 263/7/14 private c6b70f2a9f045d1b
+boolean.private signature.private signature.public | _ _ _ : 0 0 7 7 512/7/263 private f5a04f1e35193462
+boolean.private signature.private signature.private | _ _ _ : 0 0 7 7 512/7/263 private 4d2395f8e270d618

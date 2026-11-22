@@ -23,7 +23,8 @@ mod serialize;
 mod string;
 mod to_id;
 
-#[cfg(any(test, feature = "prop-tests"))]
+#[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod prop_tests;
 
 use console::{
@@ -36,7 +37,6 @@ use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// The minimum self bond for a validator to join the committee
@@ -255,6 +255,7 @@ impl<N: Network> Committee<N> {
 }
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use console::{
@@ -408,7 +409,7 @@ mod tests {
     use super::*;
     use console::prelude::TestRng;
 
-    use parking_lot::RwLock;
+    use snarkvm_utilities::locks::RwLock;
     use std::sync::Arc;
 
     type CurrentNetwork = console::network::MainnetV0;

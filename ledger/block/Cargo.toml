@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-block"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A block for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -18,24 +18,6 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-authority/serial",
-  "snarkvm-ledger-puzzle/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-authority/wasm",
-  "snarkvm-ledger-puzzle/wasm",
-  "snarkvm-ledger-committee/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
-test = [ "snarkvm-synthesizer-process/test" ]
-test-helpers = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -90,10 +72,6 @@ workspace = true
 workspace = true
 features = [ "preserve_order" ]
 
-[dev-dependencies.aleo-std]
-workspace = true
-features = [ "storage" ]
-
 [dev-dependencies.bincode]
 workspace = true
 
@@ -105,7 +83,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem" ]
+features = [ "filesystem", "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true
@@ -123,3 +101,7 @@ path = "../store"
 
 [dev-dependencies.snarkvm-synthesizer-process]
 path = "../../synthesizer/process"
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "test-helpers" ]

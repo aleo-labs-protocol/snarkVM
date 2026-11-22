@@ -19,8 +19,7 @@ use console::{
     program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 /// An in-memory transition storage.
 #[derive(Clone)]
@@ -42,6 +41,8 @@ pub struct TransitionMemory<N: Network> {
     /// The signer commitments.
     scm_map: MemoryMap<N::TransitionID, Field<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for TransitionMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
@@ -137,6 +138,8 @@ pub struct InputMemory<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for InputMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> InputStorage<N> for InputMemory<N> {
@@ -255,6 +258,8 @@ pub struct OutputMemory<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for OutputMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> OutputStorage<N> for OutputMemory<N> {

@@ -1,0 +1,82 @@
+# Circuit shape of `ternary` for each operand mode and a fixed set of addresses.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-address --test snapshots
+boolean.constant address.constant address.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.constant address.public | true zero _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.public | true generator _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.public | true sampled-1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.public | true sampled-2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant address.constant address.private | true zero _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.private | true generator _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.private | true sampled-1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.constant address.private | true sampled-2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.public address.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.public address.constant | true _ zero : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.public address.constant | true _ generator : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.public address.constant | true _ sampled-1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.public address.constant | true _ sampled-2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.public address.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.public address.private | false _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant address.public address.private | true _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.private address.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant address.private address.constant | true _ zero : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant address.private address.constant | true _ generator : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant address.private address.constant | true _ sampled-1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant address.private address.constant | true _ sampled-2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant address.private address.public | false _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant address.private address.public | true _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant address.private address.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public address.constant address.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public address.constant address.constant | _ zero zero : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.public address.constant address.public | _ zero _ : 0 0 2 2 3/2/4 private 942b8ca2af5ec25b
+boolean.public address.constant address.public | _ generator _ : 0 0 2 2 4/2/4 private de4d40e0523652f8
+boolean.public address.constant address.public | _ sampled-1 _ : 0 0 2 2 4/2/4 private 135934c0c65e817b
+boolean.public address.constant address.public | _ sampled-2 _ : 0 0 2 2 4/2/4 private 33e22f8059b30602
+boolean.public address.constant address.private | _ zero _ : 0 0 2 2 3/2/4 private f13b6baa0f580f1f
+boolean.public address.constant address.private | _ generator _ : 0 0 2 2 4/2/4 private c336554fe734c20b
+boolean.public address.constant address.private | _ sampled-1 _ : 0 0 2 2 4/2/4 private 42a5e7595df73e7b
+boolean.public address.constant address.private | _ sampled-2 _ : 0 0 2 2 4/2/4 private 2a5836ec0573e64d
+boolean.public address.public address.constant | _ _ zero : 0 0 2 2 3/2/3 private 2e0a18cd168bf3af
+boolean.public address.public address.constant | _ _ generator : 0 0 2 2 4/2/4 private 269e81562057fb78
+boolean.public address.public address.constant | _ _ sampled-1 : 0 0 2 2 4/2/4 private c4122d7a7145782d
+boolean.public address.public address.constant | _ _ sampled-2 : 0 0 2 2 4/2/4 private 8eb09864ae703507
+boolean.public address.public address.public | _ _ _ : 0 0 2 2 4/2/4 private 50cfa68ac0853635
+boolean.public address.public address.private | _ _ _ : 0 0 2 2 4/2/4 private e0e5cfed3526accd
+boolean.public address.private address.constant | _ _ zero : 0 0 2 2 3/2/3 private 4cddf9abf0ce53b6
+boolean.public address.private address.constant | _ _ generator : 0 0 2 2 4/2/4 private c1e1526ac3c5a3de
+boolean.public address.private address.constant | _ _ sampled-1 : 0 0 2 2 4/2/4 private 8b1f87a318af3d8c
+boolean.public address.private address.constant | _ _ sampled-2 : 0 0 2 2 4/2/4 private 25426358ee6f066c
+boolean.public address.private address.public | _ _ _ : 0 0 2 2 4/2/4 private f1d3d0c0b540dd1b
+boolean.public address.private address.private | _ _ _ : 0 0 2 2 4/2/4 private 2b8740c0614b3986
+boolean.private address.constant address.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.private address.constant address.constant | _ zero zero : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.private address.constant address.public | _ zero _ : 0 0 2 2 3/2/4 private 5a581bfc43413031
+boolean.private address.constant address.public | _ generator _ : 0 0 2 2 4/2/4 private 562df0335c942a32
+boolean.private address.constant address.public | _ sampled-1 _ : 0 0 2 2 4/2/4 private a9c450a493017110
+boolean.private address.constant address.public | _ sampled-2 _ : 0 0 2 2 4/2/4 private 4e15b870650e2d88
+boolean.private address.constant address.private | _ zero _ : 0 0 2 2 3/2/4 private d400d06294931544
+boolean.private address.constant address.private | _ generator _ : 0 0 2 2 4/2/4 private cfa01423de03e5ed
+boolean.private address.constant address.private | _ sampled-1 _ : 0 0 2 2 4/2/4 private 6b10d361810dc4f2
+boolean.private address.constant address.private | _ sampled-2 _ : 0 0 2 2 4/2/4 private b610112fe5c11b93
+boolean.private address.public address.constant | _ _ zero : 0 0 2 2 3/2/3 private 62c870522bcf880b
+boolean.private address.public address.constant | _ _ generator : 0 0 2 2 4/2/4 private 060f5bf70a938dd4
+boolean.private address.public address.constant | _ _ sampled-1 : 0 0 2 2 4/2/4 private d71befcee8cfd4de
+boolean.private address.public address.constant | _ _ sampled-2 : 0 0 2 2 4/2/4 private f62e0cedabf886fd
+boolean.private address.public address.public | _ _ _ : 0 0 2 2 4/2/4 private 7ee40d87cde35112
+boolean.private address.public address.private | _ _ _ : 0 0 2 2 4/2/4 private 383376e6cc2a34b2
+boolean.private address.private address.constant | _ _ zero : 0 0 2 2 3/2/3 private 4a41478aaf45ac20
+boolean.private address.private address.constant | _ _ generator : 0 0 2 2 4/2/4 private 6d3f595068f0c470
+boolean.private address.private address.constant | _ _ sampled-1 : 0 0 2 2 4/2/4 private 6f0c1d9f1c50862f
+boolean.private address.private address.constant | _ _ sampled-2 : 0 0 2 2 4/2/4 private 0d401f3629ec5dbb
+boolean.private address.private address.public | _ _ _ : 0 0 2 2 4/2/4 private 672216f9869db8a8
+boolean.private address.private address.private | _ _ _ : 0 0 2 2 4/2/4 private 06251eaeb72031ce

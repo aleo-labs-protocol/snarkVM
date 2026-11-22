@@ -29,36 +29,6 @@ impl<A: Aleo> Ternary for Signature<A> {
     }
 }
 
-impl<A: Aleo> Metrics<dyn Ternary<Boolean = Boolean<A>, Output = Signature<A>>> for Signature<A> {
-    type Case = (Mode, Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            (Mode::Constant, _, _)
-            | (Mode::Public, Mode::Constant, Mode::Constant)
-            | (Mode::Private, Mode::Constant, Mode::Constant) => Count::is(0, 0, 0, 0),
-            _ => Count::is(0, 0, 7, 7),
-        }
-    }
-}
-
-impl<A: Aleo> OutputMode<dyn Ternary<Boolean = Boolean<A>, Output = Self>> for Signature<A> {
-    type Case = (CircuitType<Boolean<A>>, Mode, Mode);
-
-    fn output_mode(parameter: &Self::Case) -> Mode {
-        match parameter.0.mode().is_constant() {
-            true => match &parameter.0 {
-                CircuitType::Constant(constant) => match constant.eject_value() {
-                    true => parameter.1,
-                    false => parameter.2,
-                },
-                _ => A::halt("The constant condition is required to determine output mode."),
-            },
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,8 +46,7 @@ mod tests {
             let case = format!("({} ? {} : {})", condition.eject_value(), a.eject_value(), b.eject_value());
             let candidate = Signature::ternary(&condition, &a, &b);
             assert_eq!(expected, candidate.eject_value(), "{case}");
-            assert_count!(Ternary(Boolean, Signature, Signature) => Signature, &(condition.eject_mode(), a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Ternary(Boolean, Signature, Signature) => Signature, &(CircuitType::from(&condition), a.eject_mode(), b.eject_mode()), candidate);
+            assert_scope!();
         });
     }
 

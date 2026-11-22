@@ -43,7 +43,9 @@ impl<A: Aleo> ToBits for Record<A, Plaintext<A>> {
 
         // Write the first 31 bits of the data length (as we know it is less than 2^31).
         // Note: In order to introduce a hiding bitflag, we repurpose the last bit as the hiding bit.
-        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_le.len() as u32)).to_bits_le()[..31]);
+        let data_bits_len =
+            u32::try_from(data_bits_le.len()).unwrap_or_else(|_| A::halt("Record data exceeds u32::MAX bits"));
+        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_len)).to_bits_le()[..31]);
 
         // Construct the hiding bit.
         // Note: While this bitflag is redundant, it is necessary for backwards compatibility.
@@ -88,7 +90,9 @@ impl<A: Aleo> ToBits for Record<A, Plaintext<A>> {
 
         // Write the last 31 bits of the data length (as we know it is less than 2^31).
         // Note: In order to introduce a hiding bitflag, we repurpose the first bit as the hiding bit.
-        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_be.len() as u32)).to_bits_be()[1..]);
+        let data_bits_len =
+            u32::try_from(data_bits_be.len()).unwrap_or_else(|_| A::halt("Record data exceeds u32::MAX bits"));
+        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_len)).to_bits_be()[1..]);
 
         // Construct the data bits.
         vec.extend_from_slice(&data_bits_be);
@@ -134,7 +138,9 @@ impl<A: Aleo> ToBits for Record<A, Ciphertext<A>> {
 
         // Write the first 31 bits of the data length (as we know it is less than 2^31).
         // Note: In order to introduce a hiding bitflag, we repurpose the last bit as the hiding bit.
-        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_le.len() as u32)).to_bits_le()[..31]);
+        let data_bits_len =
+            u32::try_from(data_bits_le.len()).unwrap_or_else(|_| A::halt("Record data exceeds u32::MAX bits"));
+        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_len)).to_bits_le()[..31]);
 
         // Construct the hiding bit.
         // Note: While this bitflag is redundant, it is necessary for backwards compatibility.
@@ -185,7 +191,9 @@ impl<A: Aleo> ToBits for Record<A, Ciphertext<A>> {
 
         // Write the last 31 bits of the data length (as we know it is less than 2^31).
         // Note: In order to introduce a hiding bitflag, we repurpose the first bit as the hiding bit.
-        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_be.len() as u32)).to_bits_be()[1..]);
+        let data_bits_len =
+            u32::try_from(data_bits_be.len()).unwrap_or_else(|_| A::halt("Record data exceeds u32::MAX bits"));
+        vec.extend_from_slice(&U32::constant(console::U32::new(data_bits_len)).to_bits_be()[1..]);
 
         // Construct the data bits.
         vec.extend_from_slice(&data_bits_be);

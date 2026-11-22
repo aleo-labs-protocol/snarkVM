@@ -35,10 +35,9 @@ macro_rules! remove_file {
         #[cfg(all(feature = "filesystem", not(feature = "wasm")))]
         if std::path::PathBuf::from(&$filepath).exists() {
             let _removed = std::fs::remove_file(&$filepath);
-            #[cfg(not(feature = "no_std_out"))]
             match _removed {
-                Ok(()) => println!("Removed {:?}. Please retry the command.", $filepath),
-                Err(err) => eprintln!("Failed to remove {:?}: {err}", $filepath),
+                Ok(()) => snarkvm_utilities::tracing::warn!("Removed {:?}. Please retry the command.", $filepath),
+                Err(err) => snarkvm_utilities::tracing::warn!("Failed to remove {:?}: {err}", $filepath),
             }
         }
     };
@@ -50,12 +49,7 @@ macro_rules! impl_store_and_remote_fetch {
         fn store_bytes(buffer: &[u8], file_path: &std::path::Path) -> Result<(), $crate::errors::ParameterError> {
             use snarkvm_utilities::Write;
 
-            #[cfg(not(feature = "no_std_out"))]
-            {
-                use colored::*;
-                let output = format!("{:>15} - Storing file in {:?}", "Installation", file_path);
-                println!("{}", output.dimmed());
-            }
+            snarkvm_utilities::tracing::info!("Storing file in {file_path:?}");
 
             // Ensure the folders up to the file path all exist.
             let mut directory_path = file_path.to_path_buf();
@@ -93,7 +87,7 @@ macro_rules! impl_store_and_remote_fetch {
                         }
                     }
                 }
-                Err(error) => eprintln!("{}", error),
+                Err(error) => snarkvm_utilities::tracing::warn!("Failed to create {temp_path:?}: {error}"),
             }
             Ok(())
         }
@@ -112,12 +106,7 @@ macro_rules! impl_store_and_remote_fetch {
             match file.try_lock() {
                 Ok(()) => Some(file),
                 Err(std::fs::TryLockError::WouldBlock) => {
-                    #[cfg(not(feature = "no_std_out"))]
-                    {
-                        use colored::*;
-                        let output = format!("{:>15} - Waiting for a concurrent download of {:?}", "Installation", file_path);
-                        println!("{}", output.dimmed());
-                    }
+                    snarkvm_utilities::tracing::info!("Waiting for a concurrent download of {file_path:?}");
                     file.lock().ok().map(|()| file)
                 }
                 Err(std::fs::TryLockError::Error(_)) => None,
@@ -128,12 +117,7 @@ macro_rules! impl_store_and_remote_fetch {
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
             use std::io::Read;
 
-            #[cfg(not(feature = "no_std_out"))]
-            {
-                use colored::*;
-                let output = format!("{:>15} - Downloading \"{}\"", "Installation", url);
-                println!("{}", output.dimmed());
-            }
+            snarkvm_utilities::tracing::info!("Downloading \"{url}\"");
 
             use std::time::Duration;
             const CONNECT: Option<Duration> = Some(Duration::from_secs(10));
@@ -174,13 +158,7 @@ macro_rules! impl_store_and_remote_fetch {
                 }
             }
 
-            #[cfg(not(feature = "no_std_out"))]
-            {
-                use colored::*;
-                let size_in_megabytes = buffer.len() as u64 / 1_048_576;
-                let output = format!("{:>15} - Download complete ({} MB)", "Installation", size_in_megabytes);
-                println!("{}", output.dimmed());
-            }
+            snarkvm_utilities::tracing::info!("Download complete ({} MB)", buffer.len() as u64 / 1_048_576);
 
             Ok(())
         }
@@ -254,7 +232,7 @@ macro_rules! impl_load_bytes_logic_remote {
         cfg_if::cfg_if! {
             if #[cfg(all(feature = "filesystem", not(feature="wasm")))] {
                 // Compose the correct file path for the parameter file.
-                let mut file_path = aleo_std::aleo_dir();
+                let mut file_path = snarkvm_utilities::aleo_dir();
                 file_path.push($local_dir);
                 file_path.push($filename);
 
@@ -271,15 +249,7 @@ macro_rules! impl_load_bytes_logic_remote {
                     std::fs::read(&file_path)?
                 } else {
                     // Downloads the missing parameters and stores it in the local directory for use.
-                    #[cfg(not(feature = "no_std_out"))]
-                    {
-                        use colored::*;
-                        let path = format!("(in {:?})", file_path);
-                        eprintln!(
-                            "\n⚠️  \"{}\" does not exist. Downloading and storing it {}.\n",
-                            $filename, path.dimmed()
-                        );
-                    }
+                    snarkvm_utilities::tracing::info!("\"{}\" does not exist. Downloading and storing it in {:?}.", $filename, file_path);
 
                     // Load remote file
                     cfg_if::cfg_if!{
@@ -290,18 +260,9 @@ macro_rules! impl_load_bytes_logic_remote {
                             let mut last_error: Option<($crate::errors::ParameterError, &str)> = None;
 
                             for base_url in remote_urls.iter() {
-                                // Remove the previous error (if any).
-                                cfg_if::cfg_if!{
-                                    if #[cfg(feature = "no_std_out")] {
-                                        last_error = None;
-                                    } else {
-                                        use colored::Colorize;
-                                        // If this is a retry, print the previous error as warning.
-                                        if let Some((err, url)) = last_error.take() {
-                                            eprintln!("{:>15} - {err}", "Warning".yellow());
-                                            eprintln!("{:>15} - Failed to fetch from \"{url}\". Trying next source...", "Warning".yellow());
-                                         }
-                                    }
+                                // Log the previous error (if any).
+                                if let Some((err, url)) = last_error.take() {
+                                    snarkvm_utilities::tracing::warn!("Failed to fetch from \"{url}\": {err}. Trying next source...");
                                 }
 
                                 let url = format!("{}/{}", base_url, $filename);
@@ -337,8 +298,8 @@ macro_rules! impl_load_bytes_logic_remote {
                             match stored {
                                 Ok(()) => buffer,
                                 Err(_) => {
-                                    eprintln!(
-                                        "\n❗ Error - Failed to store \"{}\" locally. Please download this file manually and ensure it is stored in {:?}.\n",
+                                    snarkvm_utilities::tracing::warn!(
+                                        "Failed to store \"{}\" locally. Please download this file manually and ensure it is stored in {:?}.",
                                         $filename, file_path
                                     );
                                     buffer

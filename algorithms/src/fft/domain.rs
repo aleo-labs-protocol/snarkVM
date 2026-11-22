@@ -33,18 +33,13 @@ use crate::{
     fft::{DensePolynomial, DomainCoeff, SparsePolynomial},
 };
 use snarkvm_fields::{FftField, FftParameters, Field, PrimeField, batch_inversion};
-#[cfg(not(feature = "serial"))]
-use snarkvm_utilities::max_available_threads;
-use snarkvm_utilities::{execute_with_max_available_threads, serialize::*};
+use snarkvm_utilities::{execute_with_max_available_threads, max_available_threads, serialize::*};
 
 use rand::RngExt;
 use std::{borrow::Cow, fmt};
 
 use anyhow::{Result, anyhow, ensure};
 
-#[cfg(feature = "serial")]
-use itertools::Itertools;
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Returns the ceiling of the base-2 logarithm of `x`.
@@ -72,7 +67,6 @@ pub fn log2(x: usize) -> u32 {
 
 // minimum size of a parallelized chunk
 #[allow(unused)]
-#[cfg(not(feature = "serial"))]
 const MIN_PARALLEL_CHUNK_SIZE: usize = 1 << 7;
 
 /// Defines a domain over which finite field (I)FFTs can be performed. Works
@@ -226,18 +220,6 @@ impl<F: FftField> EvaluationDomain<F> {
     }
 
     /// Multiply the `i`-th element of `coeffs` with `c*g^i`.
-    #[cfg(feature = "serial")]
-    fn distribute_powers_and_mul_by_const<T: DomainCoeff<F>>(coeffs: &mut [T], g: F, c: F) {
-        // invariant: pow = c*g^i at the ith iteration of the loop
-        let mut pow = c;
-        coeffs.iter_mut().for_each(|coeff| {
-            *coeff *= pow;
-            pow *= &g
-        })
-    }
-
-    /// Multiply the `i`-th element of `coeffs` with `c*g^i`.
-    #[cfg(not(feature = "serial"))]
     fn distribute_powers_and_mul_by_const<T: DomainCoeff<F>>(coeffs: &mut [T], g: F, c: F) {
         let min_parallel_chunk_size = 1024;
         let num_cpus_available = max_available_threads();
@@ -282,10 +264,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // run in parallel.
             //
             // Same shape as `distribute_powers_and_mul_by_const` above.
-            #[cfg(not(feature = "serial"))]
             let chunk = core::cmp::max(size / max_available_threads(), 1024);
-            #[cfg(feature = "serial")]
-            let chunk = core::cmp::max(size, 1);
 
             // The chunks run unordered, so each seeds itself rather than carrying `r` from
             // its predecessor. `chunk_gen^i` is the same seed as `g^(i*chunk)` from a
@@ -344,6 +323,7 @@ impl<F: FftField> EvaluationDomain<F> {
     /// first elements
     pub fn reindex_by_subdomain(&self, other: &Self, index: usize) -> Result<usize> {
         ensure!(self.size() > other.size(), "other.size() must be smaller than self.size()");
+        ensure!(index < self.size(), "index ({index}) must be smaller than self.size()");
 
         // Let this subgroup be G, and the subgroup we're re-indexing by be S.
         // Since its a subgroup, the 0th element of S is at index 0 in G, the first
@@ -715,16 +695,7 @@ impl<F: FftField> EvaluationDomain<F> {
         }
     }
 
-    /// Computes the first `self.size / 2` roots of unity for the entire domain.
-    /// e.g. for the domain [1, g, g^2, ..., g^{n - 1}], it computes
-    // [1, g, g^2, ..., g^{(n/2) - 1}]
-    #[cfg(feature = "serial")]
-    pub fn roots_of_unity(&self, root: F) -> Vec<F> {
-        compute_powers_serial((self.size as usize) / 2, root)
-    }
-
     /// Computes the first `self.size / 2` roots of unity.
-    #[cfg(not(feature = "serial"))]
     pub fn roots_of_unity(&self, root: F) -> Vec<F> {
         // TODO: check if this method can replace parallel compute powers.
         let log_size = log2(self.size as usize);
@@ -749,7 +720,6 @@ impl<F: FftField> EvaluationDomain<F> {
         }
     }
 
-    #[cfg(not(feature = "serial"))]
     fn roots_of_unity_recursive(out: &mut [F], log_powers: &[F]) {
         assert_eq!(out.len(), 1 << log_powers.len());
         // base case: just compute the powers sequentially,
@@ -828,10 +798,7 @@ impl<F: FftField> EvaluationDomain<F> {
         let mut step = 1;
         let mut first = true;
 
-        #[cfg(not(feature = "serial"))]
         let max_threads = snarkvm_utilities::parallel::max_available_threads();
-        #[cfg(feature = "serial")]
-        let max_threads = 1;
 
         let mut gap = xi.len() / 2;
         while gap > 0 {
@@ -877,10 +844,7 @@ impl<F: FftField> EvaluationDomain<F> {
             core::cmp::min(roots_cache.len() / 2, roots_cache.len() / MIN_NUM_CHUNKS_FOR_COMPACTION);
         let mut compacted_roots = vec![F::default(); compaction_max_size];
 
-        #[cfg(not(feature = "serial"))]
         let max_threads = snarkvm_utilities::parallel::max_available_threads();
-        #[cfg(feature = "serial")]
-        let max_threads = 1;
 
         let mut gap = 1;
         while gap < xi.len() {
@@ -916,7 +880,6 @@ const MIN_NUM_CHUNKS_FOR_COMPACTION: usize = 1 << 7;
 const MIN_GAP_SIZE_FOR_PARALLELISATION: usize = 1 << 10;
 
 // minimum size at which to parallelize.
-#[cfg(not(feature = "serial"))]
 const LOG_ROOTS_OF_UNITY_PARALLEL_SIZE: u32 = 7;
 
 #[inline]
@@ -965,7 +928,6 @@ pub(crate) fn compute_powers_and_mul_by_const_serial<F: Field>(size: usize, root
 }
 
 #[allow(unused)]
-#[cfg(not(feature = "serial"))]
 pub(crate) fn compute_powers<F: Field>(size: usize, g: F) -> Vec<F> {
     if size < MIN_PARALLEL_CHUNK_SIZE {
         return compute_powers_serial(size, g);
@@ -1582,6 +1544,19 @@ mod tests {
             }
             image.sort_unstable();
             assert_eq!(image, (0..g.size()).collect::<Vec<_>>(), "big={big} small={small} not a permutation");
+        }
+    }
+
+    /// `reindex_by_subdomain` rejects an index outside the domain, up to the
+    /// largest `usize`.
+    #[test]
+    fn reindex_by_subdomain_rejects_an_index_outside_the_domain() {
+        for (big, small) in [(2usize, 1usize), (8, 2)] {
+            let g = EvaluationDomain::<Fr>::new(big).unwrap();
+            let s = EvaluationDomain::<Fr>::new(small).unwrap();
+            for index in [g.size(), usize::MAX / 2 + 2, usize::MAX] {
+                assert!(g.reindex_by_subdomain(&s, index).is_err(), "big={big} small={small} index={index}");
+            }
         }
     }
 }

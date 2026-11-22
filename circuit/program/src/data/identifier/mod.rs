@@ -54,7 +54,10 @@ impl<A: Aleo> Identifier<A> {
         let field = Field::from_bits_le(&Vec::<Boolean<_>>::constant(identifier_string.to_bits_le()));
 
         // Return the identifier.
-        Self(field, identifier_string.len() as u8)
+        Self(
+            field,
+            u8::try_from(identifier_string.len()).unwrap_or_else(|_| A::halt("Identifier exceeds u8::MAX bytes")),
+        )
     }
 
     /// Returns a public identifier.
@@ -71,7 +74,10 @@ impl<A: Aleo> Identifier<A> {
             Err(error) => A::halt(format!("Failed to convert an identifier to a field: {error}")),
         };
 
-        Self(field, identifier_string.len() as u8)
+        Self(
+            field,
+            u8::try_from(identifier_string.len()).unwrap_or_else(|_| A::halt("Identifier exceeds u8::MAX bytes")),
+        )
     }
 }
 

@@ -24,6 +24,10 @@ use std::io;
 ///
 /// At an upgrade height, snarkOS nodes stop communicating with nodes of a lower
 /// `ConsensusVersion` by default. A height of `u32::MAX` is an unscheduled stub and is not an upgrade.
+///
+/// Minor releases add a variant for each new consensus version, and snarkVM does not treat this as a
+/// breaking change. Gate on a version with comparisons such as `>=`. An exhaustive match must be updated
+/// for each new version, so that each new version is handled explicitly.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Sequence)]
 #[repr(u16)]
 pub enum ConsensusVersion {
@@ -85,6 +89,11 @@ pub enum ConsensusVersion {
     ///      Lowers the maximum committee size on testnet to 40.
     ///      Modifies the cost of the rand.chacha opcode to a more accurate value.
     V22 = 22,
+    /// V23: Adds explicit availability status to block responses (snarkOS message version 34).
+    ///      Rejects deployments with a static `call` to a function that has a constant output.
+    ///      Prices non-raw hash and commitment inputs by their encoded size in finalize.
+    ///      Prices the message in `sign.verify` by its encoded size in finalize.
+    V23 = 23,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -119,6 +128,7 @@ impl FromBytes for ConsensusVersion {
             20 => Ok(Self::V20),
             21 => Ok(Self::V21),
             22 => Ok(Self::V22),
+            23 => Ok(Self::V23),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -164,6 +174,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V20, u32::MAX),
     (ConsensusVersion::V21, u32::MAX),
     (ConsensusVersion::V22, u32::MAX),
+    (ConsensusVersion::V23, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -192,6 +203,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V21, 22_437_000),
     // Target: October 20, 2026 at ~18:00 UTC
     (ConsensusVersion::V22, 22_962_000),
+    (ConsensusVersion::V23, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -219,9 +231,10 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V21, 20_234_000),
     // Target: October 13, 2026 at ~08:00 UTC (evening of October 12 PT)
     (ConsensusVersion::V22, 20_415_000),
+    (ConsensusVersion::V23, u32::MAX),
 ];
 
-/// The consensus version heights when the `test_consensus_heights` feature is enabled.
+/// The consensus version heights when the `dev-network` feature is enabled.
 // We want each to come immediately after the previous one by default for faster testing.
 // Whether activating them all at height 0 is possible is open for investigation.
 // If a test needs to stay on one consensus version for a while, consider just locally testing or using a custom `CONSENSUS_VERSION_HEIGHTS` environment variable.
@@ -248,13 +261,14 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V20, 23),
     (ConsensusVersion::V21, 24),
     (ConsensusVersion::V22, 25),
+    (ConsensusVersion::V23, 26),
 ];
 
 /// Asserts that the given consensus version heights are well-formed.
 ///
 /// A height of `u32::MAX` means the version is unscheduled. Scheduled heights strictly increase,
 /// and once a version is unscheduled every later version must also be unscheduled.
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+#[cfg(any(test, feature = "dev-network", feature = "wasm"))]
 pub(crate) fn verify_consensus_heights(heights: &[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]) {
     assert_eq!(heights[0].1, 0, "Genesis height must be 0.");
     for window in heights.windows(2) {
@@ -273,13 +287,13 @@ pub(crate) fn verify_consensus_heights(heights: &[(ConsensusVersion, u32); NUM_C
     }
 }
 
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
+#[cfg(any(test, feature = "dev-network"))]
 pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
     // Attempt to read the test consensus heights from the environment variable.
     load_test_consensus_heights_inner(std::env::var("CONSENSUS_VERSION_HEIGHTS").ok())
 }
 
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+#[cfg(any(test, feature = "dev-network", feature = "wasm"))]
 pub(crate) fn load_test_consensus_heights_inner(
     consensus_version_heights: Option<String>,
 ) -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
@@ -749,6 +763,7 @@ mod tests {
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V20), VarunaVersion::V2);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V21), VarunaVersion::V3);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V22), VarunaVersion::V3);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V23), VarunaVersion::V3);
     }
 
     /// Ensure that every published consensus height table is well-formed.
@@ -793,16 +808,9 @@ mod tests {
     /// Ensure that a trailing run of unscheduled versions is accepted.
     #[test]
     fn test_consensus_heights_accept_trailing_unscheduled() {
-        let heights = load_test_consensus_heights_inner(Some(test_heights_string(&[
-            (18, u32::MAX),
-            (19, u32::MAX),
-            (20, u32::MAX),
-            (21, u32::MAX),
-        ])));
+        let overrides: Vec<_> = (18..NUM_CONSENSUS_VERSIONS).map(|index| (index, u32::MAX)).collect();
+        let heights = load_test_consensus_heights_inner(Some(test_heights_string(&overrides)));
         assert_eq!(heights[17].1, 21);
-        assert_eq!(heights[18].1, u32::MAX);
-        assert_eq!(heights[19].1, u32::MAX);
-        assert_eq!(heights[20].1, u32::MAX);
-        assert_eq!(heights[21].1, u32::MAX);
+        assert!(heights[18..].iter().all(|(_, height)| *height == u32::MAX));
     }
 }

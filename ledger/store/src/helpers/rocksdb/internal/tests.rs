@@ -24,8 +24,7 @@ use console::{
     prelude::{TestRng, Uniform},
     types::Scalar,
 };
-
-use aleo_std::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 // pub(crate) fn temp_file() -> std::path::PathBuf {
 //     tempfile::NamedTempFile::new().expect("Failed to open temporary file").path().to_owned()
@@ -52,7 +51,7 @@ fn test_open_allocates_little_disk_space() {
     const MAX_ALLOCATED_BYTES: u64 = 1024 * 1024;
 
     let storage = StorageMode::new_test(None);
-    let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
+    let path = snarkvm_utilities::aleo_ledger_dir(0, &storage);
     let map = RocksDB::open_map(0, storage, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
 
     for i in 0..100u32 {
@@ -71,7 +70,7 @@ fn test_open_allocates_little_disk_space() {
 #[test]
 fn test_dropping_last_handle_deletes_test_directory() {
     let storage = StorageMode::new_test(None);
-    let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
+    let path = snarkvm_utilities::aleo_ledger_dir(0, &storage);
     let map = RocksDB::open_map(0, storage.clone(), MapID::Test(TestMapID::Test)).expect("Failed to open data map");
     let nested_map =
         RocksDB::open_nested_map(0, storage, MapID::Test(TestMapID::Test2)).expect("Failed to open nested data map");
@@ -88,7 +87,7 @@ fn test_dropping_last_handle_deletes_test_directory() {
 fn test_reopen_after_dropping_every_handle() {
     // The caller's `StorageMode` keeps the directory alive after the database closes.
     let storage = StorageMode::new_test(None);
-    let path = aleo_std_storage::aleo_ledger_dir(0, &storage);
+    let path = snarkvm_utilities::aleo_ledger_dir(0, &storage);
 
     let map = RocksDB::open_map(0, storage.clone(), MapID::Test(TestMapID::Test)).expect("Failed to open data map");
     map.insert(123456789u32, "123456789".to_string()).expect("Failed to insert");

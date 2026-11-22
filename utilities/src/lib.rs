@@ -40,12 +40,11 @@ pub use vm_error::*;
 pub mod iterator;
 pub use iterator::*;
 
+pub mod locks;
+
 #[macro_use]
 pub mod parallel;
 pub use parallel::*;
-
-#[macro_use]
-mod print;
 
 pub mod rand;
 pub use self::rand::*;
@@ -54,9 +53,56 @@ pub use self::rand::*;
 pub mod serialize;
 pub use serialize::*;
 
+/// A cache of test fixtures that the test processes of one binary share.
+#[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
+pub mod fixture;
+#[cfg(any(test, feature = "test-helpers"))]
+pub use fixture::*;
+
+/// The storage mode of a node, and the directories that it resolves to.
+#[cfg(feature = "storage")]
+pub mod storage;
+#[cfg(feature = "storage")]
+pub use storage::*;
+
+#[macro_use]
+mod timing;
+
 /// Helpers for error handling.
 pub mod errors;
 pub use errors::*;
 
 /// Use old name for backward-compatibility.
 pub use errors::io_error as error;
+
+/// Seals [`PrettyUnwrap`]. Only this crate implements it.
+///
+/// ```compile_fail,E0277
+/// use snarkvm_utilities::PrettyUnwrap;
+///
+/// struct Wrapper;
+///
+/// impl PrettyUnwrap for Wrapper {
+///     type Inner = ();
+///
+///     fn pretty_unwrap(self) -> Self::Inner {}
+///
+///     fn pretty_expect<S: ToString>(self, _: S) -> Self::Inner {}
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// The `tracing` crate, for the expansion of `timing_span!` and `timing_event!`.
+#[doc(hidden)]
+pub use tracing;
+
+/// The `locktick` crate, for dependents that build with `--cfg locktick`.
+///
+/// Hazard: a dependent that depends on `locktick` directly can build a second copy of it, whose
+/// `lock_snapshots` does not list snarkVM's locks.
+#[cfg(locktick)]
+#[doc(hidden)]
+pub use locktick;

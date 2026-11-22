@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-types-address"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Address circuit for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -25,3 +25,7 @@ workspace = true
 
 [dependencies.snarkvm-circuit-types-scalar]
 workspace = true
+
+[dev-dependencies.snarkvm-circuit-environment]
+workspace = true
+features = [ "test-helpers" ]
