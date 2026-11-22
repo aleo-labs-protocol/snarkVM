@@ -75,10 +75,10 @@ module, and old-version tests under `vm::tests::old_versions`. See "Synthesizer 
 
 ```bash
 cargo test -p <crate>                                           # Run crate tests
-cargo test -p <crate> -- test_name                              # Run specific test
-cargo test -p snarkvm-synthesizer --lib -- --include-ignored --skip memory_intensive --skip old_versions  # Fast and slow tiers
-cargo test -p snarkvm-synthesizer --lib -- --ignored memory_intensive  # Memory-intensive tier
-cargo test -p snarkvm-synthesizer --lib --release -- --ignored old_versions  # Old-version tier
+cargo test -p <crate> -- --include-ignored test_name            # Run specific test, even if ignored
+cargo test -p snarkvm-synthesizer --lib -- --include-ignored --skip ::memory_intensive:: --skip ::old_versions::  # Fast and slow tiers
+cargo test -p snarkvm-synthesizer --lib -- --ignored ::memory_intensive:: --test-threads 2  # Memory-intensive tier
+cargo test -p snarkvm-synthesizer --lib --release -- --ignored ::old_versions::  # Old-version tier
 cargo test -p snarkvm-synthesizer --test '*'                    # Integration tests
 ```
 

@@ -147,9 +147,11 @@ and path say its tier:
 To run a tier with `cargo test -p snarkvm-synthesizer --lib`:
 
 - fast: no arguments;
-- fast and slow: `-- --include-ignored --skip memory_intensive --skip old_versions`;
-- memory-intensive: `-- --ignored memory_intensive`;
-- old versions, in release: `--release -- --ignored old_versions`.
+- fast and slow: `-- --include-ignored --skip ::memory_intensive:: --skip ::old_versions::`;
+- memory-intensive: `-- --ignored ::memory_intensive:: --test-threads 2`;
+- old versions, in release: `--release -- --ignored ::old_versions::`.
+
+A test name filter alone skips an ignored test. Add `--include-ignored` to run one by name.
 
 ## Forks
 

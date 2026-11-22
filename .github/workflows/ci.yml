@@ -491,12 +491,12 @@ jobs:
           # Two shards: the tests keep all 8 slots busy for the whole run, so only
           # more runners make it finish sooner.
           - name: synthesizer-test-1
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/memory_intensive|old_versions/) -j 8 --partition count:1/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8 --partition count:1/2
           - name: synthesizer-test-2
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/memory_intensive|old_versions/) -j 8 --partition count:2/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8 --partition count:2/2
           - name: synthesizer-prerelease
             runs: |
-              nextest run -p snarkvm-synthesizer --run-ignored only -E test(/memory_intensive/) -j 2
+              nextest run -p snarkvm-synthesizer --lib --run-ignored only -E test(/::memory_intensive::/) -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
           - name: synthesizer-integration
             runs: nextest run -p snarkvm-synthesizer -j 4 --test *
@@ -549,7 +549,7 @@ jobs:
         name: [old-consensus-versions-1, old-consensus-versions-2, old-consensus-versions-3, integers-exhaustive, synthesizer-rocks]
         include:
           # Three shards, each on its own box. `count:` deals the tests out in
-          # name order, so each slow `test_v14` module spreads across shards.
+          # name order, so each long `test_v14` module spreads across shards.
           - name: old-consensus-versions-1
             runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:1/3 -E test(/::old_versions::/)
           - name: old-consensus-versions-2
@@ -564,8 +564,8 @@ jobs:
           # only test_vm_execute_and_finalize opens a RocksDB store.
           - name: synthesizer-rocks
             runs: |
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored all -E !test(/memory_intensive|old_versions/) -j 8
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored only -E test(/memory_intensive/) -j 2
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored only -E test(/::memory_intensive::/) -j 2
               nextest run -p snarkvm-synthesizer --release --features rocks --test test_vm_execute_and_finalize
     name: test-release
     steps: *test-steps
