@@ -401,7 +401,7 @@ fn read_point_unchecked<E: PairingEngine, R: Read>(reader: &mut R) -> io::Result
     let infinity = bool::read_le(&mut *reader)?;
 
     if infinity != (x.is_zero() && y.is_one()) {
-        return Err(error("Infinity flag is not valid"));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Infinity flag is not valid"));
     }
     Ok(E::G1Affine::from_coordinates_unchecked((x, y, infinity)))
 }
@@ -888,7 +888,7 @@ mod tests {
 
         assert_eq!(read(generator, false).unwrap(), generator);
         assert_eq!(read(zero, true).unwrap(), zero);
-        assert!(read(generator, true).is_err());
-        assert!(read(zero, false).is_err());
+        assert_eq!(read(generator, true).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert_eq!(read(zero, false).unwrap_err().kind(), io::ErrorKind::InvalidData);
     }
 }
