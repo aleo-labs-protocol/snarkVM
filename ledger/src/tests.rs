@@ -136,7 +136,7 @@ fn test_load_unchecked() {
 }
 
 /// Loads a ledger whose genesis state root is `Field::one()`.
-#[cfg(feature = "dev_genesis_state_root")]
+#[cfg(feature = "dev-network")]
 #[test]
 fn test_load_dev_genesis_state_root() {
     let rng = &mut TestRng::default();
@@ -1927,24 +1927,25 @@ fn test_abort_invalid_transaction() {
     let crate::test_helpers::TestEnv { ledger, private_key, address, validators, .. } =
         crate::test_helpers::sample_test_env(rng);
 
-    // Initialize a new VM.
-    let vm = sample_vm();
+    // Construct a ledger on a custom genesis block.
+    let custom_genesis = sample_vm().genesis_beacon(&private_key, rng).unwrap();
+    let other_ledger = CurrentLedger::load(custom_genesis, StorageMode::new_test(None)).unwrap();
 
-    // Construct a custom genesis block.
-    let custom_genesis = vm.genesis_beacon(&private_key, rng).unwrap();
-
-    // Update the VM.
-    vm.add_next_block(&custom_genesis).unwrap();
+    // Under `dev-network` every chain stores the same state root at height 0.
+    let block = other_ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+    other_ledger.advance_to_next_block(&block).unwrap();
 
     // Generate a transaction that will be invalid on another network.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
-    let invalid_transaction = vm
+    let invalid_transaction = other_ledger
+        .vm
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.clone().into_iter(), None, 0, None, rng)
         .unwrap();
     let invalid_transaction_id = invalid_transaction.id();
 
     // Check that the ledger deems this transaction invalid.
-    assert!(ledger.check_transaction_basic(&invalid_transaction, None, rng).is_err());
+    let error = ledger.check_transaction_basic(&invalid_transaction, None, rng).unwrap_err();
+    assert!(format!("{error:#}").contains("Fee verification failed - State root"), "{error:#}");
 
     // Construct valid transactions for the ledger.
     let valid_transaction_1 = ledger

@@ -54,7 +54,7 @@ rows.
 | `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins, the fast tier | `synthesizer` |
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`, then `-synthesizer-program`, and then `-circuit-program`, lib and bins, from one build | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
-| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `dev-network`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block`, from the build of the ignored `-ledger-store` tests | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
+| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `dev-network`, ignored ones included, and its dev genesis state root test; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`, the part of `dev-network` that fixes the genesis state root; `-ledger-block`, from the build of the ignored `-ledger-store` tests | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
 | `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
 | `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
 | `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the fast and slow tiers of the `snarkvm-synthesizer` lib and bins | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
@@ -127,8 +127,10 @@ Check this before moving a crate between builds, for example by comparing
 
 `dev-network` lowers network parameters (consensus heights, genesis targets)
 for local test and development networks; never enable it to join a public
-network, including testnet. `snarkvm-ledger` and `snarkvm-synthesizer` enable
-it on their dev-dependencies, so their tests run with it. A `dev-network` build
+network, including testnet. `snarkvm-ledger`'s also fixes the genesis state
+root to `Field::one()` at height 0. `snarkvm-ledger` and `snarkvm-synthesizer`
+enable `snarkvm-console`'s on their dev-dependencies, so their tests run with
+the lowered parameters but not the fixed root. A `dev-network` build
 rejects the shipped genesis blocks, so the `snarkvm-ledger-block` tests that
 read them check only that rejection there; `-ledger-block` runs alone in
 `ledger-merge`, where they read the blocks.
