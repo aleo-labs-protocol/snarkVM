@@ -94,7 +94,9 @@ test-helpers = [
   "dep:snarkvm-circuit",
   "snarkvm-console/test-helpers"
 ]
-dev-committee = []
+# Adds `Ledger::load_with_dev_committee`, which replaces the round-based committee lookups with a deterministic committee from a start round, to extend a copied ledger with blocks it signs; inert unless that loader or its unchecked variant is called.
+# The caller must also relax its own block checks; combined with `dev-network` it cannot load a production ledger, whose genesis that feature rejects. Never enable it to join a public network.
+dev-committee-override = [ ]
 dev_genesis_state_root = [ "snarkvm-ledger-store/dev_genesis_state_root" ]
 
 [dependencies.snarkvm-console]
