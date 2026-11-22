@@ -277,6 +277,8 @@ jobs:
   # `large_params`, on any snarkvm crate. Helper features such as
   # `test-helpers` can still be unified. Each command in an entry with a
   # different feature set rebuilds the snarkvm crates whose features change.
+  # Commands with the same `-p` set and cargo flags share one build; nextest's
+  # `-E` and `-j` are not cargo flags.
   #
   # Cheap entries run on free hosted runners, the rest on the fleet.
   test:
@@ -299,20 +301,27 @@ jobs:
           - name: ledger
             runs: nextest run -p snarkvm-ledger
           # ledger-query's async tests bound wall-clock time, which a loaded
-          # hosted runner can exceed.
+          # hosted runner can exceed. The second and third lines name the same
+          # packages, so they share one build, and their filters split its
+          # tests. A package named in `-p` but in neither filter is built and
+          # never tested. Adding ledger-query to that build would turn on
+          # `filesystem` for it, and its `async` for the others.
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
-              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
-              nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -E package(=snarkvm-ledger-narwhal-data)|package(=snarkvm-ledger-test-helpers)
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -E package(=snarkvm-ledger-puzzle)|package(=snarkvm-ledger-puzzle-epoch)
               nextest run -p snarkvm-ledger-query --features async
           - name: synthesizer
             runs: nextest run -p snarkvm-synthesizer --lib --bins -j 16
+          # The last two lines share one build, and their filters split its
+          # tests. Adding synthesizer-process to that build would turn on
+          # `filesystem` for the others.
           - name: synthesizer-process
             runs: |
               nextest run -p snarkvm-synthesizer-process
-              nextest run -p snarkvm-synthesizer-program --lib --bins
-              nextest run -p snarkvm-circuit-program
+              nextest run -p snarkvm-synthesizer-program -p snarkvm-circuit-program --lib --bins -E package(=snarkvm-synthesizer-program)
+              nextest run -p snarkvm-synthesizer-program -p snarkvm-circuit-program --lib --bins -E package(=snarkvm-circuit-program)
           # nextest runs no doctests. The `compile_fail` doctests check that
           # outside crates cannot implement the sealed traits. This entry is one
           # workspace build, so it unifies `rocks` and
