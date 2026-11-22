@@ -36,7 +36,8 @@ type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<MainnetV0>
 /// verifies with Varuna V1, which the network no longer runs.
 ///
 /// Under `dev-network`, which these benchmarks require, each version from V2 onward lasts
-/// one block, so only the latest version stays put across the blocks the setup needs.
+/// one block, so only the latest version stays put across the blocks the setup needs. Without it,
+/// `initialize_vm` would advance millions of blocks.
 fn bench_consensus_version() -> ConsensusVersion {
     ConsensusVersion::latest()
 }

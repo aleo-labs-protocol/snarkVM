@@ -26,7 +26,7 @@ use criterion::Criterion;
 use std::time::Duration;
 
 /// Fixed RNG seed so benchmark inputs are reproducible across runs.
-const BENCH_RNG_SEED: u64 = 0xB34D_CAFE_CDEC_0123;
+const BENCH_RNG_SEED: u64 = 0xB34D_CAFE_CDEC_0122;
 
 fn prove(c: &mut Criterion) {
     let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
@@ -44,14 +44,22 @@ fn prove(c: &mut Criterion) {
     let mut group = c.benchmark_group("prove");
     group.sample_size(10).measurement_time(Duration::from_secs(60));
 
-    for (function, inputs) in [
+    // Authorize every case before benchmarking any: proving draws from `rng` once per iteration, and
+    // criterion picks the iteration count.
+    let authorizations: Vec<_> = [
         ("transfer_public", vec![address.clone(), amount.clone()]),
         ("transfer_private", vec![Value::Record(records[0].clone()), address, amount]),
-    ] {
+    ]
+    .into_iter()
+    .map(|(function, inputs)| {
         let execute_authorization = vm.authorize(&private_key, "credits.aleo", function, inputs, rng).unwrap();
         let execution_id = execute_authorization.to_execution_id().unwrap();
         let fee_authorization = vm.authorize_fee_public(&private_key, 300000, 1000, execution_id, rng).unwrap();
+        (function, execute_authorization, fee_authorization)
+    })
+    .collect();
 
+    for (function, execute_authorization, fee_authorization) in authorizations {
         group.bench_function(format!("Transaction::Execute({function})"), |b| {
             b.iter(|| {
                 vm.execute_authorization(
