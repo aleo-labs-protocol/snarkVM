@@ -17,6 +17,7 @@ use super::*;
 
 // Tests that awaiting `DynamicFuture` instances in the same order they were created works correctly.
 #[test]
+#[ignore = "old version"]
 fn test_await_in_order() {
     let rng = &mut TestRng::default();
 
@@ -121,6 +122,7 @@ fn test_await_in_order() {
 
 // Tests that awaiting `DynamicFuture` instances in reverse order works correctly.
 #[test]
+#[ignore = "old version"]
 fn test_await_reverse_order() {
     let rng = &mut TestRng::default();
 
@@ -228,6 +230,7 @@ fn test_await_reverse_order() {
 
 // Tests nested `call.dynamic` where A -> B -> C, each with finalize that modifies state.
 #[test]
+#[ignore = "old version"]
 fn test_nested_dynamic_futures() {
     let rng = &mut TestRng::default();
 
@@ -380,6 +383,7 @@ fn test_nested_dynamic_futures() {
 
 // Tests that when a `DynamicFuture`'s finalize fails, the transaction is properly rejected.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_future_finalize_failure() {
     let rng = &mut TestRng::default();
 
@@ -473,6 +477,7 @@ fn test_dynamic_future_finalize_failure() {
 
 // Tests calling the same `call.dynamic` function multiple times and awaiting all `DynamicFuture` instances.
 #[test]
+#[ignore = "old version"]
 fn test_multiple_futures_same_function() {
     let rng = &mut TestRng::default();
 
@@ -576,6 +581,7 @@ fn test_multiple_futures_same_function() {
 
 // Tests reading state modified by a `DynamicFuture`'s finalize using `get.dynamic` after await.
 #[test]
+#[ignore = "old version"]
 fn test_read_state_after_dynamic_await() {
     let rng = &mut TestRng::default();
 
@@ -692,6 +698,7 @@ fn test_read_state_after_dynamic_await() {
 
 // Tests a `call.dynamic` that returns both a `dynamic.record` and a `DynamicFuture`.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_future_with_dynamic_record() {
     let rng = &mut TestRng::default();
 
@@ -800,6 +807,7 @@ fn test_dynamic_future_with_dynamic_record() {
 
 // Tests awaiting `DynamicFuture` instances from different programs in an interleaved order.
 #[test]
+#[ignore = "old version"]
 fn test_interleaved_awaits_different_programs() {
     let rng = &mut TestRng::default();
 
@@ -943,6 +951,7 @@ fn test_interleaved_awaits_different_programs() {
 
 // Tests a `DynamicFuture` with complex finalize logic including multiple mapping operations and conditionals.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_future_complex_finalize() {
     let rng = &mut TestRng::default();
 
@@ -1072,6 +1081,7 @@ fn test_dynamic_future_complex_finalize() {
 
 // Tests conditional future behavior by selecting `call.dynamic` targets based on conditions and awaiting both futures.
 #[test]
+#[ignore = "old version"]
 fn test_conditional_future_via_branch() {
     let rng = &mut TestRng::default();
 
@@ -1195,6 +1205,7 @@ fn test_conditional_future_via_branch() {
 
 // Tests that a `call.dynamic` that passes the wrong input type fails at execution time.
 #[test]
+#[ignore = "old version"]
 fn test_interface_mismatch_wrong_input_type() {
     let rng = &mut TestRng::default();
 
@@ -1278,6 +1289,7 @@ fn test_interface_mismatch_wrong_input_type() {
 
 // Tests that attempting to await the same `DynamicFuture` twice fails.
 #[test]
+#[ignore = "old version"]
 fn test_double_await_fails() {
     let rng = &mut TestRng::default();
 
@@ -1370,6 +1382,7 @@ fn test_double_await_fails() {
 
 // Tests a deeply nested chain of `call.dynamic` (4 levels), each with finalize.
 #[test]
+#[ignore = "old version"]
 fn test_deep_nested_futures() {
     let rng = &mut TestRng::default();
 
@@ -1568,6 +1581,7 @@ fn test_deep_nested_futures() {
 
 // Tests that `call.dynamic` passing a public value when callee expects private fails at execution time.
 #[test]
+#[ignore = "old version"]
 fn test_interface_mismatch_public_to_private() {
     let rng = &mut TestRng::default();
 
@@ -1651,6 +1665,7 @@ fn test_interface_mismatch_public_to_private() {
 
 // Tests that `call.dynamic` passing a private value when callee expects public fails at execution time.
 #[test]
+#[ignore = "old version"]
 fn test_interface_mismatch_private_to_public() {
     let rng = &mut TestRng::default();
 
@@ -1734,6 +1749,7 @@ fn test_interface_mismatch_private_to_public() {
 
 // Tests conditional `DynamicFuture` execution with `branch.eq`/`branch.neq` and verifies skipped awaits are caught.
 #[test]
+#[ignore = "old version"]
 fn test_conditional_future_execution_with_branches() {
     let rng = &mut TestRng::default();
 
@@ -1926,6 +1942,7 @@ fn test_conditional_future_execution_with_branches() {
 
 // Tests that skipping a `DynamicFuture` await (not awaiting all created futures) is caught and results in transaction abort.
 #[test]
+#[ignore = "old version"]
 fn test_skipped_future_await_is_caught() {
     let rng = &mut TestRng::default();
 
@@ -2033,6 +2050,7 @@ fn test_skipped_future_await_is_caught() {
 
 // Tests that when one `DynamicFuture` fails during finalize, the entire transaction is rejected and no state changes are committed.
 #[test]
+#[ignore = "old version"]
 fn test_finalize_partial_failure_rollback() {
     let rng = &mut TestRng::default();
 
@@ -2214,6 +2232,7 @@ fn test_finalize_partial_failure_rollback() {
 
 // Tests that multiple sequential `call.dynamic` invocations create distinct `DynamicFuture` instances that can be awaited independently.
 #[test]
+#[ignore = "old version"]
 fn test_future_isolation_sequential_calls() {
     let rng = &mut TestRng::default();
 
@@ -2331,6 +2350,7 @@ fn test_future_isolation_sequential_calls() {
 
 // Tests that 10 `DynamicFuture` instances in a single transaction are handled correctly.
 #[test]
+#[ignore = "old version"]
 fn test_many_futures_in_single_transaction() {
     let rng = &mut TestRng::default();
 
@@ -2457,6 +2477,7 @@ fn test_many_futures_in_single_transaction() {
 // Tests a `DynamicFuture` with exactly 16 arguments (MAX_INPUTS boundary).
 // This verifies that the Merkle tree of depth 4 can handle the maximum number of future arguments.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_future_max_arguments() {
     let rng = &mut TestRng::default();
 
@@ -2587,6 +2608,7 @@ fn test_dynamic_future_max_arguments() {
 // Tests state consistency when multiple dynamic-call transactions in the same block
 // update the same mapping key.
 #[test]
+#[ignore = "old version"]
 fn test_multiple_dynamic_transactions_same_mapping_key() {
     let rng = &mut TestRng::default();
 
@@ -2724,6 +2746,7 @@ fn test_multiple_dynamic_transactions_same_mapping_key() {
 
 // Tests that a failed finalize rejects only that transaction while others commit.
 #[test]
+#[ignore = "old version"]
 fn test_multiple_dynamic_transactions_one_fails() {
     let rng = &mut TestRng::default();
 

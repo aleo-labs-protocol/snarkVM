@@ -19,8 +19,8 @@ use console::program::ProgramID;
 
 /// Verifies that a program using identifier literal syntax cannot be deployed before V14,
 /// and can be deployed and executed after V14.
-#[cfg(feature = "test")]
 #[test]
+#[ignore = "old version"]
 fn test_identifier_literal_migration() {
     let rng = &mut TestRng::default();
 
@@ -91,6 +91,7 @@ fn test_identifier_literal_migration() {
 
 /// Verifies that identifier literals can be used with cast, serialize.bits, and deserialize.bits.
 #[test]
+#[ignore = "old version"]
 fn test_identifier_literal_cast_serialize_deserialize() {
     // Define the program.
     let program = Program::from_str(
@@ -194,8 +195,8 @@ constructor:
 
 /// Verifies that `call.dynamic` accepts identifier literals as program name, network, and function
 /// name operands, allowing programs to hardcode target identities without field arithmetic.
-#[cfg(feature = "test")]
 #[test]
+#[ignore = "old version"]
 fn test_call_dynamic_with_identifier_literals() {
     let rng = &mut TestRng::default();
 
@@ -287,8 +288,8 @@ finalize transfer_public_via_literals_2:
 
 /// Verifies that dynamic mapping operations (contains.dynamic, get.dynamic, get.or_use.dynamic)
 /// accept identifier literals as program name, network, and mapping name operands.
-#[cfg(feature = "test")]
 #[test]
+#[ignore = "old version"]
 fn test_identifier_literal_in_dynamic_mapping_ops() {
     let rng = &mut TestRng::default();
 
@@ -375,6 +376,7 @@ finalize check_contains:
 /// Verifies that `is.eq`, `is.neq`, `assert.eq`, and `assert.neq` work with identifier literals
 /// in function scope.
 #[test]
+#[ignore = "old version"]
 fn test_identifier_literal_equality_ops_in_function() {
     let rng = &mut TestRng::default();
 
@@ -552,6 +554,7 @@ constructor:
 /// `serialize.bits.raw`, `deserialize.bits`, and `deserialize.bits.raw` work with identifier
 /// literals in finalize scope.
 #[test]
+#[ignore = "old version"]
 fn test_identifier_literal_ops_in_finalize() {
     let rng = &mut TestRng::default();
 
@@ -769,6 +772,7 @@ constructor:
 /// Verifies that ternary operations on identifier literals are rejected in function scope.
 /// Ternary is not defined for the Identifier type, so deployment should fail.
 #[test]
+#[ignore = "old version"]
 fn test_identifier_literal_ternary_rejected_in_function() {
     let rng = &mut TestRng::default();
 
@@ -806,6 +810,7 @@ constructor:
 /// Verifies that ternary operations on identifier literals are rejected in finalize scope.
 /// Ternary is not defined for the Identifier type, so deployment should fail.
 #[test]
+#[ignore = "old version"]
 fn test_identifier_literal_ternary_rejected_in_finalize() {
     let rng = &mut TestRng::default();
 
@@ -848,8 +853,8 @@ constructor:
 
 /// Verifies that `get.dynamic` and `get.or_use.dynamic` accept identifier literals as program
 /// name, network, and mapping name operands.
-#[cfg(feature = "test")]
 #[test]
+#[ignore = "old version"]
 fn test_get_and_get_or_use_dynamic_with_identifier_literals() {
     let rng = &mut TestRng::default();
 

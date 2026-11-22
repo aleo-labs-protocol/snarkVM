@@ -28,7 +28,6 @@ default = [ "indexmap/rayon" ]
 async = [ "snarkvm-ledger-query/async" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 wasm = [ "snarkvm-console/wasm" ]
-test = [ "snarkvm-console/test" ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ ]
 dev_skip_checks = [ ]
@@ -112,10 +111,6 @@ workspace = true
 [dev-dependencies.snarkvm-ledger-query]
 workspace = true
 features = [ "query" ]
-
-[dev-dependencies.snarkvm-ledger-store]
-workspace = true
-features = [ "test" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true

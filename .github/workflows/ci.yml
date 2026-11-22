@@ -271,7 +271,7 @@ jobs:
       - run: cargo locktick-clippy --workspace --all-targets --all-features -- -D warnings
 
   # `cargo test -p a -p b` unifies the features of a and b, and several crates
-  # enable `test`, `rocks` or `dev-network` on their dependencies,
+  # enable `rocks` or `dev-network` on their dependencies,
   # which changes what those dependencies compute. Crates share a command only
   # where that unification enables none of those features, nor `wasm` or
   # `large_params`, on any snarkvm crate. Helper features such as
@@ -315,7 +315,7 @@ jobs:
               nextest run -p snarkvm-circuit-program
           # nextest runs no doctests. The `compile_fail` doctests check that
           # outside crates cannot implement the sealed traits. This entry is one
-          # workspace build, so it unifies `test`, `rocks` and
+          # workspace build, so it unifies `rocks` and
           # `dev-network`, which no doctest depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
           # of the RocksDB maps need `rocks`; the flag enables it even if no
           # dev-dependency does.
@@ -472,32 +472,34 @@ jobs:
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
           # Only this entry runs valid_solutions and the genesis tests that need
           # `dev_genesis_state_root`, so pull requests to staging do not.
-          # `test` selects valid_solutions, and `dev-network` lowers the proof targets
-          # so it can find valid solutions. `dev_genesis_state_root` fixes the stored
+          # `dev-network` compiles valid_solutions and lowers the proof targets so it
+          # can find valid solutions. `dev_genesis_state_root` fixes the stored
           # genesis state root.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test,dev-network --run-ignored all -E test(/^tests::valid_solutions::/)
+              nextest run -p snarkvm-ledger --features dev-network --run-ignored all -E test(/^tests::valid_solutions::/)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
-              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
-              nextest run -p snarkvm-ledger --features dev_genesis_state_root,test -E test(test_load_dev_genesis_state_root)
+              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
+              nextest run -p snarkvm-ledger --features dev_genesis_state_root -E test(test_load_dev_genesis_state_root)
               nextest run -p snarkvm-ledger-block -j 12
           - name: parameters
             runs: nextest run -p snarkvm-parameters --features filesystem -j 2
           - name: parameters-uncached
             runs: nextest run -p snarkvm-parameters --features filesystem --run-ignored ignored-only -j 2
+          # The `snarkvm-synthesizer` lines select tiers by `#[ignore]` and the
+          # `memory_intensive` and `old_versions` path markers; see CI.md.
           # Two shards: the tests keep all 8 slots busy for the whole run, so only
           # more runners make it finish sooner.
           - name: synthesizer-test-1
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --features test -j 8 --partition count:1/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8 --partition count:1/2
           - name: synthesizer-test-2
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --features test -j 8 --partition count:2/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8 --partition count:2/2
           - name: synthesizer-prerelease
             runs: |
-              nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2
+              nextest run -p snarkvm-synthesizer --lib --run-ignored only -E test(/::memory_intensive::/) -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
           - name: synthesizer-integration
-            runs: nextest run -p snarkvm-synthesizer --features test -j 4 --test *
+            runs: nextest run -p snarkvm-synthesizer -j 4 --test *
           - name: synthesizer-program
             runs: |
               nextest run -p snarkvm-synthesizer-program --test lib -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)
@@ -547,26 +549,24 @@ jobs:
         name: [old-consensus-versions-1, old-consensus-versions-2, old-consensus-versions-3, integers-exhaustive, synthesizer-rocks]
         include:
           # Three shards, each on its own box. `count:` deals the tests out in
-          # name order, so each slow `test_v14` module spreads across shards.
+          # name order, so each long `test_v14` module spreads across shards.
           - name: old-consensus-versions-1
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:1/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:1/3 -E test(/::old_versions::/)
           - name: old-consensus-versions-2
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:2/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:2/3 -E test(/::old_versions::/)
           - name: old-consensus-versions-3
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:3/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:3/3 -E test(/::old_versions::/)
           # Not `--release`: that compiles out the check in `is_satisfied` that
           # each constraint uses only declared variables.
           - name: integers-exhaustive
             runs: nextest run -p snarkvm-circuit-types-integers --run-ignored ignored-only
-          # `rocks` alone is the feature set nodes ship. `test` changes some rules
-          # and adds tests, so each set runs. Of the integration targets,
+          # `rocks` alone is the feature set nodes ship. Of the integration targets,
           # only test_vm_execute_and_finalize opens a RocksDB store.
           - name: synthesizer-rocks
             runs: |
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks -j 8
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 8
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 2 --run-ignored ignored-only
-              nextest run -p snarkvm-synthesizer --release --features test,rocks --test test_vm_execute_and_finalize
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored only -E test(/::memory_intensive::/) -j 2
+              nextest run -p snarkvm-synthesizer --release --features rocks --test test_vm_execute_and_finalize
     name: test-release
     steps: *test-steps
 

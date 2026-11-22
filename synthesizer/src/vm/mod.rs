@@ -1563,270 +1563,6 @@ function compute:
     }
 
     #[test]
-    #[ignore]
-    fn test_multiple_deployments_and_multiple_executions() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
-        // Initialize the VM.
-        let (vm, block) = sample_vm_past_v8();
-
-        // Fetch the unspent records.
-        let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        trace!("Unspent Records:\n{:#?}", records);
-
-        // Select a record to spend.
-        let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Split once.
-        let transaction = vm
-            .execute(
-                &caller_private_key,
-                ("credits.aleo", "split"),
-                [Value::Record(record), Value::from_str("1000000000u64").unwrap()].iter(), // 1000 credits
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap();
-        let records = transaction.records().collect_vec();
-        let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
-        let second_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
-        let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-        vm.add_next_block(&block).unwrap();
-
-        // Split again.
-        let mut transactions = Vec::new();
-        let transaction = vm
-            .execute(
-                &caller_private_key,
-                ("credits.aleo", "split"),
-                [Value::Record(first_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap();
-        let records = transaction.records().collect_vec();
-        let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
-        let third_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
-        transactions.push(transaction);
-        // Split again.
-        let transaction = vm
-            .execute(
-                &caller_private_key,
-                ("credits.aleo", "split"),
-                [Value::Record(second_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap();
-        let records = transaction.records().collect_vec();
-        let second_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
-        let fourth_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
-        transactions.push(transaction);
-        // Add the split transactions to a block and update the VM.
-        let fee_block = sample_next_block(&vm, &caller_private_key, &transactions, rng).unwrap();
-        vm.add_next_block(&fee_block).unwrap();
-
-        // Deploy the programs.
-        let first_program = r"
-program test_program_1.aleo;
-constructor:
-    assert.eq edition 0u16;
-mapping map_0:
-    key as field.public;
-    value as field.public;
-function init:
-    async init into r0;
-    output r0 as test_program_1.aleo/init.future;
-finalize init:
-    set 0field into map_0[0field];
-function getter:
-    async getter into r0;
-    output r0 as test_program_1.aleo/getter.future;
-finalize getter:
-    get map_0[0field] into r0;
-        ";
-        let second_program = r"
-program test_program_2.aleo;
-constructor:
-    assert.eq edition 0u16;
-mapping map_0:
-    key as field.public;
-    value as field.public;
-function init:
-    async init into r0;
-    output r0 as test_program_2.aleo/init.future;
-finalize init:
-    set 0field into map_0[0field];
-function getter:
-    async getter into r0;
-    output r0 as test_program_2.aleo/getter.future;
-finalize getter:
-    get map_0[0field] into r0;
-        ";
-        let first_deployment = vm
-            .deploy(&caller_private_key, &Program::from_str(first_program).unwrap(), Some(first_record), 1, None, rng)
-            .unwrap();
-        let second_deployment = vm
-            .deploy(&caller_private_key, &Program::from_str(second_program).unwrap(), Some(second_record), 1, None, rng)
-            .unwrap();
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, &[first_deployment, second_deployment], rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Execute the programs.
-        let first_execution = vm
-            .execute(
-                &caller_private_key,
-                ("test_program_1.aleo", "init"),
-                Vec::<Value<MainnetV0>>::new().iter(),
-                Some(third_record),
-                1,
-                None,
-                rng,
-            )
-            .unwrap();
-        let second_execution = vm
-            .execute(
-                &caller_private_key,
-                ("test_program_2.aleo", "init"),
-                Vec::<Value<MainnetV0>>::new().iter(),
-                Some(fourth_record),
-                1,
-                None,
-                rng,
-            )
-            .unwrap();
-        let execution_block =
-            sample_next_block(&vm, &caller_private_key, &[first_execution, second_execution], rng).unwrap();
-        vm.add_next_block(&execution_block).unwrap();
-    }
-
-    #[test]
-    #[ignore]
-    fn test_load_deployments_with_imports() {
-        // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
-        let rng = &mut TestRng::fixed(123456789);
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
-        // Initialize the VM.
-        let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
-
-        // Fetch the unspent records.
-        let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<Vec<(_, _)>>();
-        trace!("Unspent Records:\n{:#?}", records);
-        let record_0 = records[0].1.decrypt(&caller_view_key).unwrap();
-        let record_1 = records[1].1.decrypt(&caller_view_key).unwrap();
-        let record_2 = records[2].1.decrypt(&caller_view_key).unwrap();
-        let record_3 = records[3].1.decrypt(&caller_view_key).unwrap();
-
-        // Create the deployment for the first program.
-        let program_1 = r"
-program first_program.aleo;
-
-constructor:
-    assert.eq edition 0u16;
-
-function c:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    add r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_1 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_1).unwrap(), Some(record_0), 0, None, rng)
-            .unwrap();
-
-        // Deploy the first program.
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_1), rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Create the deployment for the second program.
-        let program_2 = r"
-import first_program.aleo;
-
-program second_program.aleo;
-
-constructor:
-    assert.eq edition 0u16;
-
-function b:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    call first_program.aleo/c r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_2 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_2).unwrap(), Some(record_1), 0, None, rng)
-            .unwrap();
-
-        // Deploy the second program.
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_2), rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Create the deployment for the third program.
-        let program_3 = r"
-import second_program.aleo;
-
-program third_program.aleo;
-
-constructor:
-    assert.eq edition 0u16;
-
-function a:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    call second_program.aleo/b r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_3 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_3).unwrap(), Some(record_2), 0, None, rng)
-            .unwrap();
-
-        // Create the deployment for the fourth program.
-        let program_4 = r"
-import second_program.aleo;
-import first_program.aleo;
-
-program fourth_program.aleo;
-
-constructor:
-    assert.eq edition 0u16;
-
-function a:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    call second_program.aleo/b r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_4 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_4).unwrap(), Some(record_3), 0, None, rng)
-            .unwrap();
-
-        // Deploy the third and fourth program together.
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, &[deployment_3.clone(), deployment_4.clone()], rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Enforce that the VM can load properly with the imports.
-        assert!(VM::from(vm.store.clone()).is_ok());
-    }
-
-    #[test]
     fn test_multiple_external_calls() {
         let rng = &mut TestRng::default();
 
@@ -1948,47 +1684,6 @@ function check:
     }
 
     #[test]
-    #[ignore]
-    fn test_deployment_with_external_records() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a private key.
-        let private_key = sample_genesis_private_key();
-
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy the program.
-        let program = Program::from_str(
-            r"
-import credits.aleo;
-program test_program.aleo;
-
-function transfer:
-    input r0 as credits.aleo/credits.record;
-    input r1 as u64.private;
-    input r2 as u64.private;
-    input r3 as [address; 10u32].private;
-    call credits.aleo/transfer_private r0 r3[0u32] r1 into r4 r5;
-    call credits.aleo/transfer_private r5 r3[0u32] r2 into r6 r7;
-",
-        )
-        .unwrap();
-
-        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-        assert!(vm.check_transaction(&deployment, None, rng).is_ok());
-        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-
-        // Check that program is deployed.
-        assert!(vm.contains_program(&ProgramID::from_str("test_program.aleo").unwrap()));
-    }
-
-    #[test]
     fn test_internal_fee_calls_are_invalid() {
         let rng = &mut TestRng::default();
 
@@ -2069,42 +1764,6 @@ function call_fee_private:
             vm.execute(&private_key, ("test_program.aleo", "call_fee_private"), inputs.into_iter(), None, 0, None, rng)
                 .is_err()
         );
-    }
-
-    #[test]
-    #[ignore = "memory-intensive"]
-    fn test_deployment_synthesis_overload() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a private key.
-        let private_key = sample_genesis_private_key();
-
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy the base program.
-        let program = Program::from_str(
-            r"
-program synthesis_overload.aleo;
-
-function do:
-    input r0 as [[u128; 32u32]; 2u32].private;
-    hash.sha3_256 r0 into r1 as field;
-    hash.sha3_256 r0 into r2 as field;
-    output r2 as field.public;",
-        )
-        .unwrap();
-
-        // Create the deployment transaction.
-        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-
-        // Verify the deployment transaction. It should fail because there are too many constraints.
-        assert!(vm.check_transaction(&deployment, None, rng).is_err());
     }
 
     #[test]
@@ -3843,8 +3502,8 @@ function adder:
         assert!(vm.process().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_versioned_keyword_restrictions() {
         let rng = &mut TestRng::default();
 
@@ -3907,8 +3566,8 @@ function adder:
         }
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_deploy_and_execute_in_same_block_fails() {
         let rng = &mut TestRng::default();
 
@@ -3973,8 +3632,8 @@ function adder:
         assert!(vm.process().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_deploy_string() {
         let rng = &mut TestRng::default();
 
@@ -4138,5 +3797,365 @@ constructor:
 
         // // Check that the program was notdeployed.
         // assert!(!vm.process().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
+    }
+
+    mod memory_intensive {
+        use super::*;
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_multiple_deployments_and_multiple_executions() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            // Initialize the VM.
+            let (vm, block) = sample_vm_past_v8();
+
+            // Fetch the unspent records.
+            let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+            trace!("Unspent Records:\n{:#?}", records);
+
+            // Select a record to spend.
+            let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
+
+            // Split once.
+            let transaction = vm
+                .execute(
+                    &caller_private_key,
+                    ("credits.aleo", "split"),
+                    [Value::Record(record), Value::from_str("1000000000u64").unwrap()].iter(), // 1000 credits
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let records = transaction.records().collect_vec();
+            let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
+            let second_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
+            let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+            vm.add_next_block(&block).unwrap();
+
+            // Split again.
+            let mut transactions = Vec::new();
+            let transaction = vm
+                .execute(
+                    &caller_private_key,
+                    ("credits.aleo", "split"),
+                    [Value::Record(first_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let records = transaction.records().collect_vec();
+            let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
+            let third_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
+            transactions.push(transaction);
+            // Split again.
+            let transaction = vm
+                .execute(
+                    &caller_private_key,
+                    ("credits.aleo", "split"),
+                    [Value::Record(second_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let records = transaction.records().collect_vec();
+            let second_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
+            let fourth_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
+            transactions.push(transaction);
+            // Add the split transactions to a block and update the VM.
+            let fee_block = sample_next_block(&vm, &caller_private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&fee_block).unwrap();
+
+            // Deploy the programs.
+            let first_program = r"
+program test_program_1.aleo;
+constructor:
+    assert.eq edition 0u16;
+mapping map_0:
+    key as field.public;
+    value as field.public;
+function init:
+    async init into r0;
+    output r0 as test_program_1.aleo/init.future;
+finalize init:
+    set 0field into map_0[0field];
+function getter:
+    async getter into r0;
+    output r0 as test_program_1.aleo/getter.future;
+finalize getter:
+    get map_0[0field] into r0;
+        ";
+            let second_program = r"
+program test_program_2.aleo;
+constructor:
+    assert.eq edition 0u16;
+mapping map_0:
+    key as field.public;
+    value as field.public;
+function init:
+    async init into r0;
+    output r0 as test_program_2.aleo/init.future;
+finalize init:
+    set 0field into map_0[0field];
+function getter:
+    async getter into r0;
+    output r0 as test_program_2.aleo/getter.future;
+finalize getter:
+    get map_0[0field] into r0;
+        ";
+            let first_deployment = vm
+                .deploy(
+                    &caller_private_key,
+                    &Program::from_str(first_program).unwrap(),
+                    Some(first_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let second_deployment = vm
+                .deploy(
+                    &caller_private_key,
+                    &Program::from_str(second_program).unwrap(),
+                    Some(second_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, &[first_deployment, second_deployment], rng).unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Execute the programs.
+            let first_execution = vm
+                .execute(
+                    &caller_private_key,
+                    ("test_program_1.aleo", "init"),
+                    Vec::<Value<MainnetV0>>::new().iter(),
+                    Some(third_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let second_execution = vm
+                .execute(
+                    &caller_private_key,
+                    ("test_program_2.aleo", "init"),
+                    Vec::<Value<MainnetV0>>::new().iter(),
+                    Some(fourth_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let execution_block =
+                sample_next_block(&vm, &caller_private_key, &[first_execution, second_execution], rng).unwrap();
+            vm.add_next_block(&execution_block).unwrap();
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_load_deployments_with_imports() {
+            // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
+            let rng = &mut TestRng::fixed(123456789);
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            // Initialize the VM.
+            let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
+
+            // Fetch the unspent records.
+            let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<Vec<(_, _)>>();
+            trace!("Unspent Records:\n{:#?}", records);
+            let record_0 = records[0].1.decrypt(&caller_view_key).unwrap();
+            let record_1 = records[1].1.decrypt(&caller_view_key).unwrap();
+            let record_2 = records[2].1.decrypt(&caller_view_key).unwrap();
+            let record_3 = records[3].1.decrypt(&caller_view_key).unwrap();
+
+            // Create the deployment for the first program.
+            let program_1 = r"
+program first_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function c:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_1 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_1).unwrap(), Some(record_0), 0, None, rng)
+                .unwrap();
+
+            // Deploy the first program.
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_1), rng).unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Create the deployment for the second program.
+            let program_2 = r"
+import first_program.aleo;
+
+program second_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function b:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call first_program.aleo/c r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_2 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_2).unwrap(), Some(record_1), 0, None, rng)
+                .unwrap();
+
+            // Deploy the second program.
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_2), rng).unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Create the deployment for the third program.
+            let program_3 = r"
+import second_program.aleo;
+
+program third_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function a:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call second_program.aleo/b r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_3 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_3).unwrap(), Some(record_2), 0, None, rng)
+                .unwrap();
+
+            // Create the deployment for the fourth program.
+            let program_4 = r"
+import second_program.aleo;
+import first_program.aleo;
+
+program fourth_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function a:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call second_program.aleo/b r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_4 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_4).unwrap(), Some(record_3), 0, None, rng)
+                .unwrap();
+
+            // Deploy the third and fourth program together.
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, &[deployment_3.clone(), deployment_4.clone()], rng)
+                    .unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Enforce that the VM can load properly with the imports.
+            assert!(VM::from(vm.store.clone()).is_ok());
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_deployment_with_external_records() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a private key.
+            let private_key = sample_genesis_private_key();
+
+            // Initialize the genesis block.
+            let genesis = sample_genesis_block();
+
+            // Initialize the VM.
+            let vm = sample_vm();
+            // Update the VM.
+            vm.add_next_block(&genesis).unwrap();
+
+            // Deploy the program.
+            let program = Program::from_str(
+                r"
+import credits.aleo;
+program test_program.aleo;
+
+function transfer:
+    input r0 as credits.aleo/credits.record;
+    input r1 as u64.private;
+    input r2 as u64.private;
+    input r3 as [address; 10u32].private;
+    call credits.aleo/transfer_private r0 r3[0u32] r1 into r4 r5;
+    call credits.aleo/transfer_private r5 r3[0u32] r2 into r6 r7;
+",
+            )
+            .unwrap();
+
+            let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+            assert!(vm.check_transaction(&deployment, None, rng).is_ok());
+            vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
+
+            // Check that program is deployed.
+            assert!(vm.contains_program(&ProgramID::from_str("test_program.aleo").unwrap()));
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_deployment_synthesis_overload() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a private key.
+            let private_key = sample_genesis_private_key();
+
+            // Initialize the genesis block.
+            let genesis = sample_genesis_block();
+
+            // Initialize the VM.
+            let vm = sample_vm();
+            // Update the VM.
+            vm.add_next_block(&genesis).unwrap();
+
+            // Deploy the base program.
+            let program = Program::from_str(
+                r"
+program synthesis_overload.aleo;
+
+function do:
+    input r0 as [[u128; 32u32]; 2u32].private;
+    hash.sha3_256 r0 into r1 as field;
+    hash.sha3_256 r0 into r2 as field;
+    output r2 as field.public;",
+            )
+            .unwrap();
+
+            // Create the deployment transaction.
+            let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+
+            // Verify the deployment transaction. It should fail because there are too many constraints.
+            assert!(vm.check_transaction(&deployment, None, rng).is_err());
+        }
     }
 }

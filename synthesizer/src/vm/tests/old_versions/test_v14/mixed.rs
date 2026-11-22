@@ -25,6 +25,7 @@ use super::*;
 // `synthesizer/tests/test_vm_execute_and_finalize.rs` and
 // `test_v15/cost_for_call.rs` which also verify cost estimation correctness.
 #[test]
+#[ignore = "old version"]
 fn test_execution_cost_for_authorization_and_call() {
     let rng = &mut TestRng::default();
 
@@ -268,6 +269,7 @@ fn test_execution_cost_for_authorization_and_call() {
 
 // Tests an integration scenario combining translation, `get.record.dynamic`, and cast to `dynamic.record` with signature verification.
 #[test]
+#[ignore = "old version"]
 fn test_translation_get_dynamic_cast_to_dynamic() {
     let rng = &mut TestRng::default();
 

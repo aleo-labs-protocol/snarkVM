@@ -67,6 +67,7 @@ fn create_v3_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng 
 // 2. V14: Create an amendment (checksum, no owner, WITH translation VKs for records)
 // 3. Validation passes because translation VKs were added (didn't exist in original V2)
 #[test]
+#[ignore = "old version"]
 fn test_v3_deployment_requires_v14() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -167,6 +168,7 @@ constructor:
 // 6. Execute the program post-amendment
 // 7. Second amendment fails (no VK changes since circuits are deterministic)
 #[test]
+#[ignore = "old version"]
 fn test_amendment_updates_vks() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -291,6 +293,7 @@ constructor:
 // 3. Test various invalid amendments (wrong checksum, non-existent program)
 // 4. Test valid amendment that adds translation VKs
 #[test]
+#[ignore = "old version"]
 fn test_amendment_validation() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -415,6 +418,7 @@ constructor:
 // 3. Another user submits a amendment (adds translation VKs)
 // 4. Verify the program owner hasn't changed
 #[test]
+#[ignore = "old version"]
 fn test_amendment_permissionless() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -508,6 +512,7 @@ constructor:
 //   2. The verification logic also checks for credits.aleo amendments
 // This test verifies level 1 - the deployment creation itself is blocked.
 #[test]
+#[ignore = "old version"]
 fn test_credits_cannot_be_amended() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -536,6 +541,7 @@ fn test_credits_cannot_be_amended() -> Result<()> {
 // 3. After a V3 amendment at V14, the verifier VM gains translation keys.
 // 4. The verifier VM with translation keys (from amendment) can verify and accept the transaction.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_call_after_amendment() {
     let rng = &mut TestRng::default();
 

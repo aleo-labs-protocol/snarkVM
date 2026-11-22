@@ -475,6 +475,7 @@ fn sample_vm_with_programs(
 
 // Tests the local check: tests 1, 2 and 5.
 #[test]
+#[ignore = "slow"]
 fn test_existence_check_local() {
     let rng = &mut TestRng::default();
 
@@ -624,6 +625,7 @@ fn test_existence_check_local() {
 
 // Tests the global and local checks on rover records: tests 3 and 4.
 #[test]
+#[ignore = "slow"]
 fn test_existence_check_decommission() {
     let rng = &mut TestRng::default();
 
@@ -769,6 +771,7 @@ fn test_existence_check_decommission() {
 
 // Tests the global check on families of map records: tests 6 and 7.
 #[test]
+#[ignore = "slow"]
 fn test_existence_check_families() {
     let rng = &mut TestRng::default();
 

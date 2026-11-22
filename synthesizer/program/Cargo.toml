@@ -84,4 +84,3 @@ features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-synthesizer-process]
 path = "../process"
-features = [ "test" ]

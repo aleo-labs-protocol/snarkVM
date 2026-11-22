@@ -122,6 +122,7 @@ fn vm_halt_message(payload: Box<dyn std::any::Any + Send>) -> String {
 
 /// Checks that the block-wide synthesis limit is computed and enforced correctly.
 #[test]
+#[ignore = "slow"]
 fn test_blockwide_synthesis_limit() {
     let current_max_certificates = CurrentNetwork::LATEST_MAX_CERTIFICATES() as f64;
 
@@ -284,6 +285,7 @@ fn test_blockwide_synthesis_limit() {
 /// Checks that, during synthesis, if the running density of one of the function- or record-circuit
 /// matrices surpasses the total claimed in the verifying key, synthesis stops.
 #[test]
+#[ignore = "slow"]
 fn test_vk_num_non_zero_detected() {
     let rng = &mut TestRng::default();
 

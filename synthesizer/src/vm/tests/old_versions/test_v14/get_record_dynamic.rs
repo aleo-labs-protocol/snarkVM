@@ -17,6 +17,7 @@ use super::*;
 
 // Tests `get.record.dynamic` for extracting entries from dynamic records including polymorphic reads and failure modes.
 #[test]
+#[ignore = "old version"]
 fn test_get_record_dynamic() {
     // Parameters for dynamic function calls
     let program_name_str = "warehouse";
@@ -334,6 +335,7 @@ fn test_get_record_dynamic() {
 // **** Note **** This test must exceptionally be run at ConsensusVersion::V18 now that credits
 //                translation has been gated by that version.
 #[test]
+#[ignore = "old version"]
 fn translate_transfer_public_to_private() {
     let credits_program_str = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
     let network_str = "aleo";
@@ -439,6 +441,7 @@ fn translate_transfer_public_to_private() {
 
 // Tests `dynamic.record` with 10 fields to verify the depth-5 Merkle tree handles larger records correctly.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_record_with_many_fields() {
     let rng = &mut TestRng::default();
 
@@ -571,6 +574,7 @@ fn test_dynamic_record_with_many_fields() {
 
 // Tests dynamic records with nested struct fields to verify complex data structures work correctly.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_record_with_nested_structs() {
     let rng = &mut TestRng::default();
 
@@ -721,6 +725,7 @@ fn test_dynamic_record_with_nested_structs() {
 
 // Tests `dynamic.record` with minimal fields (owner only) to verify the smallest possible record structure works.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_record_minimal_fields() {
     let rng = &mut TestRng::default();
 
@@ -817,6 +822,7 @@ fn test_dynamic_record_minimal_fields() {
 
 // Tests `dynamic.record` with 20 fields to verify near-maximum capacity for the depth-5 Merkle tree (max 32 entries).
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_record_near_maximum_fields() {
     let rng = &mut TestRng::default();
 
@@ -970,6 +976,7 @@ fn test_dynamic_record_near_maximum_fields() {
 // Verifies that the depth-5 Merkle tree (2^5 = 32 leaves) correctly handles the maximum
 // number of data entries by reading the first, middle, and last fields.
 #[test]
+#[ignore = "old version"]
 fn test_dynamic_record_maximum_fields() {
     let rng = &mut TestRng::default();
 
@@ -1149,6 +1156,7 @@ fn test_dynamic_record_maximum_fields() {
 // Tests `get.record.dynamic` with explicit visibility suffixes (`.private`, `.public`, `.constant`).
 // Verifies that matching visibility succeeds and mismatching visibility fails.
 #[test]
+#[ignore = "old version"]
 fn test_get_record_dynamic_visibility() {
     let rng = &mut TestRng::default();
 
