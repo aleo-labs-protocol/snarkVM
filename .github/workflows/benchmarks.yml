@@ -93,7 +93,7 @@ jobs:
       - name: Benchmark ledger (block)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a output.txt
 
       - name: Benchmark ledger (dag)
         run: |
