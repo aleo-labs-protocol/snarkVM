@@ -112,6 +112,7 @@ jobs:
 
       # Skip store/advance: require a pre-generated `test-ledger/` fixture
       # (see `snarkvm-testchain-generator --no-ledger`).
+      # Skip ledger prove: seconds per proof add tens of minutes, and its variance trips the alert threshold.
 
       - name: Benchmark ledger/puzzle
         run: |

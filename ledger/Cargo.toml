@@ -67,6 +67,12 @@ path = "benches/verify_transaction.rs"
 harness = false
 required-features = [ "dev-network" ]
 
+[[bench]]
+name = "prove"
+path = "benches/prove.rs"
+harness = false
+required-features = [ "dev-network" ]
+
 [features]
 default = [ "async", "indexmap/rayon", ]
 async = [
@@ -75,22 +81,6 @@ async = [
   "snarkvm-synthesizer/async"
 ]
 metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
-# Enables the proving benchmarks in `benches/transaction.rs`.
-#
-# Off by default because proving a transaction takes seconds: on a shared CI
-# runner the group adds tens of minutes, needs the multi-gigabyte universal SRS,
-# and is variable enough to trip the benchmark action's alert threshold. The
-# same three reasons the `varuna` and `store`/`advance` benchmarks are skipped
-# in `.github/workflows/benchmarks.yml`.
-#
-# It requires `dev-network`, and that is not a convenience. The
-# Varuna version is chosen from the block height, and the mainnet table does not
-# reach `ConsensusVersion::V4` -- the V1 to V2 boundary -- until height
-# 6_135_000. A benchmark on a freshly created chain would therefore prove with
-# Varuna V1, which the network has not used since that height, and which does
-# not even call `prover_prepare_third_round`. The test heights put V4 at height
-# 7, which a benchmark can actually reach.
-bench-prove = [ "dev-network" ]
 # Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
 dev-network = [ "snarkvm-console/dev-network", "snarkvm-synthesizer/dev-network" ]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
