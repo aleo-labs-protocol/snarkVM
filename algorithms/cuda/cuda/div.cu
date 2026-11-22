@@ -13,9 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Division by X - z, in its own translation unit: ptxas allocates registers per
-// module, so this cooperative, shfl-heavy kernel is kept apart from the NTT and
-// MSM kernels and from batchinv.cu's elementwise passes.
+// Division by X - z and evaluation at one point, in their own translation unit:
+// ptxas allocates registers per module, so these cooperative, shfl-heavy
+// kernels are kept apart from the NTT and MSM kernels and from batchinv.cu's
+// elementwise passes.
 
 #include <cuda.h>
 
@@ -33,6 +34,7 @@
 #include <util/gpu_t.cuh>
 #include <util/rusterror.h>
 #include <polynomial/div_by_x_minus_z.cuh>
+#include <polynomial/evaluate.cuh>
 
 #include <algorithm>
 
@@ -46,6 +48,11 @@ constexpr bool div_rotate = false;
 // `cudaFuncGetAttributes` fails at run time with "invalid resource handle".
 template __global__ void
 d_div_by_x_minus_z<fr_t, div_n, div_rotate, div_bsz>(fr_t[], size_t, fr_t);
+
+// One point per launch, which is sppark's `evaluate` for a single point and a
+// 32-byte field.
+template __global__ void
+d_evaluate<1, fr_t>(fr_t[], const fr_t[], int, const fr_t[], size_t, size_t, fr_t[]);
 
 #ifndef __CUDA_ARCH__
 
@@ -79,6 +86,38 @@ void divide_by_x_minus_z_device(const stream_t& stream, fr_t* d_inout,
     int slots = std::max(WARP_SZ, gridDim);
     stream.launch_coop(kernel, {gridDim, blockDim, sizeof(fr_t) * slots},
                        d_inout, len, z);
+}
+
+// `*d_ret` becomes the `len` coefficients at `d_coeffs` evaluated at `*d_z`,
+// both on the device. The launch parameters are sppark's `evaluate` for one
+// point. `len >= 2`: at 1, `top_row` wraps.
+//
+// The exchange buffer: with one point, `d_evaluate` reads and writes only
+// `xchg[0][0..WARP_SZ)`, at a warp index below `blockDim / WARP_SZ <= 32` and
+// at a lane index, so `WARP_SZ` elements cover it. The scratch holds one
+// element per block.
+void evaluate_device(const stream_t& stream, fr_t* d_ret, const fr_t* d_z,
+                     const fr_t* d_coeffs, size_t len)
+{
+    constexpr int blockDim = d_evaluate_bsize<1, fr_t>();
+    static_assert(blockDim <= WARP_SZ * WARP_SZ, "one exchange slot per warp");
+
+    int gridDim = std::min(stream.sm_count(), blockDim);
+    size_t blocks = (len + blockDim - 1) / blockDim;
+    if (blocks < (size_t)gridDim)
+        gridDim = (int)blocks;
+    if (gridDim < 12)
+        gridDim = 1;
+
+    size_t gridSz = (size_t)gridDim * blockDim;
+    size_t top_row = len - (len - 1) % gridSz;
+    if (top_row == len)
+        top_row -= gridSz;
+
+    dev_ptr_t<fr_t> d_scratch{gridDim > 1 ? (size_t)gridDim : 0, stream};
+    stream.launch_coop(d_evaluate<1, fr_t>, {gridDim, blockDim, sizeof(fr_t) * WARP_SZ},
+                       d_ret, d_z, 1, d_coeffs, len, top_row,
+                       gridDim > 1 ? &d_scratch[0] : nullptr);
 }
 
 #endif
