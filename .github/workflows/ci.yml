@@ -301,17 +301,19 @@ jobs:
           - name: ledger
             runs: nextest run -p snarkvm-ledger
           # ledger-query's async tests bound wall-clock time, which a loaded
-          # hosted runner can exceed. The second and third lines name the same
-          # packages, so they share one build, and their filters split its
-          # tests. A package named in `-p` but in neither filter is built and
-          # never tested. Adding ledger-query to that build would turn on
-          # `filesystem` for it, and its `async` for the others.
+          # hosted runner, or other tests beside them, can exceed. The last
+          # three lines name the same packages and features, so they share one
+          # build, and their filters split its tests. A package named in `-p`
+          # but in no filter is built and never tested. The build turns on
+          # ledger-query's `async` for the other packages, and `filesystem` for
+          # ledger-query. A plain `--features async` would also turn on
+          # narwhal-data's own `async`.
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
-              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -E package(=snarkvm-ledger-narwhal-data)|package(=snarkvm-ledger-test-helpers)
-              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -E package(=snarkvm-ledger-puzzle)|package(=snarkvm-ledger-puzzle-epoch)
-              nextest run -p snarkvm-ledger-query --features async
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -p snarkvm-ledger-query --features snarkvm-ledger-query/async -E package(=snarkvm-ledger-narwhal-data)|package(=snarkvm-ledger-test-helpers)
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -p snarkvm-ledger-query --features snarkvm-ledger-query/async -E package(=snarkvm-ledger-puzzle)|package(=snarkvm-ledger-puzzle-epoch)
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -p snarkvm-ledger-query --features snarkvm-ledger-query/async -E package(=snarkvm-ledger-query)
           - name: synthesizer
             runs: nextest run -p snarkvm-synthesizer --lib --bins -j 16
           # The last two lines share one build, and their filters split its
