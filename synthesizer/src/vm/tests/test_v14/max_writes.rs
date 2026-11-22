@@ -17,7 +17,6 @@ use super::*;
 
 use console::algorithms::U8;
 
-#[cfg(feature = "test")]
 #[test]
 fn test_max_writes_migration() {
     let rng = &mut TestRng::default();

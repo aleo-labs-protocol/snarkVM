@@ -1010,20 +1010,19 @@ mod tests {
 
     use console::account::ViewKey;
 
-    #[cfg(feature = "test")]
-    use console::algorithms::{ECDSASignature, Keccak256};
-    use console::{account::Address, types::Field};
+    use console::{
+        account::Address,
+        algorithms::{ECDSASignature, Keccak256},
+        types::Field,
+    };
     use snarkvm_ledger_block::{Transaction, Transition};
-    #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
 
-    #[cfg(feature = "test")]
     use k256::elliptic_curve::Generate;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     #[test]
-    #[cfg(feature = "test")]
     fn test_varuna_v3_transaction_boundary() {
         let rng = &mut TestRng::fixed(3104);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
@@ -1062,7 +1061,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test")]
     fn test_varuna_v3_inclusion_and_deployment_boundary() -> Result<()> {
         let rng = &mut TestRng::fixed(3107);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21)?;
@@ -1157,7 +1155,6 @@ function identity:
     }
 
     #[test]
-    #[cfg(feature = "test")]
     fn test_varuna_v3_snark_instructions_boundary() {
         use console::{program::Register, types::U8};
         use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -1624,7 +1621,6 @@ function compute:
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_none());
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_varuna_migration() {
         let rng = &mut TestRng::default();
@@ -1688,7 +1684,6 @@ function compute:
         assert!(new_vm.check_transaction(&transaction_v2, None, rng).is_err());
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_program_rules_migration() {
         let rng = &mut TestRng::default();
@@ -1839,7 +1834,6 @@ function compute:
         ]);
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_ecdsa_migration() {
         let rng = &mut TestRng::default();
@@ -1999,7 +1993,6 @@ function compute:
         assert!(vm.block_store().get_confirmed_transaction(&invalid_tx_id).unwrap().unwrap().is_rejected());
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_increased_array_size() {
         let rng = &mut TestRng::default();
@@ -2055,7 +2048,6 @@ function compute:
         assert!(vm.check_transaction(&deployment, None, rng).is_ok());
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_block_timestamp_migration() {
         let rng = &mut TestRng::default();
@@ -2158,7 +2150,6 @@ function compute:
     }
 }
 
-#[cfg(feature = "test")]
 #[cfg(test)]
 mod credits_migration_tests {
     use super::*;
@@ -2321,7 +2312,6 @@ mod credits_migration_tests {
         assert_eq!(get_pool(), Some(Value::from_str(&format!("{TOTAL_UPGRADE_LIMIT}u64")).unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_inclusion_local_records() {
         // 1. Check that `credits.aleo/upgrade` can be called invoked directly.

@@ -15,7 +15,6 @@
 
 use super::*;
 
-#[cfg(feature = "test")]
 #[test]
 fn test_aleo_generators_migration() {
     let rng = &mut TestRng::default();

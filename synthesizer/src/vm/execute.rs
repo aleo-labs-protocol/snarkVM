@@ -418,7 +418,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_execute_cost_fee_migration() {
         let rng = &mut TestRng::default();
@@ -451,7 +450,6 @@ mod tests {
         assert_eq!(old_cost - cost, 8_500 * 2);
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration_occurs_at_correct_block_height() {
         let rng = &mut TestRng::default();
@@ -489,7 +487,6 @@ mod tests {
         assert_eq!(34_060, *transaction.base_fee_amount().unwrap());
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration_correctly_calculates_nested() {
         let rng = &mut TestRng::default();

@@ -2377,7 +2377,6 @@ finalize transfer_public:
         );
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_genesis_num_validators_does_not_exceed_maximum_before_v3() {
         // This test will fail if the consensus v3 height is 0
@@ -2400,7 +2399,6 @@ finalize transfer_public:
         assert!(Committee::new_genesis(committee_map).is_err());
     }
 
-    #[cfg(not(feature = "test"))]
     #[test]
     #[allow(clippy::assertions_on_constants)]
     fn test_migration_v3_maximum_validator_increase() {

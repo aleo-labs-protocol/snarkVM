@@ -51,20 +51,20 @@ rows.
 | `test (crates)` | `cpu` | all | 90 | `snarkvm`, `-algorithms`, `-circuit-collections`, `-circuit-types-integers`, `-console-collections` | `snarkvm`, `algorithms`, `circuit-collections`, `circuit-types-integers`, `console-collections` |
 | `test (ledger)` | `cpu` | all | 90 | `snarkvm-ledger` | `ledger` |
 | `test (ledger-store)` | `cpu` | all | 90 | `snarkvm-ledger-store` with `rocks`; then `-ledger-narwhal-data` and `-ledger-test-helpers`; then `-ledger-puzzle` and `-ledger-puzzle-epoch` | `ledger-store`, `ledger-narwhal-data`, `ledger-test-helpers`, `ledger-puzzle`, `ledger-puzzle-epoch` |
-| `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins | `synthesizer` |
+| `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins, except the tests that the default filter in [`.config/nextest.toml`](.config/nextest.toml) leaves out | `synthesizer` |
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`; then `-synthesizer-program` lib and bins; then `-circuit-program` | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
-| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `test,test_targets`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root,test`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block` | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
+| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `test_targets`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block` | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
 | `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
 | `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
-| `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the `snarkvm-synthesizer` lib and bins tests, with `test` | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
-| `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer` with `test`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
-| `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests with `test`, printing `snarkvm=debug` events | `synthesizer-integration` |
+| `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the `snarkvm-synthesizer` lib and bins tests, with `--ignore-default-filter` | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
+| `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer`, with `--ignore-default-filter`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
+| `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests, printing `snarkvm=debug` events | `synthesizer-integration` |
 | `test-merge (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
 | `each-feature` | `cpu` | merge | 90 | `cargo hack clippy --each-feature` on each crate, without `cuda`, `no-embedded-srs` and `dev_skip_checks`: each crate with no features and with each feature alone | |
 | `test-release (old-consensus-versions-1)` to `-3` | `cpu` | release | 120 | one third each of the V8 to V14 tests of `snarkvm-synthesizer`, ignored ones included, with `test-old-consensus-versions`, release | |
 | `test-release (integers-exhaustive)` | `cpu` | release | 120 | the ignored tests of `snarkvm-circuit-types-integers`, which check every 8-bit input | |
-| `test-release (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks`, release; again with `test,rocks`, then the ignored tests; then `test_vm_execute_and_finalize` with `test,rocks` | |
+| `test-release (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks` and `--ignore-default-filter`, release; then the ignored tests; then `test_vm_execute_and_finalize` with `rocks` | |
 | `machete` | hosted | merge | | `cargo machete` | `check-unused-dependencies` |
 | `windows` | hosted (Windows) | release | | `cargo check --examples --benches --tests` in `algorithms`, `circuit`, `console`, `curves`, `fields`, `ledger`, `parameters`, `synthesizer`, `utilities` | `verify-windows` |
 
@@ -113,8 +113,8 @@ as snarkVM-internal, runs nothing.
 
 Each line of a `test`, `test-merge` or `test-release` entry's `runs` is one
 cargo build, and the entry runs its lines in order. `cargo test -p a -p b`
-unifies the features of `a` and `b`, and several crates enable `test`, `rocks`
-or `test_consensus_heights` on their dependencies, which changes what those
+unifies the features of `a` and `b`, and several crates enable `rocks` or
+`test_consensus_heights` on their dependencies, which changes what those
 dependencies compute. So crates share a line only where that unification
 enables none of those features, nor `wasm` or `large_params`, on any snarkvm
 crate. Helper features such as `test-helpers` can still be unified, so a test

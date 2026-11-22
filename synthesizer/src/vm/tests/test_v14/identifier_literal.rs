@@ -19,7 +19,6 @@ use console::program::ProgramID;
 
 /// Verifies that a program using identifier literal syntax cannot be deployed before V14,
 /// and can be deployed and executed after V14.
-#[cfg(feature = "test")]
 #[test]
 fn test_identifier_literal_migration() {
     let rng = &mut TestRng::default();
@@ -194,7 +193,6 @@ constructor:
 
 /// Verifies that `call.dynamic` accepts identifier literals as program name, network, and function
 /// name operands, allowing programs to hardcode target identities without field arithmetic.
-#[cfg(feature = "test")]
 #[test]
 fn test_call_dynamic_with_identifier_literals() {
     let rng = &mut TestRng::default();
@@ -287,7 +285,6 @@ finalize transfer_public_via_literals_2:
 
 /// Verifies that dynamic mapping operations (contains.dynamic, get.dynamic, get.or_use.dynamic)
 /// accept identifier literals as program name, network, and mapping name operands.
-#[cfg(feature = "test")]
 #[test]
 fn test_identifier_literal_in_dynamic_mapping_ops() {
     let rng = &mut TestRng::default();
@@ -848,7 +845,6 @@ constructor:
 
 /// Verifies that `get.dynamic` and `get.or_use.dynamic` accept identifier literals as program
 /// name, network, and mapping name operands.
-#[cfg(feature = "test")]
 #[test]
 fn test_get_and_get_or_use_dynamic_with_identifier_literals() {
     let rng = &mut TestRng::default();

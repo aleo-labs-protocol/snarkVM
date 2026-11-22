@@ -3843,7 +3843,6 @@ function adder:
         assert!(vm.process().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_versioned_keyword_restrictions() {
         let rng = &mut TestRng::default();
@@ -3907,7 +3906,6 @@ function adder:
         }
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_deploy_and_execute_in_same_block_fails() {
         let rng = &mut TestRng::default();
@@ -3973,7 +3971,6 @@ function adder:
         assert!(vm.process().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
     fn test_deploy_string() {
         let rng = &mut TestRng::default();

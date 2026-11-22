@@ -32,24 +32,12 @@ mod test_v13;
 #[cfg(feature = "test-old-consensus-versions")]
 mod test_v14;
 
-// Tests specific to recent consensus versions, executed in more flows than the older ones by
-// default.
-#[cfg(feature = "test")]
+// The default filter in `.config/nextest.toml` names these modules, and the pull request line skips them.
 mod test_v15;
-
-#[cfg(feature = "test")]
 mod test_v16;
-
-#[cfg(feature = "test")]
 mod test_v18;
-
-#[cfg(feature = "test")]
 mod test_v20;
-
-#[cfg(feature = "test")]
 mod test_v22;
-
-#[cfg(feature = "test")]
 mod test_v23;
 
 use super::*;

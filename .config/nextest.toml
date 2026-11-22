@@ -1,3 +1,16 @@
+[profile.default]
+# The `snarkvm-synthesizer` tests that only the merge and release lines run, with `--ignore-default-filter`.
+default-filter = """
+not (package(snarkvm-synthesizer) & kind(lib) & (
+    test(/^vm::tests::test_v(15|16|18|20|22|23)::/)
+    | test(/^vm::verify::credits_migration_tests::/)
+    | test(/^vm::verify::tests::test_(varuna_v3_transaction_boundary|varuna_v3_inclusion_and_deployment_boundary|varuna_v3_snark_instructions_boundary|varuna_migration|program_rules_migration|ecdsa_migration|increased_array_size|block_timestamp_migration)$/)
+    | test(/^vm::execute::tests::test_(execute_cost_fee_migration|fee_migration_occurs_at_correct_block_height|fee_migration_correctly_calculates_nested)$/)
+    | test(/^vm::test_helpers::test_(versioned_keyword_restrictions|deploy_and_execute_in_same_block_fails|deploy_string)$/)
+    | test(=vm::finalize::tests::test_genesis_num_validators_does_not_exceed_maximum_before_v3)
+))
+"""
+
 [profile.ci]
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 10 }
