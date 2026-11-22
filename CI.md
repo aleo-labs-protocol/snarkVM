@@ -55,8 +55,8 @@ rows.
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`, then `-synthesizer-program`, and then `-circuit-program`, lib and bins, from one build | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
 | `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `dev-network`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block`, from the build of the ignored `-ledger-store` tests | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
-| `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
-| `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
+| `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters`, without building its examples | `parameters` |
+| `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, without building its examples, in an empty home directory | `parameters-uncached` |
 | `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the fast and slow tiers of the `snarkvm-synthesizer` lib and bins | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
 | `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the `memory_intensive` tier of `snarkvm-synthesizer`, two at a time; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
 | `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests, printing `snarkvm=debug` events | `synthesizer-integration` |

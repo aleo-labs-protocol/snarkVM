@@ -293,9 +293,11 @@ jobs:
           # The first run's powers tests, with `filesystem`, cache the powers
           # files in ~/.aleo/resources. The ignored tests run without
           # `filesystem`, and read those files. The last two runs share a build.
+          # In the first run, `--lib --tests` leaves out the examples. `lint`
+          # checks that they compile.
           - name: crates
             runs: |
-              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections -p snarkvm-parameters --features snarkvm-parameters/filesystem -E !package(snarkvm-parameters)|test(/powers::tests/)
+              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections -p snarkvm-parameters --features snarkvm-parameters/filesystem --lib --tests -E !package(snarkvm-parameters)|test(/powers::tests/)
               nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored all -E package(snarkvm-parameters)
               nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored ignored-only -E package(snarkvm-algorithms)
           - name: ledger
@@ -497,10 +499,12 @@ jobs:
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
               nextest run -p snarkvm-ledger --features dev_genesis_state_root -E test(test_load_dev_genesis_state_root)
               nextest run -p snarkvm-ledger-store -p snarkvm-ledger-block -j 12 -E package(=snarkvm-ledger-block)
+          # `--lib --tests` leaves out the examples. `lint` checks that they
+          # compile.
           - name: parameters
-            runs: nextest run -p snarkvm-parameters --features filesystem -j 2
+            runs: nextest run -p snarkvm-parameters --features filesystem --lib --tests -j 2
           - name: parameters-uncached
-            runs: nextest run -p snarkvm-parameters --features filesystem --run-ignored ignored-only -j 2
+            runs: nextest run -p snarkvm-parameters --features filesystem --lib --tests --run-ignored ignored-only -j 2
           # The `snarkvm-synthesizer` lines select tiers by `#[ignore]` and the
           # `memory_intensive` and `old_versions` path markers; see CI.md.
           # Two shards: the tests keep all 8 slots busy for the whole run, so only
