@@ -46,41 +46,6 @@ impl<E: Environment, I: IntegerType> Ternary for Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Ternary<Boolean = Boolean<E>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            (Mode::Constant, _, _)
-            | (Mode::Public, Mode::Constant, Mode::Constant)
-            | (Mode::Private, Mode::Constant, Mode::Constant) => Count::is(0, 0, 0, 0),
-            _ => Count::is(0, 0, I::BITS, I::BITS),
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Ternary<Boolean = Boolean<E>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (CircuitType<Boolean<E>>, Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        let (condition, mode_a, mode_b) = case;
-        match condition.mode().is_constant() {
-            true => match condition {
-                CircuitType::Constant(constant) => match constant.eject_value() {
-                    true => *mode_a,
-                    false => *mode_b,
-                },
-                _ => E::halt("The constant condition is required to determine output mode."),
-            },
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,8 +67,7 @@ mod tests {
             Circuit::scope(name, || {
                 let candidate = Integer::ternary(&condition, &a, &b);
                 assert_eq!(expected, candidate.eject_value());
-                assert_count!(Ternary(Boolean, Integer<I>, Integer<I>) => Integer<I>, &(mode_condition, mode_a, mode_b));
-                // assert_output_mode!(Ternary(Boolean, Integer<I>, Integer<I>) => Integer<I>, &(CircuitType::from(&condition), mode_a, mode_b), candidate);
+                assert_scope!();
             });
             Circuit::reset();
         }

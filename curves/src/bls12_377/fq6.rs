@@ -27,6 +27,8 @@ pub type Fq6 = Fp6<Fq6Parameters>;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Fq6Parameters;
 
+impl snarkvm_fields::sealed_parameters::Sealed for Fq6Parameters {}
+
 impl Fp6Parameters for Fq6Parameters {
     type Fp2Params = Fq2Parameters;
 

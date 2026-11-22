@@ -69,6 +69,7 @@ impl<N: Network> ClosureCore<N> {
     }
 
     /// Returns the closure instructions.
+    #[doc(hidden)]
     pub fn instructions(&self) -> &[Instruction<N>] {
         &self.instructions
     }
@@ -157,6 +158,7 @@ impl<N: Network> ClosureCore<N> {
     /// This method will halt if there are output statements already.
     /// This method will halt if the maximum number of instructions has been reached.
     #[inline]
+    #[doc(hidden)]
     pub fn add_instruction(&mut self, instruction: Instruction<N>) -> Result<()> {
         // Ensure that there are no outputs in memory.
         ensure!(self.outputs.is_empty(), "Cannot add instructions after outputs have been added");

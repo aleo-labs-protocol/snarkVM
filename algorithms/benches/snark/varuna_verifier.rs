@@ -16,14 +16,13 @@
 /*
 Performs time measurements on the verification of test circuits with selected batch sizes and parameters.
  - Generate artifacts with:
-   cargo bench --bench varuna_verifier --features test,filesystem -- --generate
+   cargo bench --bench varuna_verifier --features test-helpers,filesystem -- --generate
  - Artifacts are ignored by git. To clean them, run:
-   cargo bench --bench varuna_verifier --features test,filesystem -- --clean
+   cargo bench --bench varuna_verifier --features test-helpers,filesystem -- --clean
  - Obtain time measurements (using previously generated artifacts) with:
-   cargo bench --bench varuna_verifier --features test,filesystem
-   The --serial feature can be added to deactivate parallelism.
+   cargo bench --bench varuna_verifier --features test-helpers,filesystem
  - Flamegraph (on previously generated artifacts) with:
-   cargo flamegraph --bench varuna_verifier --features="test, filesystem, serial"
+   cargo flamegraph --bench varuna_verifier --features="test-helpers, filesystem"
 */
 
 use snarkvm_algorithms::{

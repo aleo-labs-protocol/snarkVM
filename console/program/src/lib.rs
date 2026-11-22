@@ -18,11 +18,9 @@
 #![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
-#[macro_use]
-extern crate enum_index_derive;
-
 pub use snarkvm_console_account::Signature;
 pub use snarkvm_console_network::Network;
+#[doc(no_inline)]
 pub use snarkvm_console_types::prelude::*;
 
 mod data;

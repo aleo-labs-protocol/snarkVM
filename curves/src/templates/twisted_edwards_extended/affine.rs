@@ -32,25 +32,17 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Affine<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
-    pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
-    pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "multiply the x and y coordinates")]
-    pub t: P::BaseField,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) t: P::BaseField,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    #[deprecated(
-        since = "4.13.0",
-        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
-    )]
-    pub fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
+    pub(crate) fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
         Self { x, y, t }
     }
 }
@@ -85,6 +77,8 @@ impl<P: Parameters> Display for Affine<P> {
         write!(f, "Affine(x={}, y={})", self.x, self.y)
     }
 }
+
+impl<P: Parameters> crate::sealed::Sealed for Affine<P> {}
 
 impl<P: Parameters> AffineCurve for Affine<P> {
     type BaseField = P::BaseField;

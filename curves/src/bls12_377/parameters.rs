@@ -40,6 +40,8 @@ use crate::{
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bls12_377Parameters;
 
+impl crate::sealed::Sealed for Bls12_377Parameters {}
+
 impl Bls12Parameters for Bls12_377Parameters {
     type Fp = Fq;
     type Fp12Params = Fq12Parameters;

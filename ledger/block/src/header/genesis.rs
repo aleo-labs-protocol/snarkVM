@@ -22,9 +22,7 @@ impl<N: Network> Header<N> {
         transactions: &Transactions<N>,
         ratified_finalize_operations: Vec<FinalizeOperation<N>>,
     ) -> Result<Self> {
-        #[cfg(not(any(debug_assertions, feature = "test")))]
         ensure!(ratifications.len() == 1, "The genesis block must contain exactly 1 ratification");
-        #[cfg(not(any(debug_assertions, feature = "test")))]
         ensure!(!ratified_finalize_operations.is_empty(), "The genesis block must contain ratify-finalize operations");
 
         // Prepare a genesis block header.
@@ -96,6 +94,13 @@ mod tests {
         let genesis_header = crate::header::test_helpers::sample_block_header(rng);
         // Ensure the size of the genesis block header is correct.
         assert_eq!(expected_size, genesis_header.to_bytes_le().unwrap().len());
+    }
+
+    #[test]
+    fn test_genesis_header_without_ratification_is_rejected() {
+        let ratifications = Ratifications::<CurrentNetwork>::try_from(vec![]).unwrap();
+        let error = Header::genesis(&ratifications, &Transactions::from(&[]), vec![]).unwrap_err();
+        assert!(error.to_string().contains("exactly 1 ratification"), "{error}");
     }
 
     #[test]

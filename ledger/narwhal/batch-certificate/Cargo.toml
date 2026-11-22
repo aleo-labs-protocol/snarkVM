@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-narwhal-batch-certificate"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A batch certificate for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -24,10 +24,8 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "rayon" ]
-serial = [ "snarkvm-console/serial" ]
-wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-batch-header/test-helpers" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-ledger-narwhal-batch-header/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -44,7 +42,6 @@ features = [ "serde" ]
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true

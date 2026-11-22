@@ -19,10 +19,8 @@ use crate::prelude::deployment_cost_v1;
 
 use console::{account::ViewKey, network::ConsensusVersion, program::ProgramOwner};
 use snarkvm_ledger_block::{Deployment, Transaction};
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer_program::{Program, StackTrait as _};
-
-use aleo_std::StorageMode;
 
 // This test checks that:
 //  - an existing program cannot be redeployed before `ConsensusVersion::V8`
@@ -32,24 +30,25 @@ use aleo_std::StorageMode;
 //  - a program with a mapping can be redeployed after `ConsensusVersion::V8` (even after `V9`)
 //  - after `ConsensusVersion::V8`, existing programs cannot be executed until they are redeployed.
 //  - the VM can be loaded from a store at the very end.
+//  - a record of the redeployed program can be minted and spent.
 #[test]
 #[ignore]
 fn test_redeployment() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the storage.
     let store = ConsensusStore::<CurrentNetwork, LedgerType>::open(StorageMode::new_test(None)).unwrap();
 
     // Initialize the VM.
     let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone())?;
-    let genesis = sample_genesis_block(rng);
+    let genesis = sample_genesis_block();
     vm.add_next_block(&genesis)?;
 
     // Get the genesis private key.
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     // Advance the VM to 3 blocks before `ConsensusVersion::V8`.
     advance_vm_to_height(
@@ -66,6 +65,23 @@ program test_redeployment.aleo;
 mapping foo:
     key as address.public;
     value as u64.public;
+record token:
+    owner as address.private;
+    amount as u64.private;
+function mint:
+    input r0 as address.private;
+    input r1 as u64.private;
+    cast r0 r1 into r2 as token.record;
+    output r2 as token.record;
+function transfer:
+    input r0 as token.record;
+    input r1 as address.private;
+    input r2 as u64.private;
+    sub r0.amount r2 into r3;
+    cast r1 r2 into r4 as token.record;
+    cast r0.owner r3 into r5 as token.record;
+    output r4 as token.record;
+    output r5 as token.record;
 function dummy:
     ",
     )?;
@@ -75,6 +91,23 @@ program test_redeployment.aleo;
 mapping foo:
     key as address.public;
     value as u64.public;
+record token:
+    owner as address.private;
+    amount as u64.private;
+function mint:
+    input r0 as address.private;
+    input r1 as u64.private;
+    cast r0 r1 into r2 as token.record;
+    output r2 as token.record;
+function transfer:
+    input r0 as token.record;
+    input r1 as address.private;
+    input r2 as u64.private;
+    sub r0.amount r2 into r3;
+    cast r1 r2 into r4 as token.record;
+    cast r0.owner r3 into r5 as token.record;
+    output r4 as token.record;
+    output r5 as token.record;
 function dummy:
 function dummy2:
     ",
@@ -118,19 +151,19 @@ function dummy2:
     assert_eq!(consensus_version, ConsensusVersion::V8);
 
     // Attempt to execute the program after `ConsensusVersion::V8`.
-    let execute = vm.execute(
-        &caller_private_key,
-        ("test_redeployment.aleo", "dummy"),
-        Vec::<Value<CurrentNetwork>>::new().iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    let error = vm
+        .execute(
+            &caller_private_key,
+            ("test_redeployment.aleo", "dummy"),
+            Vec::<Value<CurrentNetwork>>::new().iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("Cannot execute test_redeployment.aleo on edition 0"), "{error}");
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
     vm.add_next_block(&block)?;
 
     // Attempt to redeploy the program with different code after `ConsensusVersion::V8`.
@@ -195,6 +228,20 @@ function dummy2:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
 
+    // Check that a record of the redeployed program can be minted and spent.
+    let address = Address::try_from(&caller_private_key)?;
+    let inputs = [Value::from_str(&address.to_string())?, Value::from_str("100u64")?];
+    let mint =
+        vm.execute(&caller_private_key, ("test_redeployment.aleo", "mint"), inputs.iter(), None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[mint], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+    let record = block.records().next().unwrap().1.decrypt(&ViewKey::try_from(&caller_private_key)?)?;
+    let inputs = [Value::Record(record), Value::from_str(&address.to_string())?, Value::from_str("10u64")?];
+    let transfer =
+        vm.execute(&caller_private_key, ("test_redeployment.aleo", "transfer"), inputs.iter(), None, 0, None, rng)?;
+    vm.check_transaction(&transfer, None, rng)?;
+
     Ok(())
 }
 
@@ -205,7 +252,7 @@ fn test_credits_cannot_be_redeployed() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)?, rng);
@@ -230,11 +277,9 @@ fn test_credits_cannot_be_redeployed() -> Result<()> {
 fn test_credits_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
-
-    // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? - 3, rng);
+    // Initialize the VM on a genesis block whose records `upgrade` accepts.
+    let (mut vm, caller_private_key, genesis_block) = sample_vm_with_upgradable_records();
+    advance_vm_to_height(&mut vm, caller_private_key, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? - 2, rng);
 
     // A helper closure to create a program with an upgrade call.
     let sample_program = |i: usize| {
@@ -266,33 +311,9 @@ finalize run:
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
-    // Extract a record from the genesis block and `split` it into two smaller records.
-    let genesis_hash = vm.store.block_store().get_block_hash(0)?.unwrap();
-    let genesis_block = vm.store.block_store().get_block(&genesis_hash)?.unwrap();
+    // Extract a record from the genesis block.
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
-    let mut records = genesis_block
-        .transactions()
-        .records()
-        .map(|(_, record)| record.decrypt(&caller_view_key))
-        .collect::<Result<Vec<_>>>()?;
-    let record = records.pop().unwrap();
-    let execute = vm.execute(
-        &caller_private_key,
-        ("credits.aleo", "split"),
-        vec![Value::Record(record), Value::from_str("12345u64")?].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
-    vm.add_next_block(&block)?;
-
-    // Extract the split record.
-    let record = block.transactions().records().next().unwrap().1.decrypt(&caller_view_key)?;
+    let record = genesis_block.transactions().records().next().unwrap().1.decrypt(&caller_view_key)?;
 
     // Attempt to execute the `upgrade` function directly before `ConsensusVersion::V8`.
     let execute = vm.execute(
@@ -352,10 +373,10 @@ fn test_deploy_and_redeploy() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize a second caller.
-    let other_private_key = sample_genesis_private_key(rng);
+    let other_private_key = sample_genesis_private_key();
     let address = Address::try_from(&other_private_key)?;
 
     // Initialize the VM.
@@ -419,19 +440,19 @@ function dummy:
     assert_eq!(edition, 0);
 
     // Attempt to execute the program immediately after deployment.
-    let execute = vm.execute(
-        &caller_private_key,
-        ("test_deploy_and_redeploy.aleo", "dummy"),
-        Vec::<Value<CurrentNetwork>>::new().iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    let error = vm
+        .execute(
+            &caller_private_key,
+            ("test_deploy_and_redeploy.aleo", "dummy"),
+            Vec::<Value<CurrentNetwork>>::new().iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("Cannot execute test_deploy_and_redeploy.aleo on edition 0"), "{error}");
+    let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
     vm.add_next_block(&block)?;
 
     // Redeploy the program with the other private key, using the original deployment.

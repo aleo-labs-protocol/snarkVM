@@ -25,7 +25,7 @@ use snarkvm_synthesizer_error::{
     VmCheckBlockContentError,
     indexed_finalize_bail,
 };
-use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
+use snarkvm_utilities::{cfg_sort_by_cached_key, defer};
 
 /// Uniqueness tracking accumulated while assembling a candidate block's transactions.
 struct CandidateTransactionDetails<N: Network> {
@@ -132,7 +132,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
         rng: &mut R,
     ) -> Result<(Ratifications<N>, Transactions<N>, Vec<N::TransactionID>, Vec<FinalizeOperation<N>>)> {
-        let timer = timer!("VM::speculate");
+        let timer = timing_span!("VM::speculate").entered();
 
         // Collect the candidate transactions into a vector.
         let candidate_transactions: Vec<_> = candidate_transactions.collect::<Vec<_>>();
@@ -172,13 +172,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .filter_map(|tx_id| {
                 unordered_aborted_transaction_ids.get(&tx_id).map(|error| {
                     warn!("Speculation safely aborted a transaction - {error} ({tx_id})");
-                    dev_eprintln!("Speculation safely aborted a transaction - {error} ({tx_id})");
                     tx_id
                 })
             })
             .collect();
 
-        finish!(timer, "Finished dry-run of the transactions");
+        timing_event!("Finished dry-run of the transactions");
+        drop(timer);
 
         // Return the ratifications, confirmed transactions, aborted transaction IDs, and ratified finalize operations.
         Ok((
@@ -206,7 +206,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transactions: &Transactions<N>,
         rng: &mut R,
     ) -> Result<Vec<FinalizeOperation<N>>> {
-        let timer = timer!("VM::check_speculate");
+        let timer = timing_span!("VM::check_speculate").entered();
 
         // Retrieve the transactions and their rejected IDs.
         let transactions_and_rejected_ids = cfg_iter!(transactions)
@@ -253,35 +253,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // where any aborted transactions should be in the aborted transaction ID list, not in transactions.
         ensure!(aborted_transactions.is_empty(), "Aborted transactions found in the block (from speculation)");
 
-        finish!(timer, "Finished dry-run of the transactions");
+        timing_event!("Finished dry-run of the transactions");
+        drop(timer);
 
         // Return the ratified finalize operations.
         Ok(ratified_finalize_operations)
-    }
-
-    /// Committee lookback for `block.round()` semantics matching `Ledger::get_committee_lookback_for_round`.
-    #[cfg(any(test, feature = "test"))]
-    fn committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
-        let previous_round = match round.is_multiple_of(2) {
-            true => round.saturating_sub(1),
-            false => round.saturating_sub(2),
-        };
-        let committee_lookback_round = previous_round.saturating_sub(Committee::<N>::COMMITTEE_LOOKBACK_RANGE);
-        self.finalize_store().committee_store().get_committee_for_round(committee_lookback_round)
-    }
-
-    /// Epoch hash at `block_height`, matching `Ledger::get_epoch_hash`.
-    #[cfg(any(test, feature = "test"))]
-    fn epoch_hash_for_height(&self, block_height: u32) -> Result<N::BlockHash> {
-        let epoch_number = block_height.saturating_div(N::NUM_BLOCKS_PER_EPOCH);
-        let epoch_starting_height = epoch_number.saturating_mul(N::NUM_BLOCKS_PER_EPOCH);
-        if epoch_starting_height == 0 {
-            return Ok(N::BlockHash::default());
-        }
-        match self.block_store().get_previous_block_hash(epoch_starting_height)? {
-            Some(hash) => Ok(hash),
-            None => bail!("Missing previous block hash for epoch boundary height {epoch_starting_height}"),
-        }
     }
 
     /// Runs `check_speculate` and [`Block::verify`] for a candidate next block. Caller supplies
@@ -350,83 +326,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .map_err(VmCheckBlockContentError::Verification)
     }
 
-    /// Like [`Self::check_block_content_inner`], loading the block tip and committee lookbacks from this VM.
-    ///
-    /// Note: this duplicates the lookups that `Ledger` performs before calling
-    /// [`Self::check_block_content_inner`], so that a test holding only a [`VM`] can run the same
-    /// check. Production callers go through `Ledger::check_next_block`; if this is ever needed
-    /// outside of tests, the two copies should be unified rather than both being maintained.
-    ///
-    /// # Panics
-    /// This function panics if called from an async context.
-    #[cfg(any(test, feature = "test"))]
-    #[inline]
-    pub fn check_block_content_from_tip<R: Rng + CryptoRng>(
-        &self,
-        block: &Block<N>,
-        rng: &mut R,
-    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>), VmCheckBlockContentError> {
-        let max_height = self
-            .block_store()
-            .max_height()
-            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("empty block store")))?;
-        let latest_hash = self
-            .block_store()
-            .get_block_hash(max_height)
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("missing tip block hash")))?;
-        let latest_block = self
-            .block_store()
-            .get_block(&latest_hash)
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| VmCheckBlockContentError::Verification(anyhow!("missing tip block")))?;
-        let latest_block_timestamp = latest_block.timestamp();
-        let latest_state_root = self.block_store().current_state_root();
-
-        let committee_lookback = self
-            .committee_lookback_for_round(block.round())
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| {
-                VmCheckBlockContentError::Verification(anyhow!(
-                    "missing committee lookback for block round {}",
-                    block.round()
-                ))
-            })?;
-        let previous_committee_lookback = self
-            .committee_lookback_for_round(block.round().saturating_sub(1))
-            .map_err(VmCheckBlockContentError::Verification)?
-            .ok_or_else(|| {
-                VmCheckBlockContentError::Verification(anyhow!(
-                    "missing previous committee lookback for block round {}",
-                    block.round()
-                ))
-            })?;
-
-        let latest_epoch_hash =
-            self.epoch_hash_for_height(latest_block.height()).map_err(VmCheckBlockContentError::Verification)?;
-
-        let current_timestamp = i64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| VmCheckBlockContentError::Verification(anyhow!(e)))?
-                .as_secs(),
-        )
-        .map_err(|e| VmCheckBlockContentError::Verification(anyhow!(e)))?;
-
-        self.check_block_content_inner(
-            block,
-            &latest_block,
-            latest_block_timestamp,
-            latest_state_root,
-            &previous_committee_lookback,
-            &committee_lookback,
-            self.puzzle(),
-            latest_epoch_hash,
-            current_timestamp,
-            rng,
-        )
-    }
-
     /// Finalizes the given transactions into the VM.
     ///
     /// Returns the finalize operations from pre-ratify and post-ratify.
@@ -438,24 +337,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
-        let timer = timer!("VM::finalize");
+        let timer = timing_span!("VM::finalize").entered();
 
         // Performs a **real-run** of finalize over the list of ratifications, solutions, and transactions.
         let ratified_finalize_operations = self.atomic_finalize(state, ratifications, solutions, transactions)?;
 
-        finish!(timer, "Finished real-run of finalize");
+        timing_event!("Finished real-run of finalize");
+        drop(timer);
         Ok(ratified_finalize_operations)
     }
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of confirmed transactions allowed in a block.
-    #[cfg(not(any(test, feature = "test")))]
     pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = Transactions::<N>::MAX_TRANSACTIONS;
-    /// The maximum number of confirmed transactions allowed in a block.
-    /// This is deliberately set to a low value (8) for testing purposes only.
-    #[cfg(any(test, feature = "test"))]
-    pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 8;
+
+    /// Replaces `MAXIMUM_CONFIRMED_TRANSACTIONS` for this VM and its clones.
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn set_maximum_confirmed_transactions(&self, maximum: usize) {
+        self.maximum_confirmed_transactions.store(maximum, std::sync::atomic::Ordering::Relaxed);
+    }
 
     /// Performs atomic speculation over a list of transactions.
     ///
@@ -523,7 +424,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     )> {
         self.ensure_sequential_processing();
 
-        let timer = timer!("VM::atomic_speculate");
+        let timer = timing_span!("VM::atomic_speculate").entered();
 
         // Retrieve the number of solutions.
         let num_solutions = solutions.len();
@@ -616,12 +517,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
             // Determine the block spend limit.
             let block_spend_limit = state.block_spend_limit();
+            #[cfg(not(any(test, feature = "test-helpers")))]
+            let maximum_confirmed_transactions = Self::MAXIMUM_CONFIRMED_TRANSACTIONS;
+            #[cfg(any(test, feature = "test-helpers"))]
+            let maximum_confirmed_transactions =
+                self.maximum_confirmed_transactions.load(std::sync::atomic::Ordering::Relaxed);
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
                 // Ensure the number of confirmed transactions does not exceed the maximum.
                 // Upon reaching the maximum number of confirmed transactions, all remaining transactions are aborted.
-                if confirmed.len() >= Self::MAXIMUM_CONFIRMED_TRANSACTIONS {
+                if confirmed.len() >= maximum_confirmed_transactions {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), "Exceeds block transaction limit".to_string()));
                     // Continue to the next transaction.
@@ -712,7 +618,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     Ok(result) => result,
                                     Err(error) => {
                                         // Note: On failure, skip this transaction, and continue speculation.
-                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        debug!("Failed to finalize the fee in a rejected deploy - {error}");
                                         // Store the aborted transaction.
                                         aborted.push((transaction.clone(), error.to_string()));
                                         // Continue to the next transaction.
@@ -731,14 +637,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 }
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
-                                    dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                     match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
-                                            dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                            debug!("Failed to finalize the fee in a rejected deploy - {error}");
                                             // Store the aborted transaction.
                                             aborted.push((transaction.clone(), error.to_string()));
                                             // Continue to the next transaction.
@@ -764,7 +669,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             }
                             // Construct the rejected execute transaction.
                             Err(error) => {
-                                dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                 match fee {
@@ -797,9 +701,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                             }
                                             Err(error) => {
                                                 // Note: On failure, skip this transaction, and continue speculation.
-                                                dev_eprintln!(
-                                                    "Failed to finalize the fee in a rejected execute - {error}"
-                                                );
+                                                debug!("Failed to finalize the fee in a rejected execute - {error}");
                                                 // Store the aborted transaction.
                                                 aborted.push((transaction.clone(), error.to_string()));
                                                 // Continue to the next transaction.
@@ -834,7 +736,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Note: This will abort the entire atomic batch.
                     Transaction::Fee(..) => Err("Cannot speculate on a fee transaction".to_string()),
                 };
-                lap!(timer, "Speculated on transaction '{}'", transaction.id());
+                timing_event!("Speculated on transaction '{}'", transaction.id());
 
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
@@ -849,7 +751,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction failed, abort the entire batch.
                     Err(error) => {
                         error!("Critical bug in speculate: {error}\n\n{transaction}");
-                        dev_eprintln!("Critical bug in speculate: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to speculate on transaction - {error}"));
                     }
@@ -916,7 +817,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 return Err("Failed to construct the ratifications after speculation".to_string());
             };
 
-            finish!(timer);
+            drop(timer);
 
             // On return, 'atomic_finalize!' will abort the batch, and return the ratifications,
             // confirmed & aborted transactions, and finalize operations from pre-ratify and post-ratify.
@@ -939,7 +840,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(not(test))]
         self.ensure_sequential_processing();
 
-        let timer = timer!("VM::atomic_finalize");
+        let timer = timing_span!("VM::atomic_finalize").entered();
 
         self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
@@ -1145,7 +1046,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Note: This will abort the entire atomic batch.
                     _ => return Err("Invalid confirmed transaction type".to_string()),
                 };
-                lap!(timer, "Finalizing transaction {}", transaction.id());
+                timing_event!("Finalizing transaction {}", transaction.id());
 
                 match outcome {
                     // If the transaction succeeded to finalize, continue to the next transaction.
@@ -1153,7 +1054,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction failed to finalize, abort and continue to the next transaction.
                     Err(error) => {
                         error!("Critical bug in finalize: {error}\n\n{transaction}");
-                        dev_eprintln!("Critical bug in finalize: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to finalize on transaction - {error}"));
                     }
@@ -1181,7 +1081,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Commit all the stacks to the process.
             process.commit_stacks();
 
-            finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
+            drop(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
             Ok(ratified_finalize_operations)
         });
@@ -1972,6 +1872,9 @@ mod tests {
             "
 program {program_name};
 
+constructor:
+    assert.eq edition 0u16;
+
 mapping account:
     // The token owner.
     key as address.public;
@@ -2625,7 +2528,7 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // Sample a private key and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Sample a private key and address for the recipient.
@@ -2633,14 +2536,10 @@ finalize transfer_public:
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let (vm, block) = test_helpers::sample_vm_past_v8();
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -2649,7 +2548,7 @@ finalize transfer_public:
 
         // Construct the deployment block.
         let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
+            new_program_deployment(&vm, &caller_private_key, &block, &mut unspent_records, rng).unwrap();
 
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
@@ -2714,7 +2613,7 @@ finalize transfer_public:
             let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2742,7 +2641,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2770,7 +2669,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2802,7 +2701,7 @@ finalize transfer_public:
             let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2836,7 +2735,7 @@ finalize transfer_public:
         let rng = &mut TestRng::default();
 
         // Sample a private key, view key, and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         for finalize_logic in &[
@@ -2849,14 +2748,10 @@ finalize transfer_public:
     div r0 0u128 into r1;",
         ] {
             // Initialize the vm.
-            let vm = test_helpers::sample_vm_with_genesis_block(rng);
-
-            // Deploy a new program.
-            let genesis =
-                vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+            let (vm, block) = test_helpers::sample_vm_past_v8();
 
             // Get the unspent records.
-            let mut unspent_records = genesis
+            let mut unspent_records = block
                 .transitions()
                 .cloned()
                 .flat_map(Transition::into_records)
@@ -2868,6 +2763,9 @@ finalize transfer_public:
             let program = Program::<CurrentNetwork>::from_str(&format!(
                 "
 program {program_id};
+
+constructor:
+    assert.eq edition 0u16;
 
 mapping hashes:
     key as u128.public;
@@ -2893,7 +2791,7 @@ function ped_hash:
                 &vm,
                 &caller_private_key,
                 &[deployment_transaction],
-                &genesis,
+                &block,
                 &mut unspent_records,
                 rng,
             )
@@ -2910,7 +2808,7 @@ function ped_hash:
             // Speculatively execute the transaction. Ensure that this call does not panic and returns a rejected transaction.
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .speculate(
-                    sample_finalize_state(1),
+                    sample_finalize_state(vm.block_store().current_block_height() + 1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2945,18 +2843,14 @@ function ped_hash:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let (vm, block) = test_helpers::sample_vm_past_v8();
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -2964,7 +2858,7 @@ function ped_hash:
             .collect::<Vec<_>>();
 
         // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &private_key, &genesis, &mut unspent_records, rng).unwrap();
+        let splits_block = generate_splits(&vm, &private_key, &block, &mut unspent_records, rng).unwrap();
 
         // Add the splits block to the VM.
         vm.add_next_block(&splits_block).unwrap();
@@ -2974,6 +2868,9 @@ function ped_hash:
             let program = Program::<CurrentNetwork>::from_str(
                 "
 program testing.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 mapping entries:
     key as address.public;
@@ -3073,18 +2970,16 @@ finalize compute:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        // Initialize the vm, with a cap that a test can fill.
+        let (vm, block) = test_helpers::sample_vm_past_v8();
+        let maximum_confirmed_transactions = 8;
+        vm.set_maximum_confirmed_transactions(maximum_confirmed_transactions);
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -3093,7 +2988,7 @@ finalize compute:
 
         // Construct the deployment block.
         let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
+            new_program_deployment(&vm, &caller_private_key, &block, &mut unspent_records, rng).unwrap();
 
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
@@ -3101,7 +2996,7 @@ finalize compute:
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
 
-        for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
+        for _ in 0..maximum_confirmed_transactions + 1 {
             let inputs = vec![
                 Value::<CurrentNetwork>::from_str(&caller_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u64").unwrap(),
@@ -3114,7 +3009,7 @@ finalize compute:
             vm.check_transaction(&transaction, None, rng).unwrap();
 
             // Abort the transaction if the block is full.
-            if transactions.len() >= VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS {
+            if transactions.len() >= maximum_confirmed_transactions {
                 excess_transaction_ids.push(transaction.id());
             }
 
@@ -3128,7 +3023,7 @@ finalize compute:
 
         // Ensure that the excess transactions were aborted.
         assert_eq!(next_block.aborted_transaction_ids(), &excess_transaction_ids);
-        assert_eq!(next_block.transactions().len(), VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS);
+        assert_eq!(next_block.transactions().len(), maximum_confirmed_transactions);
     }
 
     #[test]
@@ -3206,14 +3101,26 @@ finalize compute:
             rng,
         );
 
-        // Construct the delegators, greater than the maximum delegator size.
-        let delegators = (0..MAX_DELEGATORS + 1)
-            .map(|_| {
-                let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-                let validator = Address::try_from(validators.keys().next().unwrap()).unwrap();
-                let amount = MIN_DELEGATOR_STAKE;
-                (private_key, (validator, amount))
+        // Retrieve the validator that every delegator bonds to.
+        // The validator set is non-empty, and an address derivation from a private key does not fail.
+        let validator = Address::try_from(validators.keys().next().unwrap()).unwrap();
+
+        // Sample the delegator account seeds, greater than the maximum delegator size.
+        let seeds = (0..MAX_DELEGATORS + 1).map(|_| Uniform::rand(rng)).collect::<Vec<Field<CurrentNetwork>>>();
+        // Derive the delegator private keys and addresses in parallel.
+        // Neither a private key derivation from a seed nor an address derivation from a private key fails.
+        let delegator_accounts = cfg_into_iter!(seeds)
+            .map(|seed| {
+                let private_key = PrivateKey::<CurrentNetwork>::try_from(seed).unwrap();
+                let address = Address::try_from(&private_key).unwrap();
+                (private_key, address)
             })
+            .collect::<Vec<_>>();
+
+        // Construct the delegators, greater than the maximum delegator size.
+        let delegators = delegator_accounts
+            .iter()
+            .map(|(private_key, _)| (*private_key, (validator, MIN_DELEGATOR_STAKE)))
             .collect::<IndexMap<_, _>>();
 
         // Construct the committee.
@@ -3226,12 +3133,16 @@ finalize compute:
             <CurrentNetwork as Network>::STARTING_SUPPLY - allocated_amount,
         );
         public_balances.extend(sample_public_balances(
-            &delegators.keys().map(|private_key| Address::try_from(private_key).unwrap()).collect::<Vec<_>>(),
+            &delegator_accounts.iter().map(|(_, address)| *address).collect::<Vec<_>>(),
             0,
         ));
 
         // Construct the bonded balances.
-        let bonded_balances = sample_bonded_balances(&validators, &delegators);
+        // Each delegator is its own withdrawal address, as in `sample_bonded_balances`.
+        let mut bonded_balances = sample_bonded_balances(&validators, &IndexMap::new());
+        bonded_balances.extend(
+            delegator_accounts.iter().map(|(_, address)| (*address, (validator, *address, MIN_DELEGATOR_STAKE))),
+        );
 
         // Construct the genesis block, which should fail.
         let result = vm.genesis_quorum(
@@ -4090,17 +4001,13 @@ finalize compute:
         let rng = &mut TestRng::default();
 
         // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
 
         // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let (vm, block) = test_helpers::sample_vm_past_v8();
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -4112,6 +4019,9 @@ finalize compute:
             let program = Program::<CurrentNetwork>::from_str(
                 "
 program testing.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 mapping entries:
     key as address.public;
@@ -4143,32 +4053,39 @@ finalize compute:
             let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
 
             // Construct the new block.
-            sample_next_block(&vm, &private_key, &[transaction], &genesis, &mut unspent_records, rng).unwrap()
+            sample_next_block(&vm, &private_key, &[transaction], &block, &mut unspent_records, rng).unwrap()
         };
 
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
 
-        // Create an execution transaction, that will be rejected.
-        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
-        let rejected_tx =
-            create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+        // Adds a block with a transaction that is rejected, and returns the block and whether its reason was stored.
+        let add_rejected_transaction =
+            |previous_block: &Block<CurrentNetwork>, unspent_records: &mut Vec<_>, rng: &mut TestRng| {
+                let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+                let rejected_tx =
+                    create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], unspent_records, rng);
+                let next_block =
+                    sample_next_block(&vm, &private_key, &[rejected_tx], previous_block, unspent_records, rng).unwrap();
+                assert_eq!(next_block.transactions().len(), 1);
+                let rejected_transaction = next_block.transactions().iter().next().unwrap();
+                assert!(rejected_transaction.is_rejected());
+                vm.add_next_block(&next_block).unwrap();
+                let is_stored = vm.finalize_store().get_rejected_reason(&rejected_transaction.id()).unwrap().is_some();
+                (next_block, is_stored)
+            };
 
-        // Construct the next block with the rejected transaction.
-        let next_block =
-            sample_next_block(&vm, &private_key, &[rejected_tx], &deployment_block, &mut unspent_records, rng).unwrap();
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let (mut previous_block, is_stored) = add_rejected_transaction(&deployment_block, &mut unspent_records, rng);
+        assert!(previous_block.height() < v15_height);
+        assert!(!is_stored, "Rejection reason should not be stored before V15");
 
-        // Check that the transaction was rejected.
-        assert_eq!(next_block.transactions().len(), 1);
-        let rejected_transaction = next_block.transactions().iter().next().unwrap();
-        assert!(rejected_transaction.is_rejected());
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Check that the rejection reason was stored.
-        let tx_id = *rejected_transaction.id();
-        let rejection_reason = vm.finalize_store().get_rejected_reason(&tx_id).unwrap();
-        assert!(rejection_reason.is_some(), "Rejection reason should be stored");
+        while previous_block.height() + 1 < v15_height {
+            previous_block =
+                sample_next_block(&vm, &private_key, &[], &previous_block, &mut unspent_records, rng).unwrap();
+            vm.add_next_block(&previous_block).unwrap();
+        }
+        let (_, is_stored) = add_rejected_transaction(&previous_block, &mut unspent_records, rng);
+        assert!(is_stored, "Rejection reason should be stored from V15");
     }
 }

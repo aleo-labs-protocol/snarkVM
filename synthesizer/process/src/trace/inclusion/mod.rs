@@ -202,3 +202,121 @@ impl<N: Network> Inclusion<N> {
         Ok(batch_verifier_inputs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use circuit::AleoV0;
+    use console::{
+        network::MainnetV0,
+        program::{
+            BLOCKS_DEPTH,
+            BlockPath,
+            Identifier,
+            Plaintext,
+            ProgramID,
+            Record,
+            state_path::test_helpers::sample_global_state_path,
+        },
+        types::{U32, U64},
+    };
+    use snarkvm_ledger_block::{Input, Output};
+
+    type CurrentNetwork = MainnetV0;
+
+    /// Returns `true` if the inclusion circuit accepts a record from block `height`, spent by `program`/`function`.
+    fn accepts(program: &str, function: &str, height: u32, rng: &mut TestRng) -> Result<bool> {
+        let commitment = Field::rand(rng);
+        let gamma = Group::rand(rng);
+        let serial_number =
+            Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::serial_number_from_gamma(&gamma, commitment)?;
+
+        // Move the block of a sampled state path to `height`. A tree of that many blocks is too large to build,
+        // so the root is hashed up from random siblings, as `MerklePath::verify` does.
+        let path = sample_global_state_path::<CurrentNetwork>(Some(commitment), rng)?;
+        let leaf = path.block_hash().to_bits_le();
+        let siblings = (0..BLOCKS_DEPTH).map(|_| Field::rand(rng)).collect::<Vec<_>>();
+        let mut root = CurrentNetwork::hash_bhp1024(&[&[false], &leaf[..]].concat())?;
+        for (level, sibling) in siblings.iter().enumerate() {
+            let (left, right) = if (height >> level) & 1 == 0 { (root, *sibling) } else { (*sibling, root) };
+            root = CurrentNetwork::hash_bhp512(&[vec![true], left.to_bits_le(), right.to_bits_le()].concat())?;
+        }
+        let block_path = BlockPath::<CurrentNetwork>::try_from((U64::new(height as u64), siblings))?;
+        ensure!(CurrentNetwork::verify_merkle_path_bhp(&block_path, &root, &leaf), "Invalid block path");
+        let state_path = StatePath::from(
+            root.into(),
+            block_path,
+            path.block_hash(),
+            path.previous_block_hash(),
+            *path.header_root(),
+            path.header_path().clone(),
+            *path.header_leaf(),
+            path.transactions_path().clone(),
+            *path.transaction_id(),
+            path.transaction_path().clone(),
+            *path.transaction_leaf(),
+            *path.transition_root(),
+            *path.tcm(),
+            path.transition_path().clone(),
+            *path.transition_leaf(),
+        );
+
+        // `Transition::is_upgrade` requires two outputs.
+        let transition = Transition::new_unchecked(
+            Field::<CurrentNetwork>::rand(rng).into(),
+            ProgramID::from_str(program)?,
+            Identifier::from_str(function)?,
+            vec![Input::Record(serial_number, Field::rand(rng))],
+            vec![Output::Constant(Field::rand(rng), None), Output::Constant(Field::rand(rng), None)],
+            Group::rand(rng),
+            Field::rand(rng),
+            Field::rand(rng),
+        );
+        let verifier_inputs = Inclusion::prepare_verifier_inputs(
+            state_path.global_state_root(),
+            InclusionVersion::V1,
+            [transition].iter(),
+        )?
+        .remove(0);
+        let [_, _, local_state_root, _, is_record_block_height_reached, upgrade_block_height] = verifier_inputs[..]
+        else {
+            bail!("Expected six verifier inputs");
+        };
+        let upgrade_block_height =
+            *<U32<CurrentNetwork> as console::prelude::FromField>::from_field(&Field::new(upgrade_block_height))?;
+        let assignment = InclusionAssignment::new(
+            state_path,
+            commitment,
+            gamma,
+            serial_number,
+            is_record_block_height_reached.is_one(),
+            upgrade_block_height,
+            Field::<CurrentNetwork>::new(local_state_root).into(),
+            true,
+        )
+        .to_circuit_assignment::<AleoV0>()?;
+
+        // The circuit takes the verifier's public inputs.
+        let public_inputs = assignment.public_inputs().iter().map(|variable| variable.value()).collect::<Vec<_>>();
+        ensure!(public_inputs == verifier_inputs, "The circuit and the verifier take different public inputs");
+        Ok(assignment.constraints().iter().all(|constraint| {
+            let (a, b, c) = constraint.to_terms();
+            a.value() * b.value() == c.value()
+        }))
+    }
+
+    #[test]
+    fn test_upgrade_height_boundary() -> Result<()> {
+        let rng = &mut TestRng::default();
+        // A `credits.aleo` record from the block at `INCLUSION_UPGRADE_HEIGHT` or below can only be spent by `upgrade`.
+        let upgrade_height = CurrentNetwork::INCLUSION_UPGRADE_HEIGHT()?;
+        for (height, needs_upgrade) in [(upgrade_height - 1, true), (upgrade_height, true), (upgrade_height + 1, false)]
+        {
+            assert_eq!(accepts("credits.aleo", "transfer_private", height, rng)?, !needs_upgrade, "height {height}");
+            assert_eq!(accepts("credits.aleo", "upgrade", height, rng)?, needs_upgrade, "height {height}");
+            // Other programs' records carry no height check.
+            assert!(accepts("token.aleo", "transfer", height, rng)?, "height {height}");
+        }
+        Ok(())
+    }
+}

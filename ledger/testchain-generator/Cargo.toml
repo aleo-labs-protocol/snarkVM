@@ -19,15 +19,11 @@ include = ["../../LICENSE.md"]
 
 [features]
 default = [ ]
-test_targets = [ "snarkvm-ledger/test_targets"]
 test = [ "snarkvm-ledger/test" ]
-
-[dependencies.aleo-std]
-workspace = true
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "test_consensus_heights" ]
+features = [ "dev-network" ]
 
 [dependencies.snarkvm-ledger]
 workspace = true
@@ -40,7 +36,7 @@ workspace = true
 workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 
 [dependencies.clap]
 version = "4"

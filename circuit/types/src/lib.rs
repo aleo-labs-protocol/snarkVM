@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![warn(clippy::cast_possible_truncation)]
 
 #[cfg(test)]
 extern crate snarkvm_console as console;
@@ -47,5 +48,6 @@ pub mod modules {
 
 pub mod prelude {
     pub use crate::modules::*;
+    #[doc(no_inline)]
     pub use snarkvm_circuit_environment::prelude::*;
 }

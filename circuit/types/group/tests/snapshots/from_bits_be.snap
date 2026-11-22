@@ -1,0 +1,22 @@
+# Circuit shape of `from_bits_be` for each operand mode and a fixed set of group elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-group --test snapshots
+boolean[8].constant | * : halt
+boolean[8].constant | zero.x : 6 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].public | _ : 4 0 13 13 20/20/16 private 98061c92fce61b2e
+boolean[8].private | _ : 4 0 13 13 20/20/16 private 8aa1b1341f367ce1
+boolean[253].constant | * : 9 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[253].constant | zero.x : 6 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[253].constant | 1 : halt
+boolean[253].constant | 9 : halt
+boolean[253].constant | 2^253-1 : halt
+boolean[253].public | _ : 4 0 265 266 684/438/434 private 93a08e6280fd6c1f
+boolean[253].private | _ : 4 0 265 266 684/438/434 private 9fe74897c2e53434

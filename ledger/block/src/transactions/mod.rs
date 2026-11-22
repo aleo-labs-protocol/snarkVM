@@ -51,7 +51,6 @@ use snarkvm_synthesizer_program::{Command, FinalizeOperation};
 
 use indexmap::IndexMap;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// The set of transactions included in a block.
@@ -217,7 +216,6 @@ impl<N: Network> Transactions<N> {
     }
 
     /// Returns a parallel iterator over all transactions, for all transactions in `self`.
-    #[cfg(not(feature = "serial"))]
     pub fn par_iter(&self) -> impl '_ + IndexedParallelIterator<Item = &ConfirmedTransaction<N>> {
         self.transactions.par_values()
     }

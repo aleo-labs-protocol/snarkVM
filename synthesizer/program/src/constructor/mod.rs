@@ -37,6 +37,7 @@ pub struct ConstructorCore<N: Network> {
 
 impl<N: Network> ConstructorCore<N> {
     /// Returns the constructor commands.
+    #[doc(hidden)]
     pub fn commands(&self) -> &[Command<N>] {
         &self.commands
     }
@@ -83,6 +84,7 @@ impl<N: Network> ConstructorCore<N> {
     /// # Errors
     /// This method will halt if the maximum number of commands has been reached.
     #[inline]
+    #[doc(hidden)]
     pub fn add_command(&mut self, command: Command<N>) -> Result<()> {
         // Ensure the maximum number of commands has not been exceeded.
         ensure!(self.commands.len() < N::MAX_COMMANDS, "Cannot add more than {} commands", N::MAX_COMMANDS);

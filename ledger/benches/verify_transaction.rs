@@ -34,10 +34,9 @@ use snarkvm_console::{
 };
 use snarkvm_ledger::Ledger;
 use snarkvm_ledger_block::{Transaction, Transition};
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer::VM;
 
-use aleo_std::StorageMode;
 use criterion::{Criterion, Throughput};
 use rayon::prelude::*;
 
@@ -45,7 +44,7 @@ type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<Mainnet
 
 /// The consensus version every transaction here is built and verified at.
 ///
-/// Under `test_consensus_heights` each version from V2 onward lasts one block, so only the latest
+/// Under `dev-network` each version from V2 onward lasts one block, so only the latest
 /// version is stable across the several blocks this setup needs.
 fn bench_consensus_version() -> ConsensusVersion {
     ConsensusVersion::latest()

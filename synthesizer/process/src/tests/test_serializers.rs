@@ -21,11 +21,8 @@ use console::{
     program::{Address, ArrayType, Identifier, LiteralType, Locator, PlaintextType, RegisterType, U32, Value},
 };
 use snarkvm_synthesizer_program::{Program, StackTrait};
+use snarkvm_utilities::locks::RwLock;
 
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -167,7 +164,7 @@ function test_serde_equivalence:
                 None,
                 rng,
             );
-            let exec_is_ok = res_exec.is_ok() || <CurrentAleo as circuit::Environment>::is_satisfied();
+            let exec_is_ok = res_exec.is_ok() && <CurrentAleo as circuit::Environment>::is_satisfied();
 
             // Check that either all operations succeeded.
             assert!(

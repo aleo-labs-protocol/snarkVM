@@ -324,7 +324,7 @@ fn test_translation(
 fn test_translation_output_non_external_dynamic_content() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let provider_name_str = "gas_pump_provider";
     let caller_name_str = "gas_pump_caller";
@@ -427,7 +427,7 @@ fn test_translation_output_non_external_dynamic_content() {
 fn test_translation_input_external_dynamic_content() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
@@ -594,7 +594,7 @@ fn test_translation_input_external_dynamic_content() {
 fn test_translation_input_dynamic_non_external() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let record_static_str = format!(
@@ -627,7 +627,7 @@ fn test_translation_input_dynamic_non_external() {
 fn test_translation_output_non_external_dynamic() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     test_translation(&caller_private_key, "flow.aleo", "dynamic_pump", Some(vec![]), None, None, rng);
 }
@@ -637,7 +637,7 @@ fn test_translation_output_non_external_dynamic() {
 fn test_translation_input_dynamic_external() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let record_static_str = format!(
@@ -670,7 +670,7 @@ fn test_translation_input_dynamic_external() {
 fn test_translation_output_external_dynamic() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let record_static_str = format!(
@@ -700,6 +700,7 @@ fn test_translation_output_external_dynamic() {
 // Tests three consecutive translations in a single execution path with consistent prover/verifier traversal order.
 #[test]
 fn test_translation_triple() {
+    let _ = tracing_subscriber::fmt::try_init();
     // Before root call: pump a gas_container.record
     // Root call:
     //    - Receive as input a dynamic record corresponding to the above static one
@@ -711,7 +712,7 @@ fn test_translation_triple() {
 
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let record_static_str = format!(
@@ -757,7 +758,7 @@ fn test_translation_traversal_consistency() {
 
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
@@ -984,7 +985,7 @@ fn test_malicious_dynamic_id_tampering() {
 
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
@@ -1176,7 +1177,7 @@ fn test_malicious_external_record_dynamic_id_tampering() {
 
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
@@ -1369,9 +1370,10 @@ fn test_malicious_external_record_dynamic_id_tampering() {
 }
 
 // Checks that translation keys for the same record name but different programs are different and vice versa.
-// Run with `snark-print` feature to explore Varuna batch sizes and locate translation keys in verification batches.
+// Run with `RUST_LOG=snarkvm_algorithms::snark::varuna=trace` to explore Varuna batch sizes and locate translation keys in verification batches.
 #[test]
 fn test_differing_keys() {
+    let _ = tracing_subscriber::fmt::try_init();
     // Parameters for dynamic calls
     let program_a_name = Identifier::<CurrentNetwork>::from_str("program_a").unwrap();
     let program_b_name = Identifier::<CurrentNetwork>::from_str("program_b").unwrap();
@@ -1447,7 +1449,7 @@ fn test_differing_keys() {
 
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
@@ -1459,7 +1461,7 @@ fn test_differing_keys() {
     add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction_b], rng);
 
     // Displaying the keys associated to each translation circuit for easier
-    // identification with snark-print
+    // identification in the Varuna trace events
     for program_name in ["program_a.aleo", "program_b.aleo"] {
         let stack = vm.process().get_stack(program_name).unwrap();
         println!("{program_name} translation keys:");
@@ -1493,7 +1495,7 @@ fn test_differing_keys() {
 fn test_translation_max_entries_record() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("max_entries").unwrap().to_field().unwrap();

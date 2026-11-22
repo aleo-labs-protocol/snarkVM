@@ -15,6 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
+#![warn(clippy::cast_possible_truncation)]
 
 extern crate snarkvm_console_network as console;
 
@@ -30,8 +31,14 @@ pub use v0::*;
 use snarkvm_circuit_collections::merkle_tree::MerklePath;
 use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, environment::Environment};
 
+/// Seals [`Aleo`]. Only the networks of this crate implement it.
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// This trait is sealed. Only snarkVM implements it.
 // Note: The functions of this trait are not thread safe.
-pub trait Aleo: Environment {
+pub trait Aleo: sealed::Sealed + Environment {
     /// The maximum number of field elements in data (must not exceed u16::MAX).
     const MAX_DATA_SIZE_IN_FIELDS: u32 = <Self::Network as console::Network>::MAX_DATA_SIZE_IN_FIELDS;
 

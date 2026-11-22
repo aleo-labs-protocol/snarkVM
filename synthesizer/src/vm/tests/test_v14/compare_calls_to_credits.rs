@@ -156,7 +156,7 @@ fn get_execution_costs(
 #[test]
 fn test_compare_transfer_public() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -297,7 +297,7 @@ fn test_compare_transfer_public() {
 #[test]
 fn test_compare_transfer_public_as_signer() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -435,7 +435,7 @@ fn test_compare_transfer_public_as_signer() {
 #[test]
 fn test_compare_transfer_public_to_private() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -578,7 +578,7 @@ fn test_compare_transfer_public_to_private() {
 #[test]
 fn test_compare_transfer_private() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
@@ -743,7 +743,7 @@ fn test_compare_transfer_private() {
 #[test]
 fn test_compare_transfer_private_to_public() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
@@ -899,7 +899,7 @@ fn test_compare_transfer_private_to_public() {
 #[test]
 fn test_compare_join() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
@@ -1028,7 +1028,7 @@ fn test_compare_join() {
 #[test]
 fn test_compare_split() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Field representations for call.dynamic.
@@ -1161,7 +1161,7 @@ fn test_compare_split() {
 #[test]
 fn test_compare_bond_validator() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1265,7 +1265,7 @@ fn test_compare_bond_validator() {
 #[test]
 fn test_compare_bond_public() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1367,7 +1367,7 @@ fn test_compare_bond_public() {
 #[test]
 fn test_compare_unbond_public() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1467,7 +1467,7 @@ fn test_compare_unbond_public() {
 #[test]
 fn test_compare_claim_unbond_public() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");
@@ -1566,7 +1566,7 @@ fn test_compare_claim_unbond_public() {
 #[test]
 fn test_compare_set_validator_state() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Field representations for call.dynamic.
     let credits_field = identifier_to_field("credits");

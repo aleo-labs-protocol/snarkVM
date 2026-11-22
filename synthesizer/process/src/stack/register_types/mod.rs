@@ -51,12 +51,14 @@ use snarkvm_synthesizer_program::{
     register_types_equivalent,
     types_equivalent,
 };
-use snarkvm_utilities::dev_eprintln;
+use snarkvm_utilities::tracing::debug;
 
 use indexmap::{IndexMap, IndexSet};
 
 use std::collections::HashSet;
 
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegisterTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
@@ -106,7 +108,7 @@ impl<N: Network> RegisterTypes<N> {
             Operand::AleoGeneratorPowers(index) => match index {
                 None => RegisterType::Plaintext(PlaintextType::Array(ArrayType::new(
                     PlaintextType::Literal(LiteralType::Group),
-                    vec![U32::new(N::Scalar::SIZE_IN_BITS as u32)],
+                    vec![U32::new(u32::try_from(N::Scalar::SIZE_IN_BITS)?)],
                 )?)),
                 Some(_) => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
             },

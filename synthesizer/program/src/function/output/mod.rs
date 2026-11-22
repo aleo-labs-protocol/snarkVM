@@ -33,6 +33,7 @@ pub struct Output<N: Network> {
 impl<N: Network> Output<N> {
     /// Returns the output operand.
     #[inline]
+    #[doc(hidden)]
     pub const fn operand(&self) -> &Operand<N> {
         &self.operand
     }

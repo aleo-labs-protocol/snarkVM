@@ -1,0 +1,45 @@
+# Circuit shape of `sub` for each operand mode and a fixed set of group elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-group --test snapshots
+group.constant group.constant | * : 4 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | zero zero : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | zero G : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | zero 2G : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | zero -G : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | zero sampled : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | G zero : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | 2G zero : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | -G zero : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.constant | sampled zero : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.public | zero _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+group.constant group.public | G _ : 2 0 3 3 3/5/5 private 84255b25a4649f14
+group.constant group.public | 2G _ : 2 0 3 3 3/5/5 private ead7a73bed61450d
+group.constant group.public | -G _ : 2 0 3 3 3/5/5 private 04f051e0374f9c51
+group.constant group.public | sampled _ : 2 0 3 3 3/5/5 private f3d6e64919b61bb5
+group.constant group.private | zero _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+group.constant group.private | G _ : 2 0 3 3 3/5/5 private a444e43bc606a8bd
+group.constant group.private | 2G _ : 2 0 3 3 3/5/5 private ccc05bab9f489734
+group.constant group.private | -G _ : 2 0 3 3 3/5/5 private f642df124473bef2
+group.constant group.private | sampled _ : 2 0 3 3 3/5/5 private de2e626fb041861e
+group.public group.constant | _ zero : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+group.public group.constant | _ G : 2 0 3 3 3/5/5 private 4562191a54fe0244
+group.public group.constant | _ 2G : 2 0 3 3 3/5/5 private 09ed3d5562e79aab
+group.public group.constant | _ -G : 2 0 3 3 3/5/5 private b44c19040065d796
+group.public group.constant | _ sampled : 2 0 3 3 3/5/5 private 39e4f0423acce3a8
+group.public group.public | _ _ : 2 0 6 6 7/9/9 private 6a3c941a428b5d3c
+group.public group.private | _ _ : 2 0 6 6 7/9/9 private 767fc4f872b086b0
+group.private group.constant | _ zero : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+group.private group.constant | _ G : 2 0 3 3 3/5/5 private dab6109921d96d3e
+group.private group.constant | _ 2G : 2 0 3 3 3/5/5 private 446fba5a799a28dc
+group.private group.constant | _ -G : 2 0 3 3 3/5/5 private 42a580a8c9e0ed08
+group.private group.constant | _ sampled : 2 0 3 3 3/5/5 private 7863ca5b50ca2553
+group.private group.public | _ _ : 2 0 6 6 7/9/9 private 73f62c465e2b5366
+group.private group.private | _ _ : 2 0 6 6 7/9/9 private 5dcd1224194379b8

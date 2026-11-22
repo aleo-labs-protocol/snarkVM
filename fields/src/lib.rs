@@ -56,6 +56,36 @@ pub use to_field_vec::*;
 pub mod traits;
 pub use traits::*;
 
+/// Seals [`Field`]. Only the field types of this crate implement it.
+///
+/// The parameter traits have their own seal, [`sealed_parameters::Sealed`], which is public
+/// for `snarkvm-curves`. Code outside snarkVM that implements one of them does not compile:
+///
+/// ```compile_fail,E0277
+/// use snarkvm_fields::FftParameters;
+/// use snarkvm_utilities::biginteger::BigInteger256;
+///
+/// struct Parameters;
+///
+/// impl FftParameters for Parameters {
+///     type BigInteger = BigInteger256;
+///
+///     const TWO_ADICITY: u32 = 1;
+///     const TWO_ADIC_ROOT_OF_UNITY: BigInteger256 = BigInteger256([0; 4]);
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Seals [`FftParameters`], [`Fp2Parameters`], [`Fp6Parameters`](fp6_3over2::Fp6Parameters)
+/// and [`Fp12Parameters`]. `snarkvm-curves` implements it for its fields, so it is public, but it
+/// is not part of the API.
+#[doc(hidden)]
+pub mod sealed_parameters {
+    pub trait Sealed {}
+}
+
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,
@@ -74,21 +104,18 @@ pub fn batch_inversion<F: Field>(v: &mut [F]) {
     batch_inversion_and_mul(v, &F::one());
 }
 
-#[cfg(feature = "serial")]
-// Given a vector of field elements {v_i}, compute the vector {coeff * v_i^(-1)}
-pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
-    serial_batch_inversion_and_mul(v, coeff);
-}
-
-#[cfg(not(feature = "serial"))]
 // Given a vector of field elements {v_i}, compute the vector {coeff * v_i^(-1)}
 pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
     use rayon::prelude::*;
-    // Divide the vector v evenly between all available cores
-    let min_elements_per_thread = 1;
     let num_cpus_available = snarkvm_utilities::parallel::max_available_threads();
     let num_elems = v.len();
-    let num_elem_per_thread = min_elements_per_thread.max(num_elems / num_cpus_available);
+    // Below 4 elements per thread, waking the pool costs more than one serial pass.
+    if num_elems < 4 * num_cpus_available {
+        serial_batch_inversion_and_mul(v, coeff);
+        return;
+    }
+    // Divide the vector v evenly between all available cores
+    let num_elem_per_thread = num_elems / num_cpus_available;
 
     // Batch invert in parallel, without copying the vector
     v.par_chunks_mut(num_elem_per_thread).for_each(|chunk| {

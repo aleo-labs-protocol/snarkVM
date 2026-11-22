@@ -103,6 +103,8 @@ thread_local! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AleoV0;
 
+impl crate::sealed::Sealed for AleoV0 {}
+
 impl Aleo for AleoV0 {
     /// Initializes the global constants for the Aleo environment.
     fn initialize_global_constants() {
@@ -392,6 +394,8 @@ impl Aleo for AleoV0 {
         POSEIDON_4.with(|psd4| POSEIDON_2.with(|psd2| path.verify(psd4, psd2, root, leaf)))
     }
 }
+
+impl snarkvm_circuit_types::environment::sealed_circuit_environment::Sealed for AleoV0 {}
 
 impl Environment for AleoV0 {
     type Affine = <E as Environment>::Affine;

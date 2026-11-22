@@ -1,0 +1,121 @@
+# Circuit shape of `ternary` for each operand mode and a fixed set of field elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-field --test snapshots
+boolean.constant field.constant field.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.constant field.public | true 0 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.public | true 1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.public | true 2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.public | true (p-1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.public | true (p+1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.public | true -2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.public | true -1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.constant field.private | true 0 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.private | true 1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.private | true 2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.private | true (p-1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.private | true (p+1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.private | true -2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.constant field.private | true -1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.public field.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.public field.constant | true _ 0 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.constant | true _ 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.constant | true _ 2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.constant | true _ (p-1)/2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.constant | true _ (p+1)/2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.constant | true _ -2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.constant | true _ -1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.public field.private | false _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.public field.private | true _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.private field.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant field.private field.constant | true _ 0 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.constant | true _ 1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.constant | true _ 2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.constant | true _ (p-1)/2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.constant | true _ (p+1)/2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.constant | true _ -2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.constant | true _ -1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.public | false _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant field.private field.public | true _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant field.private field.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public field.constant field.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public field.constant field.constant | _ 0 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.public field.constant field.constant | _ 1 0 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.public field.constant field.constant | _ 1 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.public field.constant field.public | _ 0 _ : 0 0 1 1 1/1/2 private e884ebb5ebf8c666
+boolean.public field.constant field.public | _ 1 _ : 0 0 1 1 2/1/2 private d4169c49667a7912
+boolean.public field.constant field.public | _ 2 _ : 0 0 1 1 2/1/2 private 819da068f7d82d7a
+boolean.public field.constant field.public | _ (p-1)/2 _ : 0 0 1 1 2/1/2 private ea84b53b68a056ca
+boolean.public field.constant field.public | _ (p+1)/2 _ : 0 0 1 1 2/1/2 private 9948d842b300d9fb
+boolean.public field.constant field.public | _ -2 _ : 0 0 1 1 2/1/2 private 6bb4f289f7f70277
+boolean.public field.constant field.public | _ -1 _ : 0 0 1 1 2/1/2 private 6ba231682474eb29
+boolean.public field.constant field.private | _ 0 _ : 0 0 1 1 1/1/2 private feb53a0b8c3b5aba
+boolean.public field.constant field.private | _ 1 _ : 0 0 1 1 2/1/2 private f72f45e2a2920314
+boolean.public field.constant field.private | _ 2 _ : 0 0 1 1 2/1/2 private 138619616c344bfe
+boolean.public field.constant field.private | _ (p-1)/2 _ : 0 0 1 1 2/1/2 private 02c07502ce286f28
+boolean.public field.constant field.private | _ (p+1)/2 _ : 0 0 1 1 2/1/2 private f940119b7fca6008
+boolean.public field.constant field.private | _ -2 _ : 0 0 1 1 2/1/2 private dded795f7fa9a1ce
+boolean.public field.constant field.private | _ -1 _ : 0 0 1 1 2/1/2 private 53c83466779bfa62
+boolean.public field.public field.constant | _ _ 0 : 0 0 1 1 1/1/1 private 19043827acbbf6ad
+boolean.public field.public field.constant | _ _ 1 : 0 0 1 1 2/1/2 private df54a4e22c44cd01
+boolean.public field.public field.constant | _ _ 2 : 0 0 1 1 2/1/2 private f7cc95877d50b81a
+boolean.public field.public field.constant | _ _ (p-1)/2 : 0 0 1 1 2/1/2 private c91a5f28905ffa48
+boolean.public field.public field.constant | _ _ (p+1)/2 : 0 0 1 1 2/1/2 private 7fea64637ac04f96
+boolean.public field.public field.constant | _ _ -2 : 0 0 1 1 2/1/2 private 05f948c45ccad98c
+boolean.public field.public field.constant | _ _ -1 : 0 0 1 1 2/1/2 private e872bd975eb10c97
+boolean.public field.public field.public | _ _ _ : 0 0 1 1 2/1/2 private cbf2ccf1d5b54126
+boolean.public field.public field.private | _ _ _ : 0 0 1 1 2/1/2 private 47f4c64fea988776
+boolean.public field.private field.constant | _ _ 0 : 0 0 1 1 1/1/1 private 8dcf3791937be92b
+boolean.public field.private field.constant | _ _ 1 : 0 0 1 1 2/1/2 private 5a642a4fd9af26d0
+boolean.public field.private field.constant | _ _ 2 : 0 0 1 1 2/1/2 private 1424091f14547168
+boolean.public field.private field.constant | _ _ (p-1)/2 : 0 0 1 1 2/1/2 private c2cf22d1852b33e9
+boolean.public field.private field.constant | _ _ (p+1)/2 : 0 0 1 1 2/1/2 private cddd16686160a132
+boolean.public field.private field.constant | _ _ -2 : 0 0 1 1 2/1/2 private 0641df8a5c91799a
+boolean.public field.private field.constant | _ _ -1 : 0 0 1 1 2/1/2 private 151bc4a1c84cabfa
+boolean.public field.private field.public | _ _ _ : 0 0 1 1 2/1/2 private a3895e3a3d36cfa0
+boolean.public field.private field.private | _ _ _ : 0 0 1 1 2/1/2 private 110f9e7b2bf8848c
+boolean.private field.constant field.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.private field.constant field.constant | _ 0 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.private field.constant field.constant | _ 1 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.private field.constant field.public | _ 0 _ : 0 0 1 1 1/1/2 private 18bd6482689c1ee3
+boolean.private field.constant field.public | _ 1 _ : 0 0 1 1 2/1/2 private ad75fbff802d5e98
+boolean.private field.constant field.public | _ 2 _ : 0 0 1 1 2/1/2 private 8851681b1023aed0
+boolean.private field.constant field.public | _ (p-1)/2 _ : 0 0 1 1 2/1/2 private 795a6ccfcb7f37ea
+boolean.private field.constant field.public | _ (p+1)/2 _ : 0 0 1 1 2/1/2 private 1e90966109cec9d4
+boolean.private field.constant field.public | _ -2 _ : 0 0 1 1 2/1/2 private c677a049cbfb4e4c
+boolean.private field.constant field.public | _ -1 _ : 0 0 1 1 2/1/2 private d8303fa4f4203a14
+boolean.private field.constant field.private | _ 0 _ : 0 0 1 1 1/1/2 private 6fdf52c987945c7f
+boolean.private field.constant field.private | _ 1 _ : 0 0 1 1 2/1/2 private fab8dddeeba0727c
+boolean.private field.constant field.private | _ 2 _ : 0 0 1 1 2/1/2 private 1f33bd4a4f0ad96c
+boolean.private field.constant field.private | _ (p-1)/2 _ : 0 0 1 1 2/1/2 private 71130caeba49cd7b
+boolean.private field.constant field.private | _ (p+1)/2 _ : 0 0 1 1 2/1/2 private d1ef36f9983d3301
+boolean.private field.constant field.private | _ -2 _ : 0 0 1 1 2/1/2 private d2b5b9956d78604d
+boolean.private field.constant field.private | _ -1 _ : 0 0 1 1 2/1/2 private 3ef7370963d58d3d
+boolean.private field.public field.constant | _ _ 0 : 0 0 1 1 1/1/1 private 5ba0717a0e169dc8
+boolean.private field.public field.constant | _ _ 1 : 0 0 1 1 2/1/2 private 934a8cdf899d75e5
+boolean.private field.public field.constant | _ _ 2 : 0 0 1 1 2/1/2 private d61840a8318feb4e
+boolean.private field.public field.constant | _ _ (p-1)/2 : 0 0 1 1 2/1/2 private 2d54e71c5e7b8049
+boolean.private field.public field.constant | _ _ (p+1)/2 : 0 0 1 1 2/1/2 private 241b657345e2eab7
+boolean.private field.public field.constant | _ _ -2 : 0 0 1 1 2/1/2 private a2b5a338b4b60423
+boolean.private field.public field.constant | _ _ -1 : 0 0 1 1 2/1/2 private 56a8f9f1061166df
+boolean.private field.public field.public | _ _ _ : 0 0 1 1 2/1/2 private f4934d8584f11ca8
+boolean.private field.public field.private | _ _ _ : 0 0 1 1 2/1/2 private acf43cc8a6fe7d2c
+boolean.private field.private field.constant | _ _ 0 : 0 0 1 1 1/1/1 private c93eba45710e28bc
+boolean.private field.private field.constant | _ _ 1 : 0 0 1 1 2/1/2 private ab131f1875defc00
+boolean.private field.private field.constant | _ _ 2 : 0 0 1 1 2/1/2 private fc6eb256ffccb254
+boolean.private field.private field.constant | _ _ (p-1)/2 : 0 0 1 1 2/1/2 private 16e0930bfd34cb06
+boolean.private field.private field.constant | _ _ (p+1)/2 : 0 0 1 1 2/1/2 private 198ef8f10ebe8e21
+boolean.private field.private field.constant | _ _ -2 : 0 0 1 1 2/1/2 private c2a812cf298b0b09
+boolean.private field.private field.constant | _ _ -1 : 0 0 1 1 2/1/2 private 77d46ee8f50e87a7
+boolean.private field.private field.public | _ _ _ : 0 0 1 1 2/1/2 private 3e4ea9e6df41f958
+boolean.private field.private field.private | _ _ _ : 0 0 1 1 2/1/2 private 1af2f336e15fd99e

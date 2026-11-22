@@ -18,12 +18,13 @@ mod parse;
 mod serialize;
 mod size_in_bits;
 
-use crate::{FinalizeType, Identifier, Locator, PlaintextType, ProgramID, ValueType};
+use crate::{FinalizeType, Identifier, Locator, PlaintextType, ProgramID, ValueType, Variant};
 use snarkvm_console_network::prelude::*;
 
-use enum_index::EnumIndex;
-
-#[derive(Clone, PartialEq, Eq, Hash, EnumIndex)]
+/// Minor releases add variants to this enum, and snarkVM does not treat this as a breaking change.
+/// An exhaustive match must be updated for each new variant, so that each new variant is handled
+/// explicitly.
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum RegisterType<N: Network> {
     /// A plaintext type.
     Plaintext(PlaintextType<N>),
@@ -40,6 +41,18 @@ pub enum RegisterType<N: Network> {
 }
 
 impl<N: Network> RegisterType<N> {
+    /// Returns the variant of the register type.
+    pub const fn variant(&self) -> Variant {
+        match self {
+            RegisterType::Plaintext(..) => 0,
+            RegisterType::Record(..) => 1,
+            RegisterType::ExternalRecord(..) => 2,
+            RegisterType::Future(..) => 3,
+            RegisterType::DynamicRecord => 4,
+            RegisterType::DynamicFuture => 5,
+        }
+    }
+
     // Make unqualified structs or records into external ones with the given `id`.
     pub fn qualify(self, id: ProgramID<N>) -> Self {
         match self {

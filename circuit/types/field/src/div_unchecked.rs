@@ -60,39 +60,10 @@ impl<E: Environment> DivUnchecked<Field<E>> for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn DivUnchecked<Field<E>, Output = Field<E>>> for Field<E> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            (Mode::Constant, Mode::Constant) | (_, Mode::Constant) => Count::is(1, 0, 0, 0),
-            (_, _) => Count::is(0, 0, 1, 1),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn DivUnchecked<Field<E>, Output = Field<E>>> for Field<E> {
-    type Case = (CircuitType<Field<E>>, CircuitType<Field<E>>);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0.mode(), case.1.mode()) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (Mode::Public, Mode::Constant) => match &case.1 {
-                CircuitType::Constant(constant) => match constant.eject_value().is_one() {
-                    true => Mode::Public,
-                    false => Mode::Private,
-                },
-                _ => E::halt("The constant is required to determine the output mode of Public + Constant"),
-            },
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_circuit_environment::{Circuit, assert_count_fails};
+    use snarkvm_circuit_environment::{Circuit, assert_scope_fails};
 
     const ITERATIONS: u64 = 10;
 
@@ -115,7 +86,7 @@ mod tests {
                 false => {
                     Circuit::scope(name, || {
                         let _ = a.div_unchecked(b);
-                        assert_count_fails!(DivUnchecked(Field, Field) => Field, &(a.eject_mode(), b.eject_mode()));
+                        assert_scope_fails!();
                     });
                 }
             },
@@ -124,8 +95,7 @@ mod tests {
                 Circuit::scope(name, || {
                     let candidate = a.div_unchecked(b);
                     assert_eq!(expected, candidate.eject_value(), "({} / {})", a.eject_value(), b.eject_value());
-                    assert_count!(DivUnchecked(Field, Field) => Field, &(a.eject_mode(), b.eject_mode()));
-                    assert_output_mode!(DivUnchecked(Field, Field) => Field, &(CircuitType::from(a), CircuitType::from(b)), candidate);
+                    assert_scope!();
                 });
             }
         }

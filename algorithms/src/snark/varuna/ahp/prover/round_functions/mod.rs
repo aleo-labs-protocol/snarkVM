@@ -28,7 +28,9 @@ use itertools::Itertools;
 use rand::{CryptoRng, Rng};
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::{defer, dev_println};
+use snarkvm_utilities::{cfg_into_iter, cfg_iter, timing_span, tracing::trace};
+
+use rayon::prelude::*;
 
 mod fifth;
 mod first;
@@ -43,8 +45,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         circuits_to_constraints: &BTreeMap<&'a Circuit<F, SM>, &[C]>,
         rng: &mut R,
     ) -> Result<prover::State<'a, F, SM>, AHPError> {
-        let init_time = start_timer!(|| "AHP::Prover::Init");
-        defer! { end_timer!(init_time); }
+        let _init_time = timing_span!("AHP::Prover::Init").entered();
 
         let mut randomizing_assignments = Vec::with_capacity(circuits_to_constraints.len());
         for constraints in circuits_to_constraints.values() {
@@ -69,25 +70,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 randomizing_assignments.len()
             )));
         }
-        let indices_and_assignments = circuits_to_constraints
-            .iter()
-            .zip_eq(randomizing_assignments)
+        let circuits = circuits_to_constraints.iter().zip_eq(randomizing_assignments).collect::<Vec<_>>();
+        let indices_and_assignments = cfg_into_iter!(circuits)
             .map(|((circuit, constraints), circuit_rand_assignments)| {
-                let assignments = constraints
-                    .iter()
-                    .zip(circuit_rand_assignments)
+                let assignments = cfg_iter!(constraints)
+                    .zip_eq(circuit_rand_assignments)
                     .enumerate()
                     .map(|(i, (instance, rand_assignments))| {
                         let mut pcs = {
-                            let constraint_time = start_timer!(|| format!(
-                                "Generating constraints and witnesses for {:?} and index {i}",
-                                circuit.id
-                            ));
-                            defer! { end_timer!(constraint_time); }
-
-                            // i may not be used if the timer feature is disabled.
-                            #[allow(unused_variables)]
-                            let _ = i;
+                            let _constraint_time =
+                                timing_span!("Generating constraints and witnesses", circuit = %circuit.id, index = i)
+                                    .entered();
 
                             let mut pcs = prover::ConstraintSystem::new();
                             instance.generate_constraints(&mut pcs)?;
@@ -95,9 +88,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         };
 
                         {
-                            let padding_time =
-                                start_timer!(|| format!("Padding matrices for {:?} and index {i}", circuit.id));
-                            defer! { end_timer!(padding_time); }
+                            let _padding_time =
+                                timing_span!("Padding matrices", circuit = %circuit.id, index = i).entered();
 
                             SM::ZK.then(|| {
                                 crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(
@@ -121,12 +113,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         assert!(padded_public_variables[0].is_one());
                         assert_eq!(private_variables.len(), num_private_variables);
 
-                        dev_println!("Number of padded public variables in Prover::Init: {num_public_variables}");
-                        dev_println!("Number of private variables: {num_private_variables}");
-                        dev_println!("Number of constraints: {num_constraints}");
-                        dev_println!("Number of non-zero entries in A: {}", circuit.index_info.num_non_zero_a);
-                        dev_println!("Number of non-zero entries in B: {}", circuit.index_info.num_non_zero_b);
-                        dev_println!("Number of non-zero entries in C: {}", circuit.index_info.num_non_zero_c);
+                        trace!("Number of padded public variables in Prover::Init: {num_public_variables}");
+                        trace!("Number of private variables: {num_private_variables}");
+                        trace!("Number of constraints: {num_constraints}");
+                        trace!("Number of non-zero entries in A: {}", circuit.index_info.num_non_zero_a);
+                        trace!("Number of non-zero entries in B: {}", circuit.index_info.num_non_zero_b);
+                        trace!("Number of non-zero entries in C: {}", circuit.index_info.num_non_zero_c);
 
                         if circuit.index_info.num_constraints != num_constraints
                             || circuit.index_info.num_public_inputs != num_public_variables
@@ -138,7 +130,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
                         Self::formatted_public_input_is_admissible(&padded_public_variables)?;
 
-                        let eval_z_a_time = start_timer!(|| format!("For {:?}, evaluating z_A_{i}", circuit.id));
+                        let eval_z_a_time = timing_span!("Evaluating z_A", circuit = %circuit.id, index = i).entered();
                         let z_a = circuit
                             .a
                             .iter()
@@ -146,9 +138,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
-                        end_timer!(eval_z_a_time);
+                        drop(eval_z_a_time);
 
-                        let eval_z_b_time = start_timer!(|| format!("For {:?}, evaluating z_B_{i}", circuit.id));
+                        let eval_z_b_time = timing_span!("Evaluating z_B", circuit = %circuit.id, index = i).entered();
                         let z_b = circuit
                             .b
                             .iter()
@@ -156,9 +148,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
-                        end_timer!(eval_z_b_time);
+                        drop(eval_z_b_time);
 
-                        let eval_z_c_time = start_timer!(|| format!("For {:?}, evaluating z_C_{i}", circuit.id));
+                        let eval_z_c_time = timing_span!("Evaluating z_C", circuit = %circuit.id, index = i).entered();
                         let z_c = circuit
                             .c
                             .iter()
@@ -166,7 +158,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
                             })
                             .collect();
-                        end_timer!(eval_z_c_time);
+                        drop(eval_z_c_time);
 
                         Ok(prover::Assignments::<F>(padded_public_variables, private_variables, z_a, z_b, z_c))
                     })

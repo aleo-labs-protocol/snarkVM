@@ -126,28 +126,6 @@ impl<E: Environment> Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn SquareRoot<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn count(case: &Self::Case) -> Count {
-        match case.is_constant() {
-            true => Count::is(2, 0, 0, 0),
-            false => Count::is(1, 0, 758, 761),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn SquareRoot<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case.is_constant() {
-            true => Mode::Constant,
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,8 +144,7 @@ mod tests {
                 Circuit::scope(name, || {
                     let candidate = input.square_root();
                     assert_eq!(expected, candidate.eject_value());
-                    assert_count!(SquareRoot(Field) => Field, &mode);
-                    assert_output_mode!(SquareRoot(Field) => Field, &mode, candidate);
+                    assert_scope!();
                 });
                 Circuit::reset();
             }

@@ -20,7 +20,8 @@ use std::marker::PhantomData;
 
 /// Computations are expressed in terms of rank-1 constraint systems (R1CS).
 /// The `generate_constraints` method is called to generate constraints for
-/// both CRS generation and for proving.
+/// both CRS generation and for proving. The prover may call it on a thread
+/// other than the caller's.
 pub trait ConstraintSynthesizer<F: Field>: Sync {
     /// Drives generation of new constraints inside `CS`.
     fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<(), SynthesisError>;

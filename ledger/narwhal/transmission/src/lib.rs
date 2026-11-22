@@ -81,6 +81,7 @@ impl<N: Network> Transmission<N> {
 }
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use console::{

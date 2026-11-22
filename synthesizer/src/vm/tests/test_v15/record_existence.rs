@@ -15,41 +15,12 @@
 
 use super::*;
 
-// Tests that the record-existence check passes or fails as expected in a number
-// of scenarios. In particular, all cases documented in process_transition
-// (auxiliary function to ensure_records_exist) are explored.
-#[test]
-fn test_existence_check() {
-    let rng = &mut TestRng::default();
+// The tests below check that the record-existence check passes or fails as
+// expected in a number of scenarios. Together, they explore all cases documented
+// in process_transition (auxiliary function to ensure_records_exist).
 
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
-
-    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
-    let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
-    let program_extension_field = Identifier::<CurrentNetwork>::from_str("extension").unwrap().to_field().unwrap();
-    let decommission_function_field =
-        Identifier::<CurrentNetwork>::from_str("decommission").unwrap().to_field().unwrap();
-    let decommission_reversed_function_field =
-        Identifier::<CurrentNetwork>::from_str("decommission_reversed").unwrap().to_field().unwrap();
-    let decommission_two_function_field =
-        Identifier::<CurrentNetwork>::from_str("decommission_two").unwrap().to_field().unwrap();
-    let mint_rover_function_field = Identifier::<CurrentNetwork>::from_str("mint_rover").unwrap().to_field().unwrap();
-    let program_frontier_field = Identifier::<CurrentNetwork>::from_str("frontier").unwrap().to_field().unwrap();
-    let program_remapper_field = Identifier::<CurrentNetwork>::from_str("remapper").unwrap().to_field().unwrap();
-    let consume_map_function_field = Identifier::<CurrentNetwork>::from_str("consume_map").unwrap().to_field().unwrap();
-    let consume_dynamic_map_function_field =
-        Identifier::<CurrentNetwork>::from_str("consume_dynamic_map").unwrap().to_field().unwrap();
-    let remap_dynamic_function_field =
-        Identifier::<CurrentNetwork>::from_str("remap_dynamic_function").unwrap().to_field().unwrap();
-    let do_not_consume_function_field =
-        Identifier::<CurrentNetwork>::from_str("do_not_consume").unwrap().to_field().unwrap();
-    let consume_external_map_function_field =
-        Identifier::<CurrentNetwork>::from_str("consume_external_map").unwrap().to_field().unwrap();
-    let dynamic_pass_through_function_field =
-        Identifier::<CurrentNetwork>::from_str("dynamic_pass_through_function").unwrap().to_field().unwrap();
-
-    let program_base = Program::<CurrentNetwork>::from_str(
+fn program_base() -> Program<CurrentNetwork> {
+    Program::<CurrentNetwork>::from_str(
         r"
         program base.aleo;
 
@@ -110,9 +81,24 @@ fn test_existence_check() {
             assert.eq true true;
         ",
     )
-    .unwrap();
+    .unwrap()
+}
 
-    let program_extension = Program::<CurrentNetwork>::from_str(&format!(
+fn program_extension() -> Program<CurrentNetwork> {
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
+    let program_extension_field = Identifier::<CurrentNetwork>::from_str("extension").unwrap().to_field().unwrap();
+    let decommission_function_field =
+        Identifier::<CurrentNetwork>::from_str("decommission").unwrap().to_field().unwrap();
+    let decommission_reversed_function_field =
+        Identifier::<CurrentNetwork>::from_str("decommission_reversed").unwrap().to_field().unwrap();
+    let decommission_two_function_field =
+        Identifier::<CurrentNetwork>::from_str("decommission_two").unwrap().to_field().unwrap();
+    let mint_rover_function_field = Identifier::<CurrentNetwork>::from_str("mint_rover").unwrap().to_field().unwrap();
+    let dynamic_pass_through_function_field =
+        Identifier::<CurrentNetwork>::from_str("dynamic_pass_through_function").unwrap().to_field().unwrap();
+
+    Program::<CurrentNetwork>::from_str(&format!(
         r"
         import base.aleo;
 
@@ -183,9 +169,11 @@ fn test_existence_check() {
         constructor:
             assert.eq true true;
         ",
-    )).unwrap();
+    )).unwrap()
+}
 
-    let program_frontier = Program::<CurrentNetwork>::from_str(
+fn program_frontier() -> Program<CurrentNetwork> {
+    Program::<CurrentNetwork>::from_str(
         r"
         program frontier.aleo;
 
@@ -211,9 +199,11 @@ fn test_existence_check() {
             assert.eq true true;
         ",
     )
-    .unwrap();
+    .unwrap()
+}
 
-    let program_mini_remapper = Program::<CurrentNetwork>::from_str(
+fn program_mini_remapper() -> Program<CurrentNetwork> {
+    Program::<CurrentNetwork>::from_str(
         r"
         import frontier.aleo;
         program mini_remapper.aleo;
@@ -229,11 +219,25 @@ fn test_existence_check() {
             assert.eq true true;
         ",
     )
-    .unwrap();
+    .unwrap()
+}
 
-    let program_remapper = Program::<CurrentNetwork>::from_str(&format!(
+fn program_remapper() -> Program<CurrentNetwork> {
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let program_frontier_field = Identifier::<CurrentNetwork>::from_str("frontier").unwrap().to_field().unwrap();
+    let program_remapper_field = Identifier::<CurrentNetwork>::from_str("remapper").unwrap().to_field().unwrap();
+    let consume_map_function_field = Identifier::<CurrentNetwork>::from_str("consume_map").unwrap().to_field().unwrap();
+    let consume_dynamic_map_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_dynamic_map").unwrap().to_field().unwrap();
+    let remap_dynamic_function_field =
+        Identifier::<CurrentNetwork>::from_str("remap_dynamic_function").unwrap().to_field().unwrap();
+    let do_not_consume_function_field =
+        Identifier::<CurrentNetwork>::from_str("do_not_consume").unwrap().to_field().unwrap();
+    let consume_external_map_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_external_map").unwrap().to_field().unwrap();
+
+    Program::<CurrentNetwork>::from_str(&format!(
         r"
-        import base.aleo;
         import mini_remapper.aleo;
         import frontier.aleo;
 
@@ -337,9 +341,11 @@ fn test_existence_check() {
         constructor:
             assert.eq true true;
         "),
-    ).unwrap();
+    ).unwrap()
+}
 
-    let program_frontier_upgraded = Program::<CurrentNetwork>::from_str(
+fn program_frontier_upgraded() -> Program<CurrentNetwork> {
+    Program::<CurrentNetwork>::from_str(
         r"
         import extension.aleo;
         import remapper.aleo;
@@ -447,34 +453,46 @@ fn test_existence_check() {
         constructor:
             assert.eq true true;
         "
-    ).unwrap();
+    ).unwrap()
+}
 
+// Returns a VM at the V15 height with the given programs deployed in order, one block each.
+fn sample_vm_with_programs(
+    caller_private_key: &PrivateKey<CurrentNetwork>,
+    programs: &[Program<CurrentNetwork>],
+    rng: &mut TestRng,
+) -> VM<CurrentNetwork, LedgerType> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
-    println!("Deploying program base...");
-    let deploy_base = vm.deploy(&caller_private_key, &program_base, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_base], rng);
+    for program in programs {
+        println!("Deploying program {}...", program.id());
+        let deployment = vm.deploy(caller_private_key, program, None, 0, None, rng).unwrap();
+        add_and_test_with_costs(&vm, caller_private_key, None, &[deployment], rng);
+    }
 
-    println!("Deploying program extension...");
-    let deploy_extension = vm.deploy(&caller_private_key, &program_extension, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_extension], rng);
+    vm
+}
 
-    println!("Deploying program frontier...");
-    let deploy_frontier = vm.deploy(&caller_private_key, &program_frontier, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_frontier], rng);
+// Tests the local check: tests 1, 2 and 5.
+#[test]
+fn test_existence_check_local() {
+    let rng = &mut TestRng::default();
 
-    println!("Deploying program mini_remapper...");
-    let deploy_mini_remapper = vm.deploy(&caller_private_key, &program_mini_remapper, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_mini_remapper], rng);
+    let caller_private_key = sample_genesis_private_key();
 
-    println!("Deploying program remapper...");
-    let deploy_remapper = vm.deploy(&caller_private_key, &program_remapper, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_remapper], rng);
-
-    println!("Upgrading program frontier...");
-    let deploy_frontier_upgraded =
-        vm.deploy(&caller_private_key, &program_frontier_upgraded, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_frontier_upgraded], rng);
+    // The upgraded frontier imports extension and remapper, so it is deployed last.
+    let vm = sample_vm_with_programs(
+        &caller_private_key,
+        &[
+            program_base(),
+            program_extension(),
+            program_frontier(),
+            program_mini_remapper(),
+            program_remapper(),
+            program_frontier_upgraded(),
+        ],
+        rng,
+    );
 
     // Test 1: A child function of the root transition breaks the (function version of the) local check
     // Involves process_transition cases 3, 5, 7
@@ -584,6 +602,35 @@ fn test_existence_check() {
         .unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx_base_function_2_5], rng);
+
+    // Test 5: four tests on the local check involving cast-to-dynamic
+    // Involves process_transition cases 1, 2, 3, 4, 8
+    println!("Test 5: Attempting to pass a locally minted DynamicRecord to a function...");
+
+    let test_case_5_tx = vm.execute(
+        &caller_private_key,
+        ("frontier.aleo", "simple_cast_function"),
+        [Value::from_str("true").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    let err = test_case_5_tx.unwrap_err().to_string();
+    assert!(err.contains("frontier.aleo/simple_cast_function"));
+    assert!(err.contains("DynamicRecord at r2 passed to a function call is cast from a locally minted Record at r1"));
+}
+
+// Tests the global and local checks on rover records: tests 3 and 4.
+#[test]
+fn test_existence_check_decommission() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key();
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
+
+    let vm = sample_vm_with_programs(&caller_private_key, &[program_base(), program_extension()], rng);
 
     // Test 3: A static record cast to dynamic twice and passed to a callee once
     // translated and once as dynamic does not break the global or local checks.
@@ -718,24 +765,21 @@ fn test_existence_check() {
         vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
 
     assert_eq!(num_unspent_records_3, num_unspent_records_2 - 1);
+}
 
-    // Test 5: four tests on the local check involving cast-to-dynamic
-    // Involves process_transition cases 1, 2, 3, 4, 8
-    println!("Test 5: Attempting to pass a locally minted DynamicRecord to a function...");
+// Tests the global check on families of map records: tests 6 and 7.
+#[test]
+fn test_existence_check_families() {
+    let rng = &mut TestRng::default();
 
-    let test_case_5_tx = vm.execute(
+    let caller_private_key = sample_genesis_private_key();
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
+
+    let vm = sample_vm_with_programs(
         &caller_private_key,
-        ("frontier.aleo", "simple_cast_function"),
-        [Value::from_str("true").unwrap()].into_iter(),
-        None,
-        0,
-        None,
+        &[program_frontier(), program_mini_remapper(), program_remapper()],
         rng,
     );
-
-    let err = test_case_5_tx.unwrap_err().to_string();
-    assert!(err.contains("frontier.aleo/simple_cast_function"));
-    assert!(err.contains("DynamicRecord at r2 passed to a function call is cast from a locally minted Record at r1"));
 
     // Test 6: global check where a large family is constructed. It checks
     // families are updated correctly throughout function calls.

@@ -26,7 +26,6 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     io::{Result as IoResult, Write},
@@ -34,24 +33,17 @@ use std::{
 };
 
 // The CUDA FFI reads this by bytes.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Affine<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
-    pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
-    pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "use `is_zero`")]
-    pub infinity: bool,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) infinity: bool,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    #[deprecated(
-        since = "4.13.0",
-        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
-    )]
-    pub const fn new(x: P::BaseField, y: P::BaseField, infinity: bool) -> Self {
+    pub(crate) const fn new(x: P::BaseField, y: P::BaseField, infinity: bool) -> Self {
         Self { x, y, infinity }
     }
 }
@@ -86,6 +78,8 @@ impl<P: Parameters> PartialEq<Projective<P>> for Affine<P> {
         other.eq(self)
     }
 }
+
+impl<P: Parameters> crate::sealed::Sealed for Affine<P> {}
 
 impl<P: Parameters> AffineCurve for Affine<P> {
     type BaseField = P::BaseField;

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-process"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A process for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -24,30 +24,16 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "indexmap/rayon", "rayon" ]
+default = [ "indexmap/rayon" ]
 async = [ "snarkvm-ledger-query/async" ]
-locktick = [ "dep:locktick", "snarkvm-ledger-store/locktick" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-query/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-block/wasm",
-  "snarkvm-ledger-query/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
-test = [ "snarkvm-console/test", "snarkvm-circuit/test" ]
-timer = [ "aleo-std/timer" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
+wasm = [ "snarkvm-console/wasm" ]
+test = [ "snarkvm-console/test" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ ]
 dev_skip_checks = [ ]
-test_consensus_heights = [ ]
+# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [ "snarkvm-console/dev-network" ]
 
 [[bench]]
 name = "stack_operations"
@@ -91,9 +77,6 @@ workspace = true
 [dependencies.snarkvm-utilities]
 workspace = true
 
-[dependencies.aleo-std]
-workspace = true
-
 [dependencies.colored]
 workspace = true
 
@@ -104,14 +87,6 @@ features = [ "serde" ]
 [dependencies.itertools]
 workspace = true
 
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
-[dependencies.parking_lot]
-workspace = true
-
 [dependencies.rand]
 workspace = true
 
@@ -120,7 +95,6 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true
@@ -145,10 +119,14 @@ features = [ "test" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 path = "../../ledger/test-helpers"
 
 [dev-dependencies.tempfile]
 workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test-helpers" ]
