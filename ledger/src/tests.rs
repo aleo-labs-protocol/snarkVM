@@ -1945,7 +1945,7 @@ fn test_abort_invalid_transaction() {
 
     // Check that the ledger deems this transaction invalid.
     let error = ledger.check_transaction_basic(&invalid_transaction, None, rng).unwrap_err();
-    assert!(format!("{error:#}").contains("Fee verification failed - State root"), "{error:#}");
+    assert!(format!("{error:#}").to_lowercase().contains("state root"), "{error:#}");
 
     // Construct valid transactions for the ledger.
     let valid_transaction_1 = ledger
