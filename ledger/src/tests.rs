@@ -175,6 +175,57 @@ fn test_check_next_block_rejects_a_beacon_block() {
 }
 
 #[test]
+fn test_prepare_beacon_block_with_timestamp_is_deterministic() {
+    const SEED: u64 = 1_234_567;
+    let crate::test_helpers::TestEnv { ledger: ledger_a, private_key, .. } =
+        crate::test_helpers::sample_test_env(&mut TestRng::from_seed(SEED));
+    let crate::test_helpers::TestEnv { ledger: ledger_b, .. } =
+        crate::test_helpers::sample_test_env(&mut TestRng::from_seed(SEED));
+    let rng_a = &mut TestRng::from_seed(SEED);
+    let rng_b = &mut TestRng::from_seed(SEED);
+
+    for _ in 0..3 {
+        let timestamp = ledger_a.latest_timestamp() + CurrentNetwork::BLOCK_TIME as i64;
+        let block_a = ledger_a
+            .prepare_advance_to_next_beacon_block_with_timestamp(&private_key, vec![], vec![], vec![], timestamp, rng_a)
+            .unwrap();
+        let block_b = ledger_b
+            .prepare_advance_to_next_beacon_block_with_timestamp(&private_key, vec![], vec![], vec![], timestamp, rng_b)
+            .unwrap();
+        assert_eq!(block_a.timestamp(), timestamp);
+        assert_eq!(block_a.header().timestamp(), timestamp);
+        assert_eq!(block_a.hash(), block_b.hash());
+        assert_eq!(block_a.to_bytes_le().unwrap(), block_b.to_bytes_le().unwrap());
+        ledger_a.advance_to_next_block(&block_a).unwrap();
+        ledger_b.advance_to_next_block(&block_b).unwrap();
+    }
+    assert_eq!(ledger_a.latest_height(), 3);
+}
+
+#[test]
+fn test_prepare_beacon_block_with_timestamp_rejects_out_of_range_timestamps() {
+    let rng = &mut TestRng::default();
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    for timestamp in [CurrentNetwork::GENESIS_TIMESTAMP, i64::MIN, i64::MAX] {
+        let result = ledger.prepare_advance_to_next_beacon_block_with_timestamp(
+            &private_key,
+            vec![],
+            vec![],
+            vec![],
+            timestamp,
+            rng,
+        );
+        assert!(result.is_err(), "timestamp {timestamp} was accepted");
+    }
+    // The ledger does not compare the timestamp to the wall clock.
+    let timestamp = time::OffsetDateTime::now_utc().unix_timestamp() + 365 * 24 * 60 * 60;
+    let block = ledger
+        .prepare_advance_to_next_beacon_block_with_timestamp(&private_key, vec![], vec![], vec![], timestamp, rng)
+        .unwrap();
+    assert_eq!(block.timestamp(), timestamp);
+}
+
+#[test]
 fn test_get_block() {
     let rng = &mut TestRng::default();
 

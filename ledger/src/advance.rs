@@ -42,8 +42,16 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             return Err(anyhow!("Ratifications are currently unsupported from the memory pool").into());
         }
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) =
-            self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
+            .construct_block_template(
+                &previous_block,
+                Some(&subdag),
+                None,
+                ratifications,
+                solutions,
+                transactions,
+                rng,
+            )?;
 
         // Construct the new quorum block.
         Block::new_quorum(
@@ -59,7 +67,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         .map_err(|e| CheckBlockError::Other(e))
     }
 
-    /// Returns a candidate for the next block in the ledger.
+    /// Returns a candidate for the next block in the ledger, with the current time as its timestamp.
     /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
     ///
     /// Note, that beacon blocks are only used for testing purposes.
@@ -73,6 +81,37 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         candidate_ratifications: Vec<Ratify<N>>,
         candidate_solutions: Vec<Solution<N>>,
         candidate_transactions: Vec<Transaction<N>>,
+        rng: &mut R,
+    ) -> Result<Block<N>, CheckBlockError<N>> {
+        self.prepare_advance_to_next_beacon_block_with_timestamp(
+            private_key,
+            candidate_ratifications,
+            candidate_solutions,
+            candidate_transactions,
+            OffsetDateTime::now_utc().unix_timestamp(),
+            rng,
+        )
+    }
+
+    /// Returns a candidate for the next block in the ledger, with the given Unix timestamp.
+    /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
+    ///
+    /// This function returns an error if the timestamp is not greater than `N::GENESIS_TIMESTAMP`,
+    /// or if the next coinbase target cannot be computed from it.
+    /// It does not compare the timestamp to the previous block's timestamp or to the current time.
+    ///
+    /// Note, that beacon blocks are only used for testing purposes.
+    /// Production code will most likely use [`Ledger::prepare_advance_to_next_quorum_block`] instead.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    pub fn prepare_advance_to_next_beacon_block_with_timestamp<R: Rng + CryptoRng>(
+        &self,
+        private_key: &PrivateKey<N>,
+        candidate_ratifications: Vec<Ratify<N>>,
+        candidate_solutions: Vec<Solution<N>>,
+        candidate_transactions: Vec<Transaction<N>>,
+        timestamp: i64,
         rng: &mut R,
     ) -> Result<Block<N>, CheckBlockError<N>> {
         // Currently, we do not support ratifications from the memory pool.
@@ -89,6 +128,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             .construct_block_template(
                 &previous_block,
                 None,
+                Some(timestamp),
                 candidate_ratifications,
                 candidate_solutions,
                 candidate_transactions,
@@ -248,6 +288,9 @@ where
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Constructs a block template for the next block in the ledger.
     ///
+    /// A block with a `subdag` takes its timestamp from the subdag, and `beacon_timestamp` is unused.
+    /// A block without a `subdag` requires a `beacon_timestamp`.
+    ///
     /// # Concurrency
     /// This function assumes that `previous_block` is identical to [`Self::current_block`]. To ensure this,
     /// you should hold a read (or write) lock to the latter while calling this function.
@@ -256,11 +299,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ///
     /// # Panics
     /// This function panics if called from an async context.
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn construct_block_template<R: Rng + CryptoRng>(
         &self,
         previous_block: &Block<N>,
         subdag: Option<&Subdag<N>>,
+        beacon_timestamp: Option<i64>,
         candidate_ratifications: Vec<Ratify<N>>,
         candidate_solutions: Vec<Solution<N>>,
         candidate_transactions: Vec<Transaction<N>>,
@@ -373,7 +417,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 // Return the timestamp for the given committee lookback.
                 subdag.timestamp(&previous_committee_lookback)
             }
-            None => OffsetDateTime::now_utc().unix_timestamp(),
+            None => beacon_timestamp.ok_or_else(|| anyhow!("A beacon block template requires a timestamp"))?,
         };
 
         // Calculate the next coinbase targets and timestamps.
