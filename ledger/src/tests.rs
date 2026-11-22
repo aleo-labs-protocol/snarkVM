@@ -2532,7 +2532,7 @@ function foo:
 }
 
 // At the production proof target these tests do not finish.
-#[cfg(all(feature = "test", feature = "test_targets"))]
+#[cfg(all(feature = "test", feature = "dev-network"))]
 mod valid_solutions {
     use super::*;
     use crate::is_solution_limit_reached::stake_requirements_per_solution;

@@ -32,7 +32,8 @@ test = [ "snarkvm-console/test" ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ ]
 dev_skip_checks = [ ]
-test_consensus_heights = [ ]
+# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [ "snarkvm-console/dev-network" ]
 
 [[bench]]
 name = "stack_operations"

@@ -103,12 +103,12 @@ jobs:
       - name: Benchmark ledger (transaction)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench transaction --features=dev-network -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger (verify_transaction)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench verify_transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench verify_transaction --features=dev-network -- --output-format bencher | tee -a output.txt
 
       # Skip store/advance: require a pre-generated `test-ledger/` fixture
       # (see `snarkvm-testchain-generator --no-ledger`).

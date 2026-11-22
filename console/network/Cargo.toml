@@ -14,8 +14,8 @@ wasm = [
   "snarkvm-parameters/wasm"
 ]
 test = [ ]
-test_targets = [ ]
-test_consensus_heights = [ ]
+# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [ ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-console-network-environment/test-helpers" ]
 
