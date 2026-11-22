@@ -86,7 +86,7 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
-use snarkvm_utilities::{VmScope, locks::RwLock, timing_event, timing_span};
+use snarkvm_utilities::{locks::RwLock, timing_event, timing_span};
 
 use indexmap::IndexMap;
 use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
