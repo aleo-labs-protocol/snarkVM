@@ -76,7 +76,7 @@ constructor:
 // Tests that deploying a program with `commit.*.raw` instructions is aborted before
 // `ConsensusVersion::V15` and accepted at `V15`.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_deploy_commit_raw_before_and_at_v15() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -114,7 +114,7 @@ fn test_deploy_commit_raw_before_and_at_v15() {
 // The expected group value is computed natively and passed into the program. Both
 // the function body and the finalize block independently verify the assertion.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_ped128_raw_additive_homomorphism() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();

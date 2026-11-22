@@ -419,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_execute_cost_fee_migration() {
         let rng = &mut TestRng::default();
         let credits_program = "credits.aleo";
@@ -452,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_fee_migration_occurs_at_correct_block_height() {
         let rng = &mut TestRng::default();
 
@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_fee_migration_correctly_calculates_nested() {
         let rng = &mut TestRng::default();
 
@@ -927,7 +927,7 @@ constructor:
         use super::*;
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_join_transaction_size() {
             let rng = &mut TestRng::default();
 
@@ -968,7 +968,7 @@ constructor:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_fee_private_transition_size() {
             let rng = &mut TestRng::default();
 
@@ -989,7 +989,7 @@ constructor:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_wide_nested_execution_cost() {
             // Initialize an RNG.
             let rng = &mut TestRng::default();

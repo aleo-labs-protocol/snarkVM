@@ -2378,7 +2378,7 @@ finalize transfer_public:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_genesis_num_validators_does_not_exceed_maximum_before_v3() {
         // This test will fail if the consensus v3 height is 0
         assert_ne!(0, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap());
@@ -3555,7 +3555,7 @@ finalize transfer_public:
         use super::*;
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_atomic_finalize_many() {
             let rng = &mut TestRng::default();
 
@@ -3762,7 +3762,7 @@ finalize transfer_public:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_finalize_catch_halt() {
             let rng = &mut TestRng::default();
 
@@ -3877,7 +3877,7 @@ function ped_hash:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_rejected_transaction_should_not_update_storage() {
             let rng = &mut TestRng::default();
 
@@ -4009,7 +4009,7 @@ finalize compute:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_rejection_reason_storage() {
             let rng = &mut TestRng::default();
 

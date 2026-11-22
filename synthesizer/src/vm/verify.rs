@@ -1023,7 +1023,7 @@ mod tests {
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_varuna_v3_transaction_boundary() {
         let rng = &mut TestRng::fixed(3104);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
@@ -1062,7 +1062,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_varuna_v3_inclusion_and_deployment_boundary() -> Result<()> {
         let rng = &mut TestRng::fixed(3107);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21)?;
@@ -1157,7 +1157,7 @@ function identity:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_varuna_v3_snark_instructions_boundary() {
         use console::{program::Register, types::U8};
         use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -1538,7 +1538,7 @@ function compute:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_varuna_migration() {
         let rng = &mut TestRng::default();
 
@@ -1602,7 +1602,7 @@ function compute:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_program_rules_migration() {
         let rng = &mut TestRng::default();
 
@@ -1753,7 +1753,7 @@ function compute:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_ecdsa_migration() {
         let rng = &mut TestRng::default();
 
@@ -1913,7 +1913,7 @@ function compute:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_increased_array_size() {
         let rng = &mut TestRng::default();
 
@@ -1969,7 +1969,7 @@ function compute:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_block_timestamp_migration() {
         let rng = &mut TestRng::default();
 
@@ -2074,7 +2074,7 @@ function compute:
         use super::*;
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_check_transaction_execution() {
             let rng = &mut TestRng::default();
 
@@ -2104,7 +2104,7 @@ function compute:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_verify_deploy_and_execute() {
             // Initialize the RNG.
             let rng = &mut TestRng::default();
@@ -2177,7 +2177,7 @@ mod credits_migration_tests {
     const TOTAL_UPGRADE_LIMIT: u64 = 4_000_000_000_000u64;
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_upgrade_pool_limit() {
         let rng = &mut TestRng::default();
 
@@ -2230,7 +2230,7 @@ mod credits_migration_tests {
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_inclusion_local_records() {
         // 1. Check that `credits.aleo/upgrade` can be called invoked directly.
         // 2. Check that local records can be spent and checked properly.
@@ -2404,7 +2404,7 @@ function local_transfer:
     mod memory_intensive {
         use super::*;
 
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         #[test]
         fn test_inclusion_migration() {
             // 1. Check that `upgrade` is not callable before migration

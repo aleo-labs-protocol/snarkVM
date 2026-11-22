@@ -19,7 +19,7 @@ use super::*;
 
 // Tests that `circuit::DynamicRecord::from_record` is consistent with `console::DynamicRecord::from_record`.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_circuit_dynamic_record_from_record() {
     let mut rng = TestRng::default();
 
@@ -101,7 +101,7 @@ fn test_circuit_dynamic_record_from_record() {
 // Tests casting external and non-external records to `dynamic.record` using `get.record.dynamic` to access entries.
 // Also verifies that double-spend errors occur when the static record is consumed by both caller and callee (via translation).
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_cast_simple() {
     let mut rng = TestRng::default();
 

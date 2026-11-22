@@ -29,7 +29,7 @@ use snarkvm_utilities::TestRng;
 //  - a record cannot be consumed twice in the same program.
 //  - a local record cannot be created and consumed in the same program.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_upgrade_cycle_with_records() {
     let rng = &mut TestRng::default();
 

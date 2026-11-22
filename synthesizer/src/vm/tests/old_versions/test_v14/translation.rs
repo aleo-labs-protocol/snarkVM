@@ -321,7 +321,7 @@ fn test_translation(
 // `dynamic.record`, the Merkle tree encoding must faithfully represent the original
 // field values so that `get.record.dynamic` can recover them.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_output_non_external_dynamic_content() {
     let rng = &mut TestRng::default();
 
@@ -425,7 +425,7 @@ fn test_translation_output_non_external_dynamic_content() {
 // `caller_ext_dyn.aleo/container.record` (external record), the translation correctly
 // reconstructs the original static record so field access returns the original values.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_input_external_dynamic_content() {
     let rng = &mut TestRng::default();
 
@@ -593,7 +593,7 @@ fn test_translation_input_external_dynamic_content() {
 
 // Tests translation of a dynamic record input to a non-external static record.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_input_dynamic_non_external() {
     let rng = &mut TestRng::default();
 
@@ -627,7 +627,7 @@ fn test_translation_input_dynamic_non_external() {
 
 // Tests translation of a non-external static record output to a dynamic record.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_output_non_external_dynamic() {
     let rng = &mut TestRng::default();
 
@@ -638,7 +638,7 @@ fn test_translation_output_non_external_dynamic() {
 
 // Tests translation of a dynamic record input to an external static record.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_input_dynamic_external() {
     let rng = &mut TestRng::default();
 
@@ -672,7 +672,7 @@ fn test_translation_input_dynamic_external() {
 
 // Tests translation of an external static record output to a dynamic record.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_output_external_dynamic() {
     let rng = &mut TestRng::default();
 
@@ -705,7 +705,7 @@ fn test_translation_output_external_dynamic() {
 
 // Tests three consecutive translations in a single execution path with consistent prover/verifier traversal order.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_triple() {
     let _ = tracing_subscriber::fmt::try_init();
     // Before root call: pump a gas_container.record
@@ -751,7 +751,7 @@ fn test_translation_triple() {
 
 // Tests that prover and verifier traverse translation tasks in the same order using a complex execution graph.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_traversal_consistency() {
     // This tests checks the prover and verifier order all translation tasks associated to a
     // transaction the same way by asserting correct verification of the following execution
@@ -988,7 +988,7 @@ fn test_translation_traversal_consistency() {
 
 // Tests that stripping or altering `dynamic_id` from `RecordWithDynamicID` inputs causes verification failure.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_malicious_dynamic_id_tampering() {
     use snarkvm_ledger_block::{Execution, Input, Output, Transition};
 
@@ -1181,7 +1181,7 @@ fn test_malicious_dynamic_id_tampering() {
 
 // Tests that stripping or altering `dynamic_id` from `ExternalRecordWithDynamicID` inputs causes verification failure.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_malicious_external_record_dynamic_id_tampering() {
     use snarkvm_ledger_block::{Execution, Input, Output, Transition};
 
@@ -1382,7 +1382,7 @@ fn test_malicious_external_record_dynamic_id_tampering() {
 // Checks that translation keys for the same record name but different programs are different and vice versa.
 // Run with `RUST_LOG=snarkvm_algorithms::snark::varuna=trace` to explore Varuna batch sizes and locate translation keys in verification batches.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_differing_keys() {
     let _ = tracing_subscriber::fmt::try_init();
     // Parameters for dynamic calls
@@ -1503,7 +1503,7 @@ fn test_differing_keys() {
 // Tests translation with a record containing exactly 32 entries (MAX_DATA_ENTRIES boundary).
 // This verifies that the Merkle tree of depth 5 can handle the maximum number of entries.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_translation_max_entries_record() {
     let rng = &mut TestRng::default();
 

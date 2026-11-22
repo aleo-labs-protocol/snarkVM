@@ -22,7 +22,7 @@ use super::*;
 
 /// Construction-time rejection: declared output type must match the operand's actual type.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_view_output_type_mismatch_rejected() {
     // `r1` is a `u64`, but the view declares its output as `u32`.
     let result = Program::<CurrentNetwork>::from_str(
@@ -55,7 +55,7 @@ fn test_view_output_type_mismatch_rejected() {
 
 /// Construction-time rejection: write-style commands inside a view are rejected at parse.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_view_rejects_write_commands_at_parse() {
     let cases = [
         // `set` into a mapping
@@ -117,7 +117,7 @@ fn test_view_rejects_write_commands_at_parse() {
 /// syntax) and accepted at V15. Without this gate, deploying such a program pre-V15 would
 /// fork: new nodes accept the bytes, old nodes reject the unknown component variant.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_deploy_view_before_and_at_v15() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -172,7 +172,7 @@ view fixed_value:
 /// `Program::contains_string_type` (which now walks `self.views`). Without that fix, strings could
 /// sneak in through view inputs/outputs even though they're banned post-V12.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_deploy_view_with_string_type_rejected() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -208,7 +208,7 @@ view echo:
 /// return value through normal finalize logic. Deploys a program with a `lookup` view, then
 /// executes a function whose finalize calls `lookup`, doubles the result, and writes it back.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_calls_same_program_view() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -283,7 +283,7 @@ fn test_finalize_calls_same_program_view() -> Result<()> {
 
 /// Tests that a finalize body can call a view function in an IMPORTED (external) program.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_calls_cross_program_view() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -373,7 +373,7 @@ fn test_finalize_calls_cross_program_view() -> Result<()> {
 /// Tests that a finalize body calling a NON-view target (i.e. a regular function) is rejected
 /// by Stack::new(). The type-check resolves the target and bails because it is not a view.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_calls_non_view_rejected() {
     let rng = &mut TestRng::default();
 
@@ -411,7 +411,7 @@ fn test_finalize_calls_non_view_rejected() {
 /// Tests that pre-V15 deployments of a program containing a `call` in finalize are rejected.
 /// `contains_v15_syntax` flags any `call` in a finalize body as V15 syntax.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_deploy_finalize_call_before_and_at_v15() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -483,7 +483,7 @@ fn test_deploy_finalize_call_before_and_at_v15() {
 /// as `v_old * 1000 + v_new` and stored in `before_after[r0]`. We assert it equals 11_055,
 /// which uniquely encodes (11, 55) — proving the first call saw 11 and the second saw 55.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -563,7 +563,7 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
 /// imported program (not a view). Same shape as the same-program negative test, but goes through
 /// the `CallOperator::Locator` resolution path. Must be rejected by Stack::new().
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_calls_cross_program_non_view_rejected() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -622,7 +622,7 @@ fn test_finalize_calls_cross_program_non_view_rejected() {
 /// Negative: deploy is rejected when the call's operand count does not match the view's input
 /// arity. Exercises the arity check in `Call::output_types`.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_arity_mismatch_rejected() {
     let rng = &mut TestRng::default();
 
@@ -666,7 +666,7 @@ fn test_finalize_call_arity_mismatch_rejected() {
 /// a type that does not match the view's declared output type. Proves that `Call::output_types`
 /// propagates the view's output types into the surrounding finalize type-check.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_destination_type_mismatch_rejected() {
     let rng = &mut TestRng::default();
 
@@ -714,7 +714,7 @@ fn test_finalize_call_destination_type_mismatch_rejected() {
 /// the call graph — `ViewCore::add_command` rejects `is_call()` so a view cannot invoke another
 /// view (or any function), preventing recursion at the structural level.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_view_rejects_call_command_at_parse() {
     let result = Program::<CurrentNetwork>::from_str(
         r"
@@ -750,7 +750,7 @@ fn test_view_rejects_call_command_at_parse() {
 /// name; a self-locator is treated as an error since the locator form is reserved for external
 /// programs.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_self_locator_rejected() {
     let rng = &mut TestRng::default();
 
@@ -794,7 +794,7 @@ fn test_finalize_call_self_locator_rejected() {
 /// imports it — the explicit import check in the finalize type-check fires before the external
 /// stack lookup.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_missing_import_rejected() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -861,7 +861,7 @@ fn test_finalize_call_missing_import_rejected() {
 /// Construction-time rejection: `call.dynamic` is forbidden inside a finalize body. The
 /// `Finalize::add_command` guard rejects `is_dynamic_call`, so parsing the program must fail.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_rejects_call_dynamic_at_parse() {
     let result = Program::<CurrentNetwork>::from_str(
         r"
@@ -895,7 +895,7 @@ fn test_finalize_rejects_call_dynamic_at_parse() {
 ///   - per-destination type propagation when output types differ (u64, boolean, address),
 ///   - end-to-end storage of each typed value via `set`.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_multi_output_multi_type() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -964,7 +964,7 @@ fn test_finalize_call_multi_output_multi_type() -> Result<()> {
 /// destination is typed as `vw_struct_data.aleo/Summary` in the caller, and downstream field
 /// access (`r1.total`) must resolve against the external struct definition.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_struct_return_cross_program() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1058,7 +1058,7 @@ fn test_finalize_call_struct_return_cross_program() -> Result<()> {
 /// outputs. Mirrors the operand-arity test but exercises the destination-count check in
 /// `Call::output_types_for_view`.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_destination_count_mismatch_rejected() {
     let rng = &mut TestRng::default();
 
@@ -1106,7 +1106,7 @@ fn test_finalize_call_destination_count_mismatch_rejected() {
 /// per-operand type check in `Call::output_types_for_view` rejects this by Stack::new() rather than
 /// deferring to runtime.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_input_type_mismatch_rejected() {
     let rng = &mut TestRng::default();
 
@@ -1153,7 +1153,7 @@ fn test_finalize_call_input_type_mismatch_rejected() {
 /// The deploy itself succeeds — the failure is exclusively a runtime path through
 /// `evaluate_call_to_view` -> `evaluate_view_inner` -> per-command bail.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1217,7 +1217,7 @@ fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
 /// single-call finalize body, and the view's output destinations may be bound without being
 /// consumed further.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_as_only_finalize_instruction() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1266,7 +1266,7 @@ fn test_finalize_call_as_only_finalize_instruction() -> Result<()> {
 /// path through `Call::output_types_for_view` (arity match against the zero-input view) and the
 /// runtime operand-loading loop (which becomes a no-op).
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_calls_zero_input_view() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1315,7 +1315,7 @@ fn test_finalize_calls_zero_input_view() -> Result<()> {
 /// when the branch is taken. Exercises the new finalize-Call dispatch from within the branching
 /// control-flow already used by other finalize bodies.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_inside_branch() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1394,7 +1394,7 @@ fn test_finalize_call_inside_branch() -> Result<()> {
 /// (`test_finalize_multiple_calls_and_interleaved_writes`) — exercises that locator-resolution
 /// and cost rollup walk correctly on repeated cross-program calls within one finalize.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_cross_program_multiple_calls() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1498,7 +1498,7 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
 /// the entire transaction is finalize-rejected. This is the Aleo analogue of Solidity's
 /// `function require_member(address) external view { require(...); }` pattern.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_zero_output_guard_view() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1555,7 +1555,7 @@ fn test_finalize_call_zero_output_guard_view() -> Result<()> {
 /// by Stack::new(). The `view.outputs().len() != self.destinations.len()` check in
 /// `Call::output_types_for_view` should bail (0 outputs vs. 1 destination).
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_finalize_call_zero_output_view_with_destinations_rejected() {
     let rng = &mut TestRng::default();
 

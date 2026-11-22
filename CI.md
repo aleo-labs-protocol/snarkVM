@@ -129,6 +129,9 @@ rejects the shipped genesis blocks, so the `snarkvm-ledger-block` tests that
 read them check only that rejection there; `-ledger-block` runs alone in
 `ledger-merge`, where they read the blocks.
 
+Each entry uploads nextest's JUnit reports, one for each line, as the artifact
+`junit-<entry>`, with the time of each test.
+
 ## Synthesizer test tiers
 
 The `snarkvm-synthesizer` lib tests come in four tiers. Each test's attributes
@@ -136,10 +139,10 @@ and path say its tier:
 
 | Tier | Marker | Lines |
 |---|---|---|
-| fast | no `#[ignore]` | every `snarkvm-synthesizer` line |
-| slow | `#[ignore]` | `synthesizer-test-1`, `-2`; the first `synthesizer-rocks` line |
-| memory-intensive | `#[ignore]`, in a `memory_intensive` module | `synthesizer-prerelease`; the second `synthesizer-rocks` line |
-| old versions | `#[ignore]`, under `vm::tests::old_versions` | `old-consensus-versions-1` to `-3` |
+| fast | no `#[ignore]` | `test (synthesizer)`; `synthesizer-test-1`, `-2`; the first `synthesizer-rocks` line |
+| slow | `#[ignore = "slow"]` | `synthesizer-test-1`, `-2`; the first `synthesizer-rocks` line |
+| memory-intensive | `#[ignore = "memory intensive"]`, in a `memory_intensive` module | `synthesizer-prerelease`; the second `synthesizer-rocks` line |
+| old versions | `#[ignore = "old version"]`, under `vm::tests::old_versions` | `old-consensus-versions-1` to `-3` |
 
 To run a tier with `cargo test -p snarkvm-synthesizer --lib`:
 
@@ -147,9 +150,6 @@ To run a tier with `cargo test -p snarkvm-synthesizer --lib`:
 - fast and slow: `-- --include-ignored --skip memory_intensive --skip old_versions`;
 - memory-intensive: `-- --ignored memory_intensive`;
 - old versions, in release: `--release -- --ignored old_versions`.
-
-Each entry uploads nextest's JUnit reports, one for each line, as the artifact
-`junit-<entry>`, with the time of each test.
 
 ## Forks
 

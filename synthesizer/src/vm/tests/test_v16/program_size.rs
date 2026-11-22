@@ -50,7 +50,7 @@ constructor:
 
 // This test verifies that a large program that is over the previous size limit can be deployed after V16.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_deploy_large_program_v16() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -92,7 +92,7 @@ fn test_deploy_large_program_v16() {
 
 // This test verifies serialization round-trips for large program deployment transactions at V15 and V16.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_deploy_large_program_v16_serialization() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();

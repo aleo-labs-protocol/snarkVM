@@ -20,7 +20,7 @@ use console::algorithms::U8;
 use std::sync::OnceLock;
 
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_increased_argument_bitsize() {
     // Define the programs.
     let program = Program::from_str(
@@ -145,7 +145,7 @@ function compute:
 
 // This test verifies that a large program that is over the previous size limit can be deployed after V14.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_deploy_large_program_v14() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -193,7 +193,7 @@ fn test_deploy_large_program_v14() {
 
 // This test verifies serialization round-trips for large program deployment transactions at V13 and V14.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_deploy_large_program_v14_serialization() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -272,7 +272,7 @@ fn test_deploy_large_program_v14_serialization() {
 // - programs using syntax introduced in `V14` can be deployed at and after `V14`.
 // - a program with an array up to 2048 elements can be deployed after `V14`.
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_deployments_for_v14_features() {
     // Define the programs.
     let programs = vec![

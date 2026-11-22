@@ -68,8 +68,9 @@ do or how language constructs work are unhelpful.
 ## Testing
 
 **Synthesizer tests are slow** — run only the specific test function.
-Plain `cargo test` runs only the fast tier. `#[ignore]` keeps a test off the pull request line, and the
-`memory_intensive` and `old_versions` path markers pick its other lines. See "Synthesizer test tiers" in
+Plain `cargo test` runs only the fast tier. A synthesizer test's tier is its `#[ignore]` reason (`"slow"`,
+`"memory intensive"` or `"old version"`) and its path: memory-intensive tests sit in a `memory_intensive`
+module, and old-version tests under `vm::tests::old_versions`. See "Synthesizer test tiers" in
 `CI.md`. Set `RUST_LOG` (e.g. `snarkvm=debug,timing=trace`) to print their events and timings.
 
 ```bash

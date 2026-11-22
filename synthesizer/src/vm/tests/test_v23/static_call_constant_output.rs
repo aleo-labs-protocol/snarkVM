@@ -69,7 +69,7 @@ fn next_consensus_version(vm: &VM<CurrentNetwork, LedgerType>) -> Result<Consens
 // V23, a new program with such a call is rejected, and a new program with a static call to a function without
 // constant outputs is accepted.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_static_call_to_constant_output_across_v23() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();

@@ -16,7 +16,7 @@
 use super::*;
 
 #[test]
-#[ignore = "old version: release lines"]
+#[ignore = "old version"]
 fn test_aleo_generators_migration() {
     let rng = &mut TestRng::default();
 

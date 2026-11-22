@@ -3503,7 +3503,7 @@ function adder:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_versioned_keyword_restrictions() {
         let rng = &mut TestRng::default();
 
@@ -3567,7 +3567,7 @@ function adder:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_deploy_and_execute_in_same_block_fails() {
         let rng = &mut TestRng::default();
 
@@ -3633,7 +3633,7 @@ function adder:
     }
 
     #[test]
-    #[ignore = "slow: merge lines"]
+    #[ignore = "slow"]
     fn test_deploy_string() {
         let rng = &mut TestRng::default();
 
@@ -3803,7 +3803,7 @@ constructor:
         use super::*;
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_multiple_deployments_and_multiple_executions() {
             let rng = &mut TestRng::default();
 
@@ -3966,7 +3966,7 @@ finalize getter:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_load_deployments_with_imports() {
             // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
             let rng = &mut TestRng::fixed(123456789);
@@ -4082,7 +4082,7 @@ function a:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_deployment_with_external_records() {
             let rng = &mut TestRng::default();
 
@@ -4123,7 +4123,7 @@ function transfer:
         }
 
         #[test]
-        #[ignore = "memory intensive: merge lines"]
+        #[ignore = "memory intensive"]
         fn test_deployment_synthesis_overload() {
             let rng = &mut TestRng::default();
 

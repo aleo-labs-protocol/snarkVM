@@ -40,7 +40,7 @@ fn get_public_balance(vm: &VM<CurrentNetwork, LedgerType>, address: &str) -> u64
 // in `synthesizer/tests/test_vm_execute_and_finalize.rs` and
 // `test_v15/cost_for_call.rs` which also verify cost estimation correctness.
 #[test]
-#[ignore = "slow: merge lines"]
+#[ignore = "slow"]
 fn test_cost_for_call_depending_on_signer() {
     let rng = &mut TestRng::default();
 
