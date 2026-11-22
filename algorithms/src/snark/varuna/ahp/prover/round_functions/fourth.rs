@@ -164,11 +164,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let R_size_C_size = constraint_domain.size_as_field_element * variable_domain.size_as_field_element;
 
         // The whole chain runs on the device: the evaluations, the
-        // interpolations, the shift into g, the b*f multiply, the subtract and
-        // the vanishing divide. With `cuda` on BLS12-377 this arm is
-        // unconditional and has no host fallback; a device failure aborts. Unlike
-        // the gate in `third.rs`, a one-element non-zero domain aborts here
-        // rather than falling through to the host.
+        // interpolations, the shift into g, the b*f multiply on the device's
+        // coset, the subtract and the coset's scaling. With `cuda` on BLS12-377 this
+        // arm is unconditional and has no host fallback; a device failure
+        // aborts. Unlike the gate in `third.rs`, a one-element non-zero domain
+        // aborts here rather than falling through to the host.
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         if core::any::TypeId::of::<F>() == core::any::TypeId::of::<snarkvm_curves::bls12_377::Fr>() {
             let _chain_time = timing_span!("Round 4 chain on the device", %label).entered();
@@ -177,12 +177,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let lg_domain = domain.trailing_zeros();
             // deg(b*f) <= 2*domain - 2, so the quotient has at most domain - 1
             // coefficients. The device rejects a quotient with terms above
-            // `q_len`, and the host trims what comes back.
+            // `q_len`, and the host trims what comes back. The multiply runs at the
+            // domain's size, on the device's coset.
             let q_len = domain - 1;
             let mut f0 = F::zero();
             let matrix_sumcheck_constants =
                 v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
-            let selector_mult = non_zero_domain.size_as_field_element * max_non_zero_domain.size_inv;
+            let selector_mult = non_zero_domain.size_as_field_element
+                * max_non_zero_domain.size_inv
+                * non_zero_domain.coset_vanishing_inv();
             let result = snarkvm_algorithms_cuda::fourth_round_chain(
                 q_len,
                 &mut f0,
@@ -190,7 +193,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 &col_on_K.evaluations,
                 &row_col_val.evaluations,
                 lg_domain,
-                lg_domain + 1,
+                lg_domain,
                 &alpha,
                 &beta,
                 &matrix_sumcheck_constants,
@@ -461,7 +464,8 @@ mod gpu_fourth_round_polys_contract {
 }
 
 /// The round-four chain's tail against the host: the shift into `g`, the `b*f`
-/// multiply, the subtract, and the vanishing divide.
+/// multiply, the subtract, and the vanishing divide or, at the half size, the
+/// coset's scaling.
 ///
 /// The reference starts from `fourth_round_polys`, not from
 /// `interpolate_with_pc`, because the latter is itself a device call under
@@ -522,16 +526,30 @@ mod gpu_fourth_round_chain_contract {
         let rng = &mut TestRng::default();
         let mut bad: Vec<String> = Vec::new();
 
-        // `(lg, len)`. The last two cover `len < domain`, where the kernel
-        // zeroes `[len, domain)`.
-        for (lg, len) in
-            [(5u32, 1usize << 5), (10, 1 << 10), (12, 1 << 12), (10, (1 << 10) - 7), (12, (1 << 12) - 1025)]
-        {
+        // `(lg, len)`. The two below 32 take the device NTT's small-domain
+        // launch, and the last two cover `len < domain`, where the kernel
+        // zeroes `[len, domain)`. Each runs at the half size, as the prover
+        // does, and at the full size.
+        let cases = [
+            (1u32, 2usize),
+            (4, 1 << 4),
+            (5, 1 << 5),
+            (10, 1 << 10),
+            (12, 1 << 12),
+            (10, (1 << 10) - 7),
+            (12, (1 << 12) - 1025),
+        ];
+        for ((lg, len), half) in cases.into_iter().flat_map(|case| [(case, true), (case, false)]) {
             let domain_size = 1usize << lg;
             let non_zero_domain = EvaluationDomain::<Fr>::new(domain_size).unwrap();
             // Four times the source, so `selector_mult` is not one.
             let max_non_zero_domain = EvaluationDomain::<Fr>::new(domain_size * 4).unwrap();
-            let selector_mult = non_zero_domain.size_as_field_element * max_non_zero_domain.size_inv;
+            let host_selector_mult = non_zero_domain.size_as_field_element * max_non_zero_domain.size_inv;
+            let (lg_mul, selector_mult) = if half {
+                (lg, host_selector_mult * non_zero_domain.coset_vanishing_inv())
+            } else {
+                (lg + 1, host_selector_mult)
+            };
 
             let row: Vec<Fr> = (0..len).map(|_| Fr::rand(rng)).collect();
             let col: Vec<Fr> = (0..len).map(|_| Fr::rand(rng)).collect();
@@ -563,7 +581,7 @@ mod gpu_fourth_round_chain_contract {
             )
             .is_err()
             {
-                bad.push(format!("lg {lg} len {len}: the reference prefix failed"));
+                bad.push(format!("lg {lg} len {len} half {half}: the reference prefix failed"));
                 continue;
             }
 
@@ -578,7 +596,7 @@ mod gpu_fourth_round_chain_contract {
                 match apply_randomized_selector(&mut h, Fr::one(), &max_non_zero_domain, &non_zero_domain, false) {
                     Ok(v) => v,
                     Err(e) => {
-                        bad.push(format!("lg {lg} len {len}: the host tail refused the divide ({e})"));
+                        bad.push(format!("lg {lg} len {len} half {half}: the host tail refused the divide ({e})"));
                         continue;
                     }
                 };
@@ -592,7 +610,7 @@ mod gpu_fourth_round_chain_contract {
                 &col,
                 &rcv,
                 lg,
-                lg + 1,
+                lg_mul,
                 &alpha,
                 &beta,
                 &coeff,
@@ -600,36 +618,40 @@ mod gpu_fourth_round_chain_contract {
                 &a_scale,
                 &selector_mult,
             ) else {
-                bad.push(format!("lg {lg} len {len}: the chain failed"));
+                bad.push(format!("lg {lg} len {len} half {half}: the chain failed"));
                 continue;
             };
             let [got_a, got_b, got_g, got_lhs] = host_outputs(out, domain_size, domain_size - 1);
 
             // `a` and `b` come back untrimmed and domain-sized on both sides.
             if want_a != got_a {
-                bad.push(format!("lg {lg} len {len} a: differs"));
+                bad.push(format!("lg {lg} len {len} half {half} a: differs"));
             }
             if want_b != got_b {
-                bad.push(format!("lg {lg} len {len} b: differs"));
+                bad.push(format!("lg {lg} len {len} half {half} b: differs"));
             }
             // `g` is `f` without its constant term.
             if want_f[1..] != got_g[..] {
-                bad.push(format!("lg {lg} len {len} g: differs"));
+                bad.push(format!("lg {lg} len {len} half {half} g: differs"));
             }
             if want_f[0] != got_f0 {
-                bad.push(format!("lg {lg} len {len} f0: differs"));
+                bad.push(format!("lg {lg} len {len} half {half} f0: differs"));
             }
             // `apply_randomized_selector` trims and the device does not, so
             // compare over the host length and require the rest to be zero.
             if want_lhs.coeffs.len() > got_lhs.len() {
-                bad.push(format!("lg {lg} len {len} lhs: {} coeffs against {}", got_lhs.len(), want_lhs.coeffs.len()));
+                bad.push(format!(
+                    "lg {lg} len {len} half {half} lhs: {} coeffs against {}",
+                    got_lhs.len(),
+                    want_lhs.coeffs.len()
+                ));
                 continue;
             }
             if let Some(i) = (0..want_lhs.coeffs.len()).find(|&i| want_lhs.coeffs[i] != got_lhs[i]) {
-                bad.push(format!("lg {lg} len {len} lhs: coeff {i} differs"));
+                bad.push(format!("lg {lg} len {len} half {half} lhs: coeff {i} differs"));
             }
             if let Some(i) = (want_lhs.coeffs.len()..got_lhs.len()).find(|&i| !got_lhs[i].is_zero()) {
-                bad.push(format!("lg {lg} len {len} lhs: coeff {i} past the degree is non-zero"));
+                bad.push(format!("lg {lg} len {len} half {half} lhs: coeff {i} past the degree is non-zero"));
             }
         }
 
@@ -649,6 +671,7 @@ mod gpu_fourth_round_chain_contract {
         let non_zero = EvaluationDomain::<Fr>::new(domain_size).unwrap();
         let max_non_zero = EvaluationDomain::<Fr>::new(domain_size * 4).unwrap();
         let selector_mult = non_zero.size_as_field_element * max_non_zero.size_inv;
+        let coset_inv = non_zero.coset_vanishing_inv();
 
         let row: Vec<Fr> = (0..domain_size).map(|_| Fr::rand(rng)).collect();
         let col: Vec<Fr> = (0..domain_size).map(|_| Fr::rand(rng)).collect();
@@ -657,35 +680,76 @@ mod gpu_fourth_round_chain_contract {
         let (coeff, b_scale) = (Fr::rand(rng), Fr::rand(rng));
         let a_scale = b_scale * coeff;
 
-        let run = |q_len: usize| {
-            let mut f0 = Fr::zero();
-            snarkvm_algorithms_cuda::fourth_round_chain(
-                q_len,
-                &mut f0,
-                &row,
-                &col,
-                &rcv,
-                lg,
-                lg + 1,
-                &alpha,
-                &beta,
-                &coeff,
-                &b_scale,
-                &a_scale,
-                &selector_mult,
-            )
-            .err()
-            .map(|e| e.code)
-        };
+        for half in [true, false] {
+            let (lg_mul, selector_mult) = if half { (lg, selector_mult * coset_inv) } else { (lg + 1, selector_mult) };
+            let run = |q_len: usize| {
+                let mut f0 = Fr::zero();
+                snarkvm_algorithms_cuda::fourth_round_chain(
+                    q_len,
+                    &mut f0,
+                    &row,
+                    &col,
+                    &rcv,
+                    lg,
+                    lg_mul,
+                    &alpha,
+                    &beta,
+                    &coeff,
+                    &b_scale,
+                    &a_scale,
+                    &selector_mult,
+                )
+                .err()
+                .map(|e| e.code)
+            };
 
-        assert_eq!(run(domain_size - 1), None, "the bound the prover passes must be accepted");
-        for short in [domain_size / 2, 8, 1] {
-            // `cudaErrorAssert` specifically, so a shape guard cannot pass this.
-            assert_eq!(
-                run(short),
-                Some(CUDA_ERROR_ASSERT),
-                "a q_len of {short} strands quotient coefficients and must be refused as a wrong proof"
-            );
+            assert_eq!(run(domain_size - 1), None, "half {half}: the bound the prover passes must be accepted");
+            for short in [domain_size / 2, 8, 1] {
+                // `cudaErrorAssert` specifically, so a shape guard cannot pass this.
+                assert_eq!(
+                    run(short),
+                    Some(CUDA_ERROR_ASSERT),
+                    "half {half}: a q_len of {short} strands quotient coefficients and must be refused as a wrong proof"
+                );
+            }
+        }
+    }
+
+    /// The size-`n` multiply on the coset gives the size-`2n` multiply's
+    /// outputs, once the selector carries the coset's constant.
+    #[test]
+    fn the_half_size_multiply_matches_the_full_size_multiply() {
+        use crate::fft::EvaluationDomain;
+
+        let rng = &mut TestRng::default();
+        for lg in [5u32, 10] {
+            let n = 1usize << lg;
+            let mut array = || (0..n).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+            let (row, col, rcv) = (array(), array(), array());
+            let [alpha, beta, coeff, b_scale, selector_mult] = [(); 5].map(|_| Fr::rand(rng));
+            let coset_inv = EvaluationDomain::<Fr>::new(n).unwrap().coset_vanishing_inv();
+            let chain = |lg_mul: u32, selector_mult: Fr| {
+                let mut f0 = Fr::zero();
+                let out = snarkvm_algorithms_cuda::fourth_round_chain(
+                    n - 1,
+                    &mut f0,
+                    &row,
+                    &col,
+                    &rcv,
+                    lg,
+                    lg_mul,
+                    &alpha,
+                    &beta,
+                    &coeff,
+                    &b_scale,
+                    &(b_scale * coeff),
+                    &selector_mult,
+                )
+                .map_err(|e| e.code)
+                .expect("the chain runs");
+                (host_outputs(out, n, n - 1), f0)
+            };
+            assert!(chain(lg, selector_mult * coset_inv) == chain(lg + 1, selector_mult), "lg {lg}");
         }
     }
 
@@ -863,7 +927,7 @@ mod gpu_resident_evals {
             col,
             rcv,
             lg,
-            lg + 1,
+            lg,
             &alpha,
             &beta,
             &coeff,

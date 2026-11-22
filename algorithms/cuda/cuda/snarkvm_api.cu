@@ -208,6 +208,17 @@ extern "C" {
         });
     }
 
+    RustError snarkvm_mul_coset(fr_t* out, const fr_t* a, size_t a_len,
+                                const fr_t* b, size_t b_len, uint32_t lg_domain_size)
+    {
+        return catch_all([&] {
+            if (!snarkvm_g.ok()) {
+                return snarkvm_g.failure();
+            }
+            return snarkvm_g->MulCoset(out, a, a_len, b, b_len, lg_domain_size);
+        });
+    }
+
     RustError snarkvm_fourth_round_chain(fr_t* a_out, fr_t* b_out, fr_t* g_out,
                                          fr_t* lhs_out, fr_t* f0_out,
                                          const fr_t* row, const fr_t* col,
