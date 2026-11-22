@@ -154,6 +154,7 @@ fn get_execution_costs(
 // =============================================================================
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_transfer_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -295,6 +296,7 @@ fn test_compare_transfer_public() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_transfer_public_as_signer() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -433,6 +435,7 @@ fn test_compare_transfer_public_as_signer() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_transfer_public_to_private() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -576,6 +579,7 @@ fn test_compare_transfer_public_to_private() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_transfer_private() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -741,6 +745,7 @@ fn test_compare_transfer_private() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_transfer_private_to_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -897,6 +902,7 @@ fn test_compare_transfer_private_to_public() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_join() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1026,6 +1032,7 @@ fn test_compare_join() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_split() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1159,6 +1166,7 @@ fn test_compare_split() {
 // =============================================================================
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_bond_validator() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1263,6 +1271,7 @@ fn test_compare_bond_validator() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_bond_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1365,6 +1374,7 @@ fn test_compare_bond_public() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_unbond_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1465,6 +1475,7 @@ fn test_compare_unbond_public() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_claim_unbond_public() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1564,6 +1575,7 @@ fn test_compare_claim_unbond_public() {
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_compare_set_validator_state() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();

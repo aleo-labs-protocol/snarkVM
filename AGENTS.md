@@ -68,13 +68,16 @@ do or how language constructs work are unhelpful.
 ## Testing
 
 **Synthesizer tests are slow** — run only the specific test function.
-`cargo nextest run` skips the slow tests that the default filter in `.config/nextest.toml` names, unless you
-pass `--ignore-default-filter`. `cargo test` runs them. Set `RUST_LOG` (e.g. `snarkvm=debug,timing=trace`) to print their events and timings.
+Plain `cargo test` runs only the fast tier. `#[ignore]` keeps a test off the pull request line, and the
+`memory_intensive` and `old_versions` path markers pick its other lines. See "Synthesizer test tiers" in
+`CI.md`. Set `RUST_LOG` (e.g. `snarkvm=debug,timing=trace`) to print their events and timings.
 
 ```bash
 cargo test -p <crate>                                           # Run crate tests
 cargo test -p <crate> -- test_name                              # Run specific test
-cargo nextest run -p snarkvm-synthesizer --lib                  # Skip the slow tests
+cargo test -p snarkvm-synthesizer --lib -- --include-ignored --skip memory_intensive --skip old_versions  # Fast and slow tiers
+cargo test -p snarkvm-synthesizer --lib -- --ignored memory_intensive  # Memory-intensive tier
+cargo test -p snarkvm-synthesizer --lib --release -- --ignored old_versions  # Old-version tier
 cargo test -p snarkvm-synthesizer --test '*'                    # Integration tests
 ```
 

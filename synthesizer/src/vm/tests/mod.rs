@@ -13,26 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests specific to older consensus versions, not executed in most flows by default.
-#[cfg(feature = "test-old-consensus-versions")]
-mod test_v8;
+mod old_versions {
+    use super::*;
 
-#[cfg(feature = "test-old-consensus-versions")]
-mod test_v9;
+    mod test_v10;
+    mod test_v11;
+    mod test_v13;
+    mod test_v14;
+    mod test_v8;
+    mod test_v9;
+}
 
-#[cfg(feature = "test-old-consensus-versions")]
-mod test_v10;
-
-#[cfg(feature = "test-old-consensus-versions")]
-mod test_v11;
-
-#[cfg(feature = "test-old-consensus-versions")]
-mod test_v13;
-
-#[cfg(feature = "test-old-consensus-versions")]
-mod test_v14;
-
-// The default filter in `.config/nextest.toml` names these modules, and the pull request line skips them.
 mod test_v15;
 mod test_v16;
 mod test_v18;

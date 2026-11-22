@@ -18,6 +18,7 @@ use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command};
 use super::*;
 
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_rand_chacha_cost() {
     // The cost of rand.chacha changes at ConsensusVersion::V22:
     //   - Before V22, the command has a flat cost regardless of its seeds or output type.

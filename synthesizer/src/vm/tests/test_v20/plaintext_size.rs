@@ -45,6 +45,7 @@ fn run_check_at_v20(program_text: &str) -> Result<()> {
 /// A triply-nested 2048x2048x2048 bool array, the largest array type the element limit permits.
 /// It is rejected on the type AST, without sampling any leaf.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_deeply_nested_array_input_rejected() {
     let result = run_check_at_v20(
         r"
@@ -64,6 +65,7 @@ constructor:
 
 /// A program whose function input fits well under the cap is accepted.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_under_cap_function_input_accepted() {
     run_check_at_v20(
         r"
@@ -82,6 +84,7 @@ constructor:
 
 /// A struct whose member exceeds the per-type cap is rejected.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_over_cap_struct_member_rejected() {
     let err = run_check_at_v20(
         r"
@@ -104,6 +107,7 @@ constructor:
 
 /// A record entry that exceeds the per-type cap is rejected.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_over_cap_record_entry_rejected() {
     let err = run_check_at_v20(
         r"
@@ -127,6 +131,7 @@ constructor:
 
 /// A mapping value that exceeds the per-type cap is rejected.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_over_cap_mapping_value_rejected() {
     let err = run_check_at_v20(
         r"
@@ -150,6 +155,7 @@ constructor:
 
 /// A closure input that exceeds the per-type cap is rejected.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_over_cap_closure_input_rejected() {
     let err = run_check_at_v20(
         r"
@@ -178,6 +184,7 @@ constructor:
 /// The legacy `check_future_argument_bit_size` runs only before V14 and permits up to
 /// `u16::MAX` bits; this check applies from V20 with a tighter budget.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_over_cap_finalize_input_rejected() {
     let err = run_check_at_v20(
         r"
@@ -205,6 +212,7 @@ constructor:
 /// An external struct whose members refer to structs local to the external program is resolved
 /// against that program, and accepted when it fits under the cap.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_under_cap_external_struct_accepted() {
     run_check_at_v20_with_imports(
         &[r"
@@ -242,6 +250,7 @@ constructor:
 /// An external struct whose local member type exceeds the per-type cap is rejected. The external
 /// program may predate V20, so its declarations are only bounded where an importer declares them.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_over_cap_external_struct_rejected() {
     let err = run_check_at_v20_with_imports(
         &[r"
@@ -279,6 +288,7 @@ constructor:
 /// An external struct may refer to a struct in a program that the importer does not import, so
 /// each struct reference must be resolved against the program that declares it.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_under_cap_transitive_external_struct_accepted() {
     run_check_at_v20_with_imports(
         &[
@@ -334,6 +344,7 @@ constructor:
 /// The check is run on a detached thread so that the regression surfaces as a bounded timeout failure rather
 /// than hanging the test suite indefinitely.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_shared_struct_dag_terminates() {
     use std::{
         fmt::Write as _,

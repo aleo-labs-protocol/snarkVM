@@ -51,20 +51,20 @@ rows.
 | `test (crates)` | `cpu` | all | 90 | `snarkvm`, `-algorithms`, `-circuit-collections`, `-circuit-types-integers`, `-console-collections` | `snarkvm`, `algorithms`, `circuit-collections`, `circuit-types-integers`, `console-collections` |
 | `test (ledger)` | `cpu` | all | 90 | `snarkvm-ledger` | `ledger` |
 | `test (ledger-store)` | `cpu` | all | 90 | `snarkvm-ledger-store` with `rocks`; then `-ledger-narwhal-data` and `-ledger-test-helpers`; then `-ledger-puzzle` and `-ledger-puzzle-epoch` | `ledger-store`, `ledger-narwhal-data`, `ledger-test-helpers`, `ledger-puzzle`, `ledger-puzzle-epoch` |
-| `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins, except the tests that the default filter in [`.config/nextest.toml`](.config/nextest.toml) leaves out | `synthesizer` |
+| `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins, the fast tier | `synthesizer` |
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`; then `-synthesizer-program` lib and bins; then `-circuit-program` | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
 | `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `dev-network`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block` | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
 | `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
 | `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
-| `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the `snarkvm-synthesizer` lib and bins tests, with `--ignore-default-filter` | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
-| `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-synthesizer`, with `--ignore-default-filter`; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
+| `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the fast and slow tiers of the `snarkvm-synthesizer` lib and bins | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
+| `test-merge (synthesizer-prerelease)` | `cpu` | merge | 90 | the `memory_intensive` tier of `snarkvm-synthesizer`, two at a time; `-synthesizer-process` with `rocks` | `synthesizer-prerelease`, `synthesizer-process-with-rocksdb` |
 | `test-merge (synthesizer-integration)` | `cpu` | merge | 90 | the `snarkvm-synthesizer` parse, process and VM tests, printing `snarkvm=debug` events | `synthesizer-integration` |
 | `test-merge (synthesizer-program)` | `cpu` | merge | 90 | the `snarkvm-synthesizer-program` integration tests, in three runs split by test name | `synthesizer-program-integration`, `synthesizer-program-integration-keccak`, `synthesizer-program-integration-psd`, `synthesizer-program-integration-sha`, `synthesizer-program-integration-instruction-is`, `synthesizer-program-integration-instruction-commit` |
 | `each-feature` | `cpu` | merge | 90 | `cargo hack clippy --each-feature` on each crate, without `cuda`, `no-embedded-srs` and `dev_skip_checks`: each crate with no features and with each feature alone | |
-| `test-release (old-consensus-versions-1)` to `-3` | `cpu` | release | 120 | one third each of the V8 to V14 tests of `snarkvm-synthesizer`, ignored ones included, with `test-old-consensus-versions`, release | |
+| `test-release (old-consensus-versions-1)` to `-3` | `cpu` | release | 120 | one third each of the `old_versions` tier of `snarkvm-synthesizer`, release | |
 | `test-release (integers-exhaustive)` | `cpu` | release | 120 | the ignored tests of `snarkvm-circuit-types-integers`, which check every 8-bit input | |
-| `test-release (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks` and `--ignore-default-filter`, release; then the ignored tests; then `test_vm_execute_and_finalize` with `rocks` | |
+| `test-release (synthesizer-rocks)` | `cpu` | release | 120 | `snarkvm-synthesizer` lib and bins with `rocks`, release: the fast and slow tiers, then the `memory_intensive` tier; then `test_vm_execute_and_finalize` with `rocks` | |
 | `machete` | hosted | merge | | `cargo machete` | `check-unused-dependencies` |
 | `windows` | hosted (Windows) | release | | `cargo check --examples --benches --tests` in `algorithms`, `circuit`, `console`, `curves`, `fields`, `ledger`, `parameters`, `synthesizer`, `utilities` | `verify-windows` |
 
@@ -128,6 +128,25 @@ it on their dev-dependencies, so their tests run with it. A `dev-network` build
 rejects the shipped genesis blocks, so the `snarkvm-ledger-block` tests that
 read them check only that rejection there; `-ledger-block` runs alone in
 `ledger-merge`, where they read the blocks.
+
+## Synthesizer test tiers
+
+The `snarkvm-synthesizer` lib tests come in four tiers. Each test's attributes
+and path say its tier:
+
+| Tier | Marker | Lines |
+|---|---|---|
+| fast | no `#[ignore]` | every `snarkvm-synthesizer` line |
+| slow | `#[ignore]` | `synthesizer-test-1`, `-2`; the first `synthesizer-rocks` line |
+| memory-intensive | `#[ignore]`, in a `memory_intensive` module | `synthesizer-prerelease`; the second `synthesizer-rocks` line |
+| old versions | `#[ignore]`, under `vm::tests::old_versions` | `old-consensus-versions-1` to `-3` |
+
+To run a tier with `cargo test -p snarkvm-synthesizer --lib`:
+
+- fast: no arguments;
+- fast and slow: `-- --include-ignored --skip memory_intensive --skip old_versions`;
+- memory-intensive: `-- --ignored memory_intensive`;
+- old versions, in release: `--release -- --ignored old_versions`.
 
 Each entry uploads nextest's JUnit reports, one for each line, as the artifact
 `junit-<entry>`, with the time of each test.

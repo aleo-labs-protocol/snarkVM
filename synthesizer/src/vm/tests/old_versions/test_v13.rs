@@ -22,6 +22,7 @@ use snarkvm_utilities::TestRng;
 // This test verifies that a program with a mapping containing a missing struct can be deployed on
 // consensus version 12.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_deploy_mapping_with_missing_struct_programs_v12() {
     let block = deploy_mapping_with_missing_struct_program(ConsensusVersion::V12);
 
@@ -33,6 +34,7 @@ fn test_deploy_mapping_with_missing_struct_programs_v12() {
 // This test verifies that a program with a mapping containing a missing struct cannot be deployed on
 // consensus version 13.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_deploy_mapping_with_missing_struct_v13() {
     let block = deploy_mapping_with_missing_struct_program(ConsensusVersion::V13);
 
@@ -76,6 +78,7 @@ constructor:
 // This test verifies that a program with a mapping containing a missing struct cannot be deployed on
 // consensus version 13.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_deploy_mapping_with_missing_external_struct_v13() {
     let block = deploy_mapping_with_missing_external_struct_programs(ConsensusVersion::V13);
 
@@ -146,6 +149,7 @@ constructor:
 // This test verifies that path traversal through external structs works correctly when the
 // external struct contains a member that is a LOCAL struct reference (not an ExternalStruct).
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_struct_with_local_nested_struct() {
     let rng = &mut TestRng::default();
 
@@ -214,6 +218,7 @@ constructor:
 // This test verifies path traversal through external records when the record entry is a
 // local struct in the external program.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_record_with_local_struct_entry() {
     let rng = &mut TestRng::default();
 
@@ -281,6 +286,7 @@ constructor:
 
 // This test verifies path traversal through external structs containing arrays of local structs.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_struct_with_array_of_local_structs() {
     let rng = &mut TestRng::default();
 
@@ -350,6 +356,7 @@ constructor:
 // This test verifies that future validation works correctly when an external function's finalize
 // block takes a local struct as a parameter.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_future_with_local_struct_finalize_param() {
     let rng = &mut TestRng::default();
 
@@ -574,6 +581,7 @@ fn assert_pre_post_v13(block: Block<CurrentNetwork>, consensus_version: Consensu
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_deploy_external_structs_pre_and_post_v13() {
     let program_one = Program::from_str(
         r"
@@ -621,6 +629,7 @@ function second:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_nonlocal_struct_in_external_future() {
     let program_one = Program::from_str(
         r"
@@ -677,6 +686,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_nonlocal_struct_in_array_in_external_future() {
     let program_one = Program::from_str(
         r"
@@ -734,6 +744,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_nonlocal_struct_in_external_record_from_call() {
     let program_one = Program::from_str(
         r"
@@ -789,6 +800,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_nonlocal_struct_in_external_record_input() {
     let program_one = Program::from_str(
         r"
@@ -853,6 +865,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_nonlocal_struct_in_array_in_external_record_input() {
     let program_one = Program::from_str(
         r"
@@ -918,6 +931,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_nonlocal_struct_access_from_external_future() {
     let program_one = Program::from_str(
         r"
@@ -986,6 +1000,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_mapping_external_struct_v13() {
     let rng = &mut TestRng::default();
 
@@ -1098,6 +1113,7 @@ constructor:
 /// containing the `get`). The same scenario should succeed on V13, where the underlying bug has
 /// been fixed.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_mapping_external_struct_runtime_pre_post_v13() {
     let rng = &mut TestRng::default();
     let private_key = crate::vm::test_helpers::sample_genesis_private_key();
@@ -1224,6 +1240,7 @@ constructor:
 /// containing the `get`). The same scenario should succeed on V13, where the underlying bug has
 /// been fixed.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_mapping_external_struct_in_array_runtime_pre_post_v13() {
     let rng = &mut TestRng::default();
     let private_key = crate::vm::test_helpers::sample_genesis_private_key();
@@ -1350,6 +1367,7 @@ constructor:
 // block takes a local struct as a parameter but that local struct is also copied in the primary
 // program. This should pass on both V12 and V13.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_external_mapping_external_struct_copied_locally_pre_post_v13() {
     let rng = &mut TestRng::default();
 

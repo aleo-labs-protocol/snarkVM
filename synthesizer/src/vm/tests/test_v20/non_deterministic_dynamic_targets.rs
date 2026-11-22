@@ -18,6 +18,7 @@ use super::*;
 // Deploys a program whose function points the target of a call.dynamic instruction to a closure or a
 // function depending on the last bit of self.signer. The test checks several runs of test-
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_conditional_dynamic_call_target_deployment_via_signer() {
     const N_EXPERIMENTS: usize = 10;
 
@@ -90,6 +91,7 @@ fn test_conditional_dynamic_call_target_deployment_via_signer() {
 // `self.signer`, so it is NOT covered by seeding the burner key; it exercises the
 // `get.record.dynamic` fix specifically.
 #[test]
+#[ignore = "slow: merge lines"]
 fn test_conditional_dynamic_call_target_deployment_via_get_record_dynamic() {
     const N_EXPERIMENTS: usize = 10;
 

@@ -18,6 +18,7 @@ use super::*;
 use console::algorithms::U8;
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_max_writes_migration() {
     let rng = &mut TestRng::default();
 
@@ -127,6 +128,7 @@ finalize compute:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_max_writes_exceeds_finalize_amount() {
     const NUM_DEPLOYMENTS: usize = 31;
 

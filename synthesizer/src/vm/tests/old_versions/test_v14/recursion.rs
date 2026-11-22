@@ -17,6 +17,7 @@ use super::*;
 
 // This test tests self-recursive dynamic function calls for plaintext types by computing Fibonacci numbers.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_fibonacci() {
     let recursive_calls_program_name = Identifier::<CurrentNetwork>::from_str("recursive_calls").unwrap();
     let recursive_calls_program_field = recursive_calls_program_name.to_field().unwrap();
@@ -153,6 +154,7 @@ fn test_fibonacci() {
 // static `Data.record`, which triggers translation — creating a serial number — so calling it
 // twice with the same dynamic record constitutes a double-spend.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_recursive_dynamic_record_calls() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -572,6 +574,7 @@ constructor:
 // Scenario 3 (FAIL): Same dynamic record forwarded twice at position 0 to the same-program static consumer.
 // Scenario 4 (FAIL): Same dynamic record forwarded at position 0 and position 1 to two different same-program static consumers.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_same_program_dynamic_record_security() {
     let rng = &mut TestRng::default();
 

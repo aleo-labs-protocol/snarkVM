@@ -23,6 +23,7 @@ use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use std::sync::OnceLock;
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_snark_verify() {
     // Define the verification program.
     let program = Program::from_str(
@@ -161,6 +162,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_snark_verify_batch() {
     // Define the verification program.
     let program = Program::from_str(
@@ -328,6 +330,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_snark_verify_batch_padded_inputs() {
     // Define the verification program.
     let program = Program::from_str(
@@ -503,6 +506,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_snark_verify_batch_multiple_circuits() {
     // Define the verification program.
     let program = Program::from_str(
@@ -703,6 +707,7 @@ constructor:
 }
 
 #[test]
+#[ignore = "old version: release lines"]
 fn test_snark_verify_batch_via_mapping() {
     // Define the verification program.
     let program = Program::from_str(

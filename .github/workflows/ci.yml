@@ -486,15 +486,17 @@ jobs:
             runs: nextest run -p snarkvm-parameters --features filesystem -j 2
           - name: parameters-uncached
             runs: nextest run -p snarkvm-parameters --features filesystem --run-ignored ignored-only -j 2
+          # The `snarkvm-synthesizer` lines select tiers by `#[ignore]` and the
+          # `memory_intensive` and `old_versions` path markers; see CI.md.
           # Two shards: the tests keep all 8 slots busy for the whole run, so only
           # more runners make it finish sooner.
           - name: synthesizer-test-1
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --ignore-default-filter -j 8 --partition count:1/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/memory_intensive|old_versions/) -j 8 --partition count:1/2
           - name: synthesizer-test-2
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --ignore-default-filter -j 8 --partition count:2/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/memory_intensive|old_versions/) -j 8 --partition count:2/2
           - name: synthesizer-prerelease
             runs: |
-              nextest run -p snarkvm-synthesizer --ignore-default-filter --run-ignored ignored-only -j 2
+              nextest run -p snarkvm-synthesizer --run-ignored only -E test(/memory_intensive/) -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
           - name: synthesizer-integration
             runs: nextest run -p snarkvm-synthesizer -j 4 --test *
@@ -549,11 +551,11 @@ jobs:
           # Three shards, each on its own box. `count:` deals the tests out in
           # name order, so each slow `test_v14` module spreads across shards.
           - name: old-consensus-versions-1
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:1/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:1/3 -E test(/::old_versions::/)
           - name: old-consensus-versions-2
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:2/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:2/3 -E test(/::old_versions::/)
           - name: old-consensus-versions-3
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:3/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:3/3 -E test(/::old_versions::/)
           # Not `--release`: that compiles out the check in `is_satisfied` that
           # each constraint uses only declared variables.
           - name: integers-exhaustive
@@ -562,8 +564,8 @@ jobs:
           # only test_vm_execute_and_finalize opens a RocksDB store.
           - name: synthesizer-rocks
             runs: |
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --ignore-default-filter -j 8
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --ignore-default-filter -j 2 --run-ignored ignored-only
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored all -E !test(/memory_intensive|old_versions/) -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored only -E test(/memory_intensive/) -j 2
               nextest run -p snarkvm-synthesizer --release --features rocks --test test_vm_execute_and_finalize
     name: test-release
     steps: *test-steps

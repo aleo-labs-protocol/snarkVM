@@ -56,6 +56,7 @@ constructor:
 // - Fails when the program or mapping does not exist.
 // - Fails when the key is of the wrong type.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_contains() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -323,6 +324,7 @@ constructor:
 // - Fails when the destination type does not match the mapping value type.
 // - Works with struct value types.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_get() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -805,6 +807,7 @@ constructor:
 // Note: destination type mismatches and default value type mismatches are caught at
 // deployment time (static type check in `check_get_or_use_dynamic`), not at runtime.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_get_or_use() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -1239,6 +1242,7 @@ constructor:
 
 // Tests that `get.dynamic` fails when accessing a key in an empty mapping while `contains.dynamic` returns false.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_get_dynamic_empty_mapping() {
     let rng = &mut TestRng::default();
 
@@ -1358,6 +1362,7 @@ fn test_get_dynamic_empty_mapping() {
 
 // Tests contains.dynamic with array keys to verify composite key type handling.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_contains_dynamic_with_array_keys() {
     let rng = &mut TestRng::default();
 
@@ -1599,6 +1604,7 @@ fn test_contains_dynamic_with_array_keys() {
 // - Garbage field values (e.g., the field element 1) are rejected by `Identifier::from_field`
 //   because the first decoded byte (0x01) is not an ASCII letter.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_get_rejects_invalid_program_ids() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();

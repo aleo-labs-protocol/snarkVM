@@ -19,6 +19,7 @@ use console::network::varuna_version_from_consensus;
 
 // Tests `call.dynamic` to `credits.aleo` functions including `transfer_public_as_signer`, `transfer_public_to_private`, and `transfer_private`.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -241,6 +242,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
 
 // Tests a universal AMM swap pattern where the AMM dynamically calls transfer functions on arbitrary token programs.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_universal_swap() {
     // Turn on trace logging.
     let _ = tracing_subscriber::fmt::try_init();
@@ -464,6 +466,7 @@ fn test_universal_swap() {
 
 // Tests runtime selection of `call.dynamic` targets using ternary operations to conditionally determine the program and function.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_conditional_execution() {
     let constants_program_name = Identifier::<CurrentNetwork>::from_str("constants").unwrap();
     let constants_program_field = constants_program_name.to_field().unwrap();
@@ -916,6 +919,7 @@ fn test_complex_dynamic_graph_construction_internal(
 
 // Tests execution graph construction with all-static, all-dynamic, and random combinations of call types.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_complex_dynamic_graph_construction() {
     let num_random_mixes = 3;
 
@@ -934,6 +938,7 @@ fn test_complex_dynamic_graph_construction() {
 
 // Tests that `call.dynamic` to a non-existent program fails with an appropriate error.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_call_nonexistent_program() {
     let rng = &mut TestRng::default();
 
@@ -983,6 +988,7 @@ fn test_call_nonexistent_program() {
 
 // Tests that `call.dynamic` to a non-existent function in an existing program fails with an appropriate error.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_call_nonexistent_function() {
     let rng = &mut TestRng::default();
 
@@ -1049,6 +1055,7 @@ fn test_call_nonexistent_function() {
 
 // Tests circular `call.dynamic` patterns where program A calls B which calls back to A.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_circular_dynamic_calls() {
     let rng = &mut TestRng::default();
 
@@ -1129,6 +1136,7 @@ fn test_circular_dynamic_calls() {
 
 // Tests a deep `call.dynamic` hierarchy with 8 levels of nested calls.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_deep_call_hierarchy() {
     let rng = &mut TestRng::default();
 
@@ -1236,6 +1244,7 @@ fn test_deep_call_hierarchy() {
 
 // Tests that `call.dynamic` to `credits.aleo/fee_private` and `fee_public` fails at deployment time.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_call_credits_fee_functions_forbidden() {
     let rng = &mut TestRng::default();
 
@@ -1314,6 +1323,7 @@ fn test_dynamic_call_credits_fee_functions_forbidden() {
 
 // Tests that `call.dynamic` to closures fails at deployment time since closures cannot be called dynamically.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_call_closure_forbidden() {
     let rng = &mut TestRng::default();
 
@@ -1385,6 +1395,7 @@ fn test_dynamic_call_closure_forbidden() {
 
 // Tests that a program can use `call.dynamic` to call its own functions.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_self_referential_dynamic_call() {
     let rng = &mut TestRng::default();
 
@@ -1444,6 +1455,7 @@ fn test_self_referential_dynamic_call() {
 
 // Tests that malformed identifier fields in `call.dynamic` are properly rejected at deployment time.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_malformed_identifier_in_call_dynamic() {
     let rng = &mut TestRng::default();
 
@@ -1493,6 +1505,7 @@ fn test_malformed_identifier_in_call_dynamic() {
 
 // Tests that `call.dynamic` inside a finalize block fails at parse time.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_call_dynamic_in_finalize_forbidden() {
     let target_field = Identifier::<CurrentNetwork>::from_str("some_program").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1525,6 +1538,7 @@ fn test_call_dynamic_in_finalize_forbidden() {
 // Tests that outputting a `dynamic.future` directly fails at deployment time.
 // A `dynamic.future` must be passed to `async` and awaited, not returned directly.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_future_direct_output_forbidden() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -1559,6 +1573,7 @@ fn test_dynamic_future_direct_output_forbidden() {
 
 // Tests `call.dynamic` with local struct parameters (defined in the same program).
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_call_with_local_struct_parameters() {
     let rng = &mut TestRng::default();
 
@@ -1669,6 +1684,7 @@ fn test_dynamic_call_with_local_struct_parameters() {
 
 // Tests `call.dynamic` with external struct parameters (defined in an imported program).
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_call_with_external_struct_parameters() {
     let rng = &mut TestRng::default();
 
@@ -1792,6 +1808,7 @@ fn test_dynamic_call_with_external_struct_parameters() {
 
 // Tests `call.dynamic` with array parameters.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_call_with_array_parameters() {
     let rng = &mut TestRng::default();
 
@@ -1903,6 +1920,7 @@ fn test_dynamic_call_with_array_parameters() {
 // - When a `dynamic.record` is passed to a function expecting `dynamic.record`, no translation
 //   occurs and the record is not consumed. The same record can be passed multiple times.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_record_double_spend_detection() {
     let rng = &mut TestRng::default();
 
@@ -2073,6 +2091,7 @@ fn test_dynamic_record_double_spend_detection() {
 // 3. After a program upgrade at V14, the verifier VM gains translation keys.
 // 4. The verifier VM with translation keys (from upgrade) can verify and accept the transaction.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_dynamic_call_to_pre_v14_program() {
     let rng = &mut TestRng::default();
 
@@ -2329,6 +2348,7 @@ fn test_dynamic_call_to_pre_v14_program() {
 
 // Tests that a consumed record cannot be reused in a subsequent block.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_replay_attack_prevention_across_blocks() {
     let rng = &mut TestRng::default();
 
@@ -2449,6 +2469,7 @@ fn test_replay_attack_prevention_across_blocks() {
 // Tests that self.caller reflects the immediate caller in nested dynamic calls.
 // A → B → C: C sees B as caller, not A.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_nested_caller_authorization() {
     let rng = &mut TestRng::default();
 
@@ -2631,6 +2652,7 @@ fn test_nested_caller_authorization() {
 /// Tests that a V2 deployment (without record verifying keys)
 /// is rejected when verified at V14.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_v2_deployment_transaction_rejected_at_v14() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -2697,6 +2719,7 @@ constructor:
 // The caller chains 4 rounds of (call A → call B), each round contributing 32 translation
 // proof instances, for a total that exceeds the 128-instance limit.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_batch_proof_instance_limit_exceeded() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -2907,6 +2930,7 @@ fn test_batch_proof_instance_limit_exceeded() -> Result<()> {
 
 // Tests that programs containing dynamic calls with declared output types of the form "as <TYPE>.constant" are disallowed.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_constant_dynamic_call_input_output() {
     // In this program, the dynamic call attempts to return a single constant output.
     let program_a = |is_constant: bool| {

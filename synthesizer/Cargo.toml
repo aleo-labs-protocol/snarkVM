@@ -27,7 +27,6 @@ edition = "2024"
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-test-old-consensus-versions = [ ]
 test-helpers = [ ]
 wasm = [ "snarkvm-console/wasm", "snarkvm-synthesizer-process/wasm" ]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]

@@ -17,6 +17,7 @@ use super::*;
 
 /// Tests that "dynamic" cannot be used as a struct name at V14.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_restricted_keyword_dynamic_struct_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -45,6 +46,7 @@ function test:
 
 /// Tests that "dynamic" cannot be used as a function name at V14.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_restricted_keyword_dynamic_function_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -73,6 +75,7 @@ function dynamic:
 /// This is not a vulnerability because "dynamic" is restricted as a keyword at V14,
 /// preventing any deployed program from using it as a record name.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_restricted_keyword_dynamic_record_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -101,6 +104,7 @@ function test:
 
 /// Tests that "dynamic" cannot be used as a mapping name at V14.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_restricted_keyword_dynamic_mapping_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -134,6 +138,7 @@ finalize test:
 
 /// Tests that "dynamic" cannot be used as a record entry name at V14.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_restricted_keyword_dynamic_record_entry_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -164,6 +169,7 @@ function mint:
 
 /// Tests that "dynamic" cannot be used as a struct member name at V14.
 #[test]
+#[ignore = "old version: release lines"]
 fn test_restricted_keyword_dynamic_struct_member_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
