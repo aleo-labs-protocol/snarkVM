@@ -21,7 +21,6 @@ default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "dep:rocksdb", "dep:smallvec" ]
-test = [ ]
 
 [dependencies.snarkvm-metrics]
 workspace = true

@@ -13,7 +13,6 @@ filesystem = [ "snarkvm-algorithms/filesystem", "snarkvm-parameters/filesystem" 
 wasm = [
   "snarkvm-parameters/wasm"
 ]
-test = [ ]
 test_targets = [ ]
 test_consensus_heights = [ ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.

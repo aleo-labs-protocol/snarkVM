@@ -93,11 +93,6 @@ metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 bench-prove = [ "test_consensus_heights" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
-test = [
-  "snarkvm-console/test",
-  "snarkvm-ledger-store/test",
-  "snarkvm-synthesizer/test"
-]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 # Keep the [dev-dependencies] in sync with this list: the unit tests build `test_helpers` through
 # `cfg(test)`, without this feature.
@@ -214,10 +209,6 @@ features = [ "preserve_order" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true
-
-[dev-dependencies.snarkvm-synthesizer]
-workspace = true
-features = [ "test" ]
 
 [dev-dependencies.tracing-subscriber]
 workspace = true

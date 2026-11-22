@@ -130,7 +130,6 @@ async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 no-embedded-srs = [ "snarkvm-parameters/no-embedded-srs" ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
-test = [ "snarkvm-ledger/test" ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-algorithms?/test-helpers", "snarkvm-ledger/test-helpers" ]
 algorithms = [ "dep:snarkvm-algorithms" ]

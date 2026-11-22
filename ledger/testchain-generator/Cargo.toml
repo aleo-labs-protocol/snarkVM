@@ -20,7 +20,6 @@ include = ["../../LICENSE.md"]
 [features]
 default = [ ]
 test_targets = [ "snarkvm-ledger/test_targets"]
-test = [ "snarkvm-ledger/test" ]
 
 [dependencies.snarkvm-console]
 workspace = true
