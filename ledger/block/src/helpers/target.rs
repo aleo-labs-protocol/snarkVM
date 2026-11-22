@@ -1066,6 +1066,37 @@ mod tests {
     }
 
     #[test]
+    fn test_rewards_end_at_max_supply_limit_height() {
+        let limit = CurrentNetwork::MAX_SUPPLY_LIMIT_HEIGHT;
+        for (height, expect_reward) in [(limit - 1, true), (limit, false), (limit + 1, false)] {
+            let block_reward = block_reward::<CurrentNetwork>(
+                height,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::BLOCK_TIME,
+                CurrentNetwork::BLOCK_TIME.into(),
+                0,
+                0,
+            )
+            .unwrap();
+            let coinbase_reward = coinbase_reward::<CurrentNetwork>(
+                height,
+                CurrentNetwork::GENESIS_TIMESTAMP + i64::from(CurrentNetwork::BLOCK_TIME),
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
+                CurrentNetwork::ANCHOR_HEIGHT,
+                CurrentNetwork::BLOCK_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+            assert_eq!(block_reward > 0, expect_reward, "block reward at height {height}");
+            assert_eq!(coinbase_reward > 0, expect_reward, "coinbase reward at height {height}");
+        }
+    }
+
+    #[test]
     fn test_coinbase_reward_v1() {
         let coinbase_target: u64 = 10000;
         let combined_proof_target: u128 = coinbase_target as u128;

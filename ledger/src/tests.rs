@@ -2531,9 +2531,8 @@ function foo:
     }
 }
 
-// These tests require the proof targets to be low enough to be able to generate **valid** solutions.
-// This requires the 'test' feature to be enabled for the `console` dependency.
-#[cfg(feature = "test")]
+// At the production proof target these tests do not finish.
+#[cfg(all(feature = "test", feature = "test_targets"))]
 mod valid_solutions {
     use super::*;
     use crate::is_solution_limit_reached::stake_requirements_per_solution;
@@ -2647,222 +2646,99 @@ mod valid_solutions {
         assert_eq!(block.aborted_solution_ids().len(), 0)
     }
 
+    /// Asserts that the epoch provers cache holds `expected` solutions from `prover`, and matches the blocks.
+    fn assert_epoch_provers(ledger: &CurrentLedger, prover: Address<CurrentNetwork>, expected: u32) {
+        let epoch_provers = ledger.epoch_provers_cache.read();
+        assert_eq!(*epoch_provers, ledger.load_epoch_provers());
+        assert_eq!(epoch_provers.get(&prover).copied().unwrap_or(0), expected);
+        assert_eq!(epoch_provers.values().sum::<u32>(), expected);
+    }
+
+    /// Returns between 1 and `MAX_SOLUTIONS` solutions that meet the latest proof target.
+    fn sample_solutions(
+        ledger: &CurrentLedger,
+        prover: Address<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> Vec<Solution<CurrentNetwork>> {
+        let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
+        let epoch_hash = ledger.latest_epoch_hash().unwrap();
+        let proof_target = ledger.latest_proof_target();
+        let mut solutions = Vec::with_capacity(num_solutions);
+        while solutions.len() < num_solutions {
+            if let Ok(solution) = ledger.puzzle().prove(epoch_hash, prover, rng.random(), Some(proof_target)) {
+                solutions.push(solution);
+            }
+        }
+        solutions
+    }
+
     #[test]
     #[ignore]
     fn test_cumulative_proof_target_correctness() {
-        // Initialize an RNG.
         let rng = &mut TestRng::default();
-
-        // The number of blocks to test.
-        let num_blocks = CurrentNetwork::NUM_BLOCKS_PER_EPOCH * 2;
-
-        // Initialize the test environment.
         let crate::test_helpers::TestEnv { ledger, validators, .. } = crate::test_helpers::sample_test_env(rng);
-
-        // Set up the prover account with sufficient balance to generate solutions.
         let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let prover_address = Address::try_from(&prover_private_key).unwrap();
         setup_prover_account(&ledger, &validators, &prover_private_key, rng);
 
-        // Retrieve the puzzle parameters.
-        let puzzle = ledger.puzzle();
-
-        // Initialize block height.
-        let mut block_height = ledger.latest_height();
-
-        // Start a local counter of proof targets.
+        let epoch = CurrentNetwork::NUM_BLOCKS_PER_EPOCH;
         let mut combined_targets = 0;
-
-        // Track the total number of solutions in the current epoch.
-        let mut total_epoch_solutions = 0;
-
-        // Run through `num_blocks` blocks of target adjustment.
-        while block_height < num_blocks {
-            // Get coinbase puzzle data from the latest block.
-            let block = ledger.latest_block();
-            let coinbase_target = block.coinbase_target();
-            let coinbase_threshold = coinbase_target.saturating_div(2);
-            let latest_epoch_hash = ledger.latest_epoch_hash().unwrap();
-            let latest_proof_target = ledger.latest_proof_target();
-
-            // Sample the number of solutions to generate.
-            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
-
-            // Initialize a vector for valid solutions for this block.
-            let mut solutions = Vec::with_capacity(num_solutions);
-
-            // Loop through proofs until two that meet the threshold are found.
-            loop {
-                if let Ok(solution) =
-                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
-                {
-                    // Get the proof target.
-                    let proof_target = puzzle.get_proof_target(&solution).unwrap();
-
-                    // Update the local combined target counter and store the solution.
-                    combined_targets += proof_target;
-                    solutions.push(solution);
-
-                    // If two have been found, exit the solver loop.
-                    if solutions.len() >= num_solutions {
-                        break;
-                    }
-                }
+        let mut epoch_solutions = 0;
+        while ledger.latest_height() < epoch * 2 {
+            // Solutions land in the three blocks on each side of an epoch boundary.
+            let next_height = ledger.latest_height() + 1;
+            let solutions = match (next_height + 3) % epoch < 6 {
+                true => sample_solutions(&ledger, prover_address, rng),
+                false => vec![],
+            };
+            for solution in &solutions {
+                combined_targets += ledger.puzzle().get_proof_target(solution).unwrap();
             }
-
-            // If the combined target exceeds the coinbase threshold reset it.
-            if combined_targets >= coinbase_threshold {
+            if combined_targets >= ledger.latest_block().coinbase_target().saturating_div(2) {
                 combined_targets = 0;
             }
 
-            // Generate the next prospective block.
             let next_block = prepare_quorum_block(&ledger, &validators, solutions, vec![], rng).unwrap();
-
-            // Ensure the combined target matches the expected value.
             assert_eq!(combined_targets as u128, next_block.cumulative_proof_target());
-
-            // Ensure the next block is correct.
             ledger.check_next_block(&next_block, rng).unwrap();
-
-            // Advanced to the next block.
             ledger.advance_to_next_block(&next_block).unwrap();
 
-            // Set the latest block height.
-            block_height = ledger.latest_height();
-
-            // Update the epoch solutions count.
-            if block_height.is_multiple_of(CurrentNetwork::NUM_BLOCKS_PER_EPOCH) {
-                // Reset the epoch solutions count at the epoch boundary.
-                total_epoch_solutions = 0;
-            } else {
-                total_epoch_solutions += num_solutions;
-            }
-
-            // Fetch the epoch provers cache.
-            let epoch_provers = ledger.epoch_provers_cache.read();
-            // Load the epoch provers from the blocks in the current epoch.
-            let expected_epoch_provers = ledger.load_epoch_provers();
-            // Check that the epoch solutions are correct
-            assert_eq!(epoch_provers.values().sum::<u32>(), u32::try_from(total_epoch_solutions).unwrap());
-            assert_eq!(epoch_provers.len(), expected_epoch_provers.len());
-            for ((expected_address, expected_count), (address, count)) in
-                expected_epoch_provers.iter().zip(epoch_provers.iter())
-            {
-                assert_eq!(expected_address, address);
-                assert_eq!(expected_count, count);
-            }
+            epoch_solutions = match next_height.is_multiple_of(epoch) {
+                true => 0,
+                false => epoch_solutions + u32::try_from(next_block.solutions().len()).unwrap(),
+            };
+            assert_epoch_provers(&ledger, prover_address, epoch_solutions);
         }
     }
 
     #[test]
     #[ignore]
     fn test_epoch_provers_cache_cleared_at_epoch_boundary() {
-        // Initialize an RNG.
         let rng = &mut TestRng::default();
-
-        // Initialize the test environment.
         let crate::test_helpers::TestEnv { ledger, validators, .. } = crate::test_helpers::sample_test_env(rng);
-
-        // Set up the prover account with sufficient balance to generate solutions.
         let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let prover_address = Address::try_from(&prover_private_key).unwrap();
         setup_prover_account(&ledger, &validators, &prover_private_key, rng);
 
-        // Retrieve the puzzle parameters.
-        let puzzle = ledger.puzzle();
+        let boundary = CurrentNetwork::NUM_BLOCKS_PER_EPOCH;
+        crate::test_helpers::advance_to_height(&ledger, &validators, boundary - 3, rng);
 
-        // Initialize block height.
-        let mut block_height = ledger.latest_height();
-
-        // Start a local counter of proof targets.
-        let mut combined_targets = 0;
-
-        // Track the total number of solutions in the current epoch.
-        let mut total_epoch_solutions = 0;
-
-        // Run through blocks until the end of the epoch.
-        while block_height < CurrentNetwork::NUM_BLOCKS_PER_EPOCH {
-            // Check the epoch provers cache.
-            {
-                // Fetch the epoch provers cache.
-                let epoch_provers = ledger.epoch_provers_cache.read();
-                // Load the epoch provers from the blocks in the current epoch.
-                let expected_epoch_provers = ledger.load_epoch_provers();
-                // Check that the epoch solutions are correct
-                assert_eq!(epoch_provers.values().sum::<u32>(), u32::try_from(total_epoch_solutions).unwrap());
-                assert_eq!(epoch_provers.len(), expected_epoch_provers.len());
-                for ((expected_address, expected_count), (address, count)) in
-                    expected_epoch_provers.iter().zip(epoch_provers.iter())
-                {
-                    assert_eq!(expected_address, address);
-                    assert_eq!(expected_count, count);
-                    assert_eq!(*expected_count, u32::try_from(total_epoch_solutions).unwrap());
-                }
-            }
-
-            // Get coinbase puzzle data from the latest block.
-            let block = ledger.latest_block();
-            let coinbase_target = block.coinbase_target();
-            let coinbase_threshold = coinbase_target.saturating_div(2);
-            let latest_epoch_hash = ledger.latest_epoch_hash().unwrap();
-            let latest_proof_target = ledger.latest_proof_target();
-
-            // Sample the number of solutions to generate.
-            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
-
-            // Initialize a vector for valid solutions for this block.
-            let mut solutions = Vec::with_capacity(num_solutions);
-
-            // Loop through proofs until two that meet the threshold are found.
-            loop {
-                if let Ok(solution) =
-                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
-                {
-                    // Get the proof target.
-                    let proof_target = puzzle.get_proof_target(&solution).unwrap();
-
-                    // Update the local combined target counter and store the solution.
-                    combined_targets += proof_target;
-                    solutions.push(solution);
-
-                    // If two have been found, exit the solver loop.
-                    if solutions.len() >= num_solutions {
-                        break;
-                    }
-                }
-            }
-
-            // If the combined target exceeds the coinbase threshold reset it.
-            if combined_targets >= coinbase_threshold {
-                combined_targets = 0;
-            }
-
-            // Generate the next prospective block.
+        let mut epoch_solutions = 0;
+        while ledger.latest_height() < boundary + 2 {
+            let solutions = sample_solutions(&ledger, prover_address, rng);
             let next_block = prepare_quorum_block(&ledger, &validators, solutions, vec![], rng).unwrap();
-
-            // Ensure the next block is correct.
             ledger.check_next_block(&next_block, rng).unwrap();
-
-            // Advanced to the next block.
             ledger.advance_to_next_block(&next_block).unwrap();
+            assert!(!next_block.solutions().is_empty());
 
-            // Set the latest block height.
-            block_height = ledger.latest_height();
-
-            // Update the epoch solutions count.
-            total_epoch_solutions += num_solutions;
+            // The boundary block's solutions belong to the previous epoch.
+            epoch_solutions = match next_block.height() == boundary {
+                true => 0,
+                false => epoch_solutions + u32::try_from(next_block.solutions().len()).unwrap(),
+            };
+            assert_epoch_provers(&ledger, prover_address, epoch_solutions);
         }
-
-        // Ensure that we are at the end of the epoch.
-        assert!(block_height.is_multiple_of(CurrentNetwork::NUM_BLOCKS_PER_EPOCH));
-
-        // Fetch the epoch provers cache.
-        let epoch_provers = ledger.epoch_provers_cache.read();
-        // Load the epoch provers from the blocks in the current epoch.
-        let expected_epoch_provers = ledger.load_epoch_provers();
-        // Check that the epoch solutions are both empty.
-        assert_eq!(epoch_provers.len(), 0);
-        assert_eq!(expected_epoch_provers.len(), 0);
+        assert!(epoch_solutions > 0);
     }
 
     #[test]
@@ -3321,93 +3197,6 @@ mod valid_solutions {
         // Check that the aborted solution is correct.
         let block_aborted_solution_id = block.aborted_solution_ids().first().unwrap();
         assert_eq!(*block_aborted_solution_id, invalid_solution.id(), "Aborted solutions do not match");
-    }
-
-    #[test]
-    fn test_no_rewards_after_limit_height() {
-        let rng = &mut TestRng::default();
-
-        // Initialize the test environment.
-        let crate::test_helpers::TestEnv { ledger, address, validators, .. } =
-            crate::test_helpers::sample_test_env(rng);
-
-        // Advance the ledger to the reward limit height.
-        let supply_limit_height = CurrentNetwork::MAX_SUPPLY_LIMIT_HEIGHT;
-
-        // Advance until before the supply limit height.
-        while ledger.latest_height() + 1 < supply_limit_height {
-            let block = prepare_quorum_block(&ledger, &validators, vec![], vec![], rng).unwrap();
-            ledger.advance_to_next_block(&block).unwrap();
-
-            // Check that there exists rewards in the block.
-            assert!(!block.ratifications().is_empty());
-            let ratifications: Vec<_> = block.ratifications().iter().collect();
-            match ratifications[0] {
-                Ratify::BlockReward(block_reward) => {
-                    assert!(*block_reward > 0);
-                }
-                _ => panic!("Expected a block reward ratification"),
-            }
-        }
-
-        // Create one additional block at the supply limit height.
-        let next_block = prepare_quorum_block(&ledger, &validators, vec![], vec![], rng).unwrap();
-        ledger.advance_to_next_block(&next_block).unwrap();
-
-        // Check that the block and puzzle rewards are 0.
-        assert!(!next_block.ratifications().is_empty());
-        let ratifications: Vec<_> = next_block.ratifications().iter().collect();
-        match ratifications[0] {
-            Ratify::BlockReward(block_reward) => {
-                assert_eq!(*block_reward, 0);
-            }
-            _ => panic!("Expected a block reward ratification"),
-        }
-        match ratifications[1] {
-            Ratify::PuzzleReward(puzzle_reward) => {
-                assert_eq!(*puzzle_reward, 0);
-            }
-            _ => panic!("Expected a puzzle reward ratification"),
-        }
-
-        // Create another block with a valid solution that does not give any rewards.
-
-        // Retrieve the puzzle parameters.
-        let puzzle = ledger.puzzle();
-        let latest_epoch_hash = ledger.latest_epoch_hash().unwrap();
-        let minimum_proof_target = ledger.latest_proof_target();
-
-        // Create solutions that are greater than the minimum proof target.
-        let valid_solution = loop {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
-            if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
-                break solution;
-            }
-        };
-
-        // Create a block with the valid solution.
-        let next_block_with_solution =
-            prepare_quorum_block(&ledger, &validators, vec![valid_solution], vec![], rng).unwrap();
-        ledger.advance_to_next_block(&next_block_with_solution).unwrap();
-
-        // Check that the block and puzzle rewards are 0.
-        assert!(!next_block.ratifications().is_empty());
-        let ratifications: Vec<_> = next_block.ratifications().iter().collect();
-        match ratifications[0] {
-            Ratify::BlockReward(block_reward) => {
-                assert_eq!(*block_reward, 0);
-            }
-            _ => panic!("Expected a block reward ratification"),
-        }
-        match ratifications[1] {
-            Ratify::PuzzleReward(puzzle_reward) => {
-                assert_eq!(*puzzle_reward, 0);
-            }
-            _ => panic!("Expected a puzzle reward ratification"),
-        }
-
-        // Check that the solution was accepted.
-        assert_eq!(next_block_with_solution.solutions().len(), 1);
     }
 }
 

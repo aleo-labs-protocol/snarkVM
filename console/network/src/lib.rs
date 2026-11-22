@@ -129,7 +129,7 @@ pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::
 /// Explicitly configured or test consensus version heights, shared across networks.
 ///
 /// The `wasm` feature needs this static for its `get_or_init_consensus_version_heights` API.
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+#[cfg(any(test, feature = "test_consensus_heights", feature = "wasm"))]
 static CONSENSUS_VERSION_HEIGHTS: OnceLock<[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]> = OnceLock::new();
 
 /// This trait is sealed. Only snarkVM implements it.
@@ -176,12 +176,7 @@ pub trait Network:
     /// This value represents the absolute upper bound on all ALEO created over the lifetime of the network.
     const MAX_SUPPLY: u64 = 5_000_000_000_000_000; // 5B credits
     /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
-    #[cfg(not(feature = "test"))]
     const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 263_527_685;
-    /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
-    /// This is deliberately set to a low value for testing purposes only.
-    #[cfg(feature = "test")]
-    const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 5;
     /// The cost in microcredits per byte for the deployment transaction.
     const DEPLOYMENT_FEE_MULTIPLIER: u64 = 1_000; // 1 millicredit per byte
     /// The multiplier in microcredits for each command in the constructor.
@@ -244,12 +239,7 @@ pub trait Network:
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
     /// The number of blocks per epoch.
-    #[cfg(not(feature = "test"))]
     const NUM_BLOCKS_PER_EPOCH: u32 = 3600 / Self::BLOCK_TIME as u32; // 360 blocks == ~1 hour
-    /// The number of blocks per epoch.
-    /// This is deliberately set to a low value for testing purposes only.
-    #[cfg(feature = "test")]
-    const NUM_BLOCKS_PER_EPOCH: u32 = 10;
 
     /// The maximum number of entries in data.
     const MAX_DATA_ENTRIES: usize = 32;
@@ -364,7 +354,7 @@ pub trait Network:
 
     /// Returns the list of consensus versions.
     #[allow(non_snake_case)]
-    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
+    #[cfg(not(any(test, feature = "test_consensus_heights")))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
         // Explicit WebAssembly heights override the network defaults.
         #[cfg(feature = "wasm")]
@@ -376,14 +366,14 @@ pub trait Network:
     }
     /// Returns the list of test consensus versions.
     #[allow(non_snake_case)]
-    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
+    #[cfg(any(test, feature = "test_consensus_heights"))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
         CONSENSUS_VERSION_HEIGHTS.get_or_init(load_test_consensus_heights)
     }
 
     /// A set of incrementing consensus version heights used for tests.
     #[allow(non_snake_case)]
-    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
+    #[cfg(any(test, feature = "test_consensus_heights"))]
     const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] =
         TEST_CONSENSUS_VERSION_HEIGHTS;
     /// Returns the consensus version which is active at the given height.

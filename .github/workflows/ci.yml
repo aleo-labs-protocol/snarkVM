@@ -315,8 +315,8 @@ jobs:
               nextest run -p snarkvm-circuit-program
           # nextest runs no doctests. The `compile_fail` doctests check that
           # outside crates cannot implement the sealed traits. This entry is one
-          # workspace build, so it unifies `test` and `rocks`, which no doctest
-          # depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
+          # workspace build, so it unifies `test`, `rocks` and
+          # `test_consensus_heights`, which no doctest depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
           # of the RocksDB maps need `rocks`; the flag enables it even if no
           # dev-dependency does.
           - name: doctests
@@ -472,12 +472,12 @@ jobs:
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
           # Only this entry runs valid_solutions and the genesis tests that need
           # `dev_genesis_state_root`, so pull requests to staging do not.
-          # valid_solutions needs `test`, whose low proof targets let it find valid
-          # solutions. `dev_genesis_state_root` fixes the stored genesis state root.
-          # test_cumulative_proof_target_correctness is left out: it takes 150 s or 475 s from run to run.
+          # `test` selects valid_solutions, and `test_targets` lowers the proof targets
+          # so it can find valid solutions. `dev_genesis_state_root` fixes the stored
+          # genesis state root.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test --run-ignored all -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
+              nextest run -p snarkvm-ledger --features test,test_targets --run-ignored all -E test(/^tests::valid_solutions::/)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
               nextest run -p snarkvm-ledger --features dev_genesis_state_root,test -E test(test_load_dev_genesis_state_root)
@@ -558,8 +558,8 @@ jobs:
           # each constraint uses only declared variables.
           - name: integers-exhaustive
             runs: nextest run -p snarkvm-circuit-types-integers --run-ignored ignored-only
-          # `rocks` alone is the feature set nodes ship. `test` changes network
-          # constants and adds tests, so each set runs. Of the integration targets,
+          # `rocks` alone is the feature set nodes ship. `test` changes some rules
+          # and adds tests, so each set runs. Of the integration targets,
           # only test_vm_execute_and_finalize opens a RocksDB store.
           - name: synthesizer-rocks
             runs: |
