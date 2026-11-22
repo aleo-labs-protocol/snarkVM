@@ -31,7 +31,8 @@ test-old-consensus-versions = [ ]
 test-helpers = [ ]
 wasm = [ "snarkvm-console/wasm", "snarkvm-synthesizer-process/wasm" ]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
-test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
+# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [ "snarkvm-console/dev-network", "snarkvm-synthesizer-process/dev-network" ]
 
 [[bench]]
 name = "kary_merkle_tree"
@@ -152,7 +153,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem", "test-helpers", "test_consensus_heights" ]
+features = [ "filesystem", "test-helpers", "dev-network" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true

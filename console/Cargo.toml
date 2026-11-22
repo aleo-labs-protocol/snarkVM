@@ -50,8 +50,8 @@ filesystem = [ "snarkvm-console-network/filesystem" ]
 network = [ "collections", "dep:snarkvm-console-network" ]
 program = [ "network", "dep:snarkvm-console-program" ]
 types = [ "dep:snarkvm-console-types" ]
-test_targets = [ "snarkvm-console-network/test_targets" ]
-test_consensus_heights = [ "snarkvm-console-network/test_consensus_heights" ]
+# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [ "snarkvm-console-network/dev-network" ]
 dev_skip_checks = [ ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [

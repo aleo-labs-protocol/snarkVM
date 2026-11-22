@@ -271,7 +271,7 @@ jobs:
       - run: cargo locktick-clippy --workspace --all-targets --all-features -- -D warnings
 
   # `cargo test -p a -p b` unifies the features of a and b, and several crates
-  # enable `rocks` or `test_consensus_heights` on their dependencies,
+  # enable `rocks` or `dev-network` on their dependencies,
   # which changes what those dependencies compute. Crates share a command only
   # where that unification enables none of those features, nor `wasm` or
   # `large_params`, on any snarkvm crate. Helper features such as
@@ -316,7 +316,7 @@ jobs:
           # nextest runs no doctests. The `compile_fail` doctests check that
           # outside crates cannot implement the sealed traits. This entry is one
           # workspace build, so it unifies `rocks` and
-          # `test_consensus_heights`, which no doctest depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
+          # `dev-network`, which no doctest depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
           # of the RocksDB maps need `rocks`; the flag enables it even if no
           # dev-dependency does.
           - name: doctests
@@ -472,12 +472,12 @@ jobs:
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
           # Only this entry runs valid_solutions and the genesis tests that need
           # `dev_genesis_state_root`, so pull requests to staging do not.
-          # `test_targets` compiles valid_solutions and lowers the proof targets so it
+          # `dev-network` compiles valid_solutions and lowers the proof targets so it
           # can find valid solutions. `dev_genesis_state_root` fixes the stored
           # genesis state root.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test_targets --run-ignored all -E test(/^tests::valid_solutions::/)
+              nextest run -p snarkvm-ledger --features dev-network --run-ignored all -E test(/^tests::valid_solutions::/)
               nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
               nextest run -p snarkvm-ledger --features dev_genesis_state_root -E test(test_load_dev_genesis_state_root)
@@ -513,7 +513,7 @@ jobs:
   # side of a `cfg(not(feature = ...))` that a unified feature turns off.
   # `lint` builds `cuda` with `--all-features`. `no-embedded-srs` is a
   # `compile_error!` without `filesystem` or `wasm`. `dev_skip_checks` is a
-  # `compile_error!` without `test_consensus_heights`. Too slow for every pull
+  # `compile_error!` without `dev-network`. Too slow for every pull
   # request, so on the schedule, on a release branch, on pull requests to one,
   # and on demand.
   each-feature:

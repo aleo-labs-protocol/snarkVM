@@ -1950,7 +1950,8 @@ mod tests {
         // With V15, anchor_time = 35 instead of 25.
         // Verify that calling to_next_targets with V15 produces a different
         // coinbase target than V1 when timestamps cause retargeting.
-        let last_coinbase_target = CurrentNetwork::GENESIS_COINBASE_TARGET;
+        // Above every genesis coinbase target, so neither version is floored.
+        let last_coinbase_target = 1u64 << 32;
         let last_coinbase_timestamp = 0i64;
         let next_timestamp = 32i64; // 32 seconds — between 25s (V1 anchor time) and 35s (V15 anchor time)
 

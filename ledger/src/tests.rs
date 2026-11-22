@@ -175,6 +175,137 @@ fn test_check_next_block_rejects_a_beacon_block() {
 }
 
 #[test]
+fn test_prepare_beacon_block_with_timestamp_is_deterministic() -> Result<()> {
+    const SEED: u64 = 1_234_567;
+    // Block signing draws from the RNG, so both ledgers use RNGs with the same seed.
+    let rng_a = &mut TestRng::from_seed(SEED);
+    let rng_b = &mut TestRng::from_seed(SEED);
+    // Both ledgers start on the genesis fixture, which does not depend on the RNG passed here.
+    let crate::test_helpers::TestEnv { ledger: ledger_a, private_key, .. } =
+        crate::test_helpers::sample_test_env(rng_a);
+    let crate::test_helpers::TestEnv { ledger: ledger_b, .. } = crate::test_helpers::sample_test_env(rng_b);
+
+    for _ in 0..3 {
+        let timestamp = ledger_a.latest_timestamp() + CurrentNetwork::BLOCK_TIME as i64;
+        let block_a = ledger_a.prepare_advance_to_next_beacon_block_with_timestamp(
+            &private_key,
+            vec![],
+            vec![],
+            vec![],
+            timestamp,
+            rng_a,
+        )?;
+        let block_b = ledger_b.prepare_advance_to_next_beacon_block_with_timestamp(
+            &private_key,
+            vec![],
+            vec![],
+            vec![],
+            timestamp,
+            rng_b,
+        )?;
+        assert_eq!(block_a.timestamp(), timestamp);
+        assert_eq!(block_a.header().timestamp(), timestamp);
+        assert_eq!(block_a.hash(), block_b.hash());
+        assert_eq!(block_a.to_bytes_le()?, block_b.to_bytes_le()?);
+        ledger_a.advance_to_next_block(&block_a)?;
+        ledger_b.advance_to_next_block(&block_b)?;
+    }
+    assert_eq!(ledger_a.latest_height(), 3);
+    Ok(())
+}
+
+#[test]
+fn test_prepare_beacon_block_with_timestamp_rejects_out_of_range_timestamps() {
+    let rng = &mut TestRng::default();
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    let genesis = CurrentNetwork::GENESIS_TIMESTAMP;
+    let max = crate::advance::MAX_BEACON_BLOCK_TIMESTAMP;
+    for (timestamp, expected) in [
+        (i64::MIN, "is not after the genesis timestamp"),
+        (genesis - 1, "is not after the genesis timestamp"),
+        (genesis, "is not after the genesis timestamp"),
+        (max + 1, "is after the maximum timestamp"),
+        (i64::MAX, "is after the maximum timestamp"),
+    ] {
+        let result = ledger.prepare_advance_to_next_beacon_block_with_timestamp(
+            &private_key,
+            vec![],
+            vec![],
+            vec![],
+            timestamp,
+            rng,
+        );
+        let Err(error) = result else { panic!("timestamp {timestamp} was accepted") };
+        assert!(format!("{error:#}").contains(expected), "timestamp {timestamp}: {error:#}");
+    }
+    assert_eq!(ledger.latest_height(), 0);
+}
+
+#[test]
+fn test_prepare_beacon_block_with_timestamp_accepts_in_range_timestamps() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    // The ledger does not compare the timestamp to the wall clock.
+    let next_year = time::OffsetDateTime::now_utc().unix_timestamp() + 365 * 24 * 60 * 60;
+    for timestamp in [next_year, crate::advance::MAX_BEACON_BLOCK_TIMESTAMP] {
+        let block = ledger.prepare_advance_to_next_beacon_block_with_timestamp(
+            &private_key,
+            vec![],
+            vec![],
+            vec![],
+            timestamp,
+            rng,
+        )?;
+        assert_eq!(block.timestamp(), timestamp);
+        ledger.advance_to_next_block(&block)?;
+    }
+    assert_eq!(ledger.latest_height(), 2);
+    Ok(())
+}
+
+#[test]
+fn test_prepare_beacon_block_with_timestamp_checks_the_previous_timestamp() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+    let timestamp = ledger.latest_timestamp() + 100;
+    let block = ledger.prepare_advance_to_next_beacon_block_with_timestamp(
+        &private_key,
+        vec![],
+        vec![],
+        vec![],
+        timestamp,
+        rng,
+    )?;
+    ledger.advance_to_next_block(&block)?;
+
+    // A timestamp earlier than the previous block's timestamp is rejected.
+    let result = ledger.prepare_advance_to_next_beacon_block_with_timestamp(
+        &private_key,
+        vec![],
+        vec![],
+        vec![],
+        timestamp - 1,
+        rng,
+    );
+    let Err(error) = result else { panic!("timestamp {} was accepted", timestamp - 1) };
+    assert!(format!("{error:#}").contains("is earlier than the previous block's timestamp"), "{error:#}");
+
+    // A timestamp equal to the previous block's timestamp is accepted.
+    let block = ledger.prepare_advance_to_next_beacon_block_with_timestamp(
+        &private_key,
+        vec![],
+        vec![],
+        vec![],
+        timestamp,
+        rng,
+    )?;
+    ledger.advance_to_next_block(&block)?;
+    assert_eq!(ledger.latest_height(), 2);
+    assert_eq!(ledger.latest_timestamp(), timestamp);
+    Ok(())
+}
+
+#[test]
 fn test_get_block() {
     let rng = &mut TestRng::default();
 
@@ -2532,7 +2663,7 @@ function foo:
 }
 
 // At the production proof target these tests do not finish.
-#[cfg(feature = "test_targets")]
+#[cfg(feature = "dev-network")]
 mod valid_solutions {
     use super::*;
     use crate::is_solution_limit_reached::stake_requirements_per_solution;

@@ -129,7 +129,7 @@ pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::
 /// Explicitly configured or test consensus version heights, shared across networks.
 ///
 /// The `wasm` feature needs this static for its `get_or_init_consensus_version_heights` API.
-#[cfg(any(test, feature = "test_consensus_heights", feature = "wasm"))]
+#[cfg(any(test, feature = "dev-network", feature = "wasm"))]
 static CONSENSUS_VERSION_HEIGHTS: OnceLock<[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]> = OnceLock::new();
 
 /// This trait is sealed. Only snarkVM implements it.
@@ -354,7 +354,7 @@ pub trait Network:
 
     /// Returns the list of consensus versions.
     #[allow(non_snake_case)]
-    #[cfg(not(any(test, feature = "test_consensus_heights")))]
+    #[cfg(not(any(test, feature = "dev-network")))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
         // Explicit WebAssembly heights override the network defaults.
         #[cfg(feature = "wasm")]
@@ -366,14 +366,14 @@ pub trait Network:
     }
     /// Returns the list of test consensus versions.
     #[allow(non_snake_case)]
-    #[cfg(any(test, feature = "test_consensus_heights"))]
+    #[cfg(any(test, feature = "dev-network"))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
         CONSENSUS_VERSION_HEIGHTS.get_or_init(load_test_consensus_heights)
     }
 
     /// A set of incrementing consensus version heights used for tests.
     #[allow(non_snake_case)]
-    #[cfg(any(test, feature = "test_consensus_heights"))]
+    #[cfg(any(test, feature = "dev-network"))]
     const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] =
         TEST_CONSENSUS_VERSION_HEIGHTS;
     /// Returns the consensus version which is active at the given height.
