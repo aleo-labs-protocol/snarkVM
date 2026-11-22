@@ -278,7 +278,7 @@ jobs:
   # `test-helpers` can still be unified. Each command in an entry with a
   # different feature set rebuilds the snarkvm crates whose features change.
   # Commands with the same `-p` set and cargo flags share one build; nextest's
-  # `-E` and `-j` are not cargo flags.
+  # `-E`, `-j` and `--run-ignored` are not cargo flags.
   #
   # Cheap entries run on free hosted runners, the rest on the fleet.
   test:
@@ -488,14 +488,15 @@ jobs:
           # `dev_genesis_state_root`, so pull requests to staging do not.
           # `dev-network` compiles valid_solutions and lowers the proof targets so it
           # can find valid solutions. `dev_genesis_state_root` fixes the stored
-          # genesis state root.
+          # genesis state root. The second and last lines share one build, and
+          # their filters split its tests.
           - name: ledger-merge
             runs: |
               nextest run -p snarkvm-ledger --features dev-network --run-ignored all -E test(/^tests::valid_solutions::/)
-              nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
+              nextest run -p snarkvm-ledger-store -p snarkvm-ledger-block --run-ignored ignored-only -j 2 -E package(=snarkvm-ledger-store)
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
               nextest run -p snarkvm-ledger --features dev_genesis_state_root -E test(test_load_dev_genesis_state_root)
-              nextest run -p snarkvm-ledger-block -j 12
+              nextest run -p snarkvm-ledger-store -p snarkvm-ledger-block -j 12 -E package(=snarkvm-ledger-block)
           - name: parameters
             runs: nextest run -p snarkvm-parameters --features filesystem -j 2
           - name: parameters-uncached

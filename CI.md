@@ -54,7 +54,7 @@ rows.
 | `test (synthesizer)` | `cpu` | all | 90 | `snarkvm-synthesizer` lib and bins, the fast tier | `synthesizer` |
 | `test (synthesizer-process)` | `cpu` | all | 90 | `snarkvm-synthesizer-process`, then `-synthesizer-program`, and then `-circuit-program`, lib and bins, from one build | `synthesizer-process`, `synthesizer-program`, `circuit-program` |
 | `test-merge (ledger-rocks)` | `cpu` | merge | 90 | `snarkvm-ledger` with `rocks`, release | `ledger-with-rocksdb-partition1`, `ledger-with-rocksdb-partition2` |
-| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `dev-network`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block` | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
+| `test-merge (ledger-merge)` | `cpu` | merge | 90 | the `valid_solutions` tests of `snarkvm-ledger` with `dev-network`, ignored ones included; the ignored tests of `-ledger-store`; its genesis commitment and dev genesis state root tests with `dev_genesis_state_root`; the dev genesis state root test of `snarkvm-ledger` with the same features; `-ledger-block`, from the build of the ignored `-ledger-store` tests | `ledger-with-valid-solutions`, `ledger-with-valid-solutions-prerelease`, `ledger-store-prerelease`, `ledger-block` |
 | `test-merge (parameters)` | `cpu` | merge | 90 | `snarkvm-parameters` | `parameters` |
 | `test-merge (parameters-uncached)` | `cpu` | merge | 90 | the ignored tests of `snarkvm-parameters`, in an empty home directory | `parameters-uncached` |
 | `test-merge (synthesizer-test-1)`, `-2` | `cpu` | merge | 90 | one half each of the fast and slow tiers of the `snarkvm-synthesizer` lib and bins | `synthesizer-test-partition1`, `synthesizer-test-partition2` |
@@ -114,7 +114,8 @@ as snarkVM-internal, runs nothing.
 Each line of a `test`, `test-merge` or `test-release` entry's `runs` is one
 cargo command, and the entry runs its lines in order. Lines with the same `-p`
 set and cargo flags share one build, and nextest's `-E` filters split its tests
-between them, as in `test (ledger-store)` and `test (synthesizer-process)`.
+between them, as in `test (ledger-store)`, `test (synthesizer-process)` and
+`test-merge (ledger-merge)`.
 `cargo test -p a -p b` unifies the features of `a` and `b`, and several crates
 enable `rocks` or `dev-network` on their dependencies, which changes what those
 dependencies compute. So crates share a build only where that unification
