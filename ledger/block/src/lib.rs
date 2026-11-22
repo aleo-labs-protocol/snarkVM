@@ -696,7 +696,8 @@ pub mod test_helpers {
         if CurrentNetwork::CONSENSUS_VERSION_HEIGHTS() == &CurrentNetwork::_CONSENSUS_VERSION_HEIGHTS {
             Some(block.expect("a build without dev-network must decode the shipped genesis block"))
         } else {
-            assert!(block.is_err(), "a dev-network build must reject the shipped genesis block");
+            let error = block.expect_err("a dev-network build must reject the shipped genesis block").to_string();
+            assert!(error.contains("Invalid coinbase target for genesis block"), "{error}");
             None
         }
     }
