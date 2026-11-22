@@ -158,14 +158,14 @@ impl Network for TestnetV0 {
     type TransmissionChecksum = u128;
 
     /// The genesis block coinbase target.
-    #[cfg(not(feature = "test_targets"))]
+    #[cfg(not(feature = "dev-network"))]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
-    #[cfg(feature = "test_targets")]
+    #[cfg(feature = "dev-network")]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 5).saturating_sub(1);
     /// The genesis block proof target.
-    #[cfg(not(feature = "test_targets"))]
+    #[cfg(not(feature = "dev-network"))]
     const GENESIS_PROOF_TARGET: u64 = 1u64 << 27;
-    #[cfg(feature = "test_targets")]
+    #[cfg(feature = "dev-network")]
     const GENESIS_PROOF_TARGET: u64 = 1u64 << 3;
     /// The fixed timestamp of the genesis block.
     const GENESIS_TIMESTAMP: i64 = 1715776496 /* 2024-05-15 12:34:56 UTC */;
