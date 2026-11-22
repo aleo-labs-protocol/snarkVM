@@ -140,8 +140,9 @@ impl DatabaseEntry {
                         return Ok(None);
                     }
                     // Another thread is dropping the last handle. RocksDB's lock on the directory
-                    // prevents reopening the database until that handle has closed it.
-                    std::thread::yield_now();
+                    // prevents reopening the database until that handle has closed it, and a close
+                    // waits for RocksDB's background jobs, so poll without spinning.
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
             }
         }
