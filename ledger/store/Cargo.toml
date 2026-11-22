@@ -18,6 +18,7 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
+# Stores `Field::one()` as the state root at height 0; enabled through `snarkvm-ledger`'s `dev-network`.
 dev_genesis_state_root = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "dep:rocksdb", "dep:smallvec" ]

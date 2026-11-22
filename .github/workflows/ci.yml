@@ -488,18 +488,18 @@ jobs:
         include:
           - name: ledger-rocks
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
-          # Only this entry runs valid_solutions and the genesis tests that need
-          # `dev_genesis_state_root`, so pull requests to staging do not.
-          # `dev-network` compiles valid_solutions and lowers the proof targets so it
-          # can find valid solutions. `dev_genesis_state_root` fixes the stored
-          # genesis state root. The second and last lines share one build, and
-          # their filters split its tests.
+          # Only this entry runs valid_solutions and the genesis state root tests,
+          # so pull requests to staging do not. `dev-network` compiles
+          # valid_solutions, lowers the proof targets so it can find valid
+          # solutions, and fixes the stored genesis state root. The store's
+          # `dev_genesis_state_root` is the part of `dev-network` that fixes it.
+          # The second and last lines share one build, and their filters split
+          # its tests.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features dev-network --run-ignored all -E test(/^tests::valid_solutions::/)
+              nextest run -p snarkvm-ledger --features dev-network --run-ignored all -E test(/^tests::valid_solutions::/)|test(test_load_dev_genesis_state_root)
               nextest run -p snarkvm-ledger-store -p snarkvm-ledger-block --run-ignored ignored-only -j 2 -E package(=snarkvm-ledger-store)
               nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
-              nextest run -p snarkvm-ledger --features dev_genesis_state_root -E test(test_load_dev_genesis_state_root)
               nextest run -p snarkvm-ledger-store -p snarkvm-ledger-block -j 12 -E package(=snarkvm-ledger-block)
           # `--lib --tests` leaves out the examples. `lint` checks that they
           # compile.

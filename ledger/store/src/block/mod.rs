@@ -1089,8 +1089,8 @@ pub trait BlockStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Se
 /// height 0, so spending a genesis record fails with `global state root does not exist (yet)`
 /// until block 1 stores the tree root.
 /// Never enable this feature on a real network. Start the ledger from genesis with the feature
-/// already on. Turning it on or off against an existing store fails the state-root check in
-/// `Ledger::load`.
+/// already on. Turning it on or off against a store still at height 0 fails the state-root check
+/// in `Ledger::load`.
 #[cfg_attr(not(feature = "dev_genesis_state_root"), allow(unused_variables))]
 fn stored_state_root<N: Network>(block_height: u32, root: Field<N>) -> N::StateRoot {
     #[cfg(feature = "dev_genesis_state_root")]

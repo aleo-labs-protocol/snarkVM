@@ -148,11 +148,16 @@ dev_skip_checks = [
   "snarkvm-console/dev_skip_checks",
   "snarkvm-synthesizer/dev_skip_checks"
 ]
-dev-committee = [ "snarkvm-ledger/dev-committee" ]
-dev_genesis_state_root = [ "snarkvm-ledger/dev_genesis_state_root" ]
+# Adds `Ledger::load_with_dev_committee`, which replaces the round-based committee lookups with a deterministic committee from a start round, to extend a copied ledger with blocks it signs; inert unless that loader or its unchecked variant is called.
+# The caller must also relax its own block checks; combined with `dev-network` it cannot load a production ledger, whose genesis that feature rejects. Never enable it to join a public network.
+dev-committee-override = [ "snarkvm-ledger/dev-committee-override" ]
 save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
-# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
-dev-network = [ "snarkvm-console/dev-network", "snarkvm-synthesizer?/dev-network" ]
+# Lowers network parameters (consensus heights, genesis targets) and fixes the genesis state root to `Field::one()` for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [
+  "snarkvm-console/dev-network",
+  "snarkvm-ledger?/dev-network",
+  "snarkvm-synthesizer?/dev-network"
+]
 
 [workspace.dependencies.snarkvm-algorithms]
 path = "algorithms"

@@ -81,8 +81,12 @@ async = [
   "snarkvm-synthesizer/async"
 ]
 metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
-# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
-dev-network = [ "snarkvm-console/dev-network", "snarkvm-synthesizer/dev-network" ]
+# Lowers network parameters (consensus heights, genesis targets) and fixes the genesis state root to `Field::one()` for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [
+  "snarkvm-console/dev-network",
+  "snarkvm-ledger-store/dev_genesis_state_root",
+  "snarkvm-synthesizer/dev-network"
+]
 rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
 # Helpers for tests. They are not part of the API, and semver does not cover them.
 # Keep the [dev-dependencies] in sync with this list: the unit tests build `test_helpers` through
@@ -94,8 +98,9 @@ test-helpers = [
   "dep:snarkvm-circuit",
   "snarkvm-console/test-helpers"
 ]
-dev-committee = []
-dev_genesis_state_root = [ "snarkvm-ledger-store/dev_genesis_state_root" ]
+# Adds `Ledger::load_with_dev_committee`, which replaces the round-based committee lookups with a deterministic committee from a start round, to extend a copied ledger with blocks it signs; inert unless that loader or its unchecked variant is called.
+# The caller must also relax its own block checks; combined with `dev-network` it cannot load a production ledger, whose genesis that feature rejects. Never enable it to join a public network.
+dev-committee-override = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true
