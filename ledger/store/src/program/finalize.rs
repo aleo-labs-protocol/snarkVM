@@ -653,13 +653,16 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.archival.store(enabled, Ordering::SeqCst);
     }
 
-    /// Configures program history recording and returns any coverage warning.
-    pub fn configure_history(&self, programs: Vec<ProgramID<N>>, archival: bool) -> Result<Option<String>> {
+    /// Configures program history recording and reports a warning and whether coverage shrinks.
+    pub fn configure_history(&self, programs: Vec<ProgramID<N>>, archival: bool) -> Result<(Option<String>, bool)> {
         let selected: Vec<_> =
-            if archival { Vec::new() } else { programs.iter().copied().collect::<IndexSet<_>>().into_iter().collect() };
+            if archival { Vec::new() } else { programs.into_iter().collect::<IndexSet<_>>().into_iter().collect() };
+        let mut coverage_dropped = false;
         let warning = if let Some(metadata) =
             self.storage.history_metadata_map().get_confirmed(&HISTORY_METADATA_KEY)?
         {
+            coverage_dropped =
+                !archival && (metadata.0 || metadata.1.iter().any(|program| !selected.contains(program)));
             let changed = metadata.0 != archival
                 || metadata.1.len() != selected.len()
                 || !metadata.1.iter().all(|program| selected.contains(program));
@@ -702,7 +705,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         };
         self.set_history_programs(selected);
         self.set_archival(archival);
-        Ok(warning)
+        Ok((warning, coverage_dropped))
     }
 
     /// Copies confirmed state into history before the next block is imported.
@@ -1086,7 +1089,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         height: u32,
     ) -> Result<bool> {
         let Some((start, _)) = self.get_program_history_range(&program, height)? else {
-            return Ok(false);
+            bail!("Program history for '{program}' is unavailable at block {height}");
         };
         Ok(self
             .mapping_history_at_height(program, start.to_be_bytes(), mapping, height)?
@@ -2355,7 +2358,7 @@ mod tests {
         assert_eq!(finalize_store.get_program_history_range(&program_id, 12).unwrap(), None);
         assert_eq!(finalize_store.get_program_history_range(&program_id, 15).unwrap(), Some((resumed_start, 24)));
         assert_eq!(finalize_store.get_program_history_ranges(&program_id).unwrap(), vec![(0, 9), (resumed_start, 24)]);
-        assert!(!finalize_store.contains_mapping_at_height(program_id, mappings[0].1, 12).unwrap());
+        assert!(finalize_store.contains_mapping_at_height(program_id, mappings[0].1, 12).is_err());
         assert!(finalize_store.get_value_at_height(program_id, mappings[0].1, &keys[0], 12).is_err());
 
         // The new range starts with a baseline of the state that existed when recording resumed.
@@ -2394,12 +2397,33 @@ mod tests {
 
         let reopened = FinalizeStore::from(finalize_store.storage.clone())?;
         let warning = reopened.configure_history(Vec::new(), false)?;
-        assert!(warning.as_deref().is_some_and(|message| message.contains("New coverage: off")));
+        assert!(warning.0.as_deref().is_some_and(|message| message.contains("New coverage: off")));
+        assert!(warning.1);
         reopened.start_atomic();
         reopened.record_program_history(1)?;
         reopened.finish_atomic()?;
         assert_eq!(reopened.get_program_history_range(&program_id, 0)?, Some((0, 0)));
         assert_eq!(reopened.get_program_history_range(&program_id, 1)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_history_configuration_reports_coverage_drop() -> Result<()> {
+        let finalize_store = sample_memory_finalize_store();
+        let first = ProgramID::from_str("first.aleo")?;
+        let second = ProgramID::from_str("second.aleo")?;
+        assert!(!finalize_store.configure_history(vec![first], false)?.1);
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        assert!(!finalize_store.configure_history(vec![first, second], false)?.1);
+        assert!(finalize_store.configure_history(vec![second], false)?.1);
+        assert!(!finalize_store.configure_history(Vec::new(), true)?.1);
+        finalize_store.start_atomic();
+        finalize_store.record_program_history(1)?;
+        finalize_store.finish_atomic()?;
+        assert!(finalize_store.configure_history(vec![second], false)?.1);
         Ok(())
     }
 
@@ -2415,7 +2439,8 @@ mod tests {
 
         let reopened = FinalizeStore::from(finalize_store.storage.clone())?;
         let warning = reopened.configure_history(Vec::new(), false)?;
-        assert!(warning.as_deref().is_some_and(|message| message.contains("New coverage: off")));
+        assert!(warning.0.as_deref().is_some_and(|message| message.contains("New coverage: off")));
+        assert!(warning.1);
         reopened.start_atomic();
         reopened.record_program_history(1)?;
         reopened.finish_atomic()?;

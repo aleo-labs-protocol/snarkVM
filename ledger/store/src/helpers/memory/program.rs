@@ -107,10 +107,25 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         &self.key_value_map
     }
 
-    fn program_history_map(&self) -> &Self::ProgramHistoryMap { &self.program_history_map }
-    fn mapping_history_map(&self) -> &Self::MappingHistoryMap { &self.mapping_history_map }
-    fn key_history_map(&self) -> &Self::KeyHistoryMap { &self.key_history_map }
-    fn history_metadata_map(&self) -> &Self::HistoryMetadataMap { &self.history_metadata_map }
+    /// Returns the program history map.
+    fn program_history_map(&self) -> &Self::ProgramHistoryMap {
+        &self.program_history_map
+    }
+
+    /// Returns the mapping history map.
+    fn mapping_history_map(&self) -> &Self::MappingHistoryMap {
+        &self.mapping_history_map
+    }
+
+    /// Returns the key history map.
+    fn key_history_map(&self) -> &Self::KeyHistoryMap {
+        &self.key_history_map
+    }
+
+    /// Returns the history metadata map.
+    fn history_metadata_map(&self) -> &Self::HistoryMetadataMap {
+        &self.history_metadata_map
+    }
 
     /// Returns the rejection reason map.
     fn rejected_reason_map(&self) -> &Self::RejectedReasonMap {
