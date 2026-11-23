@@ -103,7 +103,10 @@ cancelled, and it waits for the scheduled run before it to end.
 `CI_SLACK_CHANNEL` variable, `#ci` by default. It posts only when the run turns
 red, and once when it turns green again. A run that `schedule-due` skips posts
 nothing. Its token, `CI_SLACK_TOKEN`, is a secret of the `ci-notify`
-environment, which admits only `staging`.
+environment, which admits only `staging`. The nightly run of
+[`bump-advisories.yml`](.github/workflows/bump-advisories.yml) has a `notify`
+job of its own, which posts when that run fails, and once when it passes again.
+Each workflow keeps its own state.
 
 The schedule fires on the default branch of every copy of this repository.
 `schedule-due` and `notify` run only in this repository, and every other job
