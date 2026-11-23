@@ -151,53 +151,44 @@ fn check_serialize<const VARIANT: u8>(
         let mut finalize_registers = sample_finalize_registers(&stack, &function_name, &[plaintext]).unwrap();
         let result_c = operation.finalize(&stack, None, &mut finalize_registers);
 
-        // Check that either all operations failed, or all operations succeeded.
+        // The input is a valid plaintext, so all operations must succeed.
         // Execution only succeeds if its circuit is also satisfied.
         let eval_is_ok = result_a.is_ok();
         let exec_is_ok = result_b.is_ok() && <CurrentAleo as circuit::Environment>::is_satisfied();
         let finalize_is_ok = result_c.is_ok();
-        let all_failed = !eval_is_ok && !exec_is_ok && !finalize_is_ok;
-        let all_succeeded = eval_is_ok && exec_is_ok && finalize_is_ok;
         assert!(
-            all_failed || all_succeeded,
-            "The results of the evaluation ({eval_is_ok}), execution ({exec_is_ok}), and finalization ({finalize_is_ok}) should either all succeed or all fail"
+            eval_is_ok && exec_is_ok && finalize_is_ok,
+            "The evaluation ({eval_is_ok}), execution ({exec_is_ok}), and finalization ({finalize_is_ok}) should all succeed"
         );
 
-        // If all operations succeeded, check that the outputs are consistent.
-        if all_succeeded {
-            // Retrieve the output of evaluation.
-            let output_a = evaluate_registers.load(&stack, &destination_operand).unwrap();
+        // Retrieve the output of evaluation.
+        let output_a = evaluate_registers.load(&stack, &destination_operand).unwrap();
 
-            // Retrieve the output of execution.
-            let output_b = execute_registers.load_circuit(&stack, &destination_operand).unwrap();
+        // Retrieve the output of execution.
+        let output_b = execute_registers.load_circuit(&stack, &destination_operand).unwrap();
 
-            // Retrieve the output of finalization.
-            let output_c = finalize_registers.load(&stack, &destination_operand).unwrap();
+        // Retrieve the output of finalization.
+        let output_c = finalize_registers.load(&stack, &destination_operand).unwrap();
 
-            // Check that the outputs are consistent.
-            assert_eq!(
-                output_a,
-                output_b.eject_value(),
-                "The results of the evaluation and execution are inconsistent"
-            );
-            assert_eq!(output_a, output_c, "The results of the evaluation and finalization are inconsistent");
+        // Check that the outputs are consistent.
+        assert_eq!(output_a, output_b.eject_value(), "The results of the evaluation and execution are inconsistent");
+        assert_eq!(output_a, output_c, "The results of the evaluation and finalization are inconsistent");
 
-            // Check that the output type is consistent with the declared type.
-            match output_a {
-                Value::Plaintext(plaintext) => {
-                    // Check that the plaintext is a bit array.
-                    let Ok(bit_array) = plaintext.as_bit_array() else {
-                        panic!("The output type is inconsistent with the declared type");
-                    };
-                    // Check that the lengths match.
-                    assert_eq!(
-                        bit_array.len(),
-                        size_in_bits as usize,
-                        "The output type is inconsistent with the declared type"
-                    );
-                }
-                _ => unreachable!("The output type is inconsistent with the declared type"),
+        // Check that the output type is consistent with the declared type.
+        match output_a {
+            Value::Plaintext(plaintext) => {
+                // Check that the plaintext is a bit array.
+                let Ok(bit_array) = plaintext.as_bit_array() else {
+                    panic!("The output type is inconsistent with the declared type");
+                };
+                // Check that the lengths match.
+                assert_eq!(
+                    bit_array.len(),
+                    size_in_bits as usize,
+                    "The output type is inconsistent with the declared type"
+                );
             }
+            _ => unreachable!("The output type is inconsistent with the declared type"),
         }
         // Reset the circuit.
         <CurrentAleo as circuit::Environment>::reset();
