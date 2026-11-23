@@ -381,7 +381,7 @@ impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {
 
 impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {
     /// Returns an iterator over the execution transaction IDs, for all executions.
-    pub fn execution_transaction_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, N::TransactionID>> {
+    pub(crate) fn execution_transaction_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, N::TransactionID>> {
         self.storage.id_map().keys_confirmed()
     }
 }

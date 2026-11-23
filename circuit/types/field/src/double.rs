@@ -23,25 +23,6 @@ impl<E: Environment> Double for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Double<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn count(_parameter: &Self::Case) -> Count {
-        Count::is(0, 0, 0, 0)
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Double<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(input: &Self::Case) -> Mode {
-        match input.is_constant() {
-            true => Mode::Constant,
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,8 +39,7 @@ mod tests {
             Circuit::scope(name, || {
                 let result = candidate.double();
                 assert_eq!(given.double(), result.eject_value());
-                assert_count!(Double(Field) => Field, &mode);
-                assert_output_mode!(Double(Field) => Field, &mode, result);
+                assert_scope!();
             });
         }
     }

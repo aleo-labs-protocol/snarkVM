@@ -98,7 +98,7 @@ impl<N: Network> Trace<N> {
 
 impl<N: Network> Trace<N> {
     /// Inserts the transition into the trace.
-    pub fn insert_transition(
+    pub(crate) fn insert_transition(
         &mut self,
         input_ids: &[InputID<N>],
         transition: &Transition<N>,
@@ -306,7 +306,7 @@ impl<N: Network> Trace<N> {
         verifier_inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         execution: &Execution<N>,
     ) -> Result<()> {
-        if cfg!(all(feature = "dev_skip_checks", feature = "test_consensus_heights")) {
+        if cfg!(all(feature = "dev_skip_checks", feature = "dev-network")) {
             return Ok(());
         }
         // Retrieve the global state root.
@@ -340,7 +340,7 @@ impl<N: Network> Trace<N> {
         verifier_inputs: (VerifyingKey<N>, Vec<Vec<N::Field>>),
         fee: &Fee<N>,
     ) -> Result<()> {
-        if cfg!(all(feature = "dev_skip_checks", feature = "test_consensus_heights")) {
+        if cfg!(all(feature = "dev_skip_checks", feature = "dev-network")) {
             return Ok(());
         }
         // Retrieve the global state root.
@@ -369,6 +369,9 @@ impl<N: Network> Trace<N> {
 
 impl<N: Network> Trace<N> {
     /// Returns the global state root and proof for the given assignments.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     pub fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         locator: &str,
         varuna_version: VarunaVersion,

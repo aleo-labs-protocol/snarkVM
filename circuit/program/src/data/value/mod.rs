@@ -24,6 +24,9 @@ use crate::{Access, DynamicFuture, DynamicRecord, Entry, Future, Plaintext, Reco
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 
+/// Minor releases add variants to this enum, and snarkVM does not treat this as a breaking change.
+/// An exhaustive match must be updated for each new variant, so that each new variant is handled
+/// explicitly.
 #[derive(Clone)]
 pub enum Value<A: Aleo> {
     /// A plaintext value.

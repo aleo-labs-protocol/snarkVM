@@ -1,0 +1,121 @@
+# Circuit shape of `ternary` for each operand mode and a fixed set of scalars.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-scalar --test snapshots
+boolean.constant scalar.constant scalar.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | true 0 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | true 1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | true 2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | true (r-1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | true (r+1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | true -2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.public | true -1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | true 0 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | true 1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | true 2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | true (r-1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | true (r+1)/2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | true -2 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.constant scalar.private | true -1 _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | true _ 0 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | true _ 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | true _ 2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | true _ (r-1)/2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | true _ (r+1)/2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | true _ -2 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.constant | true _ -1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.public scalar.private | false _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.public scalar.private | true _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | true _ 0 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | true _ 1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | true _ 2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | true _ (r-1)/2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | true _ (r+1)/2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | true _ -2 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.constant | true _ -1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.public | false _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant scalar.private scalar.public | true _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant scalar.private scalar.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public scalar.constant scalar.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public scalar.constant scalar.constant | _ 0 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.public scalar.constant scalar.constant | _ 1 0 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.public scalar.constant scalar.constant | _ 1 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.public scalar.constant scalar.public | _ 0 _ : 0 0 1 1 1/1/2 private e884ebb5ebf8c666
+boolean.public scalar.constant scalar.public | _ 1 _ : 0 0 1 1 2/1/2 private d4169c49667a7912
+boolean.public scalar.constant scalar.public | _ 2 _ : 0 0 1 1 2/1/2 private 819da068f7d82d7a
+boolean.public scalar.constant scalar.public | _ (r-1)/2 _ : 0 0 1 1 2/1/2 private 5ece086489b59340
+boolean.public scalar.constant scalar.public | _ (r+1)/2 _ : 0 0 1 1 2/1/2 private 62dc145c81cd12dd
+boolean.public scalar.constant scalar.public | _ -2 _ : 0 0 1 1 2/1/2 private dd5f110a52faa203
+boolean.public scalar.constant scalar.public | _ -1 _ : 0 0 1 1 2/1/2 private 43a6c4b7cecf77ec
+boolean.public scalar.constant scalar.private | _ 0 _ : 0 0 1 1 1/1/2 private feb53a0b8c3b5aba
+boolean.public scalar.constant scalar.private | _ 1 _ : 0 0 1 1 2/1/2 private f72f45e2a2920314
+boolean.public scalar.constant scalar.private | _ 2 _ : 0 0 1 1 2/1/2 private 138619616c344bfe
+boolean.public scalar.constant scalar.private | _ (r-1)/2 _ : 0 0 1 1 2/1/2 private a7c008fe195053c0
+boolean.public scalar.constant scalar.private | _ (r+1)/2 _ : 0 0 1 1 2/1/2 private 205df9be5ec03374
+boolean.public scalar.constant scalar.private | _ -2 _ : 0 0 1 1 2/1/2 private 8dcf36d2c3e10fec
+boolean.public scalar.constant scalar.private | _ -1 _ : 0 0 1 1 2/1/2 private 81a426a5054f8e23
+boolean.public scalar.public scalar.constant | _ _ 0 : 0 0 1 1 1/1/1 private 19043827acbbf6ad
+boolean.public scalar.public scalar.constant | _ _ 1 : 0 0 1 1 2/1/2 private df54a4e22c44cd01
+boolean.public scalar.public scalar.constant | _ _ 2 : 0 0 1 1 2/1/2 private f7cc95877d50b81a
+boolean.public scalar.public scalar.constant | _ _ (r-1)/2 : 0 0 1 1 2/1/2 private fd059b9aca156c36
+boolean.public scalar.public scalar.constant | _ _ (r+1)/2 : 0 0 1 1 2/1/2 private a0d637cf460d463a
+boolean.public scalar.public scalar.constant | _ _ -2 : 0 0 1 1 2/1/2 private e1769f7703c396ff
+boolean.public scalar.public scalar.constant | _ _ -1 : 0 0 1 1 2/1/2 private af2551b79c4394e5
+boolean.public scalar.public scalar.public | _ _ _ : 0 0 1 1 2/1/2 private cbf2ccf1d5b54126
+boolean.public scalar.public scalar.private | _ _ _ : 0 0 1 1 2/1/2 private 47f4c64fea988776
+boolean.public scalar.private scalar.constant | _ _ 0 : 0 0 1 1 1/1/1 private 8dcf3791937be92b
+boolean.public scalar.private scalar.constant | _ _ 1 : 0 0 1 1 2/1/2 private 5a642a4fd9af26d0
+boolean.public scalar.private scalar.constant | _ _ 2 : 0 0 1 1 2/1/2 private 1424091f14547168
+boolean.public scalar.private scalar.constant | _ _ (r-1)/2 : 0 0 1 1 2/1/2 private f60471604e368164
+boolean.public scalar.private scalar.constant | _ _ (r+1)/2 : 0 0 1 1 2/1/2 private 6fa08341f1f65e5d
+boolean.public scalar.private scalar.constant | _ _ -2 : 0 0 1 1 2/1/2 private b5a2fcc8cb00db6d
+boolean.public scalar.private scalar.constant | _ _ -1 : 0 0 1 1 2/1/2 private 989fc596a35118c1
+boolean.public scalar.private scalar.public | _ _ _ : 0 0 1 1 2/1/2 private a3895e3a3d36cfa0
+boolean.public scalar.private scalar.private | _ _ _ : 0 0 1 1 2/1/2 private 110f9e7b2bf8848c
+boolean.private scalar.constant scalar.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.private scalar.constant scalar.constant | _ 0 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.private scalar.constant scalar.constant | _ 1 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.private scalar.constant scalar.public | _ 0 _ : 0 0 1 1 1/1/2 private 18bd6482689c1ee3
+boolean.private scalar.constant scalar.public | _ 1 _ : 0 0 1 1 2/1/2 private ad75fbff802d5e98
+boolean.private scalar.constant scalar.public | _ 2 _ : 0 0 1 1 2/1/2 private 8851681b1023aed0
+boolean.private scalar.constant scalar.public | _ (r-1)/2 _ : 0 0 1 1 2/1/2 private a97fb60b90da5df4
+boolean.private scalar.constant scalar.public | _ (r+1)/2 _ : 0 0 1 1 2/1/2 private 48f58af2c59ab7e6
+boolean.private scalar.constant scalar.public | _ -2 _ : 0 0 1 1 2/1/2 private ed75d18709a71402
+boolean.private scalar.constant scalar.public | _ -1 _ : 0 0 1 1 2/1/2 private 99f938c4243f44fc
+boolean.private scalar.constant scalar.private | _ 0 _ : 0 0 1 1 1/1/2 private 6fdf52c987945c7f
+boolean.private scalar.constant scalar.private | _ 1 _ : 0 0 1 1 2/1/2 private fab8dddeeba0727c
+boolean.private scalar.constant scalar.private | _ 2 _ : 0 0 1 1 2/1/2 private 1f33bd4a4f0ad96c
+boolean.private scalar.constant scalar.private | _ (r-1)/2 _ : 0 0 1 1 2/1/2 private dc8b78c12866de07
+boolean.private scalar.constant scalar.private | _ (r+1)/2 _ : 0 0 1 1 2/1/2 private 9ec9befd6ba4ed0e
+boolean.private scalar.constant scalar.private | _ -2 _ : 0 0 1 1 2/1/2 private 144ec92259bc629c
+boolean.private scalar.constant scalar.private | _ -1 _ : 0 0 1 1 2/1/2 private 73dfd0c76285e99f
+boolean.private scalar.public scalar.constant | _ _ 0 : 0 0 1 1 1/1/1 private 5ba0717a0e169dc8
+boolean.private scalar.public scalar.constant | _ _ 1 : 0 0 1 1 2/1/2 private 934a8cdf899d75e5
+boolean.private scalar.public scalar.constant | _ _ 2 : 0 0 1 1 2/1/2 private d61840a8318feb4e
+boolean.private scalar.public scalar.constant | _ _ (r-1)/2 : 0 0 1 1 2/1/2 private 1aea94816c005a05
+boolean.private scalar.public scalar.constant | _ _ (r+1)/2 : 0 0 1 1 2/1/2 private a250bbdb87a66cf9
+boolean.private scalar.public scalar.constant | _ _ -2 : 0 0 1 1 2/1/2 private 827864b0483368e4
+boolean.private scalar.public scalar.constant | _ _ -1 : 0 0 1 1 2/1/2 private cdbffec20f9b2147
+boolean.private scalar.public scalar.public | _ _ _ : 0 0 1 1 2/1/2 private f4934d8584f11ca8
+boolean.private scalar.public scalar.private | _ _ _ : 0 0 1 1 2/1/2 private acf43cc8a6fe7d2c
+boolean.private scalar.private scalar.constant | _ _ 0 : 0 0 1 1 1/1/1 private c93eba45710e28bc
+boolean.private scalar.private scalar.constant | _ _ 1 : 0 0 1 1 2/1/2 private ab131f1875defc00
+boolean.private scalar.private scalar.constant | _ _ 2 : 0 0 1 1 2/1/2 private fc6eb256ffccb254
+boolean.private scalar.private scalar.constant | _ _ (r-1)/2 : 0 0 1 1 2/1/2 private 3488df3efe8db6cf
+boolean.private scalar.private scalar.constant | _ _ (r+1)/2 : 0 0 1 1 2/1/2 private 4a777be6805ba8a0
+boolean.private scalar.private scalar.constant | _ _ -2 : 0 0 1 1 2/1/2 private ab2352caa06755f4
+boolean.private scalar.private scalar.constant | _ _ -1 : 0 0 1 1 2/1/2 private cb8b4ac87349c798
+boolean.private scalar.private scalar.public | _ _ _ : 0 0 1 1 2/1/2 private 3e4ea9e6df41f958
+boolean.private scalar.private scalar.private | _ _ _ : 0 0 1 1 2/1/2 private 1af2f336e15fd99e

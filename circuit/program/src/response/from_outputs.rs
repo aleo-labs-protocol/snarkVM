@@ -294,6 +294,10 @@ mod tests {
     ) -> Result<()> {
         use console::Network;
 
+        // Initialize the thread-local global constants before the first scope, so that no iteration counts them.
+        Circuit::initialize_global_constants();
+        Circuit::reset();
+
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
@@ -422,27 +426,29 @@ mod tests {
     // Note: These counts are correct. At this (high) level of a program, we override the default mode in many cases,
     // based on the user-defined visibility in the types. Thus, we have nonzero public, private, and constraint values.
 
-    // TODO: Explain why the first runs of the tests for `Public` and `Private` modes yield a large number of constants
-
     #[test]
     #[rustfmt::skip]
     fn test_from_outputs_constant() -> Result<()> {
+        // With records, the encryption multiplies `G` and the owner by a constant randomizer derived from `tvk`. The
+        // multiplication of `G` folds the trailing zero bits of the randomizer, and the multiplication of the owner
+        // folds its leading zero bits. So the constant, private and constraint counts are upper bounds. A count reaches
+        // its bound when the randomizer is odd and has bit 249 set.
+
         // Static response without records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19397, 4, 1497, 1505))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1011, 4, 1497, 1505))?; 
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, false, count_is!(846, 4, 1497, 1505))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 1497, 1505))?;
 
         // Static response with records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(19445, 7, 13274, 13300))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(5176, 7, 13376, 13402))?;
-
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, true, count_is!(<=5079, 7, <=13274, <=13300))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_is!(<=5172, 7, <=13376, <=13402))?;
 
         // Dynamic response without records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, false, count_less_than!(713, 4, 6571, 6585))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_less_than!(713, 4, 6571, 6585))?;
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, false, count_is!(705, 4, 5432, 5446))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_is!(707, 4, 5637, 5651))?;
 
         // Dynamic response with records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, true, count_less_than!(4848, 7, 19481, 19517))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_less_than!(4716, 7, 19653, 19689))?;
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", true, true, count_is!(<=4840, 7, <=17332, <=17364))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_is!(<=4710, 7, <=17709, <=17741))?;
 
         Ok(())
     }
@@ -451,11 +457,11 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_outputs_public() -> Result<()> {
         // Static response without records.
-        check_from_outputs(Mode::Public, "test.aleo", "foo", false, false, count_is!(<=19397, 4, 3762, 3770))?;
+        check_from_outputs(Mode::Public, "test.aleo", "foo", false, false, count_is!(846, 4, 3762, 3770))?;
         check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 3762, 3770))?;
 
         // Static response with records.
-        check_from_outputs(Mode::Public, "test.aleo", "foo", false, true, count_is!(<=18692, 7, 18057, 18085))?;
+        check_from_outputs(Mode::Public, "test.aleo", "foo", false, true, count_is!(4326, 7, 18057, 18085))?;
         check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4419, 7, 18159, 18187))?;
 
         // Dynamic response without records.
@@ -473,11 +479,11 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_outputs_private() -> Result<()> {
         // Static response without records.
-        check_from_outputs(Mode::Private, "test.aleo", "foo", false, false, count_is!(<=19397, 4, 3762, 3770))?;
+        check_from_outputs(Mode::Private, "test.aleo", "foo", false, false, count_is!(846, 4, 3762, 3770))?;
         check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 3762, 3770))?;
 
         // Static response with records.
-        check_from_outputs(Mode::Private, "test.aleo", "foo", false, true, count_is!(<=18692, 7, 18057, 18085))?;
+        check_from_outputs(Mode::Private, "test.aleo", "foo", false, true, count_is!(4326, 7, 18057, 18085))?;
         check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4419, 7, 18159, 18187))?;
 
         // Dynamic response without records.

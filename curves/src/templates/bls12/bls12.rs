@@ -70,6 +70,12 @@ pub trait Bls12Parameters:
     fn g2_is_in_correct_subgroup(p: &short_weierstrass_jacobian::Affine<Self::G1Parameters>) -> bool {
         p.mul_bits(BitIteratorBE::new(<Self::G1Parameters as ModelParameters>::ScalarField::characteristic())).is_zero()
     }
+
+    /// Returns the value of the loop of `miller_loop` over `pairs`, before its final conjugation.
+    #[doc(hidden)]
+    fn miller_loop_fp12(pairs: &[(&G1Prepared<Self>, &G2Prepared<Self>)]) -> Fp12<Self::Fp12Params> {
+        Bls12::<Self>::miller_loop_scalar(pairs)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -98,6 +104,33 @@ impl<P: Bls12Parameters> Bls12<P> {
         }
     }
 
+    /// Returns the value of the loop of `miller_loop` over `pairs`, before its final conjugation, by
+    /// the scalar path, without `Bls12Parameters::miller_loop_fp12`.
+    #[doc(hidden)]
+    pub fn miller_loop_scalar(pairs: &[(&G1Prepared<P>, &G2Prepared<P>)]) -> Fp12<P::Fp12Params> {
+        let mut pairs: Vec<_> = pairs.iter().map(|(p, q)| (*p, q.ell_coeffs.iter())).collect();
+
+        let mut f = Fp12::one();
+
+        // `prepare` gives a G2 point one line for each step of this loop. A `G2Prepared` with fewer
+        // lines panics at its `unwrap`.
+        for i in BitIteratorBE::new(P::X).skip(1) {
+            f.square_in_place();
+
+            for &mut (p, ref mut coeffs) in &mut pairs {
+                Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
+            }
+
+            if i {
+                for &mut (p, ref mut coeffs) in &mut pairs {
+                    Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
+                }
+            }
+        }
+
+        f
+    }
+
     fn exp_by_x(mut f: Fp12<P::Fp12Params>) -> Fp12<P::Fp12Params> {
         f = f.cyclotomic_exp(P::X);
         if P::X_IS_NEGATIVE {
@@ -115,6 +148,7 @@ where
             BaseField = <P::G1Parameters as ModelParameters>::BaseField,
             ScalarField = <P::G1Parameters as ModelParameters>::ScalarField,
             Projective = G1Projective<P>,
+            Coordinates = (P::Fp, P::Fp, bool),
             PairWith = G2Affine<P>,
             Prepared = G1Prepared<P>,
             PairingResult = Fp12<P::Fp12Params>,
@@ -146,25 +180,11 @@ where
         let mut pairs = vec![];
         for (p, q) in i {
             if !p.is_zero() && !q.is_zero() {
-                pairs.push((p, q.ell_coeffs.iter()));
+                pairs.push((p, q));
             }
         }
 
-        let mut f = Self::Fqk::one();
-
-        for i in BitIteratorBE::new(P::X).skip(1) {
-            f.square_in_place();
-
-            for &mut (p, ref mut coeffs) in &mut pairs {
-                Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
-            }
-
-            if i {
-                for &mut (p, ref mut coeffs) in &mut pairs {
-                    Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
-                }
-            }
-        }
+        let mut f = P::miller_loop_fp12(&pairs);
 
         if P::X_IS_NEGATIVE {
             f.conjugate();

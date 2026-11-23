@@ -20,7 +20,8 @@ use console::{
     program::{Identifier, Plaintext, ProgramID, Value},
 };
 
-pub trait FinalizeStoreTrait<N: Network> {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FinalizeStoreTrait<N: Network>: crate::sealed_execution::Sealed {
     /// Returns `true` if the given `program ID` and `mapping name` is confirmed to exist.
     fn contains_mapping_confirmed(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool>;
 

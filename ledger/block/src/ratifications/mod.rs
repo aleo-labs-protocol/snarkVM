@@ -26,7 +26,6 @@ use console::{
 
 use indexmap::IndexMap;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -106,7 +105,6 @@ impl<N: Network> Ratifications<N> {
     }
 
     /// Returns a parallel iterator over all ratifications, for all ratifications in `self`.
-    #[cfg(not(feature = "serial"))]
     pub fn par_iter(&self) -> impl '_ + ParallelIterator<Item = &Ratify<N>> {
         self.ratifications.par_values()
     }

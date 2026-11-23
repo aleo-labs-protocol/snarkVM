@@ -17,6 +17,10 @@ workspace = true
 [dependencies.snarkvm-circuit-types]
 workspace = true
 
+[dev-dependencies.snarkvm-circuit-types]
+workspace = true
+features = [ "test-helpers" ]
+
 [dev-dependencies.snarkvm-utilities]
 workspace = true
 

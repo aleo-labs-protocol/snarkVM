@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use super::R1CS;
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(any(test, feature = "test-helpers"))]
 use anyhow::{Result, bail, ensure};
 
 /// A struct that contains public variable assignments, private variable assignments,
@@ -211,7 +211,8 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
 
 /// Asserts whether the underlying constraints of the two assignments are equal
 /// regardless of the concrete values taken in the assignments.
-#[cfg(any(test, feature = "test"))]
+#[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub fn compare_constraints<F: PrimeField>(assignment_1: &Assignment<F>, assignment_2: &Assignment<F>) -> Result<()> {
     ensure!(
         assignment_1.num_public() == assignment_2.num_public(),

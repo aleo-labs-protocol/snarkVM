@@ -24,7 +24,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-async = [ "tokio" ]
+async = [ "dep:tokio" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -47,3 +47,7 @@ path = "../../../ledger/block"
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 path = "../../../ledger/test-helpers"
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test-helpers" ]

@@ -469,7 +469,7 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
 
 impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
     /// Returns the input IDs for the given `transition ID`.
-    pub fn get_input_ids(&self, transition_id: &N::TransitionID) -> Result<Vec<Field<N>>> {
+    pub(crate) fn get_input_ids(&self, transition_id: &N::TransitionID) -> Result<Vec<Field<N>>> {
         self.storage.get_ids(transition_id)
     }
 
@@ -510,17 +510,17 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
     }
 
     /// Returns an iterator over the constant input IDs, for all transition inputs that are constant.
-    pub fn constant_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn constant_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.constant.keys_confirmed()
     }
 
     /// Returns an iterator over the public input IDs, for all transition inputs that are public.
-    pub fn public_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn public_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.public.keys_confirmed()
     }
 
     /// Returns an iterator over the private input IDs, for all transition inputs that are private.
-    pub fn private_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn private_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.private.keys_confirmed()
     }
 
@@ -530,7 +530,7 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
     }
 
     /// Returns an iterator over the external record input IDs, for all transition inputs that are external records.
-    pub fn external_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+    pub(crate) fn external_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.external_record.keys_confirmed()
     }
 
@@ -547,7 +547,7 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
 
 impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
     /// Returns an iterator over the constant inputs, for all transitions.
-    pub fn constant_inputs(&self) -> impl '_ + Iterator<Item = Cow<'_, Plaintext<N>>> {
+    pub(crate) fn constant_inputs(&self) -> impl '_ + Iterator<Item = Cow<'_, Plaintext<N>>> {
         self.constant.values_confirmed().flat_map(|input| match input {
             Cow::Borrowed(Some(input)) => Some(Cow::Borrowed(input)),
             Cow::Owned(Some(input)) => Some(Cow::Owned(input)),

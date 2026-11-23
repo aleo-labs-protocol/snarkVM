@@ -24,10 +24,9 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "indexmap/rayon", "rayon" ]
-serial = [ "snarkvm-console/serial" ]
-wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers" ]
+default = [ "indexmap/rayon" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -50,7 +49,6 @@ features = [ "serde" ]
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true

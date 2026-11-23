@@ -37,6 +37,7 @@ mod to_xy_coordinates;
 mod to_y_coordinate;
 mod zero;
 
+#[doc(no_inline)]
 pub use snarkvm_console_network_environment::prelude::*;
 pub use snarkvm_console_types_boolean::Boolean;
 pub use snarkvm_console_types_field::Field;
@@ -68,15 +69,6 @@ impl<E: Environment> Group<E> {
     pub const MONTGOMERY_A: Field<E> = Field::<E>::new(E::MONTGOMERY_A);
     /// The coefficient B for the Montgomery curve equation.
     pub const MONTGOMERY_B: Field<E> = Field::<E>::new(E::MONTGOMERY_B);
-
-    /// Initializes a new group without checking that `group` is a group element.
-    #[deprecated(
-        since = "4.13.0",
-        note = "use `Group::try_new`, which rejects invalid points; `from_xy_coordinates_unchecked` skips the check"
-    )]
-    pub fn new(group: E::Affine) -> Self {
-        Self::new_unchecked(group)
-    }
 
     /// Initializes a new group, if `group` is on the curve and in the prime-order subgroup.
     pub fn try_new(group: E::Affine) -> Result<Self> {

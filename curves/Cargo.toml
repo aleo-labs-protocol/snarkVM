@@ -63,6 +63,8 @@ workspace = true
 [dev-dependencies.rand]
 workspace = true
 
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
-serial = [ "snarkvm-fields/serial" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]

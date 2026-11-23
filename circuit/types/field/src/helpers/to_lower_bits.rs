@@ -73,31 +73,6 @@ impl<E: Environment> ToLowerBits for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn ToLowerBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = (Mode, u64);
-
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            (Mode::Constant, k) => Count::is(*k, 0, 0, 0),
-            (mode, k) if *k == E::BaseField::size_in_bits() as u64 => {
-                count!(Field<E>, ToBits<Boolean = Boolean<E>>, mode)
-            }
-            (_, k) => Count::is(0, 0, *k, k + 1),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn ToLowerBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,8 +101,7 @@ mod tests {
                 for (i, (expected_bit, candidate_bit)) in expected.iter().zip_eq(candidate.iter()).enumerate() {
                     assert_eq!(*expected_bit, candidate_bit.eject_value(), "LSB+{i}");
                 }
-                assert_count!(ToLowerBits<Boolean>() => Field, &(mode, I::BITS));
-                assert_output_mode!(ToLowerBits<Boolean>() => Field, &mode, candidate);
+                assert_scope!();
             });
         }
     }
@@ -145,8 +119,7 @@ mod tests {
             Circuit::scope(format!("{mode} {i}"), || {
                 let candidate = candidate.to_lower_bits_le(size_in_bits);
                 assert_eq!(expected.to_bits_le(), candidate.eject_value());
-                assert_count!(ToLowerBits<Boolean>() => Field, &(mode, size_in_bits as u64));
-                assert_output_mode!(ToLowerBits<Boolean>() => Field, &mode, candidate);
+                assert_scope!();
             });
         }
     }

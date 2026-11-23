@@ -34,3 +34,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
+
+[features]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-circuit-environment/test-helpers" ]

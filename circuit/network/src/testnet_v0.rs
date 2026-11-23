@@ -44,7 +44,7 @@ use snarkvm_circuit_types::{
     Field,
     Group,
     Scalar,
-    environment::{Assignment, R1CS, TestnetCircuit, prelude::*},
+    environment::{Assignment, CircuitState, R1CS, TestnetCircuit, prelude::*},
 };
 
 use core::fmt;
@@ -102,6 +102,8 @@ thread_local! {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AleoTestnetV0;
+
+impl crate::sealed::Sealed for AleoTestnetV0 {}
 
 impl Aleo for AleoTestnetV0 {
     /// Initializes the global constants for the Aleo environment.
@@ -558,6 +560,11 @@ impl Environment for AleoTestnetV0 {
     /// Clears the circuit and initializes an empty environment.
     fn reset() {
         E::reset()
+    }
+
+    /// Replaces this thread's circuit state with the given state, and returns the previous one.
+    fn swap_circuit_state(state: CircuitState<Self::BaseField>) -> CircuitState<Self::BaseField> {
+        E::swap_circuit_state(state)
     }
 }
 

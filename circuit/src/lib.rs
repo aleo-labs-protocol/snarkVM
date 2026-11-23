@@ -29,16 +29,7 @@ pub mod modules {
     pub use snarkvm_circuit_collections::*;
 
     pub use snarkvm_circuit_environment as environment;
-    pub use snarkvm_circuit_environment::{
-        Assignment,
-        CanaryCircuit,
-        Circuit,
-        Eject,
-        Environment,
-        Inject,
-        Mode,
-        TestnetCircuit,
-    };
+    pub use snarkvm_circuit_environment::{Assignment, Circuit, Eject, Environment, Inject, Mode, TestnetCircuit};
 
     pub use snarkvm_circuit_network as network;
     pub use snarkvm_circuit_network::*;
@@ -57,5 +48,6 @@ pub mod traits {
 
 pub mod prelude {
     pub use crate::modules::*;
+    #[doc(no_inline)]
     pub use snarkvm_circuit_environment::prelude::*;
 }

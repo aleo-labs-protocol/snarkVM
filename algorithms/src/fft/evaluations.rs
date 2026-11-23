@@ -16,9 +16,6 @@
 //! A polynomial represented in evaluations form.
 
 use crate::fft::{DensePolynomial, EvaluationDomain};
-#[cfg(feature = "serial")]
-use itertools::Itertools;
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 use snarkvm_fields::PrimeField;

@@ -27,7 +27,6 @@ use snarkvm_console_types::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, collections::BTreeMap};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// A binary Merkle tree constructed with a leaf-digest hash function and a

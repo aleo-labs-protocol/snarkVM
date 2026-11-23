@@ -77,18 +77,8 @@ pub trait Valid: Sized + Sync {
     where
         Self: 'a,
     {
-        #[cfg(not(feature = "serial"))]
-        {
-            use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
-            batch.par_bridge().try_for_each(|e| e.check())?;
-        }
-        #[cfg(feature = "serial")]
-        {
-            for item in batch {
-                item.check()?;
-            }
-        }
-        Ok(())
+        use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
+        batch.par_bridge().try_for_each(|e| e.check())
     }
 }
 

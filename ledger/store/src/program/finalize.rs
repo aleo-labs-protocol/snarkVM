@@ -629,6 +629,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     }
 }
 
+impl<N: Network, P: FinalizeStorage<N>> snarkvm_synthesizer_program::sealed_execution::Sealed for FinalizeStore<N, P> {}
+
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<N, P> {
     /// Returns `true` if the given `program ID` and `mapping name` is confirmed to exist.
     fn contains_mapping_confirmed(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool> {
@@ -809,7 +811,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     pub fn insert_rejected_reason(&self, transaction_id: Field<N>, reason: RejectedReason<N>) -> Result<()> {
         let height = self.block_height.load(std::sync::atomic::Ordering::SeqCst);
         let consensus_version = N::CONSENSUS_VERSION(height)?;
-        if cfg!(feature = "test") || consensus_version >= ConsensusVersion::V15 {
+        if consensus_version >= ConsensusVersion::V15 {
             self.storage.rejected_reason_map().insert(transaction_id, reason)
         } else {
             Ok(())

@@ -35,7 +35,7 @@ impl<N: Network> Process<N> {
             return Err(anyhow!("The root request for '{locator}' is flagged dynamic").into());
         }
 
-        dev_println!("{}", format!(" • Executing '{locator}'...",));
+        trace!("Executing '{locator}'...");
 
         // The root request does not have a caller.
         let caller = None;

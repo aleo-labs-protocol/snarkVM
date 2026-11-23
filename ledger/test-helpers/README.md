@@ -5,3 +5,6 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE.md)
 
 The `snarkvm-ledger-test-helpers` crate provides test helpers to produce data structure from the ledger.
+
+This crate is for tests of snarkVM and of the crates that depend on it. Its API is not covered by semantic
+versioning: it may change in any release.

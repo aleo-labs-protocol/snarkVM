@@ -15,12 +15,8 @@ harness = false
 
 [features]
 default = [ ]
-test = [ ]
-dev-print = [
-  "snarkvm-utilities/dev-print",
-  "snarkvm-console-algorithms/dev-print",
-  "snarkvm-console-network/dev-print"
-]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-console-network/test-helpers" ]
 
 [dependencies.snarkvm-console-account]
 workspace = true
@@ -40,12 +36,6 @@ features = [ "string" ]
 
 [dependencies.snarkvm-utilities]
 workspace = true
-
-[dependencies.enum_index]
-version = "0.2"
-
-[dependencies.enum_index_derive]
-version = "0.2"
 
 [dependencies.enum-iterator]
 workspace = true
@@ -71,3 +61,13 @@ workspace = true
 
 [dev-dependencies.criterion]
 workspace = true
+
+[dev-dependencies.snarkvm-console-network]
+workspace = true
+features = [ "test-helpers" ]
+
+# Minor releases add variants to `Literal`, `Value`, `LiteralType`, `PlaintextType`, `ValueType`,
+# `RegisterType`, and `FinalizeType`; see their documentation. The setting covers every public enum
+# of this crate, including enums that are not expected to gain variants.
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_added = "allow"

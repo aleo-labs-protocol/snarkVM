@@ -24,23 +24,14 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "synthesis", "rayon" ]
-serial = [ "snarkvm-console/serial", "snarkvm-ledger-puzzle/serial" ]
-locktick = [
-  "dep:locktick",
-  "snarkvm-ledger-puzzle/locktick",
-  "snarkvm-synthesizer-process/locktick"
-]
+default = [ "synthesis" ]
 merkle = [ ]
 synthesis = [
-  "snarkvm-circuit",
-  "lru",
-  "parking_lot",
-  "snarkvm-synthesizer-process",
-  "snarkvm-synthesizer-program"
+  "dep:snarkvm-circuit",
+  "dep:lru",
+  "dep:snarkvm-synthesizer-process",
+  "dep:snarkvm-synthesizer-program"
 ]
-wasm = [ "snarkvm-console/wasm" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
 
 [dependencies.snarkvm-circuit]
 workspace = true
@@ -73,16 +64,7 @@ workspace = true
 workspace = true
 features = [ "serde", "rayon" ]
 
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
 [dependencies.lru]
-workspace = true
-optional = true
-
-[dependencies.parking_lot]
 workspace = true
 optional = true
 
@@ -94,11 +76,10 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.hex]
 workspace = true

@@ -21,20 +21,22 @@ workspace = true
 
 [dependencies.snarkvm-console]
 workspace = true
-features = ["filesystem"]
+features = ["filesystem", "test-helpers"]
 
 [dependencies.snarkvm-circuit]
 workspace = true
 
 [dependencies.snarkvm-ledger-block]
 workspace = true
-features = ["test"]
 
 [dependencies.snarkvm-ledger-query]
 workspace = true
 features = [ "query" ]
 
 [dependencies.snarkvm-ledger-store]
+workspace = true
+
+[dependencies.snarkvm-synthesizer]
 workspace = true
 
 [dependencies.snarkvm-synthesizer-program]
@@ -47,5 +49,6 @@ workspace = true
 workspace = true
 features = [ "test-helpers" ]
 
-[dependencies.anyhow]
-workspace = true
+[dev-dependencies.tokio]
+version = "1"
+features = [ "macros", "rt" ]

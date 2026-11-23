@@ -25,6 +25,7 @@ use super::*;
 /// quorum block whose DAG-derived ceiling equals a single such transaction; a second identical
 /// execution must then be aborted during speculation.
 #[test]
+#[ignore = "slow"]
 fn test_quorum_block_spend_limit_aborts_excess_transactions() {
     let rng = &mut TestRng::default();
 

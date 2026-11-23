@@ -25,9 +25,8 @@ edition = "2024"
 
 [features]
 default = [ ]
-serial = [ "snarkvm-console/serial" ]
-wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -41,3 +40,7 @@ workspace = true
 [dev-dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test-helpers" ]
