@@ -292,10 +292,9 @@ impl Environment for TestnetCircuit {
     }
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
+    #[track_caller]
     fn halt<S: Into<String>, T>(message: S) -> T {
-        let error = message.into();
-        // eprintln!("{}", &error);
-        panic!("{}", &error)
+        snarkvm_utilities::vm_halt(message.into())
     }
 
     /// Returns the R1CS circuit, resetting the circuit.

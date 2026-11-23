@@ -538,6 +538,7 @@ impl Environment for AleoTestnetV0 {
     }
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
+    #[track_caller]
     fn halt<S: Into<String>, T>(message: S) -> T {
         E::halt(message)
     }
