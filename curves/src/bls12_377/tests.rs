@@ -1885,9 +1885,9 @@ fn test_bls12_377_cyclotomic_karabina_edge_exponents() {
         &[1u64 << 63],
         &[0u64, 1u64],
         &[5u64, 0u64, 0u64],
-        // 17 set bits with bit 0 clear (regression test for the 16-slot batch boundary).
+        // 17 set bits above bit 0, with bit 0 clear, spanning two 16-slot batches.
         &[0x0002_aaaa_aaaa_0000u64],
-        // 18 set bits with bit 0 set (crosses the 16-slot batch boundary into a second batch).
+        // 17 set bits above bit 0, with bit 0 set, spanning two 16-slot batches.
         &[0x0002_aaaa_aaaa_0001u64],
         &[0xaaaa_aaaa_aaaa_aaabu64],
         Bls12_377Parameters::X,

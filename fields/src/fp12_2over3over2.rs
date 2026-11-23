@@ -229,7 +229,9 @@ impl<P: Fp12Parameters> Fp12<P> {
 
     /// Batch-decompresses `batch` (`1 <= batch.len() <= 16`) via a single stack-allocated `Fp2`
     /// Montgomery inversion and multiplies each recovered element into `res_opt`.
-    /// Returns `false` only if the batch product is non-invertible.
+    ///
+    /// Every caller ensures `z2 != 0` or `z3 != 0` for each entry, so every denominator (`4 * z2`
+    /// or `z3`) and their product `acc` are nonzero in `Fp2`.
     fn decompress_and_mul_batch(batch: &[KarabinaCompressed<P>], res_opt: &mut Option<Self>) -> bool {
         let n = batch.len();
         debug_assert!((1..=16).contains(&n));
@@ -252,6 +254,7 @@ impl<P: Fp12Parameters> Fp12<P> {
             prods[i] = acc;
         }
 
+        // Defensive check: `acc` is a product of nonzero `Fp2` elements (`4 * z2` or `z3`), so `inverse` returns `Some`.
         let Some(mut inv_acc) = acc.inverse() else {
             return false;
         };
@@ -298,13 +301,13 @@ impl<P: Fp12Parameters> Fp12<P> {
         if total_bits == 1 {
             return *self;
         }
-        // Elements in `Fp4` (such as `0` and `1`, where `z2 == z3 == 0`) fall back to the uncompressed chain.
+        // Inputs with `z2 == 0` and `z3 == 0` (such as `0` and `1`) fall back to the uncompressed chain.
         if self.c1.c0.is_zero() && self.c0.c2.is_zero() {
             return self.cyclotomic_exp_uncompressed(exp);
         }
 
-        // Karabina (2013) compressed cyclotomic squaring (2 Fp4 squarings per bit instead of 3),
-        // flushing the 16-slot stack buffer via Montgomery batch inversion whenever it fills.
+        // Square in Karabina (2013) compressed coordinates and flush the 16-slot stack buffer via
+        // Montgomery batch inversion whenever it fills.
         let mut res_opt = if (exp[0] & 1) != 0 { Some(*self) } else { None };
         let mut comp = KarabinaCompressed::<P> { z2: self.c1.c0, z3: self.c0.c2, z4: self.c0.c1, z5: self.c1.c2 };
         let mut needed = [KarabinaCompressed::<P>::default(); 16];
