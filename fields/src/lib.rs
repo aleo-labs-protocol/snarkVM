@@ -66,6 +66,9 @@ pub mod fp6_3over2;
 mod fp12_2over3over2;
 pub use fp12_2over3over2::*;
 
+#[doc(hidden)]
+pub mod ifma;
+
 mod legendre;
 pub use legendre::*;
 
