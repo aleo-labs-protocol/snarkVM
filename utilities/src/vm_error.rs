@@ -31,15 +31,15 @@ use std::{
 /// invalid group element. So do the functions that run a program, such as `Process::authorize`, `Process::execute`
 /// and `Process::deploy`, when the program halts.
 ///
-/// A caller that must not unwind catches the panic and checks the payload type. Any other payload is a bug, and the
-/// caller keeps unwinding:
+/// A caller that must not unwind runs the operation with [`try_vm_runtime`] and checks the payload type. Any other
+/// payload is a bug, and the caller keeps unwinding:
 ///
 /// ```
-/// use snarkvm_utilities::VmHalt;
-/// use std::panic::{UnwindSafe, catch_unwind, resume_unwind};
+/// use snarkvm_utilities::{VmHalt, try_vm_runtime};
+/// use std::panic::resume_unwind;
 ///
-/// fn run<T>(operation: impl FnOnce() -> T + UnwindSafe) -> Result<T, String> {
-///     catch_unwind(operation).map_err(|payload| match payload.downcast::<VmHalt>() {
+/// fn run<T>(operation: impl FnOnce() -> T) -> Result<T, String> {
+///     try_vm_runtime(operation).map_err(|payload| match payload.downcast::<VmHalt>() {
 ///         Ok(halt) => format!("the program halted: {halt}"),
 ///         Err(payload) => resume_unwind(payload),
 ///     })
@@ -47,6 +47,9 @@ use std::{
 ///
 /// assert_eq!(run(|| 1 + 1), Ok(2));
 /// ```
+///
+/// A bare `catch_unwind` also catches a halt, but the panic hook then treats the halt as uncaught. It logs the halt at
+/// the error level and passes it to the host's panic hook.
 ///
 /// The payload travels with the panic, also when rayon re-raises the panic of a job on the thread that waits on the
 /// job. Panic hooks and code that read only `String` and `&str` payloads do not see the message of a halt;
@@ -86,13 +89,14 @@ static ACTIVE_VM_RUNTIMES: AtomicUsize = AtomicUsize::new(0);
 
 /// Installs a panic hook for VM halts, which passes every other panic to the previous hook.
 ///
-/// While any [`try_vm_runtime`] call runs, the hook logs a halt at the debug level, without a backtrace, because the
-/// halt is likely an expected outcome that the call catches. A halt message can hold private values, so only debug
-/// builds log it.
+/// While any [`try_vm_runtime`] call runs, the hook logs a halt with its message at the debug level, without a
+/// backtrace, because the halt is likely an expected outcome that the call catches.
 ///
 /// While no [`try_vm_runtime`] call runs, nothing in snarkVM catches the halt. The hook logs the halt with its message
 /// at the error level, or prints it to stderr if no tracing subscriber is set, and then passes it to the previous
 /// hook. The previous hook does not see the message, because panic hooks format only `String` and `&str` payloads.
+///
+/// A halt message can hold the values of the operands, including private inputs of the caller's own program.
 ///
 /// A halt on a thread outside [`try_vm_runtime`] while another thread is inside one is only logged at the debug
 /// level, even if no caller catches it.
@@ -106,10 +110,7 @@ fn install_vm_halt_hook() {
             };
             let location = info.location().map_or_else(|| "an unknown location".to_string(), ToString::to_string);
             if ACTIVE_VM_RUNTIMES.load(Ordering::SeqCst) > 0 {
-                #[cfg(debug_assertions)]
                 tracing::debug!("VM halted at {location}: {halt}");
-                #[cfg(not(debug_assertions))]
-                tracing::debug!("VM halted at {location}");
             } else {
                 if tracing::dispatcher::has_been_set() {
                     tracing::error!("VM halted at {location}: {halt}");
@@ -154,11 +155,12 @@ impl Drop for ActiveVmRuntime {
 
 /// Runs `f` and catches its panics. The error holds the panic payload, which is a [`VmHalt`] for a VM halt.
 ///
+/// Use it instead of `catch_unwind` around operations that can halt. While it runs, the panic hook treats a halt as
+/// caught: it logs the halt at the debug level and does not pass it to the host's panic hook. Every other panic
+/// reaches the host's panic hook.
+///
 /// Rayon re-raises the panic of a job on the thread that waits on it, so this also catches halts in the rayon jobs
 /// that `f` waits on.
-///
-/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
-#[doc(hidden)]
 #[inline]
 pub fn try_vm_runtime<R, F: FnOnce() -> R>(f: F) -> std::thread::Result<R> {
     install_vm_halt_hook();
