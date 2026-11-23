@@ -83,6 +83,9 @@ impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
 
     #[inline]
     fn mul_checked(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the product and return the new constant.
@@ -104,7 +107,7 @@ impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
             // If the product should be negative, then it cannot exceed the absolute value of the signed minimum.
             let negative_product_underflows = {
                 let lower_product_bits_nonzero =
-                    product.bits_le[..(I::BITS as usize - 1)].iter().fold(Boolean::constant(false), |a, b| a | b);
+                    product.bits_le[..(i_bits - 1)].iter().fold(Boolean::constant(false), |a, b| a | b);
                 let negative_product_lt_or_eq_signed_min =
                     !product.msb() | (product.msb() & !lower_product_bits_nonzero);
                 !operands_same_sign & !negative_product_lt_or_eq_signed_min
@@ -171,6 +174,9 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
         this: &Integer<E, I>,
         that: &Integer<E, I>,
     ) -> (Integer<E, I>, Vec<Boolean<E>>, Field<E>) {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Perform multiplication by decomposing it into operations on its upper and lower bits.
         // Here is a picture of the bits involved, placed according to the power-of-two weights, in little endian order:
         //   x0: <--I::BITS/2-->
@@ -185,25 +191,25 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
         //   - the overlapping bits of z1 and z2
         //   - the upper bits of z2
 
-        let x_1 = Field::from_bits_le(&this.bits_le[(I::BITS as usize / 2)..]);
-        let x_0 = Field::from_bits_le(&this.bits_le[..(I::BITS as usize / 2)]);
-        let y_1 = Field::from_bits_le(&that.bits_le[(I::BITS as usize / 2)..]);
-        let y_0 = Field::from_bits_le(&that.bits_le[..(I::BITS as usize / 2)]);
+        let x_1 = Field::from_bits_le(&this.bits_le[(i_bits / 2)..]);
+        let x_0 = Field::from_bits_le(&this.bits_le[..(i_bits / 2)]);
+        let y_1 = Field::from_bits_le(&that.bits_le[(i_bits / 2)..]);
+        let y_0 = Field::from_bits_le(&that.bits_le[..(i_bits / 2)]);
 
         let z_0 = &x_0 * &y_0;
         let z_2 = &x_1 * &y_1;
         let z_1 = (&x_1 + &x_0) * (&y_1 + &y_0) - &z_2 - &z_0;
 
-        let mut b_m_bits = vec![Boolean::constant(false); I::BITS as usize / 2];
+        let mut b_m_bits = vec![Boolean::constant(false); i_bits / 2];
         b_m_bits.push(Boolean::constant(true));
 
         let b_m = Field::from_bits_le(&b_m_bits);
         let z_0_plus_scaled_z_1 = &z_0 + (&z_1 * &b_m);
 
-        let bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(I::BITS as usize + I::BITS as usize / 2 + 1);
+        let bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(i_bits + i_bits / 2 + 1);
 
         // Split the integer bits into product bits and the upper bits of `z_1`.
-        let (bits_le, carry) = bits_le.split_at(I::BITS as usize);
+        let (bits_le, carry) = bits_le.split_at(i_bits);
 
         // Return the product of `self` and `other`, along with the carry bits.
         (Integer::from_bits_le(bits_le), carry.to_vec(), z_2)

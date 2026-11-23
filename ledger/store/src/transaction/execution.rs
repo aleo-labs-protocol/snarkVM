@@ -23,8 +23,8 @@ use crate::{
 use console::network::prelude::*;
 use snarkvm_ledger_block::{Execution, Transaction, Transition};
 use snarkvm_synthesizer_snark::Proof;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;

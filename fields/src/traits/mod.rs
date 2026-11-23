@@ -33,6 +33,9 @@ pub use poseidon_grain_lfsr::*;
 mod poseidon_default;
 pub use poseidon_default::*;
 
+mod poseidon_sparse_rounds;
+pub use poseidon_sparse_rounds::*;
+
 mod prime_field;
 pub use prime_field::*;
 

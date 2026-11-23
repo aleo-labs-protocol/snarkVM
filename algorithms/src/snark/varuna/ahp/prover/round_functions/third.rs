@@ -35,7 +35,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, defer};
+use snarkvm_utilities::{ExecutionPool, timing_span};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -74,8 +74,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         _r: &mut R,
         varuna_version: VarunaVersion,
     ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
-        defer! { end_timer!(round_time); }
+        let _round_time = timing_span!("AHP::Prover::ThirdRound").entered();
 
         let zk_bound = Self::zk_bound();
 
@@ -281,7 +280,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     pub(in crate::snark::varuna) fn calculate_assignments(
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, Vec<DensePolynomial<F>>>> {
-        let assignments_time = start_timer!(|| "Calculate assignments");
+        let assignments_time = timing_span!("Calculate assignments").entered();
         let assignments: BTreeMap<_, _> = state
             .circuit_specific_states
             .iter()
@@ -294,13 +293,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     .zip_eq(x_polys)
                     .enumerate()
                     .map(|(j, (w_poly, x_poly))| {
-                        let z_time = start_timer!(move || format!("Compute z poly for circuit {} {}", circuit.id, j));
+                        let z_time = timing_span!("Compute z poly", circuit = %circuit.id, index = j).entered();
 
                         let mut assignment =
                             w_poly.0.polynomial().as_dense().unwrap().mul_by_vanishing_poly(*input_domain);
                         // Zip safety: `x_poly` is smaller than `z_poly`.
                         assignment.coeffs.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
-                        end_timer!(z_time);
+                        drop(z_time);
                         // j may not be used if the timer feature is disabled.
                         #[allow(unused_variables)]
                         let _ = j;
@@ -311,15 +310,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 (circuit.id, assignments_i)
             })
             .collect();
-        end_timer!(assignments_time);
+        drop(assignments_time);
         Ok(assignments)
     }
 
     pub(in crate::snark::varuna) fn calculate_matrix_transpose(
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>> {
-        let transpose_time = start_timer!(|| "Transpose of matrices");
-        defer! { end_timer!(transpose_time); }
+        let _transpose_time = timing_span!("Transpose of matrices").entered();
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len() * 3);
         state.circuit_specific_states.iter().for_each(|(circuit, circuit_specific_state)| {
             let variable_domain = &circuit_specific_state.variable_domain;
@@ -345,7 +343,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
     #[allow(clippy::too_many_arguments)]
     pub(in crate::snark::varuna) fn calculate_lineval_sumcheck_instance_witness(
-        _matrix_label: &str,
+        matrix_label: &str,
         l_at_alpha: &[F],
         variable_domain: &EvaluationDomain<F>,
         fft_precomputation: &FFTPrecomputation<F>,
@@ -362,14 +360,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // We do this by iterating over the sparse transpose of matrix M
         // Instead of calculating L^C_col(κ)(c), we add val(k)*L^R_row(α) where we know
         // L^C_col(k)(X) will be 1
-        let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals parallel for {_matrix_label}"));
+        let m_at_alpha_evals_time = timing_span!("Compute m_at_alpha_evals", matrix = %matrix_label).entered();
         let m_at_alpha_evals: Vec<_> = matrix_transpose
             .iter()
             .map(|col| col.iter().map(|(val, row_index)| *val * l_at_alpha[*row_index]).sum::<F>())
             .collect();
-        end_timer!(m_at_alpha_evals_time);
+        drop(m_at_alpha_evals_time);
 
-        let z_m_at_alpha_time = start_timer!(|| format!("Compute z_m_at_alpha_time for {_matrix_label}"));
+        let z_m_at_alpha_time = timing_span!("Compute z_m_at_alpha", matrix = %matrix_label).entered();
         let m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain)
             .interpolate_with_pc(ifft_precomputation);
         let mut multiplier = PolyMultiplier::new();
@@ -377,19 +375,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         multiplier.add_polynomial(m_at_alpha, "m_at_alpha");
         multiplier.add_polynomial_ref(assignment, "assignment");
         let z_m_at_alpha = multiplier.multiply().unwrap();
-        end_timer!(z_m_at_alpha_time);
+        drop(z_m_at_alpha_time);
 
         Ok(z_m_at_alpha)
     }
 
     fn calculate_lineval_sumcheck_instance_witness_polys(
-        _matrix_label: &str,
+        matrix_label: &str,
         variable_domain: &EvaluationDomain<F>,
         max_variable_domain: &EvaluationDomain<F>,
         combiner: F,
         z_m_at_alpha: Option<DensePolynomial<F>>,
     ) -> Result<LinevalInstance<F>> {
-        let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
+        let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{matrix_label}_at_alpha")))?;
         // sum_{h in H} f(h) = n*(c_0 + c_n) for deg(p) < 2n, where c_0 and c_n are the
         // coeffs of f at degree 0 and n, resp. and in [0, 2n-2] only k=0 and
         // k=n are multiples of n. Avoids an O(n log n) FFT.

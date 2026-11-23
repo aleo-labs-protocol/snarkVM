@@ -19,8 +19,8 @@ use snarkvm_ledger::{
     Ledger,
     test_helpers::{CurrentConsensusStore, CurrentLedger, CurrentNetwork, LedgerType},
 };
+use snarkvm_ledger_store::StorageMode;
 
-use aleo_std::StorageMode;
 use snarkvm_console::{account::PrivateKey, prelude::*};
 use snarkvm_synthesizer::vm::VM;
 

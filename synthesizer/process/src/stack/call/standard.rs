@@ -24,7 +24,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<(), CallEvalError> {
-        let timer = timer!("Call::evaluate");
+        let timer = timing_span!("Call::evaluate").entered();
 
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
@@ -52,7 +52,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             Some(external_stack) => external_stack.as_ref(),
             None => stack,
         };
-        lap!(timer, "Retrieved the substack and resource");
+        timing_event!("Retrieved the substack and resource");
 
         // If the operator is a closure, retrieve the closure and compute the output.
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
@@ -181,7 +181,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         else {
             return Err(anyhow!("Call operator '{}' is invalid or unsupported.", self.operator()).into());
         };
-        lap!(timer, "Computed outputs");
+        timing_event!("Computed outputs");
 
         // Assign the outputs to the destination registers.
         if outputs.len() != self.destinations().len() {
@@ -196,7 +196,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
         }
-        finish!(timer);
+        drop(timer);
 
         Ok(())
     }
@@ -209,7 +209,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<(), CallExecError> {
-        let timer = timer!("Call::execute");
+        let timer = timing_span!("Call::execute").entered();
 
         // Load the operands values.
         let inputs: Vec<_> =
@@ -252,7 +252,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             Some(external_stack) => external_stack.as_ref(),
             None => stack,
         };
-        lap!(timer, "Retrieve the substack and resource");
+        timing_event!("Retrieve the substack and resource");
 
         // If we are not handling the root request, retrieve the root request's tvk
         let root_tvk = registers.root_tvk().ok();
@@ -265,7 +265,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
         // If the operator is a closure, retrieve the closure and compute the output.
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
-            lap!(timer, "Execute the closure");
+            timing_event!("Execute the closure");
             // Execute the closure, and load the outputs.
             substack.execute_closure(
                 &closure,
@@ -278,7 +278,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         }
         // If the operator is a function, retrieve the function and compute the output.
         else if let Ok(function) = substack.program().get_function(resource) {
-            lap!(timer, "Execute the function");
+            timing_event!("Execute the function");
             // Retrieve the number of inputs.
             let num_inputs = function.inputs().len();
             // Ensure the number of inputs matches the number of input statements.
@@ -491,7 +491,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     }
                 }
             };
-            lap!(timer, "Computed the request and response");
+            timing_event!("Computed the request and response");
 
             // Inject the existing circuit.
             A::inject_r1cs(r1cs);
@@ -545,7 +545,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 None,
             );
             A::assert(check_input_ids)?;
-            lap!(timer, "Checked the input ids");
+            timing_event!("Checked the input ids");
 
             // Retrieve the output registers.
             let output_registers = function
@@ -622,7 +622,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 &output_registers,
                 None,
             );
-            lap!(timer, "Checked the outputs");
+            timing_event!("Checked the outputs");
             // Return the circuit outputs.
             outputs
         }
@@ -644,9 +644,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
         }
-        lap!(timer, "Assigned the outputs to registers");
+        timing_event!("Assigned the outputs to registers");
 
-        finish!(timer);
+        drop(timer);
 
         Ok(())
     }
