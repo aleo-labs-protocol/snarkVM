@@ -41,6 +41,7 @@ pub fn affine_test<G: AffineCurve>(a: G) {
     assert!(a == a);
     assert_eq!(a.mul_by_cofactor_to_projective(), a.mul_by_cofactor());
     assert_eq!(a.mul_by_cofactor_inv().mul_by_cofactor(), a);
+    assert_eq!(a.checked_mul_by_cofactor_inv(), Some(a.mul_by_cofactor_inv()));
 }
 
 #[allow(clippy::eq_op)]

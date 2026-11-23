@@ -217,6 +217,15 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         (*self * P::COFACTOR_INV).into()
     }
 
+    fn checked_mul_by_cofactor_inv(&self) -> Option<Self> {
+        let product = *self * P::COFACTOR_INV;
+        // The conversion to affine inverts Z, and panics where Z is zero.
+        match product.z.is_zero() {
+            true => None,
+            false => Some(product.into()),
+        }
+    }
+
     fn to_projective(&self) -> Projective<P> {
         (*self).into()
     }

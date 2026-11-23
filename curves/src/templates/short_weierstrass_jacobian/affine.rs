@@ -191,6 +191,11 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         (*self * P::COFACTOR_INV).into()
     }
 
+    fn checked_mul_by_cofactor_inv(&self) -> Option<Self> {
+        // A Jacobian point with a zero Z is the point at infinity, so the conversion to affine cannot panic.
+        Some(self.mul_by_cofactor_inv())
+    }
+
     #[inline]
     fn to_projective(&self) -> Projective<P> {
         (*self).into()

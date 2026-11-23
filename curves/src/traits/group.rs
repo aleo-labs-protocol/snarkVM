@@ -211,6 +211,11 @@ pub trait AffineCurve:
     #[must_use]
     fn mul_by_cofactor_inv(&self) -> Self;
 
+    /// Returns [`Self::mul_by_cofactor_inv`], or `None` where it would panic, which can only happen for a point that
+    /// is not on the curve.
+    #[must_use]
+    fn checked_mul_by_cofactor_inv(&self) -> Option<Self>;
+
     /// Checks that the point is in the prime order subgroup given the point on the curve.
     #[must_use]
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool;

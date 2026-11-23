@@ -567,6 +567,70 @@ finalize foo:
         ))
     }
 
+    /// The off-curve `cast` deployment is rejected by a halt, so the rejection does not reach the host's panic hook.
+    #[test]
+    fn test_verify_deployment_off_curve_cast_skips_host_hook() {
+        use std::sync::Mutex;
+
+        const CHILD_PROCESS_ENV: &str = "SNARKVM_DEPLOYMENT_CAST_HOOK_CHILD";
+        const TEST_NAME: &str = "verify_deployment::tests::test_verify_deployment_off_curve_cast_skips_host_hook";
+
+        if std::env::var_os(CHILD_PROCESS_ENV).is_none() {
+            // Run this test in a fresh process because panic hooks are process-global.
+            let output =
+                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
+                    .args([TEST_NAME, "--exact", "--nocapture"])
+                    .env(CHILD_PROCESS_ENV, "1")
+                    .output()
+                    .expect("Failed to launch the child test process");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "Child test failed.\nstdout:\n{stdout}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        // The host hook records the location, payload and rayon worker index of each panic it sees.
+        let host_hook_calls = Arc::new(Mutex::new(Vec::new()));
+        let host_hook_calls_ = host_hook_calls.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            let payload = match info.payload().downcast_ref::<VmHalt>() {
+                Some(halt) => format!("VmHalt({halt})"),
+                None => format!("not a VmHalt: {:?}", snarkvm_utilities::panic_message(info.payload())),
+            };
+            let location = info.location().map(|location| location.to_string());
+            let worker = rayon::current_thread_index();
+            host_hook_calls_
+                .lock()
+                .expect("The hook does not panic while it holds the lock")
+                .push(format!("{location:?}, {payload}, rayon worker {worker:?}"));
+        }));
+
+        // The same deployment as in `test_verify_deployment_off_curve_cast_verdicts`.
+        let x = "7647702037709885229845698841124471395615470129800647510314961670563126650261";
+        let program = cast_program("cast", 0, x);
+        let rng = &mut TestRng::default();
+        let process = Process::load().unwrap();
+        let deployment = deployment_with_keys_of(&process, &program, &cast_program("cast", 0, "2"), rng);
+        let process = Process::load().unwrap();
+        assert!(
+            host_hook_calls.lock().expect("The hook does not panic while it holds the lock").is_empty(),
+            "the setup must not panic"
+        );
+
+        let result = try_vm_runtime(|| {
+            process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+        });
+        // Restore the default hook, so that the assertions below print their messages.
+        drop(std::panic::take_hook());
+        let payload = result.expect_err("the deployment must be rejected by a halt during synthesis");
+        assert!(payload.is::<VmHalt>(), "the rejection must be a VM halt");
+        let host_hook_calls = host_hook_calls.lock().expect("The hook does not panic while it holds the lock");
+        assert!(host_hook_calls.is_empty(), "the rejection must not reach the host hook: {host_hook_calls:#?}");
+    }
+
     /// Returns the outcome of `verify_deployment`, with a halt as `Err`.
     fn verify_deployment_outcome(
         process: &Process<CurrentNetwork>,
