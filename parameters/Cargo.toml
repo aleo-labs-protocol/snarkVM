@@ -44,12 +44,9 @@ required-features = ["filesystem"]
 # `~/.aleo/resources` and the remote fetch. Without it, the crate does no I/O.
 filesystem = ["snarkvm-utilities/storage", "dep:ureq"]
 large_params = []
-locktick = ["dep:locktick"]
-no_std_out = []
 rocks = ["snarkvm-ledger-store/rocks"]
 no-embedded-srs = []
-wasm = ["encoding", "js-sys", "web-sys"]
-dev-print = ["snarkvm-utilities/dev-print"]
+wasm = ["dep:encoding", "dep:js-sys", "dep:web-sys"]
 
 [dependencies.snarkvm-curves]
 workspace = true
@@ -61,9 +58,6 @@ workspace = true
 workspace = true
 
 [dependencies.cfg-if]
-workspace = true
-
-[dependencies.colored]
 workspace = true
 
 [dependencies.encoding]
@@ -78,14 +72,6 @@ version = "0.3.64"
 optional = true
 
 [dependencies.lazy_static]
-workspace = true
-
-[dependencies.locktick]
-workspace = true
-features = ["parking_lot"]
-optional = true
-
-[dependencies.parking_lot]
 workspace = true
 
 [dependencies.paste]

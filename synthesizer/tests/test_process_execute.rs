@@ -29,6 +29,7 @@ use std::panic::AssertUnwindSafe;
 
 #[test]
 fn test_process_execute() {
+    initialize_logger();
     // Load the tests.
     let tests = load_tests::<_, ProgramTest>("./tests/process/execute", "./expectations/process/execute");
 

@@ -58,7 +58,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-algorithms]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-circuit]
 path = "../../circuit"
@@ -78,6 +78,5 @@ features = [ "test-helpers" ]
 
 [features]
 save_r1cs_hashes = [ "dep:sha2" ] # used in regression-checking
-dev-print = [ "snarkvm-utilities/dev-print" ]
-test = [ ]
-test-helpers = [ "snarkvm-console-network/test-helpers" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-console-network/test-helpers", "dep:sha2" ]

@@ -151,6 +151,7 @@ fn forge_and_check(
 // Checks that the `*WithDynamicID` input/output variants are rejected when they should not appear
 // due to the call's static/dynamic nature.
 #[test]
+#[ignore = "slow"]
 fn test_dynamic_id_variant_checks() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();

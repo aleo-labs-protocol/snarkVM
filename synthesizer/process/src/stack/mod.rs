@@ -86,13 +86,9 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
-use snarkvm_utilities::{timing_event, timing_span};
+use snarkvm_utilities::{VmScope, locks::RwLock, timing_event, timing_span};
 
 use indexmap::IndexMap;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
@@ -100,7 +96,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
@@ -139,8 +134,17 @@ pub enum CallStack<N: Network> {
     AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
-    /// Validate a `Deploy` transaction's function circuit.
-    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>, Option<(u64, u64, u64)>),
+    /// Validate a `Deploy` transaction's function circuit, with its constraint, variable and non-zero limits.
+    /// If the flag is set, the limits also hold after a `call`.
+    CheckDeployment(
+        Vec<Request<N>>,
+        PrivateKey<N>,
+        Assignments<N>,
+        Option<u64>,
+        Option<u64>,
+        Option<(u64, u64, u64)>,
+        bool,
+    ),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
@@ -182,6 +186,18 @@ impl<N: Network> CallStack<N> {
 }
 
 impl<N: Network> CallStack<N> {
+    /// In `CheckDeployment` mode, sets the synthesis limits of the current circuit. After a `call`, sets them only if
+    /// the limits hold after calls.
+    pub(crate) fn set_synthesis_limits<A: circuit::Aleo<Network = N>>(&self, after_call: bool) {
+        if let CallStack::CheckDeployment(.., constraint_limit, variable_limit, non_zero_limit, hold_after_calls) = self
+            && (!after_call || *hold_after_calls)
+        {
+            A::set_constraint_limit(*constraint_limit);
+            A::set_variable_limit(*variable_limit);
+            A::set_non_zero_limit(*non_zero_limit);
+        }
+    }
+
     /// Returns a new and independent replica of the call stack.
     pub fn replicate(&self) -> Self {
         match self {
@@ -212,6 +228,7 @@ impl<N: Network> CallStack<N> {
                 constraint_limit,
                 variable_limit,
                 non_zero_limit,
+                limits_hold_after_calls,
             ) => CallStack::CheckDeployment(
                 requests.clone(),
                 *private_key,
@@ -219,6 +236,7 @@ impl<N: Network> CallStack<N> {
                 *constraint_limit,
                 *variable_limit,
                 *non_zero_limit,
+                *limits_hold_after_calls,
             ),
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
@@ -465,7 +483,7 @@ impl<N: Network> Stack<N> {
 
     /// Returns the constructor types for the program.
     #[inline]
-    pub fn get_constructor_types(&self) -> Result<FinalizeTypes<N>> {
+    pub(crate) fn get_constructor_types(&self) -> Result<FinalizeTypes<N>> {
         // Retrieve the constructor types.
         match self.constructor_types.read().as_ref() {
             Some(constructor_types) => Ok(constructor_types.clone()),
@@ -474,6 +492,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Returns the register types for the given closure or function name.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn get_register_types(&self, name: &Identifier<N>) -> Result<RegisterTypes<N>> {
         // Retrieve the register types.
@@ -484,6 +505,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Returns the register types for the given finalize name.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn get_finalize_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
         // Retrieve the finalize types.
@@ -495,7 +519,7 @@ impl<N: Network> Stack<N> {
 
     /// Returns the register types for the given view function name.
     #[inline]
-    pub fn get_view_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
+    pub(crate) fn get_view_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
         match self.view_types.read().get(name) {
             Some(view_types) => Ok(view_types.clone()),
             None => bail!("View types for '{name}' do not exist"),

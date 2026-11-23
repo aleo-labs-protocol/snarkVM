@@ -168,8 +168,8 @@ pub fn aleo_secondary_ledger_dir(_network: u16, mode: &StorageMode) -> Option<Pa
 mod tests {
     use super::*;
 
-    /// The IDs of the mainnet, testnet and canary networks, and the largest ID.
-    const NETWORK_IDS: [u16; 4] = [0, 1, 2, u16::MAX];
+    /// The IDs of the mainnet and testnet networks, and the largest ID.
+    const NETWORK_IDS: [u16; 3] = [0, 1, u16::MAX];
     /// The development IDs to check.
     const DEV_IDS: [u16; 4] = [0, 1, 39, u16::MAX];
 
@@ -182,8 +182,8 @@ mod tests {
     fn test_aleo_ledger_dir() {
         println!(
             "{:?} exists: {:?}",
-            aleo_ledger_dir(2, &StorageMode::Production),
-            aleo_ledger_dir(2, &StorageMode::Production).exists()
+            aleo_ledger_dir(1, &StorageMode::Production),
+            aleo_ledger_dir(1, &StorageMode::Production).exists()
         );
     }
 
@@ -208,7 +208,6 @@ mod tests {
         // Pin the literal form of the path for each deployed network.
         assert!(aleo_ledger_dir(0, &StorageMode::Production).ends_with(".aleo/storage/ledger-0"));
         assert!(aleo_ledger_dir(1, &StorageMode::Production).ends_with(".aleo/storage/ledger-1"));
-        assert!(aleo_ledger_dir(2, &StorageMode::Production).ends_with(".aleo/storage/ledger-2"));
     }
 
     #[test]

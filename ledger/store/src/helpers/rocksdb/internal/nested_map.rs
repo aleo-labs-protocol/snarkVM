@@ -25,7 +25,6 @@ use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering, time::Instant};
 use tracing::error;
 
-#[cfg(not(feature = "serial"))]
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[derive(Clone)]

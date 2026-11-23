@@ -1,0 +1,94 @@
+# Circuit shape of `ternary` for each operand mode and a fixed set of group elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-group --test snapshots
+boolean.constant group.constant group.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.constant group.public | true zero _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.public | true G _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.public | true 2G _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.public | true -G _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.public | true sampled _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.constant group.private | true zero _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.private | true G _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.private | true 2G _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.private | true -G _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.constant group.private | true sampled _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.public group.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.public group.constant | true _ zero : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.public group.constant | true _ G : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.public group.constant | true _ 2G : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.public group.constant | true _ -G : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.public group.constant | true _ sampled : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.public group.public | * : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.public group.private | false _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.public group.private | true _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.private group.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean.constant group.private group.constant | true _ zero : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.private group.constant | true _ G : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.private group.constant | true _ 2G : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.private group.constant | true _ -G : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.private group.constant | true _ sampled : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.private group.public | false _ _ : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.constant group.private group.public | true _ _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.constant group.private group.private | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public group.constant group.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.public group.constant group.constant | _ zero zero : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.public group.constant group.public | _ zero _ : 0 0 2 2 3/2/4 private 942b8ca2af5ec25b
+boolean.public group.constant group.public | _ G _ : 0 0 2 2 4/2/4 private de4d40e0523652f8
+boolean.public group.constant group.public | _ 2G _ : 0 0 2 2 4/2/4 private a80fa941e4d8555c
+boolean.public group.constant group.public | _ -G _ : 0 0 2 2 4/2/4 private a819876f71fd4072
+boolean.public group.constant group.public | _ sampled _ : 0 0 2 2 4/2/4 private 135934c0c65e817b
+boolean.public group.constant group.private | _ zero _ : 0 0 2 2 3/2/4 private f13b6baa0f580f1f
+boolean.public group.constant group.private | _ G _ : 0 0 2 2 4/2/4 private c336554fe734c20b
+boolean.public group.constant group.private | _ 2G _ : 0 0 2 2 4/2/4 private 0d1ebb34f9dffc11
+boolean.public group.constant group.private | _ -G _ : 0 0 2 2 4/2/4 private 0627a07002d16965
+boolean.public group.constant group.private | _ sampled _ : 0 0 2 2 4/2/4 private 42a5e7595df73e7b
+boolean.public group.public group.constant | _ _ zero : 0 0 2 2 3/2/3 private 2e0a18cd168bf3af
+boolean.public group.public group.constant | _ _ G : 0 0 2 2 4/2/4 private 269e81562057fb78
+boolean.public group.public group.constant | _ _ 2G : 0 0 2 2 4/2/4 private bfaee6fcd9517e90
+boolean.public group.public group.constant | _ _ -G : 0 0 2 2 4/2/4 private b284406a953cacae
+boolean.public group.public group.constant | _ _ sampled : 0 0 2 2 4/2/4 private c4122d7a7145782d
+boolean.public group.public group.public | _ _ _ : 0 0 2 2 4/2/4 private 50cfa68ac0853635
+boolean.public group.public group.private | _ _ _ : 0 0 2 2 4/2/4 private e0e5cfed3526accd
+boolean.public group.private group.constant | _ _ zero : 0 0 2 2 3/2/3 private 4cddf9abf0ce53b6
+boolean.public group.private group.constant | _ _ G : 0 0 2 2 4/2/4 private c1e1526ac3c5a3de
+boolean.public group.private group.constant | _ _ 2G : 0 0 2 2 4/2/4 private 3c78b8104d4aa53c
+boolean.public group.private group.constant | _ _ -G : 0 0 2 2 4/2/4 private 129a667223b5ab0b
+boolean.public group.private group.constant | _ _ sampled : 0 0 2 2 4/2/4 private 8b1f87a318af3d8c
+boolean.public group.private group.public | _ _ _ : 0 0 2 2 4/2/4 private f1d3d0c0b540dd1b
+boolean.public group.private group.private | _ _ _ : 0 0 2 2 4/2/4 private 2b8740c0614b3986
+boolean.private group.constant group.constant | * : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean.private group.constant group.constant | _ zero zero : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+boolean.private group.constant group.public | _ zero _ : 0 0 2 2 3/2/4 private 5a581bfc43413031
+boolean.private group.constant group.public | _ G _ : 0 0 2 2 4/2/4 private 562df0335c942a32
+boolean.private group.constant group.public | _ 2G _ : 0 0 2 2 4/2/4 private 885588c550f1a2aa
+boolean.private group.constant group.public | _ -G _ : 0 0 2 2 4/2/4 private 67c2723f74ecee20
+boolean.private group.constant group.public | _ sampled _ : 0 0 2 2 4/2/4 private a9c450a493017110
+boolean.private group.constant group.private | _ zero _ : 0 0 2 2 3/2/4 private d400d06294931544
+boolean.private group.constant group.private | _ G _ : 0 0 2 2 4/2/4 private cfa01423de03e5ed
+boolean.private group.constant group.private | _ 2G _ : 0 0 2 2 4/2/4 private 5a3aafd670951dac
+boolean.private group.constant group.private | _ -G _ : 0 0 2 2 4/2/4 private f6d860eed547be99
+boolean.private group.constant group.private | _ sampled _ : 0 0 2 2 4/2/4 private 6b10d361810dc4f2
+boolean.private group.public group.constant | _ _ zero : 0 0 2 2 3/2/3 private 62c870522bcf880b
+boolean.private group.public group.constant | _ _ G : 0 0 2 2 4/2/4 private 060f5bf70a938dd4
+boolean.private group.public group.constant | _ _ 2G : 0 0 2 2 4/2/4 private 3cf4329d66899070
+boolean.private group.public group.constant | _ _ -G : 0 0 2 2 4/2/4 private 73cf98a300beeb0a
+boolean.private group.public group.constant | _ _ sampled : 0 0 2 2 4/2/4 private d71befcee8cfd4de
+boolean.private group.public group.public | _ _ _ : 0 0 2 2 4/2/4 private 7ee40d87cde35112
+boolean.private group.public group.private | _ _ _ : 0 0 2 2 4/2/4 private 383376e6cc2a34b2
+boolean.private group.private group.constant | _ _ zero : 0 0 2 2 3/2/3 private 4a41478aaf45ac20
+boolean.private group.private group.constant | _ _ G : 0 0 2 2 4/2/4 private 6d3f595068f0c470
+boolean.private group.private group.constant | _ _ 2G : 0 0 2 2 4/2/4 private 6694f72e50e518cc
+boolean.private group.private group.constant | _ _ -G : 0 0 2 2 4/2/4 private 740ee8406f8b7b52
+boolean.private group.private group.constant | _ _ sampled : 0 0 2 2 4/2/4 private 6f0c1d9f1c50862f
+boolean.private group.private group.public | _ _ _ : 0 0 2 2 4/2/4 private 672216f9869db8a8
+boolean.private group.private group.private | _ _ _ : 0 0 2 2 4/2/4 private 06251eaeb72031ce

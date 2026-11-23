@@ -24,29 +24,19 @@ pub use snarkvm_console_types::{Address, Field, Group, Scalar};
 
 mod address;
 
-#[cfg(feature = "compute_key")]
 pub mod compute_key;
-#[cfg(feature = "compute_key")]
 pub use compute_key::*;
 
-#[cfg(feature = "graph_key")]
 pub mod graph_key;
-#[cfg(feature = "graph_key")]
 pub use graph_key::*;
 
-#[cfg(feature = "private_key")]
 pub mod private_key;
-#[cfg(feature = "private_key")]
 pub use private_key::*;
 
-#[cfg(feature = "signature")]
 pub mod signature;
-#[cfg(feature = "signature")]
 pub use signature::*;
 
-#[cfg(feature = "view_key")]
 pub mod view_key;
-#[cfg(feature = "view_key")]
 pub use view_key::*;
 
 #[cfg(test)]

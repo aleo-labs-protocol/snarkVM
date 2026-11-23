@@ -47,28 +47,6 @@ impl<E: Environment> Inverse for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Inverse<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn count(case: &Self::Case) -> Count {
-        match case.is_constant() {
-            true => Count::is(1, 0, 0, 0),
-            false => Count::is(0, 0, 1, 1),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Inverse<Output = Field<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case.is_constant() {
-            true => Mode::Constant,
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,8 +65,7 @@ mod tests {
                 Circuit::scope(name, || {
                     let result = candidate.inverse();
                     assert_eq!(expected, result.eject_value());
-                    assert_count!(Inverse(Field) => Field, &mode);
-                    assert_output_mode!(Inverse(Field) => Field, &mode, result);
+                    assert_scope!();
                 });
                 Circuit::reset();
             }

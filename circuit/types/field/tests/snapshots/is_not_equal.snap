@@ -1,0 +1,44 @@
+# Circuit shape of `is_not_equal` for each operand mode and a fixed set of field elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-field --test snapshots
+field.constant field.constant | * : 1 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant field.public | 0 _ : 0 0 2 2 2/3/1 private 3d8030c8697de901
+field.constant field.public | 1 _ : 0 0 2 2 4/3/1 private 6839976678ff406e
+field.constant field.public | 2 _ : 0 0 2 2 4/3/1 private 3e7822d02215a616
+field.constant field.public | (p-1)/2 _ : 0 0 2 2 4/3/1 private 3c683cf536acfd1e
+field.constant field.public | (p+1)/2 _ : 0 0 2 2 4/3/1 private 534cf3a40ffa32e3
+field.constant field.public | -2 _ : 0 0 2 2 4/3/1 private 02b22579344f1e6e
+field.constant field.public | -1 _ : 0 0 2 2 4/3/1 private 3bb9cdf387fb4041
+field.constant field.private | 0 _ : 0 0 2 2 2/3/1 private 8e5edfc03a8211f6
+field.constant field.private | 1 _ : 0 0 2 2 4/3/1 private b2516b92e82074c2
+field.constant field.private | 2 _ : 0 0 2 2 4/3/1 private 027d98d4a896ca4d
+field.constant field.private | (p-1)/2 _ : 0 0 2 2 4/3/1 private 1cf83543832a945a
+field.constant field.private | (p+1)/2 _ : 0 0 2 2 4/3/1 private 11772d3d50a70018
+field.constant field.private | -2 _ : 0 0 2 2 4/3/1 private 19ed0076fa1aca53
+field.constant field.private | -1 _ : 0 0 2 2 4/3/1 private d22e2031e16de3b1
+field.public field.constant | _ 0 : 0 0 2 2 2/3/1 private bf1617be9ea07603
+field.public field.constant | _ 1 : 0 0 2 2 4/3/1 private 396b7afbc56d4bc8
+field.public field.constant | _ 2 : 0 0 2 2 4/3/1 private 0efaeed48ba374e8
+field.public field.constant | _ (p-1)/2 : 0 0 2 2 4/3/1 private 2c34f297fbe7b929
+field.public field.constant | _ (p+1)/2 : 0 0 2 2 4/3/1 private a6a93f3664fe9b5e
+field.public field.constant | _ -2 : 0 0 2 2 4/3/1 private 549cca9760a284a9
+field.public field.constant | _ -1 : 0 0 2 2 4/3/1 private c8858f22003fbccd
+field.public field.public | _ _ : 0 0 2 2 4/3/1 private c43953466ed8415d
+field.public field.private | _ _ : 0 0 2 2 4/3/1 private 15e286c556ee7c2d
+field.private field.constant | _ 0 : 0 0 2 2 2/3/1 private 9c4d1c09298118c7
+field.private field.constant | _ 1 : 0 0 2 2 4/3/1 private ac5ecacecccac9a6
+field.private field.constant | _ 2 : 0 0 2 2 4/3/1 private 63456b73bc6c2627
+field.private field.constant | _ (p-1)/2 : 0 0 2 2 4/3/1 private c6a5a25834d344b7
+field.private field.constant | _ (p+1)/2 : 0 0 2 2 4/3/1 private acfb3c0b1d80c5c6
+field.private field.constant | _ -2 : 0 0 2 2 4/3/1 private 2189ddb8b9a187e8
+field.private field.constant | _ -1 : 0 0 2 2 4/3/1 private 3e0f9d4a73ad84e8
+field.private field.public | _ _ : 0 0 2 2 4/3/1 private fc3d4358b3e7588c
+field.private field.private | _ _ : 0 0 2 2 4/3/1 private 443023bb619bba8f

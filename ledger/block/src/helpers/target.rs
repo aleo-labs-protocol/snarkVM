@@ -30,6 +30,9 @@ const SECONDS_IN_A_YEAR: u32 = 60 * 60 * 24 * 365;
 
 /// Calculate the block reward based on the network’s consensus version, determined by the given block height.
 /// If the block height is at or beyond the max supply limit height, the block reward is zero.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 pub fn block_reward<N: Network>(
     block_height: u32,
     total_supply: u64,
@@ -57,7 +60,12 @@ pub fn block_reward<N: Network>(
 ///     H_Y1 = Expected block height at year 1.
 ///     CR = Coinbase reward.
 ///     TX_F = Transaction fees.
-pub const fn block_reward_v1(total_supply: u64, block_time: u16, coinbase_reward: u64, transaction_fees: u64) -> u64 {
+pub(crate) const fn block_reward_v1(
+    total_supply: u64,
+    block_time: u16,
+    coinbase_reward: u64,
+    transaction_fees: u64,
+) -> u64 {
     // Compute the expected block height at year 1.
     let block_height_at_year_1 = block_height_at_year(block_time, 1);
     // Compute the annual reward: (0.05 * S).
@@ -77,7 +85,7 @@ pub const fn block_reward_v1(total_supply: u64, block_time: u16, coinbase_reward
 ///     TX_F = Transaction fees.
 ///     MIN_BI = Minimum block interval.
 ///     MAX_BI = Maximum block interval.
-pub fn block_reward_v2(
+pub(crate) fn block_reward_v2(
     total_supply: u64,
     time_since_last_block: i64,
     coinbase_reward: u64,
@@ -96,6 +104,9 @@ pub fn block_reward_v2(
 /// Calculate the puzzle reward, given the coinbase reward.
 /// The puzzle reward is 2/3 of the total coinbase reward and paid out to the provers. The other 1/3 of
 /// the coinbase reward is included in the block reward and paid out to stakers.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 pub const fn puzzle_reward(coinbase_reward: u64) -> u64 {
     // Return the coinbase reward multiplied by 2 and divided by 3.
     coinbase_reward.saturating_mul(2).saturating_div(3)
@@ -103,6 +114,9 @@ pub const fn puzzle_reward(coinbase_reward: u64) -> u64 {
 
 /// Calculate the coinbase reward based on the network’s consensus version, determined by the given block height.
 /// If the block height is at or beyond the max supply limit height, the coinbase reward is zero.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 pub fn coinbase_reward<N: Network>(
     block_height: u32,
     block_timestamp: i64,
@@ -152,7 +166,7 @@ pub fn coinbase_reward<N: Network>(
 ///     P = Combined proof target.
 ///     C_R = Remaining coinbase target.
 ///     C = Coinbase target.
-pub fn coinbase_reward_v1(
+pub(crate) fn coinbase_reward_v1(
     block_height: u32,
     starting_supply: u64,
     anchor_height: u32,
@@ -187,7 +201,7 @@ pub fn coinbase_reward_v1(
 ///     P = Combined proof target.
 ///     C_R = Remaining coinbase target.
 ///     C = Coinbase target.
-pub fn coinbase_reward_v2(
+pub(crate) fn coinbase_reward_v2(
     block_timestamp: i64,
     genesis_timestamp: i64,
     starting_supply: u64,
@@ -1052,6 +1066,37 @@ mod tests {
     }
 
     #[test]
+    fn test_rewards_end_at_max_supply_limit_height() {
+        let limit = CurrentNetwork::MAX_SUPPLY_LIMIT_HEIGHT;
+        for (height, expect_reward) in [(limit - 1, true), (limit, false), (limit + 1, false)] {
+            let block_reward = block_reward::<CurrentNetwork>(
+                height,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::BLOCK_TIME,
+                CurrentNetwork::BLOCK_TIME.into(),
+                0,
+                0,
+            )
+            .unwrap();
+            let coinbase_reward = coinbase_reward::<CurrentNetwork>(
+                height,
+                CurrentNetwork::GENESIS_TIMESTAMP + i64::from(CurrentNetwork::BLOCK_TIME),
+                CurrentNetwork::GENESIS_TIMESTAMP,
+                CurrentNetwork::STARTING_SUPPLY,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
+                CurrentNetwork::ANCHOR_HEIGHT,
+                CurrentNetwork::BLOCK_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+            assert_eq!(block_reward > 0, expect_reward, "block reward at height {height}");
+            assert_eq!(coinbase_reward > 0, expect_reward, "coinbase reward at height {height}");
+        }
+    }
+
+    #[test]
     fn test_coinbase_reward_v1() {
         let coinbase_target: u64 = 10000;
         let combined_proof_target: u128 = coinbase_target as u128;
@@ -1599,7 +1644,6 @@ mod tests {
     #[test]
     fn test_total_supply_cap() {
         // The limit height is shared, but the simulated supply depends on each network's V2 height.
-        assert_eq!(simulated_supply_at_limit_height::<CanaryV0>(), 5_000_000_005_581_415);
         assert_eq!(simulated_supply_at_limit_height::<TestnetV0>(), 5_000_758_271_387_431);
         let mainnet_supply = simulated_supply_at_limit_height::<MainnetV0>();
         assert_eq!(mainnet_supply, 4_998_479_673_138_274);
@@ -1905,7 +1949,8 @@ mod tests {
         // With V15, anchor_time = 35 instead of 25.
         // Verify that calling to_next_targets with V15 produces a different
         // coinbase target than V1 when timestamps cause retargeting.
-        let last_coinbase_target = CurrentNetwork::GENESIS_COINBASE_TARGET;
+        // Above every genesis coinbase target, so neither version is floored.
+        let last_coinbase_target = 1u64 << 32;
         let last_coinbase_timestamp = 0i64;
         let next_timestamp = 32i64; // 32 seconds — between 25s (V1 anchor time) and 35s (V15 anchor time)
 

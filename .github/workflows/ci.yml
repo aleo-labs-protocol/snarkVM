@@ -8,60 +8,103 @@ on:
       - '**'
       - '!**.md'
       - 'curves/documentation/**'
+  # staging gets no run for each push. The schedule tests its head every six
+  # hours, unless an earlier scheduled run already has a verdict on that commit:
+  # see `schedule-due`.
   push:
-    branches: [staging, 'release/**']
+    branches: ['release/**']
+  # GitHub runs `schedule` only on the default branch, staging, and ignores
+  # `branches` for it. `schedule-due` and `notify` check the repository, so the
+  # schedule runs nothing in snarkVM-internal.
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions: { contents: read }
 
 # A superseded run holds one-slot boxes the newest commit is queued behind, so
 # a new push to a PR or branch cancels it: only the newest commit on each branch
-# gets a verdict. A manual dispatch is never cancelled.
+# gets a verdict. A manual dispatch or a scheduled run is never cancelled. A
+# scheduled run waits for the one before it to end, so `schedule-due` sees that
+# run's verdict.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.event_name != 'schedule' }}
 
 env:
   CARGO_TERM_COLOR: always
   RUST_MIN_STACK: 67108864
 
 # GitHub holds an outside contributor's pull request run until a maintainer
-# approves it. A fork's run gets no secrets, so start-cpu-runners is skipped and
-# fork-pr-runners.yml starts the boxes. The fleet jobs therefore accept a
-# skipped start-cpu-runners, and run only in this repository, which alone may
-# use the fleet.
-#
-# The fleet jobs also wait for check-shared-refs, a hosted job. GitHub reports
-# a run as `in_progress`, and fires the `workflow_run` event that starts the
-# boxes, only once none of its ready jobs is waiting for a runner. With no
-# hosted job ahead of them, a fork's fleet jobs would wait for boxes that only
-# that event starts.
+# approves it. The org's fleet starter boots the boxes when GitHub queues a
+# fleet job, from any run, a fork's included, so no job here starts them. The
+# fleet jobs run only in this repository, which alone may use the fleet.
 #
 # A push runs CI only in this repository. A mirror receives this branch by
-# push, with this file, and would otherwise rerun CI on its own runners.
+# push, with this file, and would otherwise rerun CI on its own runners. The
+# schedule also fires in a mirror whose default branch holds this file. There
+# `schedule-due` does not run, and every job of a scheduled run needs its
+# `due` output.
 jobs:
-  start-cpu-runners:
-    # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
-    uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
-    permissions: { id-token: write, contents: read, actions: read }
-    secrets:
-      runner_app_key: ${{ secrets.RUNNER_APP_KEY }}
-    with:
-      role-to-assume: ${{ vars.RUNNER_ROLE_ARN }}
-      label: cpu
-      # Below the default of 3: snarkVM's jobs run ten minutes or more, so a
-      # box absorbs fewer of them within the critical path. fork-pr-runners.yml
-      # repeats this.
-      jobs-per-box: 2
-      runner-app-id: ${{ vars.RUNNER_APP_ID }}
-    if: >-
-      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
-      (github.event.pull_request == null ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+  # Whether a scheduled run tests staging's head. It does not when an earlier
+  # scheduled run on the same commit has a verdict: that run passed or failed,
+  # and its `fmt` ran. A run that was cancelled, that this job skipped, or whose
+  # `schedule-due` failed has no verdict. A rerun always tests, so a commit that
+  # failed is tested again when staging moves or when someone reruns that run.
+  # If the API cannot be read, the run tests.
+  schedule-due:
+    if: github.event_name == 'schedule' && github.repository == 'aleo-labs-protocol/snarkVM'
+    runs-on: ubuntu-latest
+    permissions: { actions: read }
+    outputs:
+      due: ${{ steps.check.outputs.due }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          verdict() {
+            [ "$GITHUB_RUN_ATTEMPT" = 1 ] || return 1
+            local runs id conclusion url fmt
+            # The completed scheduled runs of this workflow on this commit that
+            # started before this one.
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=schedule&head_sha=$GITHUB_SHA&status=completed&per_page=100" \
+              --jq ".workflow_runs[] | select(.id < $GITHUB_RUN_ID) | \"\(.id) \(.conclusion) \(.html_url)\"") || return 2
+            while read -r id conclusion url; do
+              case "$conclusion" in success | failure) ;; *) continue ;; esac
+              # A skipped `fmt` means that run tested nothing.
+              fmt=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
+                --jq '.jobs[] | select(.name == "fmt") | .conclusion') || return 2
+              case "$fmt" in success | failure) ;; *) continue ;; esac
+              echo "${GITHUB_SHA:0:9} already has a verdict, $conclusion: $url" | tee -a "$GITHUB_STEP_SUMMARY"
+              return 0
+            done <<< "$runs"
+            return 1
+          }
+          rc=0
+          verdict || rc=$?
+          case $rc in
+            0) due=false ;;
+            1) due=true ;;
+            *) echo "::warning::Could not read earlier scheduled runs; testing ${GITHUB_SHA:0:9}."
+               due=true ;;
+          esac
+          echo "due=$due" >> "$GITHUB_OUTPUT"
 
   check-shared-refs:
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    # Every job waits for `schedule-due`, which is skipped on every event but
+    # the schedule. `!cancelled()` replaces the implicit `success()`, which
+    # would skip the job whenever `schedule-due` is skipped. A scheduled run
+    # runs the job only when `schedule-due` says the head is due. A push, which
+    # is to a release branch, runs it only in this repository, not in a mirror.
+    # The other hosted jobs reuse this condition as `*hosted-if`.
+    needs: schedule-due
+    if: &hosted-if >-
+      !cancelled() &&
+      (github.event_name != 'schedule' || needs.schedule-due.outputs.due == 'true') &&
+      (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -74,9 +117,11 @@ jobs:
           echo "$bad"
           [ -z "$bad" ]
 
+  # `schedule-due` reads this job's name.
   fmt:
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    needs: schedule-due
+    if: *hosted-if
     env:
       # `.rustfmt.toml` uses nightly-only options, which stable drops without
       # an error. Bumping this pin may reformat the tree.
@@ -89,21 +134,32 @@ jobs:
 
   deny:
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    needs: schedule-due
+    if: *hosted-if
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with: { tool: cargo-deny@0.20.2 }
       # Advisories: bump-advisories.yml.
       - run: cargo deny check bans licenses sources
+
+  source-checks:
+    runs-on: ubuntu-latest
+    needs: schedule-due
+    if: *hosted-if
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - run: scripts/check_sources.py
 
   # Every tracked file of snarkvm-algorithms-cuda must be in its crate archive.
   # Without `build.rs`, Cargo only warns and drops the build script, and the
   # published crate builds without its kernels even where nvcc is installed.
   cuda-package-files:
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    needs: schedule-due
+    if: *hosted-if
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -120,14 +176,15 @@ jobs:
   wasm:
     permissions: { contents: read, actions: write }
     runs-on: ubuntu-latest
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    needs: schedule-due
+    if: *hosted-if
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 22 }
       - run: rustup target add wasm32-unknown-unknown
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with: { tool: wasm-pack }
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -140,29 +197,41 @@ jobs:
         working-directory: wasm
 
   lint:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
+    # As `hosted-if` on check-shared-refs, except that a fleet job runs only in
+    # this repository on every event. The other fleet jobs reuse this condition
+    # as `*fleet-if`.
+    needs: schedule-due
     if: &fleet-if >-
-      !cancelled() && needs.check-shared-refs.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+      !cancelled() &&
+      (github.event_name != 'schedule' || needs.schedule-due.outputs.due == 'true') &&
       github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # The target dir outlives the job, and so do its timing reports.
+      - run: rm -rf "${CARGO_TARGET_DIR:-target}/cargo-timings"
+      - run: cargo clippy --workspace --all-targets --timings -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features --timings -- -D warnings
       # Some features remove items, so this does not check the docs of items that
       # exist only without a feature. It also accepts links from ungated docs to
       # feature-gated items, which break in a default-features build such as docs.rs.
-      - run: cargo doc --workspace --no-deps --all-features
+      #
+      # Each rustdoc reads, merges and rewrites the search index of all of doc/
+      # while it holds a lock on doc/. A doc/ left by earlier jobs makes every
+      # crate slower, and the crates wait on each other.
+      - name: cargo doc
+        run: |
+          cargo clean --doc
+          cargo doc --workspace --no-deps --all-features --timings
         env:
           RUSTDOCFLAGS: -D warnings
       # Clippy covers everything but the release profile, which only the
       # release branches need checked.
-      - run: cargo check --release --workspace --all-targets
+      - run: cargo check --release --workspace --all-targets --timings
         if: &release-only >-
           github.event_name == 'workflow_dispatch' ||
           startsWith(github.ref, 'refs/heads/release/') ||
@@ -177,20 +246,45 @@ jobs:
           cargo package --locked \
             -p snarkvm-utilities-derives -p snarkvm-utilities \
             -p snarkvm-fields -p snarkvm-curves -p snarkvm-algorithms-cuda
+      # Per-crate build times, one report per cargo command.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: timings-lint
+          path: ${{ env.CARGO_TARGET_DIR || 'target' }}/cargo-timings/cargo-timing-*.html
+          overwrite: true
+
+  lint-locktick:
+    runs-on: [self-hosted, linux, x64, cpu]
+    timeout-minutes: 90
+    needs: schedule-due
+    if: *fleet-if
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
+      # An env RUSTFLAGS replaces `--cfg locktick` without an error, and the
+      # build then has no locktick dependency.
+      - name: Check that the build sets cfg(locktick)
+        run: cargo locktick-clippy -q -p snarkvm-utilities --message-format=json | grep '"name":"locktick"' > /dev/null
+      - run: cargo locktick-clippy --workspace --all-targets --all-features -- -D warnings
 
   # `cargo test -p a -p b` unifies the features of a and b, and several crates
-  # enable `test`, `rocks` or `test_consensus_heights` on their dependencies,
+  # enable `rocks` or `dev-network` on their dependencies,
   # which changes what those dependencies compute. Crates share a command only
   # where that unification enables none of those features, nor `wasm` or
   # `large_params`, on any snarkvm crate. Helper features such as
   # `test-helpers` can still be unified. Each command in an entry with a
   # different feature set rebuilds the snarkvm crates whose features change.
+  # Commands with the same `-p` set and cargo flags share one build; nextest's
+  # `-E`, `-j` and `--run-ignored` are not cargo flags.
   #
   # Cheap entries run on free hosted runners, the rest on the fleet.
   test:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
+    needs: schedule-due
     if: *fleet-if
     strategy:
       fail-fast: false
@@ -199,36 +293,54 @@ jobs:
           # The first run's powers tests, with `filesystem`, cache the powers
           # files in ~/.aleo/resources. The ignored tests run without
           # `filesystem`, and read those files. The last two runs share a build.
+          # In the first run, `--lib --tests` leaves out the examples. `lint`
+          # checks that they compile. The first run tests snarkvm-curves and
+          # snarkvm-fields with the AVX-512 lanes, and `test (narwhal)` tests
+          # them without.
           - name: crates
             runs: |
-              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections -p snarkvm-parameters --features snarkvm-parameters/filesystem -E !package(snarkvm-parameters)|test(/powers::tests/)
+              nextest run -p snarkvm -p snarkvm-algorithms -p snarkvm-circuit-collections -p snarkvm-circuit-types-integers -p snarkvm-console-collections -p snarkvm-curves -p snarkvm-fields -p snarkvm-parameters --features snarkvm-parameters/filesystem --lib --tests -E !package(snarkvm-parameters)|test(/powers::tests/)
               nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored all -E package(snarkvm-parameters)
               nextest run -p snarkvm-parameters -p snarkvm-algorithms --run-ignored ignored-only -E package(snarkvm-algorithms)
           - name: ledger
             runs: nextest run -p snarkvm-ledger
           # ledger-query's async tests bound wall-clock time, which a loaded
-          # hosted runner can exceed.
+          # hosted runner, or other tests beside them, can exceed. The last
+          # three lines name the same packages and features, so they share one
+          # build, and their filters split its tests. A package named in `-p`
+          # but in no filter is built and never tested. The build turns on
+          # ledger-query's `async` for the other packages, and `filesystem` for
+          # ledger-query. A plain `--features async` would also turn on
+          # narwhal-data's own `async`.
           - name: ledger-store
             runs: |
               nextest run -p snarkvm-ledger-store --features rocks
-              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers
-              nextest run -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch
-              nextest run -p snarkvm-ledger-query --features async
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -p snarkvm-ledger-query --features snarkvm-ledger-query/async -E package(=snarkvm-ledger-narwhal-data)|package(=snarkvm-ledger-test-helpers)
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -p snarkvm-ledger-query --features snarkvm-ledger-query/async -E package(=snarkvm-ledger-puzzle)|package(=snarkvm-ledger-puzzle-epoch)
+              nextest run -p snarkvm-ledger-narwhal-data -p snarkvm-ledger-test-helpers -p snarkvm-ledger-puzzle -p snarkvm-ledger-puzzle-epoch -p snarkvm-ledger-query --features snarkvm-ledger-query/async -E package(=snarkvm-ledger-query)
           - name: synthesizer
             runs: nextest run -p snarkvm-synthesizer --lib --bins -j 16
+          # The three lines share one build, and their filters split its tests.
+          # The build turns on `filesystem` for synthesizer-program and
+          # circuit-program. `test-merge (synthesizer-program)` runs the
+          # synthesizer-program integration tests. `--lib --bins` also applies
+          # to synthesizer-process, so an integration test added to it would
+          # not run here.
           - name: synthesizer-process
             runs: |
-              nextest run -p snarkvm-synthesizer-process
-              nextest run -p snarkvm-synthesizer-program --lib --bins
-              nextest run -p snarkvm-circuit-program
+              nextest run -p snarkvm-synthesizer-process -p snarkvm-synthesizer-program -p snarkvm-circuit-program --lib --bins -E package(=snarkvm-synthesizer-process)
+              nextest run -p snarkvm-synthesizer-process -p snarkvm-synthesizer-program -p snarkvm-circuit-program --lib --bins -E package(=snarkvm-synthesizer-program)
+              nextest run -p snarkvm-synthesizer-process -p snarkvm-synthesizer-program -p snarkvm-circuit-program --lib --bins -E package(=snarkvm-circuit-program)
           # nextest runs no doctests. The `compile_fail` doctests check that
           # outside crates cannot implement the sealed traits. This entry is one
-          # workspace build, so it unifies `test` and `rocks`, which no doctest
-          # depends on. Leaving out snarkvm-wasm keeps `wasm` off. The doctests
-          # of the RocksDB maps need `rocks`; the flag enables it even if no
-          # dev-dependency does.
+          # workspace build, so it unifies `dev-network`, which no doctest
+          # depends on. Leaving out snarkvm-wasm keeps `wasm` off. Leaving out
+          # snarkvm-testchain-generator, which has no doctests, keeps
+          # `test-helpers` and `rocks` off snarkvm-ledger, and `rocks` off
+          # snarkvm-synthesizer. The doctests of the RocksDB maps need `rocks`,
+          # which only the flag enables.
           - name: doctests
-            runs: test --workspace --exclude snarkvm-wasm --doc --features snarkvm-ledger-store/rocks
+            runs: test --workspace --exclude snarkvm-wasm --exclude snarkvm-testchain-generator --doc --features snarkvm-ledger-store/rocks
     name: test (${{ matrix.name }})
     steps: &test-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -252,13 +364,18 @@ jobs:
         with: &aleo-resources
           path: ~/.aleo/resources
           key: aleo-resources-${{ matrix.name }}-${{ hashFiles('parameters/**/*.metadata') }}
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with: { tool: cargo-nextest@0.9.114 }
       # An env RUSTFLAGS replaces the flags in .cargo/config.toml without an
       # error. ADX is what `skylake` has and `x86-64-v3` lacks.
       - name: Check that the build targets skylake
         if: runner.arch == 'X64'
         run: cargo rustc -q -p snarkvm-utilities-derives --lib -- --print cfg | grep -q 'target_feature="adx"'
+      # On a CPU without AVX-512F and AVX-512 IFMA, the lane tests pass without
+      # running the lanes.
+      - name: Check that the runner has AVX-512 IFMA
+        if: matrix.name == 'crates'
+        run: grep -qw avx512f /proc/cpuinfo && grep -qw avx512ifma /proc/cpuinfo
       # Each line of `runs` is one cargo command, split on whitespace with no
       # quote handling.
       - name: Test
@@ -267,6 +384,11 @@ jobs:
           # Exercises the download path, which a box's persistent
           # ~/.aleo/resources would otherwise skip.
           FRESH_HOME: ${{ matrix.name == 'parameters-uncached' }}
+          # The synthesizer integration tests print the events that `RUST_LOG` enables.
+          RUST_LOG: ${{ matrix.name == 'synthesizer-integration' && 'snarkvm=debug' || '' }}
+          # A non-empty value keeps every AVX-512 lane entry point on its
+          # scalar path, whatever the CPU.
+          SNARKVM_NO_IFMA: ${{ matrix.name == 'narwhal' && '1' || '' }}
           NEXTEST_PROFILE: ci
           NEXTEST_NO_TESTS: fail
         run: |
@@ -279,13 +401,17 @@ jobs:
           # Under the workspace, wherever CARGO_TARGET_DIR points.
           junit=target/nextest/ci/junit.xml
           mkdir -p "$RUNNER_TEMP/junit"
+          # The target dir outlives the job, and so do its timing reports.
+          rm -rf "${CARGO_TARGET_DIR:-target}/cargo-timings"
           rc=0 n=0
           while read -ra args; do
             [ "${#args[@]}" -gt 0 ] || continue
             echo "::group::cargo ${args[*]}"
             start=$SECONDS
             rm -f "$junit"
-            cargo "${args[@]}" < /dev/null || rc=1
+            # nextest passes --timings to its cargo build. A line that passes
+            # arguments after `--` would hand it to the test binaries instead.
+            cargo "${args[@]}" --timings < /dev/null || rc=1
             echo "::endgroup::"
             echo "${args[*]}: $((SECONDS - start))s" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ -f "$junit" ]; then mv "$junit" "$RUNNER_TEMP/junit/$((n += 1)).xml"; fi
@@ -298,6 +424,13 @@ jobs:
           name: junit-${{ matrix.name }}
           path: ${{ runner.temp }}/junit
           overwrite: true
+      # Per-crate build times, one report per cargo command.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: timings-${{ matrix.name }}
+          path: ${{ env.CARGO_TARGET_DIR || 'target' }}/cargo-timings/cargo-timing-*.html
+          overwrite: true
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: runner.environment == 'github-hosted' && (github.ref == 'refs/heads/staging' || startsWith(github.ref, 'refs/heads/release/'))
         with: *aleo-resources
@@ -306,7 +439,8 @@ jobs:
   test-hosted:
     permissions: { contents: read, actions: write }
     runs-on: ${{ matrix.os }}
-    if: github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM'
+    needs: schedule-due
+    if: *hosted-if
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -334,31 +468,29 @@ jobs:
               -p snarkvm-ledger-narwhal-transmission-id -p snarkvm-synthesizer-snark
               -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
           # What differs off x86-64: the bigint carry arithmetic, and the
-          # batched MSM's batch size and prefetching.
+          # batched MSM's batch size and prefetching. macOS runs only in
+          # test-release-arm.
           - name: arithmetic-linux-arm64
             os: ubuntu-24.04-arm
-            runs: |
-              nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
-              nextest run -p snarkvm-algorithms
-          - name: arithmetic-macos-arm64
-            os: macos-15
             runs: |
               nextest run -p snarkvm-curves -p snarkvm-fields -p snarkvm-utilities -p snarkvm-utilities-derives
               nextest run -p snarkvm-algorithms
     name: test (${{ matrix.name }})
     steps: *test-steps
 
-  # Slower suites that rarely fail where the PR set passed. On every push, on
-  # pull requests to a release branch, and on demand.
+  # Slower suites that rarely fail where the PR set passed. On the schedule, on
+  # a release branch, on pull requests to one, and on demand.
   test-merge:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 90
-    if: >-
-      !cancelled() && needs.check-shared-refs.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
+    needs: schedule-due
+    if: &merge-if >-
+      !cancelled() &&
       github.repository == 'aleo-labs-protocol/snarkVM' &&
-      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
+      (needs.schedule-due.outputs.due == 'true' ||
+       github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/heads/release/') ||
+       startsWith(github.base_ref, 'release/'))
     strategy:
       fail-fast: false
       matrix:
@@ -366,35 +498,39 @@ jobs:
         include:
           - name: ledger-rocks
             runs: nextest run -p snarkvm-ledger --release --features rocks -j 10
-          # Only this entry runs valid_solutions and the genesis tests that need
-          # `dev_genesis_state_root`, so pull requests to staging do not.
-          # valid_solutions needs `test`, whose low proof targets let it find valid
-          # solutions. `dev_genesis_state_root` fixes the stored genesis state root.
-          # test_cumulative_proof_target_correctness is left out: it takes 150 s or 475 s from run to run.
+          # Only this entry runs valid_solutions and the genesis state root tests,
+          # so pull requests to staging do not. `dev-network` compiles
+          # valid_solutions, lowers the proof targets so it can find valid
+          # solutions, and fixes the stored genesis state root. The store's
+          # `dev_genesis_state_root` is the part of `dev-network` that fixes it.
+          # The second and last lines share one build, and their filters split
+          # its tests.
           - name: ledger-merge
             runs: |
-              nextest run -p snarkvm-ledger --features test --run-ignored all -E test(/^tests::valid_solutions::/)&!test(test_cumulative_proof_target_correctness)
-              nextest run -p snarkvm-ledger --features test,rocks -E test(/^tests::test_pruned_authority_/)
-              nextest run -p snarkvm-ledger-store --run-ignored ignored-only -j 2
-              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root,test -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
-              nextest run -p snarkvm-ledger --features dev_genesis_state_root,test -E test(test_load_dev_genesis_state_root)
-              nextest run -p snarkvm-ledger-block -j 12
+              nextest run -p snarkvm-ledger --features dev-network --run-ignored all -E test(/^tests::valid_solutions::/)|test(test_load_dev_genesis_state_root)
+              nextest run -p snarkvm-ledger-store -p snarkvm-ledger-block --run-ignored ignored-only -j 2 -E package(=snarkvm-ledger-store)
+              nextest run -p snarkvm-ledger-store --lib --features dev_genesis_state_root -E test(test_genesis_commitment_checks_passed_block_tree_root)|test(test_dev_genesis_state_root)
+              nextest run -p snarkvm-ledger-store -p snarkvm-ledger-block -j 12 -E package(=snarkvm-ledger-block)
+          # `--lib --tests` leaves out the examples. `lint` checks that they
+          # compile.
           - name: parameters
-            runs: nextest run -p snarkvm-parameters --features filesystem -j 2
+            runs: nextest run -p snarkvm-parameters --features filesystem --lib --tests -j 2
           - name: parameters-uncached
-            runs: nextest run -p snarkvm-parameters --features filesystem --run-ignored ignored-only -j 2
+            runs: nextest run -p snarkvm-parameters --features filesystem --lib --tests --run-ignored ignored-only -j 2
+          # The `snarkvm-synthesizer` lines select tiers by `#[ignore]` and the
+          # `memory_intensive` and `old_versions` path markers; see CI.md.
           # Two shards: the tests keep all 8 slots busy for the whole run, so only
           # more runners make it finish sooner.
           - name: synthesizer-test-1
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --features test -j 8 --partition count:1/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8 --partition count:1/2
           - name: synthesizer-test-2
-            runs: nextest run -p snarkvm-synthesizer --lib --bins --features test -j 8 --partition count:2/2
+            runs: nextest run -p snarkvm-synthesizer --lib --bins --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8 --partition count:2/2
           - name: synthesizer-prerelease
             runs: |
-              nextest run -p snarkvm-synthesizer --features test --run-ignored ignored-only -j 2
+              nextest run -p snarkvm-synthesizer --lib --run-ignored only -E test(/::memory_intensive::/) -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
           - name: synthesizer-integration
-            runs: nextest run -p snarkvm-synthesizer --features test,dev-print -j 4 --test *
+            runs: nextest run -p snarkvm-synthesizer -j 4 --test *
           - name: synthesizer-program
             runs: |
               nextest run -p snarkvm-synthesizer-program --test lib -j 8 -E !test(/keccak|psd|sha|instruction::is|instruction::commit/)
@@ -404,15 +540,36 @@ jobs:
     name: test-merge
     steps: *test-steps
 
-  # Suites that take too long for every push. On a release branch, on pull
+  # Each crate alone, with no features and with each feature on its own. The
+  # workspace builds in `lint` unify features across crates, so they miss a
+  # feature that does not enable what its code uses, and they never build the
+  # side of a `cfg(not(feature = ...))` that a unified feature turns off.
+  # `lint` builds `cuda` with `--all-features`. `no-embedded-srs` is a
+  # `compile_error!` without `filesystem` or `wasm`. `dev_skip_checks` is a
+  # `compile_error!` without `dev-network`. Too slow for every pull
+  # request, so on the schedule, on a release branch, on pull requests to one,
+  # and on demand.
+  each-feature:
+    runs-on: [self-hosted, linux, x64, cpu]
+    timeout-minutes: 90
+    needs: schedule-due
+    if: *merge-if
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+        with: { tool: cargo-hack@0.6.46 }
+      # No `--no-dev-deps`: it rewrites the manifests, which breaks `--locked`.
+      - run: cargo hack clippy --workspace --each-feature --exclude-features cuda,no-embedded-srs,dev_skip_checks --locked -- -D warnings
+
+  # Suites that take too long for the schedule. On a release branch, on pull
   # requests to one, and on demand.
   test-release:
-    needs: [check-shared-refs, start-cpu-runners]
     runs-on: [self-hosted, linux, x64, cpu]
     timeout-minutes: 120
     if: >-
-      !cancelled() && needs.check-shared-refs.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.start-cpu-runners.result) &&
       github.repository == 'aleo-labs-protocol/snarkVM' &&
       (github.event_name == 'workflow_dispatch' ||
        startsWith(github.ref, 'refs/heads/release/') ||
@@ -423,26 +580,24 @@ jobs:
         name: [old-consensus-versions-1, old-consensus-versions-2, old-consensus-versions-3, integers-exhaustive, synthesizer-rocks]
         include:
           # Three shards, each on its own box. `count:` deals the tests out in
-          # name order, so each slow `test_v14` module spreads across shards.
+          # name order, so each long `test_v14` module spreads across shards.
           - name: old-consensus-versions-1
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:1/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:1/3 -E test(/::old_versions::/)
           - name: old-consensus-versions-2
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:2/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:2/3 -E test(/::old_versions::/)
           - name: old-consensus-versions-3
-            runs: nextest run -p snarkvm-synthesizer --release --lib --features test-old-consensus-versions -j 8 --run-ignored all --partition count:3/3 -E test(/^vm::tests::test_v(8|9|1[0134])::/)
+            runs: nextest run -p snarkvm-synthesizer --release --lib -j 8 --run-ignored all --partition count:3/3 -E test(/::old_versions::/)
           # Not `--release`: that compiles out the check in `is_satisfied` that
           # each constraint uses only declared variables.
           - name: integers-exhaustive
             runs: nextest run -p snarkvm-circuit-types-integers --run-ignored ignored-only
-          # `rocks` alone is the feature set nodes ship. `test` changes network
-          # constants and adds tests, so each set runs. Of the integration targets,
+          # `rocks` alone is the feature set nodes ship. Of the integration targets,
           # only test_vm_execute_and_finalize opens a RocksDB store.
           - name: synthesizer-rocks
             runs: |
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks -j 8
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 8
-              nextest run -p snarkvm-synthesizer --release --lib --bins --features test,rocks -j 2 --run-ignored ignored-only
-              nextest run -p snarkvm-synthesizer --release --features test,rocks --test test_vm_execute_and_finalize
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored all -E !test(/::memory_intensive::|::old_versions::/) -j 8
+              nextest run -p snarkvm-synthesizer --release --lib --bins --features rocks --run-ignored only -E test(/::memory_intensive::/) -j 2
+              nextest run -p snarkvm-synthesizer --release --features rocks --test test_vm_execute_and_finalize
     name: test-release
     steps: *test-steps
 
@@ -479,13 +634,18 @@ jobs:
 
   machete:
     runs-on: ubuntu-latest
+    needs: schedule-due
     if: >-
+      !cancelled() &&
       (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM') &&
-      (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/'))
+      (needs.schedule-due.outputs.due == 'true' ||
+       github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/heads/release/') ||
+       startsWith(github.base_ref, 'release/'))
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with: { tool: cargo-machete@0.7.0 }
       - run: cargo machete
 
@@ -513,13 +673,17 @@ jobs:
       - run: cargo check --examples --benches --tests
         working-directory: ${{ matrix.dir }}
 
-  # The one check to require. A skipped job counts as passing a required check,
-  # and a fleet job is skipped when the boxes fail to start; here anything but
-  # success fails. The exception is a merge or release job skipped outside a
-  # release branch, where it is not meant to run.
+  # The one check to require. A skipped job counts as passing a required check;
+  # here anything but success fails. The exceptions: `schedule-due`, which runs
+  # only on the schedule; on a scheduled run, every job when `schedule-due`
+  # found a verdict, and the release jobs; elsewhere outside a release branch,
+  # the merge and release jobs.
   ci-ok:
-    if: always() && (github.event_name != 'push' || github.repository == 'aleo-labs-protocol/snarkVM')
-    needs: [check-shared-refs, fmt, deny, wasm, lint, test, test-hosted, test-merge, test-release, test-release-arm, machete, windows]
+    if: >-
+      always() &&
+      ((github.event_name != 'push' && github.event_name != 'schedule') ||
+       github.repository == 'aleo-labs-protocol/snarkVM')
+    needs: [schedule-due, check-shared-refs, fmt, deny, source-checks, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -528,5 +692,36 @@ jobs:
             ${{ github.event_name == 'workflow_dispatch' ||
             startsWith(github.ref, 'refs/heads/release/') ||
             startsWith(github.base_ref, 'release/') }}
+          SCHEDULE: ${{ github.event_name == 'schedule' }}
+          DUE: ${{ needs.schedule-due.outputs.due == 'true' }}
         run: |
-          jq -e --argjson release "$RELEASE" 'to_entries | map(select(.value.result != "success" and ($release or .value.result != "skipped" or (.key | IN("test-merge", "test-release", "test-release-arm", "machete", "windows") | not)))) | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+          jq -e --argjson release "$RELEASE" --argjson schedule "$SCHEDULE" --argjson due "$DUE" '
+            def may_skip:
+              . == "schedule-due" or
+              if $release then false
+              elif $schedule then ($due | not) or IN("test-release", "test-release-arm", "windows")
+              else IN("test-merge", "each-feature", "test-release", "test-release-arm", "machete", "windows")
+              end;
+            to_entries
+            | map(select(.value.result != "success" and (.value.result != "skipped" or (.key | may_skip | not))))
+            | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
+
+  # Posts to Slack when staging's scheduled CI turns red, and once when it turns
+  # green again. `checked` is false when `schedule-due` found a verdict or
+  # failed.
+  notify:
+    if: always() && github.event_name == 'schedule' && github.repository == 'aleo-labs-protocol/snarkVM'
+    needs: [schedule-due, check-shared-refs, fmt, deny, source-checks, cuda-package-files, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows, ci-ok]
+    runs-on: ubuntu-latest
+    permissions: { actions: read }
+    # CI_SLACK_TOKEN lives in the ci-notify environment, which admits only
+    # staging.
+    environment: ci-notify
+    steps:
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/notify-ci-state@v2
+        with:
+          slack-token: ${{ secrets.CI_SLACK_TOKEN }}
+          channel: ${{ vars.CI_SLACK_CHANNEL || '#ci' }}
+          result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          checked: ${{ needs.schedule-due.outputs.due == 'true' && 'true' || 'false' }}

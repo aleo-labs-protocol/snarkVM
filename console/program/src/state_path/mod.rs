@@ -235,7 +235,8 @@ impl<N: Network> StatePath<N> {
     }
 }
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use snarkvm_console_network::prelude::TestRng;

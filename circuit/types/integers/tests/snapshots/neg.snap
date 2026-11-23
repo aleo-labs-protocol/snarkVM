@@ -1,0 +1,46 @@
+# Circuit shape of `neg` for each integer type, operand mode and edge value.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-integers --test snapshots
+u8.constant | * : halt
+u8.public | _ : halt
+u8.private | _ : halt
+u16.constant | * : halt
+u16.public | _ : halt
+u16.private | _ : halt
+u32.constant | * : halt
+u32.public | _ : halt
+u32.private | _ : halt
+u64.constant | * : halt
+u64.public | _ : halt
+u64.private | _ : halt
+u128.constant | * : halt
+u128.public | _ : halt
+u128.private | _ : halt
+i8.constant | * : 16 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i8.constant | MIN : halt
+i8.public | _ : 8 0 10 12 29/12/10 private 68e304c185565a5e
+i8.private | _ : 8 0 10 12 29/12/10 private 043dc990e44fe353
+i16.constant | * : 32 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i16.constant | MIN : halt
+i16.public | _ : 16 0 18 20 53/20/18 private a5edb85038587b22
+i16.private | _ : 16 0 18 20 53/20/18 private 0a368a6668d82971
+i32.constant | * : 64 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i32.constant | MIN : halt
+i32.public | _ : 32 0 34 36 101/36/34 private f2db263bfe8dc156
+i32.private | _ : 32 0 34 36 101/36/34 private 5a260297a354016b
+i64.constant | * : 128 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i64.constant | MIN : halt
+i64.public | _ : 64 0 66 68 197/68/66 private ae38bf0fa09b8d27
+i64.private | _ : 64 0 66 68 197/68/66 private 8d4e98c7acb93b4f
+i128.constant | * : 256 0 0 0 0/0/0 constant e3b0c44298fc1c14
+i128.constant | MIN : halt
+i128.public | _ : 128 0 130 132 389/132/130 private 46a256507b232188
+i128.private | _ : 128 0 130 132 389/132/130 private 383787fef28af8d2

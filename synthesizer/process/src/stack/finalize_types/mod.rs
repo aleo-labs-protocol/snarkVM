@@ -63,6 +63,8 @@ use snarkvm_synthesizer_program::{
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct FinalizeTypes<N: Network> {
     /// The mapping of all input registers to their defined types.

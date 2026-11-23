@@ -18,6 +18,14 @@ use super::*;
 impl<N: Network> EpochProgram<N> {
     /// Synthesizes the R1CS for a program function on the given inputs.
     pub fn to_r1cs<A: circuit::Aleo<Network = N>>(&self, console_inputs: Vec<Value<N>>) -> Result<R1CS<A::BaseField>> {
+        A::with_fresh_circuit(|| self.to_r1cs_inner::<A>(console_inputs))
+    }
+
+    /// Synthesizes the R1CS for a program function on the given inputs, in the current circuit state.
+    fn to_r1cs_inner<A: circuit::Aleo<Network = N>>(
+        &self,
+        console_inputs: Vec<Value<N>>,
+    ) -> Result<R1CS<A::BaseField>> {
         let timer = timing_span!("synthesize_r1cs").entered();
 
         // Declare the function name.
@@ -36,9 +44,6 @@ impl<N: Network> EpochProgram<N> {
         let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::rng())?, Default::default());
         let mut registers = Registers::<N, A>::new(call_stack, register_types);
         timing_event!("Initialize the registers");
-
-        // Ensure the circuit environment is clean.
-        A::reset();
 
         // Inject the circuit inputs.
         let mut circuit_inputs = Vec::with_capacity(console_inputs.len());
@@ -66,18 +71,17 @@ impl<N: Network> EpochProgram<N> {
             }
 
             #[cfg(debug_assertions)]
-            #[allow(unused_variables)]
-            {
+            if snarkvm_utilities::tracing::enabled!(snarkvm_utilities::tracing::Level::TRACE) {
                 use circuit::Eject;
                 use snarkvm_synthesizer_program::RegistersCircuit;
-                use snarkvm_utilities::dev_println;
+                use snarkvm_utilities::tracing::trace;
 
                 let is_satisfied = A::is_satisfied();
-                dev_println!("Executing instruction ({instruction}) ({})", if is_satisfied { "✅" } else { "❌" });
+                trace!("Executing instruction ({instruction}) ({})", if is_satisfied { "✅" } else { "❌" });
                 if !is_satisfied {
                     for operand in instruction.operands() {
                         let value = registers.load_circuit(&self.stack, operand)?.eject_value();
-                        dev_println!("    {operand} = {}", value);
+                        trace!("    {operand} = {}", value);
                     }
                 }
             }
@@ -107,8 +111,8 @@ impl<N: Network> EpochProgram<N> {
 #[allow(unused_variables)]
 pub(crate) fn log_circuit<N: Network, A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
     #[cfg(debug_assertions)]
-    {
-        use snarkvm_utilities::dev_println;
+    if snarkvm_utilities::tracing::enabled!(snarkvm_utilities::tracing::Level::TRACE) {
+        use snarkvm_utilities::tracing::trace;
 
         use colored::Colorize as _;
 
@@ -120,7 +124,7 @@ pub(crate) fn log_circuit<N: Network, A: circuit::Aleo<Network = N>>(scope: impl
         let scope = scope.to_string().bold();
 
         // Print the log.
-        dev_println!(
+        trace!(
             "{is_satisfied} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
             width = 20
         );

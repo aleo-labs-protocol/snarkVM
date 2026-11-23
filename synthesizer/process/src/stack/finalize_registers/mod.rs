@@ -54,6 +54,9 @@ impl<N: Network> FinalizeRegisters<N> {
     /// associated with this scope" (the view path) without needing a sentinel default value.
     /// On the finalize / constructor paths, both are always `Some(...)` and the absence of a
     /// transition ID at any read site (e.g. `rand.chacha`) is treated as a runtime error.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn new(
         state: FinalizeGlobalState,

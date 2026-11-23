@@ -657,9 +657,9 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto-bigint"
-version = "0.7.7"
+version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc907c45bb7e9ef8fc3778defd0f3cd8c81288f1b4e748eba064948f20c47122"
+checksum = "914c195c4d7fbc5ed7f88d14cbf85914d5c664967658d43404b263913a477e82"
 dependencies = [
  "cpubits",
  "ctutils",
@@ -682,9 +682,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.5"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
+checksum = "261af4dc7a06ea8a527a8717d8cbba3417530d6ea14e1edb3de6b67806be474f"
 dependencies = [
  "cmov",
  "subtle",
@@ -721,22 +721,23 @@ dependencies = [
 
 [[package]]
 name = "dirs"
-version = "4.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
+checksum = "8d57d423b3c82e89b9a24ca3091fee61f456a26edbd28d26c65906f4bc1dcd8f"
 dependencies = [
  "dirs-sys",
 ]
 
 [[package]]
 name = "dirs-sys"
-version = "0.3.7"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b1d1d91c932ef41c0f2663aa8b0ca0342d444d842c06914aa0a7e352d0bada6"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
 dependencies = [
  "libc",
+ "option-ext",
  "redox_users",
- "winapi",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -991,9 +992,9 @@ checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -1469,7 +1470,7 @@ dependencies = [
  "jni-sys",
  "log",
  "simd_cesu8",
- "thiserror 2.0.21",
+ "thiserror",
  "walkdir",
  "windows-link",
 ]
@@ -1635,6 +1636,7 @@ checksum = "27bc3999429dc9e39ac740737d3a58e1297836b38882a7b9f8e9d1af9d4bcdf2"
 dependencies = [
  "parking_lot",
  "simple_moving_average",
+ "tokio",
 ]
 
 [[package]]
@@ -1685,12 +1687,12 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "metrics"
-version = "0.22.4"
+version = "0.24.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56d05972e8cbac2671e85aa9d04d9160d193f8bebd1a5c1a2f4542c62e65d1d0"
+checksum = "89550ee9f79e88fef3119de263694973a8adb26c21d75322164fb8c493039fe2"
 dependencies = [
- "ahash",
  "portable-atomic",
+ "rapidhash",
 ]
 
 [[package]]
@@ -1888,6 +1890,12 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "option-ext"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "page_size"
@@ -2096,7 +2104,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2",
- "thiserror 2.0.21",
+ "thiserror",
  "tokio",
  "tracing",
  "web-time",
@@ -2119,7 +2127,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.21",
+ "thiserror",
  "tinyvec",
  "tracing",
  "web-time",
@@ -2210,6 +2218,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rapidhash"
+version = "4.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5da7e78a036ce858e8d55b7e7dc8ba3a88b78350fd2155d3591bbd966b58589e"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "rayon"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2240,13 +2257,12 @@ dependencies = [
 
 [[package]]
 name = "redox_users"
-version = "0.4.6"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
+checksum = "60dc65c0ff1a7ae1294b0c67b9f14baf70b644404010370171787bfac1038fc0"
 dependencies = [
- "getrandom 0.2.17",
  "libredox",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -2783,7 +2799,6 @@ dependencies = [
  "snarkvm-wasm",
  "tempfile",
  "ureq",
- "walkdir",
 ]
 
 [[package]]
@@ -2814,7 +2829,7 @@ dependencies = [
  "snarkvm-fields",
  "snarkvm-parameters",
  "snarkvm-utilities",
- "thiserror 2.0.21",
+ "thiserror",
  "tracing-subscriber",
 ]
 
@@ -2901,7 +2916,7 @@ dependencies = [
  "snarkvm-fields",
  "snarkvm-utilities",
  "tempfile",
- "thiserror 2.0.21",
+ "thiserror",
 ]
 
 [[package]]
@@ -3256,7 +3271,7 @@ dependencies = [
  "serde",
  "snarkvm-fields",
  "snarkvm-utilities",
- "thiserror 2.0.21",
+ "thiserror",
 ]
 
 [[package]]
@@ -3272,7 +3287,7 @@ dependencies = [
  "serde",
  "snarkvm-curves",
  "snarkvm-utilities",
- "thiserror 2.0.21",
+ "thiserror",
  "zeroize",
 ]
 
@@ -3284,9 +3299,7 @@ dependencies = [
  "bincode",
  "criterion",
  "indexmap 2.14.0",
- "locktick",
  "lru",
- "parking_lot",
  "rand",
  "rand_chacha",
  "rayon",
@@ -3304,7 +3317,7 @@ dependencies = [
  "snarkvm-synthesizer",
  "snarkvm-synthesizer-error",
  "snarkvm-utilities",
- "thiserror 2.0.21",
+ "thiserror",
  "time",
  "tracing",
  "tracing-subscriber",
@@ -3359,7 +3372,6 @@ dependencies = [
  "anyhow",
  "bincode",
  "indexmap 2.14.0",
- "parking_lot",
  "proptest",
  "rand",
  "rand_chacha",
@@ -3370,6 +3382,7 @@ dependencies = [
  "snarkvm-ledger-committee",
  "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-metrics",
+ "snarkvm-utilities",
 ]
 
 [[package]]
@@ -3470,9 +3483,7 @@ dependencies = [
  "bincode",
  "criterion",
  "indexmap 2.14.0",
- "locktick",
  "lru",
- "parking_lot",
  "rand",
  "rand_chacha",
  "rayon",
@@ -3491,9 +3502,7 @@ dependencies = [
  "colored",
  "hex",
  "indexmap 2.14.0",
- "locktick",
  "lru",
- "parking_lot",
  "rand",
  "rand_chacha",
  "rayon",
@@ -3530,8 +3539,6 @@ dependencies = [
  "anyhow",
  "bincode",
  "indexmap 2.14.0",
- "locktick",
- "parking_lot",
  "rayon",
  "rocksdb",
  "serde",
@@ -3558,16 +3565,17 @@ dependencies = [
 name = "snarkvm-ledger-test-helpers"
 version = "4.13.1"
 dependencies = [
- "anyhow",
  "snarkvm-algorithms",
  "snarkvm-circuit",
  "snarkvm-console",
  "snarkvm-ledger-block",
  "snarkvm-ledger-query",
  "snarkvm-ledger-store",
+ "snarkvm-synthesizer",
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-utilities",
+ "tokio",
 ]
 
 [[package]]
@@ -3583,13 +3591,10 @@ version = "4.13.1"
 dependencies = [
  "anyhow",
  "cfg-if",
- "colored",
  "encoding",
  "hex",
  "js-sys",
  "lazy_static",
- "locktick",
- "parking_lot",
  "paste",
  "rand",
  "serde_json",
@@ -3602,7 +3607,7 @@ dependencies = [
  "snarkvm-synthesizer",
  "snarkvm-utilities",
  "tempfile",
- "thiserror 2.0.21",
+ "thiserror",
  "ureq",
  "wasm-bindgen-test",
  "web-sys",
@@ -3619,9 +3624,7 @@ dependencies = [
  "indexmap 2.14.0",
  "itertools 0.15.0",
  "k256",
- "locktick",
  "lru",
- "parking_lot",
  "rand",
  "rayon",
  "serde",
@@ -3660,7 +3663,7 @@ dependencies = [
  "snarkvm-circuit-environment",
  "snarkvm-console-network",
  "snarkvm-console-program",
- "thiserror 2.0.21",
+ "thiserror",
 ]
 
 [[package]]
@@ -3672,8 +3675,6 @@ dependencies = [
  "criterion",
  "indexmap 2.14.0",
  "itertools 0.15.0",
- "locktick",
- "parking_lot",
  "rand",
  "rand_chacha",
  "rayon",
@@ -3749,7 +3750,9 @@ dependencies = [
  "colored",
  "criterion",
  "dirs",
+ "locktick",
  "num-bigint",
+ "parking_lot",
  "rand",
  "rand_chacha",
  "rand_xorshift",
@@ -3760,7 +3763,7 @@ dependencies = [
  "snarkvm-utilities",
  "snarkvm-utilities-derives",
  "tempfile",
- "thiserror 2.0.21",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
  "zeroize",
@@ -3886,31 +3889,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
 dependencies = [
- "thiserror-impl 2.0.21",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -4027,7 +4010,19 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "socket2",
+ "tokio-macros",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.8",
 ]
 
 [[package]]
@@ -4283,9 +4278,9 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

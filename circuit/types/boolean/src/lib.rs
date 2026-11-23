@@ -32,7 +32,7 @@ pub mod ternary;
 pub mod xor;
 
 #[cfg(test)]
-use snarkvm_circuit_environment::{assert_count, assert_output_mode, assert_scope, count, output_mode};
+use snarkvm_circuit_environment::assert_scope;
 
 use snarkvm_circuit_environment::prelude::*;
 

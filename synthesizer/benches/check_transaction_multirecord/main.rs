@@ -21,9 +21,8 @@ Performs time measurements on the verification of the large one_to_many_records 
    cargo bench --bench check_transaction_multirecord -- --clean
  - Obtain time measurements with:
    cargo bench --bench check_transaction_multirecord
-   The --serial feature can be added to deactivate parallelism.
  - Flamegraph with:
-   cargo flamegraph --bench check_transaction_multirecord --features serial
+   cargo flamegraph --bench check_transaction_multirecord
 */
 
 use std::{env, path::Path, time::Instant};

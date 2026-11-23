@@ -16,13 +16,9 @@
 use super::*;
 use crate::errors::ParameterError;
 use snarkvm_curves::traits::{PairingCurve, PairingEngine};
-use snarkvm_utilities::CanonicalDeserialize;
+use snarkvm_utilities::{CanonicalDeserialize, locks::RwLock};
 
 use anyhow::{Result, anyhow, bail, ensure};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -525,7 +521,7 @@ impl<E: PairingEngine> PowersOfBetaG<E> {
         // A file that fails leaves the ones before it appended, so a retry
         // resumes from them rather than fetching them again.
         for file in files {
-            snarkvm_utilities::dev_println!("Loading {}", file.name());
+            snarkvm_utilities::tracing::trace!("Loading {}", file.name());
             let powers = file.read_powers::<E>(&*default_load_powers_file_sync(&file)?)?;
             self.extend(&file, powers)?;
         }

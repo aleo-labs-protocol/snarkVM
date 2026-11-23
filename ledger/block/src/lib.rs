@@ -689,6 +689,19 @@ pub mod test_helpers {
         })
     }
 
+    /// Returns the shipped genesis block, or `None` under `dev-network`, whose genesis targets reject it.
+    pub(crate) fn shipped_genesis_block() -> Option<Block<CurrentNetwork>> {
+        let block = Block::read_le(CurrentNetwork::genesis_bytes());
+        // `dev-network` lowers the consensus heights and the genesis targets together.
+        if CurrentNetwork::CONSENSUS_VERSION_HEIGHTS() == &CurrentNetwork::_CONSENSUS_VERSION_HEIGHTS {
+            Some(block.expect("a build without dev-network must decode the shipped genesis block"))
+        } else {
+            let error = block.expect_err("a dev-network build must reject the shipped genesis block").to_string();
+            assert!(error.contains("Invalid coinbase target for genesis block"), "{error}");
+            None
+        }
+    }
+
     /// Returns the genesis block of `sample_genesis_block_and_components`.
     pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
         // Sample the genesis block and components.
@@ -760,8 +773,17 @@ pub mod test_helpers {
         // Construct the ratifications.
         let ratifications = Ratifications::try_from(vec![]).unwrap();
 
-        // Prepare the block header.
-        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
+        // Prepare the block header. The block is not a valid genesis block, which `Header::genesis` would reject.
+        let header = Header::from(
+            Field::<CurrentNetwork>::zero().into(),
+            transactions.to_transactions_root().unwrap(),
+            transactions.to_finalize_root(vec![]).unwrap(),
+            ratifications.to_ratifications_root().unwrap(),
+            Field::zero(),
+            Field::zero(),
+            Metadata::genesis().unwrap(),
+        )
+        .unwrap();
         // Prepare the previous block hash.
         let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
 

@@ -25,11 +25,16 @@ edition = "2024"
 
 [features]
 default = [ ]
-serial = [ "snarkvm-console/serial" ]
-wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
-prop-tests = [ "dep:rand", "dep:rand_chacha", "dep:anyhow", "dep:proptest" ]
-test-helpers = [ "prop-tests", "rand_distr", "snarkvm-console/test-helpers" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [
+  "dep:anyhow",
+  "dep:proptest",
+  "dep:rand",
+  "dep:rand_chacha",
+  "dep:rand_distr",
+  "snarkvm-console/test-helpers"
+]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -76,9 +81,6 @@ workspace = true
 [dev-dependencies.bincode]
 workspace = true
 
-[dev-dependencies.parking_lot]
-workspace = true
-
 [dev-dependencies.rand_distr]
 version = "0.6"
 
@@ -87,4 +89,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-ledger-committee]
 path = "."
-features = [ "prop-tests", "test-helpers" ]
+features = [ "test-helpers" ]
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true

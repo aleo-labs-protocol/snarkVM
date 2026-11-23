@@ -222,4 +222,12 @@ impl Fp12Parameters for Fq12Parameters {
             field!(Fq, BigInteger([0x0, 0x0, 0x0, 0x0, 0x0, 0x0])),
         ),
     ];
+
+    fn mul_assign_fp12(a: &mut Fq12, b: &Fq12) {
+        snarkvm_fields::ifma::mul_assign_fp12(a, b)
+    }
+
+    fn cyclotomic_exp_fp12(a: &Fq12, exp: &[u64]) -> Fq12 {
+        snarkvm_fields::ifma::cyclotomic_exp_fp12(a, exp)
+    }
 }

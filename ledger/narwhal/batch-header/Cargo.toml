@@ -25,8 +25,7 @@ edition = "2024"
 
 [features]
 default = [ ]
-serial = [ "snarkvm-console/serial" ]
-wasm = [ "snarkvm-console/wasm" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers", "snarkvm-console/test-helpers" ]
 
 [dependencies.snarkvm-console]

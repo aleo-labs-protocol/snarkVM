@@ -1,0 +1,133 @@
+# Circuit shape of `pedersen128_commit_uncompressed` for each operand mode, input length and a fixed set of inputs and randomizers.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-algorithms --test snapshots
+boolean[0].constant scalar.constant | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].constant scalar.constant | empty -1 : 775 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].constant scalar.constant | empty sampled : 779 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].constant scalar.public | empty _ : 500 0 2001 2003 2623/3122/2870 private d93bd829bce26e01
+boolean[0].constant scalar.private | empty _ : 500 0 2001 2003 2623/3122/2870 private a26289adf26fb747
+boolean[0].public scalar.constant | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].public scalar.constant | _ -1 : 775 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].public scalar.constant | _ sampled : 779 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].public scalar.public | _ _ : 500 0 2001 2003 2623/3122/2870 private d93bd829bce26e01
+boolean[0].public scalar.private | _ _ : 500 0 2001 2003 2623/3122/2870 private a26289adf26fb747
+boolean[0].private scalar.constant | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].private scalar.constant | _ -1 : 775 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].private scalar.constant | _ sampled : 779 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].private scalar.public | _ _ : 500 0 2001 2003 2623/3122/2870 private d93bd829bce26e01
+boolean[0].private scalar.private | _ _ : 500 0 2001 2003 2623/3122/2870 private a26289adf26fb747
+boolean[1].constant scalar.constant | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].constant scalar.constant | zeros -1 : 775 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].constant scalar.constant | zeros sampled : 779 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].constant scalar.constant | ones 1 : 255 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].constant scalar.constant | ones -1 : 779 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].constant scalar.constant | ones sampled : 783 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].constant scalar.public | zeros _ : 500 0 2001 2003 2623/3122/2870 private d93bd829bce26e01
+boolean[1].constant scalar.public | ones _ : 502 0 2004 2006 2626/3127/2875 private 9316c5a2191eb1e5
+boolean[1].constant scalar.private | zeros _ : 500 0 2001 2003 2623/3122/2870 private a26289adf26fb747
+boolean[1].constant scalar.private | ones _ : 502 0 2004 2006 2626/3127/2875 private b005b94a0c6b4d2b
+boolean[1].public scalar.constant | _ 0 : 251 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean[1].public scalar.constant | _ 1 : 253 0 3 3 3/6/5 private b853c68da9ca960d
+boolean[1].public scalar.constant | _ -1 : 515 0 396 396 396/661/660 private 8774eb5963df7d70
+boolean[1].public scalar.constant | _ sampled : 517 0 399 399 399/666/665 private 779a31b35f0e5a82
+boolean[1].public scalar.public | _ _ : 502 0 2007 2009 2630/3132/2879 private b4839d1ebb9e90ae
+boolean[1].public scalar.private | _ _ : 502 0 2007 2009 2630/3132/2879 private 7f3a774f1bee6872
+boolean[1].private scalar.constant | _ 0 : 251 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean[1].private scalar.constant | _ 1 : 253 0 3 3 3/6/5 private 8b502107245d1de5
+boolean[1].private scalar.constant | _ -1 : 515 0 396 396 396/661/660 private 0ddbc7cb175f5f37
+boolean[1].private scalar.constant | _ sampled : 517 0 399 399 399/666/665 private 73045881291bbd40
+boolean[1].private scalar.public | _ _ : 502 0 2007 2009 2630/3132/2879 private adb8e9f1fa9fa693
+boolean[1].private scalar.private | _ _ : 502 0 2007 2009 2630/3132/2879 private c04bf1ed1686258c
+boolean[8].constant scalar.constant | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | zeros -1 : 775 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | zeros sampled : 779 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | ones 0 : 279 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | ones 1 : 283 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | ones -1 : 807 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | ones sampled : 811 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | sampled 0 : 271 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | sampled 1 : 275 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | sampled -1 : 799 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.constant | sampled sampled : 803 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant scalar.public | zeros _ : 500 0 2001 2003 2623/3122/2870 private d93bd829bce26e01
+boolean[8].constant scalar.public | ones _ : 530 0 2004 2006 2626/3127/2875 private 30f0fddd805ff33f
+boolean[8].constant scalar.public | sampled _ : 522 0 2004 2006 2626/3127/2875 private 8f9c74572f77fd56
+boolean[8].constant scalar.private | zeros _ : 500 0 2001 2003 2623/3122/2870 private a26289adf26fb747
+boolean[8].constant scalar.private | ones _ : 530 0 2004 2006 2626/3127/2875 private c27bd05fb9782159
+boolean[8].constant scalar.private | sampled _ : 522 0 2004 2006 2626/3127/2875 private 3e27186a744803a9
+boolean[8].public scalar.constant | _ 0 : 265 0 42 42 49/71/63 private 1fad413331472dc6
+boolean[8].public scalar.constant | _ 1 : 267 0 45 45 52/76/68 private df257b4ec79064c7
+boolean[8].public scalar.constant | _ -1 : 529 0 438 438 445/731/723 private ae5b7b933424d843
+boolean[8].public scalar.constant | _ sampled : 531 0 441 441 448/736/728 private c2e7886db03afa52
+boolean[8].public scalar.public | _ _ : 516 0 2049 2051 2679/3202/2942 private b027edb184431b13
+boolean[8].public scalar.private | _ _ : 516 0 2049 2051 2679/3202/2942 private 594b1a75483522db
+boolean[8].private scalar.constant | _ 0 : 265 0 42 42 49/71/63 private 8b3228d71bba665e
+boolean[8].private scalar.constant | _ 1 : 267 0 45 45 52/76/68 private 7b2f6233b57f6fc0
+boolean[8].private scalar.constant | _ -1 : 529 0 438 438 445/731/723 private 6deb1d45a568f666
+boolean[8].private scalar.constant | _ sampled : 531 0 441 441 448/736/728 private 38760ab2d941f483
+boolean[8].private scalar.public | _ _ : 516 0 2049 2051 2679/3202/2942 private 9198805d293d3104
+boolean[8].private scalar.private | _ _ : 516 0 2049 2051 2679/3202/2942 private 37de0769a343d374
+boolean[128].constant scalar.constant | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | zeros -1 : 775 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | zeros sampled : 779 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | ones 0 : 759 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | ones 1 : 763 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | ones -1 : 1287 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | ones sampled : 1291 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | sampled 0 : 475 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | sampled 1 : 479 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | sampled -1 : 1003 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.constant | sampled sampled : 1007 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[128].constant scalar.public | zeros _ : 500 0 2001 2003 2623/3122/2870 private d93bd829bce26e01
+boolean[128].constant scalar.public | ones _ : 1010 0 2004 2006 2626/3127/2875 private d474751a019a4199
+boolean[128].constant scalar.public | sampled _ : 726 0 2004 2006 2626/3127/2875 private b74ae4f420fba345
+boolean[128].constant scalar.private | zeros _ : 500 0 2001 2003 2623/3122/2870 private a26289adf26fb747
+boolean[128].constant scalar.private | ones _ : 1010 0 2004 2006 2626/3127/2875 private cec5fa3683f033c8
+boolean[128].constant scalar.private | sampled _ : 726 0 2004 2006 2626/3127/2875 private d31f35f17e59e530
+boolean[128].public scalar.constant | _ 0 : 505 0 762 762 889/1271/1143 private f4f45794cf7ccafe
+boolean[128].public scalar.constant | _ 1 : 507 0 765 765 892/1276/1148 private ba2f3f7e30a0588e
+boolean[128].public scalar.constant | _ -1 : 769 0 1158 1158 1285/1931/1803 private d13d5822b179b221
+boolean[128].public scalar.constant | _ sampled : 771 0 1161 1161 1288/1936/1808 private 52d0ac4cd00e7263
+boolean[128].public scalar.public | _ _ : 756 0 2769 2771 3519/4402/4022 private 7a88aaf1ebbfc79b
+boolean[128].public scalar.private | _ _ : 756 0 2769 2771 3519/4402/4022 private 9afd846da03c043e
+boolean[128].private scalar.constant | _ 0 : 505 0 762 762 889/1271/1143 private db171d94c0e13e44
+boolean[128].private scalar.constant | _ 1 : 507 0 765 765 892/1276/1148 private 9de1131c5c5f6e33
+boolean[128].private scalar.constant | _ -1 : 769 0 1158 1158 1285/1931/1803 private 4a7c0eaa3fe271b9
+boolean[128].private scalar.constant | _ sampled : 771 0 1161 1161 1288/1936/1808 private 5dffe1f1f3e33401
+boolean[128].private scalar.public | _ _ : 756 0 2769 2771 3519/4402/4022 private 5afe39ef889b533d
+boolean[128].private scalar.private | _ _ : 756 0 2769 2771 3519/4402/4022 private ae79b2d0d98d42ce
+boolean[129].constant scalar.constant | * : halt
+boolean[129].constant scalar.public | * : halt
+boolean[129].constant scalar.private | * : halt
+boolean[129].public scalar.constant | * : halt
+boolean[129].public scalar.public | _ _ : halt
+boolean[129].public scalar.private | _ _ : halt
+boolean[129].private scalar.constant | * : halt
+boolean[129].private scalar.public | _ _ : halt
+boolean[129].private scalar.private | _ _ : halt
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 0 _ _ 0 _ _ 0 _ 0 : 259 0 24 24 28/41/36 private 7d1d3206e802ce0b
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 0 _ _ 0 _ _ 0 _ 1 : 261 0 27 27 31/46/41 private ca7280a30d35d1b9
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 0 _ _ 0 _ _ 0 _ -1 : 523 0 420 420 424/701/696 private 10b1c1cb11575aff
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 0 _ _ 0 _ _ 0 _ sampled : 525 0 423 423 427/706/701 private 2b91ac3c04e474f5
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 1 _ _ 1 _ 0 : 265 0 33 33 37/56/51 private fc4a87918f594bb6
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 1 _ _ 1 _ 1 : 267 0 36 36 40/61/56 private b4151e9780973926
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 1 _ _ 1 _ -1 : 529 0 429 429 433/716/711 private fabe0ecf53a3e302
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 1 _ _ 1 _ sampled : 531 0 432 432 436/721/716 private 641f37f177add4cb
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 0 _ _ 1 _ 0 : 263 0 30 30 34/51/46 private 740ec35f710f5f8c
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 0 _ _ 1 _ 1 : 265 0 33 33 37/56/51 private b3d8841cafeec044
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 0 _ _ 1 _ -1 : 527 0 426 426 430/711/706 private 91dcd1225860b951
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.constant | 1 _ _ 0 _ _ 1 _ sampled : 529 0 429 429 433/716/711 private 6a1c22d4ff231d6c
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.public | 0 _ _ 0 _ _ 0 _ _ : 510 0 2031 2033 2658/3172/2915 private e6b03cd407e72d76
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.public | 1 _ _ 1 _ _ 1 _ _ : 516 0 2040 2042 2667/3187/2930 private 306c6c71659262ba
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.public | 1 _ _ 0 _ _ 1 _ _ : 514 0 2037 2039 2664/3182/2925 private 08d80ec4fc6542a1
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.private | 0 _ _ 0 _ _ 0 _ _ : 510 0 2031 2033 2658/3172/2915 private 4aa5fc5880fd7ff1
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.private | 1 _ _ 1 _ _ 1 _ _ : 516 0 2040 2042 2667/3187/2930 private e3b4e1b0d467f908
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public scalar.private | 1 _ _ 0 _ _ 1 _ _ : 514 0 2037 2039 2664/3182/2925 private 3adec68c766457a0

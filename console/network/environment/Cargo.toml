@@ -48,6 +48,5 @@ features = [ "test-helpers" ]
 
 [features]
 default = [ ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
-serial = [ "snarkvm-utilities/serial" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [ "snarkvm-utilities/test-helpers" ]

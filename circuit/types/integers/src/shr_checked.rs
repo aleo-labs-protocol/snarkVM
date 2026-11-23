@@ -88,57 +88,6 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrChecked<Integer<E, M>> for
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Shr<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        <Self as Metrics<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Shr<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        <Self as OutputMode<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShrChecked<Integer<E, M>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    /// `(mode of self, mode of rhs, self is zero, rhs is zero)`, passed on to the `ShrWrapped` count.
-    type Case = (Mode, Mode, bool, bool);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            // Both constant: the output is a new constant.
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            // Constant `rhs`: the check on `rhs` and the shift are free.
-            (_, Mode::Constant) => Count::is(0, 0, 0, 0),
-            // `shr_wrapped`, plus one constraint that the upper bits of `rhs` are zero.
-            (_, _) => {
-                let wrapped_count = count!(Integer<E, I>, ShrWrapped<Integer<E, M>, Output=Integer<E, I>>, case);
-                wrapped_count + Count::is(0, 0, 0, 1)
-            }
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn ShrChecked<Integer<E, M>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (mode_a, Mode::Constant) => mode_a,
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,22 +108,17 @@ mod tests {
     ) {
         let a = Integer::<Circuit, I>::new(mode_a, first);
         let b = Integer::<Circuit, M>::new(mode_b, second);
-        let a_is_zero = a.is_zero().eject_value();
-        let b_is_zero = b.is_zero().eject_value();
         match first.checked_shr(second.to_u32().unwrap()) {
             Some(expected) => Circuit::scope(name, || {
                 let candidate = a.shr_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                assert_count!(ShrChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
-                // assert_output_mode!(ShrChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b), candidate);
                 assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
             }),
             None => match (mode_a, mode_b) {
                 (_, Mode::Constant) => check_operation_halts(&a, &b, Integer::shr_checked),
                 _ => Circuit::scope(name, || {
                     let _candidate = a.shr_checked(&b);
-                    // assert_count_fails!(ShrChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
                     assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
                 }),
             },

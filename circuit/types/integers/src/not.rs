@@ -32,25 +32,6 @@ impl<E: Environment, I: IntegerType> Not for &Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Not<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn count(_case: &Self::Case) -> Count {
-        Count::is(0, 0, 0, 0)
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Not<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,8 +52,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.not();
             assert_eq!(expected, candidate.eject_value());
-            assert_count!(Not(Integer<I>) => Integer<I>, &mode);
-            assert_output_mode!(Not(Integer<I>) => Integer<I>, &mode, candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

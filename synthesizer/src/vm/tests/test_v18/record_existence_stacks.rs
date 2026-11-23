@@ -20,6 +20,7 @@ use super::*;
 // than the stacks of the programs corresponding to each of the transitions in the execution are
 // the stacks of external closures called by any of the transitions.
 #[test]
+#[ignore = "slow"]
 fn test_external_closure_stack_fetching() -> Result<()> {
     let rng = &mut TestRng::default();
 

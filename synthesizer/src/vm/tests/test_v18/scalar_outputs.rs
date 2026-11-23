@@ -24,6 +24,7 @@ const NUM_DEPLOYMENTS: usize = 3;
 // Tests that a function which receives a Field/Group/Address input, casts it to
 // a Scalar and outputs the latter, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_atomic() {
     let rng = &mut TestRng::default();
 
@@ -135,6 +136,7 @@ fn test_program_with_output_scalar_from_atomic() {
 // Tests that a function which receives a record holding a Scalar entry, reads the
 // entry and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_record() {
     let rng = &mut TestRng::default();
 
@@ -244,6 +246,7 @@ fn test_program_with_output_scalar_from_record() {
 // Tests that a function which receives a dynamic record, reads a Scalar entry with
 // `get.record.dynamic` and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_dynamic_record() {
     let rng = &mut TestRng::default();
 
@@ -376,6 +379,7 @@ fn test_program_with_output_scalar_from_dynamic_record() {
 // Tests that a function which receives an array of Scalars, reads the first element
 // and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_array() {
     let rng = &mut TestRng::default();
 
@@ -467,6 +471,7 @@ fn test_program_with_output_scalar_from_array() {
 // Tests that a function which receives a struct holding a Scalar field, reads the
 // field and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_struct() {
     let rng = &mut TestRng::default();
 

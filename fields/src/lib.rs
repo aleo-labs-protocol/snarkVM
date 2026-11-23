@@ -14,13 +14,40 @@
 // limitations under the License.
 
 #![allow(clippy::module_inception)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 #[macro_use]
 extern crate thiserror;
 
 #[macro_use]
 mod macros;
+
+/// Expands to `$asm` when the target can run the assembly in `adx`, and to `$scalar` otherwise.
+macro_rules! adx_or {
+    ($asm:expr, $scalar:expr) => {{
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_feature = "adx",
+            target_feature = "bmi2"
+        ))]
+        {
+            $asm
+        }
+        #[cfg(not(all(
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_feature = "adx",
+            target_feature = "bmi2"
+        )))]
+        {
+            $scalar
+        }
+    }};
+}
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64", target_feature = "adx", target_feature = "bmi2"))]
+mod adx;
 
 pub mod errors;
 pub use errors::*;
@@ -38,6 +65,9 @@ pub mod fp6_3over2;
 
 mod fp12_2over3over2;
 pub use fp12_2over3over2::*;
+
+#[doc(hidden)]
+pub mod ifma;
 
 mod legendre;
 pub use legendre::*;
@@ -104,13 +134,6 @@ pub fn batch_inversion<F: Field>(v: &mut [F]) {
     batch_inversion_and_mul(v, &F::one());
 }
 
-#[cfg(feature = "serial")]
-// Given a vector of field elements {v_i}, compute the vector {coeff * v_i^(-1)}
-pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
-    serial_batch_inversion_and_mul(v, coeff);
-}
-
-#[cfg(not(feature = "serial"))]
 // Given a vector of field elements {v_i}, compute the vector {coeff * v_i^(-1)}
 pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
     use rayon::prelude::*;

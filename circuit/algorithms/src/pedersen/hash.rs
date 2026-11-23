@@ -26,30 +26,6 @@ impl<E: Environment, const NUM_BITS: u8> Hash for Pedersen<E, NUM_BITS> {
     }
 }
 
-impl<E: Environment, const NUM_BITS: u8> Metrics<dyn Hash<Input = Boolean<E>, Output = Field<E>>>
-    for Pedersen<E, NUM_BITS>
-{
-    /// The input bits. A constant bit set to `false` selects a constant zero element.
-    type Case = Vec<CircuitType<Boolean<E>>>;
-
-    #[inline]
-    fn count(case: &Self::Case) -> Count {
-        count!(Pedersen<E, NUM_BITS>, HashUncompressed<Input = Boolean<E>, Output = Group<E>>, case)
-    }
-}
-
-impl<E: Environment, const NUM_BITS: u8> OutputMode<dyn Hash<Input = Boolean<E>, Output = Field<E>>>
-    for Pedersen<E, NUM_BITS>
-{
-    /// The input bits. A constant bit set to `false` selects a constant zero element.
-    type Case = Vec<CircuitType<Boolean<E>>>;
-
-    #[inline]
-    fn output_mode(parameter: &Self::Case) -> Mode {
-        output_mode!(Pedersen<E, NUM_BITS>, HashUncompressed<Input = Boolean<E>, Output = Group<E>>, parameter)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,20 +55,7 @@ mod tests {
                 // Perform the hash operation.
                 let candidate = circuit.hash(&circuit_input);
                 assert_eq!(expected, candidate.eject_value());
-
-                // Check constraint counts and output mode.
-                let case = circuit_input.iter().map(CircuitType::from).collect::<Vec<_>>();
-                assert_count!(
-                    Pedersen<Circuit, NUM_BITS>,
-                    HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
-                    &case
-                );
-                assert_output_mode!(
-                    Pedersen<Circuit, NUM_BITS>,
-                    HashUncompressed<Input = Boolean<Circuit>, Output = Group<Circuit>>,
-                    &case,
-                    candidate
-                );
+                assert_scope!();
             });
         }
     }

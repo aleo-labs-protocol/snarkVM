@@ -21,9 +21,6 @@ use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, cfg_iter, cfg_
 use anyhow::Result;
 use std::borrow::Cow;
 
-#[cfg(feature = "serial")]
-use itertools::Itertools;
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize, Eq, PartialEq)]

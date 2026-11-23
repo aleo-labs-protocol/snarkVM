@@ -16,19 +16,31 @@
 pub mod chain_builder;
 pub use chain_builder::TestChainBuilder;
 
-use crate::{Block, Ledger};
+use crate::{
+    Block,
+    Ledger,
+    Transaction,
+    Transmission,
+    TransmissionID,
+    authority::Authority,
+    narwhal::{BatchCertificate, BatchHeader, Subdag, subdag::test_helpers::order_subdag_with_dfs},
+    puzzle::Solution,
+};
 use console::{
     account::{Address, PrivateKey, ViewKey},
-    network::MainnetV0,
+    network::{ConsensusVersion, MainnetV0},
     prelude::*,
+    program::Value,
 };
-use snarkvm_ledger_store::StorageMode;
+use snarkvm_ledger_store::{ConsensusStorage, StorageMode};
 
 use snarkvm_circuit::AleoV0;
 use snarkvm_ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
 use snarkvm_synthesizer::vm::VM;
 
-use std::sync::OnceLock;
+use indexmap::{IndexMap, IndexSet};
+use std::{collections::BTreeMap, sync::OnceLock};
+use time::OffsetDateTime;
 
 pub use snarkvm_ledger_test_helpers::*;
 
@@ -60,6 +72,8 @@ pub type CurrentConsensusStorage = snarkvm_ledger_store::helpers::rocksdb::Conse
 pub struct TestEnv {
     pub ledger: CurrentLedger,
     pub private_key: PrivateKey<CurrentNetwork>,
+    /// The keys of the genesis committee, starting with the genesis private key.
+    pub validators: Vec<PrivateKey<CurrentNetwork>>,
     pub view_key: ViewKey<CurrentNetwork>,
     pub address: Address<CurrentNetwork>,
 }
@@ -69,13 +83,141 @@ pub struct TestEnv {
 /// Every call returns the same genesis private key and genesis block.
 /// The test environment does not depend on `_rng`, and `_rng` is not advanced.
 pub fn sample_test_env(_rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
-    let (private_key, genesis) = genesis_fixture();
+    let (validators, genesis) = sample_genesis_committee();
+    let private_key = validators[0];
     let view_key = ViewKey::try_from(private_key).unwrap();
     let address = Address::try_from(private_key).unwrap();
     // Sample the ledger.
-    let ledger = load_ledger(genesis.clone());
+    let ledger = load_ledger(genesis);
     // Return the test environment.
-    TestEnv { ledger, private_key: *private_key, view_key, address }
+    TestEnv { ledger, private_key, validators, view_key, address }
+}
+
+/// Returns a ledger one block past the height of `version`, whose last block funds a new account, `private_key`.
+///
+/// After V8 a credits record from below `INCLUSION_UPGRADE_HEIGHT + 1` can only be upgraded, so the genesis records
+/// cannot pay fees. The new account holds two credits records and a public balance, and nothing else.
+/// Under the test heights each block up to the latest version changes the consensus version, which clears the
+/// partially verified transactions.
+pub fn sample_funded_test_env(version: ConsensusVersion, rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
+    let TestEnv { ledger, private_key: genesis_private_key, validators, .. } = sample_test_env(rng);
+    advance_to_height(&ledger, &validators, CurrentNetwork::CONSENSUS_HEIGHT(version).unwrap(), rng);
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let view_key = ViewKey::try_from(private_key).unwrap();
+    let address = Address::try_from(private_key).unwrap();
+    let mut transactions = Vec::with_capacity(3);
+    for function in ["transfer_public_to_private"; 2].into_iter().chain(["transfer_public"]) {
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::from_str("1_000_000_000_000u64").unwrap(),
+        ];
+        let locator = ("credits.aleo", function);
+        transactions.push(ledger.vm.execute(&genesis_private_key, locator, inputs.iter(), None, 0, None, rng).unwrap());
+    }
+    let block = prepare_quorum_block(&ledger, &validators, vec![], transactions, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 3);
+    ledger.advance_to_next_block(&block).unwrap();
+    TestEnv { ledger, private_key, validators, view_key, address }
+}
+
+/// Adds empty quorum blocks to `ledger` until its latest height is `height`.
+pub fn advance_to_height(
+    ledger: &CurrentLedger,
+    validators: &[PrivateKey<CurrentNetwork>],
+    height: u32,
+    rng: &mut (impl Rng + CryptoRng),
+) {
+    while ledger.latest_height() < height {
+        let block = prepare_quorum_block(ledger, validators, vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    }
+}
+
+/// Returns the next block on `ledger`: a quorum block whose subdag the `validators` certify.
+///
+/// `validators` must hold the key of every committee member. The leader certificate holds the transmissions,
+/// so the block keeps their order, and at most `BatchHeader::MAX_TRANSMISSIONS_PER_BATCH` of them.
+pub fn prepare_quorum_block<N: Network, C: ConsensusStorage<N>>(
+    ledger: &Ledger<N, C>,
+    validators: &[PrivateKey<N>],
+    solutions: Vec<Solution<N>>,
+    transactions: Vec<Transaction<N>>,
+    rng: &mut (impl Rng + CryptoRng),
+) -> Result<Block<N>> {
+    let keys = validators.iter().map(|key| Ok((Address::try_from(key)?, key))).collect::<Result<IndexMap<_, _>>>()?;
+    let checksum = |transmission: &Transmission<N>| {
+        transmission.to_checksum()?.ok_or_else(|| anyhow!("A transmission object has no checksum"))
+    };
+    let mut transmissions = IndexMap::with_capacity(transactions.len() + solutions.len());
+    for transaction in transactions {
+        let id = transaction.id();
+        let transmission = Transmission::from(transaction);
+        let previous = transmissions.insert(TransmissionID::Transaction(id, checksum(&transmission)?), transmission);
+        ensure!(previous.is_none(), "Duplicate transaction {id}");
+    }
+    for solution in solutions {
+        let transmission = Transmission::from(solution);
+        let previous =
+            transmissions.insert(TransmissionID::Solution(solution.id(), checksum(&transmission)?), transmission);
+        ensure!(previous.is_none(), "Duplicate solution {}", solution.id());
+    }
+
+    // The subdag spans the round of the previous leader certificate up to the next anchor round.
+    // The previous block holds that certificate, and the certificates it links to.
+    let latest_block = ledger.latest_block();
+    let (first_round, mut previous_ids, previous_leader) = match latest_block.authority() {
+        Authority::Beacon(_) => {
+            ensure!(latest_block.height() == 0, "A quorum block cannot follow a beacon block after genesis");
+            (1, IndexSet::new(), None)
+        }
+        Authority::Quorum(subdag) => {
+            let leader = subdag.leader_certificate();
+            let ids = subdag.get(&(leader.round() - 1)).into_iter().flatten().map(BatchCertificate::id).collect();
+            (leader.round(), ids, Some((leader.author(), leader.id())))
+        }
+    };
+    let anchor_round = latest_block.round() + 2;
+    let timestamp = OffsetDateTime::now_utc().unix_timestamp();
+
+    let mut rounds = BTreeMap::new();
+    for round in first_round..=anchor_round {
+        let committee = ledger
+            .get_committee_lookback_for_round(round)?
+            .ok_or_else(|| anyhow!("No committee lookback for round {round}"))?;
+        let authors = match round == anchor_round {
+            true => vec![committee.get_leader(round)?],
+            false => committee
+                .members()
+                .keys()
+                .copied()
+                .filter(|author| previous_leader.is_none_or(|(leader, _)| leader != *author || round != first_round))
+                .collect(),
+        };
+        let mut certificates = IndexSet::new();
+        for author in authors {
+            let key = keys.get(&author).ok_or_else(|| anyhow!("No key for committee member {author}"))?;
+            let transmission_ids = match round == anchor_round {
+                true => transmissions.keys().copied().collect(),
+                false => IndexSet::new(),
+            };
+            let header =
+                BatchHeader::new(key, round, timestamp, committee.id(), transmission_ids, previous_ids.clone(), rng)?;
+            let signatures = keys
+                .iter()
+                .filter(|(address, _)| **address != author && committee.is_committee_member(**address))
+                .map(|(_, key)| key.sign(&[header.batch_id()], rng))
+                .collect::<Result<_>>()?;
+            certificates.insert(BatchCertificate::from(header, signatures)?);
+        }
+        previous_ids = certificates.iter().map(BatchCertificate::id).collect();
+        if round == first_round {
+            previous_ids.extend(previous_leader.map(|(_, id)| id));
+        }
+        rounds.insert(round, certificates);
+    }
+
+    let subdag = Subdag::from(order_subdag_with_dfs(&rounds))?;
+    ledger.prepare_advance_to_next_quorum_block(subdag, transmissions, rng).map_err(|error| error.into_anyhow())
 }
 
 /// Returns a new ledger on a new genesis block, which `private_key` signs.

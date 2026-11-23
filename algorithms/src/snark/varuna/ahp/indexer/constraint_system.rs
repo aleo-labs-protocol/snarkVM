@@ -17,10 +17,11 @@ use crate::r1cs::{ConstraintSystem as CS, Index as VarIndex, LinearCombination, 
 use snarkvm_fields::Field;
 
 use anyhow::Result;
-#[cfg(feature = "test")]
+#[cfg(feature = "test-helpers")]
 use itertools::Itertools;
 
 /// Stores constraints during index generation.
+#[doc(hidden)]
 pub struct ConstraintSystem<F: Field> {
     pub a: Vec<Vec<(F, VarIndex)>>,
     pub b: Vec<Vec<(F, VarIndex)>>,
@@ -45,7 +46,7 @@ impl<F: Field> ConstraintSystem<F> {
 
     /// Returns `true` if every constraint holds for the given variable values.
     /// The public values start with the constant one at index 0.
-    #[cfg(feature = "test")]
+    #[cfg(feature = "test-helpers")]
     pub fn is_satisfied(&self, public: &[F], private: &[F]) -> bool {
         let evaluate = |row: &[(F, VarIndex)]| {
             row.iter().fold(F::zero(), |sum, (coefficient, index)| match index {

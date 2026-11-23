@@ -30,7 +30,6 @@ use snarkvm_utilities::{cfg_par_bridge, cfg_reduce, timing_span};
 use itertools::Itertools;
 use rand::Rng;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {

@@ -13,6 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Test helpers that build ledger data structures.
+//!
+//! This crate is for tests of snarkVM and of the crates that depend on it. Its API is not covered by semantic
+//! versioning: it may change in any release.
+
 // Every helper in this crate is `#[inline]`, so the crate that calls it compiles it.
 // A helper without `#[inline]` is compiled here, and every test binary that uses this crate waits for it.
 // Clippy enforces this for public helpers only.
@@ -30,26 +35,27 @@ use console::{
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
     Block,
-    ConfirmedTransaction,
     Deployment,
     Execution,
     Fee,
-    Header,
     Input,
     Output,
-    Ratifications,
     Rejected,
     Transaction,
     Transactions,
     Transition,
 };
 use snarkvm_ledger_query::Query;
-use snarkvm_ledger_store::{BlockStore, StorageMode, helpers::memory::BlockMemory};
+use snarkvm_ledger_store::{
+    BlockStore,
+    ConsensusStore,
+    StorageMode,
+    helpers::memory::{BlockMemory, ConsensusMemory},
+};
+use snarkvm_synthesizer::vm::VM;
 use snarkvm_synthesizer_process::Process;
 use snarkvm_synthesizer_program::Program;
-use snarkvm_utilities::PrettyUnwrap;
 
-use anyhow::Context;
 use std::sync::OnceLock;
 
 mod genesis_fixture;
@@ -773,70 +779,22 @@ fn build_genesis_block_and_transactions(
     private_key: &PrivateKey<CurrentNetwork>,
     rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>) {
-    let address = Address::<CurrentNetwork>::try_from(private_key).unwrap();
-
-    // Prepare the locator.
-    let locator = ("credits.aleo", "transfer_public_to_private");
-    // Prepare the amount for each call to the function.
-    let amount = 100_000_000u64;
-    // Prepare the function inputs.
-    let inputs = [address.to_string(), format!("{amount}_u64")];
-
-    // Initialize the process.
-    let process = Process::load().unwrap();
-    // Create the transactions.
-    let transactions = {
-        Transactions::from_iter((0..2).map(|_| {
-            // Authorize the function.
-            let authorization =
-                process.authorize::<CurrentAleo, _>(private_key, locator.0, locator.1, inputs.iter(), rng).unwrap();
-            // Execute the function.
-            let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
-
-            // Initialize a new block store.
-            let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-
-            // Prepare the assignments.
-            trace.prepare(&Query::from(block_store)).unwrap();
-            // Compute the proof and construct the execution.
-            let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
-            // Convert the execution.
-            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-            let execution = Execution::from_str(&execution.to_string()).unwrap();
-
-            // Construct the transaction.
-            let transaction = Transaction::from_execution(execution, None).unwrap();
-            // Prepare the confirmed transaction.
-            ConfirmedTransaction::accepted_execute(0, transaction.clone(), vec![]).unwrap()
-        }))
-    };
-
-    // Construct the ratifications.
-    let ratifications = Ratifications::try_from(vec![]).unwrap();
-
-    // Prepare the block header.
-    let header = Header::genesis(&ratifications, &transactions, vec![])
-        .with_context(|| "Failed to generate genesis sample header")
-        .pretty_unwrap();
-    // Prepare the previous block hash.
-    let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
-
-    // Construct the block.
-    let block = Block::new_beacon(
-        private_key,
-        previous_hash,
-        header,
-        ratifications,
-        None.into(),
-        vec![],
-        transactions.clone(),
-        vec![],
-        rng,
-    )
-    .unwrap();
-    assert!(block.header().is_genesis().unwrap(), "Failed to initialize a genesis block");
-    // Return the block and transactions.
-    (block, transactions)
+    // `VM::speculate` blocks on a channel, which panics on a thread that runs a tokio runtime.
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let store = ConsensusStore::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::open(
+                    StorageMode::new_test(None),
+                )
+                .expect("Failed to open the consensus store");
+                let vm = VM::from(store).expect("Failed to initialize the VM");
+                let block = vm.genesis_beacon(private_key, rng).expect("Failed to build the genesis block");
+                let transactions = block.transactions().clone();
+                (block, transactions)
+            })
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
 }
 
 #[cfg(test)]
@@ -852,5 +810,18 @@ mod tests {
         // The helpers return the genesis fixture.
         assert_eq!((&private_key, &block), (&genesis_fixture().0, &genesis_fixture().1));
         assert_eq!(&transactions, block.transactions());
+    }
+
+    #[test]
+    fn test_genesis_block_passes_production_checks() {
+        assert!(sample_genesis_block(&mut TestRng::default()).is_genesis().expect("Malformed genesis block"));
+    }
+
+    #[tokio::test]
+    async fn test_genesis_builds_inside_a_tokio_runtime() {
+        let rng = &mut TestRng::default();
+        let private_key = PrivateKey::new(rng).expect("Failed to sample a private key");
+        let (block, _) = build_genesis_block_and_transactions(&private_key, rng);
+        assert!(block.is_genesis().expect("Malformed genesis block"));
     }
 }

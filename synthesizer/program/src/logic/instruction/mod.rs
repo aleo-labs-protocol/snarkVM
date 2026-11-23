@@ -55,6 +55,7 @@ use console::{
 };
 use snarkvm_synthesizer_error::*;
 
+#[doc(hidden)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Instruction<N: Network> {
     /// Compute the absolute value of `first`, checking for overflow, and storing the outcome in `destination`.

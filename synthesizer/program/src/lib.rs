@@ -151,7 +151,6 @@ enum ProgramLabel<N: Network> {
     Identifier(Identifier<N>),
 }
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -1527,6 +1526,19 @@ mapping message:
         // Ensure the retrieved mapping matches.
         assert_eq!(mapping.to_string(), program.get_mapping(&Identifier::from_str("message")?)?.to_string());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_contains_string_type_in_mapping() -> Result<()> {
+        for (leaf, expected) in [("field", false), ("string", true)] {
+            let value =
+                (0..CurrentNetwork::MAX_DATA_DEPTH).fold(leaf.to_string(), |element, _| format!("[{element}; 1u32]"));
+            let program = Program::<CurrentNetwork>::from_str(&format!(
+                "program example.aleo; mapping items: key as field.public; value as {value}.public;"
+            ))?;
+            assert_eq!(program.contains_string_type(), expected);
+        }
         Ok(())
     }
 

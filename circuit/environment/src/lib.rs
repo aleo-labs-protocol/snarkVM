@@ -21,9 +21,6 @@ extern crate snarkvm_console_network as console;
 
 pub use snarkvm_circuit_environment_witness::rename_selfs;
 
-pub mod canary_circuit;
-pub use canary_circuit::*;
-
 pub mod circuit;
 pub use circuit::*;
 
@@ -55,18 +52,13 @@ pub mod sealed_circuit_environment {
 
 pub mod prelude {
     pub use crate::{
-        CircuitType,
         ConstraintUnsatisfied,
-        Count,
         Environment,
         LinearCombination,
         Mode,
-        OutputMode,
         Variable,
-        count,
         count_is,
         count_less_than,
-        output_mode,
         rename_selfs,
         traits::*,
         witness,
