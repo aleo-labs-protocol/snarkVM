@@ -329,10 +329,15 @@ fn evaluate_ecdsa_verification_internal<N: Network>(
     if consensus_version >= ConsensusVersion::V23
         && matches!(variant, ECDSAVerifyVariant::Digest | ECDSAVerifyVariant::DigestEth)
     {
+        let is_byte_digest = match message {
+            Value::Plaintext(Plaintext::Array(elements, _)) => {
+                elements.len() == ECDSASignature::PREHASH_SIZE_IN_BYTES
+                    && elements.iter().all(|element| matches!(element, Plaintext::Literal(Literal::U8(_), _)))
+            }
+            _ => false,
+        };
         ensure!(
-            matches!(message, Value::Plaintext(Plaintext::Array(elements, _))
-                if elements.len() == ECDSASignature::PREHASH_SIZE_IN_BYTES
-                    && elements.iter().all(|element| matches!(element, Plaintext::Literal(Literal::U8(_), _)))),
+            is_byte_digest,
             "Instruction '{}' expects a {}-byte digest array",
             variant.opcode(),
             ECDSASignature::PREHASH_SIZE_IN_BYTES
@@ -679,24 +684,12 @@ mod tests {
             (ECDSAVerifyVariant::DigestEth, byte_array(&ECDSASignature::ethereum_address_from_public_key(key)?)),
         ] {
             assert!(evaluate_ecdsa_verification(variant.clone(), &signature, &key, &flat)?);
-            assert!(evaluate_ecdsa_verification_internal(
-                variant.clone(),
-                &signature,
-                &key,
-                &nested,
-                ConsensusVersion::V22
-            )?);
+            let verify = |message: &Value<CurrentNetwork>, version| {
+                evaluate_ecdsa_verification_internal(variant.clone(), &signature, &key, message, version)
+            };
+            assert!(verify(&nested, ConsensusVersion::V22)?);
             for invalid in [&nested, &byte_array(&digest[1..]), &byte_array(&[0; 33])] {
-                assert!(
-                    evaluate_ecdsa_verification_internal(
-                        variant.clone(),
-                        &signature,
-                        &key,
-                        invalid,
-                        ConsensusVersion::V23
-                    )
-                    .is_err()
-                );
+                assert!(verify(invalid, ConsensusVersion::V23).is_err());
             }
         }
         Ok(())
