@@ -1423,11 +1423,6 @@ fn test_bilinearity() {
     assert_eq!(ans3.pow(Fr::characteristic()), Fq12::one());
 }
 
-/// Returns one of `edges` or a random element.
-fn fq_edge_or_random(rng: &mut TestRng, edges: &[Fq]) -> Fq {
-    if rng.random_bool(0.5) { edges[rng.random_range(0..edges.len())] } else { Fq::rand(rng) }
-}
-
 /// Returns the `Fq` whose Montgomery limbs are `limbs`, which must be below the modulus.
 fn fq_from_limbs(limbs: [u64; 6]) -> Fq {
     let fq = snarkvm_fields::field!(Fq, BigInteger384(limbs));

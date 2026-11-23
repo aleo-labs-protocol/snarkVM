@@ -47,6 +47,7 @@ use crate::{
     One,
     PoseidonDefaultParameters,
     PoseidonDefaultParametersEntry,
+    SqrtTables,
     Zero,
 };
 use snarkvm_utilities::{
@@ -56,17 +57,24 @@ use snarkvm_utilities::{
 };
 
 use rand::RngExt;
-use std::arch::x86_64::*;
+use std::{arch::x86_64::*, sync::OnceLock};
 
-/// The BLS12-377 base field, with the constants of `snarkvm_curves::bls12_377::FqParameters`
-/// but for the FFT roots, which no test here reads. The crate's own `Fp384` is not the one its
-/// dev-dependency on `snarkvm-curves` instantiates, so the tests cannot take `Fq` from there.
+/// The BLS12-377 base field, with the constants of `snarkvm_curves::bls12_377::FqParameters`.
+/// The crate's own `Fp384` is not the one its dev-dependency on `snarkvm-curves` instantiates,
+/// so the tests cannot take `Fq` from there.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 struct FqParameters;
 
 type Fq = Fp384<FqParameters>;
 
-impl Fp384Parameters for FqParameters {}
+impl Fp384Parameters for FqParameters {
+    fn sqrt_tables() -> &'static SqrtTables<Fq> {
+        static TABLES: OnceLock<SqrtTables<Fq>> = OnceLock::new();
+        TABLES.get_or_init(SqrtTables::<Fq>::new)
+    }
+}
+
+impl crate::sealed_parameters::Sealed for FqParameters {}
 
 impl PoseidonDefaultParameters for FqParameters {
     const PARAMS_OPT_FOR_CONSTRAINTS: [PoseidonDefaultParametersEntry; 7] = [
@@ -83,7 +91,6 @@ impl PoseidonDefaultParameters for FqParameters {
 impl FftParameters for FqParameters {
     type BigInteger = BigInteger384;
 
-    const POWERS_OF_ROOTS_OF_UNITY: &'static [BigInteger384] = &[];
     const TWO_ADICITY: u32 = 46;
     const TWO_ADIC_ROOT_OF_UNITY: BigInteger384 = BigInteger384([
         2022196864061697551,

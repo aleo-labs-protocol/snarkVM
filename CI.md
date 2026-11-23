@@ -40,7 +40,7 @@ rows.
 | `notify` | hosted | schedule | | posts to Slack when the scheduled run turns red, and once when it turns green again | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag, and that each matrix `name` axis lists the same names as its `include` | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
-| `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
+| `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories and yanked crates are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
 | `source-checks` | hosted | all | | `scripts/check_sources.py`: the license header in each tracked `.rs` file, and on Linux the header's year | |
 | `wasm` | hosted | all | | `wasm-pack test --node` in `wasm` | `wasm` |
 | `lint` | `cpu` | all | 90 | clippy, default and `--all-features`; `cargo doc --all-features`; on release, also `cargo check --release --workspace --all-targets` | `check-clippy`, `check-all-targets`, `parameters-large` |
@@ -103,7 +103,10 @@ cancelled, and it waits for the scheduled run before it to end.
 `CI_SLACK_CHANNEL` variable, `#ci` by default. It posts only when the run turns
 red, and once when it turns green again. A run that `schedule-due` skips posts
 nothing. Its token, `CI_SLACK_TOKEN`, is a secret of the `ci-notify`
-environment, which admits only `staging`.
+environment, which admits only `staging`. The nightly run of
+[`bump-advisories.yml`](.github/workflows/bump-advisories.yml) has a `notify`
+job of its own, which posts when that run fails, and once when it passes again.
+Each workflow keeps its own state.
 
 The schedule fires on the default branch of every copy of this repository.
 `schedule-due` and `notify` run only in this repository, and every other job

@@ -53,9 +53,6 @@ macro_rules! verify_credits_proving_key_file {
     }};
 }
 
-mod canary_v0;
-pub use canary_v0::*;
-
 mod consensus_heights;
 pub use consensus_heights::*;
 
@@ -77,8 +74,6 @@ pub mod prelude {
     #[cfg(feature = "wasm")]
     pub use crate::get_or_init_consensus_version_heights;
     pub use crate::{
-        CANARY_V0_CONSENSUS_VERSION_HEIGHTS,
-        CanaryV0,
         ConsensusVersion,
         MAINNET_V0_CONSENSUS_VERSION_HEIGHTS,
         MainnetV0,
@@ -150,6 +145,8 @@ pub trait Network:
     + Sync
 {
     /// The network ID.
+    ///
+    /// ID 2 is taken: the retired Canary network used it, and its blocks and keys exist. Do not reuse it.
     const ID: u16;
     /// The (long) network name.
     const NAME: &'static str;

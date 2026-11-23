@@ -89,7 +89,7 @@ fn disabled() -> bool {
 }
 
 /// Whether the lane programs run for the tower `P` over `Fp384<Q>`: `is_supported::<Q>()`, and the
-/// tower is Fp12 = Fp6[w] / (w^2 - v), Fp6 = Fp2[v] / (v^3 - u) and Fp2 = Fp[u] / (u^2 + 5).
+/// tower is `Fp12 = Fp6[w] / (w^2 - v)`, `Fp6 = Fp2[v] / (v^3 - u)` and `Fp2 = Fp[u] / (u^2 + 5)`.
 pub fn is_supported_tower<P, Q>() -> bool
 where
     P: Fp12Parameters,

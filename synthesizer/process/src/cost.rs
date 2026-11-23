@@ -1476,10 +1476,10 @@ fn minimum_cost_in_microcredits<N: Network>(
 mod tests {
     use super::*;
     use crate::test_helpers::get_execution;
-    use circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0};
+    use circuit::{Aleo, AleoTestnetV0, AleoV0};
 
     use console::{
-        network::{CanaryV0, ConsensusVersion, MainnetV0, TestnetV0, prelude::consensus_config_value_by_version},
+        network::{ConsensusVersion, MainnetV0, TestnetV0, prelude::consensus_config_value_by_version},
         types::Address,
     };
     use snarkvm_synthesizer_program::Program;
@@ -1648,7 +1648,6 @@ finalize price:
 
     #[test]
     fn test_storage_cost_bounds_for_all_networks() {
-        test_storage_cost_bounds::<CanaryV0>();
         test_storage_cost_bounds::<MainnetV0>();
         test_storage_cost_bounds::<TestnetV0>();
     }
@@ -1996,7 +1995,6 @@ function dummy:",
         }
 
         // Run the tests for all networks.
-        run_test::<CanaryV0, AleoCanaryV0>();
         run_test::<MainnetV0, AleoV0>();
         run_test::<TestnetV0, AleoTestnetV0>();
     }
