@@ -103,29 +103,8 @@ impl<N: Network> Stack<N> {
     pub(crate) fn check_deployment_register_sizes(&self, max_bits: usize) -> Result<()> {
         let mut memoized = HashMap::new();
         let mut checked_calls = std::collections::HashSet::new();
-        let check_scope =
-            |stack: &Self, name: &Identifier<N>, instructions: &[Instruction<N>], memoized: &mut _| -> Result<()> {
-                let registers = stack.register_types.read();
-                let types = registers.get(name).ok_or_else(|| anyhow!("Register types for '{name}' do not exist"))?;
-                for instruction in instructions {
-                    // Static calls use their callee's declarations.
-                    if matches!(instruction, Instruction::Call(_)) {
-                        continue;
-                    }
-                    for destination in instruction.destinations() {
-                        let destination_type = types
-                            .destinations
-                            .get(&destination.locator())
-                            .ok_or_else(|| anyhow!("Register '{destination}' does not exist"))?;
-                        if let RegisterType::Plaintext(pt) = destination_type {
-                            stack.check_plaintext_type_size(pt, max_bits, memoized)?;
-                        }
-                    }
-                }
-                Ok(())
-            };
         for function in self.program.functions().values() {
-            check_scope(self, function.name(), function.instructions(), &mut memoized)?;
+            self.check_scope_destinations(function.name(), function.instructions(), max_bits, &mut memoized)?;
             for instruction in function.instructions() {
                 let Instruction::Call(call) = instruction else { continue };
                 let (program_id, name) = match call.operator() {
@@ -135,12 +114,10 @@ impl<N: Network> Stack<N> {
                 if !checked_calls.insert((*program_id, *name)) {
                     continue;
                 }
-                let external;
                 let callee = if program_id == self.program_id() {
-                    self
+                    StackRef::Internal(self)
                 } else {
-                    external = self.get_external_stack(program_id)?;
-                    external.as_ref()
+                    StackRef::External(self.get_external_stack(program_id)?)
                 };
                 // Static call destinations use the callee's types, including structs from its own imports.
                 if let Some(closure) = callee.program.closures().get(name) {
@@ -150,7 +127,7 @@ impl<N: Network> Stack<N> {
                         }
                     }
                     // Synthesis executes closures inline. Closures cannot contain call instructions.
-                    check_scope(callee, name, closure.instructions(), &mut memoized)?;
+                    callee.check_scope_destinations(name, closure.instructions(), max_bits, &mut memoized)?;
                 } else {
                     for output in callee.get_function_ref(name)?.outputs() {
                         if let ValueType::Constant(pt) | ValueType::Public(pt) | ValueType::Private(pt) =
@@ -159,6 +136,34 @@ impl<N: Network> Stack<N> {
                             callee.check_plaintext_type_size(pt, max_bits, &mut memoized)?;
                         }
                     }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks instruction destinations in the scope that defines their register types.
+    fn check_scope_destinations(
+        &self,
+        name: &Identifier<N>,
+        instructions: &[Instruction<N>],
+        max_bits: usize,
+        memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+    ) -> Result<()> {
+        let registers = self.register_types.read();
+        let types = registers.get(name).ok_or_else(|| anyhow!("Register types for '{name}' do not exist"))?;
+        for instruction in instructions {
+            // Static calls use their callee's declarations.
+            if matches!(instruction, Instruction::Call(_)) {
+                continue;
+            }
+            for destination in instruction.destinations() {
+                let destination_type = types
+                    .destinations
+                    .get(&destination.locator())
+                    .ok_or_else(|| anyhow!("Register '{destination}' does not exist"))?;
+                if let RegisterType::Plaintext(pt) = destination_type {
+                    self.check_plaintext_type_size(pt, max_bits, memoized)?;
                 }
             }
         }
