@@ -14,13 +14,40 @@
 // limitations under the License.
 
 #![allow(clippy::module_inception)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 #[macro_use]
 extern crate thiserror;
 
 #[macro_use]
 mod macros;
+
+/// Expands to `$asm` when the target can run the assembly in `adx`, and to `$scalar` otherwise.
+macro_rules! adx_or {
+    ($asm:expr, $scalar:expr) => {{
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_feature = "adx",
+            target_feature = "bmi2"
+        ))]
+        {
+            $asm
+        }
+        #[cfg(not(all(
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_feature = "adx",
+            target_feature = "bmi2"
+        )))]
+        {
+            $scalar
+        }
+    }};
+}
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64", target_feature = "adx", target_feature = "bmi2"))]
+mod adx;
 
 pub mod errors;
 pub use errors::*;
