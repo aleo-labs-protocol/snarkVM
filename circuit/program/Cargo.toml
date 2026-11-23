@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-program"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program circuit library for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -31,11 +31,11 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "network", "types" ]
+features = [ "network", "types", "test-helpers" ]
 
 [dev-dependencies.snarkvm-console-program]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-console-account]
 workspace = true
@@ -47,4 +47,8 @@ workspace = true
 workspace = true
 
 [features]
-dev-print = [ "snarkvm-utilities/dev-print" ]
+
+# Minor releases add variants to `Literal` and `Value`; see their documentation. The setting covers
+# every public enum of this crate, including enums that are not expected to gain variants.
+[package.metadata.cargo-semver-checks.lints]
+enum_variant_added = "allow"

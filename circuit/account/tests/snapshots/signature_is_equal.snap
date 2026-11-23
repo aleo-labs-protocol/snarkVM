@@ -1,0 +1,24 @@
+# Circuit shape of `signature_is_equal` for each operand mode and a fixed set of keys and signatures.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-account --test snapshots
+signature.constant signature.constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+signature.constant signature.public | sig-1 _ : 0 0 20 20 535/31/13 private ed56692469433431
+signature.constant signature.public | sig-2 _ : 0 0 20 20 535/31/13 private 6cf6cf7fa4c4e6ec
+signature.constant signature.private | sig-1 _ : 0 0 20 20 535/31/13 private 896c6fa1cd18390a
+signature.constant signature.private | sig-2 _ : 0 0 20 20 535/31/13 private dfa1771e1e881d1b
+signature.public signature.constant | _ sig-1 : 0 0 20 20 535/31/13 private 0a393f1e9f50c72c
+signature.public signature.constant | _ sig-2 : 0 0 20 20 535/31/13 private f9f4c6e9a686aa8f
+signature.public signature.public | _ _ : 0 0 20 20 1033/31/13 private 5d11d23f410d6df3
+signature.public signature.private | _ _ : 0 0 20 20 1033/31/13 private 76581fd112600e81
+signature.private signature.constant | _ sig-1 : 0 0 20 20 535/31/13 private 908b0ec90b8972ba
+signature.private signature.constant | _ sig-2 : 0 0 20 20 535/31/13 private 59de9f8fc9c5591d
+signature.private signature.public | _ _ : 0 0 20 20 1033/31/13 private a30ed75c660b57ce
+signature.private signature.private | _ _ : 0 0 20 20 1033/31/13 private 3e3414dc7ddb5dee

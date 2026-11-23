@@ -22,6 +22,7 @@ use indexmap::{IndexMap, IndexSet, map::Entry};
 use itertools::Itertools;
 
 /// This field is the scalar field (Fr) of BLS12-377.
+#[doc(hidden)]
 pub type Fr = snarkvm_curves::bls12_377::Fr;
 
 #[allow(dead_code)]
@@ -81,6 +82,7 @@ impl CurrentNamespace {
 }
 
 /// Constraint system for testing purposes.
+#[doc(hidden)]
 pub struct TestConstraintSystem<F: Field> {
     // used to intern full paths in test scenarios, for get and set purposes
     interned_full_paths: AHashMap<Vec<InternedPathSegment>, InternedPath>,

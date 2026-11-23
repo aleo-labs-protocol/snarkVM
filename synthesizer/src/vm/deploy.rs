@@ -111,9 +111,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Compute the deployment.
-        let timer = timer!("VM::deploy_raw");
+        let timer = timing_span!("VM::deploy_raw").entered();
         let result = process!(self, logic);
-        finish!(timer, "Compute the deployment");
+        timing_event!("Compute the deployment");
+        drop(timer);
         result
     }
 }

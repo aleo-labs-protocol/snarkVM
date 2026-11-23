@@ -13,6 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A decentralized virtual machine.
+//!
+//! # Stability
+//!
+//! The `test-helpers` features of the snarkVM crates, and the items that they enable, are for tests of snarkVM and of
+//! the crates that depend on it. They are hidden from the documentation, are not part of the API, and are not covered
+//! by semantic versioning: they may change in any release. The API of the `snarkvm-ledger-test-helpers` crate is not
+//! covered by semantic versioning either.
+
 #![forbid(unsafe_code)]
 #![allow(clippy::module_inception)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
@@ -47,6 +56,7 @@ pub use snarkvm_wasm as wasm;
 
 pub mod prelude {
     #[cfg(feature = "console")]
+    #[doc(no_inline)]
     pub use crate::console::{account::*, network::prelude::*, program::*};
     #[cfg(feature = "ledger")]
     pub use crate::ledger::prelude::*;

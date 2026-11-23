@@ -86,13 +86,9 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
+use snarkvm_utilities::{VmScope, locks::RwLock, timing_event, timing_span};
 
-use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
@@ -100,7 +96,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
@@ -465,7 +460,7 @@ impl<N: Network> Stack<N> {
 
     /// Returns the constructor types for the program.
     #[inline]
-    pub fn get_constructor_types(&self) -> Result<FinalizeTypes<N>> {
+    pub(crate) fn get_constructor_types(&self) -> Result<FinalizeTypes<N>> {
         // Retrieve the constructor types.
         match self.constructor_types.read().as_ref() {
             Some(constructor_types) => Ok(constructor_types.clone()),
@@ -474,6 +469,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Returns the register types for the given closure or function name.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn get_register_types(&self, name: &Identifier<N>) -> Result<RegisterTypes<N>> {
         // Retrieve the register types.
@@ -484,6 +482,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Returns the register types for the given finalize name.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn get_finalize_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
         // Retrieve the finalize types.
@@ -495,7 +496,7 @@ impl<N: Network> Stack<N> {
 
     /// Returns the register types for the given view function name.
     #[inline]
-    pub fn get_view_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
+    pub(crate) fn get_view_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
         match self.view_types.read().get(name) {
             Some(view_types) => Ok(view_types.clone()),
             None => bail!("View types for '{name}' do not exist"),

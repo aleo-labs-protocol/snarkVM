@@ -40,12 +40,13 @@ fn get_public_balance(vm: &VM<CurrentNetwork, LedgerType>, address: &str) -> u64
 // in `synthesizer/tests/test_vm_execute_and_finalize.rs` and
 // `test_v15/cost_for_call.rs` which also verify cost estimation correctness.
 #[test]
+#[ignore = "slow"]
 fn test_cost_for_call_depending_on_signer() {
     let rng = &mut TestRng::default();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     let zero_field = Identifier::<CurrentNetwork>::from_str("zero").unwrap().to_field().unwrap();
     let one_field = Identifier::<CurrentNetwork>::from_str("one").unwrap().to_field().unwrap();

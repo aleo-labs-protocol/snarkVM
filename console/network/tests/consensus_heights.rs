@@ -15,13 +15,12 @@
 
 //! Each network reads its own consensus version heights. The test implementation reads one table for all networks.
 
-#![cfg(not(any(feature = "test", feature = "test_consensus_heights")))]
+#![cfg(not(feature = "dev-network"))]
 
 use snarkvm_console_network::prelude::*;
 
 #[test]
 fn test_consensus_heights_are_network_specific() {
     assert_eq!(TestnetV0::CONSENSUS_VERSION_HEIGHTS(), &TestnetV0::_CONSENSUS_VERSION_HEIGHTS);
-    assert_eq!(CanaryV0::CONSENSUS_VERSION_HEIGHTS(), &CanaryV0::_CONSENSUS_VERSION_HEIGHTS);
     assert_eq!(MainnetV0::CONSENSUS_VERSION_HEIGHTS(), &MainnetV0::_CONSENSUS_VERSION_HEIGHTS);
 }

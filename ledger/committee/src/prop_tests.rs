@@ -28,7 +28,6 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
 };
-use test_strategy::proptest;
 
 type CurrentNetwork = console::network::MainnetV0;
 
@@ -169,37 +168,40 @@ fn invalid_stake_validator() -> BoxedStrategy<Validator> {
         .boxed()
 }
 
-#[proptest]
-fn committee_members(input: CommitteeContext) {
-    let CommitteeContext(committee, ValidatorSet(validators)) = input;
+#[cfg(test)]
+proptest::proptest! {
+    #[test]
+    fn committee_members(input in any::<CommitteeContext>()) {
+        let CommitteeContext(committee, ValidatorSet(validators)) = input;
 
-    let mut total_stake = 0u64;
-    for v in validators.iter() {
-        total_stake += v.stake;
+        let mut total_stake = 0u64;
+        for v in validators.iter() {
+            total_stake += v.stake;
+        }
+
+        assert_eq!(committee.num_members(), validators.len());
+        assert_eq!(committee.total_stake(), total_stake);
+        for v in validators.iter() {
+            let address = v.address;
+            assert!(committee.is_committee_member(address));
+            assert_eq!(committee.get_stake(address), v.stake);
+        }
+        let quorum_threshold = committee.quorum_threshold();
+        let availability_threshold = committee.availability_threshold();
+        // (N - f) + (f + 1) - 1 = N
+        assert_eq!(quorum_threshold + availability_threshold - 1, total_stake);
     }
 
-    assert_eq!(committee.num_members(), validators.len());
-    assert_eq!(committee.total_stake(), total_stake);
-    for v in validators.iter() {
-        let address = v.address;
-        assert!(committee.is_committee_member(address));
-        assert_eq!(committee.get_stake(address), v.stake);
+    #[test]
+    fn invalid_stakes(committee in too_low_stake_committee()) {
+        assert!(committee.is_err());
+        if let Err(err) = committee {
+            assert_eq!(err.to_string().as_str(), "All members must have at least 10000000000000 microcredits in stake");
+        }
     }
-    let quorum_threshold = committee.quorum_threshold();
-    let availability_threshold = committee.availability_threshold();
-    // (N - f) + (f + 1) - 1 = N
-    assert_eq!(quorum_threshold + availability_threshold - 1, total_stake);
-}
 
-#[proptest]
-fn invalid_stakes(#[strategy(too_low_stake_committee())] committee: Result<Committee<CurrentNetwork>>) {
-    assert!(committee.is_err());
-    if let Err(err) = committee {
-        assert_eq!(err.to_string().as_str(), "All members must have at least 10000000000000 microcredits in stake");
+    #[test]
+    fn invalid_member_count(committee in too_small_committee()) {
+        assert!(matches!(committee, Err(e) if e.to_string().as_str() == "Committee must have at least 3 members"))
     }
-}
-
-#[proptest]
-fn invalid_member_count(#[strategy(too_small_committee())] committee: Result<Committee<CurrentNetwork>>) {
-    assert!(matches!(committee, Err(e) if e.to_string().as_str() == "Committee must have at least 3 members"))
 }

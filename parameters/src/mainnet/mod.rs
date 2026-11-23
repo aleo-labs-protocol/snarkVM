@@ -279,8 +279,8 @@ mod tests {
     fn test_lock_download_waits_for_holder() {
         use std::time::Duration;
 
-        let directory = std::env::temp_dir().join(format!("snarkvm-lock-download-{}", std::process::id()));
-        let file_path = directory.join("inclusion.prover");
+        let directory = tempfile::tempdir().expect("Failed to create a temporary directory");
+        let file_path = directory.path().join("inclusion.prover");
         let holder = InclusionProver::lock_download(&file_path).expect("Failed to take the download lock");
 
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -294,8 +294,6 @@ mod tests {
         drop(holder);
         assert!(receiver.recv_timeout(Duration::from_secs(10)).is_ok(), "The waiter did not take a released lock");
         assert!(waiter.join().expect("The waiter panicked").is_some());
-
-        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[cfg(all(feature = "filesystem", not(feature = "wasm")))]

@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![warn(clippy::cast_possible_truncation)]
+
 extern crate proc_macro;
 
 use proc_macro::{Group, Ident, TokenStream, TokenTree};

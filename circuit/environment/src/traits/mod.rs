@@ -22,9 +22,6 @@ pub use from::*;
 mod inject;
 pub use inject::*;
 
-mod metrics;
-pub use metrics::*;
-
 mod operators;
 pub use operators::*;
 

@@ -23,6 +23,7 @@ use rand::{
     distr::{Distribution, StandardUniform},
 };
 use rand_chacha::ChaCha20Rng;
+#[cfg(any(test, feature = "test-helpers"))]
 use rand_xorshift::XorShiftRng;
 
 /// A trait for a uniform random number generator.
@@ -43,7 +44,7 @@ where
 
 // The rand 0.8 default implementation.
 pub trait UniformExt: Uniform {
-    /// Generates a random Option<Self> (50/50 chance of Some or None)
+    /// Generates a random `Option<Self>` (50/50 chance of Some or None)
     fn rand_option<R: Rng + ?Sized>(rng: &mut R) -> Option<Self> {
         if rng.random() { Some(Self::rand(rng)) } else { None }
     }
@@ -55,26 +56,42 @@ impl<T: Uniform> UniformExt for T {}
 /// A fast RNG used **solely** for testing and benchmarking, **not** for any real world purposes.
 ///
 /// Its output for a seed may change between versions. Use [`FixedRng`] where it must not.
+///
+/// Every `TestRng::default()` takes its seed from the `TEST_SEED` environment variable if it is set.
+/// To replay a failure, run `TEST_SEED=<seed> cargo test -p <crate> -- <test> --exact`.
+///
+/// The `test-helpers` feature provides it.
+#[cfg(any(test, feature = "test-helpers"))]
+#[derive(Clone)]
+#[doc(hidden)]
 pub struct TestRng {
     seed: u64,
     rng: XorShiftRng,
     calls: usize,
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl Default for TestRng {
     fn default() -> Self {
-        // Obtain the initial seed using entropy provided by the OS.
-        let seed: u64 = rand::random();
+        // Obtain the initial seed from `TEST_SEED`, or else using entropy provided by the OS.
+        let seed: u64 = match std::env::var_os("TEST_SEED") {
+            Some(value) => value
+                .to_str()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| panic!("TEST_SEED must be a u64, found {value:?}")),
+            None => rand::random(),
+        };
 
         // Use it as the basis for the underlying Rng.
         Self::fixed(seed)
     }
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl TestRng {
     pub fn fixed(seed: u64) -> Self {
         // Print the seed, so it's displayed if any of the tests using `test_rng` fails.
-        println!("\nInitializing 'TestRng' with seed '{seed}'\n");
+        println!("\nInitializing 'TestRng' with TEST_SEED={seed}\n");
 
         // Use the seed to initialize a fast, non-cryptographic Rng.
         Self::from_seed(seed)
@@ -150,6 +167,7 @@ impl TestRng {
     }
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl TryRng for TestRng {
     type Error = Infallible;
 
@@ -170,8 +188,10 @@ impl TryRng for TestRng {
     }
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl TryCryptoRng for TestRng {}
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl Drop for TestRng {
     fn drop(&mut self) {
         println!("Called TestRng with seed {} {} times", self.seed, self.calls);
@@ -214,7 +234,7 @@ impl TryCryptoRng for FixedRng {}
 /// `rng.gen_range(low..=high)` for `usize` on 64-bit. It mustn't be modified
 /// to maintain backwards compatibility. It is a direct reimplementation of
 /// `sample_single_inclusive` for a concrete type (`usize`) an inlined widening multiply
-/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/uniform.rs.
+/// from <https://github.com/rust-random/rand/blob/937320c/src/distributions/uniform.rs>.
 pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -> usize {
     debug_assert!(low <= high);
 
@@ -242,7 +262,7 @@ pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -
 /// This impl reproduces rand 0.8's `slice.choose_weighted(rng, weight_fn)` for u16 weights.
 /// It mustn't be modified to maintain backwards compatibility. It is a direct, "collapsed"
 /// reimplementation of `WeightedIndex::new(weights).sample(rng)` specifically for `u16` weights
-/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/weighted_index.rs.
+/// from <https://github.com/rust-random/rand/blob/937320c/src/distributions/weighted_index.rs>.
 pub fn choose_weighted_legacy<'a, T, R: Rng>(slice: &'a [T], weight_fn: impl Fn(&T) -> u16, rng: &mut R) -> &'a T {
     // WeightedIndex::new.
     let mut iter = slice.iter();
@@ -313,5 +333,25 @@ mod tests {
         rng.fill_bytes(&mut bytes);
         let expected = FIRST_BLOCK.into_iter().chain([SECOND_BLOCK_START]).flat_map(u32::to_le_bytes);
         assert!(bytes.into_iter().eq(expected));
+    }
+
+    #[test]
+    fn test_test_rng_clone_continues_stream() {
+        let mut rng = TestRng::from_seed(123456789);
+        // Advance the RNG, so that the clone starts mid-stream.
+        for _ in 0..10 {
+            rng.next_u64();
+        }
+        let mut clone = rng.clone();
+        assert_eq!(clone.calls, rng.calls);
+        for _ in 0..100 {
+            assert_eq!(clone.next_u64(), rng.next_u64());
+        }
+        let mut bytes = [0u8; 64];
+        let mut clone_bytes = [0u8; 64];
+        rng.fill_bytes(&mut bytes);
+        clone.fill_bytes(&mut clone_bytes);
+        assert_eq!(clone_bytes, bytes);
+        assert_eq!(clone.calls, rng.calls);
     }
 }

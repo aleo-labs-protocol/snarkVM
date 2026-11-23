@@ -42,7 +42,7 @@ impl<N: Network> Debug for PendingBlock<N> {
     }
 }
 
-/// Error returned by [`Self::check_block_subdag`] and [`Self::check_block_subdag_inner`].
+/// Error returned by [`Ledger::check_block_subdag`] and `Ledger::check_block_subdag_inner`.
 ///
 /// This allows parsing for begning errors, such as the block already existing in the ledger.
 #[derive(thiserror::Error, Debug)]

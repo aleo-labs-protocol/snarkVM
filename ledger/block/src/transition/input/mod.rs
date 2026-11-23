@@ -165,7 +165,7 @@ impl<N: Network> Input<N> {
                 match input.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) input index as a field element.
-                        let index = Field::from_u16(index as u16);
+                        let index = Field::from_u16(u16::try_from(index)?);
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id);
@@ -185,7 +185,7 @@ impl<N: Network> Input<N> {
                 match input.to_fields() {
                     Ok(fields) => {
                         // Construct the (console) input index as a field element.
-                        let index = Field::from_u16(index as u16);
+                        let index = Field::from_u16(u16::try_from(index)?);
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id);
@@ -314,8 +314,7 @@ pub(crate) mod test_helpers {
         let rng = &mut TestRng::default();
 
         // Sample a transition.
-        let transaction = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
-        let transition = transaction.transitions().next().unwrap();
+        let transition = crate::transition::test_helpers::sample_transition(rng);
 
         // Retrieve the transition ID and input.
         let transition_id = *transition.id();

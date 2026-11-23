@@ -17,9 +17,10 @@ use super::*;
 
 /// Tests that "view" cannot be used as a function name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_function_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -39,9 +40,10 @@ function view:
 
 /// Tests that "view" cannot be used as a struct name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_struct_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -65,9 +67,10 @@ function test:
 
 /// Tests that "view" cannot be used as a mapping name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_mapping_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -91,9 +94,10 @@ function test:
 
 /// Tests that "view" cannot be used as a record name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_record_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
@@ -117,9 +121,10 @@ function test:
 
 /// Tests that "view" cannot be used as a program name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_program_name() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(

@@ -67,6 +67,9 @@ impl<E: Environment, I: IntegerType> AddChecked<Self> for Integer<E, I> {
 
     #[inline]
     fn add_checked(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the sum and return the new constant.
@@ -81,9 +84,9 @@ impl<E: Environment, I: IntegerType> AddChecked<Self> for Integer<E, I> {
             let sum = self.to_field() + other.to_field();
 
             // Extract the integer bits from the field element, ignoring the carry bit as it is not relevant for signed addition.
-            let sum = match sum.to_lower_bits_le(I::BITS as usize + 1).split_last() {
+            let sum = match sum.to_lower_bits_le(i_bits + 1).split_last() {
                 Some((_, bits_le)) => Integer::from_bits_le(bits_le),
-                // Note: `E::halt` should never be invoked as `I::BITS as usize + 1` is greater than zero.
+                // Note: `E::halt` should never be invoked as `i_bits + 1` is greater than zero.
                 None => E::halt("Malformed sum detected during integer addition"),
             };
 
@@ -107,54 +110,6 @@ impl<E: Environment, I: IntegerType> AddChecked<Self> for Integer<E, I> {
             E::assert_eq(computed_sum, witnessed_sum).expect("Unsigned integer addition constraint unsatisfied");
 
             sum
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn Add<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        <Self as Metrics<dyn AddChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Add<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        <Self as OutputMode<dyn AddChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn AddChecked<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match I::is_signed() {
-            true => match (case.0, case.1) {
-                (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                (Mode::Constant, _) => Count::is(0, 0, I::BITS + 2, I::BITS + 4),
-                (_, Mode::Constant) => Count::is(0, 0, I::BITS + 3, I::BITS + 5),
-                (_, _) => Count::is(0, 0, I::BITS + 4, I::BITS + 6),
-            },
-            false => match (case.0, case.1) {
-                (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                (_, _) => Count::is(0, 0, I::BITS, I::BITS + 1),
-            },
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn AddChecked<Integer<E, I>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
         }
     }
 }
@@ -185,14 +140,13 @@ mod tests {
                 let candidate = a.add_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                assert_count!(Add(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                assert_output_mode!(Add(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
+                assert_scope!();
             }),
             None => match mode_a.is_constant() && mode_b.is_constant() {
                 true => check_operation_halts(&a, &b, Integer::add_checked),
                 false => Circuit::scope(name, || {
                     let _candidate = a.add_checked(&b);
-                    assert_count_fails!(Add(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
+                    assert_scope_fails!();
                 }),
             },
         }

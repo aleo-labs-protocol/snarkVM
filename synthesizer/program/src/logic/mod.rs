@@ -13,7 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[doc(hidden)]
 pub mod command;
+#[doc(hidden)]
 pub use command::*;
 
 mod finalize_global_state;
@@ -22,5 +24,7 @@ pub use finalize_global_state::*;
 mod finalize_operation;
 pub use finalize_operation::*;
 
+#[doc(hidden)]
 pub mod instruction;
+#[doc(hidden)]
 pub use instruction::*;

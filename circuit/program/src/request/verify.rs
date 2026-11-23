@@ -157,6 +157,9 @@ impl<A: Aleo> Request<A> {
             .zip_eq(input_types)
             .enumerate()
             .map(|(index, ((input_id, input), input_type))| {
+                // Note: The number of inputs is at most `MAX_INPUTS`, so the cast is lossless.
+                #[allow(clippy::cast_possible_truncation)]
+                let index_u16 = index as u16;
                 match input_id {
                     // A constant input is hashed (using `tcm`) to a field element.
                     InputID::Constant(input_hash) => {
@@ -166,7 +169,7 @@ impl<A: Aleo> Request<A> {
                         }
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -196,7 +199,7 @@ impl<A: Aleo> Request<A> {
                         }
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -226,7 +229,7 @@ impl<A: Aleo> Request<A> {
                         }
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Compute the input view key as `Hash(function ID || tvk || index)`.
                         let input_view_key = A::hash_psd4(&[function_id.clone(), tvk.clone(), input_index]);
                         // Compute the ciphertext.
@@ -330,7 +333,7 @@ impl<A: Aleo> Request<A> {
                         };
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -361,7 +364,7 @@ impl<A: Aleo> Request<A> {
                         };
 
                         // Prepare the index as a constant field element.
-                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        let input_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || input || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -495,6 +498,10 @@ mod tests {
         is_dynamic: bool,
         use_record: bool,
     ) -> Result<()> {
+        // Initialize the thread-local global constants before the first scope, so that no iteration counts them.
+        Circuit::initialize_global_constants();
+        Circuit::reset();
+
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
@@ -532,6 +539,10 @@ mod tests {
         is_dynamic: bool,
         use_record: bool,
     ) -> Result<()> {
+        // Initialize the thread-local global constants before the first scope, so that no iteration counts them.
+        Circuit::initialize_global_constants();
+        Circuit::reset();
+
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
@@ -577,39 +588,40 @@ mod tests {
         Ok(())
     }
 
-    // TODO: Explain why the first runs of the tests for `Public` and `Private` modes yield a large number of constants
-
     #[test]
     #[rustfmt::skip]
     fn test_sign_and_verify_constant() -> Result<()> {
         // Note: The variable bounds are correct. At this (high) level of a program, we override the default mode in the `Record` case,
         // based on the user-defined visibility in the record type. Thus, we have nonzero private and constraint values.
-        // These bounds are determined experimentally.
+        // A multiplication by a constant scalar folds the leading zero bits of the scalar, and a multiplication of `G`
+        // by a constant scalar folds its trailing zero bits. So these counts depend on the signature and the keys and
+        // are upper bounds. A count reaches its bound when the challenge has bit 249 set and the response and `sk_prf`
+        // are odd. With records, the bound also needs bit 250 of the response.
 
         // Static requests with records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(43442, 0, 20996, 21023), false, false, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 20996, 21023), false, false, true)?;
         check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 21511, 21538), true, false, true)?;
         check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 21098, 21125), false, false, true)?;
         check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 21613, 21640), true, false, true)?;
 
         // Dynamic requests with records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 28617, 28660), false, true, true)?;
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 29132, 29175), true, true, true)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 28789, 28832), false, true, true)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 29304, 29347), true, true, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 20996, 21023), false, true, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 21511, 21538), true, true, true)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 21098, 21125), false, true, true)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 21613, 21640), true, true, true)?;
 
 
         // Static requests without records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 4718, 4723), false, false, false)?;
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 4718, 4723), true, false, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 4718, 4723), false, false, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 4718, 4723), true, false, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_is!(<=5740, 0, 4718, 4723), false, false, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_is!(<=5740, 0, 4718, 4723), true, false, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_is!(<=5780, 0, 4718, 4723), false, false, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_is!(<=5780, 0, 4718, 4723), true, false, false)?;
 
         // Dynamic requests without records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 11206, 11223), false, true, false)?;
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 11206, 11223), true, true, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 11206, 11223), false, true, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 11206, 11223), true, true, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_is!(<=5740, 0, 4718, 4723), false, true, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_is!(<=5740, 0, 4718, 4723), true, true, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_is!(<=5780, 0, 4718, 4723), false, true, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_is!(<=5780, 0, 4718, 4723), true, true, false)?;
 
         Ok(())
     }
@@ -618,7 +630,7 @@ mod tests {
     #[rustfmt::skip]
     fn test_sign_and_verify_public() -> Result<()> {
         // Static requests with records.
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(<=40943, 0, 29913, 29944), false, false, true)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8502, 0, 29913, 29944), false, false, true)?;
         check_verify(Mode::Public, "test.aleo", "bark", count_is!(8502, 0, 30428, 30459), true, false, true)?;
         check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8472, 0, 30015, 30046), false, false, true)?;
         check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8472, 0, 30530, 30561), true, false, true)?;
@@ -649,7 +661,7 @@ mod tests {
     #[rustfmt::skip]
     fn test_sign_and_verify_private() -> Result<()> {
         // Static requests with records.
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(<=40943, 0, 29913, 29944), false, false, true)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8502, 0, 29913, 29944), false, false, true)?;
         check_verify(Mode::Private, "test.aleo", "bark", count_is!(8502, 0, 30428, 30459), true, false, true)?;
         check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8472, 0, 30015, 30046), false, false, true)?;
         check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8472, 0, 30530, 30561), true, false, true)?;
@@ -679,7 +691,7 @@ mod tests {
     #[rustfmt::skip]
     fn test_check_input_ids_constant() -> Result<()> {
         // Static requests with records.
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(<=34027, 0, 11710, 11726), false, false, true)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(4096, 0, 11710, 11726), false, false, true)?;
         check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(4096, 0, 11710, 11726), true, false, true)?;
         check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4046, 0, 11812, 11828), false, false, true)?;
         check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4046, 0, 11812, 11828), true, false, true)?;
@@ -710,7 +722,7 @@ mod tests {
     #[rustfmt::skip]
     fn test_check_input_ids_public() -> Result<()> {
         // Static requests with records.
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(<=34027, 0, 12530, 12546), false, false, true)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(4096, 0, 12530, 12546), false, false, true)?;
         check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(4096, 0, 12530, 12546), true, false, true)?;
         check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), false, false, true)?;
         check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), true, false, true)?;
@@ -740,7 +752,7 @@ mod tests {
     #[rustfmt::skip]
     fn test_check_input_ids_private() -> Result<()> {
         // Static requests with records.
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(<=34027, 0, 12530, 12546), false, false, true)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(4096, 0, 12530, 12546), false, false, true)?;
         check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(4096, 0, 12530, 12546), true, false, true)?;
         check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), false, false, true)?;
         check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), true, false, true)?;

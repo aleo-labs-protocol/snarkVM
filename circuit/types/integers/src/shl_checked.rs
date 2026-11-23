@@ -67,6 +67,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
 
     #[inline]
     fn shl_checked(&self, rhs: &Integer<E, M>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Retrieve the index for the first upper bit from the RHS that we mask.
         let first_upper_bit_index = I::BITS.trailing_zeros() as usize;
         // Initialize a constant `two`.
@@ -79,7 +82,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
 
                     // Sign-extend `self` to 2 * I::BITS.
                     let mut bits_le = self.to_bits_le();
-                    bits_le.resize(2 * I::BITS as usize, self.msb().clone());
+                    bits_le.resize(2 * i_bits, self.msb().clone());
 
                     // Calculate the result directly in the field.
                     // Since 2^{rhs} < Integer::MAX and 3 * I::BITS is less than E::BaseField::size in data bits,
@@ -93,13 +96,13 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
                         result = Field::ternary(bit, &product, &result);
                     }
                     // Extract the bits of the result, including the carry bits.
-                    let bits_le = result.to_lower_bits_le(3 * I::BITS as usize);
+                    let bits_le = result.to_lower_bits_le(3 * i_bits);
                     // Split the bits into the lower and upper bits.
-                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(I::BITS as usize);
+                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(i_bits);
                     // Initialize the integer from the lower bits.
                     let result = Self { bits_le: lower_bits_le.to_vec(), phantom: Default::default() };
                     // Ensure that the sign of the first I::BITS upper bits match the sign of the result.
-                    for bit in &upper_bits_le[..(I::BITS as usize)] {
+                    for bit in &upper_bits_le[..i_bits] {
                         E::assert_eq(bit, result.msb()).expect("Signed shift left overflow check failed");
                     }
                     // Return the result.
@@ -141,9 +144,9 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
                         result = Field::ternary(bit, &product, &result);
                     }
                     // Extract the bits of the result, including the carry bits.
-                    let bits_le = result.to_lower_bits_le(2 * I::BITS as usize);
+                    let bits_le = result.to_lower_bits_le(2 * i_bits);
                     // Split the bits into the lower and upper bits.
-                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(I::BITS as usize);
+                    let (lower_bits_le, upper_bits_le) = bits_le.split_at(i_bits);
                     // Ensure that the carry bits are all zero.
                     Boolean::assert_bits_are_zero(upper_bits_le);
                     // Initialize the integer from the lower bits
@@ -153,59 +156,6 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
                     self.mul_checked(&two.pow_checked(rhs))
                 }
             }
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn Shl<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        <Self as Metrics<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Shl<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        <Self as OutputMode<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType, M: Magnitude> Metrics<dyn ShlChecked<Integer<E, M>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode, bool, bool);
-
-    fn count(case: &Self::Case) -> Count {
-        // A quick hack that matches `(u8 -> 0, u16 -> 1, u32 -> 2, u64 -> 3, u128 -> 4)`.
-        let index = |num_bits: u64| match [8, 16, 32, 64, 128].iter().position(|&bits| bits == num_bits) {
-            Some(index) => index as u64,
-            None => E::halt(format!("Integer of {num_bits} bits is not supported")),
-        };
-
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (_, Mode::Constant) => Count::is(0, 0, 0, 0),
-            (Mode::Constant, _) | (_, _) => {
-                let wrapped_count = count!(Integer<E, I>, ShlWrapped<Integer<E, M>, Output=Integer<E, I>>, case);
-                wrapped_count + Count::is(0, 0, M::BITS - 4 - index(I::BITS), M::BITS - 3 - index(I::BITS))
-            }
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType, M: Magnitude> OutputMode<dyn ShlChecked<Integer<E, M>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (mode_a, Mode::Constant) => mode_a,
-            (_, _) => Mode::Private,
         }
     }
 }
@@ -236,8 +186,6 @@ mod tests {
                 let candidate = a.shl_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                // assert_count!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
-                // assert_output_mode!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b), candidate);
                 assert!(Circuit::is_satisfied_in_scope(), "(is_satisfied_in_scope)");
             }),
             None => match (mode_a, mode_b) {
@@ -250,14 +198,12 @@ mod tests {
                     } else {
                         Circuit::scope(name, || {
                             let _candidate = a.shl_checked(&b);
-                            // assert_count_fails!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
                             assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
                         })
                     }
                 }
                 _ => Circuit::scope(name, || {
                     let _candidate = a.shl_checked(&b);
-                    // assert_count_fails!(ShlChecked(Integer<I>, Integer<M>) => Integer<I>, &(mode_a, mode_b));
                     assert!(!Circuit::is_satisfied_in_scope(), "(!is_satisfied_in_scope)");
                 }),
             },

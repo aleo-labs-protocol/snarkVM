@@ -73,6 +73,107 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
     }
 }
 
+/// An outside crate cannot implement the map traits for a `DataMap` with a key type that the impls below do not cover.
+///
+/// ```compile_fail,E0277
+/// use serde::{Deserialize, Deserializer, Serialize, Serializer};
+/// use snarkvm_console::prelude::Result;
+/// use snarkvm_ledger_store::helpers::{MapRead, rocksdb::DataMap};
+/// use std::{
+///     borrow::{Borrow, Cow},
+///     hash::Hash,
+///     iter::Empty,
+/// };
+///
+/// #[derive(Clone, PartialEq, Eq, Hash)]
+/// struct Key;
+///
+/// impl Serialize for Key {
+///     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+///         serializer.serialize_unit()
+///     }
+/// }
+///
+/// impl<'de> Deserialize<'de> for Key {
+///     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+///         <()>::deserialize(deserializer).map(|()| Key)
+///     }
+/// }
+///
+/// impl<'a> MapRead<'a, Key, u8> for DataMap<Key, u8> {
+///     type PendingIterator = Empty<(Cow<'a, Key>, Option<Cow<'a, u8>>)>;
+///     type Iterator = Empty<(Cow<'a, Key>, Cow<'a, u8>)>;
+///     type Keys = Empty<Cow<'a, Key>>;
+///     type Values = Empty<Cow<'a, u8>>;
+///
+///     fn len_confirmed(&self) -> usize {
+///         0
+///     }
+///
+///     fn contains_key_confirmed<Q>(&self, _key: &Q) -> Result<bool>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(false)
+///     }
+///
+///     fn contains_key_speculative<Q>(&self, _key: &Q) -> Result<bool>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(false)
+///     }
+///
+///     fn get_confirmed<Q>(&'a self, _key: &Q) -> Result<Option<Cow<'a, u8>>>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(None)
+///     }
+///
+///     fn get_pending<Q>(&self, _key: &Q) -> Option<Option<u8>>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         None
+///     }
+///
+///     fn get_floor_confirmed<Q>(&'a self, _key: &Q) -> Result<Option<(Cow<'a, Key>, Cow<'a, u8>)>>
+///     where
+///         Key: Borrow<Q>,
+///         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+///     {
+///         Ok(None)
+///     }
+///
+///     fn iter_pending(&'a self) -> Self::PendingIterator {
+///         std::iter::empty()
+///     }
+///
+///     fn iter_confirmed(&'a self) -> Self::Iterator {
+///         std::iter::empty()
+///     }
+///
+///     fn keys_confirmed(&'a self) -> Self::Keys {
+///         std::iter::empty()
+///     }
+///
+///     fn values_confirmed(&'a self) -> Self::Values {
+///         std::iter::empty()
+///     }
+/// }
+/// ```
+impl<
+    K: Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    V: Clone + Serialize + DeserializeOwned + Send + Sync,
+> crate::sealed::SealedMap<K, V> for DataMap<K, V>
+{
+}
+
 impl<
     'a,
     K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
@@ -677,8 +778,8 @@ mod tests {
         account::{Address, FromStr},
         network::MainnetV0,
     };
+    use snarkvm_utilities::StorageMode;
 
-    use aleo_std::StorageMode;
     use anyhow::{anyhow, bail};
     use tracing_test::traced_test;
 

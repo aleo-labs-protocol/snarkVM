@@ -13,17 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use aleo_std::StorageMode;
 use snarkvm_algorithms::{crypto_hash::sha256::sha256, snark::varuna::VarunaVersion};
 use snarkvm_circuit::{Aleo, Assignment};
 use snarkvm_console::{
     account::PrivateKey,
-    network::{CanaryV0, FromBits, MainnetV0, Network, TestnetV0},
+    network::{FromBits, MainnetV0, Network, TestnetV0},
     prelude::{One, ToBytes, Zero},
     program::{Plaintext, Record, StatePath},
     types::Field,
 };
-use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 
 #[cfg(not(feature = "rocks"))]
 type LedgerType<N> = snarkvm_ledger_store::helpers::memory::ConsensusMemory<N>;
@@ -261,9 +260,6 @@ pub fn main() -> Result<()> {
         }
         "testnet" => {
             inclusion::<TestnetV0, snarkvm_circuit::AleoTestnetV0>()?;
-        }
-        "canary" => {
-            inclusion::<CanaryV0, snarkvm_circuit::AleoCanaryV0>()?;
         }
         _ => panic!("Invalid network"),
     };

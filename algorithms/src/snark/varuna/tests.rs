@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(any(test, feature = "test"))]
 mod varuna {
     use crate::{
         snark::varuna::{
@@ -581,7 +580,6 @@ mod varuna {
     }
 }
 
-#[cfg(any(test, feature = "test"))]
 mod varuna_hiding {
     use crate::{
         crypto_hash::PoseidonSponge,
@@ -682,6 +680,68 @@ mod varuna_hiding {
 
     fn test_circuit(num_constraints: usize, num_variables: usize, varuna_version: VarunaVersion, rng: &mut TestRng) {
         test_circuit_n_times(num_constraints, num_variables, 100, varuna_version, rng)
+    }
+
+    /// A proof with any one commitment of the proof or of the circuit doubled
+    /// is rejected. The verifier's sponge absorbs these commitments, so a
+    /// doubled commitment also changes the later challenges, and this test
+    /// does not show that the batch check's MSMs bind a commitment to its
+    /// terms. `test_batch_check_rejects_a_tampered_commitment` and
+    /// `test_batch_check_terms_matches_batch_check` in `sonic_pc` hold the
+    /// challenges fixed and show that.
+    #[test]
+    fn test_verify_rejects_a_tampered_commitment() {
+        use crate::polycommit::sonic_pc::Commitment;
+        use snarkvm_curves::{AffineCurve, ProjectiveCurve};
+
+        let rng = &mut TestRng::default();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
+        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+        let universal_prover = &universal_srs.to_universal_prover().unwrap();
+        let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
+        let fs_parameters = FS::sample_parameters();
+        let (circuit, public_inputs) = TestCircuit::gen_rand(2, 25, 25, rng);
+        let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let proof =
+            VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, VarunaVersion::V3, &circuit, rng).unwrap();
+        let verify = |index_vk: &CircuitVerifyingKey<Bls12_377>, proof: &_| {
+            VarunaInst::verify(
+                universal_verifier,
+                &fs_parameters,
+                index_vk,
+                VarunaVersion::V3,
+                public_inputs.clone(),
+                proof,
+            )
+            // A doubled commitment leaves the proof well-formed, so `verify` returns `Ok`.
+            .unwrap()
+        };
+        assert!(verify(&index_vk, &proof));
+
+        let double = |c: &mut Commitment<Bls12_377>| c.0 = c.0.to_projective().double().to_affine();
+        let tampers: [fn(&mut crate::snark::varuna::Proof<Bls12_377>) -> Option<&mut Commitment<Bls12_377>>; 9] = [
+            |p| Some(&mut p.commitments.witness_commitments[0].w),
+            |p| p.commitments.mask_poly.as_mut(),
+            |p| Some(&mut p.commitments.h_0),
+            |p| Some(&mut p.commitments.g_1),
+            |p| Some(&mut p.commitments.h_1),
+            |p| Some(&mut p.commitments.g_a_commitments[0]),
+            |p| Some(&mut p.commitments.g_b_commitments[0]),
+            |p| Some(&mut p.commitments.g_c_commitments[0]),
+            |p| Some(&mut p.commitments.h_2),
+        ];
+        for (i, tamper) in tampers.iter().enumerate() {
+            let mut wrong = proof.clone();
+            // The hiding mode commits to a masking polynomial, so every commitment is
+            // present.
+            double(tamper(&mut wrong).unwrap());
+            assert!(!verify(&index_vk, &wrong), "proof commitment {i} doubled was accepted");
+        }
+        for i in 0..index_vk.circuit_commitments.len() {
+            let mut wrong = index_vk.clone();
+            double(&mut wrong.circuit_commitments[i]);
+            assert!(!verify(&wrong, &proof), "circuit commitment {i} doubled was accepted");
+        }
     }
 
     fn test_serde_json(num_constraints: usize, num_variables: usize, rng: &mut TestRng) {
@@ -1418,6 +1478,88 @@ mod varuna_test_vectors {
     }
 }
 
+mod unsatisfied_assignment {
+    use crate::{
+        crypto_hash::PoseidonSponge,
+        r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError},
+        snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK, VarunaVersion},
+        traits::{AlgebraicSponge, SNARK},
+    };
+    use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    use snarkvm_fields::{Field, One};
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+
+    type FS = PoseidonSponge<Fq, 2, 1>;
+    type Inst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
+
+    const NUM_CONSTRAINTS: usize = 96;
+    const NUM_VARIABLES: usize = 64;
+    /// The constraint domain's size, which holds these rows and the indexer's
+    /// hiding constraint.
+    const CONSTRAINT_DOMAIN_SIZE: usize = 128;
+
+    /// Enforces `a * b = c` on every row but `rows`, and `a * b = other` on
+    /// those, so `other` alone decides whether those rows of the assignment
+    /// fail.
+    struct SomeRows<F: Field> {
+        a: F,
+        b: F,
+        other: F,
+        rows: &'static [usize],
+    }
+
+    impl<F: Field> ConstraintSynthesizer<F> for SomeRows<F> {
+        fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+            let a = cs.alloc(|| "a", || Ok(self.a))?;
+            let b = cs.alloc(|| "b", || Ok(self.b))?;
+            let c = cs.alloc(|| "c", || Ok(self.a * self.b))?;
+            let other = cs.alloc(|| "other", || Ok(self.other))?;
+            for i in 5..NUM_VARIABLES {
+                cs.alloc(|| format!("padding {i}"), || Ok(self.a))?;
+            }
+            for i in 0..NUM_CONSTRAINTS {
+                let output = if self.rows.contains(&i) { other } else { c };
+                cs.enforce(|| format!("row {i}"), |lc| lc + a, |lc| lc + b, |lc| lc + output);
+            }
+            Ok(())
+        }
+    }
+
+    fn assert_failing_rows_make_the_prover_return_an_error(rows: &'static [usize]) {
+        let rng = &mut TestRng::default();
+        let max_degree =
+            AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_CONSTRAINTS)
+                .expect("the test circuit has a max degree");
+        let srs = Inst::universal_setup(max_degree).expect("the SRS for the test circuit");
+        let prover = &srs.to_universal_prover().expect("a prover from the SRS");
+        let fs = FS::sample_parameters();
+
+        let (a, b) = (Fr::rand(rng), Fr::rand(rng));
+        let satisfied = SomeRows { a, b, other: a * b, rows };
+        let unsatisfied = SomeRows { a, b, other: a * b + Fr::one(), rows };
+        let (pk, _) = Inst::circuit_setup(&srs, &satisfied).expect("the keys for the test circuit");
+        assert_eq!(pk.circuit.constraint_domain_size().expect("the circuit's domain"), CONSTRAINT_DOMAIN_SIZE);
+
+        for version in [VarunaVersion::V2, VarunaVersion::V3] {
+            Inst::prove(prover, &fs, &pk, version, &satisfied, rng).expect("a satisfied assignment proves");
+            assert!(Inst::prove(prover, &fs, &pk, version, &unsatisfied, rng).is_err());
+        }
+    }
+
+    #[test]
+    fn one_failing_row_makes_the_prover_return_an_error() {
+        assert_failing_rows_make_the_prover_return_an_error(&[NUM_CONSTRAINTS - 1]);
+    }
+
+    /// The rows are half the constraint domain apart, so equal errors on them
+    /// cancel in the top coefficient of the interpolated error. The quotient's
+    /// check of that coefficient does not see them.
+    #[test]
+    fn failing_rows_that_cancel_in_the_top_coefficient_make_the_prover_return_an_error() {
+        assert_failing_rows_make_the_prover_return_an_error(&[0, CONSTRAINT_DOMAIN_SIZE / 2]);
+    }
+}
+
 /// A proof, pinned by its hash, so the device and the host must agree on it.
 ///
 /// This checks the whole pipeline's output rather than one kernel. The circuit
@@ -1492,6 +1634,69 @@ mod proof_vector {
                 digest, expected,
                 "the {version:?} proof for a fixed input changed; see this constant's documentation"
             );
+        }
+    }
+}
+
+mod mismatched_public_inputs {
+    use crate::{
+        crypto_hash::PoseidonSponge,
+        r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError},
+        snark::varuna::{AHPForR1CS, VarunaHidingMode, VarunaSNARK, VarunaVersion},
+        traits::{AlgebraicSponge, SNARK},
+    };
+    use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+    use snarkvm_fields::Field;
+    use snarkvm_utilities::rand::{TestRng, Uniform};
+    use std::collections::BTreeMap;
+
+    type FS = PoseidonSponge<Fq, 2, 1>;
+    type Inst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
+
+    const NUM_CONSTRAINTS: usize = 64;
+    const NUM_VARIABLES: usize = 64;
+
+    /// A circuit with `num_public` public variables, and the same number of
+    /// constraints and of variables in total for every `num_public`.
+    struct SizedInput<F: Field> {
+        num_public: usize,
+        x: F,
+    }
+
+    impl<F: Field> ConstraintSynthesizer<F> for SizedInput<F> {
+        fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+            for i in 1..self.num_public {
+                cs.alloc_input(|| format!("input {i}"), || Ok(self.x))?;
+            }
+            let a = cs.alloc(|| "a", || Ok(self.x))?;
+            let c = cs.alloc(|| "c", || Ok(self.x * self.x))?;
+            for i in self.num_public + 2..NUM_VARIABLES {
+                cs.alloc(|| format!("padding {i}"), || Ok(self.x))?;
+            }
+            for i in 0..NUM_CONSTRAINTS {
+                cs.enforce(|| format!("row {i}"), |lc| lc + a, |lc| lc + a, |lc| lc + c);
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_batch_with_mismatched_public_inputs_makes_the_prover_return_an_error() {
+        let rng = &mut TestRng::default();
+        let max_degree =
+            AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(NUM_CONSTRAINTS, NUM_VARIABLES, NUM_CONSTRAINTS)
+                .expect("the test circuit has a max degree");
+        let srs = Inst::universal_setup(max_degree).expect("the SRS for the test circuit");
+        let prover = &srs.to_universal_prover().expect("a prover from the SRS");
+        let fs = FS::sample_parameters();
+        let x = Fr::rand(rng);
+
+        for (num_public, should_prove) in [([4, 4], true), ([4, 2], false), ([2, 4], false)] {
+            let batch = num_public.map(|num_public| SizedInput { num_public, x });
+            let (pk, _) = Inst::circuit_setup(&srs, &batch[0]).expect("the keys for the test circuit");
+            let keys_to_constraints = BTreeMap::from([(&pk, &batch[..])]);
+            let proof = Inst::prove_batch(prover, &fs, VarunaVersion::V2, &keys_to_constraints, rng);
+            assert_eq!(proof.is_ok(), should_prove, "public variables: {num_public:?}");
         }
     }
 }

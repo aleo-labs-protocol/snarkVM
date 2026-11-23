@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-types"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Primitive circuit for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -34,3 +34,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
+
+[features]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-circuit-environment/test-helpers" ]

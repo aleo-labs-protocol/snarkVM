@@ -44,25 +44,6 @@ impl<E: Environment> Not for &Boolean<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Not<Output = Boolean<E>>> for Boolean<E> {
-    type Case = Mode;
-
-    fn count(_case: &Self::Case) -> Count {
-        Count::is(0, 0, 0, 0)
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Not<Output = Boolean<E>>> for Boolean<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,11 +51,9 @@ mod tests {
 
     fn check_not(name: &str, expected: bool, candidate_input: Boolean<Circuit>) {
         Circuit::scope(name, || {
-            let mode = candidate_input.mode();
             let candidate_output = !candidate_input;
             assert_eq!(expected, candidate_output.eject_value());
-            assert_count!(Not(Boolean) => Boolean, &mode);
-            assert_output_mode!(Not(Boolean) => Boolean, &mode, candidate_output);
+            assert_scope!();
         });
     }
 

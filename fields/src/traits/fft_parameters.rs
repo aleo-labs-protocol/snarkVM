@@ -17,10 +17,8 @@ use snarkvm_utilities::biginteger::BigInteger;
 
 /// A trait that defines parameters for a field that can be used for FFTs.
 ///
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait FftParameters: 'static + Send + Sync + Sized {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FftParameters: crate::sealed_parameters::Sealed + 'static + Send + Sync + Sized {
     type BigInteger: BigInteger;
 
     /// Let `N` be the size of the multiplicative group defined by the field.
@@ -43,11 +41,4 @@ pub trait FftParameters: 'static + Send + Sync + Sized {
     /// GENERATOR^((MODULUS-1) / (2^s *
     /// SMALL_SUBGROUP_BASE^SMALL_SUBGROUP_BASE_ADICITY)) Used for mixed-radix FFT.
     const LARGE_SUBGROUP_ROOT_OF_UNITY: Option<Self::BigInteger> = None;
-
-    /// `TWO_ADIC_ROOT_OF_UNITY^2^i` for `i := 0..TWO_ADICITY-1`
-    #[deprecated(
-        since = "4.13.0",
-        note = "Only the table-free path of `sqrt` reads this, and the next major release removes it. Code that needs these powers should compute them and keep them in its own trait."
-    )]
-    const POWERS_OF_ROOTS_OF_UNITY: &'static [Self::BigInteger];
 }

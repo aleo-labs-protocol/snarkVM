@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> AddWrapped<Self> for Integer<E, I> {
 
     #[inline]
     fn add_wrapped(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the sum and return the new constant.
@@ -31,36 +34,12 @@ impl<E: Environment, I: IntegerType> AddWrapped<Self> for Integer<E, I> {
             let sum = self.to_field() + other.to_field();
 
             // Extract the integer bits from the field element, with a carry bit.
-            let mut bits_le = sum.to_lower_bits_le(I::BITS as usize + 1);
+            let mut bits_le = sum.to_lower_bits_le(i_bits + 1);
             // Drop the carry bit as the operation is wrapped addition.
             bits_le.pop();
 
             // Return the sum of `self` and `other`.
             Integer { bits_le, phantom: Default::default() }
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn AddWrapped<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (_, _) => Count::is(0, 0, I::BITS + 1, I::BITS + 2),
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn AddWrapped<Integer<E, I>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
         }
     }
 }
@@ -88,8 +67,7 @@ mod tests {
             let candidate = a.add_wrapped(&b);
             assert_eq!(expected, *candidate.eject_value());
             assert_eq!(console::Integer::new(expected), candidate.eject_value());
-            assert_count!(AddWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-            assert_output_mode!(AddWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

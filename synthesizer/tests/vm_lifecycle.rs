@@ -17,12 +17,11 @@
 
 use std::sync::{Arc, Barrier};
 
-use aleo_std::StorageMode;
 use snarkvm_console::{
-    network::{CanaryV0, MainnetV0, Network, TestnetV0},
+    network::{MainnetV0, Network, TestnetV0},
     program::ProgramID,
 };
-use snarkvm_ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use snarkvm_ledger_store::{ConsensusStore, StorageMode, helpers::memory::ConsensusMemory};
 use snarkvm_synthesizer::VM;
 
 fn new_vm<N: Network>() -> VM<N, ConsensusMemory<N>> {
@@ -52,11 +51,6 @@ fn dropped_mainnet_vm_releases_process() {
 #[test]
 fn dropped_testnet_vm_releases_process() {
     assert_dropped_vm_releases_process::<TestnetV0>();
-}
-
-#[test]
-fn dropped_canary_vm_releases_process() {
-    assert_dropped_vm_releases_process::<CanaryV0>();
 }
 
 #[test]

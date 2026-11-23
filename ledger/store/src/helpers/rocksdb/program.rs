@@ -29,8 +29,8 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
 
 /// A RocksDB finalize storage.
@@ -48,6 +48,8 @@ pub struct FinalizeDB<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for FinalizeDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
@@ -112,6 +114,8 @@ pub struct CommitteeDB<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for CommitteeDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> CommitteeStorage<N> for CommitteeDB<N> {

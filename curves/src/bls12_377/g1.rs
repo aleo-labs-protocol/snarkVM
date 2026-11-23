@@ -23,7 +23,7 @@ use snarkvm_utilities::{
 use crate::{
     AffineCurve,
     ProjectiveCurve,
-    bls12_377::{Fq, Fr},
+    bls12_377::{Fq, Fr, G1Affine, G1Projective},
     templates::bls12::Bls12Parameters,
     traits::{ModelParameters, ShortWeierstrassParameters},
 };
@@ -35,6 +35,8 @@ const _: () = assert!(std::mem::offset_of!(super::G1Affine, infinity) == 96);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bls12_377G1Parameters;
+
+impl crate::sealed::Sealed for Bls12_377G1Parameters {}
 
 impl ModelParameters for Bls12_377G1Parameters {
     type BaseField = Fq;
@@ -216,6 +218,10 @@ impl ShortWeierstrassParameters for Bls12_377G1Parameters {
         }
 
         acc
+    }
+
+    fn msm_lanes(msms: &[&[(G1Affine, Fr)]]) -> Option<Vec<G1Projective>> {
+        super::msm_lanes::msm_lanes(msms)
     }
 }
 
