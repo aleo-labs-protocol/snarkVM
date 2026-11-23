@@ -27,8 +27,8 @@ use core::any::TypeId;
 pub struct VariableBase;
 
 impl VariableBase {
-    /// Returns the sum of `base * scalar`. Every base must be in the
-    /// prime-order subgroup, as `batched::msm` requires.
+    /// Returns the sum of `base * scalar`. See `batched::msm` for bases
+    /// outside the prime-order subgroup.
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         // TODO SNP: where to set the threshold
@@ -64,8 +64,7 @@ impl VariableBase {
     /// below the bucket method's cutoff go together through
     /// `AffineCurve::msm_lanes` where the curve has lanes. Every other MSM
     /// takes the method that [`Self::msm`] picks for its size on the CPU.
-    /// Every base must be in the prime-order subgroup, as `msm_lanes`
-    /// requires.
+    /// See `batched::msm` for bases outside the prime-order subgroup.
     ///
     /// Hazard: do not send these MSMs to a CUDA device. Proof verification
     /// calls this function, both in `VM::check_transaction` and in finalize's

@@ -506,9 +506,13 @@ fn msm_in_lanes<G: AffineCurve>(
     G::msm_lanes(&[&terms])?.into_iter().next()
 }
 
-/// Returns the sum of `base * scalar`. Every base must be in the prime-order
-/// subgroup: outside it, the sum of the curve's lanes differs from Straus's, so
-/// it would depend on the CPU.
+/// Returns the sum of `base * scalar`.
+///
+/// Hazard: for a base outside the prime-order subgroup, the curve's GLV
+/// multiplication and its lanes can return another sum than Straus's method,
+/// which differs by a point whose order divides the cofactor. So the sum
+/// depends on the CPU. A pairing maps that point to one, so a pairing check on
+/// the sum does not.
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
     if bases.len() < BUCKET_MIN_BASES {
         debug_assert!(scalars.len() <= bases.len());
@@ -536,8 +540,6 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         if let ([base], [scalar]) = (&*bases, &*scalars)
             && let Some(scalar) = G::ScalarField::from_bigint(*scalar)
         {
-            // GLV is correct only on the prime-order subgroup.
-            debug_assert!(base.is_in_correct_subgroup_assuming_on_curve());
             return sum + base.to_projective() * scalar;
         }
         if let Some(in_lanes) = msm_in_lanes(&bases, &scalars) {

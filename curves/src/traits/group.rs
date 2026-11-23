@@ -193,8 +193,12 @@ pub trait AffineCurve:
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective;
 
     /// Returns the sum of `base * scalar` over the pairs of each of `msms`, or `None` if the curve
-    /// has no lane path for them. Every base must be in the prime-order subgroup: outside it, the
-    /// lanes compute another sum than `base * scalar`, so the result would depend on the CPU.
+    /// has no lane path for them.
+    ///
+    /// Hazard: for a base outside the prime-order subgroup, a lane computes the curve's GLV
+    /// product, which can differ from the scalar multiple `scalar * base` by a point whose order
+    /// divides the cofactor. Such a sum depends on the CPU. A pairing maps that point to one, so a
+    /// pairing check on the sum does not.
     #[doc(hidden)]
     fn msm_lanes(_msms: &[&[(Self, Self::ScalarField)]]) -> Option<Vec<Self::Projective>> {
         None
@@ -325,7 +329,7 @@ pub trait ShortWeierstrassParameters: ModelParameters {
     ) -> short_weierstrass_jacobian::Projective<Self>;
 
     /// Returns the sum of `mul_projective` of each pair of each of `msms`, or `None` if there is no
-    /// lane path for them. See `AffineCurve::msm_lanes` for the condition on the bases.
+    /// lane path for them. See `AffineCurve::msm_lanes` for bases outside the prime-order subgroup.
     #[doc(hidden)]
     fn msm_lanes(
         _msms: &[&[(short_weierstrass_jacobian::Affine<Self>, Self::ScalarField)]],
