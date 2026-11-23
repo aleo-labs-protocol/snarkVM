@@ -1500,3 +1500,78 @@ fn test_fq_sum_of_products_matches_scalar() {
 fn test_fq_sum_of_three_products_matches_scalar() {
     fq_sum_of_products_matches_scalar::<3>();
 }
+
+#[test]
+fn test_bls12_377_miller_loop_first_iter_and_multi_pairing() {
+    let mut rng = TestRng::default();
+
+    // Reference Miller loop starting from `f = 1` via `square_in_place` + `mul_by_034` on every step.
+    let miller_loop_naive = |pairs: &[(&G1Prepared<Bls12_377Parameters>, &G2Prepared<Bls12_377Parameters>)]| -> Fq12 {
+        let mut iters: Vec<_> = pairs.iter().map(|(p, q)| (*p, q.ell_coeffs.iter())).collect();
+        let mut f = Fq12::one();
+        for bit in BitIteratorBE::new(Bls12_377Parameters::X).skip(1) {
+            f.square_in_place();
+            for &mut (p, ref mut coeffs) in &mut iters {
+                // `prepare` supplies one doubling line per step.
+                let &(mut c0, mut c1, c2) = coeffs.next().unwrap();
+                c0.mul_by_fp(&p.0.y);
+                c1.mul_by_fp(&p.0.x);
+                f.mul_by_034(&c0, &c1, &c2);
+            }
+            if bit {
+                for &mut (p, ref mut coeffs) in &mut iters {
+                    // `prepare` supplies one addition line per set bit.
+                    let &(mut c0, mut c1, c2) = coeffs.next().unwrap();
+                    c0.mul_by_fp(&p.0.y);
+                    c1.mul_by_fp(&p.0.x);
+                    f.mul_by_034(&c0, &c1, &c2);
+                }
+            }
+        }
+        f
+    };
+
+    // Check 0, 1, 2, and 4 prepared pairs against the naive loop and `miller_loop_of_pairs_reference`.
+    assert_eq!(Bls12_377::miller_loop(std::iter::empty()), Fq12::one());
+    assert_eq!(Bls12_377::miller_loop_scalar(&[]), Fq12::one());
+    assert_eq!(Bls12_377::product_of_pairings(std::iter::empty()), Fq12::one());
+
+    for n in [1usize, 2, 4] {
+        let owned: Vec<_> = (0..n)
+            .map(|_| {
+                (G1Projective::rand(&mut rng).to_affine().prepare(), G2Projective::rand(&mut rng).to_affine().prepare())
+            })
+            .collect();
+        let refs: Vec<_> = owned.iter().map(|(p, q)| (p, q)).collect();
+        let expected = miller_loop_naive(&refs);
+        assert_eq!(expected, miller_loop_of_pairs_reference(&owned));
+        assert_eq!(Bls12_377::miller_loop_scalar(&refs), expected);
+        assert_eq!(Bls12_377Parameters::miller_loop_fp12(&refs), expected);
+        assert_eq!(Bls12_377::miller_loop(refs.iter().copied()), expected);
+    }
+
+    // Verify 3-pair product_of_pairings consistency and cancellation on G1[r] x G2[r].
+    let r1 = Fr::rand(&mut rng);
+    let r2 = Fr::rand(&mut rng);
+    let p = G1Projective::prime_subgroup_generator() * r1;
+    let q = G2Projective::prime_subgroup_generator() * r2;
+    let s1 = Fr::rand(&mut rng);
+    let s2 = Fr::rand(&mut rng);
+    let a1 = (p * s1).to_affine();
+    let a2 = p.to_affine();
+    let a3 = (-(p * (s1 + s2))).to_affine();
+    let b1 = q.to_affine();
+    let b2 = (q * s2).to_affine();
+    let p1 = a1.prepare();
+    let p2 = a2.prepare();
+    let p3 = a3.prepare();
+    let q1 = b1.prepare();
+    let q2 = b2.prepare();
+    let z_p = G1Affine::zero().prepare();
+    let z_q = G2Affine::zero().prepare();
+    let multi =
+        Bls12_377::product_of_pairings([(&z_p, &q1), (&p1, &q1), (&p2, &z_q), (&p2, &q2), (&p3, &q1)].into_iter());
+    let single_prod = Bls12_377::pairing(a1, b1) * Bls12_377::pairing(a2, b2) * Bls12_377::pairing(a3, b1);
+    assert_eq!(multi, single_prod);
+    assert_eq!(multi, Fq12::one());
+}
