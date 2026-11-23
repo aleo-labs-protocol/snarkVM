@@ -1,0 +1,59 @@
+# Circuit shape of `to_upper_bits_le` for each operand mode and a fixed set of field elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-field --test snapshots
+field.constant k=0 | * : halt
+field.constant k=0 | 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.public k=0 | _ : 0 0 0 1 1/1/0 constant 01c4b29a4b4371c2
+field.private k=0 | _ : 0 0 0 1 1/1/0 constant 01a5df048a067782
+field.constant k=1 | * : 1 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=1 | 1 : halt
+field.constant k=1 | -1 : halt
+field.public k=1 | _ : 0 0 1 2 3/2/1 private 47ae4883431fc234
+field.private k=1 | _ : 0 0 1 2 3/2/1 private d6a9dc65038c579f
+field.constant k=9 | * : 9 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=9 | 1 : halt
+field.constant k=9 | -1 : halt
+field.public k=9 | _ : 0 0 17 19 33/23/22 private 12efac22171abba8
+field.private k=9 | _ : 0 0 17 19 33/23/22 private bd8253e27e8d6350
+field.constant k=17 | * : 17 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=17 | 1 : halt
+field.constant k=17 | -1 : halt
+field.public k=17 | _ : 0 0 33 35 60/42/41 private 64dbf596e426f9fb
+field.private k=17 | _ : 0 0 33 35 60/42/41 private db47297dbebe82cb
+field.constant k=33 | * : 33 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=33 | 1 : halt
+field.constant k=33 | -1 : halt
+field.public k=33 | _ : 0 0 64 66 114/80/79 private 687e4c4aa8e46a90
+field.private k=33 | _ : 0 0 64 66 114/80/79 private 6e55a31ceb8e8920
+field.constant k=65 | * : 65 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=65 | 1 : halt
+field.constant k=65 | -1 : halt
+field.public k=65 | _ : 0 0 129 131 228/162/161 private 07c4e3f995348c29
+field.private k=65 | _ : 0 0 129 131 228/162/161 private db4b25febcdb7b6a
+field.constant k=129 | * : 129 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=129 | 1 : halt
+field.constant k=129 | -1 : halt
+field.public k=129 | _ : 0 0 256 258 456/326/325 private 2615625b9d932ff2
+field.private k=129 | _ : 0 0 256 258 456/326/325 private 0237cd7e8d6b2fe6
+field.constant k=251 | * : 251 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=251 | 1 : halt
+field.public k=251 | _ : 0 0 501 503 918/666/665 private de242785af160076
+field.private k=251 | _ : 0 0 501 503 918/666/665 private e848e875598c292b
+field.constant k=252 | * : 252 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant k=252 | 1 : halt
+field.public k=252 | _ : 0 0 503 505 922/669/668 private d45786f58d9f933e
+field.private k=252 | _ : 0 0 503 505 922/669/668 private 3efc78cf333068a1
+field.constant k=253 | * : 253 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.public k=253 | _ : 0 0 505 507 926/672/671 private 67b5c4a38a74cb9e
+field.private k=253 | _ : 0 0 505 507 926/672/671 private 8bd46c714cf180d5
+field.constant k=254 | * : halt
+field.public k=254 | _ : halt
+field.private k=254 | _ : halt

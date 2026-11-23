@@ -26,6 +26,7 @@ mod size_in_bits;
 mod size_in_bytes;
 mod to_bits;
 
+#[doc(no_inline)]
 pub use snarkvm_console_network_environment::prelude::*;
 
 use core::marker::PhantomData;

@@ -25,7 +25,6 @@ use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering, time::Instant};
 use tracing::error;
 
-#[cfg(not(feature = "serial"))]
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[derive(Clone)]
@@ -104,6 +103,14 @@ fn get_map_and_key(map_key: &[u8]) -> Result<(&[u8], &[u8])> {
 
     // Return the map and key bytes.
     Ok((map, key))
+}
+
+impl<
+    M: Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    K: Clone + Debug + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    V: Clone + Serialize + DeserializeOwned + Send + Sync,
+> crate::sealed::SealedNestedMap<M, K, V> for NestedDataMap<M, K, V>
+{
 }
 
 impl<

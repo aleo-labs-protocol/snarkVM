@@ -19,7 +19,7 @@ impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
     #[inline]
     pub fn deploy<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<Deployment<N>> {
-        let timer = timer!("Stack::deploy");
+        let timer = timing_span!("Stack::deploy").entered();
 
         // Ensure the program contains functions.
         ensure!(!self.program.functions().is_empty(), "Program '{}' has no functions", self.program.id());
@@ -31,17 +31,17 @@ impl<N: Network> Stack<N> {
         for function_name in self.program.functions().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_key::<A, R>(function_name, rng)?;
-            lap!(timer, "Synthesize key for {function_name}");
+            timing_event!("Synthesize key for {function_name}");
 
             // Retrieve the proving key.
             let proving_key = self.get_proving_key(function_name)?;
             // Retrieve the verifying key.
             let verifying_key = self.get_verifying_key(function_name)?;
-            lap!(timer, "Retrieve the keys for {function_name}");
+            timing_event!("Retrieve the keys for {function_name}");
 
             // Certify the circuit.
             let certificate = Certificate::certify(&function_name.to_string(), &proving_key, &verifying_key)?;
-            lap!(timer, "Certify the circuit");
+            timing_event!("Certify the circuit");
 
             // Add the verifying key and certificate to the bundle.
             verifying_keys.push((*function_name, (verifying_key, certificate)));
@@ -51,24 +51,24 @@ impl<N: Network> Stack<N> {
         for record_name in self.program.records().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_translation_key::<A, R>(record_name, rng)?;
-            lap!(timer, "Synthesize key for translation circuit for {record_name}");
+            timing_event!("Synthesize key for translation circuit for {record_name}");
 
             // Retrieve the proving key.
             let proving_key = self.get_proving_key(record_name)?;
 
             // Retrieve the verifying key.
             let verifying_key = self.get_verifying_key(record_name)?;
-            lap!(timer, "Retrieve the keys for translation circuit for {record_name}");
+            timing_event!("Retrieve the keys for translation circuit for {record_name}");
 
             // Certify the circuit.
             let certificate = Certificate::certify(&record_name.to_string(), &proving_key, &verifying_key)?;
-            lap!(timer, "Certify the circuit");
+            timing_event!("Certify the circuit");
 
             // Add the verifying key and certificate to the bundle.
             verifying_keys.push((*record_name, (verifying_key, certificate)));
         }
 
-        finish!(timer);
+        drop(timer);
 
         // Return the deployment.
         // Note: The owner placeholder `Address::zero()` is unconditionally overwritten by
@@ -94,12 +94,12 @@ impl<N: Network> Stack<N> {
         // validator computes the same result.
         _rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("Stack::verify_deployment");
+        let timer = timing_span!("Stack::verify_deployment").entered();
 
         // NOTE: As developer, you will likely still want to confirm that your
         // deployment is within R1CS constraint and variable limits using
         // targeted and parallelized synthesis.
-        if cfg!(all(feature = "dev_skip_checks", feature = "test_consensus_heights")) {
+        if cfg!(all(feature = "dev_skip_checks", feature = "dev-network")) {
             return Ok(());
         }
 
@@ -159,11 +159,10 @@ impl<N: Network> Stack<N> {
             "The number of functions in the program does not match the number of function verifying keys"
         );
 
-        #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
         // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
         if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-            finish!(timer);
+            drop(timer);
             return Ok(());
         }
 
@@ -208,7 +207,7 @@ impl<N: Network> Stack<N> {
                     _ => self.sample_value(&burner_address, &input_type.into(), &mut seeded_rng),
                 })
                 .collect::<Result<Vec<_>>>()?;
-            lap!(timer, "Sample the inputs");
+            timing_event!("Sample the inputs");
             // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
             let is_root = true;
 
@@ -227,7 +226,7 @@ impl<N: Network> Stack<N> {
                 // `CheckDeployment` synthesis depends on the ambient RNG. See the burner note above.
                 &mut sub_seeded_rng,
             )?;
-            lap!(timer, "Compute the request for {}", function.name());
+            timing_event!("Compute the request for {}", function.name());
             // Initialize the assignments.
             let assignments = Assignments::<N>::default();
             // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
@@ -274,25 +273,31 @@ impl<N: Network> Stack<N> {
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.random())).collect::<Vec<_>>();
-        cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
-            |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
-                // Synthesize the circuit.
-                if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {
-                    bail!("Failed to synthesize the circuit for '{function_name}': {err}")
-                }
-                // Check the certificate.
-                match assignments.read().last() {
-                    None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
-                    Some((assignment, _metrics)) => {
-                        // Ensure the certificate is valid.
-                        if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
-                            bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
-                        }
+        // Each job synthesizes in the VM scope of this thread. `certificate.verify` may wait on rayon, so it runs
+        // outside, and its panics reach the host panic hook.
+        VmScope::parallel(|vm_scope| {
+            cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
+                |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
+                    // Synthesize the circuit.
+                    if let Err(err) =
+                        vm_scope.run(|| self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng))
+                    {
+                        bail!("Failed to synthesize the circuit for '{function_name}': {err}")
                     }
-                };
-                Ok(())
-            },
-        )?;
+                    // Check the certificate.
+                    match assignments.read().last() {
+                        None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
+                        Some((assignment, _metrics)) => {
+                            // Ensure the certificate is valid.
+                            if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
+                                bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
+                            }
+                        }
+                    };
+                    Ok(())
+                },
+            )
+        })?;
 
         // If the deployment contains translation verifying keys, verify them.
         if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
@@ -335,7 +340,7 @@ impl<N: Network> Stack<N> {
                     let is_external_record = Uniform::rand(&mut sub_seeded_rng);
                     let id_static = Uniform::rand(&mut sub_seeded_rng);
 
-                    lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
+                    timing_event!("Sample the inputs to the translation circuit for record {record_name}");
 
                     Ok((
                         record_name,
@@ -363,60 +368,63 @@ impl<N: Network> Stack<N> {
             // Note: `Deployment::check_is_ordered` (called above) ensures that the translation
             // verifying keys appear in the same order as the program's record definitions, so
             // `zip_eq` correctly pairs each record assignment with its corresponding key.
-            cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
-            |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
-                // Construct the variable, constraint and non-zero element counts to pass to the translation-circuit
-                // synthesizer as bounds. These are only enforced in ConsensusVersion::V18 and later.
-                let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V18 {
-                    (None, None, None)
-                } else {
-                    let variable_limit = Some(verifying_key.num_variables());
-
-                    let constraint_limit = if verifying_key.circuit_info.num_constraints >= 1 {
-                        // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
-                        Some(verifying_key.circuit_info.num_constraints as u64 - 1)
+            // As above, each job synthesizes in the VM scope of this thread.
+            VmScope::parallel(|vm_scope| {
+                cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
+                |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
+                    // Construct the variable, constraint and non-zero element counts to pass to the translation-circuit
+                    // synthesizer as bounds. These are only enforced in ConsensusVersion::V18 and later.
+                    let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V18 {
+                        (None, None, None)
                     } else {
-                        bail!("The constraint limit of 0 for translation circuit for record '{record_name}' is invalid");
+                        let variable_limit = Some(verifying_key.num_variables());
+
+                        let constraint_limit = if verifying_key.circuit_info.num_constraints >= 1 {
+                            // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
+                            Some(verifying_key.circuit_info.num_constraints as u64 - 1)
+                        } else {
+                            bail!("The constraint limit of 0 for translation circuit for record '{record_name}' is invalid");
+                        };
+
+                        // Set the density limit, accounting for one non-zero entry (with value 1) added to each of A, B and C
+                        // in order to make the Varuna zerocheck hiding.
+                        let info = verifying_key.circuit_info;
+                        let non_zero_limit = if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
+                            Some((
+                                info.num_non_zero_a as u64 - 1,
+                                info.num_non_zero_b as u64 - 1,
+                                info.num_non_zero_c as u64 - 1,
+                            ))
+                        } else {
+                            bail!(
+                                "The claimed number of non-zero entries for translation circuit for record '{}' is less than the one added by the Varuna hiding constraint (A: {}, B: {}, C: {})",
+                                record_name,
+                                info.num_non_zero_a,
+                                info.num_non_zero_b,
+                                info.num_non_zero_c,
+                            );
+                        };
+
+                        (variable_limit, constraint_limit, non_zero_limit)
                     };
 
-                    // Set the density limit, accounting for one non-zero entry (with value 1) added to each of A, B and C
-                    // in order to make the Varuna zerocheck hiding.
-                    let info = verifying_key.circuit_info;
-                    let non_zero_limit = if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
-                        Some((
-                            info.num_non_zero_a as u64 - 1,
-                            info.num_non_zero_b as u64 - 1,
-                            info.num_non_zero_c as u64 - 1,
-                        ))
-                    } else {
-                        bail!(
-                            "The claimed number of non-zero entries for translation circuit for record '{}' is less than the one added by the Varuna hiding constraint (A: {}, B: {}, C: {})",
-                            record_name,
-                            info.num_non_zero_a,
-                            info.num_non_zero_b,
-                            info.num_non_zero_c,
-                        );
-                    };
-
-                    (variable_limit, constraint_limit, non_zero_limit)
-                };
-
-                // Synthesize the circuit.
-                match translation_assignment.to_circuit_assignment::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit) {
-                    Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
-                    Ok(circuit_assignment) => {
-                        // Ensure the certificate is valid.
-                        ensure!(
-                            certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
-                            "The translation-circuit certificate for record '{record_name}' is invalid in '{program_id}'"
-                        );
-                        Ok(())
-                    },
-                }
+                    // Synthesize the circuit.
+                    match vm_scope.run(|| translation_assignment.to_circuit_assignment::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)) {
+                        Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
+                        Ok(circuit_assignment) => {
+                            // Ensure the certificate is valid.
+                            ensure!(
+                                certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
+                                "The translation-circuit certificate for record '{record_name}' is invalid in '{program_id}'"
+                            );
+                            Ok(())
+                        },
+                    }
+                })
             })?;
         }
 
-        finish!(timer);
+        drop(timer);
 
         Ok(())
     }

@@ -70,7 +70,8 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const ITERATIONS: u32 = 6;
+    /// The number of distinct transaction mixes that `sample_transactions` produces.
+    const ITERATIONS: u32 = 5;
 
     fn sample_transactions(index: u32, rng: &mut TestRng) -> Transactions<CurrentNetwork> {
         if index == 0 {

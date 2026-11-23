@@ -29,8 +29,8 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
 
 /// An in-memory finalize storage.
@@ -48,6 +48,8 @@ pub struct FinalizeMemory<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for FinalizeMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
@@ -112,6 +114,8 @@ pub struct CommitteeMemory<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for CommitteeMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> CommitteeStorage<N> for CommitteeMemory<N> {

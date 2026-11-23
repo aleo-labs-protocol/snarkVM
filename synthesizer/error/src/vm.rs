@@ -50,7 +50,7 @@ pub enum VmCheckBlockContentError {
     /// `VM::check_speculate` rejected the block's ratifications or transactions.
     #[error("Failed to speculate over unconfirmed transactions - {0}")]
     Speculation(#[source] anyhow::Error),
-    /// [`snarkvm_ledger_block::Block::verify`] failed (header, authority, duplicate IDs, etc.).
+    /// `Block::verify` failed (header, authority, duplicate IDs, etc.).
     #[error("Failed to verify block - {0}")]
     Verification(#[source] anyhow::Error),
 }

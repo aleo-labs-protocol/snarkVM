@@ -1,0 +1,44 @@
+# Circuit shape of `add` for each operand mode and a fixed set of scalars.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-scalar --test snapshots
+scalar.constant scalar.constant | * : 1 0 0 0 0/0/0 constant e3b0c44298fc1c14
+scalar.constant scalar.public | 0 _ : 1 0 755 757 1379/888/1140 private ab372efdc4f1943f
+scalar.constant scalar.public | 1 _ : 1 0 755 757 1380/888/1140 private 332b2a02ffb9f618
+scalar.constant scalar.public | 2 _ : 1 0 755 757 1380/888/1140 private 95f17da8bd736830
+scalar.constant scalar.public | (r-1)/2 _ : 1 0 755 757 1380/888/1140 private 779d4f0318226fab
+scalar.constant scalar.public | (r+1)/2 _ : 1 0 755 757 1380/888/1140 private 890c520d044fd3a7
+scalar.constant scalar.public | -2 _ : 1 0 755 757 1380/888/1140 private e5dc0bae80e78690
+scalar.constant scalar.public | -1 _ : 1 0 755 757 1380/888/1140 private 665bb3b74a7fdf2c
+scalar.constant scalar.private | 0 _ : 1 0 755 757 1379/888/1140 private c01dfb09ec75ae93
+scalar.constant scalar.private | 1 _ : 1 0 755 757 1380/888/1140 private 9f3743961c8dfef5
+scalar.constant scalar.private | 2 _ : 1 0 755 757 1380/888/1140 private 413fabe129c1bd3a
+scalar.constant scalar.private | (r-1)/2 _ : 1 0 755 757 1380/888/1140 private 376a1fa96f983130
+scalar.constant scalar.private | (r+1)/2 _ : 1 0 755 757 1380/888/1140 private a42403ea8a3577f2
+scalar.constant scalar.private | -2 _ : 1 0 755 757 1380/888/1140 private 46e7dc687659b446
+scalar.constant scalar.private | -1 _ : 1 0 755 757 1380/888/1140 private cec30da25f45827a
+scalar.public scalar.constant | _ 0 : 1 0 755 757 1379/888/1140 private ab372efdc4f1943f
+scalar.public scalar.constant | _ 1 : 1 0 755 757 1380/888/1140 private 332b2a02ffb9f618
+scalar.public scalar.constant | _ 2 : 1 0 755 757 1380/888/1140 private 95f17da8bd736830
+scalar.public scalar.constant | _ (r-1)/2 : 1 0 755 757 1380/888/1140 private 779d4f0318226fab
+scalar.public scalar.constant | _ (r+1)/2 : 1 0 755 757 1380/888/1140 private 890c520d044fd3a7
+scalar.public scalar.constant | _ -2 : 1 0 755 757 1380/888/1140 private e5dc0bae80e78690
+scalar.public scalar.constant | _ -1 : 1 0 755 757 1380/888/1140 private 665bb3b74a7fdf2c
+scalar.public scalar.public | _ _ : 1 0 755 757 1380/888/1140 private 20c56862a9650660
+scalar.public scalar.private | _ _ : 1 0 755 757 1380/888/1140 private f138da73d37c34be
+scalar.private scalar.constant | _ 0 : 1 0 755 757 1379/888/1140 private c01dfb09ec75ae93
+scalar.private scalar.constant | _ 1 : 1 0 755 757 1380/888/1140 private 9f3743961c8dfef5
+scalar.private scalar.constant | _ 2 : 1 0 755 757 1380/888/1140 private 413fabe129c1bd3a
+scalar.private scalar.constant | _ (r-1)/2 : 1 0 755 757 1380/888/1140 private 376a1fa96f983130
+scalar.private scalar.constant | _ (r+1)/2 : 1 0 755 757 1380/888/1140 private a42403ea8a3577f2
+scalar.private scalar.constant | _ -2 : 1 0 755 757 1380/888/1140 private 46e7dc687659b446
+scalar.private scalar.constant | _ -1 : 1 0 755 757 1380/888/1140 private cec30da25f45827a
+scalar.private scalar.public | _ _ : 1 0 755 757 1380/888/1140 private f138da73d37c34be
+scalar.private scalar.private | _ _ : 1 0 755 757 1380/888/1140 private 8ba17a791668aa82

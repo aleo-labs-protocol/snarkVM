@@ -98,7 +98,7 @@ impl<N: Network> Rejected<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use console::{account::PrivateKey, network::MainnetV0};
+    use console::network::MainnetV0;
 
     type CurrentNetwork = MainnetV0;
 
@@ -107,23 +107,17 @@ pub mod test_helpers {
         version: u8,
         edition: u16,
         has_translation_keys: bool,
-        is_fee_private: bool,
         rng: &mut TestRng,
     ) -> Rejected<CurrentNetwork> {
-        // Sample a deploy transaction.
-        let deployment = match crate::transaction::test_helpers::sample_deployment_transaction(
+        // Sample a deployment and the private key that signs its program owner.
+        let (deployment, private_key) = crate::transaction::test_helpers::sample_deployment_and_private_key(
             version,
             edition,
             has_translation_keys,
-            is_fee_private,
             rng,
-        ) {
-            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-            _ => unreachable!(),
-        };
+        );
 
-        // Sample a new program owner.
-        let private_key = PrivateKey::new(rng).unwrap();
+        // Construct the program owner.
         let deployment_id = deployment.to_deployment_id().unwrap();
         let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
@@ -132,16 +126,12 @@ pub mod test_helpers {
     }
 
     /// Samples a rejected execution.
-    pub(crate) fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
-        // Sample an execute transaction.
-        let execution =
-            match crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
-                Transaction::Execute(_, _, execution, _) => execution,
-                _ => unreachable!(),
-            };
+    pub(crate) fn sample_rejected_execution(rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+        // Sample an execution.
+        let execution = crate::transaction::test_helpers::sample_execution(rng, 0);
 
         // Return the rejected execution.
-        Rejected::new_execution(*execution)
+        Rejected::new_execution(execution)
     }
 
     /// Sample a list of randomly rejected transactions.
@@ -162,20 +152,16 @@ pub mod test_helpers {
                     if version == 2 && edition == 0 {
                         continue;
                     }
-                    for is_fee_private in [true, false] {
-                        let tx =
-                            sample_rejected_deployment(version, edition, has_translation_keys, is_fee_private, rng);
-                        txs.push(tx);
+                    // Sample two deployments, which differ in their program owner.
+                    for _ in 0..2 {
+                        txs.push(sample_rejected_deployment(version, edition, has_translation_keys, rng));
                     }
                 }
             }
         }
 
-        // Sample the executions.
-        for is_fee_private in [true, false] {
-            let tx = sample_rejected_execution(is_fee_private, rng);
-            txs.push(tx);
-        }
+        // Sample the execution.
+        txs.push(sample_rejected_execution(rng));
 
         txs
     }

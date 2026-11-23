@@ -51,6 +51,9 @@ impl<A: Aleo> Response<A> {
             .zip_eq(output_registers)
             .enumerate()
             .map(|(index, ((output, output_types), output_register))| {
+                // Note: The sum is less than `MAX_INPUTS + MAX_OUTPUTS`, so the cast is lossless.
+                #[allow(clippy::cast_possible_truncation)]
+                let index_u16 = (num_inputs + index) as u16;
                 match output_types {
                     // For a constant output, compute the hash (using `tcm`) of the output.
                     console::ValueType::Constant(..) => {
@@ -60,7 +63,7 @@ impl<A: Aleo> Response<A> {
                         ensure!(matches!(output, Value::Plaintext(..)), "Expected a plaintext output");
 
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -91,7 +94,7 @@ impl<A: Aleo> Response<A> {
                         ensure!(matches!(output, Value::Plaintext(..)), "Expected a plaintext output");
 
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -122,7 +125,7 @@ impl<A: Aleo> Response<A> {
                         ensure!(matches!(output, Value::Plaintext(..)), "Expected a plaintext output");
 
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Compute the output view key as `Hash(function ID || tvk || index)`.
                         let output_view_key = A::hash_psd4(&[function_id.clone(), tvk.clone(), output_index]);
                         // Compute the ciphertext.
@@ -191,7 +194,7 @@ impl<A: Aleo> Response<A> {
                         ensure!(matches!(output, Value::Record(..)), "Expected a record output");
 
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -221,7 +224,7 @@ impl<A: Aleo> Response<A> {
                         ensure!(matches!(output, Value::Future(..)), "Expected a future output");
 
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -252,7 +255,7 @@ impl<A: Aleo> Response<A> {
                         ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
 
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tvk || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -282,7 +285,7 @@ impl<A: Aleo> Response<A> {
                         ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
 
                         // Prepare the index as a constant field element.
-                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        let output_index = Field::constant(console::Field::from_u16(index_u16));
                         // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
@@ -340,6 +343,10 @@ mod tests {
         expected_count: UpdatableCount,
     ) -> Result<()> {
         use console::Network;
+
+        // Initialize the thread-local global constants before the first scope, so that no iteration counts them.
+        Circuit::initialize_global_constants();
+        Circuit::reset();
 
         let rng = &mut TestRng::default();
 
@@ -485,27 +492,30 @@ mod tests {
 
     // Note: These counts are correct. At this (high) level of a program, we override the default mode in many cases,
     // based on the user-defined visibility in the types. Thus, we have nonzero public, private, and constraint values.
-    // These bounds are determined experimentally.
 
     #[test]
     #[rustfmt::skip]
     fn test_from_callback_constant() -> Result<()> {
+        // With records, the encryption multiplies the owner by a constant randomizer derived from `tvk`, and the
+        // multiplication folds the leading zero bits of the randomizer. So the constant, private and constraint counts
+        // are upper bounds. A count reaches its bound when the randomizer has bit 249 set.
+
         // Static response without records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19917, 4, 2813, 2819))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1531, 4, 2813, 2819))?; 
+        check_from_callback(Mode::Constant, "test.aleo", "foo", false, false, count_is!(1366, 4, 2813, 2819))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 2813, 2819))?;
 
         // Static response with records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(16062, 5, 10910, 10923))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(4303, 5, 11012, 11025))?;
+        check_from_callback(Mode::Constant, "test.aleo", "foo", false, true, count_is!(<=4206, 5, <=10910, <=10923))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_is!(<=4299, 5, <=11012, <=11025))?;
 
 
         // Dynamic response without records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", true, false, count_less_than!(1233, 4, 6937, 6949))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_less_than!(1233, 4, 6937, 6949))?;
+        check_from_callback(Mode::Constant, "test.aleo", "foo", true, false, count_is!(762, 4, 4108, 4114))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_is!(762, 4, 4108, 4114))?;
 
         // Dynamic response with records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", true, true, count_less_than!(3975, 5, 16167, 16190))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_less_than!(3843, 5, 16339, 16362))?;
+        check_from_callback(Mode::Constant, "test.aleo", "foo", true, true, count_is!(<=3504, 5, <=12328, <=12341))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_is!(<=3372, 5, <=12500, <=12513))?;
 
         Ok(())
     }
@@ -514,11 +524,11 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_callback_public() -> Result<()> {
         // Static response without records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", false, false, count_is!(<=19917, 4, 4108, 4114))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", false, false, count_is!(1366, 4, 4108, 4114))?;
         check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
 
         // Static response with records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", false, true, count_is!(<=15809, 5, 13475, 13490))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", false, true, count_is!(3953, 5, 13475, 13490))?;
         check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
 
         // Dynamic response without records.
@@ -536,11 +546,11 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_callback_private() -> Result<()> {
         // Static response without records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", false, false, count_is!(<=19917, 4, 4108, 4114))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", false, false, count_is!(1366, 4, 4108, 4114))?;
         check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
 
         // Static response with records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", false, true, count_is!(<=15809, 5, 13475, 13490))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", false, true, count_is!(3953, 5, 13475, 13490))?;
         check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
 
         // Dynamic response without records.

@@ -91,8 +91,6 @@ impl<E: Environment> Compare<Field<E>> for Field<E> {
     }
 }
 
-// TODO: Implement `Metrics` and `OutputMode` for `Compare`. Waiting for PR#711  to land as it significantly changes the counts.
-
 #[cfg(test)]
 mod tests {
     use super::*;

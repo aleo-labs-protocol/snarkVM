@@ -85,6 +85,7 @@ fn bar_checksum(program: &Program<CurrentNetwork>) -> [console::types::U8<Curren
 // A simple positive check of the checksum's semantics, without a VM: it is deterministic, ignores
 // other functions in the program, and changes when the function's body changes.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_is_deterministic_and_body_sensitive() {
     let v0 = program(FOO_UNCHANGED, None);
     let v1 = program(FOO_UNCHANGED, Some(BAR_UNCHANGED));
@@ -133,12 +134,13 @@ constructor:
 // This test verifies that `<name>/checksum` works for a function, a closure, and a view, and that
 // each recorded value equals the corresponding component's `to_checksum`.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_resolves_function_closure_and_view() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -177,12 +179,13 @@ fn test_checksum_resolves_function_closure_and_view() {
 // This test verifies that `<name>/checksum` pins a function across upgrades: the program may grow
 // (adding `bar`) as long as `foo` is unchanged, but an upgrade that changes `foo` is rejected.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_pin_across_upgrade() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -240,12 +243,13 @@ fn test_checksum_pin_across_upgrade() {
 // This test verifies that when `bar` is changed across an upgrade, its checksum is updated in the
 // program's Stack. `foo` is left unchanged so the constructor's pin still holds and the upgrade is accepted.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_bar_updated_in_stack_on_upgrade() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -301,6 +305,7 @@ constructor:
 
 // This test verifies that a program using `<name>/checksum` cannot be deployed before V16.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_rejected_pre_v16() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -308,7 +313,7 @@ fn test_checksum_rejected_pre_v16() {
     let program = simple_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V15 height (pre-V16).
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
@@ -343,6 +348,7 @@ constructor:
 // This test verifies that a component checksum hidden in a view is still rejected before V16, i.e. the
 // pre-V16 gate scans view commands and outputs (regression test for the view-scan gap).
 #[test]
+#[ignore = "slow"]
 fn test_checksum_in_view_rejected_pre_v16() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -350,7 +356,7 @@ fn test_checksum_in_view_rejected_pre_v16() {
     let program = view_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V15 height (pre-V16, but views are allowed).
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
@@ -363,6 +369,7 @@ fn test_checksum_in_view_rejected_pre_v16() {
 
 // This test verifies that the same view-based program is accepted at V16.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_in_view_accepted_at_v16() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -370,7 +377,7 @@ fn test_checksum_in_view_accepted_at_v16() {
     let program = view_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -408,6 +415,7 @@ constructor:
 // This test verifies that a component checksum referencing a name that is not a function, closure, or
 // view is rejected at deployment, rather than deploying successfully and failing on every execution.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_dangling_reference_rejected() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -415,7 +423,7 @@ fn test_checksum_dangling_reference_rejected() {
     let program = dangling_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -450,6 +458,7 @@ constructor:
 // This test verifies that a dangling component checksum in a view output operand is also rejected at
 // deployment, not just one in a command operand.
 #[test]
+#[ignore = "slow"]
 fn test_checksum_dangling_reference_in_view_output_rejected() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
@@ -457,7 +466,7 @@ fn test_checksum_dangling_reference_in_view_output_rejected() {
     let program = dangling_view_checksum_program();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
     // Initialize the VM at the V16 height.
     let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();

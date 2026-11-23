@@ -26,7 +26,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn get_committee_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
         // If a devnet committee hotswap is installed and active at this round,
         // it takes precedence over both the cache and the on-chain committee.
-        #[cfg(feature = "dev-committee")]
+        #[cfg(feature = "dev-committee-override")]
         if let Some(committee) = self.dev_committee.as_ref()
             && round >= committee.starting_round()
         {
@@ -64,7 +64,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // If a devnet committee hotswap is installed and active at this round,
         // short-circuit before computing the lookback round (which would otherwise
         // fall ~100 rounds earlier into the pre-hotswap mainnet committee).
-        #[cfg(feature = "dev-committee")]
+        #[cfg(feature = "dev-committee-override")]
         if let Some(committee) = self.dev_committee.as_ref()
             && round >= committee.starting_round()
         {

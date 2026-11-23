@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> ToBytes for ValueType<N> {
     /// Writes the value type to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        u8::try_from(self.enum_index()).map_err(error)?.write_le(&mut writer)?;
+        self.variant().write_le(&mut writer)?;
         match self {
             Self::Constant(plaintext_type) => plaintext_type.write_le(&mut writer),
             Self::Public(plaintext_type) => plaintext_type.write_le(&mut writer),
@@ -47,5 +47,38 @@ impl<N: Network> FromBytes for ValueType<N> {
             7 => Ok(Self::DynamicFuture),
             8.. => Err(error(format!("Failed to deserialize value type variant {variant}"))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_bytes_variant_tags() -> Result<()> {
+        // Each ValueType variant, with the tag byte it writes first.
+        let cases = [
+            ("field.constant", 0),
+            ("field.public", 1),
+            ("field.private", 2),
+            ("token.record", 3),
+            ("credits.aleo/credits.record", 4),
+            ("credits.aleo/mint_public.future", 5),
+            ("dynamic.record", 6),
+            ("dynamic.future", 7),
+        ];
+        for (string, tag) in cases {
+            let expected = ValueType::<CurrentNetwork>::from_str(string)?;
+            let bytes = expected.to_bytes_le()?;
+            assert_eq!(bytes[0], tag, "{string}");
+            assert_eq!(expected, ValueType::read_le(&bytes[..])?);
+        }
+        // Variants without a payload write only the tag.
+        assert_eq!(ValueType::<CurrentNetwork>::DynamicRecord.to_bytes_le()?, [6]);
+        assert_eq!(ValueType::<CurrentNetwork>::DynamicFuture.to_bytes_le()?, [7]);
+        Ok(())
     }
 }

@@ -62,27 +62,14 @@ impl<E: Environment, I: IntegerType> MulAssign<&Integer<E, I>> for Integer<E, I>
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Mul<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        <Self as Metrics<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::count(case)
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Mul<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        <Self as OutputMode<dyn DivChecked<Integer<E, I>, Output = Integer<E, I>>>>::output_mode(case)
-    }
-}
-
 impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
     type Output = Self;
 
     #[inline]
     fn mul_checked(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the product and return the new constant.
@@ -104,7 +91,7 @@ impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
             // If the product should be negative, then it cannot exceed the absolute value of the signed minimum.
             let negative_product_underflows = {
                 let lower_product_bits_nonzero =
-                    product.bits_le[..(I::BITS as usize - 1)].iter().fold(Boolean::constant(false), |a, b| a | b);
+                    product.bits_le[..(i_bits - 1)].iter().fold(Boolean::constant(false), |a, b| a | b);
                 let negative_product_lt_or_eq_signed_min =
                     !product.msb() | (product.msb() & !lower_product_bits_nonzero);
                 !operands_same_sign & !negative_product_lt_or_eq_signed_min
@@ -171,6 +158,9 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
         this: &Integer<E, I>,
         that: &Integer<E, I>,
     ) -> (Integer<E, I>, Vec<Boolean<E>>, Field<E>) {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Perform multiplication by decomposing it into operations on its upper and lower bits.
         // Here is a picture of the bits involved, placed according to the power-of-two weights, in little endian order:
         //   x0: <--I::BITS/2-->
@@ -185,86 +175,28 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
         //   - the overlapping bits of z1 and z2
         //   - the upper bits of z2
 
-        let x_1 = Field::from_bits_le(&this.bits_le[(I::BITS as usize / 2)..]);
-        let x_0 = Field::from_bits_le(&this.bits_le[..(I::BITS as usize / 2)]);
-        let y_1 = Field::from_bits_le(&that.bits_le[(I::BITS as usize / 2)..]);
-        let y_0 = Field::from_bits_le(&that.bits_le[..(I::BITS as usize / 2)]);
+        let x_1 = Field::from_bits_le(&this.bits_le[(i_bits / 2)..]);
+        let x_0 = Field::from_bits_le(&this.bits_le[..(i_bits / 2)]);
+        let y_1 = Field::from_bits_le(&that.bits_le[(i_bits / 2)..]);
+        let y_0 = Field::from_bits_le(&that.bits_le[..(i_bits / 2)]);
 
         let z_0 = &x_0 * &y_0;
         let z_2 = &x_1 * &y_1;
         let z_1 = (&x_1 + &x_0) * (&y_1 + &y_0) - &z_2 - &z_0;
 
-        let mut b_m_bits = vec![Boolean::constant(false); I::BITS as usize / 2];
+        let mut b_m_bits = vec![Boolean::constant(false); i_bits / 2];
         b_m_bits.push(Boolean::constant(true));
 
         let b_m = Field::from_bits_le(&b_m_bits);
         let z_0_plus_scaled_z_1 = &z_0 + (&z_1 * &b_m);
 
-        let bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(I::BITS as usize + I::BITS as usize / 2 + 1);
+        let bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(i_bits + i_bits / 2 + 1);
 
         // Split the integer bits into product bits and the upper bits of `z_1`.
-        let (bits_le, carry) = bits_le.split_at(I::BITS as usize);
+        let (bits_le, carry) = bits_le.split_at(i_bits);
 
         // Return the product of `self` and `other`, along with the carry bits.
         (Integer::from_bits_le(bits_le), carry.to_vec(), z_2)
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn MulChecked<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        // Case 1 - 2 integers fit in 1 field element (u8, u16, u32, u64, i8, i16, i32, i64).
-        if 2 * I::BITS < (E::BaseField::size_in_bits() - 1) as u64 {
-            match I::is_signed() {
-                // Signed case
-                true => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => {
-                        Count::is(4 * I::BITS, 0, (6 * I::BITS) + 4, (6 * I::BITS) + 9)
-                    }
-                    (_, _) => Count::is(3 * I::BITS, 0, (8 * I::BITS) + 6, (8 * I::BITS) + 12),
-                },
-                // Unsigned case
-                false => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => Count::is(0, 0, I::BITS, I::BITS + 1),
-                    (_, _) => Count::is(0, 0, I::BITS, I::BITS + 1),
-                },
-            }
-        }
-        // Case 2 - 1.5 integers fit in 1 field element (u128, i128).
-        else if (I::BITS + I::BITS / 2) < (E::BaseField::size_in_bits() - 1) as u64 {
-            match I::is_signed() {
-                // Signed case
-                true => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => Count::less_than(833, 0, 837, 844),
-                    (_, _) => Count::is(3 * I::BITS, 0, 1098, 1106),
-                },
-                // Unsigned case
-                false => match (case.0, case.1) {
-                    (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-                    (Mode::Constant, _) | (_, Mode::Constant) => Count::less_than(193, 0, 193, 199),
-                    (_, _) => Count::is(0, 0, 196, 199),
-                },
-            }
-        } else {
-            E::halt(format!("Multiplication of integers of size {} is not supported", I::BITS))
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn MulChecked<Integer<E, I>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            _ => Mode::Private,
-        }
     }
 }
 
@@ -293,14 +225,13 @@ mod tests {
                 let candidate = a.mul_checked(&b);
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                assert_count!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-                // assert_output_mode!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
+                assert_scope!();
             }),
             None => match (mode_a, mode_b) {
                 (Mode::Constant, Mode::Constant) => check_operation_halts(&a, &b, Integer::mul_checked),
                 _ => Circuit::scope(name, || {
                     let _candidate = a.mul_checked(&b);
-                    assert_count_fails!(MulChecked(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
+                    assert_scope_fails!();
                 }),
             },
         }

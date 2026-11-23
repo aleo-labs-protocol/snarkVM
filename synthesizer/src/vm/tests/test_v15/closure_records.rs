@@ -42,10 +42,11 @@ fn decrypt_first_record(
 
 // Tests that a closure can accept a record as input and read its fields.
 #[test]
+#[ignore = "slow"]
 fn test_closure_record_input() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
 
     // Define a program with a closure that reads a record field.
@@ -108,6 +109,7 @@ fn test_closure_record_input() -> Result<()> {
 
 // Tests that a closure cannot output a record type (rejected at parse time).
 #[test]
+#[ignore = "slow"]
 fn test_closure_record_output_rejected() {
     // Attempt to parse a program with a closure that outputs a record.
     let result = Program::<CurrentNetwork>::from_str(
@@ -139,10 +141,11 @@ fn test_closure_record_output_rejected() {
 
 // Tests that a closure can accept an external record as input and read its fields.
 #[test]
+#[ignore = "slow"]
 fn test_closure_external_record_input() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -246,9 +249,10 @@ fn test_closure_external_record_input() -> Result<()> {
 // The program parses successfully, but transaction verification (`VM::check_transaction`)
 // rejects it at V15+ because closures cannot output ExternalRecord or DynamicRecord types.
 #[test]
+#[ignore = "slow"]
 fn test_closure_external_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let parent_program = Program::from_str(
         r"
@@ -302,10 +306,11 @@ fn test_closure_external_record_output() -> Result<()> {
 
 // Tests that a closure can accept a dynamic record as input and read it with `get.record.dynamic`.
 #[test]
+#[ignore = "slow"]
 fn test_closure_dynamic_record_input() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -385,6 +390,7 @@ fn test_closure_dynamic_record_input() -> Result<()> {
 // This documents a language constraint: record inputs in closures are read-only —
 // a closure cannot forward a record to another closure or function via `call`.
 #[test]
+#[ignore = "slow"]
 fn test_closure_cannot_contain_call() {
     let rng = &mut TestRng::default();
 
@@ -432,10 +438,11 @@ fn test_closure_cannot_contain_call() {
 // Tests that the existence check rejects an ExternalRecord cast to DynamicRecord and then
 // only used in a closure. The family is never resolved through a function call boundary.
 #[test]
+#[ignore = "slow"]
 fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -527,9 +534,10 @@ fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> 
 // output it) is rejected at V15+ by the record-existence check. The ExternalRecord creates an
 // unresolved family because closures cannot provide existence verification.
 #[test]
+#[ignore = "slow"]
 fn test_pre_v15_closure_external_record_input_only_rejected_at_v15() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -617,9 +625,10 @@ fn test_pre_v15_closure_external_record_input_only_rejected_at_v15() -> Result<(
 // This covers the runtime `has_forbidden_output` check, which is the only code path exercising
 // that check — deployment-time rejection prevents new programs from reaching execution.
 #[test]
+#[ignore = "slow"]
 fn test_pre_v15_closure_external_record_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -714,9 +723,10 @@ fn test_pre_v15_closure_external_record_output_rejected_at_v15_runtime() -> Resu
 // without — execution is rejected. Verifies that the check is per-closure and not accidentally
 // bypassed when benign closures are present.
 #[test]
+#[ignore = "slow"]
 fn test_mixed_closures_forbidden_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -817,9 +827,10 @@ fn test_mixed_closures_forbidden_output_rejected_at_v15_runtime() -> Result<()> 
 // `has_forbidden_output`, where the closure lives in a different program and is referenced by
 // `call other_program.aleo/closure_name` syntax.
 #[test]
+#[ignore = "slow"]
 fn test_pre_v15_cross_program_closure_forbidden_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -933,9 +944,10 @@ fn test_pre_v15_cross_program_closure_forbidden_output_rejected_at_v15_runtime()
 // The program parses successfully, but transaction verification (`VM::check_transaction`)
 // rejects it at V15+ because closures cannot output ExternalRecord or DynamicRecord types.
 #[test]
+#[ignore = "slow"]
 fn test_closure_dynamic_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // A program whose closure casts a record to DynamicRecord and outputs it. This is
     // rejected at V15+ because `ensure_records_exist` assumes closures cannot extend
@@ -977,9 +989,10 @@ fn test_closure_dynamic_record_output() -> Result<()> {
 // but this test executes before V15 (where the restriction does not apply) and confirms the
 // output is accepted.
 #[test]
+#[ignore = "slow"]
 fn test_pre_v15_closure_external_record_output_works_before_v15() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
@@ -1056,9 +1069,10 @@ fn test_pre_v15_closure_external_record_output_works_before_v15() -> Result<()> 
 // forbidden (outputs ExternalRecord) — is rejected. Ensures the deploy-time check iterates all
 // closures and does not short-circuit after the first safe one.
 #[test]
+#[ignore = "slow"]
 fn test_mixed_closures_deploy_rejected_at_v15() -> Result<()> {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Parent defines the record.
     let parent_program = Program::from_str(

@@ -28,8 +28,7 @@ use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 /// An in-memory block storage.
 #[derive(Clone)]
@@ -73,6 +72,8 @@ pub struct BlockMemory<N: Network> {
     /// The transaction store.
     transaction_store: TransactionStore<N, TransactionMemory<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for BlockMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> BlockStorage<N> for BlockMemory<N> {

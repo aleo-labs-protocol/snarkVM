@@ -19,6 +19,7 @@
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
 pub use snarkvm_console_algorithms as algorithms;
+#[doc(no_inline)]
 pub use snarkvm_console_types::prelude::*;
 
 pub mod kary_merkle_tree;

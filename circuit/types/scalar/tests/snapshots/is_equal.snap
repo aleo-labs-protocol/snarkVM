@@ -1,0 +1,44 @@
+# Circuit shape of `is_equal` for each operand mode and a fixed set of scalars.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-scalar --test snapshots
+scalar.constant scalar.constant | * : 1 0 0 0 0/0/0 constant e3b0c44298fc1c14
+scalar.constant scalar.public | 0 _ : 0 0 2 2 2/3/1 private 3d8030c8697de901
+scalar.constant scalar.public | 1 _ : 0 0 2 2 4/3/1 private 6839976678ff406e
+scalar.constant scalar.public | 2 _ : 0 0 2 2 4/3/1 private 3e7822d02215a616
+scalar.constant scalar.public | (r-1)/2 _ : 0 0 2 2 4/3/1 private 6bbf5e0502ca6d58
+scalar.constant scalar.public | (r+1)/2 _ : 0 0 2 2 4/3/1 private 4fafb784a63d7c44
+scalar.constant scalar.public | -2 _ : 0 0 2 2 4/3/1 private 7e1536989edf5fe2
+scalar.constant scalar.public | -1 _ : 0 0 2 2 4/3/1 private 7b7c82b0b53a702e
+scalar.constant scalar.private | 0 _ : 0 0 2 2 2/3/1 private 8e5edfc03a8211f6
+scalar.constant scalar.private | 1 _ : 0 0 2 2 4/3/1 private b2516b92e82074c2
+scalar.constant scalar.private | 2 _ : 0 0 2 2 4/3/1 private 027d98d4a896ca4d
+scalar.constant scalar.private | (r-1)/2 _ : 0 0 2 2 4/3/1 private fa59e78a8df8619c
+scalar.constant scalar.private | (r+1)/2 _ : 0 0 2 2 4/3/1 private e45483fbbbd7a34d
+scalar.constant scalar.private | -2 _ : 0 0 2 2 4/3/1 private e96382cef65930e7
+scalar.constant scalar.private | -1 _ : 0 0 2 2 4/3/1 private c95ccfeaabdc000f
+scalar.public scalar.constant | _ 0 : 0 0 2 2 2/3/1 private bf1617be9ea07603
+scalar.public scalar.constant | _ 1 : 0 0 2 2 4/3/1 private 396b7afbc56d4bc8
+scalar.public scalar.constant | _ 2 : 0 0 2 2 4/3/1 private 0efaeed48ba374e8
+scalar.public scalar.constant | _ (r-1)/2 : 0 0 2 2 4/3/1 private c109bfbdf8115119
+scalar.public scalar.constant | _ (r+1)/2 : 0 0 2 2 4/3/1 private 541e5ae4b2b30e4b
+scalar.public scalar.constant | _ -2 : 0 0 2 2 4/3/1 private 90baccdf28b5ed0d
+scalar.public scalar.constant | _ -1 : 0 0 2 2 4/3/1 private a382389bf370d772
+scalar.public scalar.public | _ _ : 0 0 2 2 4/3/1 private c43953466ed8415d
+scalar.public scalar.private | _ _ : 0 0 2 2 4/3/1 private 15e286c556ee7c2d
+scalar.private scalar.constant | _ 0 : 0 0 2 2 2/3/1 private 9c4d1c09298118c7
+scalar.private scalar.constant | _ 1 : 0 0 2 2 4/3/1 private ac5ecacecccac9a6
+scalar.private scalar.constant | _ 2 : 0 0 2 2 4/3/1 private 63456b73bc6c2627
+scalar.private scalar.constant | _ (r-1)/2 : 0 0 2 2 4/3/1 private 52c058818c710f48
+scalar.private scalar.constant | _ (r+1)/2 : 0 0 2 2 4/3/1 private 45f3f310feea8a69
+scalar.private scalar.constant | _ -2 : 0 0 2 2 4/3/1 private 1f8203e516d2105f
+scalar.private scalar.constant | _ -1 : 0 0 2 2 4/3/1 private 3ed06a430a50858e
+scalar.private scalar.public | _ _ : 0 0 2 2 4/3/1 private fc3d4358b3e7588c
+scalar.private scalar.private | _ _ : 0 0 2 2 4/3/1 private 443023bb619bba8f

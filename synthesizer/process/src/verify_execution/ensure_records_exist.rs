@@ -448,29 +448,17 @@ fn process_transition<N: Network>(
 
                 // Runtime check: reject pre-V15 programs whose closures output records.
                 // New programs are blocked at deployment time; this covers legacy programs.
-                let has_forbidden_output = match call.operator() {
-                    CallOperator::Resource(resource) => {
-                        stack.program().get_closure(resource)?.outputs().iter().any(|output| {
-                            matches!(
-                                output.register_type(),
-                                RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
-                            )
-                        })
-                    }
+                let closure = match call.operator() {
+                    CallOperator::Resource(resource) => stack.program().get_closure_ref(resource)?,
                     CallOperator::Locator(locator) => execution_stacks
                         .get(locator.program_id())
                         .ok_or_else(|| anyhow!("Missing stack for program '{}'", locator.program_id()))?
                         .program()
-                        .get_closure(locator.resource())?
-                        .outputs()
-                        .iter()
-                        .any(|output| {
-                            matches!(
-                                output.register_type(),
-                                RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
-                            )
-                        }),
+                        .get_closure_ref(locator.resource())?,
                 };
+                let has_forbidden_output = closure.outputs().iter().any(|output| {
+                    matches!(output.register_type(), RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord)
+                });
                 ensure!(
                     !has_forbidden_output,
                     "Closure '{}' outputs ExternalRecord or DynamicRecord, which is disallowed at V15+",
