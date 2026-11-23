@@ -173,6 +173,275 @@ impl<P: Fp384Parameters> Fp384<P> {
             PhantomData,
         )
     }
+
+    /// Computes `k * P::MODULUS^2` as an exact 768-bit integer at compile time,
+    /// asserting that `k * P::MODULUS^2 < P::MODULUS * 2^384` so lazy Montgomery reduction stays sound.
+    #[doc(hidden)]
+    pub const fn modulus_sq_mul(k: u64) -> [u64; 12] {
+        let limit = u64::MAX / (P::MODULUS.0[5] + 1) - 1;
+        assert!(k <= limit, "lazy reduction bias exceeds P * R headroom");
+
+        let m = P::MODULUS.0;
+        let mut sq = [0u64; 12];
+        let mut i = 0;
+        while i < 6 {
+            let mut carry = 0u128;
+            let mut j = 0;
+            while j < 6 {
+                let prod = (sq[i + j] as u128) + (m[i] as u128) * (m[j] as u128) + carry;
+                sq[i + j] = prod as u64;
+                carry = prod >> 64;
+                j += 1;
+            }
+            sq[i + 6] = carry as u64;
+            i += 1;
+        }
+
+        let mut out = [0u64; 12];
+        let mut carry = 0u128;
+        let mut idx = 0;
+        while idx < 12 {
+            let prod = (sq[idx] as u128) * (k as u128) + carry;
+            out[idx] = prod as u64;
+            carry = prod >> 64;
+            idx += 1;
+        }
+        assert!(carry == 0, "k * MODULUS^2 overflowed 768 bits");
+        out
+    }
+
+    /// Unreduced 6-limb addition without modular subtraction (`a + b < 2^384`).
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn add_nocarry_limbs(a: &[u64; 6], b: &[u64; 6]) -> [u64; 6] {
+        #[inline(always)]
+        fn adc64(x: u64, y: u64, carry: &mut u64) -> u64 {
+            let (s1, c1) = x.overflowing_add(y);
+            let (s2, c2) = s1.overflowing_add(*carry);
+            *carry = u64::from(c1 | c2);
+            s2
+        }
+        let mut carry = 0;
+        let r0 = adc64(a[0], b[0], &mut carry);
+        let r1 = adc64(a[1], b[1], &mut carry);
+        let r2 = adc64(a[2], b[2], &mut carry);
+        let r3 = adc64(a[3], b[3], &mut carry);
+        let r4 = adc64(a[4], b[4], &mut carry);
+        let r5 = adc64(a[5], b[5], &mut carry);
+        debug_assert_eq!(carry, 0);
+        [r0, r1, r2, r3, r4, r5]
+    }
+
+    /// Unreduced 6x6 -> 12-limb schoolbook multiplication (`36` `mac`s, zero Montgomery reduction).
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn mul_unreduced(a: &[u64; 6], b: &[u64; 6]) -> [u64; 12] {
+        let mut carry = 0;
+        let r0 = fa::mac(0, a[0], b[0], &mut carry);
+        let r1 = fa::mac_with_carry(0, a[0], b[1], &mut carry);
+        let r2 = fa::mac_with_carry(0, a[0], b[2], &mut carry);
+        let r3 = fa::mac_with_carry(0, a[0], b[3], &mut carry);
+        let r4 = fa::mac_with_carry(0, a[0], b[4], &mut carry);
+        let r5 = fa::mac_with_carry(0, a[0], b[5], &mut carry);
+        let r6 = carry;
+
+        let mut carry = 0;
+        let r1 = fa::mac_with_carry(r1, a[1], b[0], &mut carry);
+        let r2 = fa::mac_with_carry(r2, a[1], b[1], &mut carry);
+        let r3 = fa::mac_with_carry(r3, a[1], b[2], &mut carry);
+        let r4 = fa::mac_with_carry(r4, a[1], b[3], &mut carry);
+        let r5 = fa::mac_with_carry(r5, a[1], b[4], &mut carry);
+        let r6 = fa::mac_with_carry(r6, a[1], b[5], &mut carry);
+        let r7 = carry;
+
+        let mut carry = 0;
+        let r2 = fa::mac_with_carry(r2, a[2], b[0], &mut carry);
+        let r3 = fa::mac_with_carry(r3, a[2], b[1], &mut carry);
+        let r4 = fa::mac_with_carry(r4, a[2], b[2], &mut carry);
+        let r5 = fa::mac_with_carry(r5, a[2], b[3], &mut carry);
+        let r6 = fa::mac_with_carry(r6, a[2], b[4], &mut carry);
+        let r7 = fa::mac_with_carry(r7, a[2], b[5], &mut carry);
+        let r8 = carry;
+
+        let mut carry = 0;
+        let r3 = fa::mac_with_carry(r3, a[3], b[0], &mut carry);
+        let r4 = fa::mac_with_carry(r4, a[3], b[1], &mut carry);
+        let r5 = fa::mac_with_carry(r5, a[3], b[2], &mut carry);
+        let r6 = fa::mac_with_carry(r6, a[3], b[3], &mut carry);
+        let r7 = fa::mac_with_carry(r7, a[3], b[4], &mut carry);
+        let r8 = fa::mac_with_carry(r8, a[3], b[5], &mut carry);
+        let r9 = carry;
+
+        let mut carry = 0;
+        let r4 = fa::mac_with_carry(r4, a[4], b[0], &mut carry);
+        let r5 = fa::mac_with_carry(r5, a[4], b[1], &mut carry);
+        let r6 = fa::mac_with_carry(r6, a[4], b[2], &mut carry);
+        let r7 = fa::mac_with_carry(r7, a[4], b[3], &mut carry);
+        let r8 = fa::mac_with_carry(r8, a[4], b[4], &mut carry);
+        let r9 = fa::mac_with_carry(r9, a[4], b[5], &mut carry);
+        let r10 = carry;
+
+        let mut carry = 0;
+        let r5 = fa::mac_with_carry(r5, a[5], b[0], &mut carry);
+        let r6 = fa::mac_with_carry(r6, a[5], b[1], &mut carry);
+        let r7 = fa::mac_with_carry(r7, a[5], b[2], &mut carry);
+        let r8 = fa::mac_with_carry(r8, a[5], b[3], &mut carry);
+        let r9 = fa::mac_with_carry(r9, a[5], b[4], &mut carry);
+        let r10 = fa::mac_with_carry(r10, a[5], b[5], &mut carry);
+        let r11 = carry;
+
+        [r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11]
+    }
+
+    /// Unreduced symmetric 6x6 -> 12-limb squaring (`21` `mac`s, zero Montgomery reduction).
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn square_unreduced(a: &[u64; 6]) -> [u64; 12] {
+        let mut carry = 0;
+        let r1 = fa::mac_with_carry(0, a[0], a[1], &mut carry);
+        let r2 = fa::mac_with_carry(0, a[0], a[2], &mut carry);
+        let r3 = fa::mac_with_carry(0, a[0], a[3], &mut carry);
+        let r4 = fa::mac_with_carry(0, a[0], a[4], &mut carry);
+        let r5 = fa::mac_with_carry(0, a[0], a[5], &mut carry);
+        let r6 = carry;
+        let mut carry = 0;
+        let r3 = fa::mac_with_carry(r3, a[1], a[2], &mut carry);
+        let r4 = fa::mac_with_carry(r4, a[1], a[3], &mut carry);
+        let r5 = fa::mac_with_carry(r5, a[1], a[4], &mut carry);
+        let r6 = fa::mac_with_carry(r6, a[1], a[5], &mut carry);
+        let r7 = carry;
+        let mut carry = 0;
+        let r5 = fa::mac_with_carry(r5, a[2], a[3], &mut carry);
+        let r6 = fa::mac_with_carry(r6, a[2], a[4], &mut carry);
+        let r7 = fa::mac_with_carry(r7, a[2], a[5], &mut carry);
+        let r8 = carry;
+        let mut carry = 0;
+        let r7 = fa::mac_with_carry(r7, a[3], a[4], &mut carry);
+        let r8 = fa::mac_with_carry(r8, a[3], a[5], &mut carry);
+        let r9 = carry;
+        let mut carry = 0;
+        let r9 = fa::mac_with_carry(r9, a[4], a[5], &mut carry);
+        let r10 = carry;
+
+        let mut r11 = r10 >> 63;
+        let r10 = (r10 << 1) | (r9 >> 63);
+        let mut r9 = (r9 << 1) | (r8 >> 63);
+        let r8 = (r8 << 1) | (r7 >> 63);
+        let mut r7 = (r7 << 1) | (r6 >> 63);
+        let r6 = (r6 << 1) | (r5 >> 63);
+        let mut r5 = (r5 << 1) | (r4 >> 63);
+        let r4 = (r4 << 1) | (r3 >> 63);
+        let mut r3 = (r3 << 1) | (r2 >> 63);
+        let r2 = (r2 << 1) | (r1 >> 63);
+        let mut r1 = r1 << 1;
+
+        let mut carry = 0;
+        let r0 = fa::mac_with_carry(0, a[0], a[0], &mut carry);
+        carry = fa::adc(&mut r1, 0, carry);
+        let r2 = fa::mac_with_carry(r2, a[1], a[1], &mut carry);
+        carry = fa::adc(&mut r3, 0, carry);
+        let r4 = fa::mac_with_carry(r4, a[2], a[2], &mut carry);
+        carry = fa::adc(&mut r5, 0, carry);
+        let r6 = fa::mac_with_carry(r6, a[3], a[3], &mut carry);
+        carry = fa::adc(&mut r7, 0, carry);
+        let r8 = fa::mac_with_carry(r8, a[4], a[4], &mut carry);
+        carry = fa::adc(&mut r9, 0, carry);
+        let r10 = fa::mac_with_carry(r10, a[5], a[5], &mut carry);
+        fa::adc(&mut r11, 0, carry);
+
+        [r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11]
+    }
+
+    /// Exact 12-limb addition (`a + b < 2^768`).
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn add_768(a: &[u64; 12], b: &[u64; 12]) -> [u64; 12] {
+        #[inline(always)]
+        fn adc64(x: u64, y: u64, carry: &mut u64) -> u64 {
+            let (s1, c1) = x.overflowing_add(y);
+            let (s2, c2) = s1.overflowing_add(*carry);
+            *carry = u64::from(c1 | c2);
+            s2
+        }
+        let mut carry = 0;
+        let out = [
+            adc64(a[0], b[0], &mut carry),
+            adc64(a[1], b[1], &mut carry),
+            adc64(a[2], b[2], &mut carry),
+            adc64(a[3], b[3], &mut carry),
+            adc64(a[4], b[4], &mut carry),
+            adc64(a[5], b[5], &mut carry),
+            adc64(a[6], b[6], &mut carry),
+            adc64(a[7], b[7], &mut carry),
+            adc64(a[8], b[8], &mut carry),
+            adc64(a[9], b[9], &mut carry),
+            adc64(a[10], b[10], &mut carry),
+            adc64(a[11], b[11], &mut carry),
+        ];
+        debug_assert_eq!(carry, 0);
+        out
+    }
+
+    /// Exact 12-limb subtraction (`a >= b`).
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn sub_768(a: &[u64; 12], b: &[u64; 12]) -> [u64; 12] {
+        #[inline(always)]
+        fn sbb64(x: u64, y: u64, borrow: &mut u64) -> u64 {
+            let (d1, b1) = x.overflowing_sub(y);
+            let (d2, b2) = d1.overflowing_sub(*borrow);
+            *borrow = u64::from(b1 | b2);
+            d2
+        }
+        let mut borrow = 0;
+        let out = [
+            sbb64(a[0], b[0], &mut borrow),
+            sbb64(a[1], b[1], &mut borrow),
+            sbb64(a[2], b[2], &mut borrow),
+            sbb64(a[3], b[3], &mut borrow),
+            sbb64(a[4], b[4], &mut borrow),
+            sbb64(a[5], b[5], &mut borrow),
+            sbb64(a[6], b[6], &mut borrow),
+            sbb64(a[7], b[7], &mut borrow),
+            sbb64(a[8], b[8], &mut borrow),
+            sbb64(a[9], b[9], &mut borrow),
+            sbb64(a[10], b[10], &mut borrow),
+            sbb64(a[11], b[11], &mut borrow),
+        ];
+        debug_assert_eq!(borrow, 0);
+        out
+    }
+
+    /// Exact 12-limb multiplication by `5` (`(a << 2) + a < 2^768`).
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn mul5_768(a: &[u64; 12]) -> [u64; 12] {
+        debug_assert_eq!(a[11] >> 62, 0);
+        let shifted = [
+            a[0] << 2,
+            (a[1] << 2) | (a[0] >> 62),
+            (a[2] << 2) | (a[1] >> 62),
+            (a[3] << 2) | (a[2] >> 62),
+            (a[4] << 2) | (a[3] >> 62),
+            (a[5] << 2) | (a[4] >> 62),
+            (a[6] << 2) | (a[5] >> 62),
+            (a[7] << 2) | (a[6] >> 62),
+            (a[8] << 2) | (a[7] >> 62),
+            (a[9] << 2) | (a[8] >> 62),
+            (a[10] << 2) | (a[9] >> 62),
+            (a[11] << 2) | (a[10] >> 62),
+        ];
+        Self::add_768(&shifted, a)
+    }
+
+    /// Reduces an unreduced 768-bit value `r < P::MODULUS * 2^384` into canonical Montgomery form.
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn mont_reduce_limbs(r: [u64; 12]) -> Self {
+        let mut out = Self(BigInteger([0; 6]), PhantomData);
+        out.mont_reduce(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]);
+        out
+    }
 }
 
 impl<P: Fp384Parameters> Zero for Fp384<P> {

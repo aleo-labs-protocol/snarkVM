@@ -1500,3 +1500,95 @@ fn test_fq_sum_of_products_matches_scalar() {
 fn test_fq_sum_of_three_products_matches_scalar() {
     fq_sum_of_products_matches_scalar::<3>();
 }
+
+#[test]
+fn test_bls12_377_tower_lazy_768_boundary_extremes() {
+    use crate::bls12_377::Fq2Unreduced;
+
+    let zero = Fq::zero();
+    let one = Fq::one();
+    let minus_one = -Fq::one();
+    let mont_one = snarkvm_fields::field!(Fq, BigInteger384::from(1u64));
+    let mut p_minus_1 = FqParameters::MODULUS;
+    p_minus_1.sub_noborrow(&BigInteger384::from(1u64));
+    // Largest canonical Montgomery word (`MODULUS - 1`), exercising the 768-bit `< 136 * p^2` carry ceiling.
+    let mont_max = snarkvm_fields::field!(Fq, p_minus_1);
+
+    let corners = [
+        Fq2::new(zero, zero),
+        Fq2::new(one, zero),
+        Fq2::new(zero, one),
+        Fq2::new(minus_one, minus_one),
+        Fq2::new(mont_max, zero),
+        Fq2::new(zero, mont_max),
+        Fq2::new(mont_max, mont_max),
+        Fq2::new(mont_one, mont_max),
+    ];
+
+    for a in &corners {
+        assert_eq!(a.square(), *a * *a);
+        assert_eq!(Fq2Unreduced::square(a).reduce(), a.square());
+        let mut a_sq_scalar = *a;
+        a_sq_scalar.square_in_place_scalar();
+        assert_eq!(a.square(), a_sq_scalar);
+        assert!(a.square().c0.is_valid() && a.square().c1.is_valid());
+
+        for b in &corners {
+            let prod = *a * *b;
+            let prod_lazy = Fq2Unreduced::mul(a, b).reduce();
+            let mut prod_scalar = *a;
+            prod_scalar.mul_assign_scalar(b);
+            assert_eq!(prod, prod_scalar);
+            assert_eq!(prod_lazy, prod_scalar);
+            assert!(prod.c0.is_valid() && prod.c1.is_valid());
+            assert!(prod_lazy.c0.is_valid() && prod_lazy.c1.is_valid());
+            assert_eq!((*a + *b).square(), a.square() + (*a * *b).double() + b.square());
+
+            let a6 = Fq6::new(*a, *b, *a);
+            let b6 = Fq6::new(*b, *a, *b);
+            let mut a6_mul_scalar = a6;
+            a6_mul_scalar.mul_assign_scalar(&b6);
+            assert_eq!(a6 * b6, a6_mul_scalar);
+            let mut a6_sq_scalar = a6;
+            a6_sq_scalar.square_in_place_scalar();
+            assert_eq!(a6.square(), a6_sq_scalar);
+            assert_eq!(a6.square(), a6 * a6);
+
+            let mut a6_01 = a6;
+            a6_01.mul_by_01(a, b);
+            let mut a6_01_scalar = a6;
+            a6_01_scalar.mul_by_01_scalar(a, b);
+            assert_eq!(a6_01, a6_01_scalar);
+
+            let a12 = Fq12::new(a6, b6);
+            let b12 = Fq12::new(b6, a6);
+            let p12 = a12 * b12;
+            let mut p12_scalar = a12;
+            p12_scalar.mul_assign_scalar(&b12);
+            assert_eq!(p12, p12_scalar);
+            let mut a12_sq_scalar = a12;
+            a12_sq_scalar.square_in_place_scalar();
+            assert_eq!(a12.square(), a12_sq_scalar);
+            assert_eq!(a12.square(), a12 * a12);
+            assert_eq!((a12 + b12) * a12, a12.square() + b12 * a12);
+            assert!(fq12_coefficients(&p12).all(|x| x.is_valid()));
+            assert!(fq12_coefficients(&p12_scalar).all(|x| x.is_valid()));
+
+            let mut s034 = a12;
+            s034.mul_by_034(a, b, a);
+            let mut s034_scalar = a12;
+            s034_scalar.mul_by_034_scalar(a, b, a);
+            assert_eq!(s034, s034_scalar);
+            assert_eq!(s034, a12 * Fq12::new(Fq6::new(*a, Fq2::zero(), Fq2::zero()), Fq6::new(*b, *a, Fq2::zero())));
+            assert!(fq12_coefficients(&s034).all(|x| x.is_valid()));
+
+            let mut s014 = a12;
+            s014.mul_by_014(a, b, a);
+            let mut s014_scalar = a12;
+            s014_scalar.mul_by_014_scalar(a, b, a);
+            assert_eq!(s014, s014_scalar);
+            assert_eq!(s014, a12 * Fq12::new(Fq6::new(*a, *b, Fq2::zero()), Fq6::new(Fq2::zero(), *a, Fq2::zero())));
+            assert!(fq12_coefficients(&s014).all(|x| x.is_valid()));
+        }
+    }
+}

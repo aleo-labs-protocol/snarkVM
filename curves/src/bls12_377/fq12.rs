@@ -13,10 +13,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_fields::{Fp12, Fp12Parameters, field};
+use snarkvm_fields::{Field, Fp12, Fp12Parameters, field, fp6_3over2::Fp6Parameters};
 use snarkvm_utilities::biginteger::BigInteger384 as BigInteger;
 
-use crate::bls12_377::{Fq, Fq2, Fq6Parameters};
+use crate::bls12_377::{
+    Fq,
+    Fq2,
+    Fq2Unreduced,
+    Fq6,
+    Fq6Parameters,
+    Fq6Unreduced,
+    P2_10,
+    P2_16,
+    P2_20,
+    P2_30,
+    P2_32,
+    P2_36,
+    P2_40,
+    P2_72,
+    P2_100,
+};
 
 pub type Fq12 = Fp12<Fq12Parameters>;
 
@@ -225,6 +241,88 @@ impl Fp12Parameters for Fq12Parameters {
 
     fn mul_assign_fp12(a: &mut Fq12, b: &Fq12) {
         snarkvm_fields::ifma::mul_assign_fp12(a, b)
+    }
+
+    /// Lazy-reduced `Fq12` Karatsuba multiplication (`54` 6x6 products + `12` Montgomery reductions,
+    /// down from `72` 6x6 products + `36` Montgomery reductions; all limbs `< 136 * p^2 < p * 2^384`).
+    #[inline]
+    fn mul_assign_fp12_scalar(a: &mut Fq12, b: &Fq12) {
+        let v0 = Fq6Unreduced::mul(&a.c0, &b.c0);
+        let v1 = Fq6Unreduced::mul(&a.c1, &b.c1);
+        let vt = Fq6Unreduced::mul(&(a.c0 + a.c1), &(b.c0 + b.c1));
+
+        let c1 = Fq6Unreduced {
+            c0: vt.c0.sub2_with_bias(&v0.c0, &v1.c0, &P2_72, &P2_40),
+            c1: vt.c1.sub2_with_bias(&v0.c1, &v1.c1, &P2_72, &P2_40),
+            c2: vt.c2.sub2_with_bias(&v0.c2, &v1.c2, &P2_72, &P2_40),
+        }
+        .reduce();
+
+        let v_v1 = Fq6Unreduced { c0: v1.c2.mul_by_u(&P2_100), c1: v1.c0, c2: v1.c1 };
+        let c0 = v0.add(&v_v1).reduce();
+
+        *a = Fq12::new(c0, c1);
+    }
+
+    /// Lazy-reduced complex `Fq12` squaring (`36` 6x6 products + `12` Montgomery reductions).
+    #[inline]
+    fn square_in_place_fp12(a: &mut Fq12) {
+        let ab = Fq6Unreduced::mul(&a.c0, &a.c1).reduce();
+        let v_c1 = Fq6::new(Fq6Parameters::mul_fp2_by_nonresidue(&a.c1.c2), a.c1.c0, a.c1.c1);
+        let prod = Fq6Unreduced::mul(&(a.c0 + a.c1), &(a.c0 + v_c1)).reduce();
+        let v_ab = Fq6::new(Fq6Parameters::mul_fp2_by_nonresidue(&ab.c2), ab.c0, ab.c1);
+        *a = Fq12::new(prod - ab - v_ab, ab.double());
+    }
+
+    /// Lazy-reduced sparse D-twist line multiplication `a * (c0 + c3 * w + c4 * v * w)`
+    /// (`39` 6x6 products + `12` Montgomery reductions, down from `52` products + `26` reductions;
+    /// all limbs `< 58 * p^2 < p * 2^384`).
+    #[inline]
+    fn mul_by_034_fp12(a: &mut Fq12, c0: &Fq2, c3: &Fq2, c4: &Fq2) {
+        let a_u = Fq6Unreduced {
+            c0: Fq2Unreduced::mul(&a.c0.c0, c0),
+            c1: Fq2Unreduced::mul(&a.c0.c1, c0),
+            c2: Fq2Unreduced::mul(&a.c0.c2, c0),
+        };
+        let b_u = Fq6Unreduced::mul_by_01(&a.c1, c3, c4);
+        let e_u = Fq6Unreduced::mul_by_01(&(a.c0 + a.c1), &(*c0 + c3), c4);
+
+        let out_c1 = Fq6Unreduced {
+            c0: e_u.c0.sub2_with_bias(&a_u.c0, &b_u.c0, &P2_32, &P2_16),
+            c1: e_u.c1.sub2_with_bias(&a_u.c1, &b_u.c1, &P2_32, &P2_16),
+            c2: e_u.c2.sub2_with_bias(&a_u.c2, &b_u.c2, &P2_32, &P2_16),
+        }
+        .reduce();
+
+        let v_b = Fq6Unreduced { c0: b_u.c2.mul_by_u(&P2_30), c1: b_u.c0, c2: b_u.c1 };
+        let out_c0 = a_u.add(&v_b).reduce();
+
+        *a = Fq12::new(out_c0, out_c1);
+    }
+
+    /// Lazy-reduced sparse M-twist line multiplication `a * (c0 + c1 * v + c4 * v * w)`
+    /// (`39` 6x6 products + `12` Montgomery reductions; all limbs `< 62 * p^2 < p * 2^384`).
+    #[inline]
+    fn mul_by_014_fp12(a: &mut Fq12, c0: &Fq2, c1: &Fq2, c4: &Fq2) {
+        let aa_u = Fq6Unreduced::mul_by_01(&a.c0, c0, c1);
+        let bb_u = Fq6Unreduced {
+            c0: Fq2Unreduced::mul(&a.c1.c2, c4).mul_by_u(&P2_10),
+            c1: Fq2Unreduced::mul(&a.c1.c0, c4),
+            c2: Fq2Unreduced::mul(&a.c1.c1, c4),
+        };
+        let e_u = Fq6Unreduced::mul_by_01(&(a.c0 + a.c1), c0, &(*c1 + c4));
+
+        let out_c1 = Fq6Unreduced {
+            c0: e_u.c0.sub2_with_bias(&aa_u.c0, &bb_u.c0, &P2_36, &P2_20),
+            c1: e_u.c1.sub2_with_bias(&aa_u.c1, &bb_u.c1, &P2_36, &P2_20),
+            c2: e_u.c2.sub2_with_bias(&aa_u.c2, &bb_u.c2, &P2_36, &P2_20),
+        }
+        .reduce();
+
+        let v_bb = Fq6Unreduced { c0: bb_u.c2.mul_by_u(&P2_10), c1: bb_u.c0, c2: bb_u.c1 };
+        let out_c0 = aa_u.add(&v_bb).reduce();
+
+        *a = Fq12::new(out_c0, out_c1);
     }
 
     fn cyclotomic_exp_fp12(a: &Fq12, exp: &[u64]) -> Fq12 {

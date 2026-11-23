@@ -64,6 +64,22 @@ pub trait Fp2Parameters:
     fn mul_fp_by_nonresidue(fe: &Self::Fp) -> Self::Fp {
         Self::NONRESIDUE * fe
     }
+
+    /// Sets `a` to `a * b`. An override must not fall back to `Fp2::mul_assign`, which calls this
+    /// hook; `Fp2::mul_assign_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_assign_fp2(a: &mut Fp2<Self>, b: &Fp2<Self>) {
+        a.mul_assign_scalar(b);
+    }
+
+    /// Sets `a` to `a^2`. An override must not fall back to `Fp2::square_in_place`, which calls this
+    /// hook; `Fp2::square_in_place_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn square_in_place_fp2(a: &mut Fp2<Self>) {
+        a.square_in_place_scalar();
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -76,6 +92,31 @@ impl<P: Fp2Parameters> Fp2<P> {
     /// Initializes a `Fp2` element from two `Fp` elements.
     pub const fn new(c0: P::Fp, c1: P::Fp) -> Self {
         Fp2 { c0, c1 }
+    }
+
+    /// Sets `self` to `self * other` by the two-term `sum_of_products` path, without
+    /// `Fp2Parameters::mul_assign_fp2`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_assign_scalar(&mut self, other: &Self) {
+        *self = Self::new(
+            P::Fp::sum_of_products(&[self.c0, P::mul_fp_by_nonresidue(&self.c1)], &[other.c0, other.c1]),
+            P::Fp::sum_of_products(&[self.c0, self.c1], &[other.c1, other.c0]),
+        );
+    }
+
+    /// Sets `self` to `self^2` by the default path, without `Fp2Parameters::square_in_place_fp2`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn square_in_place_scalar(&mut self) -> &mut Self {
+        let mut v0 = self.c0 - self.c1;
+        let v3 = self.c0 - P::mul_fp_by_nonresidue(&self.c1);
+        let v2 = self.c0 * self.c1;
+        v0 *= &v3;
+        v0 += &v2;
+        self.c1 = v2.double();
+        self.c0 = v0 + P::mul_fp_by_nonresidue(&v2);
+        self
     }
 }
 
@@ -161,21 +202,9 @@ impl<P: Fp2Parameters> Field for Fp2<P> {
         Self::from_random_bytes_with_flags::<EmptyFlags>(bytes).map(|f| f.0)
     }
 
+    #[inline]
     fn square_in_place(&mut self) -> &mut Self {
-        // v0 = c0 - c1
-        let mut v0 = self.c0 - self.c1;
-        // v3 = c0 - beta * c1
-        let v3 = self.c0 - P::mul_fp_by_nonresidue(&self.c1);
-        // v2 = c0 * c1
-        let v2 = self.c0 * self.c1;
-
-        // v0 = (v0 * v3) + v2
-        v0 *= &v3;
-        v0 += &v2;
-
-        self.c1 = v2.double();
-        self.c0 = v0 + P::mul_fp_by_nonresidue(&v2);
-
+        P::square_in_place_fp2(self);
         self
     }
 
@@ -425,12 +454,8 @@ impl<P: Fp2Parameters> SubAssign<&'_ Self> for Fp2<P> {
 
 impl<P: Fp2Parameters> MulAssign<&'_ Self> for Fp2<P> {
     #[inline]
-    #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &Self) {
-        *self = Self::new(
-            P::Fp::sum_of_products(&[self.c0, P::mul_fp_by_nonresidue(&self.c1)], &[other.c0, other.c1]),
-            P::Fp::sum_of_products(&[self.c0, self.c1], &[other.c1, other.c0]),
-        )
+        P::mul_assign_fp2(self, other);
     }
 }
 
