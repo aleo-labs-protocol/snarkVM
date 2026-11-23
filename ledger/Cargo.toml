@@ -190,10 +190,6 @@ features = [ "test-helpers" ]
 workspace = true
 features = [ "test-helpers" ]
 
-[dev-dependencies.snarkvm-ledger-store]
-workspace = true
-features = [ "test-helpers" ]
-
 [dev-dependencies.snarkvm-ledger-test-helpers]
 workspace = true
 

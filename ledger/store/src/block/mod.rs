@@ -2046,15 +2046,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
     }
 
-    /// Prunes the authorities of the blocks below `below`, as startup pruning does. For tests.
-    #[cfg(any(test, feature = "test-helpers"))]
-    #[doc(hidden)]
-    pub fn prune_authorities_below(&self, below: u32) -> Result<()> {
-        ensure!(below > 1, "Nothing to prune below block {below}");
-        let storage = &self.storage;
-        atomic_batch_scope!(storage, { prune_authority_heights(storage, 1..below) })
-    }
-
     /// Checks that every component of a block except its authority is present and consistent. Use it
     /// for blocks whose authority may have been pruned.
     pub fn check_block_data_without_authority(&self, block_hash: &N::BlockHash) -> Result<()> {

@@ -22,8 +22,6 @@ default = [ "indexmap/rayon" ]
 dev_genesis_state_root = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
 rocks = [ "dep:rocksdb", "dep:smallvec" ]
-# Helpers for tests. They are not part of the API, and semver does not cover them.
-test-helpers = [ ]
 
 [dependencies.snarkvm-metrics]
 workspace = true
