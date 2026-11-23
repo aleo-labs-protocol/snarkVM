@@ -64,7 +64,7 @@ pub struct RegisterTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
     inputs: IndexMap<u64, RegisterType<N>>,
     /// The mapping of all destination registers to their defined types.
-    destinations: IndexMap<u64, RegisterType<N>>,
+    pub(super) destinations: IndexMap<u64, RegisterType<N>>,
 }
 
 impl<N: Network> RegisterTypes<N> {
