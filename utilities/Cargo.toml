@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-utilities"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Utilities for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -48,6 +48,9 @@ optional = true
 [dependencies.num-bigint]
 version = "0.5"
 
+[dependencies.parking_lot]
+workspace = true
+
 [dependencies.rand]
 workspace = true
 
@@ -56,6 +59,7 @@ workspace = true
 
 [dependencies.rand_xorshift]
 version = "0.5"
+optional = true
 
 [dependencies.rayon]
 workspace = true
@@ -85,9 +89,13 @@ workspace = true
 workspace = true
 features = [ "derive" ]
 
+[target.'cfg(locktick)'.dependencies.locktick]
+workspace = true
+features = [ "parking_lot", "tokio" ]
+
 [dev-dependencies.snarkvm-utilities]
 path = "."
-features = [ "storage" ]
+features = [ "storage", "test-helpers" ]
 
 [dev-dependencies.criterion]
 workspace = true
@@ -98,8 +106,10 @@ features = [ "env-filter" ]
 
 [features]
 default = [ "derive" ]
-derive = [ "snarkvm-utilities-derives" ]
-dev-print = [ ]
-serial = [ "derive" ]
+derive = [ "dep:snarkvm-utilities-derives" ]
 storage = [ "dep:dirs", "dep:tempfile" ]
-wasm = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "dep:rand_xorshift" ]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [ "cfg(locktick)" ] }

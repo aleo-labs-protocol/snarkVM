@@ -29,8 +29,20 @@ use snarkvm_utilities::BigInteger;
 use core::{fmt::Debug, hash::Hash};
 use zeroize::Zeroize;
 
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Environment:
-    'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync
+    crate::sealed_console_environment::Sealed
+    + 'static
+    + Copy
+    + Clone
+    + Debug
+    + PartialEq
+    + Eq
+    + Hash
+    + Serialize
+    + DeserializeOwned
+    + Send
+    + Sync
 {
     type Affine: AffineCurve<
             Projective = Self::Projective,
@@ -65,6 +77,8 @@ pub trait Environment:
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Console;
+
+impl crate::sealed_console_environment::Sealed for Console {}
 
 impl Environment for Console {
     type Affine = EdwardsAffine;

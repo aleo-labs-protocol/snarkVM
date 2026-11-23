@@ -30,7 +30,9 @@ use core::marker::PhantomData;
 use std::borrow::Cow;
 
 /// A trait for execution storage.
-pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ExecutionStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `([transition ID], has_fee)`.
     type IDMap: for<'a> Map<'a, N::TransactionID, (Vec<N::TransitionID>, bool)>;
     /// The mapping of `transition ID` to `transaction ID`.
@@ -379,7 +381,7 @@ impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {
 
 impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {
     /// Returns an iterator over the execution transaction IDs, for all executions.
-    pub fn execution_transaction_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, N::TransactionID>> {
+    pub(crate) fn execution_transaction_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, N::TransactionID>> {
         self.storage.id_map().keys_confirmed()
     }
 }

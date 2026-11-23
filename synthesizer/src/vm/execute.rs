@@ -418,8 +418,8 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_execute_cost_fee_migration() {
         let rng = &mut TestRng::default();
         let credits_program = "credits.aleo";
@@ -451,8 +451,8 @@ mod tests {
         assert_eq!(old_cost - cost, 8_500 * 2);
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_fee_migration_occurs_at_correct_block_height() {
         let rng = &mut TestRng::default();
 
@@ -489,8 +489,8 @@ mod tests {
         assert_eq!(34_060, *transaction.base_fee_amount().unwrap());
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_fee_migration_correctly_calculates_nested() {
         let rng = &mut TestRng::default();
 
@@ -728,45 +728,6 @@ finalize test:
     }
 
     #[test]
-    #[ignore]
-    fn test_join_transaction_size() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
-        // Prepare the VM and records.
-        let (vm, records) = prepare_vm().unwrap();
-
-        // Fetch the unspent records.
-        let mut records = records.values();
-        let record_1 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
-        let record_2 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Prepare the inputs.
-        let inputs = [Value::<CurrentNetwork>::Record(record_1), Value::<CurrentNetwork>::Record(record_2)].into_iter();
-
-        // Execute.
-        let transaction =
-            vm.execute(&caller_private_key, ("credits.aleo", "join"), inputs, None, 0, None, rng).unwrap();
-
-        // Verify the transaction.
-        vm.check_transaction(&transaction, None, rng).unwrap();
-
-        // Assert the size of the transaction.
-        let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();
-        assert_eq!(3571, transaction_size_in_bytes, "Update me if serialization has changed");
-
-        // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
-        if let Transaction::Execute(_, _, execution, _) = &transaction {
-            let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
-            assert_eq!(2120, execution_size_in_bytes, "Update me if serialization has changed");
-        }
-    }
-
-    #[test]
     fn test_split_transaction_size() {
         let rng = &mut TestRng::default();
 
@@ -805,27 +766,6 @@ finalize test:
     }
 
     #[test]
-    #[ignore]
-    fn test_fee_private_transition_size() {
-        let rng = &mut TestRng::default();
-
-        // Retrieve a fee transaction.
-        let transaction = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
-        // Retrieve the fee.
-        let fee = match transaction {
-            Transaction::Fee(_, fee) => fee,
-            _ => panic!("Expected a fee transaction"),
-        };
-
-        // Ensure the transition is a fee transition.
-        assert!(fee.is_fee_private());
-
-        // Assert the size of the transition.
-        let fee_size_in_bytes = fee.to_bytes_le().unwrap().len();
-        assert_eq!(2076, fee_size_in_bytes, "Update me if serialization has changed");
-    }
-
-    #[test]
     fn test_fee_public_transition_size() {
         let rng = &mut TestRng::default();
 
@@ -843,178 +783,6 @@ finalize test:
         // Assert the size of the transition.
         let fee_size_in_bytes = fee.to_bytes_le().unwrap().len();
         assert_eq!(1416, fee_size_in_bytes, "Update me if serialization has changed");
-    }
-
-    #[test]
-    #[ignore]
-    fn test_wide_nested_execution_cost() {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
-
-        // Prepare the VM.
-        let (vm, _) = prepare_vm().unwrap();
-
-        // Construct the child program.
-        let child_program = Program::from_str(
-            r"
-program child.aleo;
-mapping data:
-    key as field.public;
-    value as field.public;
-function test:
-    input r0 as field.public;
-    input r1 as field.public;
-    async test r0 r1 into r2;
-    output r2 as child.aleo/test.future;
-finalize test:
-    input r0 as field.public;
-    input r1 as field.public;
-    hash.bhp256 r0 into r2 as field;
-    hash.bhp256 r1 into r3 as field;
-    set r2 into data[r3];",
-        )
-        .unwrap();
-
-        // Deploy the program.
-        let transaction = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng).unwrap();
-
-        // Construct the next block.
-        let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Construct the parent program.
-        let parent_program = Program::from_str(
-            r"
-import child.aleo;
-program parent.aleo;
-function test:
-    call child.aleo/test 0field 1field into r0;
-    call child.aleo/test 2field 3field into r1;
-    call child.aleo/test 4field 5field into r2;
-    call child.aleo/test 6field 7field into r3;
-    call child.aleo/test 8field 9field into r4;
-    call child.aleo/test 10field 11field into r5;
-    call child.aleo/test 12field 13field into r6;
-    call child.aleo/test 14field 15field into r7;
-    call child.aleo/test 16field 17field into r8;
-    call child.aleo/test 18field 19field into r9;
-    call child.aleo/test 20field 21field into r10;
-    call child.aleo/test 22field 23field into r11;
-    call child.aleo/test 24field 25field into r12;
-    call child.aleo/test 26field 27field into r13;
-    call child.aleo/test 28field 29field into r14;
-    call child.aleo/test 30field 31field into r15;
-    async test r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 into r16;
-    output r16 as parent.aleo/test.future;
-finalize test:
-    input r0 as child.aleo/test.future;
-    input r1 as child.aleo/test.future;
-    input r2 as child.aleo/test.future;
-    input r3 as child.aleo/test.future;
-    input r4 as child.aleo/test.future;
-    input r5 as child.aleo/test.future;
-    input r6 as child.aleo/test.future;
-    input r7 as child.aleo/test.future;
-    input r8 as child.aleo/test.future;
-    input r9 as child.aleo/test.future;
-    input r10 as child.aleo/test.future;
-    input r11 as child.aleo/test.future;
-    input r12 as child.aleo/test.future;
-    input r13 as child.aleo/test.future;
-    input r14 as child.aleo/test.future;
-    input r15 as child.aleo/test.future;
-    await r0;
-    await r1;
-    await r2;
-    await r3;
-    await r4;
-    await r5;
-    await r6;
-    await r7;
-    await r8;
-    await r9;
-    await r10;
-    await r11;
-    await r12;
-    await r13;
-    await r14;
-    await r15;",
-        )
-        .unwrap();
-
-        // Deploy the program.
-        let transaction = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng).unwrap();
-
-        // Construct the next block.
-        let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Execute the parent program.
-        let Transaction::Execute(_, _, execution, _) = vm
-            .execute(&caller_private_key, ("parent.aleo", "test"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-            .unwrap()
-        else {
-            unreachable!("VM::execute always produces an `Execution`")
-        };
-
-        // Check that the number of transitions is correct.
-        // Change me if the `MAX_INPUTS` changes.
-        assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
-
-        // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
-
-        // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
-        let mut expected_cost = 0;
-        for transition in execution.transitions() {
-            // Get the program ID and name of the transition.
-            let program_id = transition.program_id();
-            let function_name = transition.function_name();
-            // Get the stack.
-            let stack = vm.process().get_stack(program_id).unwrap().clone();
-            // Get the finalize types.
-            let finalize_types = stack.get_finalize_types(function_name).unwrap();
-            // Get the finalize block of the transition and sum the cost of each command.
-            let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
-                None => 0,
-                Some(finalize_logic) => {
-                    // We derive the consensus version, as it may have changed due to the short
-                    // block span of test consensus versions
-                    let consensus_version =
-                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
-
-                    // Aggregate the cost of all commands in the program.
-                    finalize_logic
-                        .commands()
-                        .iter()
-                        .map(|command| {
-                            cost_per_command(
-                                &stack,
-                                &finalize_types,
-                                command,
-                                ConsensusFeeVersion::V2,
-                                Some(consensus_version),
-                            )
-                        })
-                        .try_fold(0u64, |acc, res| {
-                            res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
-                        })
-                        .unwrap()
-                }
-            };
-            // Add the cost to the total cost.
-            expected_cost += cost;
-        }
-
-        // Check that the finalize cost is equal to the expected cost.
-        assert_eq!(finalize_cost, expected_cost);
     }
 
     #[test]
@@ -1153,5 +921,242 @@ constructor:
 
         // Check that the finalize cost is equal to the expected cost.
         assert_eq!(finalize_cost, expected_cost);
+    }
+
+    mod memory_intensive {
+        use super::*;
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_join_transaction_size() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            // Prepare the VM and records past `ConsensusVersion::V8`, where `join` can create a record.
+            let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
+            let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+
+            // Fetch the unspent records.
+            let mut records = records.values();
+            let record_1 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
+            let record_2 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
+
+            // Prepare the inputs.
+            let inputs =
+                [Value::<CurrentNetwork>::Record(record_1), Value::<CurrentNetwork>::Record(record_2)].into_iter();
+
+            // Execute.
+            let transaction =
+                vm.execute(&caller_private_key, ("credits.aleo", "join"), inputs, None, 0, None, rng).unwrap();
+
+            // Verify the transaction.
+            vm.check_transaction(&transaction, None, rng).unwrap();
+
+            // Assert the size of the transaction.
+            let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();
+            assert_eq!(3571, transaction_size_in_bytes, "Update me if serialization has changed");
+
+            // Assert the size of the execution.
+            assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+            if let Transaction::Execute(_, _, execution, _) = &transaction {
+                let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
+                assert_eq!(2120, execution_size_in_bytes, "Update me if serialization has changed");
+            }
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_fee_private_transition_size() {
+            let rng = &mut TestRng::default();
+
+            // Retrieve a fee transaction.
+            let transaction = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
+            // Retrieve the fee.
+            let fee = match transaction {
+                Transaction::Fee(_, fee) => fee,
+                _ => panic!("Expected a fee transaction"),
+            };
+
+            // Ensure the transition is a fee transition.
+            assert!(fee.is_fee_private());
+
+            // Assert the size of the transition.
+            let fee_size_in_bytes = fee.to_bytes_le().unwrap().len();
+            assert_eq!(2076, fee_size_in_bytes, "Update me if serialization has changed");
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_wide_nested_execution_cost() {
+            // Initialize an RNG.
+            let rng = &mut TestRng::default();
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+
+            // Prepare the VM.
+            let (vm, _) = prepare_vm().unwrap();
+
+            // Construct the child program.
+            let child_program = Program::from_str(
+                r"
+program child.aleo;
+mapping data:
+    key as field.public;
+    value as field.public;
+function test:
+    input r0 as field.public;
+    input r1 as field.public;
+    async test r0 r1 into r2;
+    output r2 as child.aleo/test.future;
+finalize test:
+    input r0 as field.public;
+    input r1 as field.public;
+    hash.bhp256 r0 into r2 as field;
+    hash.bhp256 r1 into r3 as field;
+    set r2 into data[r3];",
+            )
+            .unwrap();
+
+            // Deploy the program.
+            let transaction = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng).unwrap();
+
+            // Construct the next block.
+            let next_block =
+                crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+
+            // Add the next block to the VM.
+            vm.add_next_block(&next_block).unwrap();
+
+            // Construct the parent program.
+            let parent_program = Program::from_str(
+                r"
+import child.aleo;
+program parent.aleo;
+function test:
+    call child.aleo/test 0field 1field into r0;
+    call child.aleo/test 2field 3field into r1;
+    call child.aleo/test 4field 5field into r2;
+    call child.aleo/test 6field 7field into r3;
+    call child.aleo/test 8field 9field into r4;
+    call child.aleo/test 10field 11field into r5;
+    call child.aleo/test 12field 13field into r6;
+    call child.aleo/test 14field 15field into r7;
+    call child.aleo/test 16field 17field into r8;
+    call child.aleo/test 18field 19field into r9;
+    call child.aleo/test 20field 21field into r10;
+    call child.aleo/test 22field 23field into r11;
+    call child.aleo/test 24field 25field into r12;
+    call child.aleo/test 26field 27field into r13;
+    call child.aleo/test 28field 29field into r14;
+    call child.aleo/test 30field 31field into r15;
+    async test r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 into r16;
+    output r16 as parent.aleo/test.future;
+finalize test:
+    input r0 as child.aleo/test.future;
+    input r1 as child.aleo/test.future;
+    input r2 as child.aleo/test.future;
+    input r3 as child.aleo/test.future;
+    input r4 as child.aleo/test.future;
+    input r5 as child.aleo/test.future;
+    input r6 as child.aleo/test.future;
+    input r7 as child.aleo/test.future;
+    input r8 as child.aleo/test.future;
+    input r9 as child.aleo/test.future;
+    input r10 as child.aleo/test.future;
+    input r11 as child.aleo/test.future;
+    input r12 as child.aleo/test.future;
+    input r13 as child.aleo/test.future;
+    input r14 as child.aleo/test.future;
+    input r15 as child.aleo/test.future;
+    await r0;
+    await r1;
+    await r2;
+    await r3;
+    await r4;
+    await r5;
+    await r6;
+    await r7;
+    await r8;
+    await r9;
+    await r10;
+    await r11;
+    await r12;
+    await r13;
+    await r14;
+    await r15;",
+            )
+            .unwrap();
+
+            // Deploy the program.
+            let transaction = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng).unwrap();
+
+            // Construct the next block.
+            let next_block =
+                crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+
+            // Add the next block to the VM.
+            vm.add_next_block(&next_block).unwrap();
+
+            // Execute the parent program.
+            let Transaction::Execute(_, _, execution, _) = vm
+                .execute(
+                    &caller_private_key,
+                    ("parent.aleo", "test"),
+                    Vec::<Value<_>>::new().iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap()
+            else {
+                unreachable!("VM::execute always produces an `Execution`")
+            };
+
+            // Check that the number of transitions is correct.
+            // Change me if the `MAX_INPUTS` changes.
+            assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
+
+            // Get the finalize cost of the execution.
+            let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
+
+            // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
+            let mut expected_cost = 0;
+            for transition in execution.transitions() {
+                // Get the program ID and name of the transition.
+                let program_id = transition.program_id();
+                let function_name = transition.function_name();
+                // Get the stack.
+                let stack = vm.process().get_stack(program_id).unwrap().clone();
+                // Get the finalize types.
+                let finalize_types = stack.get_finalize_types(function_name).unwrap();
+                // Get the finalize block of the transition and sum the cost of each command.
+                let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
+                    None => 0,
+                    Some(finalize_logic) => {
+                        // Aggregate the cost under the same V2 schedule as the execution.
+                        finalize_logic
+                            .commands()
+                            .iter()
+                            .map(|command| {
+                                cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2, None)
+                            })
+                            .try_fold(0u64, |acc, res| {
+                                res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
+                            })
+                            .unwrap()
+                    }
+                };
+                // Add the cost to the total cost.
+                expected_cost += cost;
+            }
+
+            // Check that the finalize cost is equal to the expected cost.
+            assert_eq!(finalize_cost, expected_cost);
+        }
     }
 }

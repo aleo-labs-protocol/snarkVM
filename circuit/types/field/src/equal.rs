@@ -133,29 +133,6 @@ impl<E: Environment> Equal<Self> for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Equal<Field<E>, Output = Boolean<E>>> for Field<E> {
-    type Case = (Mode, Mode);
-
-    // TODO: How to deal where both operands are the same field element, since it changes the number of gates produced? We could use upper bounds.
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            (Mode::Constant, Mode::Constant) => Count::is(1, 0, 0, 0),
-            _ => Count::is(0, 0, 2, 2),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Equal<Field<E>, Output = Boolean<E>>> for Field<E> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,8 +144,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.is_equal(b);
             assert_eq!(expected, candidate.eject_value(), "({} == {})", a.eject_value(), b.eject_value());
-            assert_count!(Equal(Field, Field) => Boolean, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Equal(Field, Field) => Boolean, &(a.eject_mode(), b.eject_mode()), candidate);
+            assert_scope!();
         });
     }
 
@@ -176,8 +152,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.is_not_equal(b);
             assert_eq!(expected, candidate.eject_value(), "({} != {})", a.eject_value(), b.eject_value());
-            assert_count!(Equal(Field, Field) => Boolean, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Equal(Field, Field) => Boolean, &(a.eject_mode(), b.eject_mode()), candidate);
+            assert_scope!();
         });
     }
 

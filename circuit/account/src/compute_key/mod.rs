@@ -21,7 +21,7 @@ mod ternary;
 mod to_address;
 
 #[cfg(test)]
-use snarkvm_circuit_types::environment::{assert_count, assert_output_mode, assert_scope};
+use snarkvm_circuit_types::environment::assert_scope;
 
 use crate::PrivateKey;
 use snarkvm_circuit_network::Aleo;

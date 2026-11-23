@@ -212,15 +212,20 @@ pub mod test_helpers {
     type CurrentNetwork = console::network::MainnetV0;
     type CurrentAleo = snarkvm_circuit::network::AleoV0;
 
-    /// Samples a random hardcoded private fee.
-    pub fn sample_fee_private_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
+    /// Returns a private fee for a fixed ID.
+    ///
+    /// Every call returns the same fee. It does not depend on `_rng`, and `_rng` is not advanced.
+    pub fn sample_fee_private_hardcoded(_rng: &mut TestRng) -> Fee<CurrentNetwork> {
         static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
-                // Sample a deployment or execution ID.
-                let deployment_or_execution_id = Field::rand(rng);
-                // Sample a fee.
-                sample_fee_private(deployment_or_execution_id, rng)
+                let key = crate::test_helpers::genesis_fixture_key();
+                crate::test_helpers::sample_fixture("fee-private", &key, |rng| {
+                    // Sample a deployment or execution ID.
+                    let deployment_or_execution_id = Field::rand(rng);
+                    // Sample a fee.
+                    sample_fee_private(deployment_or_execution_id, rng)
+                })
             })
             .clone()
     }
@@ -274,15 +279,20 @@ pub mod test_helpers {
         Fee::from_str(&fee.to_string()).unwrap()
     }
 
-    /// Samples a random hardcoded public fee.
-    pub fn sample_fee_public_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
+    /// Returns a public fee for a fixed ID.
+    ///
+    /// Every call returns the same fee. It does not depend on `_rng`, and `_rng` is not advanced.
+    pub fn sample_fee_public_hardcoded(_rng: &mut TestRng) -> Fee<CurrentNetwork> {
         static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
-                // Sample a deployment or execution ID.
-                let deployment_or_execution_id = Field::rand(rng);
-                // Sample a fee.
-                sample_fee_public(deployment_or_execution_id, rng)
+                let key = crate::test_helpers::genesis_fixture_key();
+                crate::test_helpers::sample_fixture("fee-public", &key, |rng| {
+                    // Sample a deployment or execution ID.
+                    let deployment_or_execution_id = Field::rand(rng);
+                    // Sample a fee.
+                    sample_fee_public(deployment_or_execution_id, rng)
+                })
             })
             .clone()
     }

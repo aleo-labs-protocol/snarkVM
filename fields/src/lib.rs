@@ -22,6 +22,33 @@ extern crate thiserror;
 #[macro_use]
 mod macros;
 
+/// Expands to `$asm` when the target can run the assembly in `adx`, and to `$scalar` otherwise.
+macro_rules! adx_or {
+    ($asm:expr, $scalar:expr) => {{
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_feature = "adx",
+            target_feature = "bmi2"
+        ))]
+        {
+            $asm
+        }
+        #[cfg(not(all(
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_feature = "adx",
+            target_feature = "bmi2"
+        )))]
+        {
+            $scalar
+        }
+    }};
+}
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64", target_feature = "adx", target_feature = "bmi2"))]
+mod adx;
+
 pub mod errors;
 pub use errors::*;
 
@@ -59,6 +86,36 @@ pub use to_field_vec::*;
 pub mod traits;
 pub use traits::*;
 
+/// Seals [`Field`]. Only the field types of this crate implement it.
+///
+/// The parameter traits have their own seal, [`sealed_parameters::Sealed`], which is public
+/// for `snarkvm-curves`. Code outside snarkVM that implements one of them does not compile:
+///
+/// ```compile_fail,E0277
+/// use snarkvm_fields::FftParameters;
+/// use snarkvm_utilities::biginteger::BigInteger256;
+///
+/// struct Parameters;
+///
+/// impl FftParameters for Parameters {
+///     type BigInteger = BigInteger256;
+///
+///     const TWO_ADICITY: u32 = 1;
+///     const TWO_ADIC_ROOT_OF_UNITY: BigInteger256 = BigInteger256([0; 4]);
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Seals [`FftParameters`], [`Fp2Parameters`], [`Fp6Parameters`](fp6_3over2::Fp6Parameters)
+/// and [`Fp12Parameters`]. `snarkvm-curves` implements it for its fields, so it is public, but it
+/// is not part of the API.
+#[doc(hidden)]
+pub mod sealed_parameters {
+    pub trait Sealed {}
+}
+
 use snarkvm_utilities::{
     FromBytes,
     ToBytes,
@@ -77,13 +134,6 @@ pub fn batch_inversion<F: Field>(v: &mut [F]) {
     batch_inversion_and_mul(v, &F::one());
 }
 
-#[cfg(feature = "serial")]
-// Given a vector of field elements {v_i}, compute the vector {coeff * v_i^(-1)}
-pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
-    serial_batch_inversion_and_mul(v, coeff);
-}
-
-#[cfg(not(feature = "serial"))]
 // Given a vector of field elements {v_i}, compute the vector {coeff * v_i^(-1)}
 pub fn batch_inversion_and_mul<F: Field>(v: &mut [F], coeff: &F) {
     use rayon::prelude::*;

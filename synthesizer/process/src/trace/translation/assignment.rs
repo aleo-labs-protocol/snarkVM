@@ -50,6 +50,9 @@ fn compute_circuit_dynamic_or_external_record_id<A: Aleo>(
 }
 
 /// Data collected during execution and used to prove record translation in dynamic calls.
+///
+/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+#[doc(hidden)]
 #[derive(Clone, Debug)]
 pub struct TranslationAssignment<N: Network> {
     /// The static record (whether external or not).

@@ -24,7 +24,6 @@ use anyhow::{Result, anyhow, bail, ensure};
 
 use std::collections::HashMap;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Verifies that the existing output register indices are not changed in a new version of the program.

@@ -479,7 +479,18 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
                         // Ensure the values are equal.
                         if console_response.outputs() != response.outputs() {
-                            dev_eprintln!("\n{:#?} != {:#?}\n", console_response.outputs(), response.outputs());
+                            let (console_outputs, outputs) = (console_response.outputs(), response.outputs());
+                            let index = console_outputs.iter().zip(outputs).position(|(a, b)| a != b);
+                            debug!(
+                                "'{}/{}' outputs do not match: {} console outputs, {} circuit outputs, first mismatch at index {index:?} of type {:?}",
+                                substack.program_id(),
+                                function.name(),
+                                console_outputs.len(),
+                                outputs.len(),
+                                index.and_then(|i| function.outputs().get_index(i)).map(|output| output.value_type())
+                            );
+                            // Uncomment to also log the outputs when debugging locally. They can be private, so keep it commented out.
+                            // debug!("{:#?} != {:#?}", console_response.outputs(), response.outputs());
                             return Err(anyhow!(
                                 "Function '{}' outputs do not match in a 'call' instruction.",
                                 function.name()
@@ -561,6 +572,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 // In Synthesize and CheckDeployment modes, `response` is None at this point. Only its outputs
                 // are used in the remainder of this function, and only their types (and not specific values)
                 // are relevant, so we sample them instead.
+                // Hazard: a `.constant` output enters the caller's circuit by value, so the sampled value
+                // changes the circuit. `Process::verify_deployment` rejects such calls from `ConsensusVersion::V23`.
                 CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                     if response.is_some() {
                         return Err(

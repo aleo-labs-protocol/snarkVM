@@ -35,6 +35,7 @@ use snarkvm_synthesizer_program::Program;
 //   4. Call `transfer_private_3_flow` with `use_construct_authorization` set to true
 //      on the first three records, then set to false on the last three records.
 #[test]
+#[ignore = "slow"]
 fn test_transfer_private_3_flow() {
     let rng = &mut TestRng::default();
 

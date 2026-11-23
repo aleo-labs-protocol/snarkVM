@@ -33,7 +33,6 @@ fn shipped_file<N: Network>() -> Vec<u8> {
     match N::ID {
         MainnetV0::ID => snarkvm_parameters::mainnet::InclusionProver::load_bytes(),
         TestnetV0::ID => snarkvm_parameters::testnet::InclusionProver::load_bytes(),
-        CanaryV0::ID => snarkvm_parameters::canary::InclusionProver::load_bytes(),
         id => panic!("no shipped inclusion proving key for network {id}"),
     }
     .expect("the shipped file loads")
@@ -86,21 +85,4 @@ fn mainnet_loads_the_shipped_inclusion_proving_key() {
 #[test]
 fn testnet_loads_the_shipped_inclusion_proving_key() {
     loads_the_shipped_key::<TestnetV0>();
-}
-
-/// Without a load, the getter returns the key read from the shipped bytes, which then cannot be replaced.
-#[test]
-fn canary_falls_back_to_the_shipped_inclusion_proving_key() {
-    type N = CanaryV0;
-    let file = shipped_file::<N>();
-    let srs = Srs::<N>::load().expect("the SRS loads");
-    assert!(N::load_inclusion_proving_key(&file, &srs).is_err(), "the key loaded against an SRS that lacks its powers");
-
-    let key = N::inclusion_proving_key();
-    assert!(matches!(key.committer_key.powers_of_beta_g, Bases::Owned(_)), "the shipped key shares an SRS");
-    // `assert!`, since a failing `assert_eq!` would print both keys.
-    assert!(key.to_bytes_le().expect("the key writes") == file[1..], "the key is not the shipped one");
-
-    grow_srs_for_inclusion::<N>(&srs);
-    assert!(N::load_inclusion_proving_key(&file, &srs).is_err(), "the key loaded after the getter set it");
 }

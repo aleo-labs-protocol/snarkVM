@@ -28,7 +28,9 @@ use itertools::Itertools;
 use rand::{CryptoRng, Rng};
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::{dev_println, timing_span};
+use snarkvm_utilities::{cfg_into_iter, cfg_iter, timing_span, tracing::trace};
+
+use rayon::prelude::*;
 
 mod fifth;
 mod first;
@@ -68,23 +70,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 randomizing_assignments.len()
             )));
         }
-        let indices_and_assignments = circuits_to_constraints
-            .iter()
-            .zip_eq(randomizing_assignments)
+        let circuits = circuits_to_constraints.iter().zip_eq(randomizing_assignments).collect::<Vec<_>>();
+        let indices_and_assignments = cfg_into_iter!(circuits)
             .map(|((circuit, constraints), circuit_rand_assignments)| {
-                let assignments = constraints
-                    .iter()
-                    .zip(circuit_rand_assignments)
+                let assignments = cfg_iter!(constraints)
+                    .zip_eq(circuit_rand_assignments)
                     .enumerate()
                     .map(|(i, (instance, rand_assignments))| {
                         let mut pcs = {
                             let _constraint_time =
                                 timing_span!("Generating constraints and witnesses", circuit = %circuit.id, index = i)
                                     .entered();
-
-                            // i may not be used if the timer feature is disabled.
-                            #[allow(unused_variables)]
-                            let _ = i;
 
                             let mut pcs = prover::ConstraintSystem::new();
                             instance.generate_constraints(&mut pcs)?;
@@ -117,12 +113,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         assert!(padded_public_variables[0].is_one());
                         assert_eq!(private_variables.len(), num_private_variables);
 
-                        dev_println!("Number of padded public variables in Prover::Init: {num_public_variables}");
-                        dev_println!("Number of private variables: {num_private_variables}");
-                        dev_println!("Number of constraints: {num_constraints}");
-                        dev_println!("Number of non-zero entries in A: {}", circuit.index_info.num_non_zero_a);
-                        dev_println!("Number of non-zero entries in B: {}", circuit.index_info.num_non_zero_b);
-                        dev_println!("Number of non-zero entries in C: {}", circuit.index_info.num_non_zero_c);
+                        trace!("Number of padded public variables in Prover::Init: {num_public_variables}");
+                        trace!("Number of private variables: {num_private_variables}");
+                        trace!("Number of constraints: {num_constraints}");
+                        trace!("Number of non-zero entries in A: {}", circuit.index_info.num_non_zero_a);
+                        trace!("Number of non-zero entries in B: {}", circuit.index_info.num_non_zero_b);
+                        trace!("Number of non-zero entries in C: {}", circuit.index_info.num_non_zero_c);
 
                         if circuit.index_info.num_constraints != num_constraints
                             || circuit.index_info.num_public_inputs != num_public_variables

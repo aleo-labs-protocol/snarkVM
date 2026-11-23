@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Silences the false positives caused by black_box.
-#![allow(clippy::unit_arg)]
-
 use snarkvm_fields::{Field, Fp256, Fp384, PrimeField, batch_inversion};
 use snarkvm_utilities::TestRng;
 
@@ -41,10 +38,12 @@ fn fp256(c: &mut Criterion) {
         }
     }
 
+    // The `*_assign` methods return `()`. Pass the result to `black_box`, or the compiler removes the operation.
     c.bench_function("fp256_add_assign", |b| {
         b.iter(|| {
             for (mut v1, v2) in values.iter().cloned().zip(values.iter().skip(1)) {
-                black_box(v1.add_assign(v2));
+                v1.add_assign(black_box(v2));
+                black_box(v1);
             }
         })
     });
@@ -52,7 +51,8 @@ fn fp256(c: &mut Criterion) {
     c.bench_function("fp256_sub_assign", |b| {
         b.iter(|| {
             for (mut v1, v2) in values.iter().cloned().zip(values.iter().skip(1)) {
-                black_box(v1.sub_assign(v2));
+                v1.sub_assign(black_box(v2));
+                black_box(v1);
             }
         })
     });
@@ -60,7 +60,8 @@ fn fp256(c: &mut Criterion) {
     c.bench_function("fp256_mul_assign", |b| {
         b.iter(|| {
             for (mut v1, v2) in values.iter().cloned().zip(values.iter().skip(1)) {
-                black_box(v1.mul_assign(v2));
+                v1.mul_assign(black_box(v2));
+                black_box(v1);
             }
         })
     });
@@ -106,10 +107,12 @@ fn fp384(c: &mut Criterion) {
         }
     }
 
+    // The `*_assign` methods return `()`. Pass the result to `black_box`, or the compiler removes the operation.
     c.bench_function("fp384_add_assign", |b| {
         b.iter(|| {
             for (mut v1, v2) in values.iter().cloned().zip(values.iter().skip(1)) {
-                black_box(v1.add_assign(v2));
+                v1.add_assign(black_box(v2));
+                black_box(v1);
             }
         })
     });
@@ -117,7 +120,8 @@ fn fp384(c: &mut Criterion) {
     c.bench_function("fp384_sub_assign", |b| {
         b.iter(|| {
             for (mut v1, v2) in values.iter().cloned().zip(values.iter().skip(1)) {
-                black_box(v1.sub_assign(v2));
+                v1.sub_assign(black_box(v2));
+                black_box(v1);
             }
         })
     });
@@ -125,7 +129,8 @@ fn fp384(c: &mut Criterion) {
     c.bench_function("fp384_mul_assign", |b| {
         b.iter(|| {
             for (mut v1, v2) in values.iter().cloned().zip(values.iter().skip(1)) {
-                black_box(v1.mul_assign(v2));
+                v1.mul_assign(black_box(v2));
+                black_box(v1);
             }
         })
     });

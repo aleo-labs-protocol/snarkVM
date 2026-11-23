@@ -26,6 +26,55 @@ pub use helpers::*;
 pub mod traits;
 pub use traits::*;
 
+/// Seals [`IntegerProperties`], so [`IntegerType`] and [`Magnitude`]. Only the primitive
+/// integer types implement it.
+///
+/// Code outside this crate that implements [`IntegerProperties`] does not compile. In this
+/// example, the `where` clause supplies the other supertraits, so the seal is the only bound
+/// that fails:
+///
+/// ```compile_fail,E0277
+/// use snarkvm_console_network_environment::prelude::*;
+///
+/// use core::fmt::{Debug, Display};
+/// use num_traits::PrimInt;
+///
+/// struct Wide<T>(T);
+///
+/// impl<T> IntegerProperties for Wide<T>
+/// where
+///     Self: PrimInt + Debug + Display,
+/// {
+///     type Dual = u8;
+///
+///     const BITS: u64 = 4096;
+///     const MAX: Self = panic!();
+///     const MIN: Self = panic!();
+///
+///     fn is_signed() -> bool {
+///         false
+///     }
+///
+///     fn type_name() -> &'static str {
+///         "wide"
+///     }
+///
+///     fn into_dual(self) -> Self::Dual {
+///         0
+///     }
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Seals [`Environment`]. `snarkvm-console-network` implements it for its networks, so it is
+/// public, but it is not part of the API.
+#[doc(hidden)]
+pub mod sealed_console_environment {
+    pub trait Sealed {}
+}
+
 pub mod prelude {
     pub use crate::{
         environment::*,
@@ -62,6 +111,8 @@ pub mod prelude {
 
     pub use snarkvm_curves::{AffineCurve, MontgomeryParameters, ProjectiveCurve, TwistedEdwardsParameters};
     pub use snarkvm_fields::{Field as _, PrimeField as _, SquareRootField as _, Zero as _};
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub use snarkvm_utilities::TestRng;
     pub use snarkvm_utilities::{
         DeserializeExt,
         FromBits as _,
@@ -69,7 +120,6 @@ pub mod prelude {
         FromBytesDeserializer,
         FromBytesUncheckedDeserializer,
         LimitedWriter,
-        TestRng,
         ToBits as _,
         ToBitsRaw as _,
         ToBytes,
@@ -100,8 +150,10 @@ pub mod prelude {
         timing_span,
     };
 
+    #[doc(no_inline)]
     pub use std::io::{Read, Result as IoResult, Write};
 
+    #[doc(no_inline)]
     pub use core::{
         cmp::Ordering,
         fmt::{self, Debug, Display, Formatter},
@@ -136,9 +188,12 @@ pub mod prelude {
         str::{self, FromStr},
     };
 
+    #[doc(no_inline)]
     pub use anyhow::{Error, Result, anyhow, bail, ensure};
     pub use bech32;
+    #[doc(no_inline)]
     pub use itertools::Itertools;
+    #[doc(no_inline)]
     pub use nom::{
         Err,
         branch::alt,
@@ -149,12 +204,15 @@ pub mod prelude {
         multi::{count, many_m_n, many0, many0_count, many1, separated_list0, separated_list1},
         sequence::{delimited, pair, terminated},
     };
+    #[doc(no_inline)]
     pub use num_traits::{AsPrimitive, One, Pow, Zero};
+    #[doc(no_inline)]
     pub use rand::{
         CryptoRng,
         RngExt as Rng,
         distr::{Alphanumeric, Distribution, StandardUniform},
     };
+    #[doc(no_inline)]
     pub use serde::{
         Deserialize,
         Deserializer,

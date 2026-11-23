@@ -46,23 +46,18 @@ use snarkvm_ledger_block::{
 use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 use snarkvm_ledger_puzzle::{Solution, SolutionID};
 use snarkvm_synthesizer_program::{FinalizeOperation, Program};
-use snarkvm_utilities::StorageMode;
+use snarkvm_utilities::{
+    StorageMode,
+    locks::{Mutex, RwLock, RwLockReadGuard},
+};
 #[cfg(feature = "rocks")]
 use snarkvm_utilities::{aleo_ledger_dir, aleo_secondary_ledger_dir};
 
 use anyhow::{Context, Result};
-#[cfg(feature = "locktick")]
-use locktick::{
-    LockGuard,
-    parking_lot::{Mutex, RwLock},
-};
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Separates the confirmed transaction into a tuple.
@@ -158,7 +153,9 @@ fn missing_block_in_tree_error(height: u32, block_tree_cache_path: Option<&std::
 }
 
 /// A trait for block storage.
-pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait BlockStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// The mapping of `block height` to `state root`.
     type StateRootMap: for<'a> Map<'a, u32, N::StateRoot>;
     /// The mapping of `state root` to `block height`.
@@ -1092,8 +1089,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 /// height 0, so spending a genesis record fails with `global state root does not exist (yet)`
 /// until block 1 stores the tree root.
 /// Never enable this feature on a real network. Start the ledger from genesis with the feature
-/// already on. Turning it on or off against an existing store fails the state-root check in
-/// `Ledger::load`.
+/// already on. Turning it on or off against a store still at height 0 fails the state-root check
+/// in `Ledger::load`.
 #[cfg_attr(not(feature = "dev_genesis_state_root"), allow(unused_variables))]
 fn stored_state_root<N: Network>(block_height: u32, root: Field<N>) -> N::StateRoot {
     #[cfg(feature = "dev_genesis_state_root")]
@@ -1451,15 +1448,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     ///
     /// This may return `None` due to lock contention, even if the cache is enabled.
     #[inline]
-    #[cfg(feature = "locktick")]
-    fn get_block_cache(&self) -> Option<LockGuard<parking_lot::RwLockReadGuard<'_, BlockCache<N>>>> {
-        // This uses `try_read` to avoid deadlocks or prologned blocking of a thread in rayon: https://github.com/rayon-rs/rayon/issues/1205
-        if let Some(cache) = &*self.block_cache { cache.try_read() } else { None }
-    }
-
-    #[inline]
-    #[cfg(not(feature = "locktick"))]
-    fn get_block_cache(&self) -> Option<parking_lot::RwLockReadGuard<'_, BlockCache<N>>> {
+    fn get_block_cache(&self) -> Option<RwLockReadGuard<'_, BlockCache<N>>> {
         // This uses `try_read` to avoid deadlocks or prologned blocking of a thread in rayon: https://github.com/rayon-rs/rayon/issues/1205
         if let Some(cache) = &*self.block_cache { cache.try_read() } else { None }
     }
@@ -1900,38 +1889,21 @@ mod tests {
     fn test_rejected_transaction() {
         let rng = &mut TestRng::default();
 
-        let private_key = snarkvm_ledger_test_helpers::sample_genesis_private_key(rng);
-
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        let genesis = snarkvm_ledger_test_helpers::sample_genesis_block(rng);
+        block_store.insert(&genesis).unwrap();
 
         let fee = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(false, rng);
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng);
         let transactions =
             Transactions::from_iter([
                 ConfirmedTransaction::rejected_execute(0, fee.clone(), rejected.clone(), vec![]).unwrap()
             ]);
-        let ratifications = Ratifications::try_from(vec![]).unwrap();
-
-        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
-        let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
 
         let fee_id = fee.id();
         let unconfirmed_id = rejected.to_unconfirmed_id(&fee.fee_transition()).unwrap().into();
 
-        // Construct the block.
-        let block = Block::new_beacon(
-            &private_key,
-            previous_hash,
-            header,
-            ratifications,
-            None.into(),
-            vec![],
-            transactions,
-            vec![unconfirmed_id],
-            rng,
-        )
-        .unwrap();
-
+        let block = sample_successor_block_with_transactions(&genesis, transactions, vec![unconfirmed_id], rng);
         block_store.insert(&block).unwrap();
 
         let txn1 = block_store.get_unconfirmed_transaction(&unconfirmed_id).unwrap().unwrap();
@@ -1956,25 +1928,7 @@ mod tests {
     fn test_dev_genesis_state_root() {
         let rng = &mut TestRng::default();
 
-        let private_key = snarkvm_ledger_test_helpers::sample_genesis_private_key(rng);
-        let transactions = Transactions::from_iter(Vec::<ConfirmedTransaction<CurrentNetwork>>::new());
-        let ratifications = Ratifications::try_from(vec![]).unwrap();
-        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
-        let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
-
-        // Construct the genesis block.
-        let block = Block::new_beacon(
-            &private_key,
-            previous_hash,
-            header,
-            ratifications,
-            None.into(),
-            vec![],
-            transactions,
-            vec![],
-            rng,
-        )
-        .unwrap();
+        let block = snarkvm_ledger_test_helpers::sample_genesis_block(rng);
 
         // Initialize a new block store.
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2026,12 +1980,21 @@ mod tests {
 
     /// Builds a block at `previous.height() + 1`. The block is not a valid successor.
     fn sample_successor_block(previous: &Block<CurrentNetwork>, rng: &mut TestRng) -> Block<CurrentNetwork> {
+        sample_successor_block_with_transactions(previous, Transactions::from(&[]), vec![], rng)
+    }
+
+    /// Builds a block at `previous.height() + 1` with the given transactions. The block is not a valid successor.
+    fn sample_successor_block_with_transactions(
+        previous: &Block<CurrentNetwork>,
+        transactions: Transactions<CurrentNetwork>,
+        aborted_transaction_ids: Vec<<CurrentNetwork as Network>::TransactionID>,
+        rng: &mut TestRng,
+    ) -> Block<CurrentNetwork> {
         use snarkvm_console::{account::PrivateKey, prelude::Rng};
         use snarkvm_ledger_block::Metadata;
 
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let height = previous.height() + 1;
-        let transactions = Transactions::from(&[]);
         let ratifications = Ratifications::try_from(vec![]).unwrap();
         let metadata = Metadata::new(
             CurrentNetwork::ID,
@@ -2067,7 +2030,7 @@ mod tests {
             None.into(),
             vec![],
             transactions,
-            vec![],
+            aborted_transaction_ids,
         )
         .unwrap()
     }

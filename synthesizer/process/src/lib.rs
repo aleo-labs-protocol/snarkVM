@@ -15,7 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
-// #![warn(clippy::cast_possible_truncation)]
+#![warn(clippy::cast_possible_truncation)]
 // TODO (howardwu): Update the return type on `execute` after stabilizing the interface.
 #![allow(clippy::type_complexity)]
 
@@ -82,18 +82,16 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
-use snarkvm_utilities::{defer, dev_println, timing_event, timing_span};
+use snarkvm_utilities::{
+    defer,
+    locks::{Mutex, MutexGuard, RwLock},
+    timing_event,
+    timing_span,
+    tracing::trace,
+};
 
 use indexmap::{IndexMap, IndexSet};
 
-#[cfg(feature = "locktick")]
-use locktick::{
-    LockGuard,
-    parking_lot::{Mutex, RwLock},
-};
-use parking_lot::MutexGuard;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -126,10 +124,7 @@ pub struct Process<N: Network> {
 /// affect the state of the stacks.
 pub struct ProcessExclusiveGuard<'a, N: Network> {
     process: &'a Process<N>,
-    #[cfg(not(feature = "locktick"))]
     _guard: MutexGuard<'a, ()>,
-    #[cfg(feature = "locktick")]
-    _guard: LockGuard<MutexGuard<'a, ()>>,
 }
 
 impl<'a, N: Network> std::ops::Deref for ProcessExclusiveGuard<'a, N> {

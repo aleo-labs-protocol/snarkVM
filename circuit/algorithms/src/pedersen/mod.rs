@@ -19,7 +19,7 @@ mod hash;
 mod hash_uncompressed;
 
 #[cfg(test)]
-use snarkvm_circuit_types::environment::{assert_count, assert_output_mode, assert_scope};
+use snarkvm_circuit_types::environment::assert_scope;
 
 use crate::{Commit, CommitUncompressed, Hash, HashUncompressed};
 use snarkvm_circuit_types::prelude::*;

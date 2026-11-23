@@ -95,16 +95,12 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_utilities::{timing_event, timing_span, try_vm_runtime};
+use snarkvm_utilities::{locks::RwLock, timing_event, timing_span, try_vm_runtime};
 
 use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
 use lru::LruCache;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
     collections::{HashMap, HashSet},
@@ -113,7 +109,6 @@ use std::{
     thread,
 };
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 // The key for the partially-verified transactions cache.
@@ -140,6 +135,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     sequential_ops_tx: Option<Arc<SequentialOperationQueue<N>>>,
     /// The identity of the thread which processes operations sequentially.
     sequential_ops_thread_id: Arc<OnceLock<thread::ThreadId>>,
+    /// The block transaction cap. Shared, because the sequential worker speculates on its own clone of the VM.
+    #[cfg(any(test, feature = "test-helpers"))]
+    maximum_confirmed_transactions: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -161,7 +159,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Retrieve the block store.
         let block_store = store.block_store();
 
-        #[cfg(not(any(test, feature = "test")))]
         let process = {
             // Determine the latest block height.
             let latest_block_height = block_store.current_block_height();
@@ -174,9 +171,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Process::load()?
             }
         };
-        #[cfg(any(test, feature = "test"))]
-        // Initialize a new process.
-        let process = Process::load()?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -240,6 +234,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             sequential_ops_tx: Default::default(),
             pending_rejected_reasons: Default::default(),
             sequential_ops_thread_id: Default::default(),
+            #[cfg(any(test, feature = "test-helpers"))]
+            maximum_confirmed_transactions: Arc::new(Self::MAXIMUM_CONFIRMED_TRANSACTIONS.into()),
         };
 
         // Spawn a thread for sequential operations.
@@ -611,15 +607,10 @@ pub(crate) mod test_helpers {
 
     use indexmap::IndexMap;
     use serde_json::json;
+    use snarkvm_ledger_test_helpers::load_or_build_genesis_fixture;
     use snarkvm_synthesizer_snark::{Proof, VerifyingKey};
-    use std::{
-        ffi::OsStr,
-        fs,
-        io,
-        path::{Path, PathBuf},
-        sync::OnceLock,
-        time::UNIX_EPOCH,
-    };
+    use snarkvm_utilities::load_or_build_fixture;
+    use std::{ffi::OsStr, sync::OnceLock};
 
     pub(crate) type CurrentNetwork = MainnetV0;
     pub(crate) type CurrentAleo = AleoV0;
@@ -639,7 +630,6 @@ pub(crate) mod test_helpers {
         VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap()
     }
 
-    #[cfg(feature = "test")]
     pub(crate) fn sample_vm_at_height(height: u32, rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM with a genesis block.
         let mut vm = sample_vm_with_genesis_block();
@@ -651,7 +641,6 @@ pub(crate) mod test_helpers {
         vm
     }
 
-    #[cfg(feature = "test")]
     pub(crate) fn advance_vm_to_height(
         vm: &mut VM<CurrentNetwork, LedgerType>,
         genesis_private_key: PrivateKey<CurrentNetwork>,
@@ -663,6 +652,100 @@ pub(crate) mod test_helpers {
             let block = sample_next_block(vm, &genesis_private_key, &[], rng).unwrap();
             vm.add_next_block(&block).unwrap();
         }
+    }
+
+    /// The seed of the RNG that builds the chain of `sample_vm_past_v8`.
+    const PAST_V8_SEED: u64 = 8;
+
+    /// Returns a VM one block past `ConsensusVersion::V8`, and that block, which gives the genesis key four records.
+    ///
+    /// Every call builds the same chain, so a transaction built on one of these VMs verifies on another.
+    /// After V8 a credits record from below `INCLUSION_UPGRADE_HEIGHT + 1` can only be upgraded, so tests that spend
+    /// credits records past V8 need these records instead of the genesis records.
+    /// The test processes of one binary share the last block through a file beside the binary.
+    pub(crate) fn sample_vm_past_v8() -> (VM<CurrentNetwork, LedgerType>, Block<CurrentNetwork>) {
+        let private_key = sample_genesis_private_key();
+        let rng = &mut TestRng::fixed(PAST_V8_SEED);
+        let mut vm = sample_vm_with_genesis_block();
+        advance_vm_to_height(
+            &mut vm,
+            private_key,
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
+        let tip = vm.block_store().get_block_hash(vm.block_store().current_block_height()).unwrap().unwrap();
+        let block = load_or_build_fixture(
+            "past-v8",
+            &[genesis_fixture_seed(), PAST_V8_SEED].map(u64::to_le_bytes).concat(),
+            |block: &Block<CurrentNetwork>| block.previous_hash() == tip,
+            || {
+                let address = Address::try_from(&private_key).unwrap();
+                let inputs = [
+                    Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                    Value::from_str("1_000_000_000_000u64").unwrap(),
+                ];
+                let mints = (0..4)
+                    .map(|_| {
+                        vm.execute(
+                            &private_key,
+                            ("credits.aleo", "transfer_public_to_private"),
+                            inputs.iter(),
+                            None,
+                            0,
+                            None,
+                            rng,
+                        )
+                        .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+                let block = sample_next_block(&vm, &private_key, &mints, rng).unwrap();
+                assert_eq!(block.transactions().num_accepted(), mints.len());
+                block
+            },
+        );
+        vm.add_next_block(&block).unwrap();
+        (vm, block)
+    }
+
+    /// The amount of each record of `sample_vm_with_upgradable_records`, the most that `credits.aleo/upgrade` accepts.
+    pub(crate) const UPGRADABLE_RECORD_AMOUNT: u64 = 1_000_000_000_000;
+
+    /// Returns a VM on a genesis block, its private key, and the block, which gives that key records of `UPGRADABLE_RECORD_AMOUNT`.
+    ///
+    /// Below `ConsensusVersion::V8` only the genesis block can create a record that the current prover writes, and the
+    /// records of `sample_genesis_block` are too large for `credits.aleo/upgrade`.
+    pub(crate) fn sample_vm_with_upgradable_records()
+    -> (VM<CurrentNetwork, LedgerType>, PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
+        static INSTANCE: OnceLock<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> = OnceLock::new();
+        let (private_key, genesis) = INSTANCE.get_or_init(|| {
+            load_or_build_genesis_fixture("upgradable-genesis", genesis_fixture_seed(), |seed| {
+                let rng = &mut TestRng::from_seed(seed);
+                let stake = snarkvm_ledger_committee::MIN_VALIDATOR_STAKE;
+                let private_keys = (0..4).map(|_| PrivateKey::new(rng).unwrap()).collect::<Vec<_>>();
+                let addresses = private_keys.iter().map(|key| Address::try_from(key).unwrap()).collect::<Vec<_>>();
+                let committee =
+                    Committee::new_genesis(addresses.iter().map(|address| (*address, (stake, true, 0u8))).collect())
+                        .unwrap();
+                let bonded_balances = addresses.iter().map(|address| (*address, (*address, *address, stake))).collect();
+                // `genesis_quorum` moves `1 / (2 * NUM_GENESIS_TRANSACTIONS)` of the caller's public balance into each record.
+                let caller_balance =
+                    2 * Block::<CurrentNetwork>::NUM_GENESIS_TRANSACTIONS as u64 * UPGRADABLE_RECORD_AMOUNT;
+                let remaining = CurrentNetwork::STARTING_SUPPLY - 4 * stake - caller_balance;
+                let public_balances = IndexMap::from([
+                    (addresses[0], caller_balance),
+                    (addresses[1], remaining - 2 * (remaining / 3)),
+                    (addresses[2], remaining / 3),
+                    (addresses[3], remaining / 3),
+                ]);
+                let block = sample_vm()
+                    .genesis_quorum(&private_keys[0], committee, public_balances, bonded_balances, rng)
+                    .unwrap();
+                (private_keys[0], block)
+            })
+        });
+        let vm = sample_vm();
+        vm.add_next_block(genesis).unwrap();
+        (vm, *private_key, genesis.clone())
     }
 
     /// The default seed of the RNG that builds the genesis fixture.
@@ -697,13 +780,7 @@ pub(crate) mod test_helpers {
     /// The test processes of one binary share the fixture through a file beside the binary.
     fn genesis_fixture() -> &'static (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
         static INSTANCE: OnceLock<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
-            let seed = genesis_fixture_seed();
-            match genesis_fixture_path_and_stamp(seed) {
-                Ok((path, stamp)) => load_or_build_genesis_fixture(&path, &stamp, seed),
-                Err(_) => build_genesis_fixture(seed),
-            }
-        })
+        INSTANCE.get_or_init(|| load_or_build_genesis_fixture("genesis", genesis_fixture_seed(), build_genesis_fixture))
     }
 
     /// Builds the genesis fixture from an RNG with the given seed.
@@ -714,96 +791,6 @@ pub(crate) mod test_helpers {
         // Initialize the genesis block.
         let block = sample_vm().genesis_beacon(&private_key, rng).expect("Failed to build the genesis block");
         (private_key, block)
-    }
-
-    /// Returns the path of the genesis fixture file of the running test binary, and the stamp of the fixture.
-    ///
-    /// The stamp holds the size and the modification time of the binary, and the seed of the fixture.
-    fn genesis_fixture_path_and_stamp(seed: u64) -> io::Result<(PathBuf, Vec<u8>)> {
-        let binary = std::env::current_exe()?;
-        let metadata = fs::metadata(&binary)?;
-        let modified = metadata.modified()?.duration_since(UNIX_EPOCH).map_err(io::Error::other)?;
-        let mut stamp = Vec::with_capacity(32);
-        stamp.extend_from_slice(&metadata.len().to_le_bytes());
-        stamp.extend_from_slice(&modified.as_nanos().to_le_bytes());
-        stamp.extend_from_slice(&seed.to_le_bytes());
-        Ok((binary.with_added_extension("genesis"), stamp))
-    }
-
-    /// Reads the genesis fixture at `path`, or builds the fixture from `seed` and writes it to `path`.
-    ///
-    /// An exclusive lock on the sibling `.lock` file lets one process build the fixture while the others wait.
-    /// A file that cannot be read or parsed, or that holds a different stamp, is rebuilt and overwritten.
-    fn load_or_build_genesis_fixture(
-        path: &Path,
-        stamp: &[u8],
-        seed: u64,
-    ) -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
-        if let Some(fixture) = read_genesis_fixture(path, stamp) {
-            return fixture;
-        }
-        let lock = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(path.with_added_extension("lock"))
-            .and_then(|file| file.lock().map(|()| file));
-        // Without the lock, the fixture is built but not written.
-        let Ok(lock) = lock else {
-            return build_genesis_fixture(seed);
-        };
-        // Another process may have written the fixture while this process waited for the lock.
-        if let Some(fixture) = read_genesis_fixture(path, stamp) {
-            return fixture;
-        }
-        let fixture = build_genesis_fixture(seed);
-        // A failed write leaves the file for a later process to rebuild.
-        let _ = write_genesis_fixture(path, stamp, &fixture);
-        drop(lock);
-        fixture
-    }
-
-    /// Reads the genesis fixture at `path`, if the file holds a valid fixture with the given stamp.
-    fn read_genesis_fixture(path: &Path, stamp: &[u8]) -> Option<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> {
-        genesis_fixture_from_bytes(&fs::read(path).ok()?, stamp)
-    }
-
-    /// Writes the genesis fixture to `path` through a temporary file and a rename.
-    fn write_genesis_fixture(
-        path: &Path,
-        stamp: &[u8],
-        fixture: &(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>),
-    ) -> io::Result<()> {
-        let temporary_path = path.with_added_extension("tmp");
-        fs::write(&temporary_path, genesis_fixture_to_bytes(stamp, fixture)?)?;
-        fs::rename(temporary_path, path)
-    }
-
-    /// Returns the stamp, followed by the bytes of the genesis private key and the genesis block.
-    fn genesis_fixture_to_bytes(
-        stamp: &[u8],
-        fixture: &(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>),
-    ) -> io::Result<Vec<u8>> {
-        let mut bytes = stamp.to_vec();
-        fixture.write_le(&mut bytes)?;
-        Ok(bytes)
-    }
-
-    /// Parses the output of `genesis_fixture_to_bytes`.
-    ///
-    /// Returns `None` if the bytes hold a different stamp, fail to parse, have trailing bytes,
-    /// or hold a block that the private key did not sign.
-    fn genesis_fixture_from_bytes(
-        bytes: &[u8],
-        stamp: &[u8],
-    ) -> Option<(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)> {
-        let mut reader = bytes.strip_prefix(stamp)?;
-        let (private_key, block) = <(PrivateKey<CurrentNetwork>, Block<CurrentNetwork>)>::read_le(&mut reader).ok()?;
-        let Authority::Beacon(signature) = block.authority() else {
-            return None;
-        };
-        let is_signer = Address::try_from(&private_key).ok()? == signature.to_address();
-        (reader.is_empty() && is_signer).then_some((private_key, block))
     }
 
     /// Returns the genesis private key, which signs the block of `sample_genesis_block`.
@@ -835,6 +822,9 @@ pub(crate) mod test_helpers {
                 Program::<CurrentNetwork>::from_str(
                     r"
 program testing.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 struct message:
     amount as u128;
@@ -879,21 +869,16 @@ function compute:
                 let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
                 let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
+                // Initialize the VM.
+                let (vm, block) = sample_vm_past_v8();
 
                 // Fetch the unspent records.
                 let records =
-                    genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+                    block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
                 trace!("Unspent Records:\n{:#?}", records);
 
                 // Prepare the fee.
                 let credits = Some(records.values().next().unwrap().decrypt(&caller_view_key).unwrap());
-
-                // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
 
                 // Deploy.
                 let transaction = vm.deploy(&caller_private_key, &program, credits, 10, None, rng).unwrap();
@@ -913,21 +898,16 @@ function compute:
                 let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
                 let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
+                // Initialize the VM.
+                let (vm, block) = sample_vm_past_v8();
 
                 // Fetch the unspent records.
                 let records =
-                    genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+                    block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
                 trace!("Unspent Records:\n{:#?}", records);
 
                 // Select a record to spend.
                 let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
-
-                // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
 
                 // Prepare the inputs.
                 let inputs =
@@ -957,21 +937,16 @@ function compute:
                 let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
                 let address = Address::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
+                // Initialize the VM.
+                let (vm, block) = sample_vm_past_v8();
 
                 // Fetch the unspent records.
                 let records =
-                    genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+                    block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
                 trace!("Unspent Records:\n{:#?}", records);
 
                 // Select a record to spend.
                 let record = Some(records.values().next().unwrap().decrypt(&caller_view_key).unwrap());
-
-                // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
 
                 // Prepare the inputs.
                 let inputs = [
@@ -1000,13 +975,8 @@ function compute:
                 let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
                 let address = Address::try_from(&caller_private_key).unwrap();
 
-                // Initialize the genesis block.
-                let genesis = crate::vm::test_helpers::sample_genesis_block();
-
                 // Initialize the VM.
-                let vm = sample_vm();
-                // Update the VM.
-                vm.add_next_block(&genesis).unwrap();
+                let (vm, _) = sample_vm_past_v8();
 
                 // Prepare the inputs.
                 let inputs = [
@@ -1581,57 +1551,6 @@ function compute:
     }
 
     #[test]
-    fn test_genesis_fixture_cache_hit_matches_miss() {
-        let directory = tempfile::tempdir().expect("Failed to create a temporary directory");
-        let path = directory.path().join("genesis");
-        let stamp = b"stamp";
-
-        // The file does not exist yet, so this call builds the fixture and writes the file.
-        let miss = load_or_build_genesis_fixture(&path, stamp, genesis_fixture_seed());
-        // This call reads the file that the previous call wrote.
-        let hit = read_genesis_fixture(&path, stamp).expect("The fixture file is valid");
-
-        assert_eq!(miss, hit);
-        assert_eq!(
-            fs::read(&path).expect("Failed to read the fixture file"),
-            genesis_fixture_to_bytes(stamp, &miss).expect("Failed to serialize the fixture")
-        );
-        // The fixture of this process comes from a separate build, in this process or in another one.
-        assert_eq!(&miss, genesis_fixture());
-    }
-
-    #[test]
-    fn test_genesis_fixture_rejects_invalid_bytes() {
-        let stamp = b"stamp";
-        let fixture = genesis_fixture();
-        let (private_key, block) = fixture;
-        let bytes = genesis_fixture_to_bytes(stamp, fixture).expect("Failed to serialize the fixture");
-        assert!(genesis_fixture_from_bytes(&bytes, stamp).is_some());
-
-        // A different stamp.
-        assert!(genesis_fixture_from_bytes(&bytes, b"stamq").is_none());
-        // Missing bytes.
-        assert!(genesis_fixture_from_bytes(&[], stamp).is_none());
-        assert!(genesis_fixture_from_bytes(stamp, stamp).is_none());
-        assert!(genesis_fixture_from_bytes(&bytes[..bytes.len() - 1], stamp).is_none());
-        // Trailing bytes.
-        let mut extended = bytes.clone();
-        extended.push(0);
-        assert!(genesis_fixture_from_bytes(&extended, stamp).is_none());
-        // Bytes that do not encode a fixture.
-        let mut garbage = stamp.to_vec();
-        garbage.resize(bytes.len(), 0xff);
-        assert!(genesis_fixture_from_bytes(&garbage, stamp).is_none());
-        // A private key that did not sign the block.
-        let other_private_key =
-            PrivateKey::<CurrentNetwork>::new(&mut TestRng::default()).expect("Failed to sample a private key");
-        assert_ne!(other_private_key, *private_key);
-        let other_bytes = genesis_fixture_to_bytes(stamp, &(other_private_key, block.clone()))
-            .expect("Failed to serialize the fixture");
-        assert!(genesis_fixture_from_bytes(&other_bytes, stamp).is_none());
-    }
-
-    #[test]
     fn test_genesis_fixture_seed_from() {
         assert_eq!(genesis_fixture_seed_from(None), GENESIS_FIXTURE_SEED);
         assert_eq!(genesis_fixture_seed_from(Some(OsStr::new("5"))), 5);
@@ -1644,271 +1563,6 @@ function compute:
     }
 
     #[test]
-    fn test_genesis_fixture_stamp_holds_seed() {
-        let (path, stamp) = genesis_fixture_path_and_stamp(1).expect("Failed to stamp the fixture");
-        let (other_path, other_stamp) = genesis_fixture_path_and_stamp(2).expect("Failed to stamp the fixture");
-        assert_eq!(path, other_path);
-        assert_ne!(stamp, other_stamp);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_multiple_deployments_and_multiple_executions() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
-
-        // Fetch the unspent records.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        trace!("Unspent Records:\n{:#?}", records);
-
-        // Select a record to spend.
-        let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Split once.
-        let transaction = vm
-            .execute(
-                &caller_private_key,
-                ("credits.aleo", "split"),
-                [Value::Record(record), Value::from_str("1000000000u64").unwrap()].iter(), // 1000 credits
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap();
-        let records = transaction.records().collect_vec();
-        let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
-        let second_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
-        let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-        vm.add_next_block(&block).unwrap();
-
-        // Split again.
-        let mut transactions = Vec::new();
-        let transaction = vm
-            .execute(
-                &caller_private_key,
-                ("credits.aleo", "split"),
-                [Value::Record(first_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap();
-        let records = transaction.records().collect_vec();
-        let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
-        let third_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
-        transactions.push(transaction);
-        // Split again.
-        let transaction = vm
-            .execute(
-                &caller_private_key,
-                ("credits.aleo", "split"),
-                [Value::Record(second_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap();
-        let records = transaction.records().collect_vec();
-        let second_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
-        let fourth_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
-        transactions.push(transaction);
-        // Add the split transactions to a block and update the VM.
-        let fee_block = sample_next_block(&vm, &caller_private_key, &transactions, rng).unwrap();
-        vm.add_next_block(&fee_block).unwrap();
-
-        // Deploy the programs.
-        let first_program = r"
-program test_program_1.aleo;
-mapping map_0:
-    key as field.public;
-    value as field.public;
-function init:
-    async init into r0;
-    output r0 as test_program_1.aleo/init.future;
-finalize init:
-    set 0field into map_0[0field];
-function getter:
-    async getter into r0;
-    output r0 as test_program_1.aleo/getter.future;
-finalize getter:
-    get map_0[0field] into r0;
-        ";
-        let second_program = r"
-program test_program_2.aleo;
-mapping map_0:
-    key as field.public;
-    value as field.public;
-function init:
-    async init into r0;
-    output r0 as test_program_2.aleo/init.future;
-finalize init:
-    set 0field into map_0[0field];
-function getter:
-    async getter into r0;
-    output r0 as test_program_2.aleo/getter.future;
-finalize getter:
-    get map_0[0field] into r0;
-        ";
-        let first_deployment = vm
-            .deploy(&caller_private_key, &Program::from_str(first_program).unwrap(), Some(first_record), 1, None, rng)
-            .unwrap();
-        let second_deployment = vm
-            .deploy(&caller_private_key, &Program::from_str(second_program).unwrap(), Some(second_record), 1, None, rng)
-            .unwrap();
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, &[first_deployment, second_deployment], rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Execute the programs.
-        let first_execution = vm
-            .execute(
-                &caller_private_key,
-                ("test_program_1.aleo", "init"),
-                Vec::<Value<MainnetV0>>::new().iter(),
-                Some(third_record),
-                1,
-                None,
-                rng,
-            )
-            .unwrap();
-        let second_execution = vm
-            .execute(
-                &caller_private_key,
-                ("test_program_2.aleo", "init"),
-                Vec::<Value<MainnetV0>>::new().iter(),
-                Some(fourth_record),
-                1,
-                None,
-                rng,
-            )
-            .unwrap();
-        let execution_block =
-            sample_next_block(&vm, &caller_private_key, &[first_execution, second_execution], rng).unwrap();
-        vm.add_next_block(&execution_block).unwrap();
-    }
-
-    #[test]
-    #[ignore]
-    fn test_load_deployments_with_imports() {
-        // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
-        let rng = &mut TestRng::fixed(123456789);
-
-        // Initialize a new caller.
-        let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = vm.genesis_beacon(&caller_private_key, rng).unwrap();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Fetch the unspent records.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<Vec<(_, _)>>();
-        trace!("Unspent Records:\n{:#?}", records);
-        let record_0 = records[0].1.decrypt(&caller_view_key).unwrap();
-        let record_1 = records[1].1.decrypt(&caller_view_key).unwrap();
-        let record_2 = records[2].1.decrypt(&caller_view_key).unwrap();
-        let record_3 = records[3].1.decrypt(&caller_view_key).unwrap();
-
-        // Create the deployment for the first program.
-        let program_1 = r"
-program first_program.aleo;
-
-function c:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    add r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_1 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_1).unwrap(), Some(record_0), 0, None, rng)
-            .unwrap();
-
-        // Deploy the first program.
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_1), rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Create the deployment for the second program.
-        let program_2 = r"
-import first_program.aleo;
-
-program second_program.aleo;
-
-function b:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    call first_program.aleo/c r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_2 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_2).unwrap(), Some(record_1), 0, None, rng)
-            .unwrap();
-
-        // Deploy the second program.
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_2), rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Create the deployment for the third program.
-        let program_3 = r"
-import second_program.aleo;
-
-program third_program.aleo;
-
-function a:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    call second_program.aleo/b r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_3 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_3).unwrap(), Some(record_2), 0, None, rng)
-            .unwrap();
-
-        // Create the deployment for the fourth program.
-        let program_4 = r"
-import second_program.aleo;
-import first_program.aleo;
-
-program fourth_program.aleo;
-
-function a:
-    input r0 as u8.private;
-    input r1 as u8.private;
-    call second_program.aleo/b r0 r1 into r2;
-    output r2 as u8.private;
-        ";
-        let deployment_4 = vm
-            .deploy(&caller_private_key, &Program::from_str(program_4).unwrap(), Some(record_3), 0, None, rng)
-            .unwrap();
-
-        // Deploy the third and fourth program together.
-        let deployment_block =
-            sample_next_block(&vm, &caller_private_key, &[deployment_3.clone(), deployment_4.clone()], rng).unwrap();
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Enforce that the VM can load properly with the imports.
-        assert!(VM::from(vm.store.clone()).is_ok());
-    }
-
-    #[test]
     fn test_multiple_external_calls() {
         let rng = &mut TestRng::default();
 
@@ -1917,21 +1571,16 @@ function a:
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let address = Address::try_from(&caller_private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
+        // Initialize the VM.
+        let (vm, block) = sample_vm_past_v8();
 
         // Fetch the unspent records.
         let records =
-            genesis.transitions().cloned().flat_map(Transition::into_records).take(3).collect::<IndexMap<_, _>>();
+            block.transitions().cloned().flat_map(Transition::into_records).take(3).collect::<IndexMap<_, _>>();
         trace!("Unspent Records:\n{:#?}", records);
         let record_0 = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
         let record_1 = records.values().nth(1).unwrap().decrypt(&caller_view_key).unwrap();
         let record_2 = records.values().nth(2).unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
 
         // Deploy the program.
         let program = Program::from_str(
@@ -1939,6 +1588,9 @@ function a:
 import credits.aleo;
 
 program test_multiple_external_calls.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 function multitransfer:
     input r0 as credits.aleo/credits.record;
@@ -2032,47 +1684,6 @@ function check:
     }
 
     #[test]
-    #[ignore]
-    fn test_deployment_with_external_records() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a private key.
-        let private_key = sample_genesis_private_key();
-
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy the program.
-        let program = Program::from_str(
-            r"
-import credits.aleo;
-program test_program.aleo;
-
-function transfer:
-    input r0 as credits.aleo/credits.record;
-    input r1 as u64.private;
-    input r2 as u64.private;
-    input r3 as [address; 10u32].private;
-    call credits.aleo/transfer_private r0 r3[0u32] r1 into r4 r5;
-    call credits.aleo/transfer_private r5 r3[0u32] r2 into r6 r7;
-",
-        )
-        .unwrap();
-
-        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-        assert!(vm.check_transaction(&deployment, None, rng).is_ok());
-        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-
-        // Check that program is deployed.
-        assert!(vm.contains_program(&ProgramID::from_str("test_program.aleo").unwrap()));
-    }
-
-    #[test]
     fn test_internal_fee_calls_are_invalid() {
         let rng = &mut TestRng::default();
 
@@ -2156,43 +1767,6 @@ function call_fee_private:
     }
 
     #[test]
-    #[cfg(feature = "memory-intensive")]
-    #[ignore = "memory-intensive"]
-    fn test_deployment_synthesis_overload() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a private key.
-        let private_key = sample_genesis_private_key();
-
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy the base program.
-        let program = Program::from_str(
-            r"
-program synthesis_overload.aleo;
-
-function do:
-    input r0 as [[u128; 32u32]; 2u32].private;
-    hash.sha3_256 r0 into r1 as field;
-    hash.sha3_256 r0 into r2 as field;
-    output r2 as field.public;",
-        )
-        .unwrap();
-
-        // Create the deployment transaction.
-        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-
-        // Verify the deployment transaction. It should fail because there are too many constraints.
-        assert!(vm.check_transaction(&deployment, None, rng).is_err());
-    }
-
-    #[test]
     fn test_deployment_num_constant_overload() {
         let rng = &mut TestRng::default();
 
@@ -2243,13 +1817,11 @@ function do2:
         // Initialize a private key.
         let private_key = sample_genesis_private_key();
 
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
         // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Deploy the base program.
         let program = Program::from_str(
@@ -2313,13 +1885,11 @@ function do:
         let private_key = sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
         // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Deploy the base program.
         let program = Program::from_str(
@@ -2397,13 +1967,11 @@ function do:
         let private_key = sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block();
-
         // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Deploy the base program.
         let program = Program::from_str(
@@ -2991,14 +2559,11 @@ finalize transfer_public_as_signer:
         let recipient_private_key = PrivateKey::new(rng).unwrap();
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
-
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(),
+            rng,
+        );
 
         // Check the balance of the caller.
         let credits_program_id = ProgramID::from_str("credits.aleo").unwrap();
@@ -3034,6 +2599,9 @@ finalize transfer_public_as_signer:
 import credits.aleo;
 
 program credits_wrapper.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 function transfer_public_to_private:
     input r0 as address.private;
@@ -3082,7 +2650,7 @@ finalize transfer_public_to_private:
             Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
             _ => panic!("Expected a valid balance"),
         };
-        assert_eq!(balance, 182_499_995_767_962, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_995_640_937, "Update me if the initial balance changes.");
 
         // Call the wrapper program to transfer credits from the caller to the recipient.
         let transaction = vm
@@ -3120,7 +2688,7 @@ finalize transfer_public_to_private:
             _ => panic!("Expected a valid balance"),
         };
 
-        assert_eq!(balance, 182_499_995_667_116, "Update me if the initial balance changes.");
+        assert_eq!(balance, 182_499_995_635_007, "Update me if the initial balance changes.");
 
         // Check that the `credits_wrapper` program has a balance of 0.
         let balance = match vm
@@ -3187,14 +2755,11 @@ finalize transfer_public_to_private:
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
-
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Initialize a new private key.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -3311,14 +2876,11 @@ finalize transfer_public_to_private:
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block();
-
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap(),
+            rng,
+        );
 
         // Initialize a new private key.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -3940,8 +3502,8 @@ function adder:
         assert!(vm.process().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_versioned_keyword_restrictions() {
         let rng = &mut TestRng::default();
 
@@ -4004,8 +3566,8 @@ function adder:
         }
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_deploy_and_execute_in_same_block_fails() {
         let rng = &mut TestRng::default();
 
@@ -4070,8 +3632,8 @@ function adder:
         assert!(vm.process().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_deploy_string() {
         let rng = &mut TestRng::default();
 
@@ -4235,5 +3797,365 @@ constructor:
 
         // // Check that the program was notdeployed.
         // assert!(!vm.process().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
+    }
+
+    mod memory_intensive {
+        use super::*;
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_multiple_deployments_and_multiple_executions() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            // Initialize the VM.
+            let (vm, block) = sample_vm_past_v8();
+
+            // Fetch the unspent records.
+            let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+            trace!("Unspent Records:\n{:#?}", records);
+
+            // Select a record to spend.
+            let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
+
+            // Split once.
+            let transaction = vm
+                .execute(
+                    &caller_private_key,
+                    ("credits.aleo", "split"),
+                    [Value::Record(record), Value::from_str("1000000000u64").unwrap()].iter(), // 1000 credits
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let records = transaction.records().collect_vec();
+            let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
+            let second_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
+            let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+            vm.add_next_block(&block).unwrap();
+
+            // Split again.
+            let mut transactions = Vec::new();
+            let transaction = vm
+                .execute(
+                    &caller_private_key,
+                    ("credits.aleo", "split"),
+                    [Value::Record(first_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let records = transaction.records().collect_vec();
+            let first_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
+            let third_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
+            transactions.push(transaction);
+            // Split again.
+            let transaction = vm
+                .execute(
+                    &caller_private_key,
+                    ("credits.aleo", "split"),
+                    [Value::Record(second_record), Value::from_str("100000000u64").unwrap()].iter(), // 100 credits
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let records = transaction.records().collect_vec();
+            let second_record = records[0].1.clone().decrypt(&caller_view_key).unwrap();
+            let fourth_record = records[1].1.clone().decrypt(&caller_view_key).unwrap();
+            transactions.push(transaction);
+            // Add the split transactions to a block and update the VM.
+            let fee_block = sample_next_block(&vm, &caller_private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&fee_block).unwrap();
+
+            // Deploy the programs.
+            let first_program = r"
+program test_program_1.aleo;
+constructor:
+    assert.eq edition 0u16;
+mapping map_0:
+    key as field.public;
+    value as field.public;
+function init:
+    async init into r0;
+    output r0 as test_program_1.aleo/init.future;
+finalize init:
+    set 0field into map_0[0field];
+function getter:
+    async getter into r0;
+    output r0 as test_program_1.aleo/getter.future;
+finalize getter:
+    get map_0[0field] into r0;
+        ";
+            let second_program = r"
+program test_program_2.aleo;
+constructor:
+    assert.eq edition 0u16;
+mapping map_0:
+    key as field.public;
+    value as field.public;
+function init:
+    async init into r0;
+    output r0 as test_program_2.aleo/init.future;
+finalize init:
+    set 0field into map_0[0field];
+function getter:
+    async getter into r0;
+    output r0 as test_program_2.aleo/getter.future;
+finalize getter:
+    get map_0[0field] into r0;
+        ";
+            let first_deployment = vm
+                .deploy(
+                    &caller_private_key,
+                    &Program::from_str(first_program).unwrap(),
+                    Some(first_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let second_deployment = vm
+                .deploy(
+                    &caller_private_key,
+                    &Program::from_str(second_program).unwrap(),
+                    Some(second_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, &[first_deployment, second_deployment], rng).unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Execute the programs.
+            let first_execution = vm
+                .execute(
+                    &caller_private_key,
+                    ("test_program_1.aleo", "init"),
+                    Vec::<Value<MainnetV0>>::new().iter(),
+                    Some(third_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let second_execution = vm
+                .execute(
+                    &caller_private_key,
+                    ("test_program_2.aleo", "init"),
+                    Vec::<Value<MainnetV0>>::new().iter(),
+                    Some(fourth_record),
+                    1,
+                    None,
+                    rng,
+                )
+                .unwrap();
+            let execution_block =
+                sample_next_block(&vm, &caller_private_key, &[first_execution, second_execution], rng).unwrap();
+            vm.add_next_block(&execution_block).unwrap();
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_load_deployments_with_imports() {
+            // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
+            let rng = &mut TestRng::fixed(123456789);
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            // Initialize the VM.
+            let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
+
+            // Fetch the unspent records.
+            let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<Vec<(_, _)>>();
+            trace!("Unspent Records:\n{:#?}", records);
+            let record_0 = records[0].1.decrypt(&caller_view_key).unwrap();
+            let record_1 = records[1].1.decrypt(&caller_view_key).unwrap();
+            let record_2 = records[2].1.decrypt(&caller_view_key).unwrap();
+            let record_3 = records[3].1.decrypt(&caller_view_key).unwrap();
+
+            // Create the deployment for the first program.
+            let program_1 = r"
+program first_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function c:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_1 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_1).unwrap(), Some(record_0), 0, None, rng)
+                .unwrap();
+
+            // Deploy the first program.
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_1), rng).unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Create the deployment for the second program.
+            let program_2 = r"
+import first_program.aleo;
+
+program second_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function b:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call first_program.aleo/c r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_2 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_2).unwrap(), Some(record_1), 0, None, rng)
+                .unwrap();
+
+            // Deploy the second program.
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, std::slice::from_ref(&deployment_2), rng).unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Create the deployment for the third program.
+            let program_3 = r"
+import second_program.aleo;
+
+program third_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function a:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call second_program.aleo/b r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_3 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_3).unwrap(), Some(record_2), 0, None, rng)
+                .unwrap();
+
+            // Create the deployment for the fourth program.
+            let program_4 = r"
+import second_program.aleo;
+import first_program.aleo;
+
+program fourth_program.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+function a:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call second_program.aleo/b r0 r1 into r2;
+    output r2 as u8.private;
+        ";
+            let deployment_4 = vm
+                .deploy(&caller_private_key, &Program::from_str(program_4).unwrap(), Some(record_3), 0, None, rng)
+                .unwrap();
+
+            // Deploy the third and fourth program together.
+            let deployment_block =
+                sample_next_block(&vm, &caller_private_key, &[deployment_3.clone(), deployment_4.clone()], rng)
+                    .unwrap();
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Enforce that the VM can load properly with the imports.
+            assert!(VM::from(vm.store.clone()).is_ok());
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_deployment_with_external_records() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a private key.
+            let private_key = sample_genesis_private_key();
+
+            // Initialize the genesis block.
+            let genesis = sample_genesis_block();
+
+            // Initialize the VM.
+            let vm = sample_vm();
+            // Update the VM.
+            vm.add_next_block(&genesis).unwrap();
+
+            // Deploy the program.
+            let program = Program::from_str(
+                r"
+import credits.aleo;
+program test_program.aleo;
+
+function transfer:
+    input r0 as credits.aleo/credits.record;
+    input r1 as u64.private;
+    input r2 as u64.private;
+    input r3 as [address; 10u32].private;
+    call credits.aleo/transfer_private r0 r3[0u32] r1 into r4 r5;
+    call credits.aleo/transfer_private r5 r3[0u32] r2 into r6 r7;
+",
+            )
+            .unwrap();
+
+            let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+            assert!(vm.check_transaction(&deployment, None, rng).is_ok());
+            vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
+
+            // Check that program is deployed.
+            assert!(vm.contains_program(&ProgramID::from_str("test_program.aleo").unwrap()));
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_deployment_synthesis_overload() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a private key.
+            let private_key = sample_genesis_private_key();
+
+            // Initialize the genesis block.
+            let genesis = sample_genesis_block();
+
+            // Initialize the VM.
+            let vm = sample_vm();
+            // Update the VM.
+            vm.add_next_block(&genesis).unwrap();
+
+            // Deploy the base program.
+            let program = Program::from_str(
+                r"
+program synthesis_overload.aleo;
+
+function do:
+    input r0 as [[u128; 32u32]; 2u32].private;
+    hash.sha3_256 r0 into r1 as field;
+    hash.sha3_256 r0 into r2 as field;
+    output r2 as field.public;",
+            )
+            .unwrap();
+
+            // Create the deployment transaction.
+            let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+
+            // Verify the deployment transaction. It should fail because there are too many constraints.
+            assert!(vm.check_transaction(&deployment, None, rng).is_err());
+        }
     }
 }

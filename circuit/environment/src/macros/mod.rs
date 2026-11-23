@@ -13,10 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod metrics;
-#[allow(unused_imports)]
-pub use metrics::*;
-
 mod scope;
 #[allow(unused_imports)]
 pub use scope::*;

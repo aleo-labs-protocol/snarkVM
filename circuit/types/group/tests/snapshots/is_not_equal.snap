@@ -1,0 +1,36 @@
+# Circuit shape of `is_not_equal` for each operand mode and a fixed set of group elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-group --test snapshots
+group.constant group.constant | * : 2 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant group.public | zero _ : 0 0 5 5 8/8/3 private d29b7e9b842729f4
+group.constant group.public | G _ : 0 0 5 5 10/8/3 private 0059f42961f7fa4d
+group.constant group.public | 2G _ : 0 0 5 5 10/8/3 private 4444b89fe05f586b
+group.constant group.public | -G _ : 0 0 5 5 10/8/3 private 6f0b43589b7c2b74
+group.constant group.public | sampled _ : 0 0 5 5 10/8/3 private 46fd389f22fa19f2
+group.constant group.private | zero _ : 0 0 5 5 8/8/3 private 2a6fc469d808e7c3
+group.constant group.private | G _ : 0 0 5 5 10/8/3 private a010dd1b80181faa
+group.constant group.private | 2G _ : 0 0 5 5 10/8/3 private efe8e54af981bff8
+group.constant group.private | -G _ : 0 0 5 5 10/8/3 private 9feca7f758caf040
+group.constant group.private | sampled _ : 0 0 5 5 10/8/3 private e7e9d2766986da08
+group.public group.constant | _ zero : 0 0 5 5 8/8/3 private fde4b667c56120be
+group.public group.constant | _ G : 0 0 5 5 10/8/3 private 9cdb02f8c5329d2a
+group.public group.constant | _ 2G : 0 0 5 5 10/8/3 private b57fa1b888d259c3
+group.public group.constant | _ -G : 0 0 5 5 10/8/3 private d34425a9906dc3f2
+group.public group.constant | _ sampled : 0 0 5 5 10/8/3 private 554db8602a553dcb
+group.public group.public | _ _ : 0 0 5 5 10/8/3 private 73c654183da65621
+group.public group.private | _ _ : 0 0 5 5 10/8/3 private 41469f075487fd15
+group.private group.constant | _ zero : 0 0 5 5 8/8/3 private d5e19b41f3e223ee
+group.private group.constant | _ G : 0 0 5 5 10/8/3 private 11b8200b18ca56a9
+group.private group.constant | _ 2G : 0 0 5 5 10/8/3 private 293520c7b5cdde43
+group.private group.constant | _ -G : 0 0 5 5 10/8/3 private 5f054648d19e67b9
+group.private group.constant | _ sampled : 0 0 5 5 10/8/3 private 3b991a3889640491
+group.private group.public | _ _ : 0 0 5 5 10/8/3 private 7a2b6a2f8d288e7d
+group.private group.private | _ _ : 0 0 5 5 10/8/3 private 809c5b25160d3eeb

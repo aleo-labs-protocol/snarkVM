@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_synthesizer_program::CallOperator;
+
 impl<N: Network> Process<N> {
     /// Verifies the given deployment is ordered.
     #[inline]
@@ -76,6 +78,11 @@ impl<N: Network> Process<N> {
         };
         timing_event!("Compute the stack");
 
+        // Ensure the program does not make a static call to a function with a constant output.
+        if consensus_version >= ConsensusVersion::V23 {
+            ensure_no_static_calls_to_constant_outputs(&stack)?;
+        }
+
         // Ensure the verifying keys are well-formed and the certificates are valid.
         let verification = stack.verify_deployment::<A, R>(consensus_version, deployment, rng);
         timing_event!("Verify the deployment");
@@ -83,6 +90,38 @@ impl<N: Network> Process<N> {
         drop(timer);
         verification
     }
+}
+
+/// Ensures that no function in the program of `stack` makes a static `call` to a function with a constant output.
+///
+/// Deployment synthesis samples the outputs of a static call, and a constant output enters the caller's circuit as a
+/// constant.
+fn ensure_no_static_calls_to_constant_outputs<N: Network>(stack: &Stack<N>) -> Result<()> {
+    let program = stack.program();
+    for function in program.functions().values() {
+        for instruction in function.instructions() {
+            let Instruction::Call(call) = instruction else { continue };
+            // Retrieve the program that declares the callee.
+            let external_stack;
+            let (callee_program, callee_name) = match call.operator() {
+                CallOperator::Locator(locator) => {
+                    external_stack = stack.get_external_stack(locator.program_id())?;
+                    (external_stack.program(), locator.resource())
+                }
+                CallOperator::Resource(resource) => (program, resource),
+            };
+            // Closure and view outputs have no visibility, so only a function can have a constant output.
+            let Some(callee) = callee_program.functions().get(callee_name) else { continue };
+            ensure!(
+                !callee.outputs().iter().any(|output| matches!(output.value_type(), ValueType::Constant(_))),
+                "Function '{}/{}' calls '{}', which has a constant output. A static call cannot return a constant output.",
+                program.id(),
+                function.name(),
+                call.operator()
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -94,11 +133,40 @@ mod tests {
     type CurrentAleo = circuit::network::AleoV0;
     type CurrentNetwork = console::network::MainnetV0;
 
-    /// Returns a program that casts `x` to a group with `op`, as a non-constant value, for every sampled input.
+    /// Returns a program whose functions cast `x` to a group with `op`, as a non-constant value, for every sampled input.
+    fn cast_program_with(name: &str, functions: &[&str], op: &str, x: &str) -> Program<CurrentNetwork> {
+        let functions = functions
+            .iter()
+            .map(|function| {
+                format!(
+                    "function {function}:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\n"
+                )
+            })
+            .collect::<String>();
+        Program::from_str(&format!("program {name}.aleo;\n\n{functions}constructor:\n    assert.eq edition 0u16;\n"))
+            .unwrap()
+    }
+
+    /// Returns a program with one function that casts `x` to a group with `op`.
     fn cast_program(op: &str, index: usize, x: &str) -> Program<CurrentNetwork> {
-        Program::from_str(&format!(
-            "program off_curve_cast_{index}.aleo;\n\nfunction f:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\nconstructor:\n    assert.eq edition 0u16;\n"
-        ))
+        cast_program_with(&format!("off_curve_cast_{index}"), &["f"], op, x)
+    }
+
+    /// Returns a deployment of `program` with the keys of `keys_program`, for a `program` on which `deploy` panics.
+    fn deployment_with_keys_of(
+        process: &Process<CurrentNetwork>,
+        program: &Program<CurrentNetwork>,
+        keys_program: &Program<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> Deployment<CurrentNetwork> {
+        let keys = process.deploy::<CurrentAleo, _>(keys_program, rng).unwrap();
+        Deployment::new(
+            0,
+            program.clone(),
+            keys.verifying_keys().clone(),
+            Some(program.to_checksum()),
+            Some(console::types::Address::zero()),
+        )
         .unwrap()
     }
 
@@ -138,16 +206,7 @@ mod tests {
             let process = Process::load().unwrap();
             assert!(try_vm_runtime(|| process.deploy::<CurrentAleo, _>(&program, &mut TestRng::default())).is_err());
 
-            // `deploy` panics on this value, so the deployment takes its keys from the program for `2`.
-            let keys = process.deploy::<CurrentAleo, _>(&cast_program(op, index, "2"), rng).unwrap();
-            let deployment = Deployment::new(
-                0,
-                program.clone(),
-                keys.verifying_keys().clone(),
-                Some(program.to_checksum()),
-                Some(console::types::Address::zero()),
-            )
-            .unwrap();
+            let deployment = deployment_with_keys_of(&process, &program, &cast_program(op, index, "2"), rng);
             let process = Process::load().unwrap();
             let result = try_vm_runtime(|| {
                 process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
@@ -172,6 +231,54 @@ mod tests {
             .unwrap()
             .verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
             .unwrap();
+    }
+
+    /// A halt in deployment synthesis on a rayon worker does not reach the host's panic hook.
+    #[test]
+    fn test_verify_deployment_halt_on_worker_skips_host_hook() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        const CHILD_PROCESS_ENV: &str = "SNARKVM_DEPLOYMENT_HALT_HOOK_CHILD";
+        const TEST_NAME: &str = "verify_deployment::tests::test_verify_deployment_halt_on_worker_skips_host_hook";
+
+        if std::env::var_os(CHILD_PROCESS_ENV).is_none() {
+            // Run this test in a fresh process because panic hooks are process-global.
+            let output =
+                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
+                    .args([TEST_NAME, "--exact", "--nocapture"])
+                    .env(CHILD_PROCESS_ENV, "1")
+                    .output()
+                    .expect("Failed to launch the child test process");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "Child test failed.\nstdout:\n{stdout}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let host_hook_calls = Arc::new(AtomicUsize::new(0));
+        let host_hook_calls_ = host_hook_calls.clone();
+        std::panic::set_hook(Box::new(move |_| {
+            host_hook_calls_.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // Rayon runs a loop over one item on the calling thread, so the program has two functions.
+        let x = "7647702037709885229845698841124471395615470129800647510314961670563126650261";
+        let program = cast_program_with("halt_on_worker", &["f", "g"], "cast", x);
+        let rng = &mut TestRng::default();
+        let process = Process::load().unwrap();
+        let keys_program = cast_program_with("halt_on_worker", &["f", "g"], "cast", "2");
+        let deployment = deployment_with_keys_of(&process, &program, &keys_program, rng);
+
+        // This thread is not a rayon worker, so the synthesis jobs run on workers of the global pool.
+        assert!(rayon::current_thread_index().is_none());
+        let result = try_vm_runtime(|| {
+            process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+        });
+        assert!(result.is_err(), "the deployment must be rejected by a panic during synthesis");
+        assert_eq!(host_hook_calls.load(Ordering::SeqCst), 0, "the halt must not reach the host hook");
     }
 
     /// Use `cargo test profiler --features timer` to run this test.
@@ -265,6 +372,73 @@ mod tests {
         Ok(())
     }
 
+    /// A program whose `constant_output` function returns its input as a `.constant` output, and whose
+    /// `private_output` function returns its input as a `.private` output.
+    const CONSTANT_OUTPUT_CALLEE: &str = r"
+program constant_callee.aleo;
+
+function constant_output:
+    input r0 as boolean.private;
+    output r0 as boolean.constant;
+
+function private_output:
+    input r0 as boolean.private;
+    output r0 as boolean.private;";
+
+    /// The error that `verify_deployment` returns for a static call to `constant_callee.aleo/constant_output`.
+    const CONSTANT_OUTPUT_REJECTION: &str = "calls 'constant_callee.aleo/constant_output', which has a constant output";
+
+    /// Returns a program that calls `constant_callee.aleo/{callee}`.
+    fn program_calling(name: &str, callee: &str) -> Result<Program<CurrentNetwork>> {
+        Program::from_str(&format!(
+            "import constant_callee.aleo;\n\nprogram {name}.aleo;\n\nfunction foo:\n    input r0 as boolean.private;\n    call constant_callee.aleo/{callee} r0 into r1;\n    ternary r1 1u8 0u8 into r2;\n    output r2 as u8.private;\n"
+        ))
+    }
+
+    #[test]
+    fn test_static_call_to_constant_output_by_consensus_version() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::load()?;
+        process.lock().add_program(&Program::from_str(CONSTANT_OUTPUT_CALLEE)?)?;
+
+        // Before V23, the caller's circuit depends on the value that synthesis samples for the constant output. The
+        // verifier samples it with a seed derived from the deployment, which is fixed by the program. So only some
+        // programs with such a call can be deployed, and each attempt below uses a new program name.
+        let mut accepted = None;
+        for attempt in 0..32 {
+            let program = program_calling(&format!("calls_constant_{attempt}"), "constant_output")?;
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+            match process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &deployment, rng) {
+                Ok(()) => {
+                    accepted = Some(deployment);
+                    break;
+                }
+                Err(error) => {
+                    assert!(!error.to_string().contains(CONSTANT_OUTPUT_REJECTION), "unexpected error: {error}")
+                }
+            }
+        }
+        let deployment = accepted.expect("a deployment of the caller must be accepted before V23");
+
+        // From V23, the same deployment is rejected.
+        for consensus_version in [ConsensusVersion::V23, ConsensusVersion::latest()] {
+            let error = process
+                .verify_deployment::<CurrentAleo, _>(consensus_version, &deployment, rng)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(CONSTANT_OUTPUT_REJECTION), "unexpected error: {error}");
+        }
+
+        // A call to a function without constant outputs is accepted at every consensus version.
+        let program = program_calling("calls_private", "private_output")?;
+        let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+        for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23, ConsensusVersion::latest()] {
+            process.verify_deployment::<CurrentAleo, _>(consensus_version, &deployment, rng)?;
+        }
+
+        Ok(())
+    }
+
     /// Per-transaction variable and constraint limits are enforced before V18 and from V19,
     /// using the v2 limits from V19. V18 skips these checks in favor of a block-wide synthesis limit.
     #[test]
@@ -283,9 +457,9 @@ function foo:
         let over_v1_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
         let over_v2_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
         let over_v1_constraints =
-            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1) as usize);
+            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1)?);
         let over_v2_constraints =
-            with_inflated_constraints(&deployment, (CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1) as usize);
+            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1)?);
 
         // V16 enforces the original per-transaction limits.
         assert!(

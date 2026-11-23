@@ -37,7 +37,6 @@ use itertools::Itertools;
 use rand::Rng;
 use std::collections::BTreeMap;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {

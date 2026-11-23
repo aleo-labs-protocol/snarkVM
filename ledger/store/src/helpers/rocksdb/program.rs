@@ -49,6 +49,8 @@ pub struct FinalizeDB<N: Network> {
     storage_mode: StorageMode,
 }
 
+impl<N: Network> crate::sealed::Sealed for FinalizeDB<N> {}
+
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type CommitteeStorage = CommitteeDB<N>;
@@ -112,6 +114,8 @@ pub struct CommitteeDB<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for CommitteeDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> CommitteeStorage<N> for CommitteeDB<N> {

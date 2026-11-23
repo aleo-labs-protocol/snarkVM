@@ -30,7 +30,6 @@ use std::{
 
 use itertools::Itertools;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Stores a polynomial in coefficient form.

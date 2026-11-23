@@ -91,28 +91,6 @@ impl<E: Environment> Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn ToBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn count(case: &Self::Case) -> Count {
-        match case {
-            Mode::Constant => Count::is(253, 0, 0, 0),
-            _ => Count::is(0, 0, 505, 507),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn ToBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,14 +114,13 @@ mod tests {
                 for (expected_bit, candidate_bit) in expected.to_bits_le().iter().zip_eq(&candidate_bits) {
                     assert_eq!(*expected_bit, candidate_bit.eject_value());
                 }
-                assert_count!(ToBits<Boolean>() => Field, &mode);
-                assert_output_mode!(ToBits<Boolean>() => Field, &mode, candidate_bits);
+                assert_scope!();
 
                 // Ensure a second call to `to_bits_le` does not incur additional costs.
+                let counts = Circuit::count_in_scope();
                 let candidate_bits = candidate.to_bits_le();
                 assert_eq!(expected_number_of_bits, candidate_bits.len());
-                assert_count!(ToBits<Boolean>() => Field, &mode);
-                assert_output_mode!(ToBits<Boolean>() => Field, &mode, candidate_bits);
+                assert_eq!(counts, Circuit::count_in_scope());
             });
         }
     }
@@ -164,14 +141,13 @@ mod tests {
                 for (expected_bit, candidate_bit) in expected.to_bits_be().iter().zip_eq(&candidate_bits) {
                     assert_eq!(*expected_bit, candidate_bit.eject_value());
                 }
-                assert_count!(ToBits<Boolean>() => Field, &mode);
-                assert_output_mode!(ToBits<Boolean>() => Field, &mode, candidate_bits);
+                assert_scope!();
 
                 // Ensure a second call to `to_bits_be` does not incur additional costs.
+                let counts = Circuit::count_in_scope();
                 let candidate_bits = candidate.to_bits_be();
                 assert_eq!(expected_number_of_bits, candidate_bits.len());
-                assert_count!(ToBits<Boolean>() => Field, &mode);
-                assert_output_mode!(ToBits<Boolean>() => Field, &mode, candidate_bits);
+                assert_eq!(counts, Circuit::count_in_scope());
             });
         }
     }

@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This crate uses the fields and constructors that are deprecated for other crates.
-#![allow(deprecated)]
 #![allow(clippy::module_inception)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 #![doc = include_str!("../documentation/the_aleo_curves/00_overview.md")]
@@ -34,3 +32,23 @@ pub mod templates;
 #[cfg_attr(test, macro_use)]
 pub mod traits;
 pub use traits::*;
+
+/// Seals the curve traits. Only the types of this crate implement them.
+///
+/// ```compile_fail,E0277
+/// use snarkvm_curves::{
+///     ModelParameters,
+///     bls12_377::{Fq, Fr},
+/// };
+///
+/// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// struct Parameters;
+///
+/// impl ModelParameters for Parameters {
+///     type BaseField = Fq;
+///     type ScalarField = Fr;
+/// }
+/// ```
+mod sealed {
+    pub trait Sealed {}
+}
