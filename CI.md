@@ -40,7 +40,7 @@ rows.
 | `notify` | hosted | schedule | | posts to Slack when the scheduled run turns red, and once when it turns green again | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag, and that each matrix `name` axis lists the same names as its `include` | |
 | `fmt` | hosted | all | | `cargo fmt --check` on `FMT_TOOLCHAIN` | `check-fmt` |
-| `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
+| `deny` | hosted | all | | `cargo deny check bans licenses sources`; advisories and yanked crates are checked nightly by [`bump-advisories.yml`](.github/workflows/bump-advisories.yml) | `check-cargo-deny` |
 | `source-checks` | hosted | all | | `scripts/check_sources.py`: the license header in each tracked `.rs` file, and on Linux the header's year | |
 | `wasm` | hosted | all | | `wasm-pack test --node` in `wasm` | `wasm` |
 | `lint` | `cpu` | all | 90 | clippy, default and `--all-features`; `cargo doc --all-features`; on release, also `cargo check --release --workspace --all-targets` | `check-clippy`, `check-all-targets`, `parameters-large` |
