@@ -93,6 +93,7 @@ pub enum ConsensusVersion {
     ///      Rejects deployments with a static `call` to a function that has a constant output.
     ///      Prices non-raw hash and commitment inputs by their encoded size in finalize.
     ///      Prices the message in `sign.verify` by its encoded size in finalize.
+    ///      Requires a flat 32-byte digest for fixed-digest ECDSA verification in finalize.
     V23 = 23,
 }
 

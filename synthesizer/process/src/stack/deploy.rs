@@ -15,6 +15,9 @@
 
 use super::*;
 
+use console::program::LiteralType;
+use snarkvm_synthesizer_program::Command;
+
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
     #[inline]
@@ -83,6 +86,43 @@ impl<N: Network> Stack<N> {
         )
     }
 
+    /// Checks the digest operand in each scope that permits ECDSA verification.
+    fn check_fixed_digest_types(&self) -> Result<()> {
+        let check = |commands: &[Command<N>], types: Option<&FinalizeTypes<N>>| -> Result<()> {
+            for command in commands {
+                let Command::Instruction(instruction) = command else { continue };
+                if matches!(instruction, Instruction::ECDSAVerifyDigest(_) | Instruction::ECDSAVerifyDigestEth(_)) {
+                    let types = types.ok_or_else(|| anyhow!("Missing register types for '{instruction}'"))?;
+                    let digest = types.get_type_from_operand(self, &instruction.operands()[2])?;
+                    // Stack initialization checks the outer length and the innermost element type.
+                    let is_byte_array = matches!(
+                        &digest,
+                        FinalizeType::Plaintext(PlaintextType::Array(array))
+                            if array.next_element_type() == &PlaintextType::Literal(LiteralType::U8)
+                    );
+                    ensure!(
+                        is_byte_array,
+                        "Instruction '{}' expects a one-dimensional byte array for its digest. Found '{digest}'",
+                        instruction.opcode()
+                    );
+                }
+            }
+            Ok(())
+        };
+        if let Some(constructor) = self.program.constructor() {
+            check(constructor.commands(), self.constructor_types.read().as_ref())?;
+        }
+        let finalize_types = self.finalize_types.read();
+        for finalize in self.program.functions().values().filter_map(Function::finalize_logic) {
+            check(finalize.commands(), finalize_types.get(finalize.name()))?;
+        }
+        let view_types = self.view_types.read();
+        for view in self.program.views().values() {
+            check(view.commands(), view_types.get(view.name()))?;
+        }
+        Ok(())
+    }
+
     /// Checks each function in the program on the given verifying key and certificate.
     #[inline]
     pub fn verify_deployment<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
@@ -95,6 +135,10 @@ impl<N: Network> Stack<N> {
         _rng: &mut R,
     ) -> Result<()> {
         let timer = timing_span!("Stack::verify_deployment").entered();
+
+        if consensus_version >= ConsensusVersion::V23 {
+            self.check_fixed_digest_types()?;
+        }
 
         // NOTE: As developer, you will likely still want to confirm that your
         // deployment is within R1CS constraint and variable limits using

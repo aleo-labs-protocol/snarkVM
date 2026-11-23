@@ -372,6 +372,38 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_fixed_digest_type_by_consensus_version() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::load()?;
+        for (opcode, key_length) in [("ecdsa.verify.digest", 33), ("ecdsa.verify.digest.eth", 20)] {
+            for (digest_type, is_flat) in [("[u8; 32u32]", true), ("[[u8; 2u32]; 32u32]", false)] {
+                let program = Program::<CurrentNetwork>::from_str(&format!(
+                    "program check_digest.aleo;
+                     function identity:
+                         input r0 as field.private;
+                         output r0 as field.private;
+                     view check:
+                         input r0 as [u8; 65u32].public;
+                         input r1 as [u8; {key_length}u32].public;
+                         input r2 as {digest_type}.public;
+                         {opcode} r0 r1 r2 into r3;
+                         output r3 as boolean.public;"
+                ))?;
+                let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+                process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &deployment, rng)?;
+                let result = process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &deployment, rng);
+                if is_flat {
+                    result?;
+                } else {
+                    let error = result.unwrap_err();
+                    assert!(error.to_string().contains("one-dimensional"), "Unexpected error: {error}");
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// A program whose `constant_output` function returns its input as a `.constant` output, and whose
     /// `private_output` function returns its input as a `.private` output.
     const CONSTANT_OUTPUT_CALLEE: &str = r"
