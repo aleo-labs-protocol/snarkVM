@@ -15,16 +15,42 @@
 
 pub use std::error::Error;
 
-use std::{any::Any, fmt, panic, sync::Once};
+use std::{
+    any::Any,
+    fmt,
+    panic,
+    sync::{
+        Once,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 /// The panic payload of a VM halt.
 ///
-/// The payload travels with the panic, including when rayon re-raises a job's panic on the thread that waits on the
-/// job. The panic hook and the code that catches the panic can both tell a halt from any other panic, whichever
-/// thread halted.
+/// Console and circuit operations halt by panicking with this payload, for example on a division by zero or on an
+/// invalid group element. So do the functions that run a program, such as `Process::authorize`, `Process::execute`
+/// and `Process::deploy`, when the program halts.
 ///
-/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
-#[doc(hidden)]
+/// A caller that must not unwind catches the panic and checks the payload type. Any other payload is a bug, and the
+/// caller keeps unwinding:
+///
+/// ```
+/// use snarkvm_utilities::VmHalt;
+/// use std::panic::{UnwindSafe, catch_unwind, resume_unwind};
+///
+/// fn run<T>(operation: impl FnOnce() -> T + UnwindSafe) -> Result<T, String> {
+///     catch_unwind(operation).map_err(|payload| match payload.downcast::<VmHalt>() {
+///         Ok(halt) => format!("the program halted: {halt}"),
+///         Err(payload) => resume_unwind(payload),
+///     })
+/// }
+///
+/// assert_eq!(run(|| 1 + 1), Ok(2));
+/// ```
+///
+/// The payload travels with the panic, also when rayon re-raises the panic of a job on the thread that waits on the
+/// job. Panic hooks and code that read only `String` and `&str` payloads do not see the message of a halt;
+/// [`panic_message`] reads all three.
 #[derive(Debug)]
 pub struct VmHalt {
     message: String,
@@ -43,30 +69,45 @@ impl fmt::Display for VmHalt {
     }
 }
 
+/// Returns the message of a panic payload that is a [`VmHalt`], a `String` or a `&str`.
+pub fn panic_message(payload: &(dyn Any + Send)) -> Option<&str> {
+    payload
+        .downcast_ref::<VmHalt>()
+        .map(VmHalt::message)
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+}
+
 /// Ensures the VM halt hook is installed exactly once.
 static INSTALL_VM_HALT_HOOK: Once = Once::new();
 
-/// Installs a panic hook that logs VM halts and passes every other panic to the previous hook.
+/// The number of [`try_vm_runtime`] calls that are running, on any thread.
+static ACTIVE_VM_RUNTIMES: AtomicUsize = AtomicUsize::new(0);
+
+/// Installs a panic hook for VM halts, which passes every other panic to the previous hook.
+///
+/// While any [`try_vm_runtime`] call runs, the hook logs a halt at the debug level, without a backtrace, because the
+/// halt is likely an expected outcome that the call catches. Otherwise nothing in snarkVM catches the halt, and the
+/// hook passes it to the previous hook. A halt on a thread outside [`try_vm_runtime`] while another thread is inside
+/// one is only logged at the debug level, even if no caller catches it.
 fn install_vm_halt_hook() {
     INSTALL_VM_HALT_HOOK.call_once(|| {
         let previous_hook = panic::take_hook();
 
         panic::set_hook(Box::new(move |info| match info.payload().downcast_ref::<VmHalt>() {
-            // A halt is an expected outcome that any caller can trigger, so it is logged without a backtrace.
-            Some(halt) => match info.location() {
+            Some(halt) if ACTIVE_VM_RUNTIMES.load(Ordering::SeqCst) > 0 => match info.location() {
                 Some(location) => tracing::debug!("VM halted at {location}: {halt}"),
                 None => tracing::debug!("VM halted: {halt}"),
             },
-            None => previous_hook(info),
+            _ => previous_hook(info),
         }));
     });
 }
 
 /// Halts the VM with the given message, by panicking with a [`VmHalt`] payload.
 ///
-/// The panic hook logs the halt at the debug level, with the location of the caller. Every other panic goes to the
-/// panic hook that was present when the first halt or [`try_vm_runtime`] ran, so custom panic hooks should be
-/// installed before then.
+/// Panic hooks should be installed before the first halt or [`try_vm_runtime`], because the VM halt hook passes
+/// panics to the hook that was present then.
 ///
 /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
 #[doc(hidden)]
@@ -75,6 +116,22 @@ fn install_vm_halt_hook() {
 pub fn vm_halt(message: String) -> ! {
     install_vm_halt_hook();
     panic::panic_any(VmHalt { message })
+}
+
+/// Counts a running [`try_vm_runtime`] call until it drops.
+struct ActiveVmRuntime;
+
+impl ActiveVmRuntime {
+    fn enter() -> Self {
+        ACTIVE_VM_RUNTIMES.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for ActiveVmRuntime {
+    fn drop(&mut self) {
+        ACTIVE_VM_RUNTIMES.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Runs `f` and catches its panics. The error holds the panic payload, which is a [`VmHalt`] for a VM halt.
@@ -88,19 +145,8 @@ pub fn vm_halt(message: String) -> ! {
 pub fn try_vm_runtime<R, F: FnOnce() -> R>(f: F) -> std::thread::Result<R> {
     install_vm_halt_hook();
 
+    let _active = ActiveVmRuntime::enter();
     panic::catch_unwind(panic::AssertUnwindSafe(f))
-}
-
-/// Returns the message of a panic payload that is a [`VmHalt`], a `String` or a `&str`.
-///
-/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
-#[doc(hidden)]
-pub fn panic_message(payload: &(dyn Any + Send)) -> Option<&str> {
-    payload
-        .downcast_ref::<VmHalt>()
-        .map(VmHalt::message)
-        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-        .or_else(|| payload.downcast_ref::<&str>().copied())
 }
 
 #[cfg(test)]
@@ -256,11 +302,12 @@ mod tests {
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The panic should reach the host hook");
     }
 
-    /// A halt outside `try_vm_runtime` is still a halt, because `vm_halt` installs the hook itself.
+    /// A halt while no `try_vm_runtime` runs reaches the host hook, also before the first `try_vm_runtime` and after a
+    /// caught halt.
     #[test]
-    fn test_halt_outside_vm_runtime_skips_host_hook() {
+    fn test_halt_outside_vm_runtime_reaches_host_hook() {
         if !is_child_process() {
-            run_in_child_process("vm_error::tests::test_halt_outside_vm_runtime_skips_host_hook");
+            run_in_child_process("vm_error::tests::test_halt_outside_vm_runtime_reaches_host_hook");
             return;
         }
         let host_panic_count = Arc::new(AtomicUsize::new(0));
@@ -269,10 +316,20 @@ mod tests {
             host_panic_count_.fetch_add(1, Ordering::SeqCst);
         }));
 
-        let payload = panic::catch_unwind(|| vm_halt("a halt outside the VM runtime".to_string()))
+        // `vm_halt` installs the VM halt hook on top of the host hook.
+        let payload = panic::catch_unwind(|| vm_halt("a halt before any VM runtime".to_string()))
             .expect_err("The halt should unwind");
-        assert_eq!(halt_message(&*payload), "a halt outside the VM runtime");
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 0, "The halt should not reach the host hook");
+        assert_eq!(halt_message(&*payload), "a halt before any VM runtime");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halt should reach the host hook");
+
+        let payload = try_vm_runtime(|| vm_halt("a caught halt".to_string())).expect_err("The halt should be caught");
+        assert_eq!(halt_message(&*payload), "a caught halt");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The caught halt should not reach the host hook");
+
+        let payload = panic::catch_unwind(|| vm_halt("a halt after the VM runtime".to_string()))
+            .expect_err("The halt should unwind");
+        assert_eq!(halt_message(&*payload), "a halt after the VM runtime");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 2, "The halt should reach the host hook");
     }
 
     /// Halts on rayon workers skip the host hook, and their payload reaches `try_vm_runtime` on the waiting thread.
