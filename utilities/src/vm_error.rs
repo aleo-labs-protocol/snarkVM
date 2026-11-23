@@ -87,19 +87,37 @@ static ACTIVE_VM_RUNTIMES: AtomicUsize = AtomicUsize::new(0);
 /// Installs a panic hook for VM halts, which passes every other panic to the previous hook.
 ///
 /// While any [`try_vm_runtime`] call runs, the hook logs a halt at the debug level, without a backtrace, because the
-/// halt is likely an expected outcome that the call catches. Otherwise nothing in snarkVM catches the halt, and the
-/// hook passes it to the previous hook. A halt on a thread outside [`try_vm_runtime`] while another thread is inside
-/// one is only logged at the debug level, even if no caller catches it.
+/// halt is likely an expected outcome that the call catches. A halt message can hold private values, so only debug
+/// builds log it.
+///
+/// While no [`try_vm_runtime`] call runs, nothing in snarkVM catches the halt. The hook logs the halt with its message
+/// at the error level, or prints it to stderr if no tracing subscriber is set, and then passes it to the previous
+/// hook. The previous hook does not see the message, because panic hooks format only `String` and `&str` payloads.
+///
+/// A halt on a thread outside [`try_vm_runtime`] while another thread is inside one is only logged at the debug
+/// level, even if no caller catches it.
 fn install_vm_halt_hook() {
     INSTALL_VM_HALT_HOOK.call_once(|| {
         let previous_hook = panic::take_hook();
 
-        panic::set_hook(Box::new(move |info| match info.payload().downcast_ref::<VmHalt>() {
-            Some(halt) if ACTIVE_VM_RUNTIMES.load(Ordering::SeqCst) > 0 => match info.location() {
-                Some(location) => tracing::debug!("VM halted at {location}: {halt}"),
-                None => tracing::debug!("VM halted: {halt}"),
-            },
-            _ => previous_hook(info),
+        panic::set_hook(Box::new(move |info| {
+            let Some(halt) = info.payload().downcast_ref::<VmHalt>() else {
+                return previous_hook(info);
+            };
+            let location = info.location().map_or_else(|| "an unknown location".to_string(), ToString::to_string);
+            if ACTIVE_VM_RUNTIMES.load(Ordering::SeqCst) > 0 {
+                #[cfg(debug_assertions)]
+                tracing::debug!("VM halted at {location}: {halt}");
+                #[cfg(not(debug_assertions))]
+                tracing::debug!("VM halted at {location}");
+            } else {
+                if tracing::dispatcher::has_been_set() {
+                    tracing::error!("VM halted at {location}: {halt}");
+                } else {
+                    eprintln!("VM halted at {location}: {halt}");
+                }
+                previous_hook(info);
+            }
         }));
     });
 }
@@ -307,7 +325,12 @@ mod tests {
     #[test]
     fn test_halt_outside_vm_runtime_reaches_host_hook() {
         if !is_child_process() {
-            run_in_child_process("vm_error::tests::test_halt_outside_vm_runtime_reaches_host_hook");
+            let output = run_in_child_process("vm_error::tests::test_halt_outside_vm_runtime_reaches_host_hook");
+            // The child sets no tracing subscriber, so the hook prints the messages of the uncaught halts.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains(": a halt before any VM runtime"), "Unexpected stderr:\n{stderr}");
+            assert!(stderr.contains(": a halt after the VM runtime"), "Unexpected stderr:\n{stderr}");
+            assert!(!stderr.contains("a caught halt"), "Unexpected stderr:\n{stderr}");
             return;
         }
         let host_panic_count = Arc::new(AtomicUsize::new(0));
