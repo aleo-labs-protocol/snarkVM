@@ -30,19 +30,12 @@ impl<N: Network> UniversalSRS<N> {
     /// Returns the circuit proving and verifying key.
     pub fn to_circuit_key(
         &self,
-        _function_name: &str,
+        function_name: &str,
         assignment: &circuit::Assignment<N::Field>,
     ) -> Result<(ProvingKey<N>, VerifyingKey<N>)> {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
-
+        let timer = timing_span!("Build circuit key", function_name).entered();
         let (proving_key, verifying_key) = Varuna::<N>::circuit_setup(self, assignment)?;
-
-        #[cfg(feature = "dev-print")]
-        {
-            let _elapsed = timer.elapsed().as_millis();
-            dev_println!(" • Built '{_function_name}' (in {_elapsed} ms)");
-        }
+        drop(timer);
 
         Ok((
             ProvingKey::new(Arc::new(proving_key)),
@@ -54,22 +47,10 @@ impl<N: Network> UniversalSRS<N> {
 impl<N: Network> Deref for UniversalSRS<N> {
     type Target = varuna::UniversalSRS<N::PairingCurve>;
 
-    #[allow(clippy::let_and_return)]
     fn deref(&self) -> &Self::Target {
         self.srs.get_or_init(|| {
-            #[cfg(feature = "dev-print")]
-            let timer = std::time::Instant::now();
-
-            // Load the universal SRS.
-            let universal_srs = varuna::UniversalSRS::load().expect("Failed to load the universal SRS");
-
-            #[cfg(feature = "dev-print")]
-            {
-                let _elapsed = timer.elapsed().as_millis();
-                dev_println!(" • Loaded universal setup (in {_elapsed} ms)");
-            }
-
-            universal_srs
+            let _timer = timing_span!("Load universal setup").entered();
+            varuna::UniversalSRS::load().expect("Failed to load the universal SRS")
         })
     }
 }

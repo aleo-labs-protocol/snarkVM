@@ -20,7 +20,7 @@ mod tests;
 
 use crate::Blake2Xs;
 use snarkvm_console_types::prelude::*;
-use snarkvm_utilities::BigInteger;
+use snarkvm_utilities::{BigInteger, timing_span, tracing::trace};
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -81,8 +81,14 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
 
     /// Initializes a new instance of BHP with the given domain.
     pub fn setup(domain: &str) -> Result<Self> {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
+        let _timer = timing_span!(
+            "BHP hasher setup",
+            num_windows = NUM_WINDOWS,
+            window_size = WINDOW_SIZE,
+            num_combined_chunks = BHP_NUM_COMBINED_CHUNKS,
+            domain
+        )
+        .entered();
 
         // Chunk `j` contributes a coefficient in {±1, ±2, ±3, ±4} times `16^j`.
         // The absolute value of one window is at most `4 * (16^WINDOW_SIZE - 1) / 15`.
@@ -197,16 +203,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             ensure!(!base.is_zero(), "BHP random base point is the identity");
         }
 
-        #[cfg(feature = "dev-print")]
-        {
-            // Display the setup time and approximate hasher size.
-
-            let elapsed = timer.elapsed().as_micros() as f64 / 1000.0;
-
-            println!(
-                " • BHP hasher setup (NUM_WINDOWS = {NUM_WINDOWS}, WINDOW_SIZE = {WINDOW_SIZE}, NUM_COMBINED_CHUNKS = {BHP_NUM_COMBINED_CHUNKS}, DOMAIN = '{domain}'): {elapsed:.2} ms"
-            );
-
+        trace!("Approximate BHP hasher size: {} B", {
             // The number of group elements stored in the hasher is
             //    N (basis elements)
             //  + N * 8 (lookup for basis elements)
@@ -217,7 +214,6 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             //  - W_SIZE = WINDOW_SIZE,
             //  - N = number of basis elements = NUM_W * W_SIZE,
             //  - C = BHP_NUM_COMBINED_CHUNKS
-
             let num_els_bases: usize = bases.iter().map(|v| v.len()).sum();
             let num_els_bases_lookup: usize =
                 bases_lookup.iter().map(|vs| vs.iter().map(|v| v.len()).sum::<usize>()).sum();
@@ -225,11 +221,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
                 combined_bases_lookup.iter().map(|vs| vs.iter().map(|v| v.len()).sum::<usize>()).sum();
             let num_els_random_base = random_base.len();
 
-            let bytes = (num_els_bases + num_els_bases_lookup + num_els_combined_bases_lookup + num_els_random_base)
-                * std::mem::size_of::<Group<E>>();
-
-            println!("   Approximate BHP hasher size: {bytes} B");
-        }
+            (num_els_bases + num_els_bases_lookup + num_els_combined_bases_lookup + num_els_random_base)
+                * std::mem::size_of::<Group<E>>()
+        });
 
         Ok(Self {
             bases: Arc::new(bases),

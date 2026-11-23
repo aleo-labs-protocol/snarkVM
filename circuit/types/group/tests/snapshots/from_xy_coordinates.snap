@@ -1,0 +1,48 @@
+# Circuit shape of `from_xy_coordinates` for each operand mode and a fixed set of group elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-group --test snapshots
+field.constant field.constant | * : 8 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant field.constant | zero.x zero.y : 5 0 0 0 0/0/0 constant e3b0c44298fc1c14
+field.constant field.constant | 0 -1 : halt
+field.constant field.constant | -(G.x) -(G.y) : halt
+field.constant field.constant | 1 1 : halt
+field.constant field.public | * : 4 0 12 13 12/20/16 public 0e3f5fc96bf0997c
+field.constant field.public | G.x _ : 4 0 12 13 13/20/16 public 4b71d3e899c090db
+field.constant field.public | 2G.x _ : 4 0 12 13 13/20/16 public 25aed9a6cb329b7a
+field.constant field.public | -G.x _ : 4 0 12 13 13/20/16 public ec46448d17afd0e8
+field.constant field.public | sampled.x _ : 4 0 12 13 13/20/16 public acf31e355f55494c
+field.constant field.public | -(G.x) _ : 4 0 12 13 13/20/16 public ec46448d17afd0e8
+field.constant field.public | 1 _ : 4 0 12 13 13/20/16 public c4ffdb7f1d422fd6
+field.constant field.private | * : 4 0 12 13 12/20/16 private 262c8fbac2e3445b
+field.constant field.private | G.x _ : 4 0 12 13 13/20/16 private c95d83172e0074a4
+field.constant field.private | 2G.x _ : 4 0 12 13 13/20/16 private 782d8c9f6744d486
+field.constant field.private | -G.x _ : 4 0 12 13 13/20/16 private f25571c04d0ffeb0
+field.constant field.private | sampled.x _ : 4 0 12 13 13/20/16 private 8b324899572c23a9
+field.constant field.private | -(G.x) _ : 4 0 12 13 13/20/16 private f25571c04d0ffeb0
+field.constant field.private | 1 _ : 4 0 12 13 13/20/16 private 7f18a7b1cf965ad3
+field.public field.constant | * : 4 0 12 13 13/20/16 public 15026f1ddb167f67
+field.public field.constant | _ G.y : 4 0 12 13 13/20/16 public 3d2d230bb7b281ef
+field.public field.constant | _ 2G.y : 4 0 12 13 13/20/16 public 24b1c3a12481fa4e
+field.public field.constant | _ -G.y : 4 0 12 13 13/20/16 public 3d2d230bb7b281ef
+field.public field.constant | _ sampled.y : 4 0 12 13 13/20/16 public 11f5400de35f31ec
+field.public field.constant | _ -1 : 4 0 12 13 13/20/16 public 250f40f824210201
+field.public field.constant | _ -(G.y) : 4 0 12 13 13/20/16 public 40342d1e15fd6b4d
+field.public field.public | _ _ : 4 0 12 13 13/20/16 public 1b26c2ae7821fcd0
+field.public field.private | _ _ : 4 0 12 13 13/20/16 private 60fb4d40f6856ad4
+field.private field.constant | * : 4 0 12 13 13/20/16 private 2d7cb74ac0055205
+field.private field.constant | _ G.y : 4 0 12 13 13/20/16 private e8fc0f31abb17912
+field.private field.constant | _ 2G.y : 4 0 12 13 13/20/16 private 25cdb2806059b47f
+field.private field.constant | _ -G.y : 4 0 12 13 13/20/16 private e8fc0f31abb17912
+field.private field.constant | _ sampled.y : 4 0 12 13 13/20/16 private 15683ae6047e4889
+field.private field.constant | _ -1 : 4 0 12 13 13/20/16 private 4b6cd03a0a1def71
+field.private field.constant | _ -(G.y) : 4 0 12 13 13/20/16 private 0f236e4600754fc2
+field.private field.public | _ _ : 4 0 12 13 13/20/16 private aa8a30fd45ca72ea
+field.private field.private | _ _ : 4 0 12 13 13/20/16 private 5671cf1a3189c29f

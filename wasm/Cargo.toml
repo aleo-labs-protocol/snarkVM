@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-wasm"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "WASM for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -29,24 +29,21 @@ crate-type = [ "cdylib", "rlib" ]
 [features]
 default = [ "full" ]
 full = [
-  "circuit",
   "curves",
   "fields",
   "ledger",
   "synthesizer",
   "utilities"
 ]
-circuit = [ ]
-curves = [ "snarkvm-curves" ]
-fields = [ "snarkvm-fields" ]
+curves = [ "dep:snarkvm-curves" ]
+fields = [ "dep:snarkvm-fields" ]
 ledger = [
-  "snarkvm-ledger-block",
-  "snarkvm-ledger-query",
-  "snarkvm-ledger-store"
+  "dep:snarkvm-ledger-block",
+  "dep:snarkvm-ledger-query",
+  "dep:snarkvm-ledger-store"
 ]
-synthesizer = [ "snarkvm-synthesizer" ]
-utilities = [ "snarkvm-utilities" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
+synthesizer = [ "dep:snarkvm-synthesizer" ]
+utilities = [ "dep:snarkvm-utilities" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -62,17 +59,15 @@ optional = true
 
 [dependencies.snarkvm-ledger-block]
 workspace = true
-features = [ "wasm" ]
 optional = true
 
 [dependencies.snarkvm-ledger-query]
 workspace = true
-features = [ "async", "wasm" ]
+features = [ "async" ]
 optional = true
 
 [dependencies.snarkvm-ledger-store]
 workspace = true
-features = [ "wasm" ]
 optional = true
 
 [dependencies.snarkvm-synthesizer]
@@ -82,7 +77,6 @@ optional = true
 
 [dependencies.snarkvm-utilities]
 workspace = true
-features = [ "wasm" ]
 optional = true
 
 [dependencies.getrandom]
@@ -94,7 +88,7 @@ version = "0.3.37"
 
 [dev-dependencies.snarkvm-utilities]
 workspace = true
-features = [ "wasm" ]
+features = [ "test-helpers" ]
 
 [package.metadata.cargo-machete]
 ignored = [

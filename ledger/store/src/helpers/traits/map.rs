@@ -19,11 +19,13 @@ use core::{borrow::Borrow, hash::Hash};
 use std::borrow::Cow;
 
 /// A trait representing map-like storage operations with read-write capabilities.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait Map<
     'a,
     K: 'a + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Send + Sync,
     V: 'a + Clone + Serialize + Deserialize<'a> + Send + Sync,
->: Clone + MapRead<'a, K, V> + Send + Sync
+>: crate::sealed::SealedMap<K, V> + Clone + MapRead<'a, K, V> + Send + Sync
 {
     ///
     /// Inserts the given key-value pair into the map.
@@ -90,11 +92,13 @@ pub trait Map<
 }
 
 /// A trait representing map-like storage operations with read-only capabilities.
+///
+/// This trait is sealed. Only snarkVM implements it.
 pub trait MapRead<
     'a,
     K: 'a + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Sync,
     V: 'a + Clone + Serialize + Deserialize<'a> + Sync,
->
+>: crate::sealed::SealedMap<K, V>
 {
     type PendingIterator: Iterator<Item = (Cow<'a, K>, Option<Cow<'a, V>>)>;
     type Iterator: Iterator<Item = (Cow<'a, K>, Cow<'a, V>)>;

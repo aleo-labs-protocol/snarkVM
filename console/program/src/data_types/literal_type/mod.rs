@@ -28,6 +28,9 @@ use enum_iterator::Sequence;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
+/// Minor releases add variants to this enum, and snarkVM does not treat this as a breaking change.
+/// An exhaustive match must be updated for each new variant, so that each new variant is handled
+/// explicitly.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, FromPrimitive, Sequence)]
 pub enum LiteralType {
     /// The Aleo address type.

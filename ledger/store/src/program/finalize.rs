@@ -26,8 +26,8 @@ use console::{
 };
 use snarkvm_ledger_block::RejectedReason;
 use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
@@ -76,7 +76,9 @@ fn to_key_id<N: Network>(
 /// // (program_id => (mapping_name => (key => value)))
 /// BTreeMap<ProgramID<N>, BTreeMap<Identifier<N>, BTreeMap<Key, Value>>>
 /// ```
-pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// The committee storage.
     type CommitteeStorage: CommitteeStorage<N>;
     /// The mapping of `program ID` to `[mapping name]`.
@@ -627,6 +629,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     }
 }
 
+impl<N: Network, P: FinalizeStorage<N>> snarkvm_synthesizer_program::sealed_execution::Sealed for FinalizeStore<N, P> {}
+
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<N, P> {
     /// Returns `true` if the given `program ID` and `mapping name` is confirmed to exist.
     fn contains_mapping_confirmed(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool> {
@@ -807,7 +811,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     pub fn insert_rejected_reason(&self, transaction_id: Field<N>, reason: RejectedReason<N>) -> Result<()> {
         let height = self.block_height.load(std::sync::atomic::Ordering::SeqCst);
         let consensus_version = N::CONSENSUS_VERSION(height)?;
-        if cfg!(feature = "test") || consensus_version >= ConsensusVersion::V15 {
+        if consensus_version >= ConsensusVersion::V15 {
             self.storage.rejected_reason_map().insert(transaction_id, reason)
         } else {
             Ok(())
@@ -833,8 +837,7 @@ mod tests {
     use super::*;
     use crate::helpers::memory::FinalizeMemory;
     use console::network::MainnetV0;
-
-    use aleo_std::StorageMode;
+    use snarkvm_utilities::StorageMode;
 
     use console::{program::Literal, types::U64};
 

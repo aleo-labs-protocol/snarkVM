@@ -29,17 +29,34 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait Fp12Parameters: 'static + Copy + Clone + Debug + Default + PartialEq + Eq + Hash + Send + Sync {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait Fp12Parameters:
+    crate::sealed_parameters::Sealed + 'static + Copy + Clone + Debug + Default + PartialEq + Eq + Hash + Send + Sync
+{
     type Fp6Params: Fp6Parameters;
 
     /// Coefficients for the Frobenius automorphism.
     const FROBENIUS_COEFF_FP12_C1: [Fp2<Fp2Params<Self>>; 12];
+
+    /// Sets `a` to `a * b`. An override must not fall back to `Fp12::mul_assign`, which calls this
+    /// hook; `Fp12::mul_assign_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_assign_fp12(a: &mut Fp12<Self>, b: &Fp12<Self>) {
+        a.mul_assign_scalar(b)
+    }
+
+    /// Returns `a^exp` by the chain of `Fp12::cyclotomic_exp`. `exp` lists the words of the exponent,
+    /// the least significant first. An override must not fall back to `Fp12::cyclotomic_exp`, which
+    /// calls this hook; `Fp12::cyclotomic_exp_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn cyclotomic_exp_fp12(a: &Fp12<Self>, exp: &[u64]) -> Fp12<Self> {
+        a.cyclotomic_exp_scalar(exp)
+    }
 }
 
-type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
+pub(crate) type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
 
 /// An element of Fp12, represented by c0 + c1 * v
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -104,6 +121,16 @@ impl<P: Fp12Parameters> Fp12<P> {
         self.c0 = bb;
         self.c0 = Self::mul_fp6_by_nonresidue(&self.c0);
         self.c0.add_assign(aa);
+    }
+
+    /// Sets `self` to `self * other` by the scalar path, without `Fp12Parameters::mul_assign_fp12`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_assign_scalar(&mut self, other: &Self) {
+        let v0 = self.c0 * other.c0;
+        let v1 = self.c1 * other.c1;
+        self.c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1;
+        self.c0 = v0 + Self::mul_fp6_by_nonresidue(&v1);
     }
 
     pub fn cyclotomic_square(&self) -> Self {
@@ -173,6 +200,12 @@ impl<P: Fp12Parameters> Fp12<P> {
     }
 
     pub fn cyclotomic_exp<S: AsRef<[u64]>>(&self, exp: S) -> Self {
+        P::cyclotomic_exp_fp12(self, exp.as_ref())
+    }
+
+    /// Returns `self^exp` by the scalar chain, without `Fp12Parameters::cyclotomic_exp_fp12`.
+    #[doc(hidden)]
+    pub fn cyclotomic_exp_scalar(&self, exp: &[u64]) -> Self {
         let mut res = Self::one();
 
         let mut found_one = false;
@@ -228,6 +261,8 @@ impl<P: Fp12Parameters> One for Fp12<P> {
         self.c0.is_one() && self.c1.is_zero()
     }
 }
+
+impl<P: Fp12Parameters> crate::sealed::Sealed for Fp12<P> {}
 
 impl<P: Fp12Parameters> Field for Fp12<P> {
     type BasePrimeField = <Fp6<P::Fp6Params> as Field>::BasePrimeField;
@@ -411,12 +446,8 @@ impl<P: Fp12Parameters> SubAssign<&'_ Self> for Fp12<P> {
 
 impl<P: Fp12Parameters> MulAssign<&'_ Self> for Fp12<P> {
     #[inline]
-    #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &Self) {
-        let v0 = self.c0 * other.c0;
-        let v1 = self.c1 * other.c1;
-        self.c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1;
-        self.c0 = v0 + Self::mul_fp6_by_nonresidue(&v1);
+        P::mul_assign_fp12(self, other);
     }
 }
 

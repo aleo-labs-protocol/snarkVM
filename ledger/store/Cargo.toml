@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-store"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A data store for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -18,29 +18,10 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
+# Stores `Field::one()` as the state root at height 0; enabled through `snarkvm-ledger`'s `dev-network`.
 dev_genesis_state_root = [ ]
-locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 metrics = [ "dep:snarkvm-metrics" ]
-rocks = [ "rocksdb", "smallvec" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-puzzle/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-authority/wasm",
-  "snarkvm-ledger-block/wasm",
-  "snarkvm-ledger-puzzle/wasm",
-  "snarkvm-ledger-committee/wasm",
-  "snarkvm-ledger-narwhal-batch-certificate/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
-test = [ ]
+rocks = [ "dep:rocksdb", "dep:smallvec" ]
 
 [dependencies.snarkvm-metrics]
 workspace = true
@@ -72,9 +53,7 @@ workspace = true
 
 [dependencies.snarkvm-utilities]
 workspace = true
-
-[dependencies.aleo-std-storage]
-workspace = true
+features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -85,14 +64,6 @@ workspace = true
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]
-
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
-[dependencies.parking_lot]
-workspace = true
 
 [dependencies.rayon]
 workspace = true
@@ -118,9 +89,6 @@ optional = true
 [dependencies.tracing]
 workspace = true
 
-[dev-dependencies.aleo-std]
-workspace = true
-
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
 
@@ -139,3 +107,7 @@ workspace = true
 
 [dev-dependencies.tracing]
 workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test-helpers" ]

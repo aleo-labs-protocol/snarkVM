@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-environment"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Circuit environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -58,7 +58,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-algorithms]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-circuit]
 path = "../../circuit"
@@ -69,7 +69,14 @@ workspace = true
 [dev-dependencies.criterion]
 workspace = true
 
+[dev-dependencies.tempfile]
+workspace = true
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
 save_r1cs_hashes = [ "dep:sha2" ] # used in regression-checking
-dev-print = [ "snarkvm-utilities/dev-print" ]
-test = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ "snarkvm-console-network/test-helpers", "dep:sha2" ]

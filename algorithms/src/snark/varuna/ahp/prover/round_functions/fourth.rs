@@ -19,7 +19,6 @@ use crate::{
         EvaluationDomain,
         Evaluations as EvaluationsOnDomain,
         domain::{FFTPrecomputation, IFFTPrecomputation},
-        polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
@@ -27,18 +26,17 @@ use crate::{
         ahp::{AHPError, AHPForR1CS, CircuitId, indexer::CircuitInfo, verifier},
         matrices::MatrixEvals,
         prover,
-        selectors::apply_randomized_selector,
         witness_label,
     },
 };
 use snarkvm_fields::{PrimeField, batch_inversion_and_mul};
-use snarkvm_utilities::{ExecutionPool, defer};
+use snarkvm_utilities::{ExecutionPool, timing_span};
 
 use anyhow::Result;
 use core::convert::TryInto;
 use itertools::Itertools;
 use rand::Rng;
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 type Sum<F> = F;
 type Lhs<F> = DensePolynomial<F>;
@@ -79,8 +77,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
     ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, SM>), AHPError> {
-        let round_time = start_timer!(|| "AHP::Prover::FourthRound");
-        defer! { end_timer!(round_time); }
+        let _round_time = timing_span!("AHP::Prover::FourthRound").entered();
 
         let verifier::SecondMessage { alpha, .. } = second_message;
         let verifier::ThirdMessage { beta } = third_message;
@@ -178,29 +175,29 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(2);
         job_pool.add_job(|| {
-            let a_poly_time = start_timer!(|| format!("Computing a poly for {label}"));
+            let a_poly_time = timing_span!("Computing a poly", %label).entered();
             let a_poly = {
                 let evals = row_col_val.evaluations.iter().map(|v| v_R_i_alpha_v_C_i_beta * v).collect();
                 EvaluationsOnDomain::from_vec_and_domain(evals, non_zero_domain)
                     .interpolate_with_pc(ifft_precomputation)
             };
-            end_timer!(a_poly_time);
+            drop(a_poly_time);
             a_poly
         });
 
         job_pool.add_job(|| {
-            let b_poly_time = start_timer!(|| format!("Computing b poly for {label}"));
+            let b_poly_time = timing_span!("Computing b poly", %label).entered();
             let b_poly = {
                 let evals: Vec<F> = cross_products.iter().map(|&cp| R_size_C_size * cp).collect();
                 EvaluationsOnDomain::from_vec_and_domain(evals, non_zero_domain)
                     .interpolate_with_pc(ifft_precomputation)
             };
-            end_timer!(b_poly_time);
+            drop(b_poly_time);
             b_poly
         });
         let [a_poly, b_poly]: [_; 2] = job_pool.execute_all().try_into().unwrap();
 
-        let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
+        let f_evals_time = timing_span!("Computing f evals on K", %label).entered();
         // Move cross_products directly into inverses - no second pass over row/col
         // needed.
         let mut inverses = cross_products;
@@ -211,29 +208,31 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         inverses.iter_mut().zip_eq(&row_col_val.evaluations).for_each(|(inv, v)| *inv *= v);
         let f_evals_on_K = inverses;
 
-        end_timer!(f_evals_time);
+        drop(f_evals_time);
 
-        let f_poly_time = start_timer!(|| format!("Computing f poly for {label}"));
+        let f_poly_time = timing_span!("Computing f poly", %label).entered();
         // we define f as the rational equation for which we're running the sumcheck
         // protocol
         let f = EvaluationsOnDomain::from_vec_and_domain(f_evals_on_K, non_zero_domain)
             .interpolate_with_pc(ifft_precomputation);
 
-        end_timer!(f_poly_time);
+        drop(f_poly_time);
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
-        let mut h = &a_poly
-            - &{
-                let mut multiplier = PolyMultiplier::new();
-                multiplier.add_polynomial_ref(&b_poly, "b");
-                multiplier.add_polynomial_ref(&f, "f");
-                multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
-                multiplier.multiply().unwrap()
-            };
-
-        let combiner = F::one(); // We are applying combiners in the fifth round when summing the witnesses
-        let (lhs, remainder) =
-            apply_randomized_selector(&mut h, combiner, &max_non_zero_domain, &non_zero_domain, false)?;
-        assert!(remainder.is_none());
+        let f_at_zero = f.coeffs[0];
+        // `b * f = a` on the domain for any `alpha` and `beta`: where
+        // `(alpha - row) * (beta - col)` is zero, batch inversion leaves `f` zero, and
+        // `v_R_i(alpha) * v_C_i(beta)` is zero, so `a` is zero too. `lhs` is
+        // `(a - b * f) / v_K_i * (K_i.size() / K.size())`. The scale is negated
+        // because the helper returns the quotient of `b * f - a`. The combiners are
+        // applied in the fifth round.
+        let lhs = non_zero_domain.divide_product_by_vanishing_poly(
+            Cow::Borrowed(&b_poly),
+            Cow::Owned(f),
+            &a_poly,
+            -(non_zero_domain.size_as_field_element * max_non_zero_domain.size_inv),
+            fft_precomputation,
+            ifft_precomputation,
+        )?;
 
         let g_label = format!("g_{label}");
         let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
@@ -242,6 +241,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         assert!(lhs.degree() <= non_zero_domain.size() - 2);
         assert!(g.degree() <= non_zero_domain.size() - 2);
-        Ok((f.coeffs[0], lhs, g, a_poly, b_poly))
+        Ok((f_at_zero, lhs, g, a_poly, b_poly))
     }
 }

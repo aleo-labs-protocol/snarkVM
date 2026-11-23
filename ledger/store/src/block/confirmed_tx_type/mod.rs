@@ -55,13 +55,8 @@ pub mod test_helpers {
         // Sample the rejected deployment.
         // Only V2 deployments can have translation keys.
         let has_translation_keys = version >= 2 && rng.random();
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(
-            version,
-            rng.random(),
-            has_translation_keys,
-            rng.random(),
-            rng,
-        );
+        let rejected =
+            snarkvm_ledger_test_helpers::sample_rejected_deployment(version, rng.random(), has_translation_keys, rng);
         // Return the rejected deploy.
         ConfirmedTxType::RejectedDeploy(rng.random(), rejected)
     }
@@ -69,7 +64,7 @@ pub mod test_helpers {
     /// Samples a rejected execution.
     pub(crate) fn sample_rejected_execute(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected execution.
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng.random(), rng);
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_execution(rng);
         // Return the rejected execution.
         ConfirmedTxType::RejectedExecute(rng.random(), rejected)
     }

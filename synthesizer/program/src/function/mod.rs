@@ -68,6 +68,7 @@ impl<N: Network> FunctionCore<N> {
     }
 
     /// Returns the function instructions.
+    #[doc(hidden)]
     pub fn instructions(&self) -> &[Instruction<N>] {
         &self.instructions
     }
@@ -175,6 +176,7 @@ impl<N: Network> FunctionCore<N> {
     /// This method will halt if the maximum number of instructions has been reached.
     /// This method will halt if a finalize logic has been added.
     #[inline]
+    #[doc(hidden)]
     pub fn add_instruction(&mut self, instruction: Instruction<N>) -> Result<()> {
         // Ensure that there are no output statements in memory.
         ensure!(self.outputs.is_empty(), "Cannot add instructions after outputs have been added");

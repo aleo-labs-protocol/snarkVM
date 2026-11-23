@@ -18,15 +18,14 @@
 use crate::helpers::{Map, MapRead};
 use console::network::prelude::*;
 
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::{
+    bytes::unchecked_deserialize,
+    locks::{Mutex, RwLock},
+};
 
 use indexmap::IndexMap;
 
 use core::{borrow::Borrow, hash::Hash};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, btree_map},
@@ -88,6 +87,13 @@ impl<
             checkpoint: Default::default(),
         }
     }
+}
+
+impl<
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+> crate::sealed::SealedMap<K, V> for MemoryMap<K, V>
+{
 }
 
 impl<

@@ -19,39 +19,31 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, SquareRootField, Zero};
-use snarkvm_utilities::{FromBytes, ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
+use snarkvm_utilities::{ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
 
 use rand::{
     Rng,
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
-    io::{Error, ErrorKind, Read, Result as IoResult, Write},
+    io::{Result as IoResult, Write},
     ops::{Mul, Neg},
 };
 
 // The CUDA FFI reads this by bytes.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Affine<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
-    pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
-    pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "use `is_zero`")]
-    pub infinity: bool,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) infinity: bool,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    #[deprecated(
-        since = "4.13.0",
-        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
-    )]
-    pub const fn new(x: P::BaseField, y: P::BaseField, infinity: bool) -> Self {
+    pub(crate) const fn new(x: P::BaseField, y: P::BaseField, infinity: bool) -> Self {
         Self { x, y, infinity }
     }
 }
@@ -86,6 +78,8 @@ impl<P: Parameters> PartialEq<Projective<P>> for Affine<P> {
         other.eq(self)
     }
 }
+
+impl<P: Parameters> crate::sealed::Sealed for Affine<P> {}
 
 impl<P: Parameters> AffineCurve for Affine<P> {
     type BaseField = P::BaseField;
@@ -183,6 +177,10 @@ impl<P: Parameters> AffineCurve for Affine<P> {
             }
         }
         output
+    }
+
+    fn msm_lanes(msms: &[&[(Self, P::ScalarField)]]) -> Option<Vec<Projective<P>>> {
+        P::msm_lanes(msms)
     }
 
     fn mul_by_cofactor_to_projective(&self) -> Self::Projective {
@@ -300,20 +298,6 @@ impl<P: Parameters> ToBytes for Affine<P> {
         self.x.write_le(&mut writer)?;
         self.y.write_le(&mut writer)?;
         self.infinity.write_le(writer)
-    }
-}
-
-impl<P: Parameters> FromBytes for Affine<P> {
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read_le(&mut reader)?;
-        let y = P::BaseField::read_le(&mut reader)?;
-        let infinity = bool::read_le(&mut reader)?;
-
-        if infinity != x.is_zero() && y.is_one() {
-            return Err(Error::new(ErrorKind::InvalidData, "Infinity flag is not valid"));
-        }
-        Ok(Self::new(x, y, infinity))
     }
 }
 

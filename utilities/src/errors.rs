@@ -43,17 +43,6 @@ pub fn flatten_error<E: Borrow<anyhow::Error>>(error: E) -> String {
     format!("{error}{}", format!(" — {chain}").dimmed())
 }
 
-/// Displays an `anyhow::Error`'s main error and its error chain to stderr.
-///
-/// This can be used to show a "pretty" error to the end user.
-#[track_caller]
-#[inline]
-pub fn display_error<E: Borrow<anyhow::Error>>(error: E) {
-    let error = error.borrow();
-    eprintln!("⚠️ {error}");
-    error.chain().skip(1).for_each(|cause| eprintln!("     ↳ {cause}"));
-}
-
 /// Ensures that two values are equal, otherwise bails with a formatted error message.
 ///
 /// # Arguments
@@ -70,7 +59,9 @@ macro_rules! ensure_equals {
 }
 
 /// A trait to provide a nicer way to unwarp `anyhow::Result`.
-pub trait PrettyUnwrap {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait PrettyUnwrap: crate::sealed::Sealed {
     type Inner;
 
     /// Behaves like [`std::result::Result::unwrap`] but will print the entire anyhow chain to stderr.
@@ -91,6 +82,8 @@ fn pretty_panic(error: &anyhow::Error) -> ! {
     tracing::error!("[{}:{}] {string}", caller.file(), caller.line());
     panic!("{string}");
 }
+
+impl<T> crate::sealed::Sealed for anyhow::Result<T> {}
 
 /// Implement the trait for `anyhow::Result`.
 impl<T> PrettyUnwrap for anyhow::Result<T> {

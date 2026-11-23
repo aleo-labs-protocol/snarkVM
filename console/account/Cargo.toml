@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-account"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Account operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -43,17 +43,10 @@ features = [ "preserve_order" ]
 [dev-dependencies.tracing-test]
 workspace = true
 
+[dev-dependencies.snarkvm-console-network]
+workspace = true
+features = [ "test-helpers" ]
+
 [features]
-default = [
-  "compute_key",
-  "graph_key",
-  "private_key",
-  "signature",
-  "view_key"
-]
-compute_key = [ "private_key" ]
-graph_key = [ "private_key" ]
-private_key = [ "compute_key" ]
-signature = [ "compute_key" ]
-view_key = [ ]
-test = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ ]

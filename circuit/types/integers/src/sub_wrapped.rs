@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> SubWrapped<Self> for Integer<E, I> {
 
     #[inline]
     fn sub_wrapped(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the difference and return the new constant.
@@ -31,36 +34,12 @@ impl<E: Environment, I: IntegerType> SubWrapped<Self> for Integer<E, I> {
             let difference = self.to_field() + (!other).to_field() + Field::one();
 
             // Extract the integer bits from the field element, with a carry bit.
-            let mut bits_le = difference.to_lower_bits_le(I::BITS as usize + 1);
+            let mut bits_le = difference.to_lower_bits_le(i_bits + 1);
             // Drop the carry bit as the operation is wrapped subtraction.
             bits_le.pop();
 
             // Return the difference of `self` and `other`.
             Integer { bits_le, phantom: Default::default() }
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn SubWrapped<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(I::BITS, 0, 0, 0),
-            (_, _) => Count::is(0, 0, I::BITS + 1, I::BITS + 2),
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn SubWrapped<Integer<E, I>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
         }
     }
 }
@@ -88,8 +67,7 @@ mod tests {
             let candidate = a.sub_wrapped(&b);
             assert_eq!(expected, *candidate.eject_value());
             assert_eq!(console::Integer::new(expected), candidate.eject_value());
-            assert_count!(SubWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b));
-            assert_output_mode!(SubWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

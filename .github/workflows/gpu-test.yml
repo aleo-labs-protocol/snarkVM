@@ -1,17 +1,15 @@
 # Runs the CUDA kernels on a GPU. ci.yml's lint job compiles them but never
 # executes one.
 #
-# The runner is an L4 or an A10G and is normally stopped. start-runner boots it,
-# and it stops itself after 30 idle minutes. Nothing here stops it, because a
-# stop job cannot see that another workflow run is mid-test on the same runner.
+# The runner is an L4 or an A10G and is normally stopped. The org's fleet
+# starter boots it when this job is queued, and it stops itself after 30 idle
+# minutes. Nothing here stops it, because a stop job cannot see that another
+# workflow run is mid-test on the same runner.
 name: gpu-test
 
 # A separate workflow because path filters are per workflow, and GPU minutes are
 # serialized behind one runner.
 on:
-  # The two path lists are duplicated because the workflow parser does not
-  # support YAML anchors. Keep them in sync by hand.
-  #
   # Directories, not files with a device call site: `srs` and `r1cs` decide the
   # inputs a kernel is handed, and `prepare_third.rs` reaches
   # `lineval_interpolate_mul` without naming a kernel. `cargo test` runs neither
@@ -31,24 +29,14 @@ on:
       # versions the kernels resolve to, including `blst` and `sppark`.
       - 'Cargo.toml'
       - 'Cargo.lock'
+      # Sets the target CPU of the host code.
+      - '.cargo/config.toml'
       - '.github/workflows/gpu-test.yml'
       # check-shared-refs runs only when these filters match, and other
       # workflows hold gh-actions refs too.
       - '.github/workflows/**'
       # Exclusions are evaluated last, so a change to both a doc and code still
       # runs.
-      - '!**/*.md'
-  push:
-    branches: [staging]
-    # Same as pull_request.
-    paths:
-      - 'algorithms/cuda/**'
-      - 'algorithms/src/**'
-      - 'algorithms/Cargo.toml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/gpu-test.yml'
-      - '.github/workflows/**'
       - '!**/*.md'
   # Catches changes that reach the kernels from outside the paths above.
   schedule:
@@ -63,56 +51,32 @@ permissions:
   contents: read
 
 jobs:
-  # Fails while any gh-actions ref is not a release tag. The runner role trusts
-  # start-runner.yml only at a `v*` tag, a deleted branch ref fails with
-  # `unable to resolve action`, and anyone who can push to a referenced branch
-  # runs code that holds this repository's OIDC token.
+  # Fails while any gh-actions ref is not a release tag. A deleted branch ref
+  # fails with `unable to resolve action`, and anyone who can push to a
+  # referenced branch runs code in this repository's jobs.
   check-shared-refs:
     runs-on: ubuntu-latest
+    # A scheduled run runs only in this repository; see ci.yml.
+    if: github.event_name != 'schedule' || github.repository == 'aleo-labs-protocol/snarkVM'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
       - uses: aleo-labs-protocol/gh-actions/.github/actions/check-shared-refs@v2
-  # Moving the @v2 tag changes what runs with this repository's OIDC token.
-  # `actions: read` lets it count the queued jobs. Secrets are named, not
-  # inherited, because the tag moves.
-  start-runners:
-    needs: check-shared-refs
-    # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
-    uses: aleo-labs-protocol/gh-actions/.github/workflows/start-runner.yml@v2
-    permissions: { id-token: write, contents: read, actions: read }
-    secrets:
-      runner_app_key: ${{ secrets.RUNNER_APP_KEY }}
-    with:
-      role-to-assume: ${{ vars.RUNNER_ROLE_ARN }}
-      label: gpu
-      runner-app-id: ${{ vars.RUNNER_APP_ID }}
-    # Duplicates the shared workflow's guard, so it is visible in the file where
-    # someone might add pull_request_target.
-    if: >-
-      github.event_name != 'pull_request_target' &&
-      (github.event.pull_request == null ||
-       github.event.pull_request.head.repo.full_name == github.repository)
 
   gpu-test:
-    needs: start-runners
     # The runner stays registered while stopped, so the job queues rather than
     # fails.
     runs-on: [self-hosted, linux, x64, gpu]
     if: >-
       github.event_name != 'pull_request_target' &&
-      (github.event.pull_request == null ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+      github.repository == 'aleo-labs-protocol/snarkVM'
 
     timeout-minutes: 120
     env:
       # sm_86 SASS runs on an A10G and an L4 (sm_89), so either runner takes
       # the job.
       CUDA_ARCH: sm_86
-      # `x86-64-v3` does not include ADX, and both runners have it, so the build
-      # checks that blst and this crate agree on ADX whatever the target says.
-      RUSTFLAGS: -C target-cpu=x86-64-v3
     steps:
       # Checks disk headroom and the GPU, and starts the peak-memory sampler
       # that gpu-runner-report reads.

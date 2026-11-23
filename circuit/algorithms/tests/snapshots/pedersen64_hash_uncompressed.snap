@@ -1,0 +1,33 @@
+# Circuit shape of `pedersen64_hash_uncompressed` for each operand mode, input length and a fixed set of inputs.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-algorithms --test snapshots
+boolean[0].constant | empty : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].public | _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[0].private | _ : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[1].public | _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean[1].private | _ : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+boolean[8].constant | zeros : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant | ones : 28 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].constant | sampled : 20 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[8].public | _ : 14 0 42 42 49/71/63 private 0ea69f4c88443031
+boolean[8].private | _ : 14 0 42 42 49/71/63 private 3e871e39b82a282a
+boolean[64].constant | zeros : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[64].constant | ones : 252 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[64].constant | sampled : 116 0 0 0 0/0/0 constant e3b0c44298fc1c14
+boolean[64].public | _ : 126 0 378 378 441/631/567 private a9278d05d3e11fba
+boolean[64].private | _ : 126 0 378 378 441/631/567 private 23cf3a4927f8da6c
+boolean[65].constant | * : halt
+boolean[65].public | _ : halt
+boolean[65].private | _ : halt
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public | 0 _ _ 0 _ _ 0 _ : 8 0 24 24 28/41/36 private f428b1a830f17b39
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public | 1 _ _ 1 _ _ 1 _ : 14 0 33 33 37/56/51 private 4558b412b7afb650
+boolean.constant boolean.public boolean.private boolean.constant boolean.public boolean.private boolean.constant boolean.public | 1 _ _ 0 _ _ 1 _ : 12 0 30 30 34/51/46 private b121db73844bdf57

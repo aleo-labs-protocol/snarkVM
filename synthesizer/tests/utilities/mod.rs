@@ -20,8 +20,10 @@
 //! Tests should also be separated into different directories depending on the type of test.
 //!
 //! When the `TEST_FILTER` environment variable is set, then only the tests whose filenames match the filter are run.
+//! When the `TEST_WORKERS` environment variable is set, then `test_vm_execute_and_finalize` runs that many test files at once.
 //! When the `REWRITE_EXPECTATIONS` environment variable is set, then the expectation files are rewritten.
 //! Otherwise, the output is compared against the expectation files.
+//! When the `RUST_LOG` environment variable is set, then the tests print the events and span durations that it enables.
 
 #![allow(unused)]
 
@@ -33,3 +35,24 @@ pub use expectation::*;
 
 pub mod tests;
 pub use tests::*;
+
+use tracing_subscriber::{
+    filter::{LevelFilter, Targets},
+    fmt::format::FmtSpan,
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
+
+/// Installs a global subscriber that prints the events that `RUST_LOG` enables, and the duration of each enabled span.
+/// `RUST_LOG` takes a list of `target=level` directives, such as `snarkvm_synthesizer=debug,timing=trace`.
+pub fn initialize_logger() {
+    // A missing or invalid `RUST_LOG` enables nothing.
+    let targets = std::env::var("RUST_LOG").unwrap_or_default().parse::<Targets>().unwrap_or_default();
+    // A subscriber that is already installed stays in place.
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_span_events(FmtSpan::CLOSE)
+        .finish()
+        .with(targets)
+        .try_init();
+}

@@ -15,7 +15,6 @@
 
 use super::*;
 
-#[cfg(feature = "private_key")]
 impl<N: Network> TryFrom<PrivateKey<N>> for Address<N> {
     type Error = Error;
 
@@ -25,7 +24,6 @@ impl<N: Network> TryFrom<PrivateKey<N>> for Address<N> {
     }
 }
 
-#[cfg(feature = "private_key")]
 impl<N: Network> TryFrom<&PrivateKey<N>> for Address<N> {
     type Error = Error;
 
@@ -35,7 +33,6 @@ impl<N: Network> TryFrom<&PrivateKey<N>> for Address<N> {
     }
 }
 
-#[cfg(feature = "compute_key")]
 impl<N: Network> TryFrom<ComputeKey<N>> for Address<N> {
     type Error = Error;
 
@@ -45,7 +42,6 @@ impl<N: Network> TryFrom<ComputeKey<N>> for Address<N> {
     }
 }
 
-#[cfg(feature = "compute_key")]
 impl<N: Network> TryFrom<&ComputeKey<N>> for Address<N> {
     type Error = Error;
 
@@ -55,7 +51,6 @@ impl<N: Network> TryFrom<&ComputeKey<N>> for Address<N> {
     }
 }
 
-#[cfg(feature = "view_key")]
 impl<N: Network> TryFrom<ViewKey<N>> for Address<N> {
     type Error = Error;
 
@@ -65,7 +60,6 @@ impl<N: Network> TryFrom<ViewKey<N>> for Address<N> {
     }
 }
 
-#[cfg(feature = "view_key")]
 impl<N: Network> TryFrom<&ViewKey<N>> for Address<N> {
     type Error = Error;
 

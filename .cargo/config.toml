@@ -1,3 +1,16 @@
-# Note: override by setting RUSTFLAGS
-[target.'cfg(not(target_family = "wasm"))']
-rustflags = ["-C", "target-cpu=native"]
+# x86-64 builds need a Skylake or Zen CPU, or newer; on an older one they fail
+# with SIGILL. RUSTFLAGS overrides this, e.g. RUSTFLAGS="-C target-cpu=native".
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "target-cpu=skylake"]
+
+# `cargo locktick-<command>` builds with `--cfg locktick` (see `snarkvm_utilities::locks`).
+# An env RUSTFLAGS replaces this flag along with the target rustflags above. Cargo drops a
+# `--config` placed before an external subcommand such as `clippy`, so each alias puts it
+# after its subcommand. Because the aliases set target rustflags, cargo ignores `[build] rustflags`
+# and `CARGO_BUILD_RUSTFLAGS` under them on every platform, as it already does on x86-64 because of
+# the table above. Pass extra flags in `CARGO_TARGET_<TRIPLE>_RUSTFLAGS` instead, which cargo adds
+# to the aliases' flags.
+[alias]
+locktick-build = ["build", "--config", "target.'cfg(all())'.rustflags=['--cfg','locktick']"]
+locktick-check = ["check", "--config", "target.'cfg(all())'.rustflags=['--cfg','locktick']"]
+locktick-clippy = ["clippy", "--config", "target.'cfg(all())'.rustflags=['--cfg','locktick']"]

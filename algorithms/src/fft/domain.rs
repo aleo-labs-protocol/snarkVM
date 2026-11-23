@@ -30,21 +30,16 @@ use crate::{
     cfg_into_iter,
     cfg_iter,
     cfg_iter_mut,
-    fft::{DomainCoeff, SparsePolynomial},
+    fft::{DensePolynomial, DomainCoeff, SparsePolynomial},
 };
-use snarkvm_fields::{FftField, FftParameters, Field, batch_inversion};
-#[cfg(not(feature = "serial"))]
-use snarkvm_utilities::max_available_threads;
-use snarkvm_utilities::{execute_with_max_available_threads, serialize::*};
+use snarkvm_fields::{FftField, FftParameters, Field, PrimeField, batch_inversion};
+use snarkvm_utilities::{execute_with_max_available_threads, max_available_threads, serialize::*};
 
 use rand::RngExt;
 use std::{borrow::Cow, fmt};
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
 
-#[cfg(feature = "serial")]
-use itertools::Itertools;
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// Returns the ceiling of the base-2 logarithm of `x`.
@@ -72,7 +67,6 @@ pub fn log2(x: usize) -> u32 {
 
 // minimum size of a parallelized chunk
 #[allow(unused)]
-#[cfg(not(feature = "serial"))]
 const MIN_PARALLEL_CHUNK_SIZE: usize = 1 << 7;
 
 /// Defines a domain over which finite field (I)FFTs can be performed. Works
@@ -226,18 +220,6 @@ impl<F: FftField> EvaluationDomain<F> {
     }
 
     /// Multiply the `i`-th element of `coeffs` with `c*g^i`.
-    #[cfg(feature = "serial")]
-    fn distribute_powers_and_mul_by_const<T: DomainCoeff<F>>(coeffs: &mut [T], g: F, c: F) {
-        // invariant: pow = c*g^i at the ith iteration of the loop
-        let mut pow = c;
-        coeffs.iter_mut().for_each(|coeff| {
-            *coeff *= pow;
-            pow *= &g
-        })
-    }
-
-    /// Multiply the `i`-th element of `coeffs` with `c*g^i`.
-    #[cfg(not(feature = "serial"))]
     fn distribute_powers_and_mul_by_const<T: DomainCoeff<F>>(coeffs: &mut [T], g: F, c: F) {
         let min_parallel_chunk_size = 1024;
         let num_cpus_available = max_available_threads();
@@ -282,10 +264,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // run in parallel.
             //
             // Same shape as `distribute_powers_and_mul_by_const` above.
-            #[cfg(not(feature = "serial"))]
             let chunk = core::cmp::max(size / max_available_threads(), 1024);
-            #[cfg(feature = "serial")]
-            let chunk = core::cmp::max(size, 1);
 
             // The chunks run unordered, so each seeds itself rather than carrying `r` from
             // its predecessor. `chunk_gen^i` is the same seed as `g^(i*chunk)` from a
@@ -344,6 +323,7 @@ impl<F: FftField> EvaluationDomain<F> {
     /// first elements
     pub fn reindex_by_subdomain(&self, other: &Self, index: usize) -> Result<usize> {
         ensure!(self.size() > other.size(), "other.size() must be smaller than self.size()");
+        ensure!(index < self.size(), "index ({index}) must be smaller than self.size()");
 
         // Let this subgroup be G, and the subgroup we're re-indexing by be S.
         // Since its a subgroup, the 0th element of S is at index 0 in G, the first
@@ -502,6 +482,103 @@ impl<F: FftField> EvaluationDomain<F> {
         self.fft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp)
     }
 
+    /// Returns `scale * (a * b - c) / (X^n - 1)`, where `n` is the size of this
+    /// domain.
+    ///
+    /// All three operands must have degree below `n`, and `c` must agree with
+    /// the product on this domain. The host path checks only the quotient's top
+    /// coefficient. That catches a disagreement on one point, but not every
+    /// disagreement, and the result is not the quotient without agreement.
+    /// Callers that cannot guarantee agreement must check each point
+    /// themselves.
+    pub(crate) fn divide_product_by_vanishing_poly(
+        &self,
+        a: Cow<'_, DensePolynomial<F>>,
+        b: Cow<'_, DensePolynomial<F>>,
+        c: &DensePolynomial<F>,
+        scale: F,
+        fft_pc: &FFTPrecomputation<F>,
+        ifft_pc: &IFFTPrecomputation<F>,
+    ) -> Result<DensePolynomial<F>>
+    where
+        F: PrimeField,
+    {
+        let n = self.size();
+        ensure!(a.coeffs.len() <= n && b.coeffs.len() <= n && c.coeffs.len() <= n, "An operand exceeds the domain");
+
+        // The host path's out-of-order transforms have no device arm, and the
+        // device multiplies at size `2n` through `polymul`.
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        if super::is_cuda_field::<F>() {
+            let mut multiplier = crate::fft::polynomial::PolyMultiplier::new();
+            multiplier.add_polynomial_ref(&a, "a");
+            multiplier.add_polynomial_ref(&b, "b");
+            let mut product =
+                multiplier.multiply().ok_or_else(|| anyhow!("The product exceeds the field's domains"))?;
+            drop((a, b));
+            product -= c;
+            let (mut quotient, remainder) = product.divide_by_vanishing_poly(*self)?;
+            ensure!(remainder.is_zero(), "The product does not agree with `c` on the domain");
+            cfg_iter_mut!(quotient.coeffs).for_each(|x| *x *= scale);
+            return Ok(quotient);
+        }
+
+        self.divide_product_by_vanishing_poly_on_host(a, b, c, scale, fft_pc, ifft_pc)
+    }
+
+    // Computes `scale * Q`, where `Q` is the quotient of `a * b - c` by
+    // `X^n - 1`, assuming that `c` agrees with `a * b` on this domain `D`.
+    //
+    // Suppose `a * b = L + X^n * H` with `deg(L) < n` and `deg(H) < n - 1`. We want
+    // the unique `Q` such that `a * b - c = (X^n - 1) * Q`. Subtracting the two
+    // equations and comparing degrees yields `Q = H` and `c = L + H`.
+    //
+    // It therefore suffices to compute `L - H` and then recover `Q` as
+    // `(c - (L - H)) / 2`.
+    //
+    // Let `omega` be a primitive `2n`-th root of unity. Then `omega^n = -1` and,
+    // for any `n`-th root of unity `r`, with `s = omega * r`, one has
+    // `a(s) * b(s) = L(s) + s^n * H(s) = L(s) - H(s)`. In other words, `a * b`
+    // coincides with `L - H` on the coset `omega * D`.
+    //
+    // We can therefore evaluate `a` and `b` over `omega * D` with two size-`n`
+    // coset FFTs and then interpolate `L - H` with one size-`n` coset inverse FFT.
+    fn divide_product_by_vanishing_poly_on_host(
+        &self,
+        a: Cow<'_, DensePolynomial<F>>,
+        b: Cow<'_, DensePolynomial<F>>,
+        c: &DensePolynomial<F>,
+        scale: F,
+        fft_pc: &FFTPrecomputation<F>,
+        ifft_pc: &IFFTPrecomputation<F>,
+    ) -> Result<DensePolynomial<F>> {
+        let n = self.size();
+        let doubled = Self::new(2 * n).ok_or_else(|| anyhow!("The field has no domain of size {}", 2 * n))?;
+        let twisted_evals = |poly: Cow<'_, DensePolynomial<F>>| {
+            let mut evals = poly.into_owned().coeffs;
+            evals.resize(n, F::zero());
+            Self::distribute_powers(&mut evals, doubled.group_gen);
+            self.out_order_fft_in_place_with_pc(&mut evals, fft_pc);
+            evals
+        };
+        let a_evals = twisted_evals(a);
+        let b_evals = twisted_evals(b);
+        let mut l_minus_h = self.mul_polynomials_in_evaluation_domain(a_evals, &b_evals)?;
+        drop(b_evals);
+        self.ifft_helper_in_place_with_pc(&mut l_minus_h, FFTOrder::OI, ifft_pc);
+
+        // `H = ((L + H) - (L - H)) / 2`, and `c` omits its trailing zeros.
+        let half_scale = F::half() * scale;
+        let mut h = l_minus_h;
+        Self::distribute_powers_and_mul_by_const(&mut h, doubled.group_gen_inv, self.size_inv * half_scale);
+        cfg_iter_mut!(h, 1_000)
+            .enumerate()
+            .for_each(|(i, x)| *x = c.coeffs.get(i).copied().unwrap_or_default() * half_scale - *x);
+        // `a * b` has degree at most `2n - 2`, so `H` has no term of degree `n - 1`.
+        ensure!(h[n - 1].is_zero(), "The product does not agree with `c` on the domain");
+        Ok(DensePolynomial::from_coefficients_vec(h))
+    }
+
     pub(crate) fn out_order_fft_in_place_with_pc<T: DomainCoeff<F>>(
         &self,
         x_s: &mut [T],
@@ -618,16 +695,7 @@ impl<F: FftField> EvaluationDomain<F> {
         }
     }
 
-    /// Computes the first `self.size / 2` roots of unity for the entire domain.
-    /// e.g. for the domain [1, g, g^2, ..., g^{n - 1}], it computes
-    // [1, g, g^2, ..., g^{(n/2) - 1}]
-    #[cfg(feature = "serial")]
-    pub fn roots_of_unity(&self, root: F) -> Vec<F> {
-        compute_powers_serial((self.size as usize) / 2, root)
-    }
-
     /// Computes the first `self.size / 2` roots of unity.
-    #[cfg(not(feature = "serial"))]
     pub fn roots_of_unity(&self, root: F) -> Vec<F> {
         // TODO: check if this method can replace parallel compute powers.
         let log_size = log2(self.size as usize);
@@ -652,7 +720,6 @@ impl<F: FftField> EvaluationDomain<F> {
         }
     }
 
-    #[cfg(not(feature = "serial"))]
     fn roots_of_unity_recursive(out: &mut [F], log_powers: &[F]) {
         assert_eq!(out.len(), 1 << log_powers.len());
         // base case: just compute the powers sequentially,
@@ -731,10 +798,7 @@ impl<F: FftField> EvaluationDomain<F> {
         let mut step = 1;
         let mut first = true;
 
-        #[cfg(not(feature = "serial"))]
         let max_threads = snarkvm_utilities::parallel::max_available_threads();
-        #[cfg(feature = "serial")]
-        let max_threads = 1;
 
         let mut gap = xi.len() / 2;
         while gap > 0 {
@@ -780,10 +844,7 @@ impl<F: FftField> EvaluationDomain<F> {
             core::cmp::min(roots_cache.len() / 2, roots_cache.len() / MIN_NUM_CHUNKS_FOR_COMPACTION);
         let mut compacted_roots = vec![F::default(); compaction_max_size];
 
-        #[cfg(not(feature = "serial"))]
         let max_threads = snarkvm_utilities::parallel::max_available_threads();
-        #[cfg(feature = "serial")]
-        let max_threads = 1;
 
         let mut gap = 1;
         while gap < xi.len() {
@@ -819,7 +880,6 @@ const MIN_NUM_CHUNKS_FOR_COMPACTION: usize = 1 << 7;
 const MIN_GAP_SIZE_FOR_PARALLELISATION: usize = 1 << 10;
 
 // minimum size at which to parallelize.
-#[cfg(not(feature = "serial"))]
 const LOG_ROOTS_OF_UNITY_PARALLEL_SIZE: u32 = 7;
 
 #[inline]
@@ -868,7 +928,6 @@ pub(crate) fn compute_powers_and_mul_by_const_serial<F: Field>(size: usize, root
 }
 
 #[allow(unused)]
-#[cfg(not(feature = "serial"))]
 pub(crate) fn compute_powers<F: Field>(size: usize, g: F) -> Vec<F> {
     if size < MIN_PARALLEL_CHUNK_SIZE {
         return compute_powers_serial(size, g);
@@ -979,6 +1038,58 @@ mod tests {
     use snarkvm_curves::bls12_377::Fr;
     use snarkvm_fields::{FftField, Field, One, Zero};
     use snarkvm_utilities::{TestRng, Uniform};
+
+    #[test]
+    fn test_divide_product_by_vanishing_poly() {
+        use crate::fft::polynomial::PolyMultiplier;
+        use std::borrow::Cow;
+
+        let rng = &mut TestRng::default();
+        for log_n in 0..10 {
+            let domain = EvaluationDomain::<Fr>::new(1 << log_n).unwrap();
+            let n = domain.size();
+            let (fft_pc, ifft_pc) = EvaluationDomain::<Fr>::new(2 * n).unwrap().precompute_serial();
+            // Full degree, a shorter operand, and a zero operand.
+            for (len_a, len_b) in [(n, n), (n / 2 + 1, n), (0, n)] {
+                let a = DensePolynomial::from_coefficients_vec((0..len_a).map(|_| Fr::rand(rng)).collect());
+                let b = DensePolynomial::from_coefficients_vec((0..len_b).map(|_| Fr::rand(rng)).collect());
+
+                let mut multiplier = PolyMultiplier::new();
+                multiplier.add_polynomial_ref(&a, "a");
+                multiplier.add_polynomial_ref(&b, "b");
+                let product = multiplier.multiply_on_host().unwrap();
+                let (quotient, c) = product.divide_by_vanishing_poly(domain).unwrap();
+
+                let scale = Fr::rand(rng);
+                let mut expected = quotient;
+                expected *= scale;
+
+                let (a, b) = (Cow::Borrowed(&a), Cow::Borrowed(&b));
+                let result = domain
+                    .divide_product_by_vanishing_poly(a.clone(), b.clone(), &c, scale, &fft_pc, &ifft_pc)
+                    .unwrap();
+                assert_eq!(result, expected, "n = {n}, operand lengths {len_a} and {len_b}");
+                let result = domain
+                    .divide_product_by_vanishing_poly_on_host(a.clone(), b.clone(), &c, scale, &fft_pc, &ifft_pc)
+                    .unwrap();
+                assert_eq!(result, expected, "host, n = {n}, operand lengths {len_a} and {len_b}");
+
+                // A disagreement on one point of the domain.
+                let mut wrong_c = domain.fft(&c.coeffs);
+                wrong_c.resize(n, Fr::zero());
+                wrong_c[n / 2] += Fr::one();
+                let wrong_c = DensePolynomial::from_coefficients_vec(domain.ifft(&wrong_c));
+                assert!(
+                    domain
+                        .divide_product_by_vanishing_poly(a.clone(), b.clone(), &wrong_c, scale, &fft_pc, &ifft_pc)
+                        .is_err()
+                );
+                assert!(
+                    domain.divide_product_by_vanishing_poly_on_host(a, b, &wrong_c, scale, &fft_pc, &ifft_pc).is_err()
+                );
+            }
+        }
+    }
 
     #[test]
     fn vanishing_polynomial_evaluation() {
@@ -1433,6 +1544,19 @@ mod tests {
             }
             image.sort_unstable();
             assert_eq!(image, (0..g.size()).collect::<Vec<_>>(), "big={big} small={small} not a permutation");
+        }
+    }
+
+    /// `reindex_by_subdomain` rejects an index outside the domain, up to the
+    /// largest `usize`.
+    #[test]
+    fn reindex_by_subdomain_rejects_an_index_outside_the_domain() {
+        for (big, small) in [(2usize, 1usize), (8, 2)] {
+            let g = EvaluationDomain::<Fr>::new(big).unwrap();
+            let s = EvaluationDomain::<Fr>::new(small).unwrap();
+            for index in [g.size(), usize::MAX / 2 + 2, usize::MAX] {
+                assert!(g.reindex_by_subdomain(&s, index).is_err(), "big={big} small={small} index={index}");
+            }
         }
     }
 }

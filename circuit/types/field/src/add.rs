@@ -65,39 +65,6 @@ impl<E: Environment> AddAssign<&Field<E>> for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Add<Field<E>, Output = Field<E>>> for Field<E> {
-    type Case = (Mode, Mode);
-
-    fn count(_case: &Self::Case) -> Count {
-        Count::is(0, 0, 0, 0)
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Add<Field<E>, Output = Field<E>>> for Field<E> {
-    type Case = (CircuitType<Field<E>>, CircuitType<Field<E>>);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0.mode(), case.1.mode()) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (Mode::Constant, Mode::Public) => match &case.0 {
-                CircuitType::Constant(constant) => match constant.eject_value().is_zero() {
-                    true => Mode::Public,
-                    false => Mode::Private,
-                },
-                _ => E::halt("The constant is required to determine the output mode of Public + Constant"),
-            },
-            (Mode::Public, Mode::Constant) => match &case.1 {
-                CircuitType::Constant(constant) => match constant.eject_value().is_zero() {
-                    true => Mode::Public,
-                    false => Mode::Private,
-                },
-                _ => E::halt("The constant is required to determine the output mode of Public + Constant"),
-            },
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,8 +81,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a + b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            assert_count!(Add(Field, Field) => Field, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Add(Field, Field) => Field, &(CircuitType::from(a), CircuitType::from(b)), candidate);
+            assert_scope!();
         });
     }
 
@@ -129,8 +95,7 @@ mod tests {
             let mut candidate = a.clone();
             candidate += b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            assert_count!(Add(Field, Field) => Field, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Add(Field, Field) => Field, &(CircuitType::from(a), CircuitType::from(b)), candidate);
+            assert_scope!();
         });
     }
 

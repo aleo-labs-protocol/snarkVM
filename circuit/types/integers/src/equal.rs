@@ -50,28 +50,6 @@ impl<E: Environment, I: IntegerType> Equal<Self> for Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Equal<Integer<E, I>, Output = Boolean<E>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match case.0.is_constant() && case.1.is_constant() {
-            true => Count::is(0, 0, 0, 0),
-            false => Count::is(0, 0, 2, 2),
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Equal<Integer<E, I>, Output = Boolean<E>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case.0.is_constant() && case.1.is_constant() {
-            true => Mode::Constant,
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,8 +72,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.is_equal(&b);
             assert_eq!(expected, candidate.eject_value());
-            assert_count!(Equal(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b));
-            assert_output_mode!(Equal(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

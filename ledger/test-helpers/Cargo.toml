@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-test-helpers"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Test helpers for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -21,20 +21,22 @@ workspace = true
 
 [dependencies.snarkvm-console]
 workspace = true
-features = ["filesystem"]
+features = ["filesystem", "test-helpers"]
 
 [dependencies.snarkvm-circuit]
 workspace = true
 
 [dependencies.snarkvm-ledger-block]
 workspace = true
-features = ["test"]
 
 [dependencies.snarkvm-ledger-query]
 workspace = true
 features = [ "query" ]
 
 [dependencies.snarkvm-ledger-store]
+workspace = true
+
+[dependencies.snarkvm-synthesizer]
 workspace = true
 
 [dependencies.snarkvm-synthesizer-program]
@@ -45,10 +47,8 @@ workspace = true
 
 [dependencies.snarkvm-utilities]
 workspace = true
+features = [ "test-helpers" ]
 
-[dependencies.aleo-std]
-workspace = true
-features = [ "storage" ]
-
-[dependencies.anyhow]
-workspace = true
+[dev-dependencies.tokio]
+version = "1"
+features = [ "macros", "rt" ]
