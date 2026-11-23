@@ -89,14 +89,17 @@ static ACTIVE_VM_RUNTIMES: AtomicUsize = AtomicUsize::new(0);
 
 /// Installs a panic hook for VM halts, which passes every other panic to the previous hook.
 ///
-/// While any [`try_vm_runtime`] call runs, the hook logs a halt with its message at the debug level, without a
-/// backtrace, because the halt is likely an expected outcome that the call catches.
+/// While any [`try_vm_runtime`] call runs, the hook logs a halt at the debug level, without a backtrace, because the
+/// halt is likely an expected outcome that the call catches. A caught halt can come from a program with private
+/// inputs, so release builds log only its location. The caught payload holds the message.
 ///
 /// While no [`try_vm_runtime`] call runs, nothing in snarkVM catches the halt. The hook logs the halt with its message
 /// at the error level, or prints it to stderr if no tracing subscriber is set, and then passes it to the previous
 /// hook. The previous hook does not see the message, because panic hooks format only `String` and `&str` payloads.
 ///
-/// A halt message can hold the values of the operands, including private inputs of the caller's own program.
+/// A halt message can hold the values of the operands, including private inputs. An uncaught halt is reported with
+/// its message, because it ends the caller's own operation, and the host's panic hook received the message before
+/// halts had a `VmHalt` payload.
 ///
 /// A halt on a thread outside [`try_vm_runtime`] while another thread is inside one is only logged at the debug
 /// level, even if no caller catches it.
@@ -110,7 +113,10 @@ fn install_vm_halt_hook() {
             };
             let location = info.location().map_or_else(|| "an unknown location".to_string(), ToString::to_string);
             if ACTIVE_VM_RUNTIMES.load(Ordering::SeqCst) > 0 {
+                #[cfg(debug_assertions)]
                 tracing::debug!("VM halted at {location}: {halt}");
+                #[cfg(not(debug_assertions))]
+                tracing::debug!("VM halted at {location}");
             } else {
                 if tracing::dispatcher::has_been_set() {
                     tracing::error!("VM halted at {location}: {halt}");
