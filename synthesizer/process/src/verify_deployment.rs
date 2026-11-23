@@ -579,8 +579,8 @@ finalize foo:
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(error.to_string()),
             Err(payload) => Err(payload
-                .downcast_ref::<String>()
-                .cloned()
+                .downcast_ref::<VmHalt>()
+                .map(|halt| halt.message().to_string())
                 .unwrap_or_else(|| format!("unexpected panic payload: {payload:?}"))),
         }
     }
