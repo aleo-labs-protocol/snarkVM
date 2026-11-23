@@ -357,6 +357,18 @@ fn check_below_2p_with(rng: &mut TestRng, offset: &[__m512i; 8], m: i64, top: i6
 }
 
 #[test]
+fn test_below_2p_offset_128p() {
+    run_check(check_below_2p_offset_128p);
+}
+
+/// Checks `below_2p` with the offset `128 p`, the Miller loop squaring's: see `check_below_2p_with`.
+#[target_feature(enable = "avx512f,avx512ifma")]
+fn check_below_2p_offset_128p(rng: &mut TestRng) {
+    let offset = splat(&radix_52(&shift_left(&MODULI[0], 7)));
+    check_below_2p_with(rng, &offset, 128, (1 << 33) - 129);
+}
+
+#[test]
 fn test_shift_left() {
     for p in &MODULI {
         for s in [1, 6] {
