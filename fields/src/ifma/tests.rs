@@ -17,9 +17,24 @@
 //! independent products through `mont`, as the oracle for the kernel against the scalar product.
 
 use super::{
+    cyclotomic::pair_sums,
     is_supported,
     kernel::{below_2p, canonical, canonical_vectors, mont, quotient_estimate, shift_left},
-    layout::{MASK, element_words, limbs, limbs_shifted_32, modulus, radix_52, to_array, vector, words},
+    layout::{
+        MASK,
+        Z,
+        element_words,
+        lane_words,
+        limbs,
+        limbs_shifted_32,
+        modulus,
+        permute_z,
+        radix_52,
+        splat,
+        to_array,
+        vector,
+        words,
+    },
 };
 use crate::{
     FftParameters,
@@ -346,6 +361,102 @@ fn test_shift_left() {
     for p in &MODULI {
         for s in [1, 6] {
             assert_eq!(BigInteger384(shift_left(p, s)).to_biguint(), BigInteger384(*p).to_biguint() << s);
+        }
+    }
+}
+
+#[test]
+fn test_permute_z() {
+    run_check(check_permute_z);
+}
+
+/// Checks `permute_z` on vectors whose lane `l` of vector `k` holds `100 k + l` in `e` and
+/// `100 k + 8 + l` in `f`: lane `t` of the result holds `100 k + index[t]`, or zero at `Z`.
+#[target_feature(enable = "avx512f")]
+fn check_permute_z(_: &mut TestRng) {
+    let e: [__m512i; 8] = std::array::from_fn(|k| vector(std::array::from_fn(|l| (100 * k + l) as u64)));
+    let f: [__m512i; 8] = std::array::from_fn(|k| vector(std::array::from_fn(|l| (100 * k + 8 + l) as u64)));
+    for index in [[3, Z, 15, 8, Z, 0, 7, 9], [Z; 8], [0, 1, 2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14, 15]] {
+        let v = permute_z(&e, index, &f).map(|v| to_array(v));
+        for (k, v) in v.iter().enumerate() {
+            let expected: [u64; 8] = std::array::from_fn(|t| if index[t] == Z { 0 } else { 100 * k as u64 + index[t] });
+            assert_eq!(*v, expected, "{index:?}, vector {k}");
+        }
+    }
+}
+
+#[test]
+fn test_lane_words() {
+    run_check(check_lane_words);
+}
+
+/// Checks `lane_words` on 12 random elements: lane `l` of word `w` holds word `w` of element
+/// `index[l]`, or zero at `Z`.
+#[target_feature(enable = "avx512f")]
+fn check_lane_words(rng: &mut TestRng) {
+    let x: [Fq; 12] = std::array::from_fn(|_| Fq::rand(rng));
+    let x_ref = x.each_ref();
+    for index in [[0, 1, 8, 9, 6, 7, 4, 5], [2, 3, 10, 11, Z, Z, Z, Z], [11, Z, 0, Z, 5, Z, 10, Z]] {
+        let v = lane_words(&x_ref, index).map(|v| to_array(v));
+        for (w, v) in v.iter().enumerate() {
+            let expected: [u64; 8] =
+                std::array::from_fn(|l| if index[l] == Z { 0 } else { x[index[l] as usize].0.0[w] });
+            assert_eq!(*v, expected, "{index:?}, word {w}");
+        }
+    }
+}
+
+#[test]
+fn test_pair_sums() {
+    run_check(check_pair_sums);
+}
+
+/// Checks `pair_sums` with `e` and `o` at 0, `p - 1`, `2 p - 1`, `floor(16 p / 5)` and random
+/// values below `2 p`, in every lane of the mask and outside it.
+#[target_feature(enable = "avx512f")]
+fn check_pair_sums(rng: &mut TestRng) {
+    let p16 = BigInteger384(shift_left(&MODULI[0], 4));
+    let mut p_minus_1 = BigInteger384(MODULI[0]);
+    p_minus_1.sub_noborrow(&BigInteger384::from(1));
+    let mut two_p_minus_1 = BigInteger384(MODULI[0]);
+    two_p_minus_1.mul2();
+    two_p_minus_1.sub_noborrow(&BigInteger384::from(1));
+    // `floor(16 p / 5)`, by long division of the words from the top.
+    let mut bound = p16;
+    let mut remainder = 0u128;
+    for w in bound.0.iter_mut().rev() {
+        let value = remainder << 64 | *w as u128;
+        *w = (value / 5) as u64;
+        remainder = value % 5;
+    }
+    let mut values = vec![BigInteger384::from(0), p_minus_1, two_p_minus_1, bound];
+    values.extend((0..12).map(|_| {
+        let mut x = Fq::rand(rng).0;
+        x.mul2();
+        x.add_nocarry(&BigInteger384::from(rng.random_range(0..2u64)));
+        x
+    }));
+    let pairs: Vec<(BigInteger384, BigInteger384)> =
+        values.iter().flat_map(|e| values.iter().map(move |o| (*e, *o))).collect();
+    let p16_lanes = splat(&radix_52(&p16.0));
+    for k in [0u8, 0xFF, 0b1010_1010, 0b1000_1010] {
+        for chunk in pairs.chunks(8) {
+            let (es, os): (Vec<[u64; 6]>, Vec<[u64; 6]>) = chunk.iter().map(|(e, o)| (e.0, o.0)).unzip();
+            let v = pair_sums(&lanes(0, &es), &lanes(0, &os), k, &p16_lanes).map(|v| to_array(v));
+            for (l, (e, o)) in chunk.iter().enumerate() {
+                let mut expected = *e;
+                if k >> l & 1 == 1 {
+                    let mut five = *o;
+                    five.muln(2);
+                    five.add_nocarry(o);
+                    expected.add_nocarry(&p16);
+                    expected.sub_noborrow(&five);
+                } else {
+                    expected.add_nocarry(o);
+                }
+                let got: [u64; 8] = std::array::from_fn(|j| v[j][l]);
+                assert_eq!(got, radix_52(&expected.0), "mask {k:#b}, lane {l}: {e} and {o}");
+            }
         }
     }
 }

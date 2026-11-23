@@ -59,6 +59,8 @@ criterion_group!(
     bls12_377::fq12::bench_fq12_double,
     bls12_377::fq12::bench_fq12_square,
     bls12_377::fq12::bench_fq12_inverse,
+    bls12_377::fq12::bench_fq12_cyclotomic_square,
+    bls12_377::fq12::bench_fq12_cyclotomic_exp_x,
 );
 
 criterion_group!(
