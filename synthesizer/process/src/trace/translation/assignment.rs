@@ -131,6 +131,8 @@ impl<N: Network> TranslationAssignment<N> {
     // circuit in `A`. The publicly exposed function `to_circuit_assignment`
     // ejects the resulting `Assignment` from the R1CS, but having direct access
     // to `A` while the constraint system is still loaded facilitates testing.
+    // It resets the circuit of the current thread, so a caller that is part way
+    // through its own synthesis calls `to_circuit_assignment` instead.
     pub(crate) fn to_circuit_assignment_internal<A: Aleo<Network = N>>(
         &self,
         translation_index: u16,
@@ -138,12 +140,6 @@ impl<N: Network> TranslationAssignment<N> {
         constraint_limit: Option<u64>,
         non_zero_limit: Option<(u64, u64, u64)>,
     ) -> Result<()> {
-        // Ensure the circuit environment is clean.
-        ensure!(
-            A::count() == (0, 1, 0, 0, (0, 0, 0)),
-            "Circuit environment is not clean: expected (0, 1, 0, 0, (0, 0, 0)), got {:?}",
-            A::count()
-        );
         // Ensure (thread-local) global constants are initialised before we reset - otherwise the
         // use of Poseidon in the translation circuit will result in a different vk.num_constants()
         // depending on whether initialize_global_constants() has been called in the thread or not.
@@ -299,11 +295,18 @@ impl<N: Network> TranslationAssignment<N> {
         constraint_limit: Option<u64>,
         non_zero_limit: Option<(u64, u64, u64)>,
     ) -> Result<circuit::Assignment<N::Field>> {
-        self.to_circuit_assignment_internal::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)?;
-        Stack::log_circuit::<A>(
-            format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
-            "TranslationAssignment",
-        );
-        Ok(A::eject_assignment_and_reset())
+        A::with_fresh_circuit(|| {
+            self.to_circuit_assignment_internal::<A>(
+                translation_index,
+                variable_limit,
+                constraint_limit,
+                non_zero_limit,
+            )?;
+            Stack::log_circuit::<A>(
+                format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
+                "TranslationAssignment",
+            );
+            Ok(A::eject_assignment_and_reset())
+        })
     }
 }

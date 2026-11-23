@@ -266,6 +266,7 @@ impl<N: Network> Stack<N> {
                 Some(constraint_limit as u64),
                 Some(variable_limit),
                 non_zero_limit,
+                consensus_version >= ConsensusVersion::V23,
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));

@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{PairingEngine, templates::short_weierstrass_jacobian};
-use snarkvm_fields::{Field, PrimeField, SquareRootField, Zero};
+use snarkvm_fields::{ExponentSchedule, Field, PrimeField, SquareRootField, Zero};
 use snarkvm_utilities::{ToBytes, rand::Uniform, serialize::*};
 
 use core::{
@@ -192,6 +192,14 @@ pub trait AffineCurve:
     /// an integer.
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective;
 
+    /// Returns the sum of `base * scalar` over the pairs of each of `msms`, or `None` if the curve
+    /// has no lane path for them. Every base must be in the prime-order subgroup: outside it, the
+    /// lanes compute another sum than `base * scalar`, so the result would depend on the CPU.
+    #[doc(hidden)]
+    fn msm_lanes(_msms: &[&[(Self, Self::ScalarField)]]) -> Option<Vec<Self::Projective>> {
+        None
+    }
+
     /// Multiply this element by the cofactor.
     #[must_use]
     fn mul_by_cofactor(&self) -> Self {
@@ -206,6 +214,13 @@ pub trait AffineCurve:
     /// Checks that the point is in the prime order subgroup given the point on the curve.
     #[must_use]
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool;
+
+    /// Returns a point with the given x-coordinate that is in the prime order subgroup, if there is one.
+    /// Checks the candidate with the larger y-coordinate first.
+    fn subgroup_point_from_x_coordinate(x: Self::BaseField) -> Option<Self> {
+        let (p1, p2) = Self::pair_from_x_coordinate(x)?;
+        [p2, p1].into_iter().find(Self::is_in_correct_subgroup_assuming_on_curve)
+    }
 
     /// Returns the x-coordinate of the point.
     #[must_use]
@@ -315,6 +330,15 @@ pub trait ShortWeierstrassParameters: ModelParameters {
         p: short_weierstrass_jacobian::Projective<Self>,
         by: Self::ScalarField,
     ) -> short_weierstrass_jacobian::Projective<Self>;
+
+    /// Returns the sum of `mul_projective` of each pair of each of `msms`, or `None` if there is no
+    /// lane path for them. See `AffineCurve::msm_lanes` for the condition on the bases.
+    #[doc(hidden)]
+    fn msm_lanes(
+        _msms: &[&[(short_weierstrass_jacobian::Affine<Self>, Self::ScalarField)]],
+    ) -> Option<Vec<short_weierstrass_jacobian::Projective<Self>>> {
+        None
+    }
 }
 
 /// This trait is sealed. Only snarkVM implements it.
@@ -329,6 +353,14 @@ pub trait TwistedEdwardsParameters: ModelParameters {
     const COFACTOR_INV: Self::ScalarField;
     /// The affine generator of the twisted Edwards curve.
     const AFFINE_GENERATOR_COEFFS: (Self::BaseField, Self::BaseField);
+    /// A square root of `-1` in the base field. `Affine::subgroup_point_from_x_coordinate` requires
+    /// `a = -1`, a non-square `d`, and `4r` points on the curve with `r` odd.
+    const SQRT_MINUS_ONE: Self::BaseField;
+    /// `(q - 1) / 4` for the base field modulus `q`, as little-endian limbs.
+    const MODULUS_MINUS_ONE_DIV_FOUR: &'static [u64];
+
+    /// Returns the sliding-window schedule for the exponent `MODULUS_MINUS_ONE_DIV_FOUR`.
+    fn modulus_minus_one_div_four_schedule() -> &'static ExponentSchedule;
 
     type MontgomeryParameters: MontgomeryParameters<BaseField = Self::BaseField>;
 
