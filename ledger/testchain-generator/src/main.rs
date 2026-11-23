@@ -13,15 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_console::prelude::{
-    CanaryV0,
-    MainnetV0,
-    Network,
-    TEST_CONSENSUS_VERSION_HEIGHTS,
-    TestRng,
-    TestnetV0,
-    ToBytes,
-};
+use snarkvm_console::prelude::{MainnetV0, Network, TEST_CONSENSUS_VERSION_HEIGHTS, TestRng, TestnetV0, ToBytes};
 use snarkvm_ledger::{
     Ledger,
     Transaction,
@@ -56,7 +48,7 @@ struct Args {
     #[clap(long)]
     txs_path: Option<String>,
     /// The name of the network to generate the chain for.
-    #[clap(long, value_parser=PossibleValuesParser::new(vec![CanaryV0::SHORT_NAME, TestnetV0::SHORT_NAME, MainnetV0::SHORT_NAME]), default_value=TestnetV0::SHORT_NAME)]
+    #[clap(long, value_parser=PossibleValuesParser::new(vec![TestnetV0::SHORT_NAME, MainnetV0::SHORT_NAME]), default_value=TestnetV0::SHORT_NAME)]
     network: String,
     /// Set the seed to used to generate the chain.
     #[clap(long)]
@@ -88,7 +80,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.network.as_str() {
-        CanaryV0::SHORT_NAME => generate_testchain::<CanaryV0>(args),
         TestnetV0::SHORT_NAME => generate_testchain::<TestnetV0>(args),
         MainnetV0::SHORT_NAME => generate_testchain::<MainnetV0>(args),
         // This is caught by clap.

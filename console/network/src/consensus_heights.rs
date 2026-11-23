@@ -401,7 +401,7 @@ pub fn varuna_version_from_consensus(consensus_version: ConsensusVersion) -> Var
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CanaryV0, MainnetV0, Network, TestnetV0};
+    use crate::{MainnetV0, Network, TestnetV0};
 
     /// Ensure that the consensus constants are defined and correct at genesis.
     /// It is possible this invariant no longer holds in the future, e.g. due to pruning or novel types of constants.
@@ -638,19 +638,18 @@ mod tests {
     }
 
     /// Ensure that the number of constant definitions is the same across networks.
-    fn constants_equal_length<N1: Network, N2: Network, N3: Network>() {
+    fn constants_equal_length<N1: Network, N2: Network>() {
         // If we can construct an array, that means the underlying types must be the same.
-        let _ = [N1::CONSENSUS_VERSION_HEIGHTS, N2::CONSENSUS_VERSION_HEIGHTS, N3::CONSENSUS_VERSION_HEIGHTS];
-        let _ = [N1::MAX_CERTIFICATES, N2::MAX_CERTIFICATES, N3::MAX_CERTIFICATES];
-        let _ = [N1::TRANSACTION_SPEND_LIMIT, N2::TRANSACTION_SPEND_LIMIT, N3::TRANSACTION_SPEND_LIMIT];
-        let _ =
-            [N1::CREDITS_PER_SECOND_OF_RUNTIME, N2::CREDITS_PER_SECOND_OF_RUNTIME, N3::CREDITS_PER_SECOND_OF_RUNTIME];
-        let _ = [N1::MAX_ARRAY_ELEMENTS, N2::MAX_ARRAY_ELEMENTS, N3::MAX_ARRAY_ELEMENTS];
-        let _ = [N1::MAX_MAPPINGS, N2::MAX_MAPPINGS, N3::MAX_MAPPINGS];
-        let _ = [N1::MAX_PROGRAM_SIZE, N2::MAX_PROGRAM_SIZE, N3::MAX_PROGRAM_SIZE];
-        let _ = [N1::MAX_TRANSACTION_SIZE, N2::MAX_TRANSACTION_SIZE, N3::MAX_TRANSACTION_SIZE];
-        let _ = [N1::MAX_WRITES, N2::MAX_WRITES, N3::MAX_WRITES];
-        let _ = [N1::ANCHOR_TIMES, N2::ANCHOR_TIMES, N3::ANCHOR_TIMES];
+        let _ = [N1::CONSENSUS_VERSION_HEIGHTS, N2::CONSENSUS_VERSION_HEIGHTS];
+        let _ = [N1::MAX_CERTIFICATES, N2::MAX_CERTIFICATES];
+        let _ = [N1::TRANSACTION_SPEND_LIMIT, N2::TRANSACTION_SPEND_LIMIT];
+        let _ = [N1::CREDITS_PER_SECOND_OF_RUNTIME, N2::CREDITS_PER_SECOND_OF_RUNTIME];
+        let _ = [N1::MAX_ARRAY_ELEMENTS, N2::MAX_ARRAY_ELEMENTS];
+        let _ = [N1::MAX_MAPPINGS, N2::MAX_MAPPINGS];
+        let _ = [N1::MAX_PROGRAM_SIZE, N2::MAX_PROGRAM_SIZE];
+        let _ = [N1::MAX_TRANSACTION_SIZE, N2::MAX_TRANSACTION_SIZE];
+        let _ = [N1::MAX_WRITES, N2::MAX_WRITES];
+        let _ = [N1::ANCHOR_TIMES, N2::ANCHOR_TIMES];
     }
 
     /// Ensure that `LATEST_MAX_*` functions return valid values without panicking.
@@ -673,50 +672,39 @@ mod tests {
     fn test_consensus_constants() {
         consensus_constants_at_genesis::<MainnetV0>();
         consensus_constants_at_genesis::<TestnetV0>();
-        consensus_constants_at_genesis::<CanaryV0>();
 
         consensus_versions::<MainnetV0>();
         consensus_versions::<TestnetV0>();
-        consensus_versions::<CanaryV0>();
 
         consensus_constants_increasing_heights::<MainnetV0>();
         consensus_constants_increasing_heights::<TestnetV0>();
-        consensus_constants_increasing_heights::<CanaryV0>();
 
         consensus_constants_valid_heights::<MainnetV0>();
         consensus_constants_valid_heights::<TestnetV0>();
-        consensus_constants_valid_heights::<CanaryV0>();
 
         consensus_config_returns_some::<MainnetV0>();
         consensus_config_returns_some::<TestnetV0>();
-        consensus_config_returns_some::<CanaryV0>();
 
         max_certificates_increasing::<MainnetV0>(&[]);
         // Testnet lowers the maximum committee size at `V22`.
         max_certificates_increasing::<TestnetV0>(&[ConsensusVersion::V22]);
-        max_certificates_increasing::<CanaryV0>(&[]);
 
         max_array_elements_increasing::<MainnetV0>();
         max_array_elements_increasing::<TestnetV0>();
-        max_array_elements_increasing::<CanaryV0>();
 
         max_mappings_increasing::<MainnetV0>();
         max_mappings_increasing::<TestnetV0>();
-        max_mappings_increasing::<CanaryV0>();
 
         transaction_size_exceeds_program_size::<MainnetV0>();
         transaction_size_exceeds_program_size::<TestnetV0>();
-        transaction_size_exceeds_program_size::<CanaryV0>();
 
         program_and_transaction_size_aligned::<MainnetV0>();
         program_and_transaction_size_aligned::<TestnetV0>();
-        program_and_transaction_size_aligned::<CanaryV0>();
 
         latest_max_functions_are_safe::<MainnetV0>();
         latest_max_functions_are_safe::<TestnetV0>();
-        latest_max_functions_are_safe::<CanaryV0>();
 
-        constants_equal_length::<MainnetV0, TestnetV0, CanaryV0>();
+        constants_equal_length::<MainnetV0, TestnetV0>();
     }
 
     /// Ensure (de-)serialization works correctly.
@@ -741,7 +729,6 @@ mod tests {
     fn test_reward_anchor_time() {
         assert_eq!(MainnetV0::REWARD_ANCHOR_TIME, MainnetV0::ANCHOR_TIMES.first().unwrap().1);
         assert_eq!(TestnetV0::REWARD_ANCHOR_TIME, TestnetV0::ANCHOR_TIMES.first().unwrap().1);
-        assert_eq!(CanaryV0::REWARD_ANCHOR_TIME, CanaryV0::ANCHOR_TIMES.first().unwrap().1);
     }
 
     #[test]
@@ -769,7 +756,6 @@ mod tests {
     /// Ensure that every published consensus height table is well-formed.
     #[test]
     fn test_published_consensus_heights_are_valid() {
-        verify_consensus_heights(&CANARY_V0_CONSENSUS_VERSION_HEIGHTS);
         verify_consensus_heights(&MAINNET_V0_CONSENSUS_VERSION_HEIGHTS);
         verify_consensus_heights(&TESTNET_V0_CONSENSUS_VERSION_HEIGHTS);
         verify_consensus_heights(&TEST_CONSENSUS_VERSION_HEIGHTS);

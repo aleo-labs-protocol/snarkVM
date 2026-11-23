@@ -477,15 +477,5 @@ mod tests {
             // Check the restrictions.
             check_restrictions!(restrictions, Network);
         }
-
-        // Attention: The 'restrictions' variable **must match** the 'restrictions.json' in 'snarkvm_parameters' for each network.
-        {
-            // Set the network.
-            type Network = console::network::CanaryV0;
-            // Initialize the restrictions.
-            let restrictions = Restrictions::<Network>::new_blank().unwrap();
-            // Check the restrictions.
-            check_restrictions!(restrictions, Network);
-        }
     }
 }
