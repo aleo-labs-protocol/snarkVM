@@ -127,7 +127,7 @@ fn ensure_no_static_calls_to_constant_outputs<N: Network>(stack: &Stack<N>) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_utilities::try_vm_runtime;
+    use snarkvm_utilities::{VmHalt, try_vm_runtime};
     use std::ops::Deref;
 
     type CurrentAleo = circuit::network::AleoV0;
@@ -138,6 +138,24 @@ mod tests {
         Program::from_str(&format!(
             "program off_curve_cast_{index}.aleo;\n\nfunction f:\n    input r0 as field.private;\n    is.eq r0 r0 into r1;\n    ternary r1 {x}field 1field into r2;\n    {op} r2 into r3 as group;\n    output r3 as group.private;\n\nconstructor:\n    assert.eq edition 0u16;\n"
         ))
+        .unwrap()
+    }
+
+    /// Returns a deployment of `program` with the verifying keys of `keys_program`.
+    fn deployment_with_keys_of(
+        process: &Process<CurrentNetwork>,
+        program: &Program<CurrentNetwork>,
+        keys_program: &Program<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> Deployment<CurrentNetwork> {
+        let keys = process.deploy::<CurrentAleo, _>(keys_program, rng).unwrap();
+        Deployment::new(
+            0,
+            program.clone(),
+            keys.verifying_keys().clone(),
+            Some(program.to_checksum()),
+            Some(console::types::Address::zero()),
+        )
         .unwrap()
     }
 
@@ -177,16 +195,7 @@ mod tests {
             let process = Process::load().unwrap();
             assert!(try_vm_runtime(|| process.deploy::<CurrentAleo, _>(&program, &mut TestRng::default())).is_err());
 
-            // `deploy` panics on this value, so the deployment takes its keys from the program for `2`.
-            let keys = process.deploy::<CurrentAleo, _>(&cast_program(op, index, "2"), rng).unwrap();
-            let deployment = Deployment::new(
-                0,
-                program.clone(),
-                keys.verifying_keys().clone(),
-                Some(program.to_checksum()),
-                Some(console::types::Address::zero()),
-            )
-            .unwrap();
+            let deployment = deployment_with_keys_of(&process, &program, &cast_program(op, index, "2"), rng);
             let process = Process::load().unwrap();
             let result = try_vm_runtime(|| {
                 process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
@@ -211,6 +220,68 @@ mod tests {
             .unwrap()
             .verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
             .unwrap();
+    }
+
+    /// A halt in deployment synthesis on a rayon worker does not reach the host's panic hook.
+    #[test]
+    fn test_verify_deployment_halt_on_worker_skips_host_hook() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        const CHILD_PROCESS_ENV: &str = "SNARKVM_DEPLOYMENT_HALT_HOOK_CHILD";
+        const TEST_NAME: &str = "verify_deployment::tests::test_verify_deployment_halt_on_worker_skips_host_hook";
+
+        if std::env::var_os(CHILD_PROCESS_ENV).is_none() {
+            // Run this test in a fresh process because panic hooks are process-global.
+            let output =
+                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
+                    .args([TEST_NAME, "--exact", "--nocapture"])
+                    .env(CHILD_PROCESS_ENV, "1")
+                    .output()
+                    .expect("Failed to launch the child test process");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "Child test failed.\nstdout:\n{stdout}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let host_hook_calls = Arc::new(AtomicUsize::new(0));
+        let host_hook_calls_ = host_hook_calls.clone();
+        std::panic::set_hook(Box::new(move |_| {
+            host_hook_calls_.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // Each function of `program` has more variables than the keys of `keys_program` allow, so its synthesis halts
+        // at the variable limit. Rayon runs a loop over one item on the calling thread, so the program has two functions.
+        let program_with = |instruction: &str| {
+            let functions = ["f", "g"].map(|function| {
+                format!(
+                    "function {function}:\n    input r0 as field.private;\n    {instruction};\n    output r1 as field.private;\n\n"
+                )
+            });
+            Program::<CurrentNetwork>::from_str(&format!(
+                "program halt_on_worker.aleo;\n\n{}constructor:\n    assert.eq edition 0u16;\n",
+                functions.concat()
+            ))
+            .expect("The program should parse")
+        };
+        let program = program_with("hash.bhp256 r0 into r1 as field");
+        let keys_program = program_with("add r0 r0 into r1");
+        let rng = &mut TestRng::default();
+        let process = Process::load().unwrap();
+        let deployment = deployment_with_keys_of(&process, &program, &keys_program, rng);
+
+        // This thread is not a rayon worker, so the synthesis jobs run on workers of the global pool.
+        assert!(rayon::current_thread_index().is_none());
+        let result = try_vm_runtime(|| {
+            process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
+        });
+        let payload = result.expect_err("the deployment must be rejected by a halt during synthesis");
+        let halt = payload.downcast_ref::<VmHalt>().expect("the panic must be a VM halt");
+        assert!(halt.message().starts_with("Surpassed the"), "unexpected halt message: {halt}");
+        assert_eq!(host_hook_calls.load(Ordering::SeqCst), 0, "the halt must not reach the host hook");
     }
 
     /// Use `cargo test profiler --features timer` to run this test.
