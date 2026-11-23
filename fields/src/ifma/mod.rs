@@ -142,20 +142,20 @@ where
     a.cyclotomic_exp_scalar(exp)
 }
 
-/// A G1 point `[x, y]` and the line coefficients `(c0, c1, c2)` of its G2 point in Fp2 over `R`, as
-/// `miller_loop_fp12` takes them.
-pub type MillerLoopPair<'a, R> = ([&'a <R as Fp2Parameters>::Fp; 2], &'a [(Fp2<R>, Fp2<R>, Fp2<R>)]);
+/// Scale factors `[s0, s1]` derived from a G1 point and the affine line coefficients `(c1, c2)`
+/// (with `c0 = 1`) of its G2 point in Fp2 over `R`, as `miller_loop_fp12` takes them.
+pub type MillerLoopPair<'a, R> = ([&'a <R as Fp2Parameters>::Fp; 2], &'a [(Fp2<R>, Fp2<R>)]);
 
 /// Returns the value of the loop of `Bls12::miller_loop` from `f` for a D-type twist, before its
-/// final conjugation, over the exponent `x` and the pairs of a G1 point `[x, y]` and the line
-/// coefficients `(c0, c1, c2)` of its G2 point; or `None` if `is_supported_tower::<P, Q>()` is
-/// false, `x` is empty, or a pair has fewer lines than the loop takes.
+/// final conjugation, over the exponent `x` and the pairs of G1 scale factors `[s0, s1]` and the
+/// affine line coefficients `(c1, c2)` of its G2 point; or `None` if `is_supported_tower::<P, Q>()`
+/// is false, `x` is empty, or a pair has fewer lines than the loop takes.
 ///
 /// The loop takes the bits of `x`, whose words are listed the least significant first, from the
 /// second most significant bit of the last word down to bit 0. For each bit, it squares `f` and
 /// multiplies it by the next line of each pair in turn, and if the bit is set, it multiplies by
-/// the next line of each pair once more. A line `(c0, c1, c2)` of the pair with the point
-/// `[x, y]` multiplies `f` as `Fp12::mul_by_034` does by `c0 y`, `c1 x` and `c2`.
+/// the next line of each pair once more. A line `(c1, c2)` of the pair with scale factors
+/// `[s0, s1]` multiplies `f` as `Fp12::mul_by_34` does by `c1 s0` and `c2 s1`.
 pub fn miller_loop_fp12<P, Q>(f: &Fp12<P>, x: &[u64], pairs: &[MillerLoopPair<'_, Fp2Params<P>>]) -> Option<Fp12<P>>
 where
     P: Fp12Parameters,

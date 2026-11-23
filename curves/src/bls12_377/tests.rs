@@ -37,7 +37,7 @@ use crate::{
         msm_lane_outputs,
     },
     templates::{
-        bls12::{Bls12Parameters, G1Prepared, G2Prepared},
+        bls12::{Bls12, Bls12Parameters, G1Prepared, G2Prepared, TwistType},
         short_weierstrass_jacobian::tests::sw_tests,
         twisted_edwards_extended::tests::edwards_test,
     },
@@ -81,6 +81,7 @@ use snarkvm_fields::{
 use snarkvm_utilities::{
     BitIteratorBE,
     Compress,
+    ToBytes,
     Validate,
     biginteger::{BigInteger, BigInteger256, BigInteger384},
     rand::{TestRng, Uniform},
@@ -734,6 +735,43 @@ fn test_fq12_mul_by_034() {
     }
 }
 
+#[test]
+fn test_fq12_mul_by_14() {
+    let mut rng = TestRng::default();
+
+    for _ in 0..1000 {
+        let c1 = Fq2::rand(&mut rng);
+        let c4 = Fq2::rand(&mut rng);
+        let mut a = Fq12::rand(&mut rng);
+        let mut b = a;
+
+        a.mul_by_14(&c1, &c4);
+        b = fq12_schoolbook(
+            &b,
+            &Fq12::new(Fq6::new(Fq2::one(), c1, Fq2::zero()), Fq6::new(Fq2::zero(), c4, Fq2::zero())),
+        );
+
+        assert_eq!(a, b);
+    }
+}
+
+#[test]
+fn test_fq12_mul_by_34() {
+    let mut rng = TestRng::default();
+
+    for _ in 0..1000 {
+        let c3 = Fq2::rand(&mut rng);
+        let c4 = Fq2::rand(&mut rng);
+        let mut a = Fq12::rand(&mut rng);
+        let mut b = a;
+
+        a.mul_by_34(&c3, &c4);
+        b = fq12_schoolbook(&b, &Fq12::new(Fq6::one(), Fq6::new(c3, c4, Fq2::zero())));
+
+        assert_eq!(a, b);
+    }
+}
+
 /// The elements at the edges of the lane kernel's input range: 0, 1, 2, -1, -2, and the
 /// Montgomery words 1, 2, p - 1 and R^2.
 fn fq_edge_elements() -> Vec<Fq> {
@@ -835,8 +873,6 @@ const PAIRING_OF_GENERATORS: &str = concat!(
 
 #[test]
 fn test_pairing_of_generators() {
-    use snarkvm_utilities::ToBytes;
-
     let e = Bls12_377::pairing(G1Affine::prime_subgroup_generator(), G2Affine::prime_subgroup_generator());
     let hex: String = e.to_bytes_le().unwrap().iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(hex, PAIRING_OF_GENERATORS);
@@ -1015,18 +1051,19 @@ fn test_fq12_cyclotomic_exp() {
     }
 }
 
-/// A G1 point and the line coefficients of its G2 point, as `ifma::miller_loop_fp12` takes them.
+/// Scale factors `[s0, s1]` and the affine line coefficients `(c1, c2)` of a G2 point, as
+/// `ifma::miller_loop_fp12` takes them.
 type Pair<'a> = snarkvm_fields::ifma::MillerLoopPair<'a, Fq2Parameters>;
 
-/// A `Pair` that owns its point and lines.
-type OwnedPair = ([Fq; 2], Vec<(Fq2, Fq2, Fq2)>);
+/// A `Pair` that owns its scale factors and lines.
+type OwnedPair = ([Fq; 2], Vec<(Fq2, Fq2)>);
 
-/// `Bls12::ell` for the D-type twist, from `fq12_schoolbook`.
-fn ell_reference(f: &Fq12, (c0, c1, c2): &(Fq2, Fq2, Fq2), [x, y]: [&Fq; 2]) -> Fq12 {
-    let (mut c0, mut c1) = (*c0, *c1);
-    c0.mul_by_fp(y);
-    c1.mul_by_fp(x);
-    fq12_schoolbook(f, &Fq12::new(Fq6::new(c0, Fq2::zero(), Fq2::zero()), Fq6::new(c1, *c2, Fq2::zero())))
+/// Multiplies `f` by `1 + (c1 s0) w + (c2 s1) w^3`, from `fq12_schoolbook`.
+fn ell_reference(f: &Fq12, (c1, c2): &(Fq2, Fq2), [s0, s1]: [&Fq; 2]) -> Fq12 {
+    let (mut c1, mut c2) = (*c1, *c2);
+    c1.mul_by_fp(s0);
+    c2.mul_by_fp(s1);
+    fq12_schoolbook(f, &Fq12::new(Fq6::one(), Fq6::new(c1, c2, Fq2::zero())))
 }
 
 /// The loop of `Bls12::miller_loop` from `f`, before its final conjugation, from `fq12_schoolbook`
@@ -1036,11 +1073,92 @@ fn miller_loop_reference(mut f: Fq12, x: &[u64], pairs: &[Pair<'_>]) -> Fq12 {
     for bit in BitIteratorBE::new(x).skip(1) {
         f = fq12_schoolbook(&f, &f);
         for _ in 0..1 + bit as usize {
-            for (point, lines) in pairs {
-                f = ell_reference(&f, &lines[k], *point);
+            for (scales, lines) in pairs {
+                f = ell_reference(&f, &lines[k], *scales);
             }
             k += 1;
         }
+    }
+    f
+}
+
+/// Unnormalized homogeneous projective line triples `(c0, c1, c2)` of `q` over `x` for `twist`.
+fn projective_g2_lines(q: G2Affine, x: &[u64], twist: TwistType) -> Vec<(Fq2, Fq2, Fq2)> {
+    let two_inv = Fq::half();
+    let b_twist = Bls12_377G2Parameters::WEIERSTRASS_B;
+    let mut r = [q.x, q.y, Fq2::one()];
+    let mut out = Vec::new();
+    for bit in BitIteratorBE::new(x).skip(1) {
+        let [rx, ry, rz] = r;
+        let mut a = rx * ry;
+        a.mul_by_fp(&two_inv);
+        let b = ry.square();
+        let c = rz.square();
+        let e = b_twist * (c.double() + c);
+        let f_term = e.double() + e;
+        let mut g = b + f_term;
+        g.mul_by_fp(&two_inv);
+        let h = (ry + rz).square() - (b + c);
+        let i = e - b;
+        let j = rx.square();
+        let e_sq = e.square();
+        r = [a * (b - f_term), g.square() - (e_sq.double() + e_sq), b * h];
+        out.push(match twist {
+            TwistType::M => (i, j.double() + j, -h),
+            TwistType::D => (-h, j.double() + j, i),
+        });
+        if bit {
+            let [rx, ry, rz] = r;
+            let theta = ry - q.y * rz;
+            let lambda = rx - q.x * rz;
+            let c = theta.square();
+            let d = lambda.square();
+            let e = lambda * d;
+            let f_term = rz * c;
+            let g = rx * d;
+            let h = e + f_term - g.double();
+            r = [lambda * h, theta * (g - h) - e * ry, rz * e];
+            let j_add = theta * q.x - lambda * q.y;
+            out.push(match twist {
+                TwistType::M => (j_add, -theta, lambda),
+                TwistType::D => (lambda, -theta, j_add),
+            });
+        }
+    }
+    out
+}
+
+/// `Bls12::miller_loop` from unnormalized projective `(c0, c1, c2)` lines and `fq12_schoolbook`.
+fn projective_miller_loop_reference(pairs: &[(G1Affine, G2Affine)]) -> Fq12 {
+    let active: Vec<_> = pairs
+        .iter()
+        .copied()
+        .filter(|(p, q)| !p.is_zero() && !q.is_zero())
+        .map(|(p, q)| (p, projective_g2_lines(q, Bls12_377Parameters::X, TwistType::D)))
+        .collect();
+    if active.is_empty() {
+        return Fq12::one();
+    }
+
+    let mut f = Fq12::one();
+    let mut k = 0;
+    for bit in BitIteratorBE::new(Bls12_377Parameters::X).skip(1) {
+        f = fq12_schoolbook(&f, &f);
+        for _ in 0..1 + usize::from(bit) {
+            for (p, lines) in &active {
+                let (mut c0, mut c1, c2) = lines[k];
+                c0.mul_by_fp(&p.y);
+                c1.mul_by_fp(&p.x);
+                f = fq12_schoolbook(
+                    &f,
+                    &Fq12::new(Fq6::new(c0, Fq2::zero(), Fq2::zero()), Fq6::new(c1, c2, Fq2::zero())),
+                );
+            }
+            k += 1;
+        }
+    }
+    if Bls12_377Parameters::X_IS_NEGATIVE {
+        f.conjugate();
     }
     f
 }
@@ -1065,19 +1183,19 @@ fn check_miller_loop_fp12(f: &Fq12, x: &[u64], pairs: &[Pair<'_>]) {
 fn test_fq12_miller_loop_lanes() {
     let mut rng = TestRng::default();
     let edges = fq_edge_elements();
-    // `n` pairs whose point and line coefficients `element` draws, with the lines the loop takes
-    // for `x`.
+    // `n` pairs whose scale factors and line coefficients `element` draws, with the lines the loop
+    // takes for `x`.
     let pairs = |rng: &mut TestRng, n: usize, x: &[u64], element: &dyn Fn(&mut TestRng) -> Fq| -> Vec<OwnedPair> {
         (0..n)
             .map(|_| {
                 let mut fq2 = || Fq2::new(element(rng), element(rng));
-                let lines = (0..miller_loop_lines(x)).map(|_| (fq2(), fq2(), fq2())).collect();
+                let lines = (0..miller_loop_lines(x)).map(|_| (fq2(), fq2())).collect();
                 ([element(rng), element(rng)], lines)
             })
             .collect()
     };
     let check = |f: &Fq12, x: &[u64], pairs: &[OwnedPair]| {
-        let pairs: Vec<Pair<'_>> = pairs.iter().map(|([x, y], lines)| ([x, y], lines.as_slice())).collect();
+        let pairs: Vec<Pair<'_>> = pairs.iter().map(|([s0, s1], lines)| ([s0, s1], lines.as_slice())).collect();
         check_miller_loop_fp12(f, x, &pairs);
     };
     let random = |rng: &mut TestRng| Fq::rand(rng);
@@ -1107,8 +1225,8 @@ fn test_fq12_miller_loop_lanes() {
         check(&Fq12::one(), x, &pairs(&mut rng, n, x, &random));
     }
 
-    // Every coefficient of `f`, of the lines and of the points equal to an edge element, for each
-    // pair of edge elements.
+    // Every coefficient of `f`, of the lines and of the scale factors equal to an edge element, for
+    // each pair of edge elements.
     let x = [0b1011];
     for a in &edges {
         for b in &edges {
@@ -1116,8 +1234,8 @@ fn test_fq12_miller_loop_lanes() {
         }
     }
 
-    // The coefficients of `f`, the lines and the points each 0 or p - 1 in random patterns, and edge
-    // elements mixed with random ones.
+    // The coefficients of `f`, the lines and the scale factors each 0 or p - 1 in random patterns,
+    // and edge elements mixed with random ones.
     let pick = |rng: &mut TestRng| fq_edge_or_random(rng, &edges);
     for element in [&fq_zero_or_minus_one as &dyn Fn(&mut TestRng) -> Fq, &pick] {
         for _ in 0..40 {
@@ -1202,6 +1320,31 @@ fn test_fq12_miller_loop_lanes_square_extreme() {
     check_miller_loop_fp12(&Fq12::new(Fq6::new(f0, f2, f4), Fq6::new(f1, f3, f5)), &[1], &[]);
 }
 
+/// Runs `snarkvm_fields::ifma::miller_loop_fp12` through a 4-pair step at `x = [0b10]` whose
+/// first three affine lines build `1 + w + w^2 + w^3 + w^4 + w^5` (`F_0..F_5 = 1`) via the cube
+/// root of unity `PHI`, and whose fourth line `(0, -K^-1)` (`K = 2^416 mod p`) drives `Q_1`, `Q_3`
+/// and `P_4`'s plane-2 products to `p - 1` (`k_0 = k_1 = 0`), taking lane 6's real part to
+/// `2 - 15 (p - 1)` (`~ -15 p`) before `below_2p`.
+#[test]
+fn test_fq12_miller_loop_lanes_line_extreme() {
+    let phi = Bls12_377G1Parameters::PHI;
+    let a = Fq2::new(-phi, Fq::zero());
+    let c = Fq2::new(Fq::one() + phi, Fq::zero());
+    let k = Fq::from(2u64).pow([416]);
+    // `K = 2^416 mod p` is nonzero, so it has an inverse.
+    let neg_k_inv = Fq2::new(Fq::zero(), -k.inverse().unwrap());
+
+    let one = Fq::one();
+    let scales = [&one, &one];
+    let l0 = [(a, Fq2::zero())];
+    let l1 = [(c, Fq2::zero())];
+    let l2 = [(Fq2::zero(), Fq2::one())];
+    let l3 = [(neg_k_inv, neg_k_inv)];
+    let pairs: [Pair<'_>; 4] = [(scales, &l0), (scales, &l1), (scales, &l2), (scales, &l3)];
+
+    check_miller_loop_fp12(&Fq12::one(), &[0b10], &pairs);
+}
+
 type PreparedPair = (G1Prepared<Bls12_377Parameters>, G2Prepared<Bls12_377Parameters>);
 
 /// Returns `n` pairs of random points with their prepared forms, the G1 point of pair `i` at
@@ -1216,14 +1359,16 @@ fn prepared_pairs(rng: &mut TestRng, n: usize, zero_g1: &[usize], zero_g2: &[usi
         .collect()
 }
 
-/// `Bls12::miller_loop` from `miller_loop_reference`, over the pairs without a point at infinity.
+/// `Bls12::miller_loop` from `miller_loop_reference`, over the pairs without a point at infinity
+/// when every active G1 point has nonzero `y`.
 fn miller_loop_of_pairs_reference(pairs: &[PreparedPair]) -> Fq12 {
-    let pairs: Vec<Pair<'_>> = pairs
-        .iter()
-        .filter(|(p, q)| !p.is_zero() && !q.is_zero())
-        .map(|(p, q)| ([&p.0.x, &p.0.y], q.ell_coeffs.as_slice()))
-        .collect();
-    let mut f = miller_loop_reference(Fq12::one(), Bls12_377Parameters::X, &pairs);
+    let active: Vec<(&G1Prepared<Bls12_377Parameters>, &G2Prepared<Bls12_377Parameters>)> =
+        pairs.iter().filter(|(p, q)| !p.is_zero() && !q.is_zero()).map(|(p, q)| (p, q)).collect();
+    // Active prime-order G1 points have `y != 0`, so `g1_d_scales` returns `Some`.
+    let scales = Bls12_377::g1_d_scales(&active).unwrap();
+    let lines: Vec<Pair<'_>> =
+        scales.iter().zip(&active).map(|([s0, s1], (_, q))| ([s0, s1], q.ell_coeffs.as_slice())).collect();
+    let mut f = miller_loop_reference(Fq12::one(), Bls12_377Parameters::X, &lines);
     if Bls12_377Parameters::X_IS_NEGATIVE {
         f.conjugate();
     }
@@ -1246,22 +1391,197 @@ fn test_miller_loop() {
                 "{n} pairs, zero G1 {zero_g1:?}, zero G2 {zero_g2:?}"
             );
             assert!(fq12_coefficients(&f).all(|x| x.is_valid()));
+
+            let refs: Vec<_> =
+                pairs.iter().filter(|(p, q)| !p.is_zero() && !q.is_zero()).map(|(p, q)| (p, q)).collect();
+            assert_eq!(Bls12_377Parameters::miller_loop_fp12(&refs), Bls12_377::miller_loop_scalar(&refs));
         }
     }
     assert_eq!(Bls12_377::miller_loop(std::iter::empty()), Fq12::one());
 
-    // The pairing and the product of pairings against the reference Miller loop.
-    for n in [1, 2, 6] {
-        let pairs = prepared_pairs(&mut rng, n, &[], &[]);
-        // The Miller loop of points not at infinity is nonzero, so it has an inverse.
-        let expected = Bls12_377::final_exponentiation(&miller_loop_of_pairs_reference(&pairs)).unwrap();
-        assert_eq!(Bls12_377::product_of_pairings(pairs.iter().map(|(p, q)| (p, q))), expected, "{n} pairs");
+    // The pairing and the product of pairings against the projective Miller loop reference.
+    for n in 0..=8 {
+        let raw: Vec<(G1Affine, G2Affine)> = (0..n)
+            .map(|_| (G1Projective::rand(&mut rng).to_affine(), G2Projective::rand(&mut rng).to_affine()))
+            .collect();
+        let prepared: Vec<PreparedPair> = raw.iter().map(|(p, q)| (p.prepare(), q.prepare())).collect();
+        // The projective Miller loop of valid curve points is nonzero, so `final_exponentiation` returns `Some`.
+        let expected = Bls12_377::final_exponentiation(&projective_miller_loop_reference(&raw)).unwrap();
+        assert_eq!(Bls12_377::product_of_pairings(prepared.iter().map(|(p, q)| (p, q))), expected, "{n} pairs");
     }
     let (p, q) = (G1Projective::rand(&mut rng).to_affine(), G2Projective::rand(&mut rng).to_affine());
     // As above.
-    let expected =
-        Bls12_377::final_exponentiation(&miller_loop_of_pairs_reference(&[(p.prepare(), q.prepare())])).unwrap();
+    let expected = Bls12_377::final_exponentiation(&projective_miller_loop_reference(&[(p, q)])).unwrap();
     assert_eq!(Bls12_377::pairing(p, q), expected);
+
+    // Points outside the prime-order subgroups in G1 (including `y == 0`) and G2 against the projective reference.
+    let [order_2, order_3] = g1_small_order_points();
+    let fq = |s: &str| Fq::from_str(s).expect("the literal is a canonical Fq element");
+    let off_g2_x = Fq2::new(
+        fq(
+            "80453520267516129593051327224590975620090736720770429508396740963130851304924183393465498314279415142214774756387",
+        ),
+        fq(
+            "208004220316808651132818824654517262152313755570600949882521492435178790612687529516238401457775909276130267505865",
+        ),
+    );
+    let off_g2 = G2Affine::from_x_coordinate(off_g2_x, true).expect("off_g2_x has an on-curve point");
+    for g1_pt in [order_2, order_3, p] {
+        for g2_pt in [q, off_g2] {
+            let f_single = Bls12_377::miller_loop(std::iter::once((&g1_pt.prepare(), &g2_pt.prepare())));
+            let f_proj_single = projective_miller_loop_reference(&[(g1_pt, g2_pt)]);
+            // Both Miller loops of valid curve points are nonzero, and their ratio lies in `Fq2^*`.
+            let ratio_single = f_proj_single * f_single.inverse().unwrap();
+            assert!(
+                ratio_single.c1.is_zero()
+                    && ratio_single.c0.c1.is_zero()
+                    && ratio_single.c0.c2.is_zero()
+                    && !ratio_single.c0.c0.is_zero()
+            );
+            // `f_proj_single` is nonzero, so `final_exponentiation` returns `Some`.
+            let expected = Bls12_377::final_exponentiation(&f_proj_single).unwrap();
+            assert_eq!(Bls12_377::pairing(g1_pt, g2_pt), expected);
+
+            let mixed = [(p, q), (g1_pt, g2_pt)];
+            let mixed_prep: Vec<PreparedPair> = mixed.iter().map(|(a, b)| (a.prepare(), b.prepare())).collect();
+            let f_mixed = Bls12_377::miller_loop(mixed_prep.iter().map(|(a, b)| (a, b)));
+            let f_proj_mixed = projective_miller_loop_reference(&mixed);
+            // As above.
+            let ratio_mixed = f_proj_mixed * f_mixed.inverse().unwrap();
+            assert!(
+                ratio_mixed.c1.is_zero()
+                    && ratio_mixed.c0.c1.is_zero()
+                    && ratio_mixed.c0.c2.is_zero()
+                    && !ratio_mixed.c0.c0.is_zero()
+            );
+            // As above.
+            let expected_mixed = Bls12_377::final_exponentiation(&f_proj_mixed).unwrap();
+            assert_eq!(Bls12_377::product_of_pairings(mixed_prep.iter().map(|(a, b)| (a, b))), expected_mixed);
+        }
+    }
+
+    // Canonical serialization and `ToBytes` round-trips for finite and infinity `G2Prepared` values.
+    for g2_prep in [q.prepare(), G2Affine::zero().prepare()] {
+        let mut bytes = Vec::new();
+        // Writing to an in-memory `Vec<u8>` cannot fail.
+        g2_prep.serialize_with_mode(&mut bytes, Compress::Yes).unwrap();
+        // Serialized `G2Prepared` bytes are well-formed.
+        let decoded =
+            G2Prepared::<Bls12_377Parameters>::deserialize_with_mode(&bytes[..], Compress::Yes, Validate::Yes).unwrap();
+        assert_eq!(decoded, g2_prep);
+        // `ToBytes::to_bytes_le` writes into an in-memory `Vec<u8>`, which cannot fail.
+        let le_bytes = g2_prep.to_bytes_le().unwrap();
+        assert_eq!(le_bytes.len(), 4 + g2_prep.ell_coeffs.len() * 2 * 96 + 1);
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+struct TestMTwistParameters;
+
+impl crate::sealed::Sealed for TestMTwistParameters {}
+
+impl Bls12Parameters for TestMTwistParameters {
+    type Fp = Fq;
+    type Fp12Params = Fq12Parameters;
+    type Fp2Params = Fq2Parameters;
+    type Fp6Params = Fq6Parameters;
+    type G1Parameters = Bls12_377G1Parameters;
+    type G2Parameters = Bls12_377G2Parameters;
+
+    const TWIST_TYPE: TwistType = TwistType::M;
+    const X: &'static [u64] = Bls12_377Parameters::X;
+    const X_IS_NEGATIVE: bool = true;
+}
+
+/// Checks `TwistType::M` (`G2Prepared::from_affine`, `Bls12::miller_loop_scalar`, and `ell_m`) and
+/// the zero-skipping `c0 == 0` guard in `G2Prepared::from_affine`'s batch inversion.
+#[test]
+fn test_miller_loop_m_twist_and_c0_zero() {
+    let mut rng = TestRng::default();
+
+    // `TwistType::M` Miller loop across 0..=4 pairs, including `y == 0` in G1 (`order_2`).
+    let [order_2, _] = g1_small_order_points();
+    for n in 0..=4 {
+        let raw: Vec<(G1Affine, G2Affine)> = (0..n)
+            .map(|idx| {
+                let p = if idx == 0 && n == 3 { order_2 } else { G1Projective::rand(&mut rng).to_affine() };
+                (p, G2Projective::rand(&mut rng).to_affine())
+            })
+            .collect();
+        let prep_g1: Vec<_> = raw.iter().map(|(p, _)| G1Prepared::<TestMTwistParameters>::from_affine(*p)).collect();
+        let prep_g2: Vec<_> = raw.iter().map(|(_, q)| G2Prepared::<TestMTwistParameters>::from_affine(*q)).collect();
+        let refs: Vec<_> = prep_g1.iter().zip(&prep_g2).collect();
+
+        let mut f_aff = Bls12::<TestMTwistParameters>::miller_loop_scalar(&refs);
+        if TestMTwistParameters::X_IS_NEGATIVE {
+            f_aff.conjugate();
+        }
+
+        let per_pair_lines: Vec<_> =
+            raw.iter().map(|(_, q)| projective_g2_lines(*q, TestMTwistParameters::X, TwistType::M)).collect();
+        let mut f_proj = Fq12::one();
+        let mut step_idx = 0;
+        for bit in BitIteratorBE::new(TestMTwistParameters::X).skip(1) {
+            f_proj = fq12_schoolbook(&f_proj, &f_proj);
+            for _ in 0..1 + usize::from(bit) {
+                for ((p, _), lines) in raw.iter().zip(&per_pair_lines) {
+                    let (c0, mut c1, mut c2) = lines[step_idx];
+                    c1.mul_by_fp(&p.x);
+                    c2.mul_by_fp(&p.y);
+                    f_proj = fq12_schoolbook(
+                        &f_proj,
+                        &Fq12::new(Fq6::new(c0, c1, Fq2::zero()), Fq6::new(Fq2::zero(), c2, Fq2::zero())),
+                    );
+                }
+                step_idx += 1;
+            }
+        }
+        if TestMTwistParameters::X_IS_NEGATIVE {
+            f_proj.conjugate();
+        }
+
+        // Both Miller loops over valid curve points are nonzero, so `f_aff` has an inverse.
+        let ratio = f_proj * f_aff.inverse().unwrap();
+        assert!(ratio.c1.is_zero() && ratio.c0.c1.is_zero() && ratio.c0.c2.is_zero() && !ratio.c0.c0.is_zero());
+        assert_eq!(Bls12_377::final_exponentiation(&f_aff), Bls12_377::final_exponentiation(&f_proj));
+    }
+
+    // On `Bls12_377`, `c0` is nonzero at every step for every curve point in `E'(Fq2)`. For
+    // unchecked inputs where `c0 == 0`, `G2Prepared::from_affine` skips zeros in its prefix-product
+    // batch inversion without panicking, sets zero-`c0` steps to `(0, 0)`, and normalizes every
+    // nonzero-`c0` step before and after a zero to `(c1 / c0, c2 / c0)`.
+    let check_c0_guard = |got: &[(Fq2, Fq2)], raw: &[(Fq2, Fq2, Fq2)]| {
+        assert_eq!(got.len(), raw.len());
+        for (ell, (c0, c1, c2)) in got.iter().zip(raw) {
+            if let Some(c0_inv) = c0.inverse() {
+                assert_eq!(*ell, (*c1 * c0_inv, *c2 * c0_inv));
+            } else {
+                assert_eq!(*ell, (Fq2::zero(), Fq2::zero()));
+            }
+        }
+    };
+
+    // `(1, 0)` on `TwistType::D`: all 69 steps have `c0 == 0`.
+    let q_all_zero = G2Affine::from_coordinates_unchecked((Fq2::one(), Fq2::zero(), false));
+    let raw_all_zero = projective_g2_lines(q_all_zero, Bls12_377Parameters::X, TwistType::D);
+    assert!(raw_all_zero.iter().all(|(c0, _, _)| c0.is_zero()));
+    check_c0_guard(&G2Prepared::<Bls12_377Parameters>::from_affine(q_all_zero).ell_coeffs, &raw_all_zero);
+
+    // `(0, 1)` on `TwistType::D` (`c0 != 0` on `0..5`, `c0 == 0` on `5..69`) and `TwistType::M`
+    // (`c0 != 0` on `0..5`, `c0 == 0` at `5`, `c0 != 0` on `6..8`, `c0 == 0` on `8..69`).
+    let q_mixed = G2Affine::from_coordinates_unchecked((Fq2::zero(), Fq2::one(), false));
+    let raw_d = projective_g2_lines(q_mixed, Bls12_377Parameters::X, TwistType::D);
+    assert!(raw_d[..5].iter().all(|(c0, _, _)| !c0.is_zero()) && raw_d[5..].iter().all(|(c0, _, _)| c0.is_zero()));
+    check_c0_guard(&G2Prepared::<Bls12_377Parameters>::from_affine(q_mixed).ell_coeffs, &raw_d);
+
+    let raw_m = projective_g2_lines(q_mixed, TestMTwistParameters::X, TwistType::M);
+    assert!(
+        raw_m[..5].iter().all(|(c0, _, _)| !c0.is_zero())
+            && raw_m[5].0.is_zero()
+            && raw_m[6..8].iter().all(|(c0, _, _)| !c0.is_zero())
+            && raw_m[8..].iter().all(|(c0, _, _)| c0.is_zero())
+    );
+    check_c0_guard(&G2Prepared::<TestMTwistParameters>::from_affine(q_mixed).ell_coeffs, &raw_m);
 }
 
 #[test]
@@ -1269,7 +1589,10 @@ fn test_bls12_377_miller_loop_lanes() {
     let mut rng = TestRng::default();
     let pairs = prepared_pairs(&mut rng, 2, &[], &[]);
     let prepared: Vec<_> = pairs.iter().map(|(p, q)| (p, q)).collect();
-    let lines: Vec<Pair<'_>> = pairs.iter().map(|(p, q)| ([&p.0.x, &p.0.y], q.ell_coeffs.as_slice())).collect();
+    // Active prime-order G1 points have `y != 0`, so `g1_d_scales` returns `Some`.
+    let scales = Bls12_377::g1_d_scales(&prepared).unwrap();
+    let lines: Vec<Pair<'_>> =
+        scales.iter().zip(&pairs).map(|([s0, s1], (_, q))| ([s0, s1], q.ell_coeffs.as_slice())).collect();
 
     // The hook and the scalar path give the value of the loop.
     let expected = miller_loop_of_pairs_reference(&pairs);
@@ -1284,7 +1607,7 @@ fn test_bls12_377_miller_loop_lanes() {
     // Coefficients past the ones the loop takes are not read; with one fewer, the lanes decline.
     let coefficients = &pairs[1].1.ell_coeffs;
     let mut long = coefficients.clone();
-    long.push((Fq2::rand(&mut rng), Fq2::rand(&mut rng), Fq2::rand(&mut rng)));
+    long.push((Fq2::rand(&mut rng), Fq2::rand(&mut rng)));
     assert_eq!(run(&[lines[0], (lines[1].0, &long)]), in_lanes);
     let short = &coefficients[..coefficients.len() - 1];
     assert_eq!(run(&[lines[0], (lines[1].0, short)]), None);

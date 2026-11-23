@@ -27,14 +27,14 @@ use std::io::{Result as IoResult, Write};
 
 pub type G2Affine<P> = Affine<<P as Bls12Parameters>::G2Parameters>;
 pub type G2Projective<P> = Projective<<P as Bls12Parameters>::G2Parameters>;
+type CoeffPair<T> = (Fp2<T>, Fp2<T>);
 type CoeffTriplet<T> = (Fp2<T>, Fp2<T>, Fp2<T>);
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct G2Prepared<P: Bls12Parameters> {
-    // Stores the coefficients of the line evaluations as calculated in
-    // https://eprint.iacr.org/2013/722.pdf
-    pub ell_coeffs: Vec<CoeffTriplet<P::Fp2Params>>,
+    /// The affine line coefficients `(c1 / c0, c2 / c0)` for each step of the Miller loop.
+    pub ell_coeffs: Vec<CoeffPair<P::Fp2Params>>,
     pub infinity: bool,
 }
 
@@ -57,7 +57,6 @@ impl<P: Bls12Parameters> ToBytes for G2Prepared<P> {
         for coeff in &self.ell_coeffs {
             coeff.0.write_le(&mut writer)?;
             coeff.1.write_le(&mut writer)?;
-            coeff.2.write_le(&mut writer)?;
         }
         self.infinity.write_le(writer)
     }
@@ -75,17 +74,40 @@ impl<P: Bls12Parameters> G2Prepared<P> {
 
         let mut r = G2HomProjective { x: q.x, y: q.y, z: Fp2::one() };
 
-        let bit_iterator = BitIteratorBE::new(P::X);
-        let mut ell_coeffs = Vec::with_capacity(bit_iterator.len() * 3 / 2);
+        let num_lines = BitIteratorBE::new(P::X).skip(1).map(|b| 1 + usize::from(b)).sum();
+        let mut ell_coeffs = Vec::with_capacity(num_lines);
+        let mut c0_and_prefix = Vec::with_capacity(num_lines);
+        let mut acc = Fp2::<P::Fp2Params>::one();
 
         // `one_half` = 1/2 in the field.
         let one_half = P::Fp::half();
 
-        for i in bit_iterator.skip(1) {
-            ell_coeffs.push(doubling_step::<P>(&mut r, &one_half));
+        let mut push_step = |(c0, c1, c2): CoeffTriplet<P::Fp2Params>| {
+            c0_and_prefix.push((c0, acc));
+            if !c0.is_zero() {
+                acc *= c0;
+            }
+            ell_coeffs.push((c1, c2));
+        };
+
+        for i in BitIteratorBE::new(P::X).skip(1) {
+            push_step(doubling_step::<P>(&mut r, &one_half));
 
             if i {
-                ell_coeffs.push(addition_step::<P>(&mut r, &q));
+                push_step(addition_step::<P>(&mut r, &q));
+            }
+        }
+
+        // `acc` starts at one and only multiplies by nonzero `Fp2` elements, so it is nonzero.
+        let mut inv = acc.inverse().unwrap();
+        for (ell, (c0, prefix)) in ell_coeffs.iter_mut().zip(c0_and_prefix.iter()).rev() {
+            if !c0.is_zero() {
+                let c0_inv = inv * prefix;
+                inv *= c0;
+                ell.0 *= c0_inv;
+                ell.1 *= c0_inv;
+            } else {
+                *ell = (Fp2::zero(), Fp2::zero());
             }
         }
 
