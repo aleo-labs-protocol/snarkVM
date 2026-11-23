@@ -302,8 +302,8 @@ mod tests {
         bail!("\n\nRemember to #[ignore] this test!\n\n")
     }
 
-    /// Inflates the claimed variable count on the first verifying key of `deployment`.
-    fn with_inflated_variables<N: Network>(deployment: &Deployment<N>, num_variables: u64) -> Deployment<N> {
+    /// Sets the claimed variable count on the first verifying key of `deployment`.
+    fn with_claimed_variables<N: Network>(deployment: &Deployment<N>, num_variables: u64) -> Deployment<N> {
         let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
         let tampered_vks =
             vec![(*function_id, (VerifyingKey::new(Arc::new(vk.deref().clone()), num_variables), certificate.clone()))];
@@ -317,11 +317,19 @@ mod tests {
         .unwrap()
     }
 
-    /// Inflates the claimed constraint count on the first verifying key of `deployment`.
-    fn with_inflated_constraints<N: Network>(deployment: &Deployment<N>, num_constraints: usize) -> Deployment<N> {
+    /// Sets the claimed constraint count on the first verifying key of `deployment`.
+    fn with_claimed_constraints<N: Network>(deployment: &Deployment<N>, num_constraints: usize) -> Deployment<N> {
+        with_claimed_circuit_vk(deployment, |vk| vk.circuit_info.num_constraints = num_constraints)
+    }
+
+    /// Edits the circuit verifying key, and so the claimed counts, on the first verifying key of `deployment`.
+    fn with_claimed_circuit_vk<N: Network>(
+        deployment: &Deployment<N>,
+        edit: impl FnOnce(&mut snarkvm_algorithms::snark::varuna::CircuitVerifyingKey<N::PairingCurve>),
+    ) -> Deployment<N> {
         let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
         let mut circuit_vk = vk.deref().clone();
-        circuit_vk.circuit_info.num_constraints = num_constraints;
+        edit(&mut circuit_vk);
         let tampered_vks =
             vec![(*function_id, (VerifyingKey::new(Arc::new(circuit_vk), vk.num_variables()), certificate.clone()))];
         Deployment::new(
@@ -454,12 +462,12 @@ function foo:
         )?;
         let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
 
-        let over_v1_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
-        let over_v2_variables = with_inflated_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
+        let over_v1_variables = with_claimed_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
+        let over_v2_variables = with_claimed_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
         let over_v1_constraints =
-            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1)?);
+            with_claimed_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS + 1)?);
         let over_v2_constraints =
-            with_inflated_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1)?);
+            with_claimed_constraints(&deployment, usize::try_from(CurrentNetwork::MAX_DEPLOYMENT_CONSTRAINTS_V2 + 1)?);
 
         // V16 enforces the original per-transaction limits.
         assert!(
@@ -498,6 +506,151 @@ function foo:
                 .contains("combined constraints exceeds the deployment limit")
         );
 
+        Ok(())
+    }
+
+    /// A program whose functions return a field, a record and a future.
+    const LIMITS_CALLEE: &str = r"
+program limits_callee.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
+
+function f:
+    input r0 as field.private;
+    output r0 as field.private;
+
+function mint:
+    input r0 as u64.private;
+    cast self.caller r0 into r1 as token.record;
+    output r1 as token.record;
+
+function bump:
+    input r0 as u64.public;
+    async bump r0 into r1;
+    output r1 as limits_callee.aleo/bump.future;
+
+finalize bump:
+    input r0 as u64.public;
+    assert.eq r0 r0;";
+
+    /// A program whose function synthesizes after calls that return a record, a future and a field.
+    const CALLS_RETURNING_RECORDS_AND_FUTURES: &str = r"
+import limits_callee.aleo;
+
+program calls_records_and_futures.aleo;
+
+function foo:
+    input r0 as u64.private;
+    call limits_callee.aleo/mint r0 into r1;
+    call limits_callee.aleo/bump 1u64 into r2;
+    call limits_callee.aleo/f 1field into r3;
+    hash.bhp256 r3 into r4 as field;
+    async foo r2 r4 into r5;
+    output r1 as limits_callee.aleo/token.record;
+    output r5 as calls_records_and_futures.aleo/foo.future;
+
+finalize foo:
+    input r0 as limits_callee.aleo/bump.future;
+    input r1 as field.public;
+    await r0;";
+
+    /// Returns a program whose function `foo` runs `first` and then hashes eight times.
+    fn program_hashing(name: &str, import: &str, first: &str) -> Result<Program<CurrentNetwork>> {
+        let hashes: String = (1..9).map(|i| format!("    hash.bhp256 r{i} into r{} as field;\n", i + 1)).collect();
+        Program::from_str(&format!(
+            "{import}program {name}.aleo;\n\nfunction foo:\n    input r0 as field.private;\n    {first}\n{hashes}    output r9 as field.private;\n"
+        ))
+    }
+
+    /// Returns the outcome of `verify_deployment`, with a halt as `Err`.
+    fn verify_deployment_outcome(
+        process: &Process<CurrentNetwork>,
+        consensus_version: ConsensusVersion,
+        deployment: &Deployment<CurrentNetwork>,
+    ) -> Result<(), String> {
+        match try_vm_runtime(|| {
+            process.verify_deployment::<CurrentAleo, _>(consensus_version, deployment, &mut TestRng::default())
+        }) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(payload) => Err(payload
+                .downcast_ref::<String>()
+                .cloned()
+                .unwrap_or_else(|| format!("unexpected panic payload: {payload:?}"))),
+        }
+    }
+
+    /// From V23, a function's synthesis limits hold after it calls another function.
+    #[test]
+    fn test_synthesis_limits_after_call_by_consensus_version() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::load()?;
+        process.lock().add_program(&Program::from_str(LIMITS_CALLEE)?)?;
+
+        let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name)?.to_field();
+        let dynamic_call = format!(
+            "call.dynamic {} {} {} with r0 (as field.private) into r1 (as field.private);",
+            field("limits_callee")?,
+            field("aleo")?,
+            field("f")?
+        );
+        let programs = [
+            (false, program_hashing("hashes_without_call", "", "add r0 1field into r1;")?),
+            (
+                true,
+                program_hashing(
+                    "hashes_after_static_call",
+                    "import limits_callee.aleo;\n\n",
+                    "call limits_callee.aleo/f r0 into r1;",
+                )?,
+            ),
+            (true, program_hashing("hashes_after_dynamic_call", "", &dynamic_call)?),
+        ];
+
+        // An honest deployment whose function makes several calls, with record and future outputs, is accepted.
+        let deployment =
+            process.deploy::<CurrentAleo, _>(&Program::from_str(CALLS_RETURNING_RECORDS_AND_FUTURES)?, rng)?;
+        for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23] {
+            verify_deployment_outcome(&process, consensus_version, &deployment).map_err(|error| anyhow!(error))?;
+        }
+
+        for (calls, program) in programs {
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+            let vk = &deployment.verifying_keys()[0].1.0;
+            let fewer_variables = with_claimed_variables(&deployment, vk.num_variables() / 2);
+            let fewer_constraints = with_claimed_constraints(&deployment, vk.circuit_info.num_constraints / 2);
+            let fewer_non_zeros = with_claimed_circuit_vk(&deployment, |vk| vk.circuit_info.num_non_zero_a /= 2);
+
+            for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23] {
+                verify_deployment_outcome(&process, consensus_version, &deployment).map_err(|error| anyhow!(error))?;
+
+                let variables = verify_deployment_outcome(&process, consensus_version, &fewer_variables);
+                let constraints = verify_deployment_outcome(&process, consensus_version, &fewer_constraints);
+                let non_zeros = verify_deployment_outcome(&process, consensus_version, &fewer_non_zeros);
+                if calls && consensus_version < ConsensusVersion::V23 {
+                    // Before V23, the limits stop at the call. The eight hashes after the call use more than half of
+                    // the variables, so the halved variable count is reached only after the call.
+                    assert_eq!(variables, Ok(()));
+                    assert!(matches!(&constraints, Err(error) if error.contains("certificate")), "{constraints:?}");
+                    assert!(matches!(&non_zeros, Err(error) if error.contains("certificate")), "{non_zeros:?}");
+                } else {
+                    assert!(
+                        matches!(&variables, Err(error) if error.contains("Surpassed the variable limit")),
+                        "{variables:?}"
+                    );
+                    assert!(
+                        matches!(&constraints, Err(error) if error.contains("Surpassed the constraint limit")),
+                        "{constraints:?}"
+                    );
+                    assert!(
+                        matches!(&non_zeros, Err(error) if error.contains("Surpassed the circuit density limit")),
+                        "{non_zeros:?}"
+                    );
+                }
+            }
+        }
         Ok(())
     }
 }

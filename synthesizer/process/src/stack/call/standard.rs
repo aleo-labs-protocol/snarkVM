@@ -507,6 +507,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Inject the existing circuit.
             A::inject_r1cs(r1cs);
 
+            // Restore the caller's synthesis limits, which the ejection cleared, if they hold after calls.
+            registers.call_stack_ref().set_synthesis_limits::<A>(true);
+
             use circuit::Inject;
 
             // Inject the network ID as `Mode::Constant`.
