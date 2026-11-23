@@ -291,6 +291,13 @@ impl<P: Fp12Parameters> Fp12<P> {
     /// `Fp12Parameters::cyclotomic_exp_fp12`. Assumes `self` lies in `G_{Phi_6(p^2)}` (or is zero).
     #[doc(hidden)]
     pub fn cyclotomic_exp_scalar(&self, exp: &[u64]) -> Self {
+        // Measurement switch (aleo-measurements, not for merge): a non-empty
+        // `SNARKVM_KARABINA_OFF` runs staging's uncompressed chain instead.
+        static KARABINA_OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *KARABINA_OFF.get_or_init(|| std::env::var_os("SNARKVM_KARABINA_OFF").is_some_and(|value| !value.is_empty()))
+        {
+            return self.cyclotomic_exp_uncompressed(exp);
+        }
         let Some(top_idx) = exp.iter().rposition(|&w| w != 0) else {
             return Self::one();
         };
