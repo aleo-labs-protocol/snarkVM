@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-types-address"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Type operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -26,3 +26,7 @@ workspace = true
 [dev-dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
+
+[dev-dependencies.snarkvm-console-network-environment]
+workspace = true
+features = [ "test-helpers" ]

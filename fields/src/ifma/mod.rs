@@ -39,6 +39,8 @@
 #![allow(unsafe_code)]
 
 #[cfg(target_arch = "x86_64")]
+mod cyclotomic;
+#[cfg(target_arch = "x86_64")]
 mod fp12;
 #[cfg(target_arch = "x86_64")]
 mod glv;
@@ -46,6 +48,8 @@ mod glv;
 mod kernel;
 #[cfg(target_arch = "x86_64")]
 mod layout;
+#[cfg(target_arch = "x86_64")]
+mod miller;
 #[cfg(all(test, target_arch = "x86_64"))]
 mod tests;
 
@@ -61,6 +65,7 @@ use crate::{
     fp6_3over2::Fp6Parameters,
     fp12_2over3over2::Fp2Params,
 };
+use snarkvm_utilities::BitIteratorBE;
 
 /// Whether the lane programs run for `P` on this CPU: `2^366 <= p < 2^377`, `SNARKVM_NO_IFMA` is
 /// unset or empty in the environment, and the CPU supports AVX-512F and AVX-512 IFMA.
@@ -114,6 +119,68 @@ where
         return;
     }
     a.mul_assign_scalar(b)
+}
+
+/// Returns `a^exp` by the chain of `Fp12::cyclotomic_exp`, in lanes if `is_supported_tower::<P, Q>()`
+/// and `exp` has a set bit. `exp` lists the words of the exponent, the least significant first.
+pub fn cyclotomic_exp_fp12<P, Q>(a: &Fp12<P>, exp: &[u64]) -> Fp12<P>
+where
+    P: Fp12Parameters,
+    Fp2Params<P>: Fp2Parameters<Fp = Fp384<Q>>,
+    Q: Fp384Parameters,
+{
+    #[cfg(target_arch = "x86_64")]
+    if is_supported_tower::<P, Q>()
+        && let Some(i) = exp.iter().rposition(|w| *w != 0)
+    {
+        let top = 64 * i + 63 - exp[i].leading_zeros() as usize;
+        let mut result = *a;
+        // SAFETY: `is_supported` detected both target features that `cyclotomic_exp_avx512` enables.
+        unsafe { cyclotomic::cyclotomic_exp_avx512(fp12::coefficients_mut(&mut result), exp, top) };
+        return result;
+    }
+    a.cyclotomic_exp_scalar(exp)
+}
+
+/// A G1 point `[x, y]` and the line coefficients `(c0, c1, c2)` of its G2 point in Fp2 over `R`, as
+/// `miller_loop_fp12` takes them.
+pub type MillerLoopPair<'a, R> = ([&'a <R as Fp2Parameters>::Fp; 2], &'a [(Fp2<R>, Fp2<R>, Fp2<R>)]);
+
+/// Returns the value of the loop of `Bls12::miller_loop` from `f` for a D-type twist, before its
+/// final conjugation, over the exponent `x` and the pairs of a G1 point `[x, y]` and the line
+/// coefficients `(c0, c1, c2)` of its G2 point; or `None` if `is_supported_tower::<P, Q>()` is
+/// false, `x` is empty, or a pair has fewer lines than the loop takes.
+///
+/// The loop takes the bits of `x`, whose words are listed the least significant first, from the
+/// second most significant bit of the last word down to bit 0. For each bit, it squares `f` and
+/// multiplies it by the next line of each pair in turn, and if the bit is set, it multiplies by
+/// the next line of each pair once more. A line `(c0, c1, c2)` of the pair with the point
+/// `[x, y]` multiplies `f` as `Fp12::mul_by_034` does by `c0 y`, `c1 x` and `c2`.
+pub fn miller_loop_fp12<P, Q>(f: &Fp12<P>, x: &[u64], pairs: &[MillerLoopPair<'_, Fp2Params<P>>]) -> Option<Fp12<P>>
+where
+    P: Fp12Parameters,
+    Fp2Params<P>: Fp2Parameters<Fp = Fp384<Q>>,
+    Q: Fp384Parameters,
+{
+    if !is_supported_tower::<P, Q>() || x.is_empty() {
+        return None;
+    }
+    let lines = BitIteratorBE::new(x).skip(1).map(|bit| 1 + bit as usize).sum::<usize>();
+    if pairs.iter().any(|(_, coefficients)| coefficients.len() < lines) {
+        return None;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut result = *f;
+        // SAFETY: `is_supported` detected both target features that `miller_loop_avx512` enables.
+        unsafe { miller::miller_loop_avx512(fp12::coefficients_mut(&mut result), x, pairs) };
+        Some(result)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = f;
+        None
+    }
 }
 
 /// The relative cost of the doublings of one `glv_mul_8` call, which every call runs: the

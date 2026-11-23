@@ -16,7 +16,6 @@
 use snarkvm_console_algorithms::{BHP, Poseidon};
 use snarkvm_console_types::prelude::*;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 /// A trait for a Merkle leaf hash function.

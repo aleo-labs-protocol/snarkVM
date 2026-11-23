@@ -38,31 +38,6 @@ impl<E: Environment, I: IntegerType> Neg for &Integer<E, I> {
     }
 }
 
-impl<E: Environment, I: IntegerType> Metrics<dyn Neg<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn count(case: &Self::Case) -> Count {
-        match I::is_signed() {
-            false => E::halt("Unsigned integers cannot be negated"),
-            true => match case {
-                Mode::Constant => Count::is(2 * I::BITS, 0, 0, 0),
-                _ => Count::is(I::BITS, 0, I::BITS + 2, I::BITS + 4),
-            },
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Neg<Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,14 +60,13 @@ mod tests {
                 let candidate = a.neg();
                 assert_eq!(expected, *candidate.eject_value());
                 assert_eq!(console::Integer::new(expected), candidate.eject_value());
-                assert_count!(Neg(Integer<I>) => Integer<I>, &mode);
-                assert_output_mode!(Neg(Integer<I>) => Integer<I>, &mode, candidate);
+                assert_scope!();
             }),
             None => match mode {
                 Mode::Constant => check_unary_operation_halts(a, |a: Integer<Circuit, I>| a.neg()),
                 _ => Circuit::scope(name, || {
                     let _candidate = a.neg();
-                    assert_count_fails!(Neg(Integer<I>) => Integer<I>, &mode);
+                    assert_scope_fails!();
                 }),
             },
         }

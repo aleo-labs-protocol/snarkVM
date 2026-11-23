@@ -6,7 +6,7 @@
 - Scope out necessary tests ahead of time.
 - If uncertain, ask.
 - Think very hard in your planning process.
-- New files, crates, dependencies, abstractions, traits, or error types require approval.
+- New files, crates, dependencies, traits, or error types require approval.
 
 ## Architecture
 
@@ -29,7 +29,8 @@ snarkVM is a virtual machine for zero-knowledge proof execution on the Aleo bloc
 
 ## Rules
 - All changes must be backwards compatible — no consensus forks.
-- New files, crates, dependencies, abstractions, or traits require approval.
+- New files, crates, dependencies, traits, or error types require approval.
+- Do not add cargo features without explicit sign-off.
 - `unwrap`s must have a comment justifying why they can't panic.
 
 ### Forking Risk
@@ -67,12 +68,18 @@ do or how language constructs work are unhelpful.
 ## Testing
 
 **Synthesizer tests are slow** — run only the specific test function.
-Use `--features test,dev-print` for integration tests.
+Plain `cargo test` runs only the fast tier. A synthesizer test's tier is its `#[ignore]` reason (`"slow"`,
+`"memory intensive"` or `"old version"`) and its path: memory-intensive tests sit in a `memory_intensive`
+module, and old-version tests under `vm::tests::old_versions`. See "Synthesizer test tiers" in
+`CI.md`. Set `RUST_LOG` (e.g. `snarkvm=debug,timing=trace`) to print their events and timings.
 
 ```bash
 cargo test -p <crate>                                           # Run crate tests
-cargo test -p <crate> -- test_name                              # Run specific test
-cargo test -p snarkvm-synthesizer --features test,dev-print     # Integration tests
+cargo test -p <crate> -- --include-ignored test_name            # Run specific test, even if ignored
+cargo test -p snarkvm-synthesizer --lib -- --include-ignored --skip ::memory_intensive:: --skip ::old_versions::  # Fast and slow tiers
+cargo test -p snarkvm-synthesizer --lib -- --ignored ::memory_intensive:: --test-threads 2  # Memory-intensive tier
+cargo test -p snarkvm-synthesizer --lib --release -- --ignored ::old_versions::  # Old-version tier
+cargo test -p snarkvm-synthesizer --test '*'                    # Integration tests
 ```
 
 ## Validation
@@ -109,7 +116,7 @@ Pre-commit hook runs workspace-wide: `cargo clippy --workspace --all-targets --a
 - Match existing file patterns exactly — if the file uses `Self::`, you use `Self::`.
 - Comments must be concise, complete, punctuated sentences.
 - `#![forbid(unsafe_code)]` in all crates unless approved.
-- License header required (enforced by `tests/sources.rs`).
+- License header required (enforced by `scripts/check_sources.py`).
 
 ## Review Checklist
 

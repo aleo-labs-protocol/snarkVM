@@ -132,14 +132,15 @@ pub(super) fn canonical(x: &[__m512i; 8], p: &[__m512i; 8], offset: &[__m512i; 8
     subtract_p_below_2p(&below_2p(x, p, offset, estimate), p)
 }
 
-/// Returns `x` mod `p` in `[0, 2 p)` with limbs below 2^52, for `x` in `(-64 p, 2^33 p)` with
-/// limbs below 2^62 in absolute value and `2^366 <= p < 2^377`. `offset` and `estimate` hold
-/// `canonical_constants(p)` in every lane.
+/// Returns `x` mod `p` in `[0, 2 p)` with limbs below 2^52, for `x` in `(-k p, 2^33 p)` with
+/// limbs below 2^62 in absolute value and `2^366 <= p < 2^377`, where `offset` holds `k p` in
+/// every lane for a `k` at most 2^33, and `estimate` holds `quotient_estimate(p)`;
+/// `canonical_vectors` gives both for `k = 64`.
 #[inline]
 #[target_feature(enable = "avx512f,avx512ifma")]
 pub(super) fn below_2p(x: &[__m512i; 8], p: &[__m512i; 8], offset: &[__m512i; 8], estimate: __m512i) -> [__m512i; 8] {
     let zero = _mm512_setzero_si512();
-    // `v = x + 64 p` is in `(0, 2^34 p)`, below 2^411, so its top limb `v_7` is below 2^47. With
+    // `v = x + k p` is in `(0, 2^34 p)`, below 2^411, so its top limb `v_7` is below 2^47. With
     // `e = estimate`, `quotient = floor(v_7 e / 2^52)` is at most `v / p`, since `e <= 2^416 / p`.
     // And `v / p - quotient < 2`, since `v < (v_7 + 1) 2^364`, `2^364 / p <= 1 / 4`,
     // `e > 2^416 / p - 1` and `v_7 / 2^52 < 1 / 32`. So `v - quotient p` is in `[0, 2 p)`. The

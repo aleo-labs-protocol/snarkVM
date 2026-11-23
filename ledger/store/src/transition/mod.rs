@@ -29,13 +29,15 @@ use console::{
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Input, Output, Transition};
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use std::borrow::Cow;
 
 /// A trait for transition storage.
-pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait TransitionStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The transition program IDs and function names.
     type LocatorMap: for<'a> Map<'a, N::TransitionID, (ProgramID<N>, Identifier<N>)>;
     /// The transition inputs.

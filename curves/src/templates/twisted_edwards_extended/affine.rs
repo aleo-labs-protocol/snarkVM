@@ -19,11 +19,11 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, TwistedEdwardsParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, PrimeField, SquareRootField, Zero};
-use snarkvm_utilities::{FromBytes, ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
+use snarkvm_utilities::{ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
 
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
-    io::{Read, Result as IoResult, Write},
+    io::{Result as IoResult, Write},
     ops::{Mul, Neg},
 };
 
@@ -32,25 +32,17 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Affine<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
-    pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
-    pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "multiply the x and y coordinates")]
-    pub t: P::BaseField,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) t: P::BaseField,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    #[deprecated(
-        since = "4.13.0",
-        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
-    )]
-    pub fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
+    pub(crate) fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
         Self { x, y, t }
     }
 }
@@ -85,6 +77,8 @@ impl<P: Parameters> Display for Affine<P> {
         write!(f, "Affine(x={}, y={})", self.x, self.y)
     }
 }
+
+impl<P: Parameters> crate::sealed::Sealed for Affine<P> {}
 
 impl<P: Parameters> AffineCurve for Affine<P> {
     type BaseField = P::BaseField;
@@ -291,15 +285,6 @@ impl<P: Parameters> ToBytes for Affine<P> {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.x.write_le(&mut writer)?;
         self.y.write_le(&mut writer)
-    }
-}
-
-impl<P: Parameters> FromBytes for Affine<P> {
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read_le(&mut reader)?;
-        let y = P::BaseField::read_le(&mut reader)?;
-        Ok(Self::new(x, y, x * y))
     }
 }
 

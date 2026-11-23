@@ -23,6 +23,8 @@ pub type Fq12 = Fp12<Fq12Parameters>;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Fq12Parameters;
 
+impl snarkvm_fields::sealed_parameters::Sealed for Fq12Parameters {}
+
 impl Fp12Parameters for Fq12Parameters {
     type Fp6Params = Fq6Parameters;
 
@@ -223,5 +225,9 @@ impl Fp12Parameters for Fq12Parameters {
 
     fn mul_assign_fp12(a: &mut Fq12, b: &Fq12) {
         snarkvm_fields::ifma::mul_assign_fp12(a, b)
+    }
+
+    fn cyclotomic_exp_fp12(a: &Fq12, exp: &[u64]) -> Fq12 {
+        snarkvm_fields::ifma::cyclotomic_exp_fp12(a, exp)
     }
 }

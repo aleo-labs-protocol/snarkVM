@@ -154,9 +154,8 @@ impl<N: Network> Drop for SequentialOperationQueue<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aleo_std::StorageMode;
     use console::network::MainnetV0;
-    use snarkvm_ledger_store::helpers::memory::ConsensusMemory;
+    use snarkvm_ledger_store::{StorageMode, helpers::memory::ConsensusMemory};
 
     fn queue_with_panicking_worker() -> SequentialOperationQueue<MainnetV0> {
         SequentialOperationQueue { sender: None, thread: Some(thread::spawn(|| panic!("worker failed"))) }

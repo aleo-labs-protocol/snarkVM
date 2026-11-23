@@ -26,8 +26,7 @@ use console::{
     program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
-
-use aleo_std_storage::StorageMode;
+use snarkvm_utilities::StorageMode;
 
 /// A database transition storage.
 #[derive(Clone)]
@@ -49,6 +48,8 @@ pub struct TransitionDB<N: Network> {
     /// The signer commitments.
     scm_map: DataMap<N::TransitionID, Field<N>>,
 }
+
+impl<N: Network> crate::sealed::Sealed for TransitionDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
@@ -144,6 +145,8 @@ pub struct InputDB<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for InputDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> InputStorage<N> for InputDB<N> {
@@ -263,6 +266,8 @@ pub struct OutputDB<N: Network> {
     /// The storage mode.
     storage_mode: StorageMode,
 }
+
+impl<N: Network> crate::sealed::Sealed for OutputDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> OutputStorage<N> for OutputDB<N> {

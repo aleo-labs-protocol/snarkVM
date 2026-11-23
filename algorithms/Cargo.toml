@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-algorithms"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -43,13 +43,13 @@ bench = false
 name = "varuna"
 path = "benches/snark/varuna.rs"
 harness = false
-required-features = [ "test", "filesystem" ]
+required-features = [ "test-helpers", "filesystem" ]
 
 [[bench]]
 name = "varuna_verifier"
 path = "benches/snark/varuna_verifier.rs"
 harness = false
-required-features = [ "test", "filesystem" ]
+required-features = [ "test-helpers", "filesystem" ]
 
 [dependencies.snarkvm-curves]
 workspace = true
@@ -71,9 +71,6 @@ optional = true
 version = "0.8"
 default-features = false
 features = [ "std", "no-rng" ]
-
-[dependencies.aleo-std]
-workspace = true
 
 [dependencies.anyhow]
 workspace = true
@@ -119,9 +116,9 @@ workspace = true
 [dependencies.num-traits]
 workspace = true
 
-[dev-dependencies.aleo-std]
+[dev-dependencies.snarkvm-utilities]
 workspace = true
-features = [ "storage" ]
+features = [ "storage", "test-helpers" ]
 
 [dev-dependencies.expect-test]
 workspace = true
@@ -139,17 +136,12 @@ features = [ "preserve_order" ]
 [dev-dependencies.serial_test]
 workspace = true
 
+[dev-dependencies.tracing-subscriber]
+workspace = true
+features = [ "env-filter" ]
+
 [features]
-cuda = [ "snarkvm-algorithms-cuda" ]
+cuda = [ "dep:snarkvm-algorithms-cuda" ]
 filesystem = [ "snarkvm-parameters/filesystem" ]
-locktick = [ "snarkvm-parameters/locktick" ]
-profiler = [ "aleo-std/profiler" ]
-test = [ ]
-serial = [
-  "snarkvm-curves/serial",
-  "snarkvm-fields/serial",
-  "snarkvm-utilities/serial"
-]
-test_exports = [ ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
-snark-print = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [ ]

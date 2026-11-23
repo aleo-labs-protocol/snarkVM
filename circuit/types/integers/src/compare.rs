@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> Compare<Self> for Integer<E, I> {
 
     /// Returns `true` if `self` is less than `other`.
     fn is_less_than(&self, other: &Self) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the comparison and return the new constant.
@@ -33,9 +36,9 @@ impl<E: Environment, I: IntegerType> Compare<Self> for Integer<E, I> {
             let negative_one_plus_difference_plus_one =
                 Integer::<E, I>::constant(-console::Integer::one()).to_field() + self.to_field() - other.to_field()
                     + Field::one();
-            match negative_one_plus_difference_plus_one.to_lower_bits_le(I::BITS as usize + 1).last() {
+            match negative_one_plus_difference_plus_one.to_lower_bits_le(i_bits + 1).last() {
                 Some(bit) => Self::Output::ternary(&same_sign, &!bit, &self_is_negative_and_other_is_positive),
-                // Note: `E::halt` should never be invoked as `I::BITS as usize + 1` is greater than zero.
+                // Note: `E::halt` should never be invoked as `i_bits + 1` is greater than zero.
                 None => E::halt("Malformed expression detected during signed integer comparison."),
             }
         } else {
@@ -44,9 +47,9 @@ impl<E: Environment, I: IntegerType> Compare<Self> for Integer<E, I> {
             let max_plus_difference_plus_one =
                 Integer::<E, I>::constant(console::Integer::MAX).to_field() + self.to_field() - other.to_field()
                     + Field::one();
-            match max_plus_difference_plus_one.to_lower_bits_le(I::BITS as usize + 1).last() {
+            match max_plus_difference_plus_one.to_lower_bits_le(i_bits + 1).last() {
                 Some(bit) => !bit,
-                // Note: `E::halt` should never be invoked as `I::BITS as usize + 1` is greater than zero.
+                // Note: `E::halt` should never be invoked as `i_bits + 1` is greater than zero.
                 None => E::halt("Malformed expression detected during unsigned integer comparison."),
             }
         }
@@ -65,35 +68,6 @@ impl<E: Environment, I: IntegerType> Compare<Self> for Integer<E, I> {
     /// Returns `true` if `self` is greater than or equal to `other`.
     fn is_greater_than_or_equal(&self, other: &Self) -> Self::Output {
         !self.is_less_than(other)
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn Compare<Integer<E, I>, Output = Boolean<E>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match I::is_signed() {
-            true => match (case.0, case.1) {
-                (Mode::Constant, Mode::Constant) => Count::is(1, 0, 0, 0),
-                (Mode::Constant, _) | (_, Mode::Constant) => Count::is(I::BITS, 0, I::BITS + 2, I::BITS + 3),
-                (_, _) => Count::is(I::BITS, 0, I::BITS + 4, I::BITS + 5),
-            },
-            false => match (case.0, case.1) {
-                (Mode::Constant, Mode::Constant) => Count::is(1, 0, 0, 0),
-                (_, _) => Count::is(I::BITS, 0, I::BITS + 1, I::BITS + 2),
-            },
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn Compare<Integer<E, I>, Output = Boolean<E>>> for Integer<E, I> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
-        }
     }
 }
 
@@ -121,8 +95,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.is_less_than(&b);
             assert_eq!(expected, candidate.eject_value());
-            assert_count!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b));
-            assert_output_mode!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
         Circuit::reset();
 
@@ -131,8 +104,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.is_less_than_or_equal(&b);
             assert_eq!(expected, candidate.eject_value());
-            assert_count!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b));
-            assert_output_mode!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
         Circuit::reset();
 
@@ -141,8 +113,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.is_greater_than(&b);
             assert_eq!(expected, candidate.eject_value());
-            assert_count!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b));
-            assert_output_mode!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
         Circuit::reset();
 
@@ -151,8 +122,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.is_greater_than_or_equal(&b);
             assert_eq!(expected, candidate.eject_value());
-            assert_count!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b));
-            assert_output_mode!(Compare(Integer<I>, Integer<I>) => Boolean, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

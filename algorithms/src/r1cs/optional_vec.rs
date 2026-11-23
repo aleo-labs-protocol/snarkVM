@@ -16,6 +16,7 @@
 // A helper object containing a list of values that, when removed, leave a
 // "hole" in their place; this allows all the following indices to remain
 // unperturbed; the holes take priority when inserting new objects.
+#[doc(hidden)]
 pub struct OptionalVec<T> {
     // a list of optional values
     values: Vec<Option<T>>,

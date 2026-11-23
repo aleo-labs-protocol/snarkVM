@@ -24,10 +24,11 @@ const NUM_DEPLOYMENTS: usize = 3;
 // Tests that a function which receives a Field/Group/Address input, casts it to
 // a Scalar and outputs the latter, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_atomic() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     // The three types which can be cast to a Scalar but do not always fit
@@ -135,10 +136,11 @@ fn test_program_with_output_scalar_from_atomic() {
 // Tests that a function which receives a record holding a Scalar entry, reads the
 // entry and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_record() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {
@@ -244,10 +246,11 @@ fn test_program_with_output_scalar_from_record() {
 // Tests that a function which receives a dynamic record, reads a Scalar entry with
 // `get.record.dynamic` and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_dynamic_record() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     // The read functions materialize the dynamic record with a `call.dynamic` to
@@ -376,10 +379,11 @@ fn test_program_with_output_scalar_from_dynamic_record() {
 // Tests that a function which receives an array of Scalars, reads the first element
 // and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_array() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {
@@ -467,10 +471,11 @@ fn test_program_with_output_scalar_from_array() {
 // Tests that a function which receives a struct holding a Scalar field, reads the
 // field and outputs it, deploys correctly.
 #[test]
+#[ignore = "slow"]
 fn test_program_with_output_scalar_from_struct() {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {

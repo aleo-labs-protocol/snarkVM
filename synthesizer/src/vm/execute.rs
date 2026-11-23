@@ -180,7 +180,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: &dyn QueryTrait<N>,
         rng: &mut R,
     ) -> Result<(Execution<N>, Response<N>), VmExecError> {
-        let timer = timer!("VM::execute_authorization_raw");
+        let timer = timing_span!("VM::execute_authorization_raw").entered();
 
         // Construct the locator of the main function.
         let locator = {
@@ -202,11 +202,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let authorization = cast_ref!(authorization as Authorization<$network>);
                 // Execute the call.
                 let (response, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
-                lap!(timer, "Execute the call");
+                timing_event!("Execute the call");
 
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
-                lap!(timer, "Prepare the assignments");
+                timing_event!("Prepare the assignments");
 
                 // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
                 // function in the execution, all DynamicRecords and ExternalRecords
@@ -216,12 +216,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     let include_direct_imports = consensus_version >= ConsensusVersion::V18;
                     let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
                     Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
-                    lap!(timer, "Check record existence");
+                    timing_event!("Check record existence");
                 }
 
                 // Compute the proof and construct the execution.
                 let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
-                lap!(timer, "Compute the proof");
+                timing_event!("Compute the proof");
 
                 // Return the execution.
                 Ok((cast_ref!(execution as Execution<N>).clone(), cast_ref!(response as Response<N>).clone()))
@@ -230,7 +230,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Execute the authorization.
         let result = process!(self, logic);
-        finish!(timer, "Execute the authorization");
+        timing_event!("Execute the authorization");
+        drop(timer);
         result
     }
 
@@ -243,7 +244,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: &dyn QueryTrait<N>,
         rng: &mut R,
     ) -> Result<Fee<N>, VmExecError> {
-        let timer = timer!("VM::execute_fee_authorization_raw");
+        let timer = timing_span!("VM::execute_fee_authorization_raw").entered();
 
         // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
@@ -259,11 +260,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let authorization = cast_ref!(authorization as Authorization<$network>);
                 // Execute the call.
                 let (_, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
-                lap!(timer, "Execute the call");
+                timing_event!("Execute the call");
 
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
-                lap!(timer, "Prepare the assignments");
+                timing_event!("Prepare the assignments");
 
                 // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
                 // function in the execution, all DynamicRecords and ExternalRecords
@@ -273,12 +274,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     let include_direct_imports = consensus_version >= ConsensusVersion::V18;
                     let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
                     Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
-                    lap!(timer, "Check record existence");
+                    timing_event!("Check record existence");
                 }
 
                 // Compute the proof and construct the fee.
                 let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;
-                lap!(timer, "Compute the proof");
+                timing_event!("Compute the proof");
 
                 // Return the fee.
                 Ok(cast_ref!(fee as Fee<N>).clone())
@@ -287,7 +288,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Execute the authorization.
         let result = process!(self, logic);
-        finish!(timer, "Execute the authorization");
+        timing_event!("Execute the authorization");
+        drop(timer);
         result
     }
 }
@@ -314,20 +316,18 @@ mod tests {
     #[cfg(feature = "rocks")]
     type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
-    fn prepare_vm(
-        rng: &mut TestRng,
-    ) -> Result<(
+    fn prepare_vm() -> Result<(
         VM<CurrentNetwork, LedgerType>,
         IndexMap<Field<CurrentNetwork>, Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
     )> {
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
 
         // Fetch the unspent records.
         let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
 
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
@@ -342,12 +342,12 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let withdrawal_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let withdrawal_address = Address::try_from(&withdrawal_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -382,13 +382,13 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let validator_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let validator_address = Address::try_from(&validator_private_key).unwrap();
         let delegator_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let delegator_address = Address::try_from(&delegator_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -418,8 +418,8 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_execute_cost_fee_migration() {
         let rng = &mut TestRng::default();
         let credits_program = "credits.aleo";
@@ -433,7 +433,7 @@ mod tests {
         let inputs = &[recipient_address.to_string(), format!("{transfer_public_amount}_u64")];
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
 
@@ -451,17 +451,17 @@ mod tests {
         assert_eq!(old_cost - cost, 8_500 * 2);
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_fee_migration_occurs_at_correct_block_height() {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -489,16 +489,16 @@ mod tests {
         assert_eq!(34_060, *transaction.base_fee_amount().unwrap());
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_fee_migration_correctly_calculates_nested() {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Deploy a nested program to test the finalize cost cache
         let program = Program::from_str(
@@ -570,7 +570,7 @@ finalize test:
             &[validator_address.to_string(), withdrawal_address.to_string(), format!("{bond_public_amount}_u64")];
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
 
@@ -587,11 +587,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -625,12 +625,12 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent record.
         let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
@@ -664,11 +664,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -698,11 +698,11 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Initialize a new signer.
-        let signer = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let signer = crate::vm::test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&signer).unwrap();
 
         // Prepare the VM and records.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
         // Prepare the inputs.
         let inputs = [
@@ -728,54 +728,15 @@ finalize test:
     }
 
     #[test]
-    #[ignore]
-    fn test_join_transaction_size() {
-        let rng = &mut TestRng::default();
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
-        // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
-
-        // Fetch the unspent records.
-        let mut records = records.values();
-        let record_1 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
-        let record_2 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Prepare the inputs.
-        let inputs = [Value::<CurrentNetwork>::Record(record_1), Value::<CurrentNetwork>::Record(record_2)].into_iter();
-
-        // Execute.
-        let transaction =
-            vm.execute(&caller_private_key, ("credits.aleo", "join"), inputs, None, 0, None, rng).unwrap();
-
-        // Verify the transaction.
-        vm.check_transaction(&transaction, None, rng).unwrap();
-
-        // Assert the size of the transaction.
-        let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();
-        assert_eq!(3571, transaction_size_in_bytes, "Update me if serialization has changed");
-
-        // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
-        if let Transaction::Execute(_, _, execution, _) = &transaction {
-            let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
-            assert_eq!(2120, execution_size_in_bytes, "Update me if serialization has changed");
-        }
-    }
-
-    #[test]
     fn test_split_transaction_size() {
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
         let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
         // Prepare the VM and records.
-        let (vm, records) = prepare_vm(rng).unwrap();
+        let (vm, records) = prepare_vm().unwrap();
 
         // Fetch the unspent record.
         let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
@@ -805,27 +766,6 @@ finalize test:
     }
 
     #[test]
-    #[ignore]
-    fn test_fee_private_transition_size() {
-        let rng = &mut TestRng::default();
-
-        // Retrieve a fee transaction.
-        let transaction = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
-        // Retrieve the fee.
-        let fee = match transaction {
-            Transaction::Fee(_, fee) => fee,
-            _ => panic!("Expected a fee transaction"),
-        };
-
-        // Ensure the transition is a fee transition.
-        assert!(fee.is_fee_private());
-
-        // Assert the size of the transition.
-        let fee_size_in_bytes = fee.to_bytes_le().unwrap().len();
-        assert_eq!(2076, fee_size_in_bytes, "Update me if serialization has changed");
-    }
-
-    #[test]
     fn test_fee_public_transition_size() {
         let rng = &mut TestRng::default();
 
@@ -846,20 +786,223 @@ finalize test:
     }
 
     #[test]
-    #[ignore]
-    fn test_wide_nested_execution_cost() {
+    fn test_deep_nested_execution_cost() {
         // Initialize an RNG.
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Prepare the VM.
-        let (vm, _) = prepare_vm(rng).unwrap();
+        let (vm, _) = prepare_vm().unwrap();
 
-        // Construct the child program.
-        let child_program = Program::from_str(
+        // Construct the base program.
+        let base_program = Program::from_str(
             r"
+program test_1.aleo;
+mapping data:
+    key as field.public;
+    value as field.public;
+function test:
+    input r0 as field.public;
+    input r1 as field.public;
+    async test r0 r1 into r2;
+    output r2 as test_1.aleo/test.future;
+finalize test:
+    input r0 as field.public;
+    input r1 as field.public;
+    hash.bhp256 r0 into r2 as field;
+    hash.bhp256 r1 into r3 as field;
+    set r2 into data[r3];
+constructor:
+    assert.eq edition 0u16;",
+        )
+        .unwrap();
+
+        // Add the program to the process.
+        // The program is well-formed and has no imports, so adding it does not fail.
+        vm.process().lock().add_program(&base_program).unwrap();
+
+        // Initialize programs up to the maximum depth.
+        for i in 2..=Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1 {
+            // Construct the program.
+            let program = Program::from_str(&format!(
+                r"
+{imports}
+program test_{curr}.aleo;
+mapping data:
+    key as field.public;
+    value as field.public;
+function test:
+    input r0 as field.public;
+    input r1 as field.public;
+    call test_{prev}.aleo/test r0 r1 into r2;
+    async test r0 r1 r2 into r3;
+    output r3 as test_{curr}.aleo/test.future;
+finalize test:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as test_{prev}.aleo/test.future;
+    await r2;
+    hash.bhp256 r0 into r3 as field;
+    hash.bhp256 r1 into r4 as field;
+    set r3 into data[r4];
+constructor:
+    assert.eq edition 0u16;",
+                imports = (1..i).map(|j| format!("import test_{j}.aleo;")).join("\n"),
+                prev = i - 1,
+                curr = i,
+            ))
+            .unwrap();
+
+            // Add the program to the process.
+            // The program is well-formed and its imports are in the process, so adding it does not fail.
+            vm.process().lock().add_program(&program).unwrap();
+        }
+
+        // Authorize the program.
+        // The program is in the process and the inputs match its signature, so authorizing it does not fail.
+        let authorization = vm
+            .authorize(
+                &caller_private_key,
+                format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1),
+                "test",
+                [Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
+                rng,
+            )
+            .unwrap();
+
+        // Construct an unproven execution from the authorized transitions, which determine the finalize cost.
+        // The authorization holds at least the root transition, so the list of transitions is not empty and the construction does not fail.
+        let execution = Execution::from(
+            authorization.transitions().into_values(),
+            <CurrentNetwork as Network>::StateRoot::default(),
+            None,
+        )
+        .unwrap();
+
+        // Check that the number of transitions is correct.
+        assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
+
+        // Get the finalize cost of the execution.
+        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
+
+        // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
+        let mut expected_cost = 0;
+        for transition in execution.transitions() {
+            // Get the program ID and name of the transition.
+            let program_id = transition.program_id();
+            let function_name = transition.function_name();
+            // Get the stack.
+            let stack = vm.process().get_stack(program_id).unwrap().clone();
+            // Get the finalize types.
+            let finalize_types = stack.get_finalize_types(function_name).unwrap();
+            // Get the finalize block of the transition and sum the cost of each command.
+            let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
+                None => 0,
+                Some(finalize_logic) => {
+                    // Aggregate the cost of all commands in the program, priced as `execution_cost` prices
+                    // them for `ConsensusVersion::V2`: with fee version V2 and no consensus version.
+                    finalize_logic
+                        .commands()
+                        .iter()
+                        .map(|command| {
+                            cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2, None)
+                        })
+                        .try_fold(0u64, |acc, res| {
+                            res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
+                        })
+                        .unwrap()
+                }
+            };
+            // Add the cost to the total cost.
+            expected_cost += cost;
+        }
+
+        // Check that the finalize cost is equal to the expected cost.
+        assert_eq!(finalize_cost, expected_cost);
+    }
+
+    mod memory_intensive {
+        use super::*;
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_join_transaction_size() {
+            let rng = &mut TestRng::default();
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            // Prepare the VM and records past `ConsensusVersion::V8`, where `join` can create a record.
+            let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
+            let records = block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+
+            // Fetch the unspent records.
+            let mut records = records.values();
+            let record_1 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
+            let record_2 = records.next().unwrap().decrypt(&caller_view_key).unwrap();
+
+            // Prepare the inputs.
+            let inputs =
+                [Value::<CurrentNetwork>::Record(record_1), Value::<CurrentNetwork>::Record(record_2)].into_iter();
+
+            // Execute.
+            let transaction =
+                vm.execute(&caller_private_key, ("credits.aleo", "join"), inputs, None, 0, None, rng).unwrap();
+
+            // Verify the transaction.
+            vm.check_transaction(&transaction, None, rng).unwrap();
+
+            // Assert the size of the transaction.
+            let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();
+            assert_eq!(3571, transaction_size_in_bytes, "Update me if serialization has changed");
+
+            // Assert the size of the execution.
+            assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+            if let Transaction::Execute(_, _, execution, _) = &transaction {
+                let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
+                assert_eq!(2120, execution_size_in_bytes, "Update me if serialization has changed");
+            }
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_fee_private_transition_size() {
+            let rng = &mut TestRng::default();
+
+            // Retrieve a fee transaction.
+            let transaction = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
+            // Retrieve the fee.
+            let fee = match transaction {
+                Transaction::Fee(_, fee) => fee,
+                _ => panic!("Expected a fee transaction"),
+            };
+
+            // Ensure the transition is a fee transition.
+            assert!(fee.is_fee_private());
+
+            // Assert the size of the transition.
+            let fee_size_in_bytes = fee.to_bytes_le().unwrap().len();
+            assert_eq!(2076, fee_size_in_bytes, "Update me if serialization has changed");
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_wide_nested_execution_cost() {
+            // Initialize an RNG.
+            let rng = &mut TestRng::default();
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+
+            // Prepare the VM.
+            let (vm, _) = prepare_vm().unwrap();
+
+            // Construct the child program.
+            let child_program = Program::from_str(
+                r"
 program child.aleo;
 mapping data:
     key as field.public;
@@ -875,21 +1018,22 @@ finalize test:
     hash.bhp256 r0 into r2 as field;
     hash.bhp256 r1 into r3 as field;
     set r2 into data[r3];",
-        )
-        .unwrap();
+            )
+            .unwrap();
 
-        // Deploy the program.
-        let transaction = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng).unwrap();
+            // Deploy the program.
+            let transaction = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng).unwrap();
 
-        // Construct the next block.
-        let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+            // Construct the next block.
+            let next_block =
+                crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
 
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
+            // Add the next block to the VM.
+            vm.add_next_block(&next_block).unwrap();
 
-        // Construct the parent program.
-        let parent_program = Program::from_str(
-            r"
+            // Construct the parent program.
+            let parent_program = Program::from_str(
+                r"
 import child.aleo;
 program parent.aleo;
 function test:
@@ -944,164 +1088,11 @@ finalize test:
     await r13;
     await r14;
     await r15;",
-        )
-        .unwrap();
-
-        // Deploy the program.
-        let transaction = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng).unwrap();
-
-        // Construct the next block.
-        let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Execute the parent program.
-        let Transaction::Execute(_, _, execution, _) = vm
-            .execute(&caller_private_key, ("parent.aleo", "test"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
-            .unwrap()
-        else {
-            unreachable!("VM::execute always produces an `Execution`")
-        };
-
-        // Check that the number of transitions is correct.
-        // Change me if the `MAX_INPUTS` changes.
-        assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
-
-        // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
-
-        // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
-        let mut expected_cost = 0;
-        for transition in execution.transitions() {
-            // Get the program ID and name of the transition.
-            let program_id = transition.program_id();
-            let function_name = transition.function_name();
-            // Get the stack.
-            let stack = vm.process().get_stack(program_id).unwrap().clone();
-            // Get the finalize types.
-            let finalize_types = stack.get_finalize_types(function_name).unwrap();
-            // Get the finalize block of the transition and sum the cost of each command.
-            let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
-                None => 0,
-                Some(finalize_logic) => {
-                    // We derive the consensus version, as it may have changed due to the short
-                    // block span of test consensus versions
-                    let consensus_version =
-                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
-
-                    // Aggregate the cost of all commands in the program.
-                    finalize_logic
-                        .commands()
-                        .iter()
-                        .map(|command| {
-                            cost_per_command(
-                                &stack,
-                                &finalize_types,
-                                command,
-                                ConsensusFeeVersion::V2,
-                                Some(consensus_version),
-                            )
-                        })
-                        .try_fold(0u64, |acc, res| {
-                            res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
-                        })
-                        .unwrap()
-                }
-            };
-            // Add the cost to the total cost.
-            expected_cost += cost;
-        }
-
-        // Check that the finalize cost is equal to the expected cost.
-        assert_eq!(finalize_cost, expected_cost);
-    }
-
-    #[test]
-    #[ignore = "memory-intensive"]
-    fn test_deep_nested_execution_cost() {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-
-        // Prepare the VM.
-        let (vm, _) = prepare_vm(rng).unwrap();
-
-        // Forward the chain to block 13:
-        for _i in 1..13 {
-            let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
-
-            vm.add_next_block(&next_block).unwrap();
-        }
-
-        // Construct the base program.
-        let base_program = Program::from_str(
-            r"
-program test_1.aleo;
-mapping data:
-    key as field.public;
-    value as field.public;
-function test:
-    input r0 as field.public;
-    input r1 as field.public;
-    async test r0 r1 into r2;
-    output r2 as test_1.aleo/test.future;
-finalize test:
-    input r0 as field.public;
-    input r1 as field.public;
-    hash.bhp256 r0 into r2 as field;
-    hash.bhp256 r1 into r3 as field;
-    set r2 into data[r3];
-constructor:
-    assert.eq edition 0u16;",
-        )
-        .unwrap();
-
-        // Deploy the program.
-        let transaction = vm.deploy(&caller_private_key, &base_program, None, 0, None, rng).unwrap();
-
-        // Construct the next block.
-        let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Initialize programs up to the maximum depth.
-        for i in 2..=Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1 {
-            // Construct the program.
-            let program = Program::from_str(&format!(
-                r"
-{imports}
-program test_{curr}.aleo;
-mapping data:
-    key as field.public;
-    value as field.public;
-function test:
-    input r0 as field.public;
-    input r1 as field.public;
-    call test_{prev}.aleo/test r0 r1 into r2;
-    async test r0 r1 r2 into r3;
-    output r3 as test_{curr}.aleo/test.future;
-finalize test:
-    input r0 as field.public;
-    input r1 as field.public;
-    input r2 as test_{prev}.aleo/test.future;
-    await r2;
-    hash.bhp256 r0 into r3 as field;
-    hash.bhp256 r1 into r4 as field;
-    set r3 into data[r4];
-constructor:
-    assert.eq edition 0u16;",
-                imports = (1..i).map(|j| format!("import test_{j}.aleo;")).join("\n"),
-                prev = i - 1,
-                curr = i,
-            ))
+            )
             .unwrap();
 
             // Deploy the program.
-            let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+            let transaction = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng).unwrap();
 
             // Construct the next block.
             let next_block =
@@ -1109,73 +1100,63 @@ constructor:
 
             // Add the next block to the VM.
             vm.add_next_block(&next_block).unwrap();
-        }
 
-        // Execute the program.
-        let Transaction::Execute(_, _, execution, _) = vm
-            .execute(
-                &caller_private_key,
-                (format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1), "test"),
-                [Value::from_str("0field").unwrap(), Value::from_str("1field").unwrap()].iter(),
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap()
-        else {
-            unreachable!("VM::execute always produces an `Execution`")
-        };
-
-        // Check that the number of transitions is correct.
-        assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
-
-        // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
-
-        // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
-        let mut expected_cost = 0;
-        for transition in execution.transitions() {
-            // Get the program ID and name of the transition.
-            let program_id = transition.program_id();
-            let function_name = transition.function_name();
-            // Get the stack.
-            let stack = vm.process().get_stack(program_id).unwrap().clone();
-            // Get the finalize types.
-            let finalize_types = stack.get_finalize_types(function_name).unwrap();
-            // Get the finalize block of the transition and sum the cost of each command.
-            let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
-                None => 0,
-                Some(finalize_logic) => {
-                    // We derive the consensus version, as it may have changed due to the short
-                    // block span of test consensus versions
-                    let consensus_version =
-                        CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
-
-                    // Aggregate the cost of all commands in the program.
-                    finalize_logic
-                        .commands()
-                        .iter()
-                        .map(|command| {
-                            cost_per_command(
-                                &stack,
-                                &finalize_types,
-                                command,
-                                ConsensusFeeVersion::V2,
-                                Some(consensus_version),
-                            )
-                        })
-                        .try_fold(0u64, |acc, res| {
-                            res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
-                        })
-                        .unwrap()
-                }
+            // Execute the parent program.
+            let Transaction::Execute(_, _, execution, _) = vm
+                .execute(
+                    &caller_private_key,
+                    ("parent.aleo", "test"),
+                    Vec::<Value<_>>::new().iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap()
+            else {
+                unreachable!("VM::execute always produces an `Execution`")
             };
-            // Add the cost to the total cost.
-            expected_cost += cost;
-        }
 
-        // Check that the finalize cost is equal to the expected cost.
-        assert_eq!(finalize_cost, expected_cost);
+            // Check that the number of transitions is correct.
+            // Change me if the `MAX_INPUTS` changes.
+            assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
+
+            // Get the finalize cost of the execution.
+            let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
+
+            // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
+            let mut expected_cost = 0;
+            for transition in execution.transitions() {
+                // Get the program ID and name of the transition.
+                let program_id = transition.program_id();
+                let function_name = transition.function_name();
+                // Get the stack.
+                let stack = vm.process().get_stack(program_id).unwrap().clone();
+                // Get the finalize types.
+                let finalize_types = stack.get_finalize_types(function_name).unwrap();
+                // Get the finalize block of the transition and sum the cost of each command.
+                let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
+                    None => 0,
+                    Some(finalize_logic) => {
+                        // Aggregate the cost under the same V2 schedule as the execution.
+                        finalize_logic
+                            .commands()
+                            .iter()
+                            .map(|command| {
+                                cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2, None)
+                            })
+                            .try_fold(0u64, |acc, res| {
+                                res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
+                            })
+                            .unwrap()
+                    }
+                };
+                // Add the cost to the total cost.
+                expected_cost += cost;
+            }
+
+            // Check that the finalize cost is equal to the expected cost.
+            assert_eq!(finalize_cost, expected_cost);
+        }
     }
 }

@@ -36,8 +36,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          # Bump the key suffix when the flags in .cargo/config.toml change.
-          key: ${{ runner.os }}-cargo-bench-v4-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-bench-v4-${{ hashFiles('**/Cargo.lock', '.cargo/config.toml') }}
 
       - name: Benchmark algorithms
         run: |
@@ -94,7 +93,7 @@ jobs:
       - name: Benchmark ledger (block)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers,test -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench block --features=rocks,test-helpers -- --output-format bencher --sample-size 10 --measurement-time 2 | tee -a output.txt
 
       - name: Benchmark ledger (dag)
         run: |
@@ -104,15 +103,16 @@ jobs:
       - name: Benchmark ledger (transaction)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench transaction --features=dev-network -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger (verify_transaction)
         run: |
           set -o pipefail
-          cargo bench --package=snarkvm-ledger --bench verify_transaction --features=test_consensus_heights -- --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger --bench verify_transaction --features=dev-network -- --output-format bencher | tee -a output.txt
 
       # Skip store/advance: require a pre-generated `test-ledger/` fixture
       # (see `snarkvm-testchain-generator --no-ledger`).
+      # Skip ledger prove: seconds per proof add tens of minutes, and its variance trips the alert threshold.
 
       - name: Benchmark ledger/puzzle
         run: |
@@ -120,8 +120,8 @@ jobs:
           # Puzzle::prove is high-variance at the crate's 10-sample default; the
           # bencher median then trips the 200% alert. Collect it separately with
           # more samples and longer windows. Filter so check_solutions stays cheap.
-          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::prove --output-format bencher --sample-size 100 --warm-up-time 3 --measurement-time 10 | tee -a output.txt
-          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- Puzzle::check_solutions --output-format bencher | tee -a output.txt
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle -- Puzzle::prove --output-format bencher --sample-size 100 --warm-up-time 3 --measurement-time 10 | tee -a output.txt
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle -- Puzzle::check_solutions --output-format bencher | tee -a output.txt
 
       # Clean benchmark output to remove unnecessary lines
       - name: Clean benchmark output

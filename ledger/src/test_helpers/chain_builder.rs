@@ -28,9 +28,8 @@ use snarkvm_console::{
     network::MainnetV0,
     prelude::*,
 };
+use snarkvm_ledger_store::StorageMode;
 use snarkvm_synthesizer::vm::VM;
-
-use aleo_std::StorageMode;
 
 use anyhow::{Context, Result};
 use indexmap::{IndexMap, IndexSet};
@@ -126,6 +125,15 @@ impl<N: Network> Default for GenerateBlockOptions<N> {
     }
 }
 
+impl TestChainBuilder<CurrentNetwork> {
+    /// Initialize the builder on the genesis fixture of `sample_test_env`, with the four validators of its committee.
+    /// Every call returns a builder on the same genesis block.
+    pub fn new() -> Result<Self> {
+        let (private_keys, genesis_block) = super::sample_genesis_committee();
+        Self::from_genesis(private_keys, genesis_block)
+    }
+}
+
 impl<N: Network> TestChainBuilder<N> {
     /// Generate a new committee and genesis block.
     pub fn initialize_components(committee_size: usize, rng: &mut TestRng) -> Result<(Vec<PrivateKey<N>>, Block<N>)> {
@@ -151,11 +159,6 @@ impl<N: Network> TestChainBuilder<N> {
         );
 
         Ok((private_keys, genesis_block))
-    }
-
-    /// Initialize the builder with the default quorum size.
-    pub fn new(rng: &mut TestRng) -> Result<Self> {
-        Self::new_with_quorum_size(4, rng)
     }
 
     /// Initialize the builder with the specified quorum size.

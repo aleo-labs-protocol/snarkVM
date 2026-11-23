@@ -45,7 +45,12 @@ use crate::{
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
-use snarkvm_utilities::{ToBytes, defer, dev_eprintln, dev_println, to_bytes_le};
+use snarkvm_utilities::{
+    ToBytes,
+    timing_span,
+    to_bytes_le,
+    tracing::{debug, trace},
+};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
@@ -73,8 +78,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         universal_srs: &UniversalSRS<E>,
         circuits: &[&C],
     ) -> Result<Vec<(CircuitProvingKey<E, SM>, CircuitVerifyingKey<E>)>> {
-        let index_time = start_timer!(|| "Varuna::CircuitSetup");
-        defer! { end_timer!(index_time); }
+        let _index_time = timing_span!("Varuna::CircuitSetup").entered();
 
         let universal_prover = &universal_srs.to_universal_prover()?;
 
@@ -99,8 +103,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let ck = CommitterUnionKey::union(std::iter::once(&committer_key));
 
             let mut circuit_commitments = {
-                let commit_time = start_timer!(|| format!("Commit to index polynomials for {}", indexed_circuit.id));
-                defer! { end_timer!(commit_time); }
+                let _commit_time = timing_span!("Commit to index polynomials", circuit = %indexed_circuit.id).entered();
                 let setup_rng = None::<&mut dyn Rng>; // We do not randomize the commitments
 
                 let (circuit_commitments, commitment_randomnesses): (_, _) = SonicKZG10::<E, FS>::commit(
@@ -184,16 +187,16 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
     }
 
     fn absorb(commitments: &[Commitment<E>], sponge: &mut FS) {
-        let sponge_time = start_timer!(|| "Absorbing commitments");
+        let sponge_time = timing_span!("Absorbing commitments").entered();
         sponge.absorb_native_field_elements(commitments);
-        end_timer!(sponge_time);
+        drop(sponge_time);
     }
 
     fn absorb_with_sums(commitments: &[Commitment<E>], sums: &[prover::MatrixSums<E::Fr>], sponge: &mut FS) {
-        let sponge_time = start_timer!(|| "Absorbing commitments and message");
+        let sponge_time = timing_span!("Absorbing commitments and message").entered();
         Self::absorb(commitments, sponge);
         Self::absorb_sums(sums, sponge);
-        end_timer!(sponge_time);
+        drop(sponge_time);
     }
 
     fn absorb_sums(sums: &[prover::MatrixSums<E::Fr>], sponge: &mut FS) {
@@ -224,9 +227,9 @@ where
     type VerifyingKey = CircuitVerifyingKey<E>;
 
     fn universal_setup(max_degree: usize) -> Result<Self::UniversalSRS> {
-        let setup_time = start_timer!(|| { format!("Varuna::UniversalSetup with max_degree {max_degree}",) });
+        let setup_time = timing_span!("Varuna::UniversalSetup", max_degree).entered();
         let srs = SonicKZG10::<E, FS>::load_srs(max_degree).map_err(Into::into);
-        end_timer!(setup_time);
+        drop(setup_time);
         srs
     }
 
@@ -359,8 +362,7 @@ where
         keys_to_constraints: &BTreeMap<&CircuitProvingKey<E, SM>, &[C]>,
         zk_rng: &mut R,
     ) -> Result<Self::Proof> {
-        let prover_time = start_timer!(|| "Varuna::Prover");
-        defer! { end_timer!(prover_time); }
+        let _prover_time = timing_span!("Varuna::Prover").entered();
         if keys_to_constraints.is_empty() {
             bail!(SNARKError::EmptyBatch);
         }
@@ -381,37 +383,6 @@ where
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
 
-        #[cfg(feature = "snark-print")]
-        {
-            // Display the batch sizes and (padded) public inputs
-            let batch_sizes = keys_to_constraints
-                .keys()
-                .map(|pk| {
-                    prover_state
-                        .batch_size(&pk.circuit)
-                        .ok_or(anyhow!("[Varuna::prove_batch] Batch not found for circuit {:?}", pk.circuit.id))
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            println!("[Varuna::prove_batch] Batch sizes: {batch_sizes:?}\n");
-
-            for (i, (key, batch_size)) in keys_to_constraints.keys().zip(batch_sizes.iter()).enumerate() {
-                println!("  - Circuit {i}: {} ({batch_size} instance(s))\n", key.circuit_verifying_key.id);
-                // Safe: `prover_state` was initialized from the same circuits as
-                // `keys_to_constraints`, so `key.circuit` is always present.
-                for (j, public_input) in prover_state.public_inputs(&key.circuit).unwrap().iter().enumerate() {
-                    println!("    - Instance {j}");
-                    // We prepend the initial constant 1 to facilitate collation with displayed
-                    // verifier inputs
-                    println!("      - 0: {}", E::Fr::one());
-                    for (k, value) in public_input.iter().enumerate() {
-                        println!("      - {}: {value}", k + 1);
-                    }
-                    println!();
-                }
-            }
-        }
-
         for pk in keys_to_constraints.keys() {
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
@@ -423,18 +394,22 @@ where
             batch_sizes.insert(circuit_id, batch_size);
             circuit_infos.insert(circuit_id, &pk.circuit_verifying_key.circuit_info);
             inputs_and_batch_sizes.insert(circuit_id, (batch_size, padded_public_input));
+            trace!(
+                "[Varuna::prove_batch] Circuit {circuit_id}: {batch_size} instance(s), public inputs: {public_input:?}"
+            );
             public_inputs.insert(circuit_id, public_input);
             total_instances = total_instances.saturating_add(batch_size);
 
             circuit_ids.push(circuit_id);
         }
         ensure!(prover_state.total_instances == total_instances);
+        trace!("[Varuna::prove_batch] Batch sizes: {:?}", batch_sizes.values().collect_vec());
 
         let committer_key = CommitterUnionKey::union(keys_to_constraints.keys().map(|pk| pk.committer_key.deref()));
 
         let circuit_commitments =
             keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
-        dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
+        trace!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge =
             Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
 
@@ -444,8 +419,7 @@ where
         let prover_state = AHPForR1CS::<_, SM>::prover_first_round(prover_state, zk_rng)?;
 
         let (first_commitments, first_commitment_randomnesses) = {
-            let first_round_comm_time = start_timer!(|| "Committing to first round polys");
-            defer! { end_timer!(first_round_comm_time); }
+            let _first_round_comm_time = timing_span!("Committing to first round polys").entered();
             let first_round_oracles = prover_state.first_round_oracles.as_ref().unwrap();
             SonicKZG10::<E, FS>::commit(
                 universal_prover,
@@ -474,8 +448,7 @@ where
             AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
 
         let (second_commitments, second_commitment_randomnesses) = {
-            let second_round_comm_time = start_timer!(|| "Committing to second round polys");
-            defer! { end_timer!(second_round_comm_time); }
+            let _second_round_comm_time = timing_span!("Committing to second round polys").entered();
             SonicKZG10::<E, FS>::commit(
                 universal_prover,
                 &committer_key,
@@ -537,8 +510,7 @@ where
         )?;
 
         let (third_commitments, third_commitment_randomnesses) = {
-            let third_round_comm_time = start_timer!(|| "Committing to third round polys");
-            defer! { end_timer!(third_round_comm_time); }
+            let _third_round_comm_time = timing_span!("Committing to third round polys").entered();
             SonicKZG10::<E, FS>::commit(
                 universal_prover,
                 &committer_key,
@@ -587,8 +559,7 @@ where
             AHPForR1CS::<_, SM>::prover_fourth_round(&verifier_second_msg, &verifier_third_msg, prover_state, zk_rng)?;
 
         let (fourth_commitments, fourth_commitment_randomnesses) = {
-            let fourth_round_comm_time = start_timer!(|| "Committing to fourth round polys");
-            defer! { end_timer!(fourth_round_comm_time); }
+            let _fourth_round_comm_time = timing_span!("Committing to fourth round polys").entered();
             SonicKZG10::<E, FS>::commit(
                 universal_prover,
                 &committer_key,
@@ -615,8 +586,7 @@ where
         let fifth_oracles = AHPForR1CS::<_, SM>::prover_fifth_round(verifier_fourth_msg, prover_state, zk_rng)?;
 
         let (fifth_commitments, fifth_commitment_randomnesses) = {
-            let fifth_round_comm_time = start_timer!(|| "Committing to fifth round polys");
-            defer! { end_timer!(fifth_round_comm_time); }
+            let _fifth_round_comm_time = timing_span!("Committing to fifth round polys").entered();
             SonicKZG10::<E, FS>::commit(
                 universal_prover,
                 &committer_key,
@@ -695,11 +665,10 @@ where
 
         // Compute the AHP verifier's query set.
         let (query_set, verifier_state) = AHPForR1CS::<_, SM>::verifier_query_set(verifier_state);
-        dev_println!("Final challenge gamma: {:?}", verifier_state.gamma);
+        trace!("Final challenge gamma: {:?}", verifier_state.gamma);
         let memoized = MemoizedEvaluations { inner: &polynomials, memo: Default::default() };
         let lc_s = {
-            let lc_time = start_timer!(|| "Constructing linear combinations");
-            defer! { end_timer!(lc_time); }
+            let _lc_time = timing_span!("Constructing linear combinations").entered();
             AHPForR1CS::<_, SM>::construct_linear_combinations(
                 &public_inputs,
                 &memoized,
@@ -711,8 +680,7 @@ where
         };
 
         let evaluations = {
-            let eval_time = start_timer!(|| "Evaluating linear combinations over query set");
-            defer! { end_timer!(eval_time); }
+            let _eval_time = timing_span!("Evaluating linear combinations over query set").entered();
             let mut evaluations = std::collections::BTreeMap::new();
             for (label, (_, point)) in query_set.to_set() {
                 if !AHPForR1CS::<E::Fr, SM>::LC_WITH_ZERO_EVAL.contains(&label.as_str()) {
@@ -724,9 +692,9 @@ where
             proof::Evaluations::from_map(&evaluations, batch_sizes.clone())
         };
 
-        let absorb_time = start_timer!(|| "Absorbing evaluations");
+        let absorb_time = timing_span!("Absorbing evaluations").entered();
         sponge.absorb_nonnative_field_elements(evaluations.to_field_elements());
-        end_timer!(absorb_time);
+        drop(absorb_time);
 
         let pc_proof = SonicKZG10::<E, FS>::open_combinations(
             universal_prover,
@@ -798,26 +766,7 @@ where
         let mut circuit_infos = BTreeMap::new();
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
 
-        #[cfg(feature = "snark-print")]
-        {
-            // Display the batch sizes and (padded) public inputs
-            println!(
-                "[Varuna::verify_batch] Batch sizes: {:?}\n",
-                keys_to_inputs.values().map(|instances| instances.len()).collect_vec()
-            );
-
-            for (i, (circuit, public_inputs)) in keys_to_inputs.iter().enumerate() {
-                println!("  - Circuit {i}: {} ({} instance(s))\n", circuit.id, public_inputs.len());
-                for (j, public_input) in public_inputs.iter().enumerate() {
-                    let public_input = public_input.borrow().to_field_elements()?;
-                    println!("    - Instance {j}");
-                    for (k, value) in public_input.iter().enumerate() {
-                        println!("      - {k}: {value}");
-                    }
-                    println!("\n");
-                }
-            }
-        }
+        trace!("[Varuna::verify_batch] Batch sizes: {batch_sizes_vec:?}");
 
         for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
             max_num_constraints = max_num_constraints.max(vk.circuit_info.num_constraints);
@@ -842,6 +791,11 @@ where
                     Ok(input)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            trace!(
+                "[Varuna::verify_batch] Circuit {}: {} instance(s), public inputs: {input_fields:?}",
+                vk.id,
+                input_fields.len()
+            );
 
             let (padded_public_inputs_i, parsed_public_inputs_i): (Vec<_>, Vec<_>) = {
                 input_fields
@@ -851,7 +805,7 @@ where
                         let mut new_input = Vec::with_capacity(input_len);
                         new_input.extend_from_slice(input);
                         new_input.resize(input_len, E::Fr::zero());
-                        dev_println!("[verify Batch] Number of padded public variables: {}", new_input.len());
+                        trace!("[verify Batch] Number of padded public variables: {}", new_input.len());
                         let unformatted = prover::ConstraintSystem::unformat_public_input(&new_input);
                         (new_input, unformatted)
                     })
@@ -882,15 +836,14 @@ where
             !proof.pc_proof.is_hiding() & comms.mask_poly.is_none()
         };
         if !proof_has_correct_zk_mode {
-            dev_eprintln!(
+            debug!(
                 "Found `mask_poly` in the first round when not expected, or proof has incorrect hiding mode ({})",
                 proof.pc_proof.is_hiding()
             );
             return Ok(false);
         }
 
-        let verifier_time = start_timer!(|| format!("Varuna::Verify with batch sizes: {batch_sizes:?}"));
-        defer! { end_timer!(verifier_time); }
+        let _verifier_time = timing_span!("Varuna::Verify", ?batch_sizes).entered();
 
         let first_round_info = AHPForR1CS::<E::Fr, SM>::first_round_polynomial_info(batch_sizes.iter());
 
@@ -967,15 +920,14 @@ where
         let fifth_commitments = [LabeledCommitment::new_with_info(&fifth_round_info["h_2"], comms.h_2)];
 
         let circuit_commitments = keys_to_inputs.keys().map(|vk| vk.circuit_commitments.as_slice());
-        dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
+        trace!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge =
             Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
 
         // --------------------------------------------------------------------
         // First round
         let (_, verifier_state) = {
-            let first_round_time = start_timer!(|| "First round");
-            defer! { end_timer!(first_round_time); }
+            let _first_round_time = timing_span!("First round").entered();
             Self::absorb_labeled(&first_commitments, &mut sponge);
             AHPForR1CS::<_, SM>::verifier_first_round(
                 &batch_sizes,
@@ -991,8 +943,7 @@ where
         // --------------------------------------------------------------------
         // Second round
         let (_, verifier_state) = {
-            let second_round_time = start_timer!(|| "Second round");
-            defer! { end_timer!(second_round_time); }
+            let _second_round_time = timing_span!("Second round").entered();
             Self::absorb_labeled(&second_commitments, &mut sponge);
             AHPForR1CS::<_, SM>::verifier_second_round(verifier_state, &mut sponge, varuna_version)?
         };
@@ -1004,8 +955,7 @@ where
             match varuna_version {
                 VarunaVersion::V1 => verifier_state,
                 VarunaVersion::V2 | VarunaVersion::V3 => {
-                    let prepare_third_round_time = start_timer!(|| "Prep third round");
-                    defer! { end_timer!(prepare_third_round_time); }
+                    let _prepare_third_round_time = timing_span!("Prep third round").entered();
                     Self::absorb_sums(&proof.third_msg.sums.clone().into_iter().flatten().collect_vec(), &mut sponge);
                     let (_, verifier_state) = AHPForR1CS::<_, SM>::verifier_prepare_third_round(
                         verifier_state,
@@ -1023,8 +973,7 @@ where
         // --------------------------------------------------------------------
         // Third round
         let (_, verifier_state) = {
-            let third_round_time = start_timer!(|| "Third round");
-            defer! { end_timer!(third_round_time); }
+            let _third_round_time = timing_span!("Third round").entered();
             match varuna_version {
                 VarunaVersion::V1 => {
                     Self::absorb_labeled_with_sums(
@@ -1044,8 +993,7 @@ where
         // --------------------------------------------------------------------
         // Fourth round
         let (_, verifier_state) = {
-            let fourth_round_time = start_timer!(|| "Fourth round");
-            defer! { end_timer!(fourth_round_time); }
+            let _fourth_round_time = timing_span!("Fourth round").entered();
             Self::absorb_labeled_with_sums(&fourth_commitments, &proof.fourth_msg.sums, &mut sponge);
             AHPForR1CS::<_, SM>::verifier_fourth_round(verifier_state, &mut sponge)?
         };
@@ -1054,8 +1002,7 @@ where
         // --------------------------------------------------------------------
         // Fifth round
         let verifier_state = {
-            let fifth_round_time = start_timer!(|| "Fifth round");
-            defer! { end_timer!(fifth_round_time); }
+            let _fifth_round_time = timing_span!("Fifth round").entered();
             Self::absorb_labeled(&fifth_commitments, &mut sponge);
             AHPForR1CS::<_, SM>::verifier_fifth_round(verifier_state, &mut sponge)?
         };
@@ -1083,13 +1030,13 @@ where
             .chain(fifth_commitments)
             .collect();
 
-        let query_set_time = start_timer!(|| "Constructing query set");
+        let query_set_time = timing_span!("Constructing query set").entered();
         let (query_set, verifier_state) = AHPForR1CS::<_, SM>::verifier_query_set(verifier_state);
-        end_timer!(query_set_time);
+        drop(query_set_time);
 
-        let absorb_time = start_timer!(|| "Absorbing evaluations");
+        let absorb_time = timing_span!("Absorbing evaluations").entered();
         sponge.absorb_nonnative_field_elements(proof.evaluations.to_field_elements());
-        end_timer!(absorb_time);
+        drop(absorb_time);
 
         let mut evaluations = Evaluations::new();
 
@@ -1116,8 +1063,7 @@ where
         }
 
         let lc_s = {
-            let lc_time = start_timer!(|| "Constructing linear combinations");
-            defer! { end_timer!(lc_time); }
+            let _lc_time = timing_span!("Constructing linear combinations").entered();
             AHPForR1CS::<_, SM>::construct_linear_combinations(
                 &public_inputs,
                 &evaluations,
@@ -1129,8 +1075,7 @@ where
         };
 
         let evaluations_are_correct = {
-            let pc_time = start_timer!(|| "Checking linear combinations with PC");
-            defer! { end_timer!(pc_time); }
+            let _pc_time = timing_span!("Checking linear combinations with PC").entered();
             SonicKZG10::<E, FS>::check_combinations(
                 universal_verifier,
                 lc_s.values(),
@@ -1143,7 +1088,7 @@ where
         };
 
         if !evaluations_are_correct {
-            dev_eprintln!("SonicKZG10::Check failed using final challenge gamma: {:?}", verifier_state.gamma);
+            debug!("SonicKZG10::Check failed using final challenge gamma: {:?}", verifier_state.gamma);
         }
 
         Ok(evaluations_are_correct & proof_has_correct_zk_mode)
@@ -1157,6 +1102,8 @@ struct MemoizedEvaluations<'a, F: PrimeField, E> {
     inner: &'a E,
     memo: std::cell::RefCell<Evaluations<F>>,
 }
+
+impl<F: PrimeField, E> crate::sealed::Sealed for MemoizedEvaluations<'_, F, E> {}
 
 impl<F: PrimeField, E: EvaluationsProvider<F>> EvaluationsProvider<F> for MemoizedEvaluations<'_, F, E> {
     fn get_lc_eval(&self, lc: &crate::polycommit::sonic_pc::LinearCombination<F>, point: F) -> Result<F> {

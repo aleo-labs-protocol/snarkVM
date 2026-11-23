@@ -20,6 +20,9 @@ impl<E: Environment, I: IntegerType> MulWrapped<Self> for Integer<E, I> {
 
     #[inline]
     fn mul_wrapped(&self, other: &Integer<E, I>) -> Self::Output {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Determine the variable mode.
         if self.is_constant() && other.is_constant() {
             // Compute the product and return the new constant.
@@ -33,58 +36,27 @@ impl<E: Environment, I: IntegerType> MulWrapped<Self> for Integer<E, I> {
             // Babbage involves three multiplication, same as Karatsuba.
             // For integers with size less than 128, this algorithm saves approximately 0.5 * I::BITS
             // constraints compared to a field multiplication.
-            let x_1 = Field::from_bits_le(&self.bits_le[(I::BITS as usize / 2)..]);
-            let x_0 = Field::from_bits_le(&self.bits_le[..(I::BITS as usize / 2)]);
-            let y_1 = Field::from_bits_le(&other.bits_le[(I::BITS as usize / 2)..]);
-            let y_0 = Field::from_bits_le(&other.bits_le[..(I::BITS as usize / 2)]);
+            let x_1 = Field::from_bits_le(&self.bits_le[(i_bits / 2)..]);
+            let x_0 = Field::from_bits_le(&self.bits_le[..(i_bits / 2)]);
+            let y_1 = Field::from_bits_le(&other.bits_le[(i_bits / 2)..]);
+            let y_0 = Field::from_bits_le(&other.bits_le[..(i_bits / 2)]);
 
             let z_0 = &x_0 * &y_0;
             let z_1 = (&x_1 * &y_0) + (&x_0 * &y_1);
 
-            let mut b_m_bits = vec![Boolean::constant(false); I::BITS as usize / 2];
+            let mut b_m_bits = vec![Boolean::constant(false); i_bits / 2];
             b_m_bits.push(Boolean::constant(true));
 
             let b_m = Field::from_bits_le(&b_m_bits);
             let z_0_plus_scaled_z_1 = &z_0 + (&z_1 * &b_m);
 
-            let mut bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(I::BITS as usize + I::BITS as usize / 2 + 1);
+            let mut bits_le = z_0_plus_scaled_z_1.to_lower_bits_le(i_bits + i_bits / 2 + 1);
 
             // Remove any carry bits.
-            bits_le.truncate(I::BITS as usize);
+            bits_le.truncate(i_bits);
 
             // Return the product of `self` and `other`, without the carry bits.
             Integer { bits_le, phantom: Default::default() }
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> Metrics<dyn MulWrapped<Integer<E, I>, Output = Integer<E, I>>> for Integer<E, I> {
-    type Case = (Mode, Mode, bool, bool);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1, case.2, case.3) {
-            (Mode::Constant, Mode::Constant, _, _) => Count::is(I::BITS, 0, 0, 0),
-            (Mode::Constant, _, true, _) | (_, Mode::Constant, _, true) => {
-                Count::is(I::BITS + (I::BITS / 2) + 1, 0, 0, 0)
-            }
-            (Mode::Constant, _, false, _) | (_, Mode::Constant, _, false) => {
-                Count::is(0, 0, I::BITS + (I::BITS / 2) + 1, I::BITS + (I::BITS / 2) + 2)
-            }
-            (_, _, _, _) => Count::is(0, 0, I::BITS + (I::BITS / 2) + 4, I::BITS + (I::BITS / 2) + 5),
-        }
-    }
-}
-
-impl<E: Environment, I: IntegerType> OutputMode<dyn MulWrapped<Integer<E, I>, Output = Integer<E, I>>>
-    for Integer<E, I>
-{
-    type Case = (Mode, Mode, bool, bool);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1, case.2, case.3) {
-            (Mode::Constant, _, true, _) | (_, Mode::Constant, _, true) => Mode::Constant,
-            (Mode::Constant, Mode::Constant, _, _) => Mode::Constant,
-            (_, _, _, _) => Mode::Private,
         }
     }
 }
@@ -107,15 +79,12 @@ mod tests {
     ) {
         let a = Integer::<Circuit, I>::new(mode_a, first);
         let b = Integer::<Circuit, I>::new(mode_b, second);
-        let a_is_zero = a.is_zero().eject_value();
-        let b_is_zero = b.is_zero().eject_value();
         let expected = first.wrapping_mul(&second);
         Circuit::scope(name, || {
             let candidate = a.mul_wrapped(&b);
             assert_eq!(expected, *candidate.eject_value());
             assert_eq!(console::Integer::new(expected), candidate.eject_value());
-            assert_count!(MulWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero));
-            assert_output_mode!(MulWrapped(Integer<I>, Integer<I>) => Integer<I>, &(mode_a, mode_b, a_is_zero, b_is_zero), candidate);
+            assert_scope!();
         });
         Circuit::reset();
     }

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -43,24 +43,19 @@ default = [
   "types"
 ]
 wasm = [ "snarkvm-console-network/wasm" ]
-test = [
-  "snarkvm-console-account/test",
-  "snarkvm-console-network/test",
-  "snarkvm-console-program/test"
-]
-account = [ "network", "snarkvm-console-account" ]
-algorithms = [ "snarkvm-console-algorithms" ]
-collections = [ "algorithms", "snarkvm-console-collections" ]
+account = [ "network", "dep:snarkvm-console-account" ]
+algorithms = [ "dep:snarkvm-console-algorithms" ]
+collections = [ "algorithms", "dep:snarkvm-console-collections" ]
 filesystem = [ "snarkvm-console-network/filesystem" ]
-network = [ "collections", "snarkvm-console-network" ]
-program = [ "network", "snarkvm-console-program" ]
-serial = [ "snarkvm-console-algorithms/serial", "snarkvm-console-collections/serial" ]
-types = [ "snarkvm-console-types" ]
-test_targets = [ "snarkvm-console-network/test_targets" ]
-test_consensus_heights = [ "snarkvm-console-network/test_consensus_heights" ]
-dev-print = [
-  "snarkvm-console-algorithms?/dev-print",
-  "snarkvm-console-network?/dev-print",
-  "snarkvm-console-program?/dev-print"
-]
+network = [ "collections", "dep:snarkvm-console-network" ]
+program = [ "network", "dep:snarkvm-console-program" ]
+types = [ "dep:snarkvm-console-types" ]
+# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [ "snarkvm-console-network/dev-network" ]
 dev_skip_checks = [ ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
+test-helpers = [
+  "snarkvm-console-account?/test-helpers",
+  "snarkvm-console-network/test-helpers",
+  "snarkvm-console-program?/test-helpers"
+]

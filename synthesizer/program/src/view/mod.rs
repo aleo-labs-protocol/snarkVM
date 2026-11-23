@@ -86,6 +86,7 @@ impl<N: Network> ViewCore<N> {
     }
 
     /// Returns the view commands.
+    #[doc(hidden)]
     pub fn commands(&self) -> &[Command<N>] {
         &self.commands
     }
@@ -173,6 +174,7 @@ impl<N: Network> ViewCore<N> {
 
     /// Adds the given command to the view.
     #[inline]
+    #[doc(hidden)]
     pub fn add_command(&mut self, command: Command<N>) -> Result<()> {
         // Ensure there are no outputs already.
         ensure!(self.outputs.is_empty(), "Cannot add commands after outputs have been added");

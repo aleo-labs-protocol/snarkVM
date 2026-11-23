@@ -22,6 +22,10 @@ use crate::{ArrayType, Identifier, LiteralType, Locator, ProgramID, StructType};
 use snarkvm_console_network::prelude::*;
 
 /// A `PlaintextType` defines the type parameter for a literal, struct, array, or external struct.
+///
+/// Minor releases add variants to this enum, and snarkVM does not treat this as a breaking change.
+/// An exhaustive match must be updated for each new variant, so that each new variant is handled
+/// explicitly.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum PlaintextType<N: Network> {
     /// A literal type contains its type name.

@@ -18,7 +18,6 @@ mod serialize;
 mod string;
 mod try_from;
 
-#[cfg(feature = "signature")]
 mod sign;
 
 use snarkvm_console_network::prelude::*;

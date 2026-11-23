@@ -71,6 +71,8 @@ pub struct AleoID<F: FieldTrait, const PREFIX: u16>(F);
 impl<F: FieldTrait, const PREFIX: u16> Bech32ID<F> for AleoID<F, PREFIX> {
     #[inline]
     fn prefix() -> String {
+        // Each network builds `PREFIX` with `hrp2!` from a two-byte `&str`, so its bytes are valid UTF-8.
+        // A `PREFIX` whose little-endian bytes are not valid UTF-8 panics here, in `Display`, and in `Debug`.
         String::from_utf8(PREFIX.to_le_bytes().to_vec()).expect("Failed to convert prefix to string")
     }
 
@@ -145,6 +147,7 @@ impl<F: FieldTrait, const PREFIX: u16> Display for AleoID<F, PREFIX> {
         bech32::encode_to_fmt::<LongBech32m, _>(
             f,
             bech32::Hrp::parse_unchecked(&Self::prefix()),
+            // Writing a field element into a `Vec<u8>` cannot fail.
             &self.0.to_bytes_le().expect("Failed to write data as bytes"),
         )
         .map_err(|_| fmt::Error)

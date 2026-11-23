@@ -27,8 +27,8 @@ use console::{
 use snarkvm_ledger_block::{Deployment, DeploymentVersion, Fee, Transaction};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::{Certificate, VerifyingKey};
+use snarkvm_utilities::StorageMode;
 
-use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;
@@ -45,7 +45,9 @@ use std::borrow::Cow;
 /// - **ConsensusVersion::V14**: V3 deployments (amendments) are introduced. Amendments update VKs for an existing
 ///   `(program ID, edition)` without changing the edition. Amendments must target the latest edition
 ///   and require at least one VK to differ from the existing deployment.
-pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
+///
+/// This trait is sealed. Only snarkVM implements it.
+pub trait DeploymentStorage<N: Network>: crate::sealed::Sealed + Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
     type IDMap: for<'a> Map<'a, N::TransactionID, ProgramID<N>>;
     /// The mapping of `transaction ID` to `edition`.
@@ -1506,7 +1508,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the edition for the given `transaction ID`.
-    pub fn get_edition_for_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<u16>> {
+    pub(crate) fn get_edition_for_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<u16>> {
         self.storage.get_edition_for_transaction(transaction_id)
     }
 
@@ -1526,7 +1528,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the latest verifying key for the given `(program ID, function or record name)`.
-    pub fn get_latest_verifying_key(
+    pub(crate) fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
@@ -1535,7 +1537,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the verifying key for the given `(program ID, function or record name, edition)`.
-    pub fn get_latest_verifying_key_with_edition(
+    pub(crate) fn get_latest_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
@@ -1546,7 +1548,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
 
     /// Returns the original verifying key for the given `(program ID, function name, edition)`.
     /// This method ignores any amendments and always returns the VK from the original deployment.
-    pub fn get_original_verifying_key(
+    pub(crate) fn get_original_verifying_key(
         &self,
         program_id: &ProgramID<N>,
         function_name: &Identifier<N>,
@@ -1556,7 +1558,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the latest certificate for the given `(program ID, function or record name)`.
-    pub fn get_latest_certificate(
+    pub(crate) fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
@@ -1565,7 +1567,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the certificate for the given `(program ID, function or record name, edition)`.
-    pub fn get_latest_certificate_with_edition(
+    pub(crate) fn get_latest_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
@@ -1576,7 +1578,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
 
     /// Returns the original certificate for the given `(program ID, function name, edition)`.
     /// This method ignores any amendments and always returns the certificate from the original deployment.
-    pub fn get_original_certificate(
+    pub(crate) fn get_original_certificate(
         &self,
         program_id: &ProgramID<N>,
         function_name: &Identifier<N>,
@@ -1670,7 +1672,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns `true` if the given program ID and edition exist.
-    pub fn contains_program_id_and_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<bool> {
+    pub(crate) fn contains_program_id_and_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<bool> {
         self.storage.reverse_id_map().contains_key_confirmed(&(*program_id, edition))
     }
 }
@@ -1694,7 +1696,9 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns an iterator over the program IDs and latest editions.
-    pub fn program_ids_and_latest_editions(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramID<N>>, Cow<'_, u16>)> {
+    pub(crate) fn program_ids_and_latest_editions(
+        &self,
+    ) -> impl '_ + Iterator<Item = (Cow<'_, ProgramID<N>>, Cow<'_, u16>)> {
         self.storage.edition_map().iter_confirmed()
     }
 
@@ -1708,7 +1712,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns an iterator over the programs and editions, for all deployments.
-    pub fn programs_with_editions(
+    pub(crate) fn programs_with_editions(
         &self,
     ) -> impl '_ + Iterator<Item = (Cow<'_, ProgramIDEdition<N>>, Cow<'_, Program<N>>)> {
         self.storage.program_map().iter_confirmed()
@@ -1738,12 +1742,15 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
 
     /// Returns the amendment info `(program ID, edition, amendment index)` for the given `transaction ID`.
     /// Returns `None` if the transaction is not an amendment.
-    pub fn get_amendment_info(&self, transaction_id: &N::TransactionID) -> Result<Option<(ProgramID<N>, u16, u64)>> {
+    pub(crate) fn get_amendment_info(
+        &self,
+        transaction_id: &N::TransactionID,
+    ) -> Result<Option<(ProgramID<N>, u16, u64)>> {
         self.storage.get_amendment_info(transaction_id)
     }
 
     /// Returns the verifying key for a specific amendment.
-    pub fn get_verifying_key_for_amendment(
+    pub(crate) fn get_verifying_key_for_amendment(
         &self,
         program_id: &ProgramID<N>,
         function_name: &Identifier<N>,
@@ -1754,7 +1761,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the certificate for a specific amendment.
-    pub fn get_certificate_for_amendment(
+    pub(crate) fn get_certificate_for_amendment(
         &self,
         program_id: &ProgramID<N>,
         function_name: &Identifier<N>,
@@ -1766,7 +1773,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
 
     /// Returns the deployment for a specific amendment.
     /// This reconstructs the deployment using the amendment's verifying keys and certificates.
-    pub fn get_deployment_for_amendment(
+    pub(crate) fn get_deployment_for_amendment(
         &self,
         program_id: &ProgramID<N>,
         edition: u16,
@@ -1781,21 +1788,21 @@ type AmendmentVKKey<N> = (ProgramID<N>, Identifier<N>, u16, u64);
 
 impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     /// Returns an iterator over the amendment transaction IDs.
-    pub fn amendment_transaction_ids(
+    pub(crate) fn amendment_transaction_ids(
         &self,
     ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentKey<N>>, Cow<'_, N::TransactionID>)> {
         self.storage.amendment_id_map().iter_confirmed()
     }
 
     /// Returns an iterator over the amendment verifying keys.
-    pub fn amendment_verifying_keys(
+    pub(crate) fn amendment_verifying_keys(
         &self,
     ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentVKKey<N>>, Cow<'_, VerifyingKey<N>>)> {
         self.storage.amendment_verifying_key_map().iter_confirmed()
     }
 
     /// Returns an iterator over the amendment certificates.
-    pub fn amendment_certificates(
+    pub(crate) fn amendment_certificates(
         &self,
     ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentVKKey<N>>, Cow<'_, Certificate<N>>)> {
         self.storage.amendment_certificate_map().iter_confirmed()

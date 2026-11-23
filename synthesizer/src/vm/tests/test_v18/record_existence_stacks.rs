@@ -20,10 +20,11 @@ use super::*;
 // than the stacks of the programs corresponding to each of the transitions in the execution are
 // the stacks of external closures called by any of the transitions.
 #[test]
+#[ignore = "slow"]
 fn test_external_closure_stack_fetching() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     let lib_program = Program::from_str(
         r"

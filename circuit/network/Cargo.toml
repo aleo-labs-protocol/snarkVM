@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-network"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Network circuit library for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -23,5 +23,6 @@ workspace = true
 [dev-dependencies.snarkvm-console-types]
 workspace = true
 
-[features]
-wasm = [ "snarkvm-console-network/wasm" ]
+[dev-dependencies.snarkvm-console-network]
+workspace = true
+features = [ "test-helpers" ]
