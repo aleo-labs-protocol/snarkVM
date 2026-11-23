@@ -2191,7 +2191,7 @@ pub(crate) mod test_chain {
                 let transactions = Transactions::from(&[]);
                 let ratifications = Ratifications::try_from(vec![]).unwrap();
                 let header = if height == 0 {
-                    // The block is not a valid genesis block, which `Header::genesis` would reject.
+                    // `Header::genesis` requires a ratification, which this chain does not have.
                     Header::from(
                         Field::<CurrentNetwork>::zero().into(),
                         transactions.to_transactions_root().unwrap(),
