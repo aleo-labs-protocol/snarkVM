@@ -91,6 +91,9 @@ fn to_key_id<N: Network>(
 ///
 /// This trait is sealed. Only snarkVM implements it.
 pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
+    /// Whether a mapping reset in an atomic batch retains writes to previously absent keys.
+    const RETAINS_PENDING_WRITES_ON_RESET: bool;
+
     /// The committee storage.
     type CommitteeStorage: CommitteeStorage<N>;
     /// The mapping of `program ID` to `[mapping name]`.
@@ -769,9 +772,15 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             let result = (|| {
                 let mut queued = 0;
                 let mut batch_bytes = 0u64;
+                let mut baseline_maps = IndexSet::new();
+                let mut expected_values = 0usize;
                 for program in &uncovered {
                     if let Some(names) = self.storage.get_mapping_names_confirmed(program)? {
                         for mapping in names {
+                            baseline_maps.insert((*program, mapping));
+                            expected_values = expected_values
+                                .checked_add(self.storage.key_value_map().len_map_confirmed(&(*program, mapping))?)
+                                .ok_or_else(|| anyhow!("History baseline entry count overflow"))?;
                             let key = (*program, version, mapping, version);
                             let bytes = bincode::serialized_size(&key)? + bincode::serialized_size(&true)?;
                             if queued > 0
@@ -789,9 +798,10 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
                         }
                     }
                 }
+                let mut copied_values = 0usize;
                 for (map, key, value) in self.storage.key_value_map().iter_confirmed() {
                     let (program, mapping) = *map;
-                    if uncovered.contains(&program) {
+                    if baseline_maps.contains(&(program, mapping)) {
                         let key = (program, version, mapping, key.into_owned(), version);
                         let value = Some(value.into_owned());
                         let bytes = bincode::serialized_size(&key)? + bincode::serialized_size(&value)?;
@@ -805,10 +815,15 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
                             batch_bytes = 0;
                         }
                         self.storage.key_history_map().insert(key, value)?;
+                        copied_values += 1;
                         queued += 1;
                         batch_bytes = batch_bytes.saturating_add(bytes);
                     }
                 }
+                ensure!(
+                    copied_values == expected_values,
+                    "History baseline scan copied {copied_values} of {expected_values} expected values"
+                );
                 self.finish_atomic()
             })();
             if result.is_err() {
@@ -1000,10 +1015,17 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
         for (index, ((program, mapping), key, value)) in operations.into_iter().enumerate() {
             let (start, baseline) = ranges[&program];
-            if baseline || resets.get(&(program, mapping)).is_some_and(|reset| index < *reset) {
+            let reset = resets.get(&(program, mapping));
+            if baseline && (!P::RETAINS_PENDING_WRITES_ON_RESET || reset.is_none()) {
                 continue;
             }
             if let Some(key) = key {
+                if reset.is_some_and(|reset| index < *reset)
+                    && (!P::RETAINS_PENDING_WRITES_ON_RESET
+                        || self.storage.key_value_map().contains_key_confirmed(&(program, mapping), &key)?)
+                {
+                    continue;
+                }
                 self.storage.key_history_map().insert((program, start, mapping, key, version), value)?;
             }
         }
@@ -2310,6 +2332,129 @@ mod tests {
     #[test]
     fn test_chunked_history_baseline_rocksdb() -> Result<()> {
         check_chunked_history_baseline(&sample_rocksdb_finalize_store())
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_history_baseline_retries_after_corrupt_value() -> Result<()> {
+        use crate::helpers::rocksdb::{Database, MapID, ProgramMap, RocksDB};
+
+        let finalize_store = sample_rocksdb_finalize_store();
+        let before_program = ProgramID::from_str("aaaaa.aleo")?;
+        let corrupt_program = ProgramID::from_str("mmmmm.aleo")?;
+        let program_id = ProgramID::from_str("zzzzz.aleo")?;
+        let mapping = Identifier::from_str("records")?;
+        let key = Plaintext::from_str("1u8")?;
+        let value = Value::from_str("7u64")?;
+        finalize_store.initialize_mapping(before_program, mapping)?;
+        finalize_store.insert_key_value(before_program, mapping, key.clone(), value.clone())?;
+        finalize_store.initialize_mapping(corrupt_program, mapping)?;
+        finalize_store.insert_key_value(corrupt_program, mapping, key.clone(), value.clone())?;
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.insert_key_value(program_id, mapping, key.clone(), value.clone())?;
+        finalize_store.configure_history(vec![before_program, program_id], false)?;
+
+        let database = RocksDB::open(CurrentNetwork::ID, finalize_store.storage.storage_mode().clone())?;
+        let mut prefix = CurrentNetwork::ID.to_le_bytes().to_vec();
+        prefix.extend_from_slice(&u16::from(MapID::Program(ProgramMap::KeyValueID)).to_le_bytes());
+        let (raw_key, raw_value) =
+            database.prefix_iterator(&prefix).nth(1).ok_or_else(|| anyhow::anyhow!("Missing test mapping entry"))??;
+        database.put(&raw_key, [0xff])?;
+        assert!(finalize_store.get_value_confirmed(corrupt_program, mapping, &key).is_err());
+        assert_eq!(finalize_store.get_value_confirmed(program_id, mapping, &key)?, Some(value.clone()));
+
+        assert!(finalize_store.prepare_history_baseline_with_batch_size(0, 1).is_err());
+        assert_eq!(finalize_store.get_program_history_range(&before_program, 0)?, None);
+        assert_eq!(finalize_store.get_program_history_range(&program_id, 0)?, None);
+
+        database.put(&raw_key, raw_value)?;
+        finalize_store.prepare_history_baseline_with_batch_size(0, 1)?;
+        assert_eq!(finalize_store.get_value_at_height(before_program, mapping, &key, 0)?, Some(value.clone()));
+        assert_eq!(finalize_store.get_value_at_height(program_id, mapping, &key, 0)?, Some(value));
+        Ok(())
+    }
+
+    fn check_insert_then_reset_history<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+    ) -> Result<()> {
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        let mapping = Identifier::from_str("records")?;
+        let recreated = Identifier::from_str("recreated")?;
+        let key = Plaintext::from_str("1u8")?;
+        let old_key = Plaintext::from_str("2u8")?;
+        let after_key = Plaintext::from_str("3u8")?;
+        let value = Value::from_str("7u64")?;
+        finalize_store.configure_history(vec![program_id], false)?;
+
+        finalize_store.start_atomic();
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.initialize_mapping(program_id, recreated)?;
+        finalize_store.insert_key_value(program_id, mapping, old_key.clone(), Value::from_str("3u64")?)?;
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        finalize_store.start_atomic();
+        finalize_store.insert_key_value(program_id, mapping, key.clone(), value.clone())?;
+        finalize_store.update_key_value(program_id, mapping, old_key.clone(), Value::from_str("4u64")?)?;
+        finalize_store.replace_mapping(program_id, mapping, Vec::new())?;
+        finalize_store.insert_key_value(program_id, mapping, after_key.clone(), Value::from_str("8u64")?)?;
+        finalize_store.insert_key_value(program_id, recreated, key.clone(), value)?;
+        finalize_store.remove_mapping(program_id, recreated)?;
+        finalize_store.initialize_mapping(program_id, recreated)?;
+        finalize_store.record_program_history(1)?;
+        finalize_store.finish_atomic()?;
+
+        for (mapping, key) in [(mapping, &key), (mapping, &old_key), (mapping, &after_key), (recreated, &key)] {
+            assert_eq!(
+                finalize_store.get_value_at_height(program_id, mapping, key, 1)?,
+                finalize_store.get_value_confirmed(program_id, mapping, key)?
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_insert_then_reset_history_memory() -> Result<()> {
+        check_insert_then_reset_history(&sample_memory_finalize_store())
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_insert_then_reset_history_rocksdb() -> Result<()> {
+        check_insert_then_reset_history(&sample_rocksdb_finalize_store())
+    }
+
+    fn check_new_program_reset_history<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+    ) -> Result<()> {
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        let mapping = Identifier::from_str("records")?;
+        let key = Plaintext::from_str("1u8")?;
+        finalize_store.configure_history(vec![program_id], false)?;
+
+        finalize_store.start_atomic();
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.insert_key_value(program_id, mapping, key.clone(), Value::from_str("7u64")?)?;
+        finalize_store.replace_mapping(program_id, mapping, Vec::new())?;
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        assert_eq!(
+            finalize_store.get_value_at_height(program_id, mapping, &key, 0)?,
+            finalize_store.get_value_confirmed(program_id, mapping, &key)?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_new_program_reset_history_memory() -> Result<()> {
+        check_new_program_reset_history(&sample_memory_finalize_store())
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_new_program_reset_history_rocksdb() -> Result<()> {
+        check_new_program_reset_history(&sample_rocksdb_finalize_store())
     }
 
     #[test]

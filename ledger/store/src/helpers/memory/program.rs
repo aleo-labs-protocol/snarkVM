@@ -62,6 +62,8 @@ impl<N: Network> crate::sealed::Sealed for FinalizeMemory<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
+    const RETAINS_PENDING_WRITES_ON_RESET: bool = false;
+
     type CommitteeStorage = CommitteeMemory<N>;
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;

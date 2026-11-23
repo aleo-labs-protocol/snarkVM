@@ -408,7 +408,7 @@ impl<
                 // Only compare the nested map - the network ID and the outer map
                 // ID are guaranteed to remain the same as long as there is more
                 // than a single map in the database.
-                if !key[PREFIX_LEN + 4..].starts_with(serialized_map) {
+                if !key.get(PREFIX_LEN + 4..).is_some_and(|suffix| suffix.starts_with(serialized_map)) {
                     // If the nested map ID is different, it's the end of iteration.
                     break;
                 }
@@ -421,6 +421,7 @@ impl<
             }
         }
 
+        iter.status()?;
         Ok(len)
     }
 

@@ -62,6 +62,8 @@ impl<N: Network> crate::sealed::Sealed for FinalizeDB<N> {}
 
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
+    const RETAINS_PENDING_WRITES_ON_RESET: bool = true;
+
     type CommitteeStorage = CommitteeDB<N>;
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
