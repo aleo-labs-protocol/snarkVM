@@ -19,9 +19,6 @@
 
 extern crate snarkvm_console_network as console;
 
-pub mod canary_v0;
-pub use canary_v0::*;
-
 pub mod testnet_v0;
 pub use testnet_v0::*;
 

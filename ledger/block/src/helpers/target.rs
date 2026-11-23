@@ -1644,7 +1644,6 @@ mod tests {
     #[test]
     fn test_total_supply_cap() {
         // The limit height is shared, but the simulated supply depends on each network's V2 height.
-        assert_eq!(simulated_supply_at_limit_height::<CanaryV0>(), 5_000_000_005_581_415);
         assert_eq!(simulated_supply_at_limit_height::<TestnetV0>(), 5_000_758_271_387_431);
         let mainnet_supply = simulated_supply_at_limit_height::<MainnetV0>();
         assert_eq!(mainnet_supply, 4_998_479_673_138_274);

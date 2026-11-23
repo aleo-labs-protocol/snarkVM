@@ -19,7 +19,7 @@ use snarkvm_algorithms::{crypto_hash::sha256::sha256, snark::varuna::VarunaVersi
 use snarkvm_circuit::{Aleo, Assignment};
 use snarkvm_console::{
     account::PrivateKey,
-    network::{CanaryV0, MainnetV0, Network, TestnetV0},
+    network::{MainnetV0, Network, TestnetV0},
     prelude::ToBytes,
     program::{DynamicRecord, Identifier, One, ProgramID, ToFields, Zero, compute_function_id},
     types::{Address, Field, Group, U16},
@@ -221,9 +221,6 @@ pub fn main() -> Result<()> {
         }
         "testnet" => {
             translation::<TestnetV0, snarkvm_circuit::AleoTestnetV0>()?;
-        }
-        "canary" => {
-            translation::<CanaryV0, snarkvm_circuit::AleoCanaryV0>()?;
         }
         _ => panic!("Invalid network"),
     };

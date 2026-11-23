@@ -21,9 +21,6 @@ extern crate snarkvm_console_network as console;
 
 pub use snarkvm_circuit_environment_witness::rename_selfs;
 
-pub mod canary_circuit;
-pub use canary_circuit::*;
-
 pub mod circuit;
 pub use circuit::*;
 
