@@ -821,9 +821,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// use `VM::check_transaction` instead.
     #[inline]
     fn check_deployment_internal<R: CryptoRng + Rng>(&self, deployment: &Deployment<N>, rng: &mut R) -> Result<()> {
-        // Retrieve the block height.
+        // Deployment verification uses the stored block height. On an activation block, the constructor
+        // runs under the new rules before deployment verification starts using them on the next block.
         let block_height = self.block_store().current_block_height();
-        // Determine which consensus version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
 
         macro_rules! logic {
@@ -1750,6 +1750,51 @@ function compute:
             deploy_3_tx_id,
             deploy_4_tx_id
         ]);
+    }
+
+    #[test]
+    #[ignore = "slow"]
+    fn test_fixed_digest_deployment_at_v23_activation() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let activation = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V23)?;
+        let vm = test_helpers::sample_vm_at_height(activation - 1, rng);
+        let private_key = test_helpers::sample_genesis_private_key();
+        let program = Program::from_str(&format!(
+            "program digest_boundary.aleo;
+             function identity:
+                 input r0 as field.private;
+                 output r0 as field.private;
+             constructor:
+                 cast {} into r0 as [u8; 65u32];
+                 cast {} into r1 as [u8; 20u32];
+                 cast 0u8 into r2 as [u8; 1u32];
+                 cast {} into r3 as [[u8; 1u32]; 32u32];
+                 ecdsa.verify.digest.eth r0 r1 r3 into r4;",
+            "1u8 ".repeat(65),
+            "0u8 ".repeat(20),
+            "r2 ".repeat(32),
+        ))?;
+        let tx = vm.deploy(&private_key, &program, None, 0, None, rng)?;
+
+        // Deployment verification uses the stored tip. The constructor runs at the candidate block height.
+        vm.check_transaction(&tx, None, rng)?;
+        let block = test_helpers::sample_next_block(&vm, &private_key, std::slice::from_ref(&tx), rng)?;
+        assert_eq!(block.height(), activation);
+        assert_eq!(block.transactions().num_rejected(), 1);
+        vm.add_next_block(&block)?;
+        let rejected = block.transactions().iter().next().expect("The block contains the rejected deployment");
+        let reason = vm.finalize_store().get_rejected_reason(&rejected.id())?;
+        assert!(
+            matches!(reason, Some(RejectedReason::Finalize { ref command, .. })
+                if matches!(command.as_ref(), Command::Instruction(crate::Instruction::ECDSAVerifyDigestEth(_)))),
+            "unexpected rejection reason: {reason:?}"
+        );
+
+        // Once the activation block is stored, deployment verification rejects the constructor's digest type.
+        let deployment = tx.deployment().expect("VM::deploy returns a deployment transaction");
+        let error = vm.check_deployment_internal(deployment, rng).unwrap_err();
+        assert!(error.to_string().contains("one-dimensional byte array"), "unexpected error: {error}");
+        Ok(())
     }
 
     #[test]

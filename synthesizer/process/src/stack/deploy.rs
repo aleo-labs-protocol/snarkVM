@@ -87,7 +87,7 @@ impl<N: Network> Stack<N> {
     }
 
     /// Checks the digest operand in each scope that permits ECDSA verification.
-    fn check_fixed_digest_types(&self) -> Result<()> {
+    pub(crate) fn check_fixed_digest_types(&self, check_constructor: bool) -> Result<()> {
         let check = |commands: &[Command<N>], types: Option<&FinalizeTypes<N>>| -> Result<()> {
             for command in commands {
                 let Command::Instruction(instruction) = command else { continue };
@@ -109,7 +109,7 @@ impl<N: Network> Stack<N> {
             }
             Ok(())
         };
-        if let Some(constructor) = self.program.constructor() {
+        if check_constructor && let Some(constructor) = self.program.constructor() {
             check(constructor.commands(), self.constructor_types.read().as_ref())?;
         }
         let finalize_types = self.finalize_types.read();
@@ -134,11 +134,19 @@ impl<N: Network> Stack<N> {
         // validator computes the same result.
         _rng: &mut R,
     ) -> Result<()> {
-        let timer = timing_span!("Stack::verify_deployment").entered();
-
         if consensus_version >= ConsensusVersion::V23 {
-            self.check_fixed_digest_types()?;
+            self.check_fixed_digest_types(true)?;
         }
+        self.verify_deployment_keys::<A>(consensus_version, deployment)
+    }
+
+    /// Verifies the deployment keys and certificates after the program checks.
+    pub(crate) fn verify_deployment_keys<A: circuit::Aleo<Network = N>>(
+        &self,
+        consensus_version: ConsensusVersion,
+        deployment: &Deployment<N>,
+    ) -> Result<()> {
+        let timer = timing_span!("Stack::verify_deployment").entered();
 
         // NOTE: As developer, you will likely still want to confirm that your
         // deployment is within R1CS constraint and variable limits using
@@ -356,9 +364,7 @@ impl<N: Network> Stack<N> {
                 .iter()
                 .map(|(record_name, _record_type)| {
                     // Construct a random `TranslationAssignment`.
-                    // Note: All randomness here is drawn from `seeded_rng` (seeded by the deployment
-                    // ID), not the ambient `_rng`, so that the translation assignment — and thus the
-                    // certificate check below — is identical across all validators.
+                    // The deployment ID seeds the RNG so all validators check the same translation assignment.
                     let program_id = *self.program_id();
                     let function_id = Field::<N>::from_u64(Uniform::rand(&mut sub_seeded_rng));
                     let record_name = *record_name;
