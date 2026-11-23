@@ -15,7 +15,7 @@
 
 use crate::{PairingEngine, templates::short_weierstrass_jacobian};
 use snarkvm_fields::{Field, PrimeField, SquareRootField, Zero};
-use snarkvm_utilities::{FromBytes, ToBytes, rand::Uniform, serialize::*};
+use snarkvm_utilities::{ToBytes, rand::Uniform, serialize::*};
 
 use core::{
     fmt::{Debug, Display},
@@ -118,7 +118,6 @@ pub trait AffineCurve:
     + Debug
     + Display
     + Default
-    + FromBytes
     + Send
     + Sync
     + 'static
@@ -237,7 +236,6 @@ pub trait PairingCurve: AffineCurve {
     type Prepared: CanonicalSerialize
         + CanonicalDeserialize
         + ToBytes
-        + FromBytes
         + PartialEq
         + Eq
         + Default
