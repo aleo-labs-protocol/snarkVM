@@ -150,33 +150,6 @@ impl std::fmt::Display for ConsensusVersion {
 /// The number of consensus versions.
 pub(crate) const NUM_CONSENSUS_VERSIONS: usize = enum_iterator::cardinality::<ConsensusVersion>();
 
-/// The consensus version height for `CanaryV0`.
-pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] = [
-    (ConsensusVersion::V1, 0),
-    (ConsensusVersion::V2, 2_900_000),
-    (ConsensusVersion::V3, 4_560_000),
-    (ConsensusVersion::V4, 5_730_000),
-    (ConsensusVersion::V5, 5_780_000),
-    (ConsensusVersion::V6, 6_240_000),
-    (ConsensusVersion::V7, 6_880_000),
-    (ConsensusVersion::V8, 7_565_000),
-    (ConsensusVersion::V9, 8_028_000),
-    (ConsensusVersion::V10, 8_600_000),
-    (ConsensusVersion::V11, 9_510_000),
-    (ConsensusVersion::V12, 10_030_000),
-    (ConsensusVersion::V13, 10_881_000),
-    (ConsensusVersion::V14, 11_960_000),
-    (ConsensusVersion::V15, u32::MAX),
-    (ConsensusVersion::V16, u32::MAX),
-    (ConsensusVersion::V17, u32::MAX),
-    (ConsensusVersion::V18, u32::MAX),
-    (ConsensusVersion::V19, u32::MAX),
-    (ConsensusVersion::V20, u32::MAX),
-    (ConsensusVersion::V21, u32::MAX),
-    (ConsensusVersion::V22, u32::MAX),
-    (ConsensusVersion::V23, u32::MAX),
-];
-
 /// The consensus version height for `MainnetV0`.
 pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] = [
     (ConsensusVersion::V1, 0),
