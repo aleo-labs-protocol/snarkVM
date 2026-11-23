@@ -126,10 +126,43 @@ impl<P: Bls12Parameters> Bls12<P> {
         }
     }
 
+    /// staging's `miller_loop_scalar`, verbatim (measurement switch).
+    fn miller_loop_scalar_staging(pairs: &[(&G1Prepared<P>, &G2Prepared<P>)]) -> Fp12<P::Fp12Params> {
+        let mut pairs: Vec<_> = pairs.iter().map(|(p, q)| (*p, q.ell_coeffs.iter())).collect();
+
+        let mut f = Fp12::one();
+
+        // `prepare` gives a G2 point one line for each step of this loop. A `G2Prepared` with fewer
+        // lines panics at its `unwrap`.
+        for i in BitIteratorBE::new(P::X).skip(1) {
+            f.square_in_place();
+
+            for &mut (p, ref mut coeffs) in &mut pairs {
+                Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
+            }
+
+            if i {
+                for &mut (p, ref mut coeffs) in &mut pairs {
+                    Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
+                }
+            }
+        }
+
+        f
+    }
+
     /// Returns the value of the loop of `miller_loop` over `pairs`, before its final conjugation, by
     /// the scalar path, without `Bls12Parameters::miller_loop_fp12`.
     #[doc(hidden)]
     pub fn miller_loop_scalar(pairs: &[(&G1Prepared<P>, &G2Prepared<P>)]) -> Fp12<P::Fp12Params> {
+        // Measurement switch (aleo-measurements, not for merge): a non-empty
+        // `SNARKVM_MILLER_FIRST_OFF` runs staging's loop instead.
+        static FIRST_OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *FIRST_OFF
+            .get_or_init(|| std::env::var_os("SNARKVM_MILLER_FIRST_OFF").is_some_and(|value| !value.is_empty()))
+        {
+            return Self::miller_loop_scalar_staging(pairs);
+        }
         if pairs.is_empty() {
             return Fp12::one();
         }
