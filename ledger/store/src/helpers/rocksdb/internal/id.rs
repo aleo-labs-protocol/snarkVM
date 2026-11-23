@@ -259,8 +259,8 @@ pub enum ProgramMap {
 
 /// The RocksDB map prefix for storage metadata.
 ///
-/// Schema-level metadata (the storage version and migration state) lives here. Block-store state
-/// that must share the block store's atomic batches lives in `BlockMap::Metadata` instead.
+/// The storage version lives here. Block-store state that must share the block store's atomic
+/// batches lives in `BlockMap::Metadata` instead.
 ///
 /// New variants may be added in minor releases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
