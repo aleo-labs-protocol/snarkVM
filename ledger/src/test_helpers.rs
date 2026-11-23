@@ -28,8 +28,9 @@ use crate::{
 };
 use console::{
     account::{Address, PrivateKey, ViewKey},
-    network::MainnetV0,
+    network::{ConsensusVersion, MainnetV0},
     prelude::*,
+    program::Value,
 };
 use snarkvm_ledger_store::{ConsensusStorage, StorageMode};
 
@@ -71,7 +72,7 @@ pub type CurrentConsensusStorage = snarkvm_ledger_store::helpers::rocksdb::Conse
 pub struct TestEnv {
     pub ledger: CurrentLedger,
     pub private_key: PrivateKey<CurrentNetwork>,
-    /// The keys of the genesis committee, starting with `private_key`.
+    /// The keys of the genesis committee, starting with the genesis private key.
     pub validators: Vec<PrivateKey<CurrentNetwork>>,
     pub view_key: ViewKey<CurrentNetwork>,
     pub address: Address<CurrentNetwork>,
@@ -90,6 +91,46 @@ pub fn sample_test_env(_rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
     let ledger = load_ledger(genesis);
     // Return the test environment.
     TestEnv { ledger, private_key, validators, view_key, address }
+}
+
+/// Returns a ledger one block past the height of `version`, whose last block funds a new account, `private_key`.
+///
+/// After V8 a credits record from below `INCLUSION_UPGRADE_HEIGHT + 1` can only be upgraded, so the genesis records
+/// cannot pay fees. The new account holds two credits records and a public balance, and nothing else.
+/// Under the test heights each block up to the latest version changes the consensus version, which clears the
+/// partially verified transactions.
+pub fn sample_funded_test_env(version: ConsensusVersion, rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
+    let TestEnv { ledger, private_key: genesis_private_key, validators, .. } = sample_test_env(rng);
+    advance_to_height(&ledger, &validators, CurrentNetwork::CONSENSUS_HEIGHT(version).unwrap(), rng);
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let view_key = ViewKey::try_from(private_key).unwrap();
+    let address = Address::try_from(private_key).unwrap();
+    let mut transactions = Vec::with_capacity(3);
+    for function in ["transfer_public_to_private"; 2].into_iter().chain(["transfer_public"]) {
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::from_str("1_000_000_000_000u64").unwrap(),
+        ];
+        let locator = ("credits.aleo", function);
+        transactions.push(ledger.vm.execute(&genesis_private_key, locator, inputs.iter(), None, 0, None, rng).unwrap());
+    }
+    let block = prepare_quorum_block(&ledger, &validators, vec![], transactions, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 3);
+    ledger.advance_to_next_block(&block).unwrap();
+    TestEnv { ledger, private_key, validators, view_key, address }
+}
+
+/// Adds empty quorum blocks to `ledger` until its latest height is `height`.
+pub fn advance_to_height(
+    ledger: &CurrentLedger,
+    validators: &[PrivateKey<CurrentNetwork>],
+    height: u32,
+    rng: &mut (impl Rng + CryptoRng),
+) {
+    while ledger.latest_height() < height {
+        let block = prepare_quorum_block(ledger, validators, vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&block).unwrap();
+    }
 }
 
 /// Returns the next block on `ledger`: a quorum block whose subdag the `validators` certify.

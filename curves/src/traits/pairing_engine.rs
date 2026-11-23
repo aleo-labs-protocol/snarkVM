@@ -30,8 +30,12 @@ pub trait PairingEngine:
         + From<Self::G1Affine>;
 
     /// The affine representation of an element in G1.
-    type G1Affine: AffineCurve<BaseField = Self::Fq, ScalarField = Self::Fr, Projective = Self::G1Projective>
-        + PairingCurve<PairWith = Self::G2Affine, PairingResult = Self::Fqk>
+    type G1Affine: AffineCurve<
+            BaseField = Self::Fq,
+            ScalarField = Self::Fr,
+            Projective = Self::G1Projective,
+            Coordinates = (Self::Fq, Self::Fq, bool),
+        > + PairingCurve<PairWith = Self::G2Affine, PairingResult = Self::Fqk>
         + From<Self::G1Projective>
         + ToConstraintField<Self::Fq>;
 

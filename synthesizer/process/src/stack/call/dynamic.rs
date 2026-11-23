@@ -589,11 +589,21 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Ensure the values are equal.
                         if console_callee_response.outputs() != callee_response.outputs() {
-                            dev_eprintln!(
-                                "\n{:#?} != {:#?}\n",
-                                console_callee_response.outputs(),
-                                callee_response.outputs()
+                            let (console_outputs, outputs) =
+                                (console_callee_response.outputs(), callee_response.outputs());
+                            let index = console_outputs.iter().zip(outputs).position(|(a, b)| a != b);
+                            debug!(
+                                "'{}/{}' outputs do not match: {} console outputs, {} circuit outputs, first mismatch at index {index:?} of type {:?}",
+                                target.substack().program_id(),
+                                callee_function.name(),
+                                console_outputs.len(),
+                                outputs.len(),
+                                index
+                                    .and_then(|i| callee_function.outputs().get_index(i))
+                                    .map(|output| output.value_type())
                             );
+                            // Uncomment to also log the outputs when debugging locally. They can be private, so keep it commented out.
+                            // debug!("{:#?} != {:#?}", console_callee_response.outputs(), callee_response.outputs());
                             return Err(anyhow!(
                                 "Function '{}' outputs do not match in a 'call.dynamic' instruction.",
                                 callee_function.name()

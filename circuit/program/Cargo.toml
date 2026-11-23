@@ -47,7 +47,6 @@ workspace = true
 workspace = true
 
 [features]
-dev-print = [ "snarkvm-utilities/dev-print" ]
 
 # Minor releases add variants to `Literal` and `Value`; see their documentation. The setting covers
 # every public enum of this crate, including enums that are not expected to gain variants.

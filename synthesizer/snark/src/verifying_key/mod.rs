@@ -44,13 +44,12 @@ impl<N: Network> VerifyingKey<N> {
     /// Returns `true` if the proof is valid for the given public inputs.
     pub fn verify(
         &self,
-        _function_name: &str,
+        function_name: &str,
         varuna_version: varuna::VarunaVersion,
         inputs: &[N::Field],
         proof: &Proof<N>,
     ) -> bool {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
+        let _timer = timing_span!("Verify", function_name).entered();
 
         // Retrieve the verification parameters.
         let universal_verifier = N::varuna_universal_verifier();
@@ -59,16 +58,9 @@ impl<N: Network> VerifyingKey<N> {
         // Verify the proof.
         #[allow(clippy::manual_unwrap_or_default)]
         match Varuna::<N>::verify(universal_verifier, fiat_shamir, self, varuna_version, inputs, proof) {
-            Ok(is_valid) => {
-                #[cfg(feature = "dev-print")]
-                {
-                    let _elapsed = timer.elapsed().as_millis();
-                    dev_println!(" • Verified '{_function_name}' (in {_elapsed} ms)");
-                }
-                is_valid
-            }
-            Err(_error) => {
-                dev_println!(" • Verifier failed on network {}: {_error}", N::NAME);
+            Ok(is_valid) => is_valid,
+            Err(error) => {
+                debug!("Verifier failed on network {}: {error}", N::NAME);
                 false
             }
         }
@@ -77,13 +69,12 @@ impl<N: Network> VerifyingKey<N> {
     /// Returns `true` if the batch proof is valid for the given public inputs.
     #[allow(clippy::type_complexity)]
     pub fn verify_batch(
-        _locator: &str,
+        locator: &str,
         varuna_version: VarunaVersion,
         inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         proof: &Proof<N>,
     ) -> Result<()> {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
+        let _timer = timing_span!("Verify batch", locator).entered();
 
         // Convert the instances.
         let num_expected_keys = inputs.len();
@@ -98,15 +89,11 @@ impl<N: Network> VerifyingKey<N> {
         // Verify the batch proof.
         match Varuna::<N>::verify_batch(universal_verifier, fiat_shamir, varuna_version, &keys_to_inputs, proof) {
             Ok(is_valid) => {
-                #[cfg(feature = "dev-print")]
-                {
-                    let _elapsed = timer.elapsed().as_millis();
-                    dev_println!(" • Verified '{_locator}': {is_valid} (in {_elapsed} ms)");
-                }
+                timing_event!("Result: {is_valid}");
                 if is_valid { Ok(()) } else { bail!("'verify_batch' failed") }
             }
             Err(error) => {
-                dev_println!(" • Verifier failed on network {}: {error}", N::NAME);
+                debug!("Verifier failed on network {}: {error}", N::NAME);
                 bail!(error)
             }
         }

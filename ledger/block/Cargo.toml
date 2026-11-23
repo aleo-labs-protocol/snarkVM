@@ -18,15 +18,6 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-authority/wasm",
-  "snarkvm-ledger-puzzle/wasm",
-  "snarkvm-ledger-committee/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
-test-helpers = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true

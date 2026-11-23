@@ -200,6 +200,7 @@ impl<N: Network> BatchCertificate<N> {
 }
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use console::{account::PrivateKey, network::MainnetV0, prelude::TestRng, types::Field};

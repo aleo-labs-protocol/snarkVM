@@ -47,14 +47,11 @@ impl<N: Network> Block<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::MainnetV0;
-
-    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_genesis() {
         // Load the genesis block.
-        let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
+        let Some(genesis_block) = crate::test_helpers::shipped_genesis_block() else { return };
         assert!(genesis_block.is_genesis().unwrap());
     }
 

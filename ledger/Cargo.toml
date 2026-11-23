@@ -59,13 +59,19 @@ harness = false
 name = "transaction"
 path = "benches/transaction.rs"
 harness = false
-required-features = [ "test_consensus_heights" ]
+required-features = [ "dev-network" ]
 
 [[bench]]
 name = "verify_transaction"
 path = "benches/verify_transaction.rs"
 harness = false
-required-features = [ "test_consensus_heights" ]
+required-features = [ "dev-network" ]
+
+[[bench]]
+name = "prove"
+path = "benches/prove.rs"
+harness = false
+required-features = [ "dev-network" ]
 
 [features]
 default = [ "async", "indexmap/rayon", ]
@@ -75,44 +81,26 @@ async = [
   "snarkvm-synthesizer/async"
 ]
 metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
-# Enables the proving benchmarks in `benches/transaction.rs`.
-#
-# Off by default because proving a transaction takes seconds: on a shared CI
-# runner the group adds tens of minutes, needs the multi-gigabyte universal SRS,
-# and is variable enough to trip the benchmark action's alert threshold. The
-# same three reasons the `varuna` and `store`/`advance` benchmarks are skipped
-# in `.github/workflows/benchmarks.yml`.
-#
-# It requires `test_consensus_heights`, and that is not a convenience. The
-# Varuna version is chosen from the block height, and the mainnet table does not
-# reach `ConsensusVersion::V4` -- the V1 to V2 boundary -- until height
-# 6_135_000. A benchmark on a freshly created chain would therefore prove with
-# Varuna V1, which the network has not used since that height, and which does
-# not even call `prover_prepare_third_round`. The test heights put V4 at height
-# 7, which a benchmark can actually reach.
-bench-prove = [ "test_consensus_heights" ]
-test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-synthesizer/test_consensus_heights" ]
-rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
-test = [
-  "snarkvm-console/test",
-  "snarkvm-ledger-store/test",
-  "snarkvm-synthesizer/test"
+# Lowers network parameters (consensus heights, genesis targets) and fixes the genesis state root to `Field::one()` for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [
+  "snarkvm-console/dev-network",
+  "snarkvm-ledger-store/dev_genesis_state_root",
+  "snarkvm-synthesizer/dev-network"
 ]
+rocks = [ "snarkvm-ledger-store/rocks", "snarkvm-synthesizer/rocks" ]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 # Keep the [dev-dependencies] in sync with this list: the unit tests build `test_helpers` through
 # `cfg(test)`, without this feature.
 test-helpers = [
-  "snarkvm-ledger-test-helpers",
+  "dep:snarkvm-ledger-test-helpers",
   "snarkvm-ledger-committee/test-helpers",
   "snarkvm-ledger-narwhal/test-helpers",
   "dep:snarkvm-circuit",
   "snarkvm-console/test-helpers"
 ]
-test_targets = [
-  "snarkvm-console/test_targets",
-]
-dev-committee = []
-dev_genesis_state_root = [ "snarkvm-ledger-store/dev_genesis_state_root" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
+# Adds `Ledger::load_with_dev_committee`, which replaces the round-based committee lookups with a deterministic committee from a start round, to extend a copied ledger with blocks it signs; inert unless that loader or its unchecked variant is called.
+# The caller must also relax its own block checks; combined with `dev-network` it cannot load a production ledger, whose genesis that feature rejects. Never enable it to join a public network.
+dev-committee-override = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -195,7 +183,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem", "test-helpers" ]
+features = [ "filesystem", "test-helpers", "dev-network" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true
@@ -214,10 +202,6 @@ features = [ "preserve_order" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true
-
-[dev-dependencies.snarkvm-synthesizer]
-workspace = true
-features = [ "test" ]
 
 [dev-dependencies.tracing-subscriber]
 workspace = true

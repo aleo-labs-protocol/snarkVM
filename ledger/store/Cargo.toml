@@ -18,20 +18,10 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
+# Stores `Field::one()` as the state root at height 0; enabled through `snarkvm-ledger`'s `dev-network`.
 dev_genesis_state_root = [ ]
 metrics = [ "dep:snarkvm-metrics" ]
-rocks = [ "rocksdb", "smallvec" ]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-authority/wasm",
-  "snarkvm-ledger-block/wasm",
-  "snarkvm-ledger-puzzle/wasm",
-  "snarkvm-ledger-committee/wasm",
-  "snarkvm-ledger-narwhal-batch-certificate/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
-test = [ ]
+rocks = [ "dep:rocksdb", "dep:smallvec" ]
 
 [dependencies.snarkvm-metrics]
 workspace = true

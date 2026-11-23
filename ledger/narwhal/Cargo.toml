@@ -24,22 +24,8 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [
-  "batch-certificate",
-  "batch-header",
-  "data",
-  "subdag",
-  "transmission",
-  "transmission-id"
-]
 async = [ "snarkvm-ledger-narwhal-data/async" ]
-wasm = [
-  "snarkvm-ledger-narwhal-batch-certificate/wasm",
-  "snarkvm-ledger-narwhal-batch-header/wasm",
-  "snarkvm-ledger-narwhal-subdag/wasm",
-  "snarkvm-ledger-narwhal-transmission/wasm",
-  "snarkvm-ledger-narwhal-transmission-id/wasm"
-]
+# Helpers for tests. They are not part of the API, and semver does not cover them.
 test-helpers = [
   "snarkvm-ledger-narwhal-batch-certificate/test-helpers",
   "snarkvm-ledger-narwhal-batch-header/test-helpers",
@@ -47,36 +33,24 @@ test-helpers = [
   "snarkvm-ledger-narwhal-transmission/test-helpers",
   "snarkvm-ledger-narwhal-transmission-id/test-helpers"
 ]
-batch-certificate = [ "snarkvm-ledger-narwhal-batch-certificate" ]
-batch-header = [ "snarkvm-ledger-narwhal-batch-header" ]
-data = [ "snarkvm-ledger-narwhal-data" ]
-subdag = [ "snarkvm-ledger-narwhal-subdag" ]
-transmission = [ "snarkvm-ledger-narwhal-transmission" ]
-transmission-id = [ "snarkvm-ledger-narwhal-transmission-id" ]
 
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
 workspace = true
-optional = true
 
 [dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
-optional = true
 
 [dependencies.snarkvm-ledger-narwhal-data]
 workspace = true
-optional = true
 
 [dependencies.snarkvm-ledger-narwhal-subdag]
 workspace = true
-optional = true
 
 [dependencies.snarkvm-ledger-narwhal-transmission]
 workspace = true
-optional = true
 
 [dependencies.snarkvm-ledger-narwhal-transmission-id]
 workspace = true
-optional = true
 
 [dev-dependencies.snarkvm-ledger-narwhal]
 path = "."

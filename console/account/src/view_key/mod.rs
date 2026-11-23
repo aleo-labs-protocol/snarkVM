@@ -17,13 +17,9 @@ mod bytes;
 mod serialize;
 mod string;
 mod to_address;
-#[cfg(feature = "private_key")]
 mod try_from;
 
-#[cfg(feature = "compute_key")]
-use crate::ComputeKey;
-#[cfg(feature = "private_key")]
-use crate::PrivateKey;
+use crate::{ComputeKey, PrivateKey};
 
 use snarkvm_console_network::prelude::*;
 use snarkvm_console_types::{Address, Scalar};

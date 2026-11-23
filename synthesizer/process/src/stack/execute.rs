@@ -715,8 +715,8 @@ impl<N: Network> Stack<N> {
         call_stack_type: impl std::fmt::Display,
     ) {
         #[cfg(debug_assertions)]
-        {
-            use snarkvm_utilities::dev_println;
+        if snarkvm_utilities::tracing::enabled!(snarkvm_utilities::tracing::Level::TRACE) {
+            use snarkvm_utilities::tracing::trace;
 
             use colored::Colorize as _;
 
@@ -728,7 +728,7 @@ impl<N: Network> Stack<N> {
             let scope = scope.to_string().bold();
 
             // Print the log.
-            dev_println!(
+            trace!(
                 "{is_satisfied} {call_stack_type:width$} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
                 width = 20
             );

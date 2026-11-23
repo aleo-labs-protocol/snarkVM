@@ -78,9 +78,7 @@ fn genesis_with_fixed_committee_seed(
 fn main() {
     /////////////////////////// User defined
     // Number of transactions to generate and check in each of the two cases:
-    // simple (transfer_public) and complex (one_to_many_records). Right now,
-    // this is set to ConsensusState::MAXIMUM_CONFIRMED_TRANSACTIONS, which is 8
-    // in test environments.
+    // simple (transfer_public) and complex (one_to_many_records).
     let n_transactions = 8;
     ///////////////////////////
 

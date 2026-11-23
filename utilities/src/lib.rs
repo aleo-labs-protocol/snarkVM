@@ -46,9 +46,6 @@ pub mod locks;
 pub mod parallel;
 pub use parallel::*;
 
-#[macro_use]
-mod print;
-
 pub mod rand;
 pub use self::rand::*;
 
@@ -58,6 +55,7 @@ pub use serialize::*;
 
 /// A cache of test fixtures that the test processes of one binary share.
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod fixture;
 #[cfg(any(test, feature = "test-helpers"))]
 pub use fixture::*;
@@ -100,3 +98,11 @@ mod sealed {
 /// The `tracing` crate, for the expansion of `timing_span!` and `timing_event!`.
 #[doc(hidden)]
 pub use tracing;
+
+/// The `locktick` crate, for dependents that build with `--cfg locktick`.
+///
+/// Hazard: a dependent that depends on `locktick` directly can build a second copy of it, whose
+/// `lock_snapshots` does not list snarkVM's locks.
+#[cfg(locktick)]
+#[doc(hidden)]
+pub use locktick;

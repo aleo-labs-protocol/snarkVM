@@ -73,6 +73,7 @@ const SLOWEST_TESTS: &[&str] = &["many_input_and_output", "interleave_async_and_
 
 #[test]
 fn test_vm_execute_and_finalize() {
+    initialize_logger();
     // Load the tests.
     let mut tests =
         load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", "./expectations/vm/execute_and_finalize");
