@@ -46,8 +46,7 @@ filesystem = ["snarkvm-utilities/storage", "dep:ureq"]
 large_params = []
 rocks = ["snarkvm-ledger-store/rocks"]
 no-embedded-srs = []
-wasm = ["encoding", "js-sys", "web-sys"]
-dev-print = ["snarkvm-utilities/dev-print"]
+wasm = ["dep:encoding", "dep:js-sys", "dep:web-sys"]
 
 [dependencies.snarkvm-curves]
 workspace = true

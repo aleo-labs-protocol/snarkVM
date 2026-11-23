@@ -36,13 +36,12 @@ impl<N: Network> ProvingKey<N> {
     /// Returns a proof for the given assignment on the circuit.
     pub fn prove<R: Rng + CryptoRng>(
         &self,
-        _function_name: &str,
+        function_name: &str,
         varuna_version: varuna::VarunaVersion,
         assignment: &circuit::Assignment<N::Field>,
         rng: &mut R,
     ) -> Result<Proof<N>> {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
+        let _timer = timing_span!("Prove", function_name).entered();
 
         // Retrieve the proving parameters.
         let universal_prover = N::varuna_universal_prover();
@@ -52,25 +51,18 @@ impl<N: Network> ProvingKey<N> {
         let proof =
             Proof::new(Varuna::<N>::prove(universal_prover, fiat_shamir, self, varuna_version, assignment, rng)?);
 
-        #[cfg(feature = "dev-print")]
-        {
-            let _elapsed = timer.elapsed().as_millis();
-            dev_println!(" • Executed '{_function_name}' (in {_elapsed} ms)");
-        }
-
         Ok(proof)
     }
 
     /// Returns a proof for the given batch of proving keys and assignments.
     #[allow(clippy::type_complexity)]
     pub fn prove_batch<R: Rng + CryptoRng>(
-        _locator: &str,
+        locator: &str,
         varuna_version: varuna::VarunaVersion,
         assignments: &[(ProvingKey<N>, Vec<circuit::Assignment<N::Field>>)],
         rng: &mut R,
     ) -> Result<Proof<N>> {
-        #[cfg(feature = "dev-print")]
-        let timer = std::time::Instant::now();
+        let _timer = timing_span!("Prove batch", locator).entered();
 
         // Prepare the instances.
         let num_expected_instances = assignments.len();
@@ -87,12 +79,6 @@ impl<N: Network> ProvingKey<N> {
         // Compute the proof.
         let batch_proof =
             Proof::new(Varuna::<N>::prove_batch(universal_prover, fiat_shamir, varuna_version, &instances, rng)?);
-
-        #[cfg(feature = "dev-print")]
-        {
-            let _elapsed = timer.elapsed().as_millis();
-            dev_println!(" • Executed '{_locator}' (in {_elapsed} ms)");
-        }
 
         Ok(batch_proof)
     }

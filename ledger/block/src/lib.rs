@@ -689,6 +689,19 @@ pub mod test_helpers {
         })
     }
 
+    /// Returns the shipped genesis block, or `None` under `dev-network`, whose genesis targets reject it.
+    pub(crate) fn shipped_genesis_block() -> Option<Block<CurrentNetwork>> {
+        let block = Block::read_le(CurrentNetwork::genesis_bytes());
+        // `dev-network` lowers the consensus heights and the genesis targets together.
+        if CurrentNetwork::CONSENSUS_VERSION_HEIGHTS() == &CurrentNetwork::_CONSENSUS_VERSION_HEIGHTS {
+            Some(block.expect("a build without dev-network must decode the shipped genesis block"))
+        } else {
+            let error = block.expect_err("a dev-network build must reject the shipped genesis block").to_string();
+            assert!(error.contains("Invalid coinbase target for genesis block"), "{error}");
+            None
+        }
+    }
+
     /// Returns the genesis block of `sample_genesis_block_and_components`.
     pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
         // Sample the genesis block and components.

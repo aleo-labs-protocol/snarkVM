@@ -19,7 +19,7 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, SquareRootField, Zero};
-use snarkvm_utilities::{FromBytes, ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
+use snarkvm_utilities::{ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
 
 use rand::{
     Rng,
@@ -28,7 +28,7 @@ use rand::{
 };
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
-    io::{Error, ErrorKind, Read, Result as IoResult, Write},
+    io::{Result as IoResult, Write},
     ops::{Mul, Neg},
 };
 
@@ -179,6 +179,10 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         output
     }
 
+    fn msm_lanes(msms: &[&[(Self, P::ScalarField)]]) -> Option<Vec<Projective<P>>> {
+        P::msm_lanes(msms)
+    }
+
     fn mul_by_cofactor_to_projective(&self) -> Self::Projective {
         self.mul_bits(BitIteratorBE::new_without_leading_zeros(P::COFACTOR))
     }
@@ -294,20 +298,6 @@ impl<P: Parameters> ToBytes for Affine<P> {
         self.x.write_le(&mut writer)?;
         self.y.write_le(&mut writer)?;
         self.infinity.write_le(writer)
-    }
-}
-
-impl<P: Parameters> FromBytes for Affine<P> {
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read_le(&mut reader)?;
-        let y = P::BaseField::read_le(&mut reader)?;
-        let infinity = bool::read_le(&mut reader)?;
-
-        if infinity != x.is_zero() && y.is_one() {
-            return Err(Error::new(ErrorKind::InvalidData, "Infinity flag is not valid"));
-        }
-        Ok(Self::new(x, y, infinity))
     }
 }
 

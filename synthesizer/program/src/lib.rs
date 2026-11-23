@@ -1530,6 +1530,19 @@ mapping message:
     }
 
     #[test]
+    fn test_contains_string_type_in_mapping() -> Result<()> {
+        for (leaf, expected) in [("field", false), ("string", true)] {
+            let value =
+                (0..CurrentNetwork::MAX_DATA_DEPTH).fold(leaf.to_string(), |element, _| format!("[{element}; 1u32]"));
+            let program = Program::<CurrentNetwork>::from_str(&format!(
+                "program example.aleo; mapping items: key as field.public; value as {value}.public;"
+            ))?;
+            assert_eq!(program.contains_string_type(), expected);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_program_struct() -> Result<()> {
         // Create a new struct.
         let struct_ = StructType::<CurrentNetwork>::from_str(

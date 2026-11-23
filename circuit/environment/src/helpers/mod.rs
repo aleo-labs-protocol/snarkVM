@@ -38,6 +38,7 @@ pub mod r1cs;
 pub use r1cs::*;
 
 #[cfg(feature = "test-helpers")]
+#[doc(hidden)]
 pub mod snapshot;
 
 pub mod updatable_count;

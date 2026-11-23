@@ -37,7 +37,7 @@ use rand::{
 };
 use zeroize::Zeroize;
 
-// The CUDA FFI reads this by bytes.
+// The CUDA FFI reads this by bytes, and `snarkvm-fields` casts `Fp384` to these limbs.
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash, Zeroize)]
 #[repr(transparent)]
 pub struct BigInteger384(pub [u64; 6]);

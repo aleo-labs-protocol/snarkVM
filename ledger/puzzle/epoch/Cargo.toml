@@ -27,13 +27,11 @@ edition = "2024"
 default = [ "synthesis" ]
 merkle = [ ]
 synthesis = [
-  "snarkvm-circuit",
-  "lru",
-  "snarkvm-synthesizer-process",
-  "snarkvm-synthesizer-program"
+  "dep:snarkvm-circuit",
+  "dep:lru",
+  "dep:snarkvm-synthesizer-process",
+  "dep:snarkvm-synthesizer-program"
 ]
-wasm = [ "snarkvm-console/wasm" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
 
 [dependencies.snarkvm-circuit]
 workspace = true
@@ -81,7 +79,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "test", "test-helpers" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.hex]
 workspace = true

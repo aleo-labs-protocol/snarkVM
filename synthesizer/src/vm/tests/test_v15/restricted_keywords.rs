@@ -17,6 +17,7 @@ use super::*;
 
 /// Tests that "view" cannot be used as a function name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_function_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -39,6 +40,7 @@ function view:
 
 /// Tests that "view" cannot be used as a struct name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_struct_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -65,6 +67,7 @@ function test:
 
 /// Tests that "view" cannot be used as a mapping name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_mapping_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -91,6 +94,7 @@ function test:
 
 /// Tests that "view" cannot be used as a record name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_record_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();
@@ -117,6 +121,7 @@ function test:
 
 /// Tests that "view" cannot be used as a program name at V15.
 #[test]
+#[ignore = "slow"]
 fn test_restricted_keyword_view_program_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key();

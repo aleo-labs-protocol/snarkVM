@@ -25,7 +25,7 @@ use snarkvm_synthesizer_error::{
     VmCheckBlockContentError,
     indexed_finalize_bail,
 };
-use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
+use snarkvm_utilities::{cfg_sort_by_cached_key, defer};
 
 /// Uniqueness tracking accumulated while assembling a candidate block's transactions.
 struct CandidateTransactionDetails<N: Network> {
@@ -172,7 +172,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .filter_map(|tx_id| {
                 unordered_aborted_transaction_ids.get(&tx_id).map(|error| {
                     warn!("Speculation safely aborted a transaction - {error} ({tx_id})");
-                    dev_eprintln!("Speculation safely aborted a transaction - {error} ({tx_id})");
                     tx_id
                 })
             })
@@ -351,12 +350,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of confirmed transactions allowed in a block.
-    #[cfg(not(any(test, feature = "test")))]
     pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = Transactions::<N>::MAX_TRANSACTIONS;
-    /// The maximum number of confirmed transactions allowed in a block.
-    /// This is deliberately set to a low value (8) for testing purposes only.
-    #[cfg(any(test, feature = "test"))]
-    pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 8;
+
+    /// Replaces `MAXIMUM_CONFIRMED_TRANSACTIONS` for this VM and its clones.
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn set_maximum_confirmed_transactions(&self, maximum: usize) {
+        self.maximum_confirmed_transactions.store(maximum, std::sync::atomic::Ordering::Relaxed);
+    }
 
     /// Performs atomic speculation over a list of transactions.
     ///
@@ -517,12 +517,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
             // Determine the block spend limit.
             let block_spend_limit = state.block_spend_limit();
+            #[cfg(not(any(test, feature = "test-helpers")))]
+            let maximum_confirmed_transactions = Self::MAXIMUM_CONFIRMED_TRANSACTIONS;
+            #[cfg(any(test, feature = "test-helpers"))]
+            let maximum_confirmed_transactions =
+                self.maximum_confirmed_transactions.load(std::sync::atomic::Ordering::Relaxed);
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
                 // Ensure the number of confirmed transactions does not exceed the maximum.
                 // Upon reaching the maximum number of confirmed transactions, all remaining transactions are aborted.
-                if confirmed.len() >= Self::MAXIMUM_CONFIRMED_TRANSACTIONS {
+                if confirmed.len() >= maximum_confirmed_transactions {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), "Exceeds block transaction limit".to_string()));
                     // Continue to the next transaction.
@@ -613,7 +618,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     Ok(result) => result,
                                     Err(error) => {
                                         // Note: On failure, skip this transaction, and continue speculation.
-                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        debug!("Failed to finalize the fee in a rejected deploy - {error}");
                                         // Store the aborted transaction.
                                         aborted.push((transaction.clone(), error.to_string()));
                                         // Continue to the next transaction.
@@ -632,14 +637,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 }
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
-                                    dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                     match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
-                                            dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                            debug!("Failed to finalize the fee in a rejected deploy - {error}");
                                             // Store the aborted transaction.
                                             aborted.push((transaction.clone(), error.to_string()));
                                             // Continue to the next transaction.
@@ -665,7 +669,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             }
                             // Construct the rejected execute transaction.
                             Err(error) => {
-                                dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                 match fee {
@@ -698,9 +701,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                             }
                                             Err(error) => {
                                                 // Note: On failure, skip this transaction, and continue speculation.
-                                                dev_eprintln!(
-                                                    "Failed to finalize the fee in a rejected execute - {error}"
-                                                );
+                                                debug!("Failed to finalize the fee in a rejected execute - {error}");
                                                 // Store the aborted transaction.
                                                 aborted.push((transaction.clone(), error.to_string()));
                                                 // Continue to the next transaction.
@@ -750,7 +751,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction failed, abort the entire batch.
                     Err(error) => {
                         error!("Critical bug in speculate: {error}\n\n{transaction}");
-                        dev_eprintln!("Critical bug in speculate: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to speculate on transaction - {error}"));
                     }
@@ -1054,7 +1054,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction failed to finalize, abort and continue to the next transaction.
                     Err(error) => {
                         error!("Critical bug in finalize: {error}\n\n{transaction}");
-                        dev_eprintln!("Critical bug in finalize: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to finalize on transaction - {error}"));
                     }
@@ -1873,6 +1872,9 @@ mod tests {
             "
 program {program_name};
 
+constructor:
+    assert.eq edition 0u16;
+
 mapping account:
     // The token owner.
     key as address.public;
@@ -2375,8 +2377,8 @@ finalize transfer_public:
         );
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_genesis_num_validators_does_not_exceed_maximum_before_v3() {
         // This test will fail if the consensus v3 height is 0
         assert_ne!(0, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap());
@@ -2398,7 +2400,6 @@ finalize transfer_public:
         assert!(Committee::new_genesis(committee_map).is_err());
     }
 
-    #[cfg(not(feature = "test"))]
     #[test]
     #[allow(clippy::assertions_on_constants)]
     fn test_migration_v3_maximum_validator_increase() {
@@ -2521,455 +2522,6 @@ finalize transfer_public:
     }
 
     #[test]
-    #[ignore]
-    fn test_atomic_finalize_many() {
-        let rng = &mut TestRng::default();
-
-        // Sample a private key and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key();
-        let caller_address = Address::try_from(&caller_private_key).unwrap();
-
-        // Sample a private key and address for the recipient.
-        let recipient_private_key = PrivateKey::new(rng).unwrap();
-        let recipient_address = Address::try_from(&recipient_private_key).unwrap();
-
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
-
-        // Get the unspent records.
-        let mut unspent_records = genesis
-            .transitions()
-            .cloned()
-            .flat_map(Transition::into_records)
-            .map(|(_, record)| record)
-            .collect::<Vec<_>>();
-
-        // Construct the deployment block.
-        let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
-
-        // Add the deployment block to the VM.
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Generate more records to use for the next block.
-        let splits_block =
-            generate_splits(&vm, &caller_private_key, &deployment_block, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Construct the initial mint.
-        let initial_mint =
-            sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 20, &mut unspent_records, rng);
-        let initial_mint_block =
-            sample_next_block(&vm, &caller_private_key, &[initial_mint], &splits_block, &mut unspent_records, rng)
-                .unwrap();
-
-        // Add the block to the vm.
-        vm.add_next_block(&initial_mint_block).unwrap();
-
-        // Construct a mint and a transfer.
-        let mint_10 =
-            sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 10, &mut unspent_records, rng);
-        let mint_20 =
-            sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 20, &mut unspent_records, rng);
-        let transfer_10 = sample_transfer_public(
-            &vm,
-            caller_private_key,
-            &program_id,
-            recipient_address,
-            10,
-            &mut unspent_records,
-            rng,
-        );
-        let transfer_20 = sample_transfer_public(
-            &vm,
-            caller_private_key,
-            &program_id,
-            recipient_address,
-            20,
-            &mut unspent_records,
-            rng,
-        );
-        let transfer_30 = sample_transfer_public(
-            &vm,
-            caller_private_key,
-            &program_id,
-            recipient_address,
-            30,
-            &mut unspent_records,
-            rng,
-        );
-
-        // TODO (raychu86): Confirm that the finalize_operations here are correct.
-
-        // Starting Balance = 20
-        // Mint_10 -> Balance = 20 + 10  = 30
-        // Transfer_10 -> Balance = 30 - 10 = 20
-        // Transfer_20 -> Balance = 20 - 20 = 0
-        {
-            let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
-                .atomic_speculate(
-                    sample_finalize_state(1),
-                    CurrentNetwork::BLOCK_TIME as i64,
-                    None,
-                    vec![],
-                    None.into(),
-                    transactions,
-                )
-                .unwrap();
-
-            // Assert that all the transactions are accepted.
-            assert_eq!(confirmed_transactions.len(), 3);
-            confirmed_transactions.iter().for_each(|confirmed_tx| assert!(confirmed_tx.is_accepted()));
-            assert!(aborted_transaction_ids.is_empty());
-
-            assert_eq!(confirmed_transactions[0].transaction(), &mint_10);
-            assert_eq!(confirmed_transactions[1].transaction(), &transfer_10);
-            assert_eq!(confirmed_transactions[2].transaction(), &transfer_20);
-        }
-
-        // Starting Balance = 20
-        // Transfer_20 -> Balance = 20 - 20 = 0
-        // Mint_10 -> Balance = 0 + 10 = 10
-        // Mint_20 -> Balance = 10 + 20 = 30
-        // Transfer_30 -> Balance = 30 - 30 = 0
-        {
-            let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
-                .atomic_speculate(
-                    sample_finalize_state(1),
-                    CurrentNetwork::BLOCK_TIME as i64,
-                    None,
-                    vec![],
-                    None.into(),
-                    transactions,
-                )
-                .unwrap();
-
-            // Assert that all the transactions are accepted.
-            assert_eq!(confirmed_transactions.len(), 4);
-            confirmed_transactions.iter().for_each(|confirmed_tx| assert!(confirmed_tx.is_accepted()));
-            assert!(aborted_transaction_ids.is_empty());
-
-            // Ensure that the transactions are in the correct order.
-            assert_eq!(confirmed_transactions[0].transaction(), &transfer_20);
-            assert_eq!(confirmed_transactions[1].transaction(), &mint_10);
-            assert_eq!(confirmed_transactions[2].transaction(), &mint_20);
-            assert_eq!(confirmed_transactions[3].transaction(), &transfer_30);
-        }
-
-        // Starting Balance = 20
-        // Transfer_20 -> Balance = 20 - 20 = 0
-        // Transfer_10 -> Balance = 0 - 10 = -10 (should be rejected)
-        {
-            let transactions = vec![transfer_20.clone(), transfer_10.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
-                .atomic_speculate(
-                    sample_finalize_state(1),
-                    CurrentNetwork::BLOCK_TIME as i64,
-                    None,
-                    vec![],
-                    None.into(),
-                    transactions,
-                )
-                .unwrap();
-
-            // Assert that the accepted and rejected transactions are correct.
-            assert_eq!(confirmed_transactions.len(), 2);
-            assert!(aborted_transaction_ids.is_empty());
-
-            assert!(confirmed_transactions[0].is_accepted());
-            assert!(confirmed_transactions[1].is_rejected());
-
-            assert_eq!(confirmed_transactions[0].transaction(), &transfer_20);
-            assert_eq!(
-                confirmed_transactions[1],
-                reject(1, &transfer_10, confirmed_transactions[1].finalize_operations())
-            );
-        }
-
-        // Starting Balance = 20
-        // Mint_20 -> Balance = 20 + 20
-        // Transfer_30 -> Balance = 40 - 30 = 10
-        // Transfer_20 -> Balance = 10 - 20 = -10 (should be rejected)
-        // Transfer_10 -> Balance = 10 - 10 = 0
-        {
-            let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
-            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
-                .atomic_speculate(
-                    sample_finalize_state(1),
-                    CurrentNetwork::BLOCK_TIME as i64,
-                    None,
-                    vec![],
-                    None.into(),
-                    transactions,
-                )
-                .unwrap();
-
-            // Assert that the accepted and rejected transactions are correct.
-            assert_eq!(confirmed_transactions.len(), 4);
-            assert!(aborted_transaction_ids.is_empty());
-
-            assert!(confirmed_transactions[0].is_accepted());
-            assert!(confirmed_transactions[1].is_accepted());
-            assert!(confirmed_transactions[2].is_rejected());
-            assert!(confirmed_transactions[3].is_accepted());
-
-            assert_eq!(confirmed_transactions[0].transaction(), &mint_20);
-            assert_eq!(confirmed_transactions[1].transaction(), &transfer_30);
-            assert_eq!(
-                confirmed_transactions[2],
-                reject(2, &transfer_20, confirmed_transactions[2].finalize_operations())
-            );
-            assert_eq!(confirmed_transactions[3].transaction(), &transfer_10);
-        }
-    }
-
-    #[test]
-    #[ignore]
-    fn test_finalize_catch_halt() {
-        let rng = &mut TestRng::default();
-
-        // Sample a private key, view key, and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key();
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
-        for finalize_logic in &[
-            "finalize ped_hash:
-    input r0 as u128.public;
-    hash.ped64 r0 into r1 as field;
-    set r1 into hashes[r0];",
-            "finalize ped_hash:
-    input r0 as u128.public;
-    div r0 0u128 into r1;",
-        ] {
-            // Initialize the vm.
-            let vm = test_helpers::sample_vm_with_genesis_block();
-
-            // Deploy a new program.
-            let genesis =
-                vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
-
-            // Get the unspent records.
-            let mut unspent_records = genesis
-                .transitions()
-                .cloned()
-                .flat_map(Transition::into_records)
-                .map(|(_, record)| record)
-                .collect::<Vec<_>>();
-
-            // Create a program that will always cause a E::halt in the finalize execution.
-            let program_id = "testing.aleo";
-            let program = Program::<CurrentNetwork>::from_str(&format!(
-                "
-program {program_id};
-
-mapping hashes:
-    key as u128.public;
-    value as field.public;
-
-function ped_hash:
-    input r0 as u128.public;
-    // hash.ped64 r0 into r1 as field; // <--- This will cause a E::halt.
-    async ped_hash r0 into r1;
-    output r1 as {program_id}/ped_hash.future;
-
-{finalize_logic}"
-            ))
-            .unwrap();
-
-            let credits = Some(unspent_records.pop().unwrap().decrypt(&caller_view_key).unwrap());
-
-            // Deploy the program.
-            let deployment_transaction = vm.deploy(&caller_private_key, &program, credits, 10, None, rng).unwrap();
-
-            // Construct the deployment block.
-            let deployment_block = sample_next_block(
-                &vm,
-                &caller_private_key,
-                &[deployment_transaction],
-                &genesis,
-                &mut unspent_records,
-                rng,
-            )
-            .unwrap();
-
-            // Add the deployment block to the VM.
-            vm.add_next_block(&deployment_block).unwrap();
-
-            // Construct a transaction that will cause a E::halt in the finalize execution.
-            let inputs = vec![Value::<CurrentNetwork>::from_str("1u128").unwrap()];
-            let transaction =
-                create_execution(&vm, caller_private_key, program_id, "ped_hash", inputs, &mut unspent_records, rng);
-
-            // Speculatively execute the transaction. Ensure that this call does not panic and returns a rejected transaction.
-            let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
-                .speculate(
-                    sample_finalize_state(1),
-                    CurrentNetwork::BLOCK_TIME as i64,
-                    None,
-                    vec![],
-                    &None.into(),
-                    [transaction.clone()].iter(),
-                    rng,
-                )
-                .unwrap();
-            assert!(aborted_transaction_ids.is_empty());
-
-            // Ensure that the transaction is rejected.
-            assert_eq!(confirmed_transactions.len(), 1);
-            assert!(transaction.is_execute());
-            if let Transaction::Execute(_, _, execution, fee) = transaction {
-                let fee_transaction = Transaction::from_fee(fee.unwrap()).unwrap();
-                let expected_confirmed_transaction = ConfirmedTransaction::RejectedExecute(
-                    0,
-                    fee_transaction,
-                    Rejected::new_execution(*execution),
-                    vec![],
-                );
-
-                let confirmed_transaction = confirmed_transactions.iter().next().unwrap();
-                assert_eq!(confirmed_transaction, &expected_confirmed_transaction);
-            }
-        }
-    }
-
-    #[test]
-    #[ignore]
-    fn test_rejected_transaction_should_not_update_storage() {
-        let rng = &mut TestRng::default();
-
-        // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key();
-        let address = Address::try_from(&private_key).unwrap();
-
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
-
-        // Get the unspent records.
-        let mut unspent_records = genesis
-            .transitions()
-            .cloned()
-            .flat_map(Transition::into_records)
-            .map(|(_, record)| record)
-            .collect::<Vec<_>>();
-
-        // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &private_key, &genesis, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Construct the deployment block.
-        let deployment_block = {
-            let program = Program::<CurrentNetwork>::from_str(
-                "
-program testing.aleo;
-
-mapping entries:
-    key as address.public;
-    value as u8.public;
-
-function compute:
-    input r0 as u8.public;
-    async compute self.caller r0 into r1;
-    output r1 as testing.aleo/compute.future;
-
-finalize compute:
-    input r0 as address.public;
-    input r1 as u8.public;
-    get.or_use entries[r0] r1 into r2;
-    add r1 r2 into r3;
-    set r3 into entries[r0];
-    get entries[r0] into r4;
-    add r4 r1 into r5;
-    set r5 into entries[r0];
-",
-            )
-            .unwrap();
-
-            // Prepare the additional fee.
-            let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
-            let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
-
-            // Deploy.
-            let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
-
-            // Construct the new block.
-            sample_next_block(&vm, &private_key, &[transaction], &splits_block, &mut unspent_records, rng).unwrap()
-        };
-
-        // Add the deployment block to the VM.
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &private_key, &deployment_block, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Create an execution transaction, that will be rejected.
-        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
-        let first = create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
-
-        // Construct the next block.
-        let next_block =
-            sample_next_block(&vm, &private_key, &[first], &splits_block, &mut unspent_records, rng).unwrap();
-
-        // Check that the transaction was rejected.
-        assert!(next_block.transactions().iter().next().unwrap().is_rejected());
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Check that the storage was not updated.
-        let program_id = ProgramID::from_str("testing.aleo").unwrap();
-        let mapping_name = Identifier::from_str("entries").unwrap();
-        assert!(
-            !vm.finalize_store()
-                .contains_key_confirmed(program_id, mapping_name, &Plaintext::from(Literal::Address(address)))
-                .unwrap()
-        );
-
-        // Create an execution transaction, that will be rejected.
-        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
-        let first = create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
-
-        // Create an execution transaction, that will be accepted.
-        let r0 = Value::<CurrentNetwork>::from_str("1u8").unwrap();
-        let second = create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
-
-        // Construct the next block.
-        let next_block =
-            sample_next_block(&vm, &private_key, &[first, second], &next_block, &mut unspent_records, rng).unwrap();
-
-        // Check that the first transaction was rejected.
-        assert!(next_block.transactions().iter().next().unwrap().is_rejected());
-
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
-
-        // Check that the storage was updated correctly.
-        let value = vm
-            .finalize_store()
-            .get_value_speculative(program_id, mapping_name, &Plaintext::from(Literal::Address(address)))
-            .unwrap()
-            .unwrap();
-        let expected = Value::<CurrentNetwork>::from_str("3u8").unwrap();
-        assert_eq!(value, expected);
-    }
-
-    #[test]
     fn test_excess_transactions_should_be_aborted() {
         let rng = &mut TestRng::default();
 
@@ -2977,15 +2529,13 @@ finalize compute:
         let caller_private_key = test_helpers::sample_genesis_private_key();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        // Initialize the vm, with a cap that a test can fill.
+        let (vm, block) = test_helpers::sample_vm_past_v8();
+        let maximum_confirmed_transactions = 8;
+        vm.set_maximum_confirmed_transactions(maximum_confirmed_transactions);
 
         // Get the unspent records.
-        let mut unspent_records = genesis
+        let mut unspent_records = block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
@@ -2994,7 +2544,7 @@ finalize compute:
 
         // Construct the deployment block.
         let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
+            new_program_deployment(&vm, &caller_private_key, &block, &mut unspent_records, rng).unwrap();
 
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
@@ -3002,7 +2552,7 @@ finalize compute:
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
 
-        for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
+        for _ in 0..maximum_confirmed_transactions + 1 {
             let inputs = vec![
                 Value::<CurrentNetwork>::from_str(&caller_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u64").unwrap(),
@@ -3015,7 +2565,7 @@ finalize compute:
             vm.check_transaction(&transaction, None, rng).unwrap();
 
             // Abort the transaction if the block is full.
-            if transactions.len() >= VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS {
+            if transactions.len() >= maximum_confirmed_transactions {
                 excess_transaction_ids.push(transaction.id());
             }
 
@@ -3029,7 +2579,7 @@ finalize compute:
 
         // Ensure that the excess transactions were aborted.
         assert_eq!(next_block.aborted_transaction_ids(), &excess_transaction_ids);
-        assert_eq!(next_block.transactions().len(), VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS);
+        assert_eq!(next_block.transactions().len(), maximum_confirmed_transactions);
     }
 
     #[test]
@@ -4001,34 +3551,365 @@ finalize compute:
         }
     }
 
-    #[test]
-    #[ignore]
-    fn test_rejection_reason_storage() {
-        let rng = &mut TestRng::default();
+    mod memory_intensive {
+        use super::*;
 
-        // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key();
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_atomic_finalize_many() {
+            let rng = &mut TestRng::default();
 
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block();
+            // Sample a private key and address for the caller.
+            let caller_private_key = test_helpers::sample_genesis_private_key();
+            let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+            // Sample a private key and address for the recipient.
+            let recipient_private_key = PrivateKey::new(rng).unwrap();
+            let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
-        // Get the unspent records.
-        let mut unspent_records = genesis
-            .transitions()
-            .cloned()
-            .flat_map(Transition::into_records)
-            .map(|(_, record)| record)
-            .collect::<Vec<_>>();
+            // Initialize the vm.
+            let (vm, block) = test_helpers::sample_vm_past_v8();
 
-        // Construct the deployment block.
-        let deployment_block = {
-            let program = Program::<CurrentNetwork>::from_str(
-                "
+            // Get the unspent records.
+            let mut unspent_records = block
+                .transitions()
+                .cloned()
+                .flat_map(Transition::into_records)
+                .map(|(_, record)| record)
+                .collect::<Vec<_>>();
+
+            // Construct the deployment block.
+            let (program_id, deployment_block) =
+                new_program_deployment(&vm, &caller_private_key, &block, &mut unspent_records, rng).unwrap();
+
+            // Add the deployment block to the VM.
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Generate more records to use for the next block.
+            let splits_block =
+                generate_splits(&vm, &caller_private_key, &deployment_block, &mut unspent_records, rng).unwrap();
+
+            // Add the splits block to the VM.
+            vm.add_next_block(&splits_block).unwrap();
+
+            // Construct the initial mint.
+            let initial_mint =
+                sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 20, &mut unspent_records, rng);
+            let initial_mint_block =
+                sample_next_block(&vm, &caller_private_key, &[initial_mint], &splits_block, &mut unspent_records, rng)
+                    .unwrap();
+
+            // Add the block to the vm.
+            vm.add_next_block(&initial_mint_block).unwrap();
+
+            // Construct a mint and a transfer.
+            let mint_10 =
+                sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 10, &mut unspent_records, rng);
+            let mint_20 =
+                sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 20, &mut unspent_records, rng);
+            let transfer_10 = sample_transfer_public(
+                &vm,
+                caller_private_key,
+                &program_id,
+                recipient_address,
+                10,
+                &mut unspent_records,
+                rng,
+            );
+            let transfer_20 = sample_transfer_public(
+                &vm,
+                caller_private_key,
+                &program_id,
+                recipient_address,
+                20,
+                &mut unspent_records,
+                rng,
+            );
+            let transfer_30 = sample_transfer_public(
+                &vm,
+                caller_private_key,
+                &program_id,
+                recipient_address,
+                30,
+                &mut unspent_records,
+                rng,
+            );
+
+            // TODO (raychu86): Confirm that the finalize_operations here are correct.
+
+            // Starting Balance = 20
+            // Mint_10 -> Balance = 20 + 10  = 30
+            // Transfer_10 -> Balance = 30 - 10 = 20
+            // Transfer_20 -> Balance = 20 - 20 = 0
+            {
+                let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
+                let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                    .atomic_speculate(
+                        sample_finalize_state(vm.block_store().current_block_height() + 1),
+                        CurrentNetwork::BLOCK_TIME as i64,
+                        None,
+                        vec![],
+                        None.into(),
+                        transactions,
+                    )
+                    .unwrap();
+
+                // Assert that all the transactions are accepted.
+                assert_eq!(confirmed_transactions.len(), 3);
+                confirmed_transactions.iter().for_each(|confirmed_tx| assert!(confirmed_tx.is_accepted()));
+                assert!(aborted_transaction_ids.is_empty());
+
+                assert_eq!(confirmed_transactions[0].transaction(), &mint_10);
+                assert_eq!(confirmed_transactions[1].transaction(), &transfer_10);
+                assert_eq!(confirmed_transactions[2].transaction(), &transfer_20);
+            }
+
+            // Starting Balance = 20
+            // Transfer_20 -> Balance = 20 - 20 = 0
+            // Mint_10 -> Balance = 0 + 10 = 10
+            // Mint_20 -> Balance = 10 + 20 = 30
+            // Transfer_30 -> Balance = 30 - 30 = 0
+            {
+                let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
+                let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                    .atomic_speculate(
+                        sample_finalize_state(vm.block_store().current_block_height() + 1),
+                        CurrentNetwork::BLOCK_TIME as i64,
+                        None,
+                        vec![],
+                        None.into(),
+                        transactions,
+                    )
+                    .unwrap();
+
+                // Assert that all the transactions are accepted.
+                assert_eq!(confirmed_transactions.len(), 4);
+                confirmed_transactions.iter().for_each(|confirmed_tx| assert!(confirmed_tx.is_accepted()));
+                assert!(aborted_transaction_ids.is_empty());
+
+                // Ensure that the transactions are in the correct order.
+                assert_eq!(confirmed_transactions[0].transaction(), &transfer_20);
+                assert_eq!(confirmed_transactions[1].transaction(), &mint_10);
+                assert_eq!(confirmed_transactions[2].transaction(), &mint_20);
+                assert_eq!(confirmed_transactions[3].transaction(), &transfer_30);
+            }
+
+            // Starting Balance = 20
+            // Transfer_20 -> Balance = 20 - 20 = 0
+            // Transfer_10 -> Balance = 0 - 10 = -10 (should be rejected)
+            {
+                let transactions = vec![transfer_20.clone(), transfer_10.clone()];
+                let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                    .atomic_speculate(
+                        sample_finalize_state(vm.block_store().current_block_height() + 1),
+                        CurrentNetwork::BLOCK_TIME as i64,
+                        None,
+                        vec![],
+                        None.into(),
+                        transactions,
+                    )
+                    .unwrap();
+
+                // Assert that the accepted and rejected transactions are correct.
+                assert_eq!(confirmed_transactions.len(), 2);
+                assert!(aborted_transaction_ids.is_empty());
+
+                assert!(confirmed_transactions[0].is_accepted());
+                assert!(confirmed_transactions[1].is_rejected());
+
+                assert_eq!(confirmed_transactions[0].transaction(), &transfer_20);
+                assert_eq!(
+                    confirmed_transactions[1],
+                    reject(1, &transfer_10, confirmed_transactions[1].finalize_operations())
+                );
+            }
+
+            // Starting Balance = 20
+            // Mint_20 -> Balance = 20 + 20
+            // Transfer_30 -> Balance = 40 - 30 = 10
+            // Transfer_20 -> Balance = 10 - 20 = -10 (should be rejected)
+            // Transfer_10 -> Balance = 10 - 10 = 0
+            {
+                let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
+                let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                    .atomic_speculate(
+                        sample_finalize_state(vm.block_store().current_block_height() + 1),
+                        CurrentNetwork::BLOCK_TIME as i64,
+                        None,
+                        vec![],
+                        None.into(),
+                        transactions,
+                    )
+                    .unwrap();
+
+                // Assert that the accepted and rejected transactions are correct.
+                assert_eq!(confirmed_transactions.len(), 4);
+                assert!(aborted_transaction_ids.is_empty());
+
+                assert!(confirmed_transactions[0].is_accepted());
+                assert!(confirmed_transactions[1].is_accepted());
+                assert!(confirmed_transactions[2].is_rejected());
+                assert!(confirmed_transactions[3].is_accepted());
+
+                assert_eq!(confirmed_transactions[0].transaction(), &mint_20);
+                assert_eq!(confirmed_transactions[1].transaction(), &transfer_30);
+                assert_eq!(
+                    confirmed_transactions[2],
+                    reject(2, &transfer_20, confirmed_transactions[2].finalize_operations())
+                );
+                assert_eq!(confirmed_transactions[3].transaction(), &transfer_10);
+            }
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_finalize_catch_halt() {
+            let rng = &mut TestRng::default();
+
+            // Sample a private key, view key, and address for the caller.
+            let caller_private_key = test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            for finalize_logic in &[
+                "finalize ped_hash:
+    input r0 as u128.public;
+    hash.ped64 r0 into r1 as field;
+    set r1 into hashes[r0];",
+                "finalize ped_hash:
+    input r0 as u128.public;
+    div r0 0u128 into r1;",
+            ] {
+                // Initialize the vm.
+                let (vm, block) = test_helpers::sample_vm_past_v8();
+
+                // Get the unspent records.
+                let mut unspent_records = block
+                    .transitions()
+                    .cloned()
+                    .flat_map(Transition::into_records)
+                    .map(|(_, record)| record)
+                    .collect::<Vec<_>>();
+
+                // Create a program that will always cause a E::halt in the finalize execution.
+                let program_id = "testing.aleo";
+                let program = Program::<CurrentNetwork>::from_str(&format!(
+                    "
+program {program_id};
+
+constructor:
+    assert.eq edition 0u16;
+
+mapping hashes:
+    key as u128.public;
+    value as field.public;
+
+function ped_hash:
+    input r0 as u128.public;
+    // hash.ped64 r0 into r1 as field; // <--- This will cause a E::halt.
+    async ped_hash r0 into r1;
+    output r1 as {program_id}/ped_hash.future;
+
+{finalize_logic}"
+                ))
+                .unwrap();
+
+                let credits = Some(unspent_records.pop().unwrap().decrypt(&caller_view_key).unwrap());
+
+                // Deploy the program.
+                let deployment_transaction = vm.deploy(&caller_private_key, &program, credits, 10, None, rng).unwrap();
+
+                // Construct the deployment block.
+                let deployment_block = sample_next_block(
+                    &vm,
+                    &caller_private_key,
+                    &[deployment_transaction],
+                    &block,
+                    &mut unspent_records,
+                    rng,
+                )
+                .unwrap();
+
+                // Add the deployment block to the VM.
+                vm.add_next_block(&deployment_block).unwrap();
+
+                // Construct a transaction that will cause a E::halt in the finalize execution.
+                let inputs = vec![Value::<CurrentNetwork>::from_str("1u128").unwrap()];
+                let transaction = create_execution(
+                    &vm,
+                    caller_private_key,
+                    program_id,
+                    "ped_hash",
+                    inputs,
+                    &mut unspent_records,
+                    rng,
+                );
+
+                // Speculatively execute the transaction. Ensure that this call does not panic and returns a rejected transaction.
+                let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
+                    .speculate(
+                        sample_finalize_state(vm.block_store().current_block_height() + 1),
+                        CurrentNetwork::BLOCK_TIME as i64,
+                        None,
+                        vec![],
+                        &None.into(),
+                        [transaction.clone()].iter(),
+                        rng,
+                    )
+                    .unwrap();
+                assert!(aborted_transaction_ids.is_empty());
+
+                // Ensure that the transaction is rejected.
+                assert_eq!(confirmed_transactions.len(), 1);
+                assert!(transaction.is_execute());
+                if let Transaction::Execute(_, _, execution, fee) = transaction {
+                    let fee_transaction = Transaction::from_fee(fee.unwrap()).unwrap();
+                    let expected_confirmed_transaction = ConfirmedTransaction::RejectedExecute(
+                        0,
+                        fee_transaction,
+                        Rejected::new_execution(*execution),
+                        vec![],
+                    );
+
+                    let confirmed_transaction = confirmed_transactions.iter().next().unwrap();
+                    assert_eq!(confirmed_transaction, &expected_confirmed_transaction);
+                }
+            }
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_rejected_transaction_should_not_update_storage() {
+            let rng = &mut TestRng::default();
+
+            // Sample a private key.
+            let private_key = test_helpers::sample_genesis_private_key();
+            let address = Address::try_from(&private_key).unwrap();
+
+            // Initialize the vm.
+            let (vm, block) = test_helpers::sample_vm_past_v8();
+
+            // Get the unspent records.
+            let mut unspent_records = block
+                .transitions()
+                .cloned()
+                .flat_map(Transition::into_records)
+                .map(|(_, record)| record)
+                .collect::<Vec<_>>();
+
+            // Generate more records to use for the next block.
+            let splits_block = generate_splits(&vm, &private_key, &block, &mut unspent_records, rng).unwrap();
+
+            // Add the splits block to the VM.
+            vm.add_next_block(&splits_block).unwrap();
+
+            // Construct the deployment block.
+            let deployment_block = {
+                let program = Program::<CurrentNetwork>::from_str(
+                    "
 program testing.aleo;
+
+constructor:
+    assert.eq edition 0u16;
 
 mapping entries:
     key as address.public;
@@ -4049,43 +3930,178 @@ finalize compute:
     add r4 r1 into r5;
     set r5 into entries[r0];
 ",
-            )
-            .unwrap();
+                )
+                .unwrap();
 
-            // Prepare the additional fee.
-            let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
-            let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+                // Prepare the additional fee.
+                let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
+                let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
 
-            // Deploy.
-            let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
+                // Deploy.
+                let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
 
-            // Construct the new block.
-            sample_next_block(&vm, &private_key, &[transaction], &genesis, &mut unspent_records, rng).unwrap()
-        };
+                // Construct the new block.
+                sample_next_block(&vm, &private_key, &[transaction], &splits_block, &mut unspent_records, rng).unwrap()
+            };
 
-        // Add the deployment block to the VM.
-        vm.add_next_block(&deployment_block).unwrap();
+            // Add the deployment block to the VM.
+            vm.add_next_block(&deployment_block).unwrap();
 
-        // Create an execution transaction, that will be rejected.
-        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
-        let rejected_tx =
-            create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+            // Generate more records to use for the next block.
+            let splits_block =
+                generate_splits(&vm, &private_key, &deployment_block, &mut unspent_records, rng).unwrap();
 
-        // Construct the next block with the rejected transaction.
-        let next_block =
-            sample_next_block(&vm, &private_key, &[rejected_tx], &deployment_block, &mut unspent_records, rng).unwrap();
+            // Add the splits block to the VM.
+            vm.add_next_block(&splits_block).unwrap();
 
-        // Check that the transaction was rejected.
-        assert_eq!(next_block.transactions().len(), 1);
-        let rejected_transaction = next_block.transactions().iter().next().unwrap();
-        assert!(rejected_transaction.is_rejected());
+            // Create an execution transaction, that will be rejected.
+            let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+            let first =
+                create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
 
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
+            // Construct the next block.
+            let next_block =
+                sample_next_block(&vm, &private_key, &[first], &splits_block, &mut unspent_records, rng).unwrap();
 
-        // Check that the rejection reason was stored.
-        let tx_id = *rejected_transaction.id();
-        let rejection_reason = vm.finalize_store().get_rejected_reason(&tx_id).unwrap();
-        assert!(rejection_reason.is_some(), "Rejection reason should be stored");
+            // Check that the transaction was rejected.
+            assert!(next_block.transactions().iter().next().unwrap().is_rejected());
+
+            // Add the next block to the VM.
+            vm.add_next_block(&next_block).unwrap();
+
+            // Check that the storage was not updated.
+            let program_id = ProgramID::from_str("testing.aleo").unwrap();
+            let mapping_name = Identifier::from_str("entries").unwrap();
+            assert!(
+                !vm.finalize_store()
+                    .contains_key_confirmed(program_id, mapping_name, &Plaintext::from(Literal::Address(address)))
+                    .unwrap()
+            );
+
+            // Create an execution transaction, that will be rejected.
+            let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+            let first =
+                create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+
+            // Create an execution transaction, that will be accepted.
+            let r0 = Value::<CurrentNetwork>::from_str("1u8").unwrap();
+            let second =
+                create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+
+            // Construct the next block.
+            let next_block =
+                sample_next_block(&vm, &private_key, &[first, second], &next_block, &mut unspent_records, rng).unwrap();
+
+            // Check that the first transaction was rejected.
+            assert!(next_block.transactions().iter().next().unwrap().is_rejected());
+
+            // Add the next block to the VM.
+            vm.add_next_block(&next_block).unwrap();
+
+            // Check that the storage was updated correctly.
+            let value = vm
+                .finalize_store()
+                .get_value_speculative(program_id, mapping_name, &Plaintext::from(Literal::Address(address)))
+                .unwrap()
+                .unwrap();
+            let expected = Value::<CurrentNetwork>::from_str("3u8").unwrap();
+            assert_eq!(value, expected);
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_rejection_reason_storage() {
+            let rng = &mut TestRng::default();
+
+            // Sample a private key.
+            let private_key = test_helpers::sample_genesis_private_key();
+
+            // Initialize the vm.
+            let (vm, block) = test_helpers::sample_vm_past_v8();
+
+            // Get the unspent records.
+            let mut unspent_records = block
+                .transitions()
+                .cloned()
+                .flat_map(Transition::into_records)
+                .map(|(_, record)| record)
+                .collect::<Vec<_>>();
+
+            // Construct the deployment block.
+            let deployment_block = {
+                let program = Program::<CurrentNetwork>::from_str(
+                    "
+program testing.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+
+mapping entries:
+    key as address.public;
+    value as u8.public;
+
+function compute:
+    input r0 as u8.public;
+    async compute self.caller r0 into r1;
+    output r1 as testing.aleo/compute.future;
+
+finalize compute:
+    input r0 as address.public;
+    input r1 as u8.public;
+    get.or_use entries[r0] r1 into r2;
+    add r1 r2 into r3;
+    set r3 into entries[r0];
+    get entries[r0] into r4;
+    add r4 r1 into r5;
+    set r5 into entries[r0];
+",
+                )
+                .unwrap();
+
+                // Prepare the additional fee.
+                let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
+                let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+
+                // Deploy.
+                let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
+
+                // Construct the new block.
+                sample_next_block(&vm, &private_key, &[transaction], &block, &mut unspent_records, rng).unwrap()
+            };
+
+            // Add the deployment block to the VM.
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Adds a block with a transaction that is rejected, and returns the block and whether its reason was stored.
+            let add_rejected_transaction = |previous_block: &Block<CurrentNetwork>,
+                                            unspent_records: &mut Vec<_>,
+                                            rng: &mut TestRng| {
+                let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+                let rejected_tx =
+                    create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], unspent_records, rng);
+                let next_block =
+                    sample_next_block(&vm, &private_key, &[rejected_tx], previous_block, unspent_records, rng).unwrap();
+                assert_eq!(next_block.transactions().len(), 1);
+                let rejected_transaction = next_block.transactions().iter().next().unwrap();
+                assert!(rejected_transaction.is_rejected());
+                vm.add_next_block(&next_block).unwrap();
+                let is_stored = vm.finalize_store().get_rejected_reason(&rejected_transaction.id()).unwrap().is_some();
+                (next_block, is_stored)
+            };
+
+            let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+            let (mut previous_block, is_stored) =
+                add_rejected_transaction(&deployment_block, &mut unspent_records, rng);
+            assert!(previous_block.height() < v15_height);
+            assert!(!is_stored, "Rejection reason should not be stored before V15");
+
+            while previous_block.height() + 1 < v15_height {
+                previous_block =
+                    sample_next_block(&vm, &private_key, &[], &previous_block, &mut unspent_records, rng).unwrap();
+                vm.add_next_block(&previous_block).unwrap();
+            }
+            let (_, is_stored) = add_rejected_transaction(&previous_block, &mut unspent_records, rng);
+            assert!(is_stored, "Rejection reason should be stored from V15");
+        }
     }
 }

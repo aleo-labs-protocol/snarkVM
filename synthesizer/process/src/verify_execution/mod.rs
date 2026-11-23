@@ -103,7 +103,7 @@ impl<N: Network> Process<N> {
 
         // Verify each transition.
         for transition in execution.transitions() {
-            dev_println!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
+            trace!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
             #[cfg(debug_assertions)]
             {
@@ -147,13 +147,7 @@ impl<N: Network> Process<N> {
                 // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
                 if let Some((_, record)) = output.record() {
                     if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-                        #[cfg(not(any(test, feature = "test")))]
                         ensure!(record.version().is_zero(), "Output record must be Version 0 before Consensus V8");
-                        #[cfg(any(test, feature = "test"))]
-                        ensure!(
-                            record.version().is_one(),
-                            "Output record must be Version 1 before Consensus V8 in tests."
-                        );
                     } else {
                         ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
                     }
@@ -636,7 +630,7 @@ impl<N: Network> Process<N> {
         // [Outputs] Extend the verifier inputs with the output IDs.
         verifier_inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
 
-        dev_println!("Transition public inputs ({} elements): {:#?}", verifier_inputs.len(), verifier_inputs);
+        trace!("Transition public inputs ({} elements): {:#?}", verifier_inputs.len(), verifier_inputs);
         Ok(verifier_inputs)
     }
 }

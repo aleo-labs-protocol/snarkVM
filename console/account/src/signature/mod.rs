@@ -24,13 +24,9 @@ mod to_bits;
 mod to_fields;
 mod verify;
 
-#[cfg(feature = "private_key")]
 mod sign;
 
-#[cfg(feature = "private_key")]
-use crate::PrivateKey;
-#[cfg(feature = "compute_key")]
-use crate::{ComputeKey, ComputeKeyCache};
+use crate::{ComputeKey, ComputeKeyCache, PrivateKey};
 
 use crate::address::Address;
 use snarkvm_console_network::prelude::*;
@@ -93,6 +89,7 @@ impl<N: Network> TypeName for Signature<N> {
 impl<N: Network> Signature<N> {
     /// Initializes a `zero` signature.
     #[cfg(any(test, feature = "test-helpers"))]
+    #[doc(hidden)]
     pub fn zero() -> Self {
         Self::from((
             Scalar::zero(),
@@ -104,6 +101,7 @@ impl<N: Network> Signature<N> {
 
     /// Initializes a "random" signature.
     #[cfg(any(test, feature = "test-helpers"))]
+    #[doc(hidden)]
     pub fn rand<R: Rng>(rng: &mut R) -> Self {
         Self::from((
             Scalar::rand(rng),

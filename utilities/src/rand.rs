@@ -63,6 +63,7 @@ impl<T: Uniform> UniformExt for T {}
 /// The `test-helpers` feature provides it.
 #[cfg(any(test, feature = "test-helpers"))]
 #[derive(Clone)]
+#[doc(hidden)]
 pub struct TestRng {
     seed: u64,
     rng: XorShiftRng,

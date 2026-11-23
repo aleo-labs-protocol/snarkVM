@@ -32,7 +32,7 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::ProvingKey;
-use snarkvm_utilities::{dev_eprintln, timing_event, timing_span};
+use snarkvm_utilities::{timing_event, timing_span, tracing::debug};
 
 use std::sync::Arc;
 

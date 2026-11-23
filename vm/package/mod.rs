@@ -22,7 +22,7 @@ use crate::{
     file::{AleoFile, Manifest},
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{process::Process, program::Program},
-    utilities::dev_println,
+    utilities::tracing::{debug, trace},
 };
 
 use anyhow::{Result, ensure};
@@ -137,10 +137,7 @@ impl<N: Network> Package<N> {
                 if let Some(edition) = self.manifest_file.editions().get(program_id) {
                     (program, *edition)
                 } else {
-                    dev_println!(
-                        " Could not find an edition for '{}' in the manifest, using edition 0...",
-                        program_id.to_string()
-                    );
+                    debug!("Could not find an edition for '{program_id}' in the manifest, using edition 0...");
                     (program, 0)
                 }
             })

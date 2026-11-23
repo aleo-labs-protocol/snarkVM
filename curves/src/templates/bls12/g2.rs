@@ -63,23 +63,6 @@ impl<P: Bls12Parameters> ToBytes for G2Prepared<P> {
     }
 }
 
-impl<P: Bls12Parameters> FromBytes for G2Prepared<P> {
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let ell_coeffs_len: u32 = FromBytes::read_le(&mut reader)?;
-        let mut ell_coeffs = Vec::with_capacity(ell_coeffs_len as usize);
-        for _ in 0..ell_coeffs_len {
-            let coeff_1: Fp2<P::Fp2Params> = FromBytes::read_le(&mut reader)?;
-            let coeff_2: Fp2<P::Fp2Params> = FromBytes::read_le(&mut reader)?;
-            let coeff_3: Fp2<P::Fp2Params> = FromBytes::read_le(&mut reader)?;
-            ell_coeffs.push((coeff_1, coeff_2, coeff_3));
-        }
-
-        let infinity: bool = FromBytes::read_le(&mut reader)?;
-
-        Ok(Self { ell_coeffs, infinity })
-    }
-}
-
 impl<P: Bls12Parameters> G2Prepared<P> {
     pub fn is_zero(&self) -> bool {
         self.infinity

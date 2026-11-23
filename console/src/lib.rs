@@ -17,8 +17,8 @@
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
 
-#[cfg(all(feature = "dev_skip_checks", not(feature = "test_consensus_heights")))]
-compile_error!("feature \"dev_skip_checks\" requires feature \"test_consensus_heights\".");
+#[cfg(all(feature = "dev_skip_checks", not(feature = "dev-network")))]
+compile_error!("feature \"dev_skip_checks\" requires feature \"dev-network\".");
 
 #[cfg(feature = "account")]
 pub use snarkvm_console_account as account;
