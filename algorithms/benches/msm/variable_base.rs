@@ -116,7 +116,7 @@ fn scalar_msm(terms: &[(G1Affine, Fr)]) -> G1Projective {
         return *base * *scalar;
     }
     let (bases, scalars): (Vec<_>, Vec<_>) = terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
-    batched::straus::<G1Affine, 5>(&bases, &scalars)
+    batched::straus::<G1Affine, { batched::STRAUS_WINDOW }>(&bases, &scalars)
 }
 
 /// `scalar_*` and `lanes_*` time one MSM of `n` random bases with random

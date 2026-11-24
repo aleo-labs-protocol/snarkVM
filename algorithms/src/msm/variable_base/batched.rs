@@ -376,7 +376,8 @@ fn batched_window<G: AffineCurve>(
 ///
 /// Every nonzero digit is odd and below `2^(STRAUS_WINDOW - 1)` in magnitude,
 /// so each base needs a table of `2^(STRAUS_WINDOW - 2)` odd multiples.
-const STRAUS_WINDOW: usize = 5;
+#[doc(hidden)]
+pub const STRAUS_WINDOW: usize = 5;
 
 /// Writes the width-`window` non-adjacent form of the low `num_bits` bits of
 /// `scalar` into `digits`, least significant digit first.
