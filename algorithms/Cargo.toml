@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-algorithms"
-version = "4.13.1"
+version = "5.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
