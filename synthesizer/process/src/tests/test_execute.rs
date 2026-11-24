@@ -3662,3 +3662,104 @@ fn test_dynamic_record_inputs_reject_another_record() {
         }
     }
 }
+
+/// Each function builds a scalar from a caller-supplied input. The circuit only constrains the input to be less than
+/// the scalar modulus, so an input at or above the modulus leaves the circuit unsatisfied.
+const UNCHECKED_SCALAR_PROGRAM: &str = r"
+program unchecked_scalar.aleo;
+function with_output:
+    input r0 as [boolean; 251u32].private;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+    output r1 as scalar.private;
+function no_output:
+    input r0 as [boolean; 251u32].private;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+function used_internally:
+    input r0 as [boolean; 251u32].private;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+    mul group::GEN r1 into r2;
+    output r2 as group.private;
+function cast_field:
+    input r0 as field.private;
+    cast r0 into r1 as scalar;
+    output r1 as scalar.private;
+";
+
+/// Returns the functions of `UNCHECKED_SCALAR_PROGRAM`, each with an input below the scalar modulus and an input at
+/// or above it.
+fn unchecked_scalar_cases() -> Vec<(&'static str, Value<CurrentNetwork>, Value<CurrentNetwork>)> {
+    let bits = |bit: bool| Value::Plaintext(Plaintext::from_bit_array(vec![bit; 251], 251).unwrap());
+    // The scalar modulus is 2111115437357092606062206234695386632838870926408408195193685246394721360383.
+    let below_modulus =
+        Value::from_str("2111115437357092606062206234695386632838870926408408195193685246394721360382field").unwrap();
+    let modulus =
+        Value::from_str("2111115437357092606062206234695386632838870926408408195193685246394721360383field").unwrap();
+    vec![
+        ("with_output", bits(false), bits(true)),
+        ("no_output", bits(false), bits(true)),
+        ("used_internally", bits(false), bits(true)),
+        ("cast_field", below_modulus, modulus),
+    ]
+}
+
+/// `authorize` refuses an input that leaves the circuit unsatisfied, and authorizes and executes an input that does
+/// not.
+#[test]
+fn test_authorize_rejects_unsatisfied_circuit() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(UNCHECKED_SCALAR_PROGRAM).unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+
+    for (function, valid, invalid) in unchecked_scalar_cases() {
+        let authorization =
+            process.authorize::<CurrentAleo, _>(&private_key, program.id(), function, [valid].iter(), rng).unwrap();
+        process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        let error = process
+            .authorize::<CurrentAleo, _>(&private_key, program.id(), function, [invalid].iter(), rng)
+            .map(|_| ())
+            .expect_err(function);
+        assert!(format!("{error:#}").contains("is not satisfied"), "{function}: {error:#}");
+    }
+}
+
+/// `execute_function` in `PackageRun` mode refuses an input that leaves the circuit unsatisfied.
+#[test]
+fn test_package_run_rejects_unsatisfied_circuit() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(UNCHECKED_SCALAR_PROGRAM).unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+    let stack = process.get_stack(program.id()).unwrap();
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+
+    for (function, valid, invalid) in unchecked_scalar_cases() {
+        let function_name = Identifier::from_str(function).unwrap();
+        let input_types = stack.get_function(&function_name).unwrap().input_types();
+        let mut package_run = |input: Value<CurrentNetwork>| {
+            let request = Request::sign(
+                &private_key,
+                *program.id(),
+                function_name,
+                [input].iter(),
+                &input_types,
+                None,
+                true,
+                None,
+                false,
+                rng,
+            )
+            .unwrap();
+            let call_stack = CallStack::PackageRun(vec![request], private_key, Default::default());
+            stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng).map(|_| ()).map_err(Error::from)
+        };
+
+        package_run(valid).unwrap();
+        let error = package_run(invalid).expect_err(function);
+        assert!(format!("{error:#}").contains("is not satisfied"), "{function}: {error:#}");
+    }
+}
