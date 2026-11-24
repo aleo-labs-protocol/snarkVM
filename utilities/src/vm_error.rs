@@ -94,8 +94,8 @@ static ACTIVE_VM_RUNTIMES: AtomicUsize = AtomicUsize::new(0);
 /// inputs, so release builds log only its location. The caught payload holds the message.
 ///
 /// While no [`try_vm_runtime`] call runs, nothing in snarkVM catches the halt. The hook logs the halt with its message
-/// at the error level, or prints it to stderr if no tracing subscriber is set, and then passes it to the previous
-/// hook. The previous hook does not see the message, because panic hooks format only `String` and `&str` payloads.
+/// at the error level, or prints it to stderr if the tracing subscriber of the halting thread does not enable that
+/// event, and then passes it to the previous hook. The previous hook does not see the message, because panic hooks format only `String` and `&str` payloads.
 ///
 /// A halt message can hold the values of the operands, including private inputs. An uncaught halt is reported with
 /// its message, because it ends the caller's own operation, and the host's panic hook received the message before
@@ -118,7 +118,9 @@ fn install_vm_halt_hook() {
                 #[cfg(not(debug_assertions))]
                 tracing::debug!("VM halted at {location}");
             } else {
-                if tracing::dispatcher::has_been_set() {
+                // `tracing::dispatcher::has_been_set` stays true after a scoped subscriber exits, and on threads
+                // without the scoped subscriber of another thread.
+                if tracing::event_enabled!(tracing::Level::ERROR) {
                     tracing::error!("VM halted at {location}: {halt}");
                 } else {
                     eprintln!("VM halted at {location}: {halt}");
@@ -361,6 +363,42 @@ mod tests {
             .expect_err("The halt should unwind");
         assert_eq!(halt_message(&*payload), "a halt after the VM runtime");
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 2, "The halt should reach the host hook");
+    }
+
+    /// An uncaught halt is printed to stderr where the halting thread has no subscriber that enables the event, also
+    /// after a scoped subscriber has exited, and while another thread holds one.
+    #[test]
+    fn test_uncaught_halt_without_thread_subscriber_prints_message() {
+        if !is_child_process() {
+            let output =
+                run_in_child_process("vm_error::tests::test_uncaught_halt_without_thread_subscriber_prints_message");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains(": a halt after a scoped subscriber"), "Unexpected stderr:\n{stderr}");
+            assert!(stderr.contains(": a halt on another thread"), "Unexpected stderr:\n{stderr}");
+            assert!(!stderr.contains("a halt in a scoped subscriber"), "Unexpected stderr:\n{stderr}");
+            return;
+        }
+        let host_panic_count = install_counting_host_hook();
+        let subscriber = || tracing_subscriber::fmt().with_writer(std::io::sink).finish();
+
+        // The scoped subscriber receives the event, so the halt is not printed to stderr.
+        tracing::subscriber::with_default(subscriber(), || {
+            let payload = panic::catch_unwind(|| vm_halt("a halt in a scoped subscriber".to_string()))
+                .expect_err("The halt should unwind");
+            assert_eq!(halt_message(&*payload), "a halt in a scoped subscriber");
+        });
+
+        let payload = panic::catch_unwind(|| vm_halt("a halt after a scoped subscriber".to_string()))
+            .expect_err("The halt should unwind");
+        assert_eq!(halt_message(&*payload), "a halt after a scoped subscriber");
+
+        tracing::subscriber::with_default(subscriber(), || {
+            let payload = thread::spawn(|| vm_halt("a halt on another thread".to_string()))
+                .join()
+                .expect_err("The halt should unwind");
+            assert_eq!(halt_message(&*payload), "a halt on another thread");
+        });
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 3, "Each uncaught halt should reach the host hook");
     }
 
     /// Halts on rayon workers skip the host hook, and their payload reaches `try_vm_runtime` on the waiting thread.
