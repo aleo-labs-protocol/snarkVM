@@ -96,8 +96,8 @@ struct LanePartialRound {
 
 impl LaneRounds {
     /// Returns the constants of `sparse_rounds`, or `None` if `P::MODULUS_BITS` is above 253, the
-    /// rate is not 8, the S-box is not `x^17`, or there are more than `MAX_PARTIAL_ROUNDS` partial
-    /// rounds.
+    /// rate is not 8, the S-box is not `x^17`, there are more than `MAX_PARTIAL_ROUNDS` partial
+    /// rounds, or no full round runs before them.
     pub(super) fn new<P: Fp256Parameters, const RATE: usize>(
         sparse_rounds: &PoseidonSparseRounds<Fp256<P>, RATE>,
     ) -> Option<Self> {
@@ -105,7 +105,7 @@ impl LaneRounds {
         if P::MODULUS_BITS > 253
             || RATE + 1 != WIDTH
             || parameters.alpha != 17
-            || parameters.partial_rounds > MAX_PARTIAL_ROUNDS
+            || sparse_rounds.rounds().len() > MAX_PARTIAL_ROUNDS
         {
             return None;
         }
@@ -140,6 +140,10 @@ impl LaneRounds {
         let last_partial_round = first_partial_round + parameters.partial_rounds;
         let num_rounds = parameters.full_rounds + parameters.partial_rounds;
         let first_arks = parameters.ark.get(..first_partial_round)?;
+        // The bounds need an element below `2 p` at the first partial round.
+        if first_arks.is_empty() {
+            return None;
+        }
         let last_arks = parameters.ark.get(last_partial_round + 1..num_rounds)?;
         Some(Self {
             modulus: radix_52(&P::MODULUS.0),
