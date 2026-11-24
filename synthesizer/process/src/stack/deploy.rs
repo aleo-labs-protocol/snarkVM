@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use super::*;
 
 impl<N: Network> Stack<N> {
@@ -83,6 +85,89 @@ impl<N: Network> Stack<N> {
         )
     }
 
+    /// Checks a plaintext type against the raw bit limit. Cached struct sizes belong to their declaring program.
+    #[doc(hidden)]
+    pub fn check_plaintext_type_size(
+        &self,
+        pt: &PlaintextType<N>,
+        max_bits: usize,
+        memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+    ) -> Result<()> {
+        let bits = plaintext_size_in_bits_raw(self, pt, 0, memoized)?.0;
+        ensure!(
+            bits <= max_bits,
+            "Plaintext type '{pt}' exceeds the maximum allowed size in bits ({bits} > {max_bits})"
+        );
+        Ok(())
+    }
+
+    /// Checks the plaintext destinations of each synthesized function and the closures it executes.
+    pub(crate) fn check_deployment_register_sizes(&self, max_bits: usize) -> Result<()> {
+        let mut memoized = HashMap::new();
+        let mut checked_calls = HashSet::new();
+        for function in self.program.functions().values() {
+            self.check_scope_destinations(function.name(), function.instructions(), max_bits, &mut memoized)?;
+            for instruction in function.instructions() {
+                let Instruction::Call(call) = instruction else { continue };
+                let (program_id, name) = match call.operator() {
+                    CallOperator::Resource(name) => (self.program_id(), name),
+                    CallOperator::Locator(locator) => (locator.program_id(), locator.resource()),
+                };
+                if !checked_calls.insert((*program_id, *name)) {
+                    continue;
+                }
+                let callee = if program_id == self.program_id() {
+                    StackRef::Internal(self)
+                } else {
+                    StackRef::External(self.get_external_stack(program_id)?)
+                };
+                // Static call destinations use the callee's types, including structs from its own imports.
+                if let Some(closure) = callee.program.closures().get(name) {
+                    for output in closure.outputs() {
+                        if let RegisterType::Plaintext(pt) = output.register_type() {
+                            callee.check_plaintext_type_size(pt, max_bits, &mut memoized)?;
+                        }
+                    }
+                    // Synthesis executes closures inline. Closures cannot contain call instructions.
+                    callee.check_scope_destinations(name, closure.instructions(), max_bits, &mut memoized)?;
+                } else {
+                    for output in callee.get_function_ref(name)?.outputs() {
+                        if let ValueType::Constant(pt) | ValueType::Public(pt) | ValueType::Private(pt) =
+                            output.value_type()
+                        {
+                            callee.check_plaintext_type_size(pt, max_bits, &mut memoized)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks instruction destinations in the scope that defines their register types.
+    fn check_scope_destinations(
+        &self,
+        name: &Identifier<N>,
+        instructions: &[Instruction<N>],
+        max_bits: usize,
+        memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+    ) -> Result<()> {
+        let registers = self.register_types.read();
+        let types = registers.get(name).ok_or_else(|| anyhow!("Register types for '{name}' do not exist"))?;
+        for instruction in instructions {
+            // Static calls use their callee's declarations.
+            if matches!(instruction, Instruction::Call(_)) {
+                continue;
+            }
+            for destination in instruction.destinations() {
+                if let RegisterType::Plaintext(pt) = types.get_type(self, &destination)? {
+                    self.check_plaintext_type_size(&pt, max_bits, memoized)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Checks each function in the program on the given verifying key and certificate.
     #[inline]
     pub fn verify_deployment<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
@@ -143,6 +228,12 @@ impl<N: Network> Stack<N> {
                 deployment.num_combined_constraints()? <= constraint_limit,
                 "The number of combined constraints exceeds the deployment limit"
             );
+        }
+
+        if consensus_version >= ConsensusVersion::V23 {
+            let max_bits = consensus_config_value_by_version!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, consensus_version)
+                .ok_or_else(|| anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"))?;
+            self.check_deployment_register_sizes(max_bits)?;
         }
 
         // Construct the call stacks and assignments used to verify the certificates.
@@ -419,5 +510,81 @@ impl<N: Network> Stack<N> {
         drop(timer);
 
         Ok(())
+    }
+}
+
+/// Returns the `(size, height)` in bits of the given plaintext type, excluding any type metadata.
+///
+/// Each struct reference is resolved against the program that declares it, since a struct declared
+/// in an external program may refer to structs local to that program, or to structs in programs
+/// that the current program does not import.
+///
+/// `memoized` records the result for each `(program, struct)` pair already sized, so that a struct shared by many
+/// members is expanded at most once. Without this, a program in which every member of each struct refers to the
+/// same earlier struct forms an acyclic graph with exponentially many paths, and this walk would make up to
+/// `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
+///
+/// `height` is the number of levels below a type at which its deepest node sits (a literal is `0`). It lets a
+/// memoized hit at a deeper position re-apply the depth check the skipped recursion would have performed on that
+/// node, so the memoization changes only the running time and never the result.
+fn plaintext_size_in_bits_raw<N: Network>(
+    stack: &Stack<N>,
+    plaintext_type: &PlaintextType<N>,
+    depth: usize,
+    memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+) -> Result<(usize, usize)> {
+    // Ensure that the depth is within the maximum limit.
+    ensure!(depth <= N::MAX_DATA_DEPTH, "Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
+
+    match plaintext_type {
+        PlaintextType::Literal(literal_type) => Ok((literal_type.size_in_bits::<N>() as usize, 0)),
+        PlaintextType::Struct(struct_name) => {
+            // If this struct has already been sized in the current traversal, reuse that result.
+            let key = (*stack.program_id(), *struct_name);
+            if let Some(&(size, height)) = memoized.get(&key) {
+                ensure!(
+                    depth.saturating_add(height) <= N::MAX_DATA_DEPTH,
+                    "Plaintext depth exceeds maximum limit: {}",
+                    N::MAX_DATA_DEPTH
+                );
+                return Ok((size, height));
+            }
+
+            // Add up the sizes of the members, which are declared in the same program.
+            let members = stack.program().get_struct(struct_name)?.members();
+            let mut total = 0usize;
+            // Track the maximum height of any member's subtree.
+            let mut member_height = 0usize;
+            for member_type in members.values() {
+                let (member_size, subtree_height) =
+                    plaintext_size_in_bits_raw(stack, member_type, depth + 1, memoized)?;
+                total =
+                    total.checked_add(member_size).ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
+                member_height = member_height.max(subtree_height);
+            }
+
+            // The struct sits one level above its deepest member; a memberless struct recurses nowhere.
+            let height = match members.is_empty() {
+                true => 0,
+                false => member_height + 1,
+            };
+            memoized.insert(key, (total, height));
+            Ok((total, height))
+        }
+        PlaintextType::ExternalStruct(locator) => {
+            // Resolve the struct, and therefore its members, against the external program.
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            plaintext_size_in_bits_raw(&external_stack, &PlaintextType::Struct(*locator.resource()), depth, memoized)
+        }
+        PlaintextType::Array(array_type) => {
+            // Multiply the size of an element by the length of the array.
+            let (element_size, element_height) =
+                plaintext_size_in_bits_raw(stack, array_type.next_element_type(), depth + 1, memoized)?;
+            let total = element_size
+                .checked_mul(**array_type.length() as usize)
+                .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
+            // The array sits one level above its element.
+            Ok((total, element_height + 1))
+        }
     }
 }

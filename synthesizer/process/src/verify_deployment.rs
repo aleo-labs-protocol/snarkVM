@@ -133,6 +133,126 @@ mod tests {
     type CurrentAleo = circuit::network::AleoV0;
     type CurrentNetwork = console::network::MainnetV0;
 
+    #[test]
+    fn test_deployment_checks_intermediate_plaintext_size_from_v23() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::<CurrentNetwork>::load()?;
+        // Only the second cast exceeds the plaintext size limit. The function input and output both use u8.
+        let program = Program::from_str(&format!(
+            "program check_intermediate.aleo;
+             function run:
+                 input r0 as u8.private;
+                 cast {} into r1 as [field; 64u32];
+                 cast {} into r2 as [[field; 64u32]; 65u32];
+                 add r0 1u8 into r3;
+                 output r3 as u8.private;",
+            "0field ".repeat(64),
+            "r1 ".repeat(65),
+        ))?;
+        let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+        let verify = |deployment: &Deployment<CurrentNetwork>, rng: &mut TestRng| -> Result<()> {
+            process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, deployment, rng)?;
+            let error = process
+                .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, deployment, rng)
+                .expect_err("V23 must reject the oversized destination.");
+            assert!(error.to_string().contains("exceeds the maximum allowed size in bits"), "{error}");
+            Ok(())
+        };
+        verify(&deployment, rng)?;
+
+        // A key-only amendment verifies the same function again.
+        process.load_deployment(&deployment)?;
+        deployment.set_program_owner_raw(None);
+        verify(&deployment, rng)
+    }
+
+    #[test]
+    fn test_deployment_register_size_limit() -> Result<()> {
+        let process = Process::<CurrentNetwork>::load()?;
+        for (body, size) in [
+            (
+                "function run:
+                 input r0 as u8.public;
+                 call.dynamic 'callee' 'aleo' 'sample' with r0 (as u8.public) into r1 (as [u8; 3u32].public);
+                 output r0 as u8.public;",
+                24,
+            ),
+            (
+                "function run:
+                 input r0 as dynamic.record;
+                 get.record.dynamic r0.amount into r1 as u16;
+                 output 0u8 as u8.public;",
+                16,
+            ),
+            (
+                "closure local:
+                 input r0 as u8;
+                 add 1u32 2u32 into r1;
+                 output r0 as u8;
+             function run:
+                 input r0 as u8.public;
+                 call local r0 into r1;
+                 output r1 as u8.public;",
+                32,
+            ),
+        ] {
+            let program = Program::from_str(&format!("program check_types.aleo; {body}"))?;
+            let stack = Stack::new(&process, &program)?;
+            stack.check_deployment_register_sizes(size)?;
+            let error =
+                stack.check_deployment_register_sizes(size - 1).expect_err("The destination exceeds the limit.");
+            assert!(error.to_string().contains("exceeds the maximum allowed size in bits"), "{error}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_deployment_register_size_imports() -> Result<()> {
+        let process = Process::<CurrentNetwork>::load()?;
+        process.lock().add_program(&Program::from_str(
+            "program shared_types.aleo;
+             struct item:
+                 amount as u32;
+             function run:
+                 input r0 as u32.public;
+                 output r0 as u32.public;",
+        )?)?;
+        process.lock().add_program(&Program::from_str(
+            "import shared_types.aleo;
+             program helper.aleo;
+             closure read:
+                 input r0 as dynamic.record;
+                 get.record.dynamic r0.amount into r1 as u64;
+                 output 0u8 as u8;
+             function make:
+                 input r0 as u32.public;
+                 cast r0 into r1 as shared_types.aleo/item;
+                 output r1 as shared_types.aleo/item.public;",
+        )?)?;
+        let build = |instruction| -> Result<_> {
+            let program = Program::from_str(&format!(
+                "import helper.aleo;
+                 program reader.aleo;
+                 closure unused:
+                     input r0 as u8;
+                     add 1u128 2u128 into r1;
+                     output r0 as u8;
+                 function run:
+                     input r0 as dynamic.record;
+                     {instruction}
+                     output 0u8 as u8.public;"
+            ))?;
+            Stack::new(&process, &program)
+        };
+        let stack = build("call helper.aleo/make 0u32 into r1;")?;
+        stack.check_deployment_register_sizes(32)?;
+        assert!(stack.check_deployment_register_sizes(31).is_err());
+        let stack = build("call helper.aleo/read r0 into r1;")?;
+        stack.check_deployment_register_sizes(64)?;
+        assert!(stack.check_deployment_register_sizes(63).is_err());
+        Ok(())
+    }
+
     /// Returns a program that casts `x` to a group with `op`, as a non-constant value, for every sampled input.
     fn cast_program(op: &str, index: usize, x: &str) -> Program<CurrentNetwork> {
         Program::from_str(&format!(

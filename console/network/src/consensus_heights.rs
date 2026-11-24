@@ -93,6 +93,7 @@ pub enum ConsensusVersion {
     ///      Rejects deployments with a static `call` to a function that has a constant output.
     ///      Prices non-raw hash and commitment inputs by their encoded size in finalize.
     ///      Prices the message in `sign.verify` by its encoded size in finalize.
+    ///      Applies the plaintext size limit to instruction destinations during deployment verification.
     ///      Keeps the synthesis limits of a deployment check after a `call`.
     V23 = 23,
 }

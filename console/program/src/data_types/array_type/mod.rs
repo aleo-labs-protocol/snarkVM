@@ -223,17 +223,15 @@ mod tests {
     }
 
     #[test]
-    fn test_contains_string_type_at_depth_limit() -> Result<()> {
-        for (leaf, expected) in [("string", true), ("field", false), ("item", false), ("external.aleo/item", false)] {
-            let dimensions = vec![U32::new(1); CurrentNetwork::MAX_DATA_DEPTH];
-            let array = ArrayType::<CurrentNetwork>::new(PlaintextType::from_str(leaf)?, dimensions)?;
-            assert_eq!(array.contains_string_type(), expected, "{leaf}");
-
-            let array = ArrayType::new(PlaintextType::Array(array), vec![U32::new(1)])?;
-            assert_eq!(array.contains_string_type(), expected, "{leaf}");
-
-            let array = ArrayType::new(PlaintextType::Array(array), vec![U32::new(1)])?;
-            assert!(array.contains_string_type(), "{leaf}");
+    fn test_contains_string_type_at_every_depth() -> Result<()> {
+        for (leaf, is_string) in [("string", true), ("field", false), ("item", false), ("external.aleo/item", false)] {
+            let mut array = ArrayType::<CurrentNetwork>::new(PlaintextType::from_str(leaf)?, vec![U32::new(1)])?;
+            for depth in 1..=CurrentNetwork::MAX_DATA_DEPTH + 2 {
+                // Arrays nested beyond `MAX_DATA_DEPTH + 1` levels are treated as containing a string.
+                let expected = is_string || depth > CurrentNetwork::MAX_DATA_DEPTH + 1;
+                assert_eq!(array.contains_string_type(), expected, "{leaf} at depth {depth}");
+                array = ArrayType::new(PlaintextType::Array(array), vec![U32::new(1)])?;
+            }
         }
         Ok(())
     }
