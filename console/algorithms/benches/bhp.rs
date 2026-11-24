@@ -16,11 +16,12 @@
 #[macro_use]
 extern crate criterion;
 
-use snarkvm_console_algorithms::{BHP256, BHP512, BHP768, BHP1024};
+use snarkvm_console_algorithms::{BHP, BHP256, BHP512, BHP768, BHP1024};
 use snarkvm_console_types::prelude::*;
 use snarkvm_utilities::{TestRng, Uniform};
 
 use criterion::Criterion;
+use std::hint::black_box;
 
 fn bhp256(c: &mut Criterion) {
     let rng = &mut TestRng::default();
@@ -80,6 +81,39 @@ fn bhp1024_large(c: &mut Criterion) {
     }
 }
 
+/// 8 hashes of `len` bits, which take one iteration: one by one in the `scalar` row, and by `hash_8` in the `lanes`
+/// row. Each row times all 8 hashes, on the next of 64 batches of random inputs.
+///
+/// The `lanes` row runs only where `hash_8` runs the hashes in AVX-512 IFMA lanes: not on a CPU without AVX-512
+/// IFMA, and not with `SNARKVM_NO_IFMA` set.
+fn bhp_x8_with<const NUM_WINDOWS: u8, const WINDOW_SIZE: u8>(c: &mut Criterion, name: &str, len: usize) {
+    let rng = &mut TestRng::default();
+    let hash = BHP::<Console, NUM_WINDOWS, WINDOW_SIZE>::setup(name).unwrap();
+
+    let batches: Vec<[Vec<bool>; 8]> =
+        (0..64).map(|_| std::array::from_fn(|_| (0..len).map(|_| bool::rand(rng)).collect())).collect();
+    let batches: Vec<[&[bool]; 8]> = batches.iter().map(|batch| batch.each_ref().map(Vec::as_slice)).collect();
+    let mut batches = batches.iter().cycle();
+    // The iterator of a cycle over 64 batches never ends.
+    let mut next = || *batches.next().unwrap();
+
+    c.bench_function(&format!("{name} Hash - input size {len} x8 scalar"), |b| {
+        b.iter(|| black_box(next()).map(|input| hash.hash(input)))
+    });
+    if hash.hash_8_lanes(next()).is_some() {
+        c.bench_function(&format!("{name} Hash - input size {len} x8 lanes"), |b| {
+            b.iter(|| hash.hash_8(black_box(next())))
+        });
+    }
+}
+
+fn bhp_x8(c: &mut Criterion) {
+    // A Merkle path hash: a bit and two fields.
+    bhp_x8_with::<6, 43>(c, "BHP512", 507);
+    // A transition leaf hash: a bit, three bytes and a field.
+    bhp_x8_with::<8, 54>(c, "BHP1024", 278);
+}
+
 criterion_group! {
     name = bhp;
     config = Criterion::default().sample_size(1000);
@@ -92,4 +126,10 @@ criterion_group! {
     targets = bhp1024_large
 }
 
-criterion_main!(bhp, bhp_large);
+criterion_group! {
+    name = bhp_lanes;
+    config = Criterion::default().sample_size(100);
+    targets = bhp_x8
+}
+
+criterion_main!(bhp, bhp_large, bhp_lanes);
