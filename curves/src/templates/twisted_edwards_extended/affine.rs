@@ -18,7 +18,7 @@ use crate::{
     templates::twisted_edwards_extended::Projective,
     traits::{AffineCurve, ProjectiveCurve, TwistedEdwardsParameters as Parameters},
 };
-use snarkvm_fields::{Field, One, PrimeField, SquareRootField, Zero};
+use snarkvm_fields::{Field, One, PrimeField, SquareRootField, Zero, ifma::EdwardsStep};
 use snarkvm_utilities::{ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
 
 use std::{
@@ -207,6 +207,10 @@ impl<P: Parameters> AffineCurve for Affine<P> {
             }
         }
         res
+    }
+
+    fn add_table_entries_8(start: &Self, steps: &[EdwardsStep<'_, P::BaseField>]) -> Option<[Projective<P>; 8]> {
+        P::add_table_entries_8(start, steps)
     }
 
     fn mul_by_cofactor_to_projective(&self) -> Self::Projective {

@@ -13,8 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{PairingEngine, templates::short_weierstrass_jacobian};
-use snarkvm_fields::{ExponentSchedule, Field, PrimeField, SquareRootField, Zero};
+use crate::{
+    PairingEngine,
+    templates::{short_weierstrass_jacobian, twisted_edwards_extended},
+};
+use snarkvm_fields::{ExponentSchedule, Field, PrimeField, SquareRootField, Zero, ifma::EdwardsStep};
 use snarkvm_utilities::{ToBytes, rand::Uniform, serialize::*};
 
 use core::{
@@ -204,6 +207,20 @@ pub trait AffineCurve:
         None
     }
 
+    /// Returns, at index `l`, the sum of `start` and entry `indices[l]` of `table` for each
+    /// `(table, indices)` of `steps`; or `None` if the curve has no lane path for them, or an
+    /// index is not below the length of its table.
+    ///
+    /// The entry of the affine point `(x, y)` of a twisted Edwards curve
+    /// `-x^2 + y^2 = 1 + d x^2 y^2` is `[y - x, y + x, 2 d x y]`. A sum is not normalized.
+    #[doc(hidden)]
+    fn add_table_entries_8(
+        _start: &Self,
+        _steps: &[EdwardsStep<'_, Self::BaseField>],
+    ) -> Option<[Self::Projective; 8]> {
+        None
+    }
+
     /// Multiply this element by the cofactor.
     #[must_use]
     fn mul_by_cofactor(&self) -> Self {
@@ -373,6 +390,17 @@ pub trait TwistedEdwardsParameters: ModelParameters {
         let mut copy = *elem;
         copy *= &Self::EDWARDS_A;
         copy
+    }
+
+    /// Returns, at index `l`, the sum of `start` and entry `indices[l]` of `table` for each
+    /// `(table, indices)` of `steps`, or `None` if there is no lane path for them. See
+    /// `AffineCurve::add_table_entries_8` for the entries.
+    #[doc(hidden)]
+    fn add_table_entries_8(
+        _start: &twisted_edwards_extended::Affine<Self>,
+        _steps: &[EdwardsStep<'_, Self::BaseField>],
+    ) -> Option<[twisted_edwards_extended::Projective<Self>; 8]> {
+        None
     }
 }
 

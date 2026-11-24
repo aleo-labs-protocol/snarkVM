@@ -32,7 +32,7 @@ use crate::{
         tests_projective::curve_tests,
     },
 };
-use snarkvm_fields::{Field, LegendreSymbol, One, SquareRootField, Zero};
+use snarkvm_fields::{Field, LegendreSymbol, One, SquareRootField, Zero, ifma};
 use snarkvm_utilities::{
     BitIteratorBE,
     ToBytes,
@@ -628,4 +628,167 @@ fn test_isomorphism() {
     };
 
     assert_eq!(fr_element, fr_element_reconstructed);
+}
+
+/// Whether `add_table_entries_8` runs on this CPU, from the CPU's features and the environment.
+fn lanes_expected() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    let expected = std::is_x86_feature_detected!("avx512f")
+        && std::is_x86_feature_detected!("avx512ifma")
+        && std::env::var_os("SNARKVM_NO_IFMA").is_none_or(|value| value.is_empty());
+    #[cfg(not(target_arch = "x86_64"))]
+    let expected = false;
+    expected
+}
+
+/// Returns the entry of `point` in a table of `add_table_entries_8`.
+fn table_entry(point: &EdwardsAffine) -> [Fq; 3] {
+    [point.y - point.x, point.y + point.x, EdwardsParameters::EDWARDS_D.double() * point.x * point.y]
+}
+
+/// Returns the points of order 1, 2 and 4, then random points of the curve, half of them outside
+/// the prime-order subgroup.
+fn points_with_edges(rng: &mut TestRng, len: usize) -> Vec<EdwardsAffine> {
+    let i = EdwardsParameters::SQRT_MINUS_ONE;
+    let small = [(Fq::zero(), Fq::one()), (Fq::zero(), -Fq::one()), (i, Fq::zero()), (-i, Fq::zero())].map(|(x, y)| {
+        let point = EdwardsAffine::from_coordinates_unchecked((x, y));
+        assert!(point.is_on_curve());
+        point
+    });
+    let mut points = small.to_vec();
+    while points.len() < len {
+        let point: EdwardsAffine = rng.random();
+        let torsion = small[rng.random_range(0..4)];
+        points.push((point.to_projective() + torsion.to_projective()).to_affine());
+    }
+    points.truncate(len);
+    points
+}
+
+#[test]
+fn test_add_table_entries_8_supported() {
+    // The hook takes this curve for one with `a = -1`.
+    assert_eq!(EdwardsParameters::EDWARDS_A, -Fq::one());
+    assert_eq!(ifma::is_supported_fp256::<FqParameters>(), lanes_expected());
+    let start = EdwardsAffine::prime_subgroup_generator();
+    match EdwardsAffine::add_table_entries_8(&start, &[]) {
+        Some(sums) => {
+            assert!(lanes_expected());
+            assert_eq!(sums, [start.to_projective(); 8]);
+        }
+        None => assert!(!lanes_expected()),
+    }
+    // A curve without the lanes declines.
+    let g1 = crate::bls12_377::G1Affine::prime_subgroup_generator();
+    assert!(crate::bls12_377::G1Affine::add_table_entries_8(&g1, &[]).is_none());
+}
+
+/// Each lane's sum against the sum by `Projective`'s addition: for one step from every pair of
+/// 12 points that start with those of order 1, 2 and 4, so the lanes meet a doubling, a sum at
+/// the identity and the identity on either side; and for chains of steps over tables of 1 to
+/// 4096 entries, with the first and the last entry of each table.
+#[test]
+fn test_add_table_entries_8() {
+    let rng = &mut TestRng::default();
+    let check = |start: &EdwardsAffine, tables: &[&[EdwardsAffine]], indices: &[[u32; 8]]| {
+        let entries: Vec<Vec<[Fq; 3]>> = tables.iter().map(|table| table.iter().map(table_entry).collect()).collect();
+        let steps: Vec<(&[[Fq; 3]], [u32; 8])> =
+            entries.iter().map(Vec::as_slice).zip(indices.iter().copied()).collect();
+        let Some(sums) = EdwardsAffine::add_table_entries_8(start, &steps) else {
+            assert!(!lanes_expected());
+            return;
+        };
+        assert!(lanes_expected());
+        for (l, sum) in sums.iter().enumerate() {
+            let expected = tables
+                .iter()
+                .zip(indices)
+                .fold(start.to_projective(), |sum, (table, indices)| sum + table[indices[l] as usize].to_projective());
+            assert_eq!(*sum, expected, "lane {l}");
+            assert_eq!(sum.to_affine(), expected.to_affine(), "lane {l}");
+            assert_eq!(sum.x * sum.y, sum.t * sum.z, "lane {l}");
+            assert!(!sum.z.is_zero(), "lane {l}");
+        }
+    };
+
+    let points = points_with_edges(rng, 12);
+    let mut table = points.clone();
+    table.extend(points.iter().map(|point| -*point));
+    for (s, start) in points.iter().enumerate() {
+        // Lane `l` adds the point at `s + l`, the negation of the start among them, and then the
+        // negations.
+        let positive = std::array::from_fn(|l| ((s + l) % 12) as u32);
+        check(start, &[&table], &[positive]);
+        check(start, &[&table], &[positive.map(|i| i + 12)]);
+    }
+
+    for (len, steps) in [(1, 1), (2, 3), (8, 7), (512, 30), (4096, 120)] {
+        let tables: Vec<Vec<EdwardsAffine>> = (0..steps.min(4)).map(|_| points_with_edges(rng, len)).collect();
+        let tables: Vec<&[EdwardsAffine]> = (0..steps).map(|i| tables[i % tables.len()].as_slice()).collect();
+        let last = (len - 1) as u32;
+        let indices: Vec<[u32; 8]> =
+            (0..steps).map(|i| std::array::from_fn(|l| [0, last, rng.random_range(0..=last)][(i + l) % 3])).collect();
+        check(&points_with_edges(rng, 5)[4], &tables, &indices);
+    }
+}
+
+/// `ifma::edwards_add_entries_8` against its formulas in `Fq`, coordinate by coordinate, on
+/// values that are no point: each of 0, 1, `p - 1` or random, so every product meets the largest
+/// operands.
+#[test]
+fn test_edwards_add_entries_8_formulas() {
+    let rng = &mut TestRng::default();
+    let edges = [Fq::zero(), Fq::one(), -Fq::one()];
+    let mut value = |extreme: f64| if rng.random_bool(extreme) { edges[rng.random_range(0..3)] } else { Fq::rand(rng) };
+    for (iteration, extreme) in [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.0].into_iter().cycle().take(400).enumerate() {
+        let start: [[Fq; 8]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| value(extreme)));
+        let tables: [Vec<[Fq; 3]>; 3] =
+            std::array::from_fn(|_| (0..9).map(|_| std::array::from_fn(|_| value(extreme))).collect());
+        let steps: Vec<(&[[Fq; 3]], [u32; 8])> = (0..iteration % 7)
+            .map(|i| (tables[i % 3].as_slice(), std::array::from_fn(|l| ((i + l) % 9) as u32)))
+            .collect();
+        let mut points = start;
+        let ran = ifma::edwards_add_entries_8(&mut points, &steps);
+        assert_eq!(ran.is_some(), lanes_expected());
+        if ran.is_none() {
+            assert_eq!(points, start);
+            continue;
+        }
+        for l in 0..8 {
+            let [mut x, mut y, mut t, mut z] = start.map(|coordinate| coordinate[l]);
+            for (table, indices) in &steps {
+                let entry = table[indices[l] as usize];
+                let (a, b, c, d) = ((y - x) * entry[0], (y + x) * entry[1], t * entry[2], z.double());
+                let (e, f, g, h) = (b - a, d - c, d + c, b + a);
+                (x, y, t, z) = (e * f, g * h, e * h, f * g);
+            }
+            assert_eq!(points.map(|coordinate| coordinate[l]), [x, y, t, z], "iteration {iteration}, lane {l}");
+        }
+    }
+}
+
+/// An index at or past the end of its table, in any lane of any step, leaves the points as they
+/// are.
+#[test]
+fn test_edwards_add_entries_8_refusals() {
+    let rng = &mut TestRng::default();
+    let table: Vec<[Fq; 3]> = points_with_edges(rng, 8).iter().map(table_entry).collect();
+    let start: [[Fq; 8]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| Fq::rand(rng)));
+    let inside = (table.as_slice(), [0, 1, 2, 3, 4, 5, 6, 7]);
+    for lane in 0..8 {
+        for index in [8, 9, u32::MAX] {
+            let mut outside = inside;
+            outside.1[lane] = index;
+            for steps in [vec![outside], vec![inside, outside], vec![outside, inside], vec![inside, inside, outside]] {
+                let mut points = start;
+                assert!(ifma::edwards_add_entries_8(&mut points, &steps).is_none());
+                assert_eq!(points, start);
+            }
+        }
+    }
+    let mut points = start;
+    assert!(ifma::edwards_add_entries_8(&mut points, &[(&[], [0; 8])]).is_none());
+    assert_eq!(points, start);
+    assert!(EdwardsAffine::add_table_entries_8(&EdwardsAffine::zero(), &[(&table[..7], [7; 8])]).is_none());
+    assert_eq!(ifma::edwards_add_entries_8(&mut points, &[inside]).is_some(), lanes_expected());
 }

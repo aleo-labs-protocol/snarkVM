@@ -19,7 +19,7 @@ use crate::{
     templates::twisted_edwards_extended::{Affine, Projective},
     traits::{AffineCurve, ModelParameters, MontgomeryParameters, TwistedEdwardsParameters},
 };
-use snarkvm_fields::{ExponentSchedule, field};
+use snarkvm_fields::{ExponentSchedule, One, field, ifma};
 use snarkvm_utilities::biginteger::BigInteger256;
 
 use std::{str::FromStr, sync::OnceLock};
@@ -72,6 +72,18 @@ impl TwistedEdwardsParameters for EdwardsParameters {
     #[inline(always)]
     fn mul_by_a(elem: &Self::BaseField) -> Self::BaseField {
         -*elem
+    }
+
+    /// Runs the additions through `ifma::edwards_add_entries_8`, which takes this curve: `a` is
+    /// -1, a square, and `d` is not a square, so its additions are complete.
+    fn add_table_entries_8(
+        start: &EdwardsAffine,
+        steps: &[ifma::EdwardsStep<'_, Fq>],
+    ) -> Option<[EdwardsProjective; 8]> {
+        let mut points = [[start.x; 8], [start.y; 8], [start.t; 8], [Fq::one(); 8]];
+        ifma::edwards_add_entries_8(&mut points, steps)?;
+        let [x, y, t, z] = points;
+        Some(std::array::from_fn(|l| EdwardsProjective::new(x[l], y[l], t[l], z[l])))
     }
 }
 
