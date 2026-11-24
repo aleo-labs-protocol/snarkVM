@@ -13,10 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(target_arch = "x86_64")]
+use crate::ifma::poseidon::LaneRounds;
 use crate::{PoseidonParameters, PrimeField};
 
 use itertools::Itertools;
 use std::sync::Arc;
+#[cfg(target_arch = "x86_64")]
+use std::sync::OnceLock;
 
 /// The partial rounds of a Poseidon permutation, rewritten as in the appendix on efficient partial
 /// rounds of [GKRRS19][poseidon], so that each partial round adds one round constant and multiplies
@@ -40,6 +44,10 @@ pub struct PoseidonSparseRounds<F: PrimeField, const RATE: usize> {
     rounds: Vec<PoseidonSparseRound<F>>,
     /// The round constants of the first full round after the partial rounds.
     last_ark: Vec<F>,
+    /// The constants in the form of `ifma::poseidon_permute_8`, once something has asked for them,
+    /// or `None` if that permutation does not run for them.
+    #[cfg(target_arch = "x86_64")]
+    lane_rounds: OnceLock<Option<Box<LaneRounds>>>,
 }
 
 /// A partial round: add `constant` to the first state element, apply the S-box to it, and multiply
@@ -122,7 +130,14 @@ impl<F: PrimeField, const RATE: usize> PoseidonSparseRounds<F, RATE> {
             .map(|((constant, row), column)| PoseidonSparseRound { constant, row, column })
             .collect();
 
-        Some(Self { parameters: parameters.clone(), first_matrix, rounds, last_ark })
+        Some(Self {
+            parameters: parameters.clone(),
+            first_matrix,
+            rounds,
+            last_ark,
+            #[cfg(target_arch = "x86_64")]
+            lane_rounds: OnceLock::new(),
+        })
     }
 
     /// Returns the parameters these partial rounds are derived from.
@@ -143,6 +158,12 @@ impl<F: PrimeField, const RATE: usize> PoseidonSparseRounds<F, RATE> {
     /// Returns the round constants of the first full round after the partial rounds.
     pub fn last_ark(&self) -> &[F] {
         &self.last_ark
+    }
+
+    /// Returns the cell of the constants in the form of `ifma::poseidon_permute_8`.
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn lane_rounds(&self) -> &OnceLock<Option<Box<LaneRounds>>> {
+        &self.lane_rounds
     }
 }
 
