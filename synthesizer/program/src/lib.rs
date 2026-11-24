@@ -1530,6 +1530,25 @@ mapping message:
     }
 
     #[test]
+    fn test_contains_string_type_in_program_components() -> Result<()> {
+        for (leaf, expected) in [("field", false), ("string", true)] {
+            let array =
+                (0..CurrentNetwork::MAX_DATA_DEPTH).fold(leaf.to_string(), |element, _| format!("[{element}; 1u32]"));
+            for component in [
+                format!("mapping items: key as {array}.public; value as field.public;"),
+                format!("mapping items: key as field.public; value as {array}.public;"),
+                format!("struct item: data as {array};"),
+                format!("record item: owner as address.private; data as {array}.private;"),
+                format!("function run: input r0 as {array}.private;"),
+            ] {
+                let program = Program::<CurrentNetwork>::from_str(&format!("program example.aleo; {component}"))?;
+                assert_eq!(program.contains_string_type(), expected, "{component}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_program_struct() -> Result<()> {
         // Create a new struct.
         let struct_ = StructType::<CurrentNetwork>::from_str(

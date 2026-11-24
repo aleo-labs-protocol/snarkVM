@@ -922,17 +922,22 @@ fn fq12_cyclotomic_exp_reference(x: &Fq12, exp: &[u64]) -> Fq12 {
     res
 }
 
+/// Projects a nonzero `f` into the cyclotomic subgroup via `f^((p^6 - 1)(p^2 + 1))`.
+fn fq12_cyclotomic_project(f: &Fq12) -> Option<Fq12> {
+    let f_inv = f.inverse()?;
+    let mut r = *f;
+    r.conjugate();
+    r = fq12_schoolbook(&r, &f_inv);
+    let mut s = r;
+    s.frobenius_map(2);
+    Some(fq12_schoolbook(&s, &r))
+}
+
 /// Returns `f^((p^6 - 1)(p^2 + 1))` for a random `f`: the easy part of the final exponentiation,
 /// which lies in the cyclotomic subgroup.
 fn fq12_cyclotomic_element(rng: &mut TestRng) -> Fq12 {
-    let f = Fq12::rand(rng);
-    let mut r = f;
-    r.conjugate();
     // A random element is nonzero.
-    r = fq12_schoolbook(&r, &f.inverse().unwrap());
-    let mut s = r;
-    s.frobenius_map(2);
-    fq12_schoolbook(&s, &r)
+    fq12_cyclotomic_project(&Fq12::rand(rng)).unwrap()
 }
 
 /// Inputs for the cyclotomic squaring and exponentiation: every coefficient equal to an edge
@@ -982,6 +987,8 @@ fn test_fq12_cyclotomic_exp() {
         vec![1],
         vec![2],
         vec![3],
+        vec![0x0002_aaaa_aaaa_0000],
+        vec![0x0002_aaaa_aaaa_0001],
         vec![u64::MAX],
         vec![1 << 63],
         vec![0, 1],
@@ -992,26 +999,50 @@ fn test_fq12_cyclotomic_exp() {
     exponents.extend((0..20).map(|_| vec![rng.random::<u64>() >> rng.random_range(0..64)]));
     exponents.extend((0..5).map(|_| vec![rng.random::<u64>(), rng.random::<u64>()]));
 
-    for (i, x) in fq12_cyclotomic_inputs(&mut rng).into_iter().enumerate() {
-        // Every exponent for a subset of the inputs, and a random one for the rest.
-        let chosen = if i % 25 == 0 {
+    let raw_inputs = fq12_cyclotomic_inputs(&mut rng);
+
+    // The IFMA lane program evaluates the uncompressed Granger-Scott chain, so where it runs it
+    // matches `fq12_cyclotomic_exp_reference` on arbitrary limb-edge inputs as well.
+    if lanes_supported() {
+        for (i, x) in raw_inputs.iter().enumerate() {
+            // Every exponent for a subset of the inputs, and a random one for the rest.
+            let chosen = if i % 25 == 0 {
+                &exponents[..]
+            } else {
+                let j = rng.random_range(0..exponents.len());
+                &exponents[j..=j]
+            };
+            for exp in chosen {
+                let c = x.cyclotomic_exp(exp);
+                assert_eq!(c, fq12_cyclotomic_exp_reference(x, exp), "{x} ^ {exp:?}");
+                assert!(fq12_coefficients(&c).all(|x| x.is_valid()), "{x} ^ {exp:?}");
+            }
+        }
+    }
+
+    // On the cyclotomic subgroup (and boundary elements `0` and `1`), both the IFMA Granger-Scott
+    // lanes and the Karabina compressed scalar path match `fq12_cyclotomic_exp_reference` and `pow`.
+    let mut cyclotomic_inputs = vec![Fq12::zero(), Fq12::one()];
+    cyclotomic_inputs.extend(raw_inputs.iter().take(80).filter_map(fq12_cyclotomic_project));
+    cyclotomic_inputs.extend((0..64).map(|_| fq12_cyclotomic_element(&mut rng)));
+
+    for (i, a) in cyclotomic_inputs.iter().enumerate() {
+        let chosen = if i % 10 == 0 {
             &exponents[..]
         } else {
             let j = rng.random_range(0..exponents.len());
             &exponents[j..=j]
         };
         for exp in chosen {
-            let c = x.cyclotomic_exp(exp);
-            assert_eq!(c, fq12_cyclotomic_exp_reference(&x, exp), "{x} ^ {exp:?}");
-            assert!(fq12_coefficients(&c).all(|x| x.is_valid()), "{x} ^ {exp:?}");
-            assert_eq!(x.cyclotomic_exp_scalar(exp), c, "{x} ^ {exp:?} by the scalar path");
+            let expected = fq12_cyclotomic_exp_reference(a, exp);
+            let c = a.cyclotomic_exp(exp);
+            let s = a.cyclotomic_exp_scalar(exp);
+            assert_eq!(c, expected, "{a} ^ {exp:?}");
+            assert_eq!(s, expected, "{a} ^ {exp:?} by the scalar path");
+            assert_eq!(a.pow(exp), expected, "{a} ^ {exp:?} by pow");
+            assert!(fq12_coefficients(&c).all(|x| x.is_valid()), "{a} ^ {exp:?}");
+            assert!(fq12_coefficients(&s).all(|x| x.is_valid()), "{a} ^ {exp:?} by the scalar path");
         }
-    }
-
-    // On the cyclotomic subgroup, the chain exponentiates.
-    for _ in 0..3 {
-        let a = fq12_cyclotomic_element(&mut rng);
-        assert_eq!(a.cyclotomic_exp(x), a.pow(x));
     }
 }
 
@@ -1837,6 +1868,263 @@ fn test_g1_msm_lanes() {
 fn test_g1_msm_lanes_rejects_a_base_outside_g1() {
     let [outside, _] = g1_small_order_points();
     let _ = G1Affine::msm_lanes(&[&[(outside, Fr::one()), (outside, Fr::one())]]);
+}
+
+#[test]
+fn test_bls12_377_cyclotomic_karabina_edge_exponents() {
+    let mut rng = TestRng::default();
+
+    let exponents: &[&[u64]] = &[
+        &[],
+        &[0u64],
+        &[0u64, 0u64],
+        &[1u64],
+        &[2u64],
+        &[3u64],
+        &[1u64 << 46],
+        &[1u64 << 63],
+        &[0u64, 1u64],
+        &[5u64, 0u64, 0u64],
+        // 17 set bits above bit 0, with bit 0 clear, spanning two 16-slot batches.
+        &[0x0002_aaaa_aaaa_0000u64],
+        // 17 set bits above bit 0, with bit 0 set, spanning two 16-slot batches.
+        &[0x0002_aaaa_aaaa_0001u64],
+        &[0xaaaa_aaaa_aaaa_aaabu64],
+        Bls12_377Parameters::X,
+        &[u64::MAX],
+        &[u64::MAX, u64::MAX],
+    ];
+
+    for _ in 0..24 {
+        let g = fq12_cyclotomic_element(&mut rng);
+        assert_eq!(g.cyclotomic_square(), g.square());
+
+        for &exp in exponents {
+            let expected = g.pow(exp);
+            assert_eq!(g.cyclotomic_exp(exp), expected);
+            assert_eq!(g.cyclotomic_exp_scalar(exp), expected);
+        }
+    }
+
+    // Boundary elements (`1` and `0`, where `z2 == z3 == 0`).
+    for elem in [Fq12::one(), Fq12::zero()] {
+        for &exp in exponents {
+            let expected = elem.pow(exp);
+            assert_eq!(elem.cyclotomic_exp(exp), expected);
+            assert_eq!(elem.cyclotomic_exp_scalar(exp), expected);
+        }
+    }
+}
+
+/// Tests Karabina's secondary `z2 == 0, z3 != 0` decompression branch (`gnark-crypto#874`) on an
+/// explicit nontrivial cyclotomic element `g in G_{Phi_6(q^2)}` constructed in polynomial time.
+///
+/// Setting `z2 = 0` in Karabina's cyclotomic equations and `g * conj(g) = 1` defines the genus-0
+/// rational curve `u * z3^3 - 6 * z3 * z4 + 8 * z4^3 = 0` over `Fq2` (`u^2 = -5`). Parameterizing
+/// by `z3 = lam * z4` with `lam = 1 + u` (`D = u * lam^3 + 8 = 10 + 6 * u != 0`) gives:
+///   `z0 = (u * lam^3 - 4) / D`, `z1 = 4 * tau / D`, `z2 = 0`,
+///   `z3 = 6 * lam^2 / D`, `z4 = 6 * lam / D`, `z5 = 2 * lam * tau / D`,
+/// where `tau^2 = 3 * (u * lam^3 - 1) / u` in `Fq2`.
+///
+/// Raising `g` to `2^-46 mod (q^4 - q^2 + 1)` yields `h_x in G_{Phi_6(q^2)}` with `h_x.c1.c0 != 0`
+/// whose 46th squaring lands directly on `g` (`z2 == 0, z3 != 0`) at bit 46 of `Bls12_377Parameters::X`.
+#[test]
+fn test_bls12_377_cyclotomic_karabina_z2_zero_z3_nonzero() {
+    // Each literal word array is strictly below `FqParameters::MODULUS`, so `from_bigint` returns `Some`.
+    let fq = |w: [u64; 6]| Fq::from_bigint(BigInteger384(w)).unwrap();
+    let fq2 = |c0: [u64; 6], c1: [u64; 6]| Fq2::new(fq(c0), fq(c1));
+
+    let u = Fq2::new(Fq::zero(), Fq::one());
+    let lam = Fq2::new(Fq::one(), Fq::one());
+    let lam2 = lam.square();
+    let ulam3 = Fq6Parameters::mul_fp2_by_nonresidue(&(lam2 * lam));
+    let tau = fq2(
+        [
+            0xcef3249d486c5423,
+            0x30f38d622f94f9f8,
+            0x1207392bc4d9b5c6,
+            0x11d210e43fae9ab5,
+            0xca63c5b50553ea97,
+            0x019dbaeaaeed10de,
+        ],
+        [
+            0x74a5e079a09ff796,
+            0x7989676925fbe15b,
+            0x04e0950a48db7621,
+            0x40f31fe55a723ed4,
+            0x9b14b874bac4b587,
+            0x017da7dad854be67,
+        ],
+    );
+    // `u = (0, 1)` is nonzero in `Fq2`, so `u.inverse()` returns `Some`.
+    assert_eq!(tau.square(), Fq2::from(3u64) * (ulam3 - Fq2::one()) * u.inverse().unwrap());
+
+    // `u * lam^3 + 8 = 10 + 6 * u != 0`, so `inverse()` returns `Some`.
+    let d_inv = (ulam3 + Fq2::from(8u64)).inverse().unwrap();
+    let z0 = (ulam3 - Fq2::from(4u64)) * d_inv;
+    let z1 = Fq2::from(4u64) * tau * d_inv;
+    let z2 = Fq2::zero();
+    let z3 = Fq2::from(6u64) * lam2 * d_inv;
+    let z4 = Fq2::from(6u64) * lam * d_inv;
+    let z5 = Fq2::from(2u64) * lam * tau * d_inv;
+    let g = Fq12::new(Fq6::new(z0, z4, z3), Fq6::new(z2, z1, z5));
+
+    // Verify `g != +-1`, `z2 == 0`, `z3 != 0`, and membership in `G_{Phi_6(q^2)}` (`g^(q^4 - q^2 + 1) == 1`).
+    assert_ne!(g, Fq12::one());
+    assert_ne!(g, -Fq12::one());
+    assert!(g.c1.c0.is_zero());
+    assert!(!g.c0.c2.is_zero());
+    let assert_in_cyclotomic_subgroup = |el: Fq12| {
+        let mut conj = el;
+        conj.conjugate();
+        assert_eq!(el * conj, Fq12::one());
+        let mut frob2 = el;
+        frob2.frobenius_map(2);
+        let mut frob4 = el;
+        frob4.frobenius_map(4);
+        assert_eq!(frob4 * el, frob2);
+    };
+    assert_in_cyclotomic_subgroup(g);
+
+    // `h_x = g^(2^-46 mod (q^4 - q^2 + 1))` in `G_{Phi_6(q^2)}`: its 45th squaring `h1` satisfies
+    // `h1^2 == g`, and its 46th squaring hits `g` (`z2 == 0, z3 != 0`) at bit 46 of `Bls12_377Parameters::X`.
+    let h_x = Fq12::new(
+        Fq6::new(
+            fq2(
+                [
+                    0x9a4b3ee0bdca69fa,
+                    0x0ba6a502d9c9ee79,
+                    0xa309cffe3582708f,
+                    0x6e4f4442a1ed4e04,
+                    0xaa4ac4a6b4562ae0,
+                    0x00cfe3a5190fc4c7,
+                ],
+                [
+                    0xbb260d6a66adf90d,
+                    0xfb347ce1899cca4b,
+                    0xc64f68c01010409c,
+                    0x07a0f266d23c8e97,
+                    0x094dd828c7bf97c0,
+                    0x00429d4f6ab17474,
+                ],
+            ),
+            fq2(
+                [
+                    0xbaf90c0015a1425e,
+                    0x5aabf182e1439262,
+                    0x78c1219d8cadaa6a,
+                    0xc754ec97df7ff2e5,
+                    0x841ddfb643bfceba,
+                    0x01905f33bc82d032,
+                ],
+                [
+                    0x5843aacf409b7f9f,
+                    0x974631225aeaa8a5,
+                    0x1e2da5c7e5a4a82c,
+                    0x20ca181cfe53dc6d,
+                    0x3342179937dbf9e0,
+                    0x004c71095edae832,
+                ],
+            ),
+            fq2(
+                [
+                    0x9653c98adc370388,
+                    0xaa868d2e0906f0a0,
+                    0x6a7acc19d5978006,
+                    0xa1d1b56b0486423d,
+                    0x6ae879a673754853,
+                    0x00dcffe7c75b6ede,
+                ],
+                [
+                    0x8371d0b811e966b6,
+                    0x3c17596e8651f95f,
+                    0xd22e215be9f5742f,
+                    0x2890481e1bec6e36,
+                    0x22bee49aac9ef567,
+                    0x00f607021cb11bbb,
+                ],
+            ),
+        ),
+        Fq6::new(
+            fq2(
+                [
+                    0x24f89b07e2585b2e,
+                    0x590fe57357891a3c,
+                    0x3e10f8ee2a7f5dfa,
+                    0x727304625b6a4d8a,
+                    0x05bbb406d6dd995c,
+                    0x00c8f655d497a60a,
+                ],
+                [
+                    0xe722cb56749548c0,
+                    0x46992627f99f0522,
+                    0xba7311972b169452,
+                    0x6e7d1a18b04c7b83,
+                    0x665c890a04331509,
+                    0x00f60b9eabb3af34,
+                ],
+            ),
+            fq2(
+                [
+                    0xfd4e62c56afb4e99,
+                    0x36257b0cc2a1fbd1,
+                    0x5c80aac4a08047b7,
+                    0x663bfb3b4b20ee12,
+                    0x4faee0524d1b44e9,
+                    0x008afd51fc678fe3,
+                ],
+                [
+                    0x2299273976b9a2b4,
+                    0xbfa4a248eb6dd311,
+                    0x9af74c6b8ee80e8a,
+                    0x08ed67201081edcd,
+                    0xaf48cb50ad45e414,
+                    0x0154f5332fe612e5,
+                ],
+            ),
+            fq2(
+                [
+                    0x6c40dd23f21a0b4c,
+                    0x959f4355b52ca9bb,
+                    0x04b43fa8633415e9,
+                    0xa08b6619b68d6858,
+                    0x69e174f48be4cd73,
+                    0x009a82211acb2c5c,
+                ],
+                [
+                    0x9160206be677bd88,
+                    0xb618ffc757b65507,
+                    0x9dd98f4e321d1536,
+                    0x4d89c91bac85c741,
+                    0x7da1b7a7833e53d6,
+                    0x0115d2e32de5b363,
+                ],
+            ),
+        ),
+    );
+    assert_in_cyclotomic_subgroup(h_x);
+    assert!(!h_x.c1.c0.is_zero());
+
+    let h1 = h_x.pow([1u64 << 45]);
+    assert!(!h1.c1.c0.is_zero());
+    assert_eq!(h1.square(), g);
+    assert_eq!(h1.cyclotomic_square(), g);
+
+    // Exercise the `z2 == 0, z3 != 0` decompression branch alone (`[2]`), with bit 0 (`[3]`),
+    // in a multi-bit batch (`[0b10110]`), and on `Bls12_377Parameters::X` itself (`h_x`).
+    for (base, exp) in [
+        (h1, &[2u64][..]),
+        (h1, &[3u64][..]),
+        (h1, &[0b10110u64][..]),
+        (g, Bls12_377Parameters::X),
+        (h_x, Bls12_377Parameters::X),
+        (h_x, &[0x0002_aaaa_aaaa_0000u64][..]),
+    ] {
+        let expected = base.pow(exp);
+        assert_eq!(base.cyclotomic_exp(exp), expected);
+        assert_eq!(base.cyclotomic_exp_scalar(exp), expected);
+    }
+    assert_eq!(h1.cyclotomic_exp_scalar(&[2u64]), g);
 }
 
 #[test]
