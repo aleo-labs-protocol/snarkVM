@@ -242,4 +242,14 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
     pub fn random_base(&self) -> &Arc<Vec<Group<E>>> {
         &self.random_base
     }
+
+    /// Returns the 8 multiples of each base that a chunk selects from, by window.
+    pub(super) fn bases_lookup(&self) -> &[Vec<[Group<E>; BHP_LOOKUP_SIZE]>] {
+        &self.bases_lookup
+    }
+
+    /// Returns the sums that each `BHP_NUM_COMBINED_CHUNKS` chunks select from, by window.
+    pub(super) fn combined_bases_lookup(&self) -> &[Vec<Vec<Group<E>>>] {
+        &self.combined_bases_lookup
+    }
 }

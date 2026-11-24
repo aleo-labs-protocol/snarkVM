@@ -15,7 +15,8 @@
 
 //! The kernel edge cases, the reductions on every multiple of `p` they accept, `mul_8`, 8
 //! independent products through `mont`, as the oracle for the kernel against the scalar product,
-//! the GLV ladder's refusals and its single-digit sums, and `mont_sum` against the integers.
+//! the GLV ladder's refusals and its single-digit sums, `mont_sum` against the integers, and
+//! `mont_sums` against `mont_sum`.
 
 use super::{
     cyclotomic::pair_sums,
@@ -37,7 +38,7 @@ use super::{
         vector,
         words,
     },
-    poseidon::mont_sum,
+    poseidon::{mont_sum, mont_sums},
 };
 use crate::{
     FftParameters,
@@ -645,6 +646,55 @@ fn check_mont_sum<const K: usize>(rng: &mut TestRng) {
                 assert!(result[..4].iter().all(|limb| limb[l] <= MASK), "K = {K}, iteration {iteration}, lane {l}");
                 let got = (0..5).rev().fold(zero.clone(), |x, k| (x << 52u32) + big(&[result[k][l], 0, 0, 0, 0]));
                 assert_eq!(got, expected, "K = {K}, iteration {iteration}, lane {l}");
+            }
+        }
+    }
+}
+
+#[test]
+fn test_mont_sums() {
+    run_check(check_mont_sums::<2, 2>);
+    run_check(check_mont_sums::<3, 1>);
+    run_check(check_mont_sums::<4, 1>);
+    run_check(check_mont_sums::<4, 3>);
+}
+
+/// Checks `mont_sums` of `N` sums of `K` products against `mont_sum` of each sum, limb by limb in
+/// every lane, for each modulus of `MODULI_5`: with every limb of every operand at `2^52 - 1`,
+/// and with each limb 0, `2^52 - 1` or random.
+#[target_feature(enable = "avx512f,avx512ifma")]
+fn check_mont_sums<const N: usize, const K: usize>(rng: &mut TestRng) {
+    for p_words in MODULI_5 {
+        // `p^-1 mod 2^64` by Newton's iteration, which doubles the correct low bits from 1.
+        let mut inverse = 1u64;
+        for _ in 0..6 {
+            inverse = inverse.wrapping_mul(2u64.wrapping_sub(p_words[0].wrapping_mul(inverse)));
+        }
+        let n0 = _mm512_set1_epi64((inverse.wrapping_neg() & MASK) as i64);
+        let p = splat(&radix_52::<4, 5>(&p_words));
+        for iteration in 0..200 {
+            let mut limb = || match (iteration, rng.random_range(0..4)) {
+                (0, _) | (_, 0) => MASK,
+                (_, 1) => 0,
+                _ => rng.random::<u64>() & MASK,
+            };
+            // `operands[side][s][k]` is operand `k` of sum `s`, on one side of the products.
+            let operands: [[[[__m512i; 5]; K]; N]; 2] = std::array::from_fn(|_| {
+                std::array::from_fn(|_| {
+                    std::array::from_fn(|_| std::array::from_fn(|_| vector(std::array::from_fn(|_| limb()))))
+                })
+            });
+            let [a, b] = operands.each_ref().map(|side| side.each_ref().map(|sum| sum.each_ref()));
+            // SAFETY: this function enables both target features that `mont_sums` requires.
+            let sums = unsafe { mont_sums(a, b, &p, n0) };
+            for s in 0..N {
+                // SAFETY: this function enables both target features that `mont_sum` requires.
+                let expected = unsafe { mont_sum(a[s], b[s], &p, n0) };
+                assert_eq!(
+                    sums[s].map(|v| to_array(v)),
+                    expected.map(|v| to_array(v)),
+                    "sum {s}, iteration {iteration}"
+                );
             }
         }
     }

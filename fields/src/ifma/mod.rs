@@ -25,8 +25,8 @@
 //! `kernel::mont` by an operand in `Fp384`'s form, which divides by 2^416. A result is canonical,
 //! in `[0, p)`, when it is stored.
 //!
-//! The `poseidon` program is over `Fp256`, and holds an integer in 5 limbs: its module gives its
-//! representation and bounds.
+//! The `poseidon` and `edwards` programs are over `Fp256`, and hold an integer in 5 limbs: their
+//! modules give their representation and bounds.
 //!
 //! # Fallback
 //!
@@ -45,6 +45,8 @@
 
 #[cfg(target_arch = "x86_64")]
 mod cyclotomic;
+#[cfg(target_arch = "x86_64")]
+mod edwards;
 #[cfg(target_arch = "x86_64")]
 mod fp12;
 #[cfg(target_arch = "x86_64")]
@@ -280,6 +282,46 @@ pub fn poseidon_permute_8<P: Fp256Parameters, const RATE: usize>(
     #[cfg(not(target_arch = "x86_64"))]
     {
         let _ = (sparse_rounds, state);
+        None
+    }
+}
+
+/// A step of `edwards_add_entries_8` over the field `F`: a table, and the index of one of its
+/// entries for each of the 8 points.
+pub type EdwardsStep<'a, F> = (&'a [[F; 3]], [u32; 8]);
+
+/// Adds to each of 8 points of a twisted Edwards curve `-x^2 + y^2 = 1 + d x^2 y^2` one entry of
+/// each table of `steps`, and returns `Some(())`; or returns `None` and leaves `points` as it is
+/// if `is_supported_fp256::<P>()` is false or an index is not below the length of its table.
+///
+/// `points[c][l]` is coordinate `c` of point `l` in extended coordinates `(X, Y, T, Z)`, with
+/// `x = X / Z`, `y = Y / Z` and `T = x y Z`. An entry holds `y - x`, `y + x` and `2 d x y` of an
+/// affine point `(x, y)`. The step `(table, indices)` adds `table[indices[l]]` to point `l`. A
+/// point with no step leaves as it enters.
+///
+/// The additions are complete when -1 is a square and `d` is not. Each coordinate leaves
+/// canonical. The coordinates of a sum are not those of the scalar formulas: only the point
+/// `(X / Z, Y / Z)` is the same.
+pub fn edwards_add_entries_8<P: Fp256Parameters>(
+    points: &mut [[Fp256<P>; 8]; 4],
+    steps: &[EdwardsStep<'_, Fp256<P>>],
+) -> Option<()> {
+    if !is_supported_fp256::<P>() {
+        return None;
+    }
+    if steps.iter().any(|(table, indices)| indices.iter().any(|index| *index as usize >= table.len())) {
+        return None;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        // SAFETY: `is_supported_fp256` detected both target features that `add_entries_8_avx512`
+        // enables, and every index is below the length of its table.
+        unsafe { edwards::add_entries_8_avx512(points, steps) };
+        Some(())
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = points;
         None
     }
 }

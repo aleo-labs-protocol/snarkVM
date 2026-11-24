@@ -14,7 +14,7 @@
 // limitations under the License.
 
 pub mod hasher;
-use hasher::BHPHasher;
+use hasher::{BHP_LOOKUP_SIZE, BHP_NUM_COMBINED_CHUNKS, BHPHasher};
 
 mod commit;
 mod commit_uncompressed;
@@ -63,13 +63,19 @@ pub struct BHP<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> {
     /// Not serialized, so a deserialized hasher recomputes it from its own domain and bases.
     #[serde(skip)]
     empty_hash: OnceLock<Field<E>>,
+    /// The tables of `hash_8_lanes`, once it has asked for them, or `None` if the curve has no lane path.
+    /// They take tens of megabytes, and clones share them.
+    ///
+    /// Not serialized, so a deserialized hasher rebuilds them from its own domain and bases.
+    #[serde(skip)]
+    lane_tables: Arc<OnceLock<Option<hash::LaneTables<E>>>>,
 }
 
 impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> PartialEq for BHP<E, NUM_WINDOWS, WINDOW_SIZE> {
-    /// Ignores the cached empty hash, which is derived from the domain and bases.
+    /// Ignores the cached empty hash and lane tables, which are derived from the domain and bases.
     fn eq(&self, other: &Self) -> bool {
         // Destructured so that a new field must be considered here.
-        let Self { domain, hasher, empty_hash: _ } = self;
+        let Self { domain, hasher, empty_hash: _, lane_tables: _ } = self;
         *domain == other.domain && *hasher == other.hasher
     }
 }
@@ -93,7 +99,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHP<E, NUM_WI
         // (For advanced users): This optimizes the initial costs during hashing.
         domain.reverse();
 
-        Ok(Self { domain, hasher, empty_hash: OnceLock::new() })
+        Ok(Self { domain, hasher, empty_hash: OnceLock::new(), lane_tables: Arc::new(OnceLock::new()) })
     }
 
     /// Returns the domain separator for the BHP hash function.
