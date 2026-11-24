@@ -243,8 +243,8 @@ impl Fp12Parameters for Fq12Parameters {
         snarkvm_fields::ifma::mul_assign_fp12(a, b)
     }
 
-    /// Lazy-reduced `Fq12` Karatsuba multiplication (`54` 6x6 products + `12` Montgomery reductions,
-    /// down from `72` 6x6 products + `36` Montgomery reductions; all limbs `< 136 * p^2 < p * 2^384`).
+    /// Lazy-reduced `Fq12` Karatsuba multiplication (`54` 6x6 products + `12` Montgomery reductions;
+    /// all limbs `< 136 * p^2 < p * 2^384`).
     #[inline]
     fn mul_assign_fp12_scalar(a: &mut Fq12, b: &Fq12) {
         let v0 = Fq6Unreduced::mul(&a.c0, &b.c0);
@@ -275,8 +275,7 @@ impl Fp12Parameters for Fq12Parameters {
     }
 
     /// Lazy-reduced sparse D-twist line multiplication `a * (c0 + c3 * w + c4 * v * w)`
-    /// (`39` 6x6 products + `12` Montgomery reductions, down from `52` products + `26` reductions;
-    /// all limbs `< 58 * p^2 < p * 2^384`).
+    /// (`39` 6x6 products + `12` Montgomery reductions; all limbs `< 58 * p^2 < p * 2^384`).
     #[inline]
     fn mul_by_034_fp12(a: &mut Fq12, c0: &Fq2, c3: &Fq2, c4: &Fq2) {
         let a_u = Fq6Unreduced {

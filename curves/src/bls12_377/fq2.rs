@@ -181,8 +181,8 @@ impl Fp2Parameters for Fq2Parameters {
     }
 
     /// On x86-64 targets with `adx` and `bmi2`, delegates to `Fp2::mul_assign_scalar` so `Fq2`
-    /// multiplication stays on two-term `Fq::sum_of_products` (`mulx`/`adcx`/`adox` CIOS in `#3754`);
-    /// on portable/non-ADX targets, uses 768-bit lazy-reduced Karatsuba (`Fq2Unreduced::mul`).
+    /// multiplication uses two-term `Fq::sum_of_products` (`mulx`/`adcx`/`adox` CIOS); on other
+    /// targets, uses 768-bit lazy-reduced Karatsuba (`Fq2Unreduced::mul`).
     #[inline]
     fn mul_assign_fp2(a: &mut Fq2, b: &Fq2) {
         #[cfg(all(
