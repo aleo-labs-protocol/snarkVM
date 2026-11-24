@@ -41,9 +41,6 @@ const SIGN_BIT: u32 = 1 << 31;
 const SCALAR_INDEX_MASK: u32 = !SIGN_BIT;
 const NOOP: u32 = u32::MAX;
 
-/// Minimum number of bases for the bucket method; smaller MSMs use Straus.
-const BUCKET_CUTOFF: usize = 32;
-
 /// Window bounds for [`best_window_size`].
 const MIN_BUCKET_WINDOW: usize = 5;
 const L1_CACHE_MAX_WINDOW: usize = 14;
@@ -648,25 +645,44 @@ pub fn straus<G: AffineCurve, const WINDOW: usize>(
     sum
 }
 
-pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    debug_assert!(scalars.len() <= bases.len());
-    let n = bases.len().min(scalars.len());
-    let (bases, scalars) = (&bases[..n], &scalars[..n]);
+/// The fewest bases that `msm` sums by the bucket method. Below it, each window
+/// holds too few points to amortize its batched inversions, and the curve's
+/// lanes and Straus's method are several times faster.
+pub(super) const BUCKET_MIN_BASES: usize = 32;
 
-    // Below `BUCKET_CUTOFF` bases, each window of the bucket method holds too
-    // few points to amortize its batched inversions, and Straus's method is
-    // several times faster.
-    if n < BUCKET_CUTOFF {
-        if n == 0 {
-            return G::Projective::zero();
-        }
+/// Returns the sum of `base * scalar` through `AffineCurve::msm_lanes`, over
+/// the shorter of `bases` and `scalars`, or `None` if the curve has no lane
+/// path for them or a scalar is not below the modulus.
+fn msm_in_lanes<G: AffineCurve>(
+    bases: &[G],
+    scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+) -> Option<G::Projective> {
+    let terms = bases
+        .iter()
+        .zip(scalars)
+        .map(|(base, scalar)| Some((*base, G::ScalarField::from_bigint(*scalar)?)))
+        .collect::<Option<Vec<_>>>()?;
+    G::msm_lanes(&[&terms])?.into_iter().next()
+}
+
+/// Returns the sum of `base * scalar`.
+///
+/// Hazard: for a base outside the prime-order subgroup, the curve's GLV
+/// multiplication and its lanes can return another sum than Straus's method,
+/// which differs by a point whose order divides the cofactor. So the sum
+/// depends on the CPU. A pairing maps that point to one, so a pairing check on
+/// the sum does not.
+pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
+    if bases.len() < BUCKET_MIN_BASES {
+        debug_assert!(scalars.len() <= bases.len());
         // A zero scalar adds nothing and a unit scalar adds its base, so
         // neither needs a table or a scalar multiplication.
         let one = <G::ScalarField as PrimeField>::BigInteger::from(1u64);
         let mut sum = G::Projective::zero();
         let (bases, scalars) = if scalars.iter().any(|scalar| scalar.is_zero() || *scalar == one) {
-            let mut rest = (Vec::with_capacity(n), Vec::with_capacity(n));
-            for (base, scalar) in bases.iter().zip_eq(scalars) {
+            let mut rest = (Vec::with_capacity(scalars.len()), Vec::with_capacity(scalars.len()));
+            // Bases past the last scalar have no scalar, so `zip` stops there.
+            for (base, scalar) in bases.iter().zip(scalars) {
                 if *scalar == one {
                     sum.add_assign_mixed(base);
                 } else if !scalar.is_zero() {
@@ -683,12 +699,14 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         if let ([base], [scalar]) = (&*bases, &*scalars)
             && let Some(scalar) = G::ScalarField::from_bigint(*scalar)
         {
-            // GLV is correct only on the prime-order subgroup.
-            debug_assert!(base.is_in_correct_subgroup_assuming_on_curve());
             return sum + base.to_projective() * scalar;
+        }
+        if let Some(in_lanes) = msm_in_lanes(&bases, &scalars) {
+            return sum + in_lanes;
         }
         sum + straus::<G, STRAUS_WINDOW>(&bases, &scalars)
     } else {
+        let n = bases.len().min(scalars.len());
         let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
         let c = best_window_size(n, num_bits);
         bucket_msm_with_window(bases, scalars, c)

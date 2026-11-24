@@ -1431,4 +1431,111 @@ mod tests {
         // commitments, so the split is checked inside a shared MSM.
         assert!(most_terms > 1, "no degree-bound MSM had more than one commitment");
     }
+
+    /// A commitment outside G1 is its G1 part plus a point whose order divides
+    /// the cofactor, and `Proof::read_le_unchecked` admits one through
+    /// `deserialize_compressed_unchecked`. Over such a base, the curve's lanes
+    /// and Straus's method return different sums. The pairing maps their
+    /// difference to one, so `batch_check` reaches the same verdict with
+    /// the lanes on and with `SNARKVM_NO_IFMA` set. The lanes-off run is a
+    /// child process with the parent's `TEST_SEED`, so both runs check the
+    /// same commitments, proofs and shifts.
+    #[test]
+    fn batch_check_verdict_outside_g1_does_not_depend_on_the_lanes() {
+        use super::{Commitment, LabeledCommitment};
+        use crate::{AlgebraicSponge, polycommit::kzg10::KZGCommitment};
+        use snarkvm_curves::{
+            AffineCurve,
+            ProjectiveCurve,
+            ShortWeierstrassParameters,
+            bls12_377::{Bls12_377G1Parameters, FqParameters, Fr, G1Affine, G1Projective},
+        };
+        use snarkvm_fields::{Field, One, PrimeField, ifma};
+        use snarkvm_utilities::{BitIteratorBE, CanonicalDeserialize, CanonicalSerialize, Uniform};
+
+        const NO_IFMA: &str = "SNARKVM_NO_IFMA";
+        const TEST_NAME: &str =
+            "polycommit::sonic_pc::tests::batch_check_verdict_outside_g1_does_not_depend_on_the_lanes";
+        let lanes_off = std::env::var_os(NO_IFMA).is_some_and(|value| !value.is_empty());
+        if lanes_off {
+            assert!(!ifma::is_supported::<FqParameters>(), "{NO_IFMA} did not turn the lanes off");
+        }
+        let run_child = |name: &str, value: String, mode: &str| {
+            let output =
+                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
+                    .args([TEST_NAME, "--exact", "--nocapture"])
+                    .env(name, value)
+                    .output()
+                    .expect("Failed to launch the child test process");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "The child test {mode} failed.\nstdout:\n{stdout}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        // Without `TEST_SEED`, each `TestRng::default()` draws a fresh seed, here and
+        // in `full_end_to_end_test`. So the test reruns itself with one, which
+        // its lanes-off child inherits.
+        if std::env::var_os("TEST_SEED").is_none() {
+            run_child("TEST_SEED", rand::random::<u64>().to_string(), "with a fixed TEST_SEED");
+            return;
+        }
+
+        let rng = &mut TestRng::default();
+        // `r` times a curve point is a point whose order divides the cofactor. On a
+        // point of small order, such as `(0, 1)` of order 3, GLV can equal the
+        // scalar multiple, so the search keeps the first point on which they
+        // differ for `k`.
+        let k = Fr::rand(rng);
+        let differs = |t: &G1Projective| {
+            let multiple = t.to_affine().mul_bits(BitIteratorBE::new_without_leading_zeros(k.to_bigint()));
+            Bls12_377G1Parameters::mul_projective(*t, k) != multiple
+        };
+        // Most curve points have a cofactor part of large order, so the search ends.
+        let torsion = std::iter::repeat_with(|| G1Affine::from_x_coordinate(Fq::rand(rng), true))
+            .flatten()
+            .map(|p| p.mul_bits(BitIteratorBE::new(Fr::characteristic())))
+            .find(differs)
+            .unwrap();
+
+        let shift = |c: &LabeledCommitment<Commitment<Bls12_377>>| {
+            let shifted = KZGCommitment::<Bls12_377>((c.commitment().0.to_projective() + torsion).to_affine());
+            let mut bytes = Vec::new();
+            // Writing a point to a vector cannot fail.
+            shifted.serialize_compressed(&mut bytes).unwrap();
+            assert!(KZGCommitment::<Bls12_377>::deserialize_compressed(&bytes[..]).is_err());
+            // The point is on the curve, which is all that the unchecked read checks.
+            let read = KZGCommitment::deserialize_compressed_unchecked(&bytes[..]).unwrap();
+            assert_eq!(read, shifted);
+            LabeledCommitment::new(c.label().to_string(), read, c.degree_bound())
+        };
+        let components = full_end_to_end_test::<Bls12_377, Sponge>().expect("test failed for bls12-377");
+        for TestComponents { verification_key, commitments, query_set, evaluations, batch_proof, .. } in components {
+            // `test_template` fills `batch_proof` for every component it returns.
+            let proof = batch_proof.unwrap();
+            let shifted: Vec<_> = commitments.iter().map(shift).collect();
+            // `batch_check` errs only on a missing label, and `shift` keeps every label.
+            let check = |evaluations: &super::Evaluations<Fr>| {
+                PC_Bls12_377::batch_check(
+                    &verification_key,
+                    &shifted,
+                    &query_set,
+                    evaluations,
+                    &proof,
+                    &mut Sponge::new(),
+                )
+                .unwrap()
+            };
+            assert!(check(&evaluations), "a commitment shifted out of G1 failed, lanes off: {lanes_off}");
+            let mut wrong = evaluations.clone();
+            // `test_template` queries every polynomial at least once.
+            *wrong.values_mut().next().unwrap() += Fr::one();
+            assert!(!check(&wrong), "a wrong evaluation passed, lanes off: {lanes_off}");
+        }
+
+        if !lanes_off {
+            run_child(NO_IFMA, "1".to_string(), "with the lanes off");
+        }
+    }
 }
