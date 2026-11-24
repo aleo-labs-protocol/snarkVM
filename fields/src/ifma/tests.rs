@@ -295,7 +295,7 @@ fn residues(rng: &mut TestRng) -> Vec<[u64; 6]> {
 fn lane_limbs(k: i64, r: &[u64; 6]) -> [u64; 8] {
     let p = MODULI[0];
     if k < 0 {
-        let (r, p) = (radix_52(r), radix_52(&p));
+        let (r, p): ([u64; 8], [u64; 8]) = (radix_52(r), radix_52(&p));
         std::array::from_fn(|j| (r[j] as i64 + k * p[j] as i64) as u64)
     } else {
         let x = BigInteger384(p).to_biguint() * (k as u64) + BigInteger384(*r).to_biguint();

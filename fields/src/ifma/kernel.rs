@@ -222,14 +222,14 @@ pub(super) const fn shift_left(x: &[u64; 6], s: u32) -> [u64; 6] {
     y
 }
 
-/// Returns the limbs, below 2^52 but for the top one, of the integers below 2^416 whose limbs are
-/// `x`, each below 2^63.
+/// Returns the limbs, below 2^52 but for the top one, of the integers below `2^(52 L)` whose limbs
+/// are `x`, each below 2^63.
 #[inline]
 #[target_feature(enable = "avx512f")]
-pub(super) fn normalize(x: &[__m512i; 8]) -> [__m512i; 8] {
+pub(super) fn normalize<const L: usize>(x: &[__m512i; L]) -> [__m512i; L] {
     let mask = _mm512_set1_epi64(MASK as i64);
     let mut v = *x;
-    for k in 0..7 {
+    for k in 0..L - 1 {
         v[k + 1] = _mm512_add_epi64(v[k + 1], _mm512_srli_epi64::<52>(v[k]));
         v[k] = _mm512_and_si512(v[k], mask);
     }
@@ -253,17 +253,17 @@ pub(super) fn signed_normalize(x: &[__m512i; 8]) -> [__m512i; 8] {
 /// Returns `x` mod `p` in `[0, p)`, for `x` below `2 p` with limbs below 2^52.
 #[inline]
 #[target_feature(enable = "avx512f")]
-pub(super) fn subtract_p_below_2p(x: &[__m512i; 8], p: &[__m512i; 8]) -> [__m512i; 8] {
+pub(super) fn subtract_p_below_2p<const L: usize>(x: &[__m512i; L], p: &[__m512i; L]) -> [__m512i; L] {
     let (zero, mask) = (_mm512_setzero_si512(), _mm512_set1_epi64(MASK as i64));
-    let mut d = [zero; 8];
+    let mut d = [zero; L];
     let mut borrow = zero;
-    for k in 0..8 {
+    for k in 0..L {
         d[k] = _mm512_sub_epi64(_mm512_sub_epi64(x[k], p[k]), borrow);
         borrow = _mm512_srli_epi64::<63>(d[k]);
     }
     let keep = _mm512_cmpneq_epi64_mask(borrow, zero);
-    let mut v = [zero; 8];
-    for k in 0..8 {
+    let mut v = [zero; L];
+    for k in 0..L {
         v[k] = _mm512_mask_blend_epi64(keep, _mm512_and_si512(d[k], mask), x[k]);
     }
     v
