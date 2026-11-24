@@ -1437,8 +1437,9 @@ mod tests {
     /// `deserialize_compressed_unchecked`. Over such a base, the curve's lanes
     /// and Straus's method return different sums. The pairing maps their
     /// difference to one, so `batch_check` reaches the same verdict with
-    /// the lanes on and with `SNARKVM_NO_IFMA` set, which this test checks
-    /// in a child process.
+    /// the lanes on and with `SNARKVM_NO_IFMA` set. The lanes-off run is a
+    /// child process with the parent's `TEST_SEED`, so both runs check the
+    /// same commitments, proofs and shifts.
     #[test]
     fn batch_check_verdict_outside_g1_does_not_depend_on_the_lanes() {
         use super::{Commitment, LabeledCommitment};
@@ -1458,6 +1459,27 @@ mod tests {
         let lanes_off = std::env::var_os(NO_IFMA).is_some_and(|value| !value.is_empty());
         if lanes_off {
             assert!(!ifma::is_supported::<FqParameters>(), "{NO_IFMA} did not turn the lanes off");
+        }
+        let run_child = |name: &str, value: String, mode: &str| {
+            let output =
+                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
+                    .args([TEST_NAME, "--exact", "--nocapture"])
+                    .env(name, value)
+                    .output()
+                    .expect("Failed to launch the child test process");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "The child test {mode} failed.\nstdout:\n{stdout}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        // Without `TEST_SEED`, each `TestRng::default()` draws a fresh seed, here and
+        // in `full_end_to_end_test`. So the test reruns itself with one, which
+        // its lanes-off child inherits.
+        if std::env::var_os("TEST_SEED").is_none() {
+            run_child("TEST_SEED", rand::random::<u64>().to_string(), "with a fixed TEST_SEED");
+            return;
         }
 
         let rng = &mut TestRng::default();
@@ -1513,18 +1535,7 @@ mod tests {
         }
 
         if !lanes_off {
-            let output =
-                std::process::Command::new(std::env::current_exe().expect("Failed to locate the test executable"))
-                    .args([TEST_NAME, "--exact", "--nocapture"])
-                    .env(NO_IFMA, "1")
-                    .output()
-                    .expect("Failed to launch the child test process");
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            assert!(
-                output.status.success() && stdout.contains("1 passed"),
-                "The child test with the lanes off failed.\nstdout:\n{stdout}\nstderr:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            run_child(NO_IFMA, "1".to_string(), "with the lanes off");
         }
     }
 }
