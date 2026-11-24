@@ -1989,12 +1989,36 @@ fn test_g1_msm_lanes() {
     }
 }
 
-#[cfg(debug_assertions)]
+/// `msm_lanes` accepts bases outside G1 in every build. Its sum is that of `mul_projective`, which
+/// differs from the sum of `k P` by a point whose order divides the cofactor. The bases are G1
+/// points shifted by such a point, and points of order 2 and 3, whose lanes meet excluded cases
+/// and take the scalar path.
 #[test]
-#[should_panic(expected = "prime-order subgroup")]
-fn test_g1_msm_lanes_rejects_a_base_outside_g1() {
-    let [outside, _] = g1_small_order_points();
-    let _ = G1Affine::msm_lanes(&[&[(outside, Fr::one()), (outside, Fr::one())]]);
+fn test_g1_msm_lanes_on_bases_outside_g1() {
+    let mut rng = TestRng::default();
+    let mut bases: Vec<G1Affine> = (0..6)
+        .map(|_| {
+            // Most curve points are outside G1, so the search ends.
+            let p = std::iter::repeat_with(|| G1Affine::from_x_coordinate(Fq::rand(&mut rng), true))
+                .flatten()
+                .find(|p| !p.is_in_correct_subgroup_assuming_on_curve())
+                .unwrap();
+            (G1Projective::rand(&mut rng) + p.mul_bits(BitIteratorBE::new(Fr::characteristic()))).to_affine()
+        })
+        .collect();
+    bases.extend(g1_small_order_points());
+    for n in [2, 5, bases.len()] {
+        let msm: Vec<_> = bases.iter().take(n).map(|base| (*base, Fr::rand(&mut rng))).collect();
+        let glv: G1Projective =
+            msm.iter().map(|(base, k)| Bls12_377G1Parameters::mul_projective(base.to_projective(), *k)).sum();
+        let multiple: G1Projective =
+            msm.iter().map(|(base, k)| base.mul_bits(BitIteratorBE::new_without_leading_zeros(k.to_bigint()))).sum();
+        assert!((glv - multiple).to_affine().mul_by_cofactor_to_projective().is_zero(), "{n} terms");
+        match G1Affine::msm_lanes(&[&msm]) {
+            Some(sums) => assert!(lanes_supported() && sums[0] == glv, "{n} terms"),
+            None => assert!(!lanes_supported(), "{n} terms"),
+        }
+    }
 }
 
 #[test]
