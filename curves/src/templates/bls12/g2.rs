@@ -30,6 +30,9 @@ pub type G2Projective<P> = Projective<<P as Bls12Parameters>::G2Parameters>;
 type CoeffPair<T> = (Fp2<T>, Fp2<T>);
 type CoeffTriplet<T> = (Fp2<T>, Fp2<T>, Fp2<T>);
 
+/// The precomputed Miller loop lines for a G2 point.
+///
+/// The serialized form of `G2Prepared` can change between versions.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct G2Prepared<P: Bls12Parameters> {
@@ -82,6 +85,12 @@ impl<P: Bls12Parameters> G2Prepared<P> {
         // `one_half` = 1/2 in the field.
         let one_half = P::Fp::half();
 
+        // Hazard: On BLS12-377 (`TwistType::D`), `c0` is never zero for a point on the curve
+        // (`h2 * r` is odd, has no small prime factors, and is coprime to the scalar multiple at
+        // each of the 69 loop steps). However, this template also defines `TwistType::M`, where
+        // the doubling step's `c0` is `i = 3 * b' * Z^2 - Y^2`, which is zero at any curve point
+        // satisfying `y^2 = 3 * b'`. At such a point, this guard substitutes `(0, 0)` and gives a
+        // wrong line (`1`), not an error (`snarkVM` instantiates no M-twist curve).
         let mut push_step = |(c0, c1, c2): CoeffTriplet<P::Fp2Params>| {
             c0_and_prefix.push((c0, acc));
             if !c0.is_zero() {
@@ -107,6 +116,7 @@ impl<P: Bls12Parameters> G2Prepared<P> {
                 ell.0 *= c0_inv;
                 ell.1 *= c0_inv;
             } else {
+                // Unreachable for on-curve points on BLS12-377; see the `TwistType::M` hazard note above.
                 *ell = (Fp2::zero(), Fp2::zero());
             }
         }

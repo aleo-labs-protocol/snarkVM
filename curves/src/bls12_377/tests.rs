@@ -1352,10 +1352,11 @@ fn test_fq12_miller_loop_lanes_square_extreme() {
 }
 
 /// Runs `snarkvm_fields::ifma::miller_loop_fp12` through a 4-pair step at `x = [0b10]` whose
-/// first three affine lines build `1 + w + w^2 + w^3 + w^4 + w^5` (`F_0..F_5 = 1`) via the cube
-/// root of unity `PHI`, and whose fourth line `(0, -K^-1)` (`K = 2^416 mod p`) drives `Q_1`, `Q_3`
-/// and `P_4`'s plane-2 products to `p - 1` (`k_0 = k_1 = 0`), taking lane 6's real part to
-/// `2 - 15 (p - 1)` (`~ -15 p`) before `below_2p`.
+/// first three pairs end at `1 + w + w^2 + w^3 + w^4 + w^5` (`F_0..F_5 = 1`) via the cube root of
+/// unity `PHI`, and whose fourth pair ends with `(neg_k_inv, neg_k_inv)` (`neg_k_inv = -K^-1 u`,
+/// `K = 2^416 mod p`). Because `below_2p` holds the zero imaginary parts of `F_0..F_5` as `p`, the
+/// fourth line's products `Q_1`, `Q_3`, `P_0` and `P_4` evaluate to `(-5 p, -1)`, taking lane 6's
+/// imaginary part to `-13 p` and its real-part low limbs to `-14.328 * 2^52` before `below_2p`.
 #[test]
 fn test_fq12_miller_loop_lanes_line_extreme() {
     let phi = Bls12_377G1Parameters::PHI;
@@ -1367,12 +1368,23 @@ fn test_fq12_miller_loop_lanes_line_extreme() {
 
     let one = Fq::one();
     let scales = [&one, &one];
-    let l0 = [(a, Fq2::zero())];
-    let l1 = [(c, Fq2::zero())];
-    let l2 = [(Fq2::zero(), Fq2::one())];
-    let l3 = [(neg_k_inv, neg_k_inv)];
+    // `x = [0b10]` takes 64 lines; the first 63 are `1` and keep `f = 1`.
+    let pad = |l: (Fq2, Fq2)| {
+        let mut v = vec![(Fq2::zero(), Fq2::zero()); 63];
+        v.push(l);
+        v
+    };
+    let l0 = pad((a, Fq2::zero()));
+    let l1 = pad((c, Fq2::zero()));
+    let l2 = pad((Fq2::zero(), Fq2::one()));
+    let l3 = pad((neg_k_inv, neg_k_inv));
     let pairs: [Pair<'_>; 4] = [(scales, &l0), (scales, &l1), (scales, &l2), (scales, &l3)];
 
+    assert_eq!(l0.len(), miller_loop_lines(&[0b10]));
+    assert_eq!(
+        miller_loop_reference(Fq12::one(), &[0b10], &pairs[..3]),
+        Fq12::new(Fq6::new(Fq2::one(), Fq2::one(), Fq2::one()), Fq6::new(Fq2::one(), Fq2::one(), Fq2::one())),
+    );
     check_miller_loop_fp12(&Fq12::one(), &[0b10], &pairs);
 }
 
@@ -1491,7 +1503,7 @@ fn test_miller_loop() {
         }
     }
 
-    // Canonical serialization and `ToBytes` round-trips for finite and infinity `G2Prepared` values.
+    // Canonical serialization round-trip and `ToBytes` encoding for finite and infinity `G2Prepared` values.
     for g2_prep in [q.prepare(), G2Affine::zero().prepare()] {
         let mut bytes = Vec::new();
         // Writing to an in-memory `Vec<u8>` cannot fail.
