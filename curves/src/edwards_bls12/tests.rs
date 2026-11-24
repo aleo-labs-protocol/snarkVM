@@ -26,6 +26,7 @@ use crate::{
             field_test,
             fp256_inverse_test,
             fp256_scalar_path_test,
+            fp256_sum_of_products_scalar_path_test,
             primefield_test,
         },
         tests_group::*,
@@ -62,6 +63,11 @@ fn test_edwards_bls12_fr_inverse() {
 #[test]
 fn test_edwards_bls12_fr_scalar_path() {
     fp256_scalar_path_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
+fn test_edwards_bls12_fr_sum_of_products_scalar_path() {
+    fp256_sum_of_products_scalar_path_test::<FrParameters>(&mut TestRng::default(), 16);
 }
 
 #[test]
