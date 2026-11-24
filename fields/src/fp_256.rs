@@ -52,7 +52,7 @@ pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {
     fn sqrt_tables() -> &'static SqrtTables<Fp256<Self>>;
 }
 
-// The CUDA FFI reads this by bytes.
+// The CUDA FFI reads this by bytes, and `adx::fp256::limbs` casts it to its limbs.
 #[derive(Copy, Clone, Default, PartialEq, Eq, Hash, Zeroize)]
 #[repr(transparent)]
 pub struct Fp256<P: Fp256Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
@@ -213,7 +213,7 @@ impl<P: Fp256Parameters> Fp256<P> {
         self.reduce();
     }
 
-    /// Returns `sum a_i b_i` by the Rust body, which `sum_of_products` runs.
+    /// Returns `sum a_i b_i` by the Rust body, which `sum_of_products` runs without ADX and BMI2.
     #[doc(hidden)]
     pub fn sum_of_products_scalar(a: &[Self], b: &[Self]) -> Self {
         fn inner<P: Fp256Parameters>(a: &[Fp256<P>], b: &[Fp256<P>]) -> Fp256<P> {
@@ -378,7 +378,20 @@ impl<P: Fp256Parameters> Field for Fp256<P> {
 
     #[inline]
     fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
-        Self::sum_of_products_scalar(a, b)
+        adx_or!(
+            {
+                use crate::adx::fp256 as adx;
+                assert!(
+                    a.len().min(b.len()) as u64 <= Self::SUM_OF_PRODUCTS_LIMIT,
+                    "sum_of_products takes too many terms for this modulus"
+                );
+                let limbs = adx::sum_of_products(adx::limbs(a), adx::limbs(b), &Self::ADX_MODULUS);
+                let mut result = Self(BigInteger(limbs), PhantomData);
+                result.reduce();
+                result
+            },
+            Self::sum_of_products_scalar(a, b)
+        )
     }
 
     #[inline]
