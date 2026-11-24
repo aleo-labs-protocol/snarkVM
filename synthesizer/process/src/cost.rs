@@ -349,11 +349,7 @@ fn inner_deployment_cost_v3_v5<N: Network>(
         / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
-    let stack = Stack::new(
-        process,
-        deployment.program(),
-        consensus_version.unwrap_or(ConsensusVersion::LEGACY_CIRCUIT_VERSION),
-    )?;
+    let stack = Stack::new(process, deployment.program(), ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
 
     // Compute the constructor cost in microcredits.
     let constructor_cost = constructor_cost_in_microcredits_v2(&stack, consensus_version)?;

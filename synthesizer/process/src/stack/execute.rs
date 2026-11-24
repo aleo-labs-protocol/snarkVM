@@ -201,27 +201,7 @@ impl<N: Network> Stack<N> {
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Option<Response<N>>, StackExecError> {
-        self.execute_function_in_circuit::<A, R>(
-            call_stack,
-            console_caller,
-            console_root_tvk,
-            rng,
-            self.circuit_version,
-        )
-    }
-
-    /// Executes a function with the circuit rules for the deployment that supplies its keys.
-    pub(super) fn execute_function_in_circuit<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
-        &self,
-        call_stack: CallStack<N>,
-        console_caller: Option<ProgramID<N>>,
-        console_root_tvk: Option<Field<N>>,
-        rng: &mut R,
-        circuit_version: ConsensusVersion,
-    ) -> Result<Option<Response<N>>, StackExecError> {
-        A::with_fresh_circuit(|| {
-            self.execute_function_inner::<A, R>(call_stack, console_caller, console_root_tvk, rng, circuit_version)
-        })
+        A::with_fresh_circuit(|| self.execute_function_inner::<A, R>(call_stack, console_caller, console_root_tvk, rng))
     }
 
     /// Executes a program function on the given inputs, in the current circuit state.
@@ -231,7 +211,6 @@ impl<N: Network> Stack<N> {
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
-        circuit_version: ConsensusVersion,
     ) -> Result<Option<Response<N>>, StackExecError> {
         let timer = timing_span!("Stack::execute_function").entered();
 
@@ -316,7 +295,7 @@ impl<N: Network> Stack<N> {
 
         // Initialize the registers.
         let mut registers =
-            Registers::new(call_stack, self.get_register_types(function.name())?.clone(), circuit_version);
+            Registers::new(call_stack, self.get_register_types(function.name())?.clone(), self.circuit_version);
 
         // Set the root tvk, from a parent request or the current request.
         let console_root_tvk = console_root_tvk.unwrap_or(*console_request.tvk());

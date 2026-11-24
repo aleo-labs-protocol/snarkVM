@@ -2745,11 +2745,31 @@ fn test_record_cast_deployment_keys_at_v23() -> Result<()> {
     let mismatched = Process::<CurrentNetwork>::load()?;
     mismatched.load_deployment(ConsensusVersion::V22, &fixed)?;
     let stack = mismatched.get_stack(program.id())?;
+    let error =
+        stack.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &fixed, rng).expect_err("the stack uses V22");
+    assert!(error.to_string().contains("does not match the stack circuit version"), "{error}");
     let certified_key = stack.get_verifying_key(&function)?;
     let error = stack.synthesize_key::<CurrentAleo, _>(&function, rng).unwrap_err();
     assert!(error.to_string().contains("does not match the stored key"), "{error}");
     assert_eq!(stack.get_verifying_key(&function)?, certified_key);
     assert!(!stack.contains_proving_key(&function));
+
+    let record = Identifier::from_str("token")?;
+    let translation_key = stack.get_verifying_key(&record)?;
+    stack.insert_verifying_key(&record, certified_key.clone())?;
+    let error =
+        stack.synthesize_translation_key::<CurrentAleo, _>(&record, rng).expect_err("the stored key belongs to digest");
+    assert!(error.to_string().contains("does not match the stored key"), "{error}");
+    assert_eq!(stack.get_verifying_key(&record)?, certified_key);
+    assert!(!stack.contains_proving_key(&record));
+    let translation_key = snarkvm_synthesizer_snark::VerifyingKey::new(
+        Arc::new((*translation_key).clone()),
+        translation_key.num_variables() + 1,
+    );
+    stack.insert_verifying_key(&record, translation_key.clone())?;
+    stack.synthesize_translation_key::<CurrentAleo, _>(&record, rng)?;
+    assert_eq!(stack.get_verifying_key(&record)?, translation_key);
+    assert!(stack.contains_proving_key(&record));
 
     let check_loaded_keys = |rng: &mut TestRng| -> Result<()> {
         let stack = process.get_stack(program.id())?;

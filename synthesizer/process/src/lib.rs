@@ -237,7 +237,10 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Adds a set of programs and editions, in topological order, to the process, deferring validation of the programs until all programs are added.
     /// If a program exists, then the existing stack is replaced and discarded.
     /// Either all programs are added or none are.
-    /// Resolve each version from the block that certified the current keys with `Network::deployment_circuit_version`.
+    /// Pass the height of each program's latest accepted deployment or amendment to `Network::deployment_circuit_version`.
+    /// Using `ConsensusVersion::latest()` can select a different circuit for a program certified before V23.
+    /// After adding the programs, insert their deployed verifying keys into the stacks before synthesizing proving keys
+    /// so synthesis can detect a circuit mismatch.
     /// The on-chain VM uses `finalize_deployment` or `load_deployment`.
     #[inline]
     pub fn add_programs_with_editions(
