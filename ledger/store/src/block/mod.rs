@@ -2537,16 +2537,10 @@ mod tests {
         assert_eq!(storage.speculative_authority_pruned_below().unwrap(), Some(block_height + 1));
     }
 
-    /// Removes the authority-pruning watermark, which the typed setter cannot move backwards.
-    #[cfg(feature = "rocks")]
-    fn clear_authority_pruned<B: BlockStorage<CurrentNetwork>>(storage: &B) {
-        storage.block_metadata_map().remove(&BlockMetadataKey::AuthorityPruned).unwrap();
-    }
-
     /// Fills the maps of `num_heights` blocks with beacon authorities, indexed by height.
     fn fill_authorities<B: BlockStorage<CurrentNetwork>>(storage: &B, num_heights: u32) {
         let rng = &mut TestRng::default();
-        let authority = sample_block_chain(1, rng)[0].authority().clone();
+        let authority = snarkvm_ledger_authority::test_helpers::sample_beacon_authority(rng);
         atomic_batch_scope!(storage, {
             for height in 0..num_heights {
                 storage.id_map().insert(height, hash_at(height))?;
@@ -2972,7 +2966,7 @@ mod tests {
         // Restore stale authority data and clear the watermark to emulate a database created before pruning.
         block_store.storage.authority_map().insert(blocks[1].hash(), blocks[1].authority().clone()).unwrap();
         block_store.storage.certificate_map().insert(certificate_id, (1, 2)).unwrap();
-        clear_authority_pruned(&block_store.storage);
+        block_store.storage.block_metadata_map().remove(&BlockMetadataKey::AuthorityPruned).unwrap();
         drop(block_store);
 
         let block_store = open_pruning::<BlockDB<_>>(storage_mode.clone());
