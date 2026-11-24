@@ -257,19 +257,23 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Field division by zero")]
     fn test_add_zero_x_denominator() {
         let one = console::Field::one();
         let d = console::Field::<<Circuit as Environment>::Network>::new(<Circuit as Environment>::EDWARDS_D);
-        let _ = inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, -d.inverse().expect("d is nonzero"));
+        check_halts(
+            || inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, -d.inverse().expect("d is nonzero")),
+            "Field division by zero",
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Field division by zero")]
     fn test_add_zero_y_denominator() {
         let one = console::Field::one();
         let d = console::Field::<<Circuit as Environment>::Network>::new(<Circuit as Environment>::EDWARDS_D);
-        let _ = inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, d.inverse().expect("d is nonzero"));
+        check_halts(
+            || inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, d.inverse().expect("d is nonzero")),
+            "Field division by zero",
+        );
     }
 
     #[test]

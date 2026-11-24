@@ -438,7 +438,7 @@ mod tests {
                         synthesize(&forged, &input, &|_| mode, batch_inversions)
                     }))
                     .expect_err("a zero denominator must halt");
-                    let message = error.downcast_ref::<String>().cloned().unwrap_or_default();
+                    let message = snarkvm_utilities::panic_message(&*error).unwrap_or_default().to_string();
                     let counts = (
                         Circuit::num_constants(),
                         Circuit::num_public(),
@@ -471,7 +471,7 @@ mod tests {
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     synthesize(&forged, &input, &|_| mode, batch_inversions)
                 }))
-                .map_err(|error| error.downcast_ref::<String>().cloned().unwrap_or_default());
+                .map_err(|error| snarkvm_utilities::panic_message(&*error).unwrap_or_default().to_string());
                 Circuit::reset();
                 outcome
             });
