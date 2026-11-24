@@ -71,8 +71,9 @@ impl<N: Network> Process<N> {
             // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
             let existing_stack = self.get_stack(program_id)?;
             if consensus_version >= ConsensusVersion::V23 {
+                // Note: The checksums are compared, because `ProgramCore::eq` does not compare constructor bodies.
                 ensure!(
-                    existing_stack.program() == deployment.program()
+                    *existing_stack.program_checksum() == deployment.program().to_checksum()
                         && *existing_stack.program_edition() == deployment.edition(),
                     "An amendment must preserve the program and edition of '{program_id}'"
                 );
@@ -601,7 +602,16 @@ view check:
         )?;
         process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &amendment, rng)?;
 
-        for (edition, candidate) in [(original.edition() + 1, &program), (original.edition(), &repaired)] {
+        // An amendment cannot change the constructor.
+        let source = program.to_string();
+        assert!(source.contains("branch.eq true true to done;"));
+        let reconstructed = Program::<CurrentNetwork>::from_str(
+            &source.replace("branch.eq true true to done;", "branch.eq false false to done;"),
+        )?;
+
+        for (edition, candidate) in
+            [(original.edition() + 1, &program), (original.edition(), &repaired), (original.edition(), &reconstructed)]
+        {
             let changed = Deployment::new(
                 edition,
                 candidate.clone(),
