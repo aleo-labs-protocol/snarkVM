@@ -15,7 +15,7 @@
 
 //! The kernel edge cases, the reductions on every multiple of `p` they accept, `mul_8`, 8
 //! independent products through `mont`, as the oracle for the kernel against the scalar product,
-//! and the GLV ladder's refusals and its single-digit sums.
+//! the GLV ladder's refusals and its single-digit sums, and `mont_sum` against the integers.
 
 use super::{
     cyclotomic::pair_sums,
@@ -37,6 +37,7 @@ use super::{
         vector,
         words,
     },
+    poseidon::mont_sum,
 };
 use crate::{
     FftParameters,
@@ -52,6 +53,7 @@ use crate::{
 };
 use snarkvm_utilities::{
     BigInteger,
+    BigInteger256,
     BigInteger384,
     rand::{TestRng, Uniform},
 };
@@ -295,7 +297,7 @@ fn residues(rng: &mut TestRng) -> Vec<[u64; 6]> {
 fn lane_limbs(k: i64, r: &[u64; 6]) -> [u64; 8] {
     let p = MODULI[0];
     if k < 0 {
-        let (r, p) = (radix_52(r), radix_52(&p));
+        let (r, p): ([u64; 8], [u64; 8]) = (radix_52(r), radix_52(&p));
         std::array::from_fn(|j| (r[j] as i64 + k * p[j] as i64) as u64)
     } else {
         let x = BigInteger384(p).to_biguint() * (k as u64) + BigInteger384(*r).to_biguint();
@@ -554,6 +556,95 @@ fn test_glv_mul_8_single_digits() {
                 let ax = if half[l] == 0 { x } else { beta * x };
                 let ay = if which[l] > 0 { y } else { -y };
                 assert!(is_jacobian_of(coordinates, &ax, &ay), "{slots} slots, {windows} windows, lane {l}");
+            }
+        }
+    }
+}
+
+/// The BLS12-377 scalar field modulus, and the moduli at the bounds of `mont_sum`'s 5 limbs.
+const MODULI_5: [[u64; 4]; 3] = [
+    [0x0a11800000000001, 0x59aa76fed0000001, 0x60b44d1e5c37b001, 0x12ab655e9a2ca556],
+    [3, 0, 0, 0],
+    [u64::MAX, u64::MAX, u64::MAX, u64::MAX],
+];
+
+#[test]
+fn test_mont_sum() {
+    run_check(check_mont_sum::<1>);
+    run_check(check_mont_sum::<2>);
+    run_check(check_mont_sum::<9>);
+}
+
+/// Checks `mont_sum` of `K` products, for each modulus of `MODULI_5`, against
+/// `(sum + m p) / 2^260` over the integers: with every operand at `2^260 - 1`, the most that a
+/// limb accumulates, and with each operand of each lane drawn from 0, 1, `p - 1`, `p`,
+/// `2^260 - 1`, one limb of 52 set bits, and random integers below 2^260.
+#[target_feature(enable = "avx512f,avx512ifma")]
+fn check_mont_sum<const K: usize>(rng: &mut TestRng) {
+    // The integer below 2^320 with the words `x`.
+    let big = |x: &[u64; 5]| {
+        x.iter().rev().fold(BigInteger256::from(0).to_biguint(), |sum, word| {
+            (sum << 64u32) + BigInteger256::from(*word).to_biguint()
+        })
+    };
+    let (zero, one) = (big(&[0; 5]), big(&[1, 0, 0, 0, 0]));
+    let max = [u64::MAX, u64::MAX, u64::MAX, u64::MAX, 0xF];
+    let mask_260 = big(&max);
+    for p_words in MODULI_5 {
+        let p_words = [p_words[0], p_words[1], p_words[2], p_words[3], 0];
+        let p = big(&p_words);
+        // `p^-1 mod 2^260` by Newton's iteration, which doubles the correct low bits from 1.
+        let mut inverse = one.clone();
+        for _ in 0..9 {
+            let correction =
+                mask_260.clone() + big(&[3, 0, 0, 0, 0]) - ((p.clone() * inverse.clone()) & mask_260.clone());
+            inverse = (inverse * correction) & mask_260.clone();
+        }
+        assert_eq!((p.clone() * inverse.clone()) & mask_260.clone(), one);
+        let negated_inverse = (one.clone() << 260u32) - inverse;
+        // Every modulus of `MODULI_5` is odd, so the low word of the inverse is not zero.
+        let n0 = negated_inverse.to_u64_digits()[0] & MASK;
+        let p_lanes = splat(&radix_52::<5, 5>(&p_words));
+
+        let edges = [
+            [0; 5],
+            [1, 0, 0, 0, 0],
+            [p_words[0] - 1, p_words[1], p_words[2], p_words[3], 0],
+            p_words,
+            max,
+            [0, MASK << 40, MASK >> 24, 0, 0],
+            [0, 0, 0, MASK << 16, MASK >> 48],
+        ];
+        for iteration in 0..200 {
+            // `operands[s][k][l]` is operand `k` of lane `l`, on side `s` of the products.
+            let operands: [[[[u64; 5]; 8]; K]; 2] = std::array::from_fn(|_| {
+                std::array::from_fn(|_| {
+                    std::array::from_fn(|_| match iteration {
+                        0 => max,
+                        _ if rng.random_bool(0.5) => edges[rng.random_range(0..edges.len())],
+                        _ => std::array::from_fn(|w| rng.random::<u64>() & max[w]),
+                    })
+                })
+            });
+            let lanes: [[[__m512i; 5]; K]; 2] = operands.map(|side| {
+                side.map(|operand| {
+                    let limbs: [[u64; 5]; 8] = operand.map(|x| radix_52(&x));
+                    std::array::from_fn(|k| vector(std::array::from_fn(|l| limbs[l][k])))
+                })
+            });
+            // SAFETY: this function enables both target features that `mont_sum` requires.
+            let result =
+                unsafe { mont_sum(lanes[0].each_ref(), lanes[1].each_ref(), &p_lanes, _mm512_set1_epi64(n0 as i64)) };
+            let result = result.map(|v| to_array(v));
+            for l in 0..8 {
+                let sum = (0..K).fold(zero.clone(), |sum, k| sum + big(&operands[0][k][l]) * big(&operands[1][k][l]));
+                let m = (sum.clone() * negated_inverse.clone()) & mask_260.clone();
+                let numerator = sum + m * p.clone();
+                assert_eq!(numerator.clone() & mask_260.clone(), zero);
+                let expected = numerator >> 260u32;
+                assert!(result[..4].iter().all(|limb| limb[l] <= MASK), "K = {K}, iteration {iteration}, lane {l}");
+                let got = (0..5).rev().fold(zero.clone(), |x, k| (x << 52u32) + big(&[result[k][l], 0, 0, 0, 0]));
+                assert_eq!(got, expected, "K = {K}, iteration {iteration}, lane {l}");
             }
         }
     }

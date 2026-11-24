@@ -21,6 +21,7 @@ use snarkvm_console_types::prelude::*;
 use snarkvm_utilities::{TestRng, Uniform};
 
 use criterion::Criterion;
+use std::hint::black_box;
 type F = Field<Console>;
 
 fn poseidon2(c: &mut Criterion) {
@@ -68,10 +69,34 @@ fn poseidon8(c: &mut Criterion) {
     c.bench_function("Poseidon8 Hash 10 -> 8", |b| b.iter(|| hash.hash_many(&input, 8)));
 }
 
+/// 8 hashes of 5 inputs, as the challenge of a signature takes, and of 16 inputs: one by one in the
+/// `scalar` rows, and by `hash_8` in the `lanes` rows. Each row times all 8 hashes. A hash of 5
+/// inputs takes one permutation after its cached first block, and a hash of 16 inputs takes two.
+///
+/// The `lanes` rows run only where `hash_8` runs the hashes in AVX-512 IFMA lanes: not on a CPU
+/// without AVX-512 IFMA, and not with `SNARKVM_NO_IFMA` set.
+fn poseidon8_x8(c: &mut Criterion) {
+    let rng = &mut TestRng::default();
+    let hash = Poseidon8::<Console>::setup("Poseidon8").unwrap();
+
+    for len in [5, 16] {
+        let inputs: [Vec<F>; 8] = std::array::from_fn(|_| (0..len).map(|_| F::rand(rng)).collect());
+        let inputs = inputs.each_ref().map(Vec::as_slice);
+        c.bench_function(&format!("Poseidon8 Hash {len} -> 1 x8 scalar"), |b| {
+            b.iter(|| black_box(inputs).map(|input| hash.hash(input)))
+        });
+        if hash.hash_many_8_lanes(inputs, 1).is_some() {
+            c.bench_function(&format!("Poseidon8 Hash {len} -> 1 x8 lanes"), |b| {
+                b.iter(|| hash.hash_8(black_box(inputs)))
+            });
+        }
+    }
+}
+
 criterion_group! {
     name = sponge;
     config = Criterion::default().sample_size(10);
-    targets = poseidon2, poseidon4, poseidon8,
+    targets = poseidon2, poseidon4, poseidon8, poseidon8_x8,
 }
 
 criterion_main!(sponge);

@@ -22,6 +22,7 @@ use crate::{
     One,
     PoseidonDefaultField,
     PoseidonDefaultParameters,
+    PoseidonSparseRounds,
     PrimeField,
     SqrtTables,
     SquareRootField,
@@ -635,7 +636,15 @@ impl<P: Fp256Parameters> PartialOrd for Fp256<P> {
     }
 }
 
-impl<P: Fp256Parameters + PoseidonDefaultParameters> PoseidonDefaultField for Fp256<P> {}
+impl<P: Fp256Parameters + PoseidonDefaultParameters> PoseidonDefaultField for Fp256<P> {
+    #[inline]
+    fn poseidon_permute_8<const RATE: usize>(
+        sparse_rounds: &PoseidonSparseRounds<Self, RATE>,
+        state: &mut [[Self; 8]],
+    ) -> Option<()> {
+        crate::ifma::poseidon_permute_8(sparse_rounds, state)
+    }
+}
 
 impl_primefield_from_int!(Fp256, u128, Fp256Parameters);
 impl_primefield_from_int!(Fp256, u64, Fp256Parameters);
