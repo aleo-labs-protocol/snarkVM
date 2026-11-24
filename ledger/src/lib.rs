@@ -67,6 +67,7 @@ use snarkvm_ledger_narwhal::{BatchCertificate, Subdag, Transmission, Transmissio
 use snarkvm_ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
 use snarkvm_ledger_query::QueryTrait;
 use snarkvm_ledger_store::{
+    AUTHORITY_PRUNING_FAILED,
     BlockAuthority,
     ConsensusStorage,
     ConsensusStore,
@@ -259,9 +260,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
 }
 
 /// Wraps a failure to open the consensus store. The `snarkos clean` advice is left out for an
-/// [`IncompatibleStore`] (a store with a newer schema): nothing is wrong with it.
+/// [`IncompatibleStore`] (a store with a newer schema) and for a failed startup pruning, which the
+/// next open resumes: nothing is wrong with the store.
 fn store_open_error(error: anyhow::Error) -> anyhow::Error {
-    if error.chain().any(|cause| cause.is::<IncompatibleStore>()) {
+    if error.chain().any(|cause| cause.is::<IncompatibleStore>() || cause.to_string() == AUTHORITY_PRUNING_FAILED) {
         anyhow::anyhow!("Failed to load ledger\n\n{error:#}\n")
     } else {
         anyhow::anyhow!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{error:#}\n")
@@ -308,7 +310,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             // The stored watermark, not the window computed from the latest height, marks the pruned
             // blocks: removing blocks lowers the latest height but not the watermark.
             if self.vm.block_store().is_authority_pruned_at(height)? {
-                self.vm.block_store().check_block_data_without_authority(&self.get_hash(height)?)?;
+                self.vm.block_store().check_block_data_without_authority(&self.get_hash(height)?, height)?;
             } else {
                 self.get_block(height)?;
             }

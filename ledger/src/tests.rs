@@ -3904,7 +3904,8 @@ fn test_pruned_authority_window_below_floor() {
     assert!(!error.contains("snarkos clean"), "{error}");
 }
 
-/// Ensures an `IncompatibleStore` loses the `snarkos clean` advice and other open failures keep it.
+/// Ensures an `IncompatibleStore` and a failed startup pruning lose the `snarkos clean` advice and other open
+/// failures keep it.
 #[test]
 fn test_store_open_error_advice() {
     use snarkvm_ledger_store::IncompatibleStore;
@@ -3913,6 +3914,13 @@ fn test_store_open_error_advice() {
     let error = crate::store_open_error(refusal).to_string();
     assert!(!error.contains("snarkos clean"), "{error}");
     assert!(error.contains("Failed to open the block store"), "{error}");
+
+    let failed_pruning = anyhow::anyhow!("bad watermark")
+        .context(snarkvm_ledger_store::AUTHORITY_PRUNING_FAILED)
+        .context("Failed to open the block store");
+    let error = crate::store_open_error(failed_pruning).to_string();
+    assert!(!error.contains("snarkos clean"), "{error}");
+    assert!(error.contains("bad watermark"), "{error}");
 
     let error = crate::store_open_error(anyhow::anyhow!("Corruption: bad block")).to_string();
     assert!(error.contains("snarkos clean"), "{error}");
