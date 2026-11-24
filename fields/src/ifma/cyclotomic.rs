@@ -33,7 +33,7 @@
 //! `[0, 2 p)`.
 //!
 //! Exit: `mont` by `2^384 mod p` returns each coefficient in `[0, p)`: the canonical Montgomery
-//! form, bit-identical to the scalar chain.
+//! form, bit-identical to the scalar chain on the cyclotomic subgroup.
 
 use super::{
     fp12::{fp12_operand, fp12_product},
