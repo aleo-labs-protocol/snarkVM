@@ -177,18 +177,37 @@ impl LaneRounds {
 ///
 /// Requires limbs below 2^52, odd `p` in `p`, `-p^-1 mod 2^52` in `n0` and `K <= 400`.
 ///
-/// The 5 rounds are written out by `round!`: as a loop, LLVM keeps the accumulator on the stack.
+/// # Safety
+///
+/// The CPU supports AVX-512F and AVX-512 IFMA.
+#[inline(always)]
+pub(super) unsafe fn mont_sum<const K: usize>(a: [&Lanes; K], b: [&Lanes; K], p: &Lanes, n0: __m512i) -> Lanes {
+    // SAFETY: the caller guarantees both target features.
+    let [sum] = unsafe { mont_sums([a], [b], p, n0) };
+    sum
+}
+
+/// Returns `mont_sum(a[s], b[s], p, n0)` for each `s`, under its requirements.
+///
+/// The rounds of the `N` sums are interleaved: each round of one sum depends on the round before,
+/// so a single sum leaves part of the IFMA throughput unused. The 5 rounds are written out by
+/// `round!`: as a loop, LLVM keeps the accumulator on the stack.
 ///
 /// # Safety
 ///
 /// The CPU supports AVX-512F and AVX-512 IFMA. This function has no `target_feature`, so that it
 /// can be `inline(always)`: as an `inline` hint, LLVM stops inlining it once it has two callers.
 #[inline(always)]
-pub(super) unsafe fn mont_sum<const K: usize>(a: [&Lanes; K], b: [&Lanes; K], p: &Lanes, n0: __m512i) -> Lanes {
+pub(super) unsafe fn mont_sums<const N: usize, const K: usize>(
+    a: [[&Lanes; K]; N],
+    b: [[&Lanes; K]; N],
+    p: &Lanes,
+    n0: __m512i,
+) -> [Lanes; N] {
     // SAFETY: the caller guarantees both target features.
     unsafe {
         let zero = _mm512_setzero_si512();
-        let mut t = [zero; 6];
+        let mut t = [[zero; 6]; N];
 
         // Adds the low half of `x y` to `lo` and the high half to `hi`.
         macro_rules! madd {
@@ -198,31 +217,34 @@ pub(super) unsafe fn mont_sum<const K: usize>(a: [&Lanes; K], b: [&Lanes; K], p:
             };
         }
 
-        // Adds `a[k] b[k]_i` for each `k`, and `m p`, to the accumulator
-        // `t_0 + t_1 2^52 + ... + t_5 2^260`, with `m` chosen so that the sum is divisible by
-        // 2^52, and divides it by 2^52. `t_0` is zero afterwards, and the next round takes it as
-        // its top limb. A limb enters as `t_5` and moves down one place each round. A round adds
-        // `K + 1` halves of products, each below 2^52, to `t_5` and to `t_0`, and `2 (K + 1)` to
-        // each of `t_1` to `t_4`, and `t_1` takes one carry, below 2^12. So the limbs stay below
-        // `10 (K + 1) 2^52 + 2^12`, which is below 2^64 for `K <= 400`.
+        // Adds `a[s][k] b[s][k]_i` for each `k`, and `m p`, to the accumulator
+        // `t_0 + t_1 2^52 + ... + t_5 2^260` of each sum, with `m` chosen so that the sum is
+        // divisible by 2^52, and divides it by 2^52. `t_0` is zero afterwards, and the next round
+        // takes it as its top limb. A limb enters as `t_5` and moves down one place each round. A
+        // round adds `K + 1` halves of products, each below 2^52, to `t_5` and to `t_0`, and
+        // `2 (K + 1)` to each of `t_1` to `t_4`, and `t_1` takes one carry, below 2^12. So the
+        // limbs stay below `10 (K + 1) 2^52 + 2^12`, which is below 2^64 for `K <= 400`.
         macro_rules! round {
             ($i:literal; $t0:literal, $t1:literal, $t2:literal, $t3:literal, $t4:literal, $t5:literal) => {
-                for k in 0..K {
-                    let (a, bi) = (a[k], b[k][$i]);
-                    madd!(t[$t0], t[$t1], a[0], bi);
-                    madd!(t[$t1], t[$t2], a[1], bi);
-                    madd!(t[$t2], t[$t3], a[2], bi);
-                    madd!(t[$t3], t[$t4], a[3], bi);
-                    madd!(t[$t4], t[$t5], a[4], bi);
+                for s in 0..N {
+                    let t = &mut t[s];
+                    for k in 0..K {
+                        let (a, bi) = (a[s][k], b[s][k][$i]);
+                        madd!(t[$t0], t[$t1], a[0], bi);
+                        madd!(t[$t1], t[$t2], a[1], bi);
+                        madd!(t[$t2], t[$t3], a[2], bi);
+                        madd!(t[$t3], t[$t4], a[3], bi);
+                        madd!(t[$t4], t[$t5], a[4], bi);
+                    }
+                    let m = _mm512_madd52lo_epu64(zero, t[$t0], n0);
+                    madd!(t[$t0], t[$t1], m, p[0]);
+                    madd!(t[$t1], t[$t2], m, p[1]);
+                    madd!(t[$t2], t[$t3], m, p[2]);
+                    madd!(t[$t3], t[$t4], m, p[3]);
+                    madd!(t[$t4], t[$t5], m, p[4]);
+                    t[$t1] = _mm512_add_epi64(t[$t1], _mm512_srli_epi64::<52>(t[$t0]));
+                    t[$t0] = zero;
                 }
-                let m = _mm512_madd52lo_epu64(zero, t[$t0], n0);
-                madd!(t[$t0], t[$t1], m, p[0]);
-                madd!(t[$t1], t[$t2], m, p[1]);
-                madd!(t[$t2], t[$t3], m, p[2]);
-                madd!(t[$t3], t[$t4], m, p[3]);
-                madd!(t[$t4], t[$t5], m, p[4]);
-                t[$t1] = _mm512_add_epi64(t[$t1], _mm512_srli_epi64::<52>(t[$t0]));
-                t[$t0] = zero;
             };
         }
 
@@ -232,9 +254,13 @@ pub(super) unsafe fn mont_sum<const K: usize>(a: [&Lanes; K], b: [&Lanes; K], p:
         round!(3; 3, 4, 5, 0, 1, 2);
         round!(4; 4, 5, 0, 1, 2, 3);
 
-        // The result is `t_5 + t_0 2^52 + ... + t_3 2^208`: the last round zeroed `t_4`, its limb
-        // at 2^260.
-        normalize(&[t[5], t[0], t[1], t[2], t[3]])
+        // Each result is `t_5 + t_0 2^52 + ... + t_3 2^208`: the last round zeroed `t_4`, its
+        // limb at 2^260.
+        let mut sums = [[zero; 5]; N];
+        for (sum, t) in sums.iter_mut().zip(&t) {
+            *sum = normalize(&[t[5], t[0], t[1], t[2], t[3]]);
+        }
+        sums
     }
 }
 
