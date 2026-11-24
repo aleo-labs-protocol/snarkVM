@@ -354,10 +354,12 @@ impl<N: Network> Stack<N> {
                 vec![request],
                 burner_private_key,
                 assignments.clone(),
-                Some(constraint_limit as u64),
-                Some(variable_limit),
-                non_zero_limit,
-                consensus_version >= ConsensusVersion::V23,
+                CheckDeploymentSettings {
+                    constraint_limit: Some(constraint_limit as u64),
+                    variable_limit: Some(variable_limit),
+                    non_zero_limit,
+                    limits_hold_after_calls: consensus_version >= ConsensusVersion::V23,
+                },
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));
