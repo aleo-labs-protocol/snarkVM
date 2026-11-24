@@ -280,9 +280,15 @@ impl<N: Network> Stack<N> {
             cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
                 |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
                     // Synthesize the circuit.
-                    if let Err(err) =
-                        vm_scope.run(|| self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng))
-                    {
+                    if let Err(err) = vm_scope.run(|| {
+                        self.execute_function_in_circuit::<A, _>(
+                            call_stack,
+                            caller,
+                            root_tvk,
+                            &mut rng,
+                            consensus_version,
+                        )
+                    }) {
                         bail!("Failed to synthesize the circuit for '{function_name}': {err}")
                     }
                     // Check the certificate.

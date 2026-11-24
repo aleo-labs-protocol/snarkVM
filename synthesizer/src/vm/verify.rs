@@ -1341,7 +1341,7 @@ finalize verify:
         let program = crate::vm::test_helpers::sample_program();
 
         // Deploy the program.
-        let deployment = vm.deploy_raw(&program, rng).unwrap();
+        let deployment = vm.deploy_raw(ConsensusVersion::V1, &program, rng).unwrap();
 
         // Get the size of the cache.
         let cache_size = vm.partially_verified_transactions.read().len();
@@ -1444,7 +1444,7 @@ finalize verify:
         let program = Program::credits().unwrap();
 
         // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(&program, rng).is_err());
+        assert!(vm.deploy_raw(ConsensusVersion::V1, &program, rng).is_err());
 
         // Create a new `credits.aleo` program.
         let program = Program::from_str(
@@ -1463,7 +1463,7 @@ function compute:
         .unwrap();
 
         // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(&program, rng).is_err());
+        assert!(vm.deploy_raw(ConsensusVersion::V1, &program, rng).is_err());
     }
 
     #[test]

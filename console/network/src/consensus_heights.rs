@@ -94,6 +94,7 @@ pub enum ConsensusVersion {
     ///      Prices non-raw hash and commitment inputs by their encoded size in finalize.
     ///      Prices the message in `sign.verify` by its encoded size in finalize.
     ///      Keeps the synthesis limits of a deployment check after a `call`.
+    ///      Fixes the record version at 1 in newly certified record casts.
     V23 = 23,
 }
 

@@ -18,7 +18,10 @@ mod deploy;
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
-    console::{network::Network, program::ProgramID},
+    console::{
+        network::{ConsensusVersion, Network},
+        program::ProgramID,
+    },
     file::{AleoFile, Manifest},
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{process::Process, program::Program},
@@ -102,8 +105,17 @@ impl<N: Network> Package<N> {
         self.directory.join("imports")
     }
 
-    /// Returns a new process for the package.
+    /// Returns a process that uses pre-V23 circuit rules for the package and its imports.
     pub fn get_process(&self) -> Result<Process<N>> {
+        self.get_process_with_circuit_versions(|_| Ok(ConsensusVersion::V22))
+    }
+
+    /// Builds a process using the key certification version of each program.
+    /// For a new deployment, use the current tip version for the main program.
+    pub fn get_process_with_circuit_versions(
+        &self,
+        circuit_version: impl Fn(&ProgramID<N>) -> Result<ConsensusVersion>,
+    ) -> Result<Process<N>> {
         // Load the default process.
         let process = Process::load()?;
         // Get the imported programs.
@@ -144,7 +156,7 @@ impl<N: Network> Package<N> {
             .collect::<Vec<_>>();
 
         // Load the programs.
-        process.lock().add_programs_with_editions(&programs_and_editions)?;
+        process.lock().add_programs_with_circuit_versions(&programs_and_editions, circuit_version)?;
 
         Ok(process)
     }

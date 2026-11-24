@@ -613,12 +613,13 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 // Compute the nonce from the randomizer.
                 let nonce = A::g_scalar_multiply(&randomizer);
 
-                // Inject the version (as `Mode::Private`).
-                // Attention: The record version is currently on Version 1. If the record version is updated, change this value.
-                // Note: The record version is injected as `Mode::Private` as the version is enforced by consensus
-                // when verifying a transaction to use the correct record version. See `Output::verify` in `Transition`
-                // for the verification logic enforced by consensus.
-                let version = circuit::U8::new(circuit::Mode::Private, console::program::U8::one());
+                // Locally constructed records have version 1. Pre-V23 circuits use a private input.
+                let mode = if registers.circuit_consensus_version() >= ConsensusVersion::V23 {
+                    circuit::Mode::Constant
+                } else {
+                    circuit::Mode::Private
+                };
+                let version = circuit::U8::new(mode, console::program::U8::one());
 
                 // Construct the record.
                 let record =

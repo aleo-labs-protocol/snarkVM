@@ -66,6 +66,7 @@ impl<N: Network> Stack<N> {
                 .chain(program.closures().iter().map(|(name, closure)| (*name, closure.to_checksum())))
                 .chain(program.views().iter().map(|(name, view)| (*name, view.to_checksum())))
                 .collect(),
+            deployment_consensus_version: ConsensusVersion::V22,
             program_edition: U16::new(edition),
             program_amendment_count: 0,
             program_owner: None,

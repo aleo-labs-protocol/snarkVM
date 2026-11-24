@@ -235,6 +235,15 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
     #[inline]
     pub fn add_programs_with_editions(&self, programs: &[(Program<N>, u16)]) -> Result<()> {
+        self.add_programs_with_circuit_versions(programs, |_| Ok(ConsensusVersion::V22))
+    }
+
+    /// Adds programs atomically using each program's edition and key certification version.
+    pub fn add_programs_with_circuit_versions(
+        &self,
+        programs: &[(Program<N>, u16)],
+        circuit_version: impl Fn(&ProgramID<N>) -> Result<ConsensusVersion>,
+    ) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // Defer cleanup of the uncommitted stacks.
@@ -244,7 +253,9 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         // Initialize raw stacks for each of the programs, skipping `credits.aleo`.
         for (program, edition) in programs {
             if program.id() != &credits_program_id {
-                self.stage_stack(Stack::new_raw(self.process, program, *edition)?)
+                let mut stack = Stack::new_raw(self.process, program, *edition)?;
+                stack.deployment_consensus_version = circuit_version(program.id())?;
+                self.stage_stack(stack);
             }
         }
         // For each stack, check and initialize it before adding it to the process.

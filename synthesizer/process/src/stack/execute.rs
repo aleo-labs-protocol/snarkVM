@@ -29,6 +29,28 @@ impl<N: Network> Stack<N> {
         caller: circuit::Address<A>,
         tvk: circuit::Field<A>,
     ) -> Result<Vec<circuit::Value<A>>, StackExecError> {
+        self.execute_closure_in_circuit(
+            closure,
+            inputs,
+            call_stack,
+            signer,
+            caller,
+            tvk,
+            self.deployment_consensus_version,
+        )
+    }
+
+    /// An imported closure uses the circuit rules of the function that calls it.
+    pub(super) fn execute_closure_in_circuit<A: circuit::Aleo<Network = N>>(
+        &self,
+        closure: &Closure<N>,
+        inputs: &[circuit::Value<A>],
+        call_stack: CallStack<N>,
+        signer: circuit::Address<A>,
+        caller: circuit::Address<A>,
+        tvk: circuit::Field<A>,
+        circuit_consensus_version: ConsensusVersion,
+    ) -> Result<Vec<circuit::Value<A>>, StackExecError> {
         let timer = timing_span!("Stack::execute_closure").entered();
 
         // Ensure the call stack is not `Evaluate`.
@@ -46,7 +68,11 @@ impl<N: Network> Stack<N> {
         let num_public = A::num_public();
 
         // Initialize the registers.
-        let mut registers = Registers::new(call_stack, self.get_register_types(closure.name())?.clone());
+        let mut registers = Registers::new_for_circuit(
+            call_stack,
+            self.get_register_types(closure.name())?.clone(),
+            circuit_consensus_version,
+        );
 
         use circuit::Eject;
 
@@ -202,7 +228,33 @@ impl<N: Network> Stack<N> {
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Option<Response<N>>, StackExecError> {
-        A::with_fresh_circuit(|| self.execute_function_inner::<A, R>(call_stack, console_caller, console_root_tvk, rng))
+        self.execute_function_in_circuit::<A, R>(
+            call_stack,
+            console_caller,
+            console_root_tvk,
+            rng,
+            self.deployment_consensus_version,
+        )
+    }
+
+    /// Executes a function with the circuit rules for the deployment that supplies its keys.
+    pub(super) fn execute_function_in_circuit<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
+        &self,
+        call_stack: CallStack<N>,
+        console_caller: Option<ProgramID<N>>,
+        console_root_tvk: Option<Field<N>>,
+        rng: &mut R,
+        circuit_consensus_version: ConsensusVersion,
+    ) -> Result<Option<Response<N>>, StackExecError> {
+        A::with_fresh_circuit(|| {
+            self.execute_function_inner::<A, R>(
+                call_stack,
+                console_caller,
+                console_root_tvk,
+                rng,
+                circuit_consensus_version,
+            )
+        })
     }
 
     /// Executes a program function on the given inputs, in the current circuit state.
@@ -212,6 +264,7 @@ impl<N: Network> Stack<N> {
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
+        circuit_consensus_version: ConsensusVersion,
     ) -> Result<Option<Response<N>>, StackExecError> {
         let timer = timing_span!("Stack::execute_function").entered();
 
@@ -295,7 +348,11 @@ impl<N: Network> Stack<N> {
         timing_event!("Verify the console request");
 
         // Initialize the registers.
-        let mut registers = Registers::new(call_stack, self.get_register_types(function.name())?.clone());
+        let mut registers = Registers::new_for_circuit(
+            call_stack,
+            self.get_register_types(function.name())?.clone(),
+            circuit_consensus_version,
+        );
 
         // Set the root tvk, from a parent request or the current request.
         let console_root_tvk = console_root_tvk.unwrap_or(*console_request.tvk());
@@ -729,5 +786,99 @@ impl<N: Network> Stack<N> {
                 width = 20
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_record_cast_version_mode() -> Result<()> {
+        use circuit::{AleoV0, Eject, Environment, Inject, Mode};
+
+        let process = Process::<MainnetV0>::load()?;
+        let program = Program::from_str(
+            "program version_mode.aleo;
+             record token:
+                 owner as address.private;
+                 amount as u64.private;
+             function mint:
+                 cast self.signer 1u64 into r0 as token.record;
+                 output r0 as token.record;",
+        )?;
+        let stack = Stack::new(&process, &program)?;
+        let function = stack.get_function(&Identifier::from_str("mint")?)?;
+        let key = PrivateKey::new(&mut TestRng::default())?;
+        let signer = Address::try_from(&key)?;
+        let call_stack = CallStack::PackageRun(Vec::new(), key, Default::default());
+        for (version, mode) in [(ConsensusVersion::V22, Mode::Private), (ConsensusVersion::V23, Mode::Constant)] {
+            AleoV0::with_fresh_circuit(|| -> Result<()> {
+                let mut registers = Registers::<_, AleoV0>::new_for_circuit(
+                    call_stack.clone(),
+                    stack.get_register_types(function.name())?,
+                    version,
+                );
+                registers.set_signer_circuit(circuit::Address::new(Mode::Private, signer));
+                registers.set_tvk_circuit(circuit::Field::new(Mode::Private, Field::one()));
+                function.instructions()[0].execute(&stack, &mut registers)?;
+                let circuit::Value::Record(record) = registers.load_circuit(&stack, function.outputs()[0].operand())?
+                else {
+                    bail!("Expected the cast to produce a record");
+                };
+                assert_eq!(record.version().eject_mode(), mode);
+                assert_eq!(record.version().eject_value(), U8::one());
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_imported_record_cast_uses_callers_circuit_version() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let process = Process::<MainnetV0>::load()?;
+        let library = Program::from_str(
+            "program cast_library.aleo;
+             record token:
+                 owner as address.private;
+                 amount as u64.private;
+             closure digest:
+                 input r0 as address;
+                 input r1 as u64;
+                 cast r0 r1 into r2 as token.record;
+                 hash.psd2 r2 into r3 as field;
+                 output r3 as field;
+             function identity:
+                 input r0 as field.private;
+                 output r0 as field.private;",
+        )?;
+        let caller = Program::from_str(
+            "import cast_library.aleo;
+             program cast_caller.aleo;
+             function run:
+                 input r0 as u64.private;
+                 call cast_library.aleo/digest self.signer r0 into r1;
+                 output r1 as field.public;",
+        )?;
+        let function = Identifier::from_str("run")?;
+        let mut library_stack = Stack::new(&process, &library)?;
+        let mut key_for = |version| -> Result<_> {
+            let mut caller_stack = Stack::new(&process, &caller)?;
+            caller_stack.deployment_consensus_version = version;
+            caller_stack.synthesize_key::<circuit::AleoV0, _>(&function, rng)?;
+            caller_stack.get_verifying_key(&function)
+        };
+        library_stack.deployment_consensus_version = ConsensusVersion::V22;
+        process.lock().add_stack(library_stack.clone());
+        let legacy_key = key_for(ConsensusVersion::V22)?;
+        let fixed_key = key_for(ConsensusVersion::V23)?;
+        assert_ne!(legacy_key, fixed_key);
+
+        library_stack.deployment_consensus_version = ConsensusVersion::V23;
+        process.lock().add_stack(library_stack);
+        assert_eq!(legacy_key, key_for(ConsensusVersion::V22)?);
+        assert_eq!(fixed_key, key_for(ConsensusVersion::V23)?);
+        Ok(())
     }
 }

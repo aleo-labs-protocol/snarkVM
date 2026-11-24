@@ -22,6 +22,11 @@ use crate::matches_type;
 use super::*;
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCircuit<N, A> for Registers<N, A> {
+    #[inline]
+    fn circuit_consensus_version(&self) -> ConsensusVersion {
+        self.circuit_consensus_version
+    }
+
     /// Returns the transition signer, as a circuit.
     #[inline]
     fn signer_circuit(&self) -> Result<circuit::Address<A>> {

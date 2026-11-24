@@ -345,6 +345,8 @@ pub struct Stack<N: Network> {
     program_checksum: [U8<N>; 32],
     /// The checksum of each component (function, closure, or view) in the program.
     component_checksums: IndexMap<Identifier<N>, [U8<N>; 32]>,
+    /// The consensus version used to certify this program's function circuits.
+    pub(crate) deployment_consensus_version: ConsensusVersion,
     /// The program edition.
     program_edition: U16<N>,
     /// The number of amendments applied to the current program edition.

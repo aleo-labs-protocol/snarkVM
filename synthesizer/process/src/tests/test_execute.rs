@@ -2710,6 +2710,61 @@ function compute:
 }
 
 #[test]
+fn test_record_cast_deployment_keys_at_v23() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let process = Process::<CurrentNetwork>::load()?;
+    let program = Program::from_str(
+        "program record_cast.aleo;
+         record token:
+             owner as address.private;
+             amount as u64.private;
+         function digest:
+             input r0 as u64.private;
+             cast self.signer r0 into r1 as token.record;
+             hash.psd2 r1 into r2 as field;
+             output r2 as field.public;
+         constructor:
+             assert.eq true true;",
+    )?;
+    let function = Identifier::from_str("digest")?;
+    let private_key = PrivateKey::new(rng)?;
+    let legacy = process.deploy::<CurrentAleo, _>(&program, rng)?;
+    let fixed = process.deploy_with_consensus_version::<CurrentAleo, _>(ConsensusVersion::V23, &program, rng)?;
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &legacy, rng)?;
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &fixed, rng)?;
+    assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &legacy, rng).is_err());
+    // The legacy circuit can exceed the smaller limits certified for the V23 key.
+    let legacy_check = snarkvm_utilities::try_vm_runtime(|| {
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &fixed, rng)
+    });
+    assert!(!matches!(legacy_check, Ok(Ok(()))));
+
+    let check_loaded_keys = |rng: &mut TestRng| -> Result<()> {
+        let stack = process.get_stack(program.id())?;
+        let deployed_key = stack.get_verifying_key(&function)?;
+        stack.synthesize_key::<CurrentAleo, _>(&function, rng)?;
+        assert_eq!(stack.get_verifying_key(&function)?, deployed_key);
+        let inputs = [Value::from(Literal::U64(U64::new(7)))];
+        let authorization =
+            process.authorize::<CurrentAleo, _>(&private_key, program.id(), function, inputs.iter(), rng)?;
+        let expected = process.evaluate::<CurrentAleo>(authorization.replicate())?;
+        let (actual, _) = process.execute::<CurrentAleo, _>(authorization, rng)?;
+        assert_eq!(actual.outputs(), expected.outputs());
+        Ok(())
+    };
+
+    process.load_deployment_with_consensus_version(ConsensusVersion::V22, &legacy)?;
+    check_loaded_keys(rng)?;
+
+    // An amendment keeps the program and edition but replaces its keys.
+    let mut amendment = fixed;
+    amendment.set_program_owner_raw(None);
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &amendment, rng)?;
+    process.load_deployment_with_consensus_version(ConsensusVersion::V23, &amendment)?;
+    check_loaded_keys(rng)
+}
+
+#[test]
 fn test_process_deploy_credits_program() {
     let rng = &mut TestRng::default();
 

@@ -43,6 +43,9 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         // Get the deployment version.
         let version = deployment.version()?;
 
+        // Deployment certificates are checked at the parent block height.
+        let deployment_consensus_version = N::CONSENSUS_VERSION(state.block_height().saturating_sub(1))?;
+
         // Finalize the deployment based on its version.
         match version {
             DeploymentVersion::V1 | DeploymentVersion::V2 => {
@@ -52,6 +55,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                     None,
                     None::<(usize, Command<N>)>,
                 )?;
+                stack.deployment_consensus_version = deployment_consensus_version;
                 timing_event!("Compute the stack");
 
                 // Set the program owner.
@@ -158,6 +162,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
                 let mut stack = Stack::new_raw(self.process, deployment.program(), *existing_stack.program_edition())?;
                 stack.initialize_and_check(self.process)?;
+                stack.deployment_consensus_version = deployment_consensus_version;
                 timing_event!("Compute the stack");
 
                 // Set the amendment count for this edition.

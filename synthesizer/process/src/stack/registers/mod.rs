@@ -32,6 +32,8 @@ use std::{cell::OnceCell, sync::OnceLock};
 pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     /// The current call stack.
     call_stack: CallStack<N>,
+    /// The consensus version of the function whose circuit contains these registers.
+    circuit_consensus_version: ConsensusVersion,
     /// The mapping of all registers to their defined types.
     register_types: RegisterTypes<N>,
     /// The mapping of assigned console registers to their values.
@@ -83,8 +85,17 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
     #[doc(hidden)]
     #[inline]
     pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>) -> Self {
+        Self::new_for_circuit(call_stack, register_types, ConsensusVersion::V22)
+    }
+
+    pub(super) fn new_for_circuit(
+        call_stack: CallStack<N>,
+        register_types: RegisterTypes<N>,
+        circuit_consensus_version: ConsensusVersion,
+    ) -> Self {
         Self {
             call_stack,
+            circuit_consensus_version,
             register_types,
             console_registers: IndexMap::new(),
             circuit_registers: IndexMap::new(),

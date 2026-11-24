@@ -209,17 +209,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             );
             // Load the deployments.
             let deployments = cfg_iter!(chunk)
-                .map(|(transaction_id, _)| {
+                .map(|(transaction_id, (height, _))| {
+                    // Deployment verification uses the height of the parent block.
+                    let consensus_version = N::CONSENSUS_VERSION(height.saturating_sub(1))?;
                     // Retrieve the deployment from the transaction ID.
                     match transaction_store.get_deployment(transaction_id)? {
-                        Some(deployment) => Ok(deployment),
+                        Some(deployment) => Ok((consensus_version, deployment)),
                         None => bail!("Deployment transaction '{transaction_id}' is not found in storage."),
                     }
                 })
                 .collect::<Result<Vec<_>>>()?;
             // Add the deployments to the process.
             // Note: This iterator must be serial, to ensure deployments are loaded in the order of their dependencies.
-            deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
+            for (consensus_version, deployment) in &deployments {
+                process.load_deployment_with_consensus_version(*consensus_version, deployment)?;
+            }
         }
 
         // Construct the VM object.
