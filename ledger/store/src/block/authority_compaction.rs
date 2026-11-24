@@ -344,7 +344,7 @@ mod tests {
         fn open_pruned(prunes: bool) -> Store {
             let storage_mode = StorageMode::new_test(Some(Arc::new(tempfile::tempdir().unwrap())));
             let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
-            atomic_batch_scope!(storage, { storage.set_authority_pruned_below(2) }).unwrap();
+            atomic_batch_scope!(storage, { set_authority_pruned_below(&storage, 2) }).unwrap();
             open_with(storage_mode, prunes)
         }
 
