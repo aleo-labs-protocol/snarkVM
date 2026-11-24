@@ -152,7 +152,18 @@ pub(crate) fn bench_fq12_cyclotomic_exp_x(c: &mut Criterion) {
 
     let mut rng = TestRng::default();
 
-    let v: Vec<Fq12> = (0..SAMPLES).map(|_| Fq12::rand(&mut rng)).collect();
+    let v: Vec<Fq12> = (0..SAMPLES)
+        .map(|_| {
+            let f = Fq12::rand(&mut rng);
+            let mut r = f;
+            r.conjugate();
+            // A random element is nonzero; project into the cyclotomic subgroup via `(p^6 - 1)(p^2 + 1)`.
+            r *= &f.inverse().unwrap();
+            let mut s = r;
+            s.frobenius_map(2);
+            s * r
+        })
+        .collect();
 
     let mut count = 0;
     c.bench_function("bls12_377: fq12_cyclotomic_exp_x", |c| {

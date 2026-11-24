@@ -134,8 +134,17 @@ pub enum CallStack<N: Network> {
     AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
-    /// Validate a `Deploy` transaction's function circuit.
-    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>, Option<(u64, u64, u64)>),
+    /// Validate a `Deploy` transaction's function circuit, with its constraint, variable and non-zero limits.
+    /// If the flag is set, the limits also hold after a `call`.
+    CheckDeployment(
+        Vec<Request<N>>,
+        PrivateKey<N>,
+        Assignments<N>,
+        Option<u64>,
+        Option<u64>,
+        Option<(u64, u64, u64)>,
+        bool,
+    ),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
@@ -177,6 +186,18 @@ impl<N: Network> CallStack<N> {
 }
 
 impl<N: Network> CallStack<N> {
+    /// In `CheckDeployment` mode, sets the synthesis limits of the current circuit. After a `call`, sets them only if
+    /// the limits hold after calls.
+    pub(crate) fn set_synthesis_limits<A: circuit::Aleo<Network = N>>(&self, after_call: bool) {
+        if let CallStack::CheckDeployment(.., constraint_limit, variable_limit, non_zero_limit, hold_after_calls) = self
+            && (!after_call || *hold_after_calls)
+        {
+            A::set_constraint_limit(*constraint_limit);
+            A::set_variable_limit(*variable_limit);
+            A::set_non_zero_limit(*non_zero_limit);
+        }
+    }
+
     /// Returns a new and independent replica of the call stack.
     pub fn replicate(&self) -> Self {
         match self {
@@ -207,6 +228,7 @@ impl<N: Network> CallStack<N> {
                 constraint_limit,
                 variable_limit,
                 non_zero_limit,
+                limits_hold_after_calls,
             ) => CallStack::CheckDeployment(
                 requests.clone(),
                 *private_key,
@@ -214,6 +236,7 @@ impl<N: Network> CallStack<N> {
                 *constraint_limit,
                 *variable_limit,
                 *non_zero_limit,
+                *limits_hold_after_calls,
             ),
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(

@@ -32,6 +32,33 @@ use std::sync::OnceLock;
 pub type CurrentNetwork = MainnetV0;
 pub type CurrentAleo = AleoV0;
 
+/// The circuit counts and limits on this thread.
+pub type CircuitSnapshot = ((u64, u64, u64, u64, (u64, u64, u64)), Option<u64>, Option<u64>, Option<(u64, u64, u64)>);
+
+/// Returns the circuit counts and limits on this thread.
+pub fn circuit_snapshot() -> CircuitSnapshot {
+    use circuit::Environment as _;
+
+    (
+        CurrentAleo::count(),
+        CurrentAleo::get_variable_limit(),
+        CurrentAleo::get_constraint_limit(),
+        CurrentAleo::get_non_zero_limit(),
+    )
+}
+
+/// Leaves a caller part way through its own synthesis on this thread, and returns its snapshot.
+pub fn start_callers_synthesis() -> CircuitSnapshot {
+    use circuit::{Environment as _, Inject as _};
+
+    let a = circuit::Field::<CurrentAleo>::new(circuit::Mode::Private, console::types::Field::from_u64(3));
+    CurrentAleo::assert_eq(&a, &a).unwrap();
+    CurrentAleo::set_variable_limit(Some(1 << 30));
+    CurrentAleo::set_constraint_limit(Some(1 << 31));
+    CurrentAleo::set_non_zero_limit(Some((1 << 32, 1 << 33, 1 << 34)));
+    circuit_snapshot()
+}
+
 /// Returns a process loaded once and shared by every later caller in the same test process.
 /// Only use it where the test never mutates the process, e.g. via `add_program` or `execute`.
 pub fn shared_process() -> &'static Process<CurrentNetwork> {
