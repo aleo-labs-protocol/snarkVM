@@ -326,22 +326,21 @@ fn evaluate_ecdsa_verification_internal<N: Network>(
     message: &Value<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<bool> {
-    if consensus_version >= ConsensusVersion::V23
-        && matches!(variant, ECDSAVerifyVariant::Digest | ECDSAVerifyVariant::DigestEth)
-    {
-        let is_byte_digest = match message {
-            Value::Plaintext(Plaintext::Array(elements, _)) => {
-                elements.len() == ECDSASignature::PREHASH_SIZE_IN_BYTES
-                    && elements.iter().all(|element| matches!(element, Plaintext::Literal(Literal::U8(_), _)))
-            }
-            _ => false,
+    if consensus_version >= ConsensusVersion::V23 {
+        let check_bytes = |value: &Value<N>, length: usize, name: &str| -> Result<()> {
+            ensure!(
+                matches!(value, Value::Plaintext(Plaintext::Array(elements, _))
+                    if elements.len() == length
+                        && elements.iter().all(|element| matches!(element, Plaintext::Literal(Literal::U8(_), _)))),
+                "Instruction '{}' expects a {length}-byte {name} array",
+                variant.opcode()
+            );
+            Ok(())
         };
-        ensure!(
-            is_byte_digest,
-            "Instruction '{}' expects a {}-byte digest array",
-            variant.opcode(),
-            ECDSASignature::PREHASH_SIZE_IN_BYTES
-        );
+        check_bytes(signature, ECDSASignature::SIGNATURE_SIZE_IN_BYTES, "signature")?;
+        if matches!(variant, ECDSAVerifyVariant::Digest | ECDSAVerifyVariant::DigestEth) {
+            check_bytes(message, ECDSASignature::PREHASH_SIZE_IN_BYTES, "digest")?;
+        }
     }
     Ok(do_ecdsa_verification!(variant, signature, public_key, message))
 }
@@ -673,11 +672,25 @@ mod tests {
                 Default::default(),
             ))
         };
-        let signature = byte_array(&signature.to_bytes_le()?);
+        let bytes = signature.to_bytes_le()?;
+        let signature = byte_array(&bytes);
+        let nested_signature = Value::Plaintext(Plaintext::Array(
+            bytes.iter().map(|byte| Plaintext::from([U8::new(*byte)])).collect(),
+            Default::default(),
+        ));
         let key = signing_key.verifying_key();
         let flat = byte_array(&digest);
         let nested =
             Value::Plaintext(Plaintext::Array(vec![Plaintext::from([U8::new(0)]); digest.len()], Default::default()));
+
+        let public_key = byte_array(key.to_sec1_point(true).as_bytes());
+        for variant in [ECDSAVerifyVariant::Digest, ECDSAVerifyVariant::HashKeccak256Raw] {
+            let verify = |version| {
+                evaluate_ecdsa_verification_internal(variant.clone(), &nested_signature, &public_key, &flat, version)
+            };
+            verify(ConsensusVersion::V22)?;
+            assert!(verify(ConsensusVersion::V23).unwrap_err().to_string().contains("65-byte signature"));
+        }
 
         for (variant, key) in [
             (ECDSAVerifyVariant::Digest, byte_array(key.to_sec1_point(true).as_bytes())),

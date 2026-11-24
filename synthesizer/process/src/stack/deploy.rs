@@ -16,7 +16,7 @@
 use super::*;
 
 use console::program::LiteralType;
-use snarkvm_synthesizer_program::Command;
+use snarkvm_synthesizer_program::{Command, Opcode};
 
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
@@ -86,25 +86,29 @@ impl<N: Network> Stack<N> {
         )
     }
 
-    /// Checks the digest operand in each scope that permits ECDSA verification.
-    pub(crate) fn check_fixed_digest_types(&self, check_constructor: bool) -> Result<()> {
+    /// Checks ECDSA signature and fixed-digest operand types in each scope that permits ECDSA verification.
+    pub(crate) fn check_ecdsa_operand_types(&self, check_constructor: bool) -> Result<()> {
         let check = |commands: &[Command<N>], types: Option<&FinalizeTypes<N>>| -> Result<()> {
             for command in commands {
                 let Command::Instruction(instruction) = command else { continue };
-                if matches!(instruction, Instruction::ECDSAVerifyDigest(_) | Instruction::ECDSAVerifyDigestEth(_)) {
-                    let types = types.ok_or_else(|| anyhow!("Missing register types for '{instruction}'"))?;
-                    let digest = types.get_type_from_operand(self, &instruction.operands()[2])?;
+                if !matches!(instruction.opcode(), Opcode::ECDSA(_)) {
+                    continue;
+                }
+                let types = types.ok_or_else(|| anyhow!("Missing register types for '{instruction}'"))?;
+                let check_operand = |index: usize, name: &str| -> Result<()> {
+                    let ty = types.get_type_from_operand(self, &instruction.operands()[index])?;
                     // Stack initialization checks the outer length and the innermost element type.
-                    let is_byte_array = matches!(
-                        &digest,
-                        FinalizeType::Plaintext(PlaintextType::Array(array))
-                            if array.next_element_type() == &PlaintextType::Literal(LiteralType::U8)
-                    );
                     ensure!(
-                        is_byte_array,
-                        "Instruction '{}' expects a one-dimensional byte array for its digest. Found '{digest}'",
+                        matches!(&ty, FinalizeType::Plaintext(PlaintextType::Array(array))
+                            if array.next_element_type() == &PlaintextType::Literal(LiteralType::U8)),
+                        "Instruction '{}' expects a one-dimensional byte array for its {name}. Found '{ty}'",
                         instruction.opcode()
                     );
+                    Ok(())
+                };
+                check_operand(0, "signature")?;
+                if matches!(instruction, Instruction::ECDSAVerifyDigest(_) | Instruction::ECDSAVerifyDigestEth(_)) {
+                    check_operand(2, "digest")?;
                 }
             }
             Ok(())
@@ -133,18 +137,6 @@ impl<N: Network> Stack<N> {
         // all randomness is drawn from `seeded_rng` (seeded by the deployment ID) so that every
         // validator computes the same result.
         _rng: &mut R,
-    ) -> Result<()> {
-        if consensus_version >= ConsensusVersion::V23 {
-            self.check_fixed_digest_types(true)?;
-        }
-        self.verify_deployment_keys::<A>(consensus_version, deployment)
-    }
-
-    /// Verifies the deployment keys and certificates after the program checks.
-    pub(crate) fn verify_deployment_keys<A: circuit::Aleo<Network = N>>(
-        &self,
-        consensus_version: ConsensusVersion,
-        deployment: &Deployment<N>,
     ) -> Result<()> {
         let timer = timing_span!("Stack::verify_deployment").entered();
 
@@ -318,6 +310,7 @@ impl<N: Network> Stack<N> {
                 Some(constraint_limit as u64),
                 Some(variable_limit),
                 non_zero_limit,
+                consensus_version >= ConsensusVersion::V23,
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));
@@ -364,7 +357,9 @@ impl<N: Network> Stack<N> {
                 .iter()
                 .map(|(record_name, _record_type)| {
                     // Construct a random `TranslationAssignment`.
-                    // The deployment ID seeds the RNG so all validators check the same translation assignment.
+                    // Note: All randomness here is drawn from `seeded_rng` (seeded by the deployment
+                    // ID), not the ambient `_rng`, so that the translation assignment — and thus the
+                    // certificate check below — is identical across all validators.
                     let program_id = *self.program_id();
                     let function_id = Field::<N>::from_u64(Uniform::rand(&mut sub_seeded_rng));
                     let record_name = *record_name;
