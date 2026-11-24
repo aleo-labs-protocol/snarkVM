@@ -345,8 +345,11 @@ fn inner_deployment_cost_v3_v5<N: Network>(
     let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
 
     // Compute the synthesis cost in microcredits.
-    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER
-        / N::ARC_0005_COMPUTE_DISCOUNT;
+    // Note: The circuit sizes are the ones the verifying keys claim, and a caller may price a deployment
+    // before they are checked against the deployment limits, so the product saturates.
+    let synthesis_cost =
+        num_combined_variables.saturating_add(num_combined_constraints).saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER)
+            / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
     let stack = Stack::new(process, deployment.program())?;
@@ -428,8 +431,11 @@ pub(crate) fn deployment_cost_v2<N: Network>(
         .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
 
     // Compute the synthesis cost in microcredits.
-    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER
-        / N::ARC_0005_COMPUTE_DISCOUNT;
+    // Note: The circuit sizes are the ones the verifying keys claim, and a caller may price a deployment
+    // before they are checked against the deployment limits, so the product saturates.
+    let synthesis_cost =
+        num_combined_variables.saturating_add(num_combined_constraints).saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER)
+            / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
     let stack = Stack::new(process, deployment.program())?;
@@ -505,7 +511,10 @@ pub fn deployment_cost_v1<N: Network>(
         .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
 
     // Compute the synthesis cost in microcredits.
-    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER;
+    // Note: The circuit sizes are the ones the verifying keys claim, and a caller may price a deployment
+    // before they are checked against the deployment limits, so the product saturates.
+    let synthesis_cost =
+        num_combined_variables.saturating_add(num_combined_constraints).saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER);
 
     // Compute a Stack for the deployment.
     let stack = Stack::new(process, deployment.program())?;
@@ -2168,6 +2177,56 @@ finalize store:
         for consensus_version in [ConsensusVersion::V22, ConsensusVersion::latest()] {
             assert_eq!(deployment_cost_v5(&process, &deployment, consensus_version).unwrap(), v3_cost);
         }
+    }
+
+    #[test]
+    fn test_deployment_cost_synthesis_overflow() {
+        // Verify that a deployment whose verifying keys claim circuit sizes large enough to overflow
+        // the synthesis cost gets a saturated synthesis cost, not a wrapped one.
+        use std::sync::Arc;
+
+        use snarkvm_synthesizer_snark::VerifyingKey;
+
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        let program = Program::from_str(
+            r"
+program synthesis_overflow.aleo;
+
+function noop:",
+        )
+        .unwrap();
+
+        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        deployment.set_program_owner_raw(Some(Address::rand(rng)));
+
+        // Claim enough variables that the synthesis cost overflows.
+        let num_variables = u64::MAX / MainnetV0::SYNTHESIS_FEE_MULTIPLIER + 1;
+        let (function_name, (verifying_key, certificate)) = &deployment.verifying_keys()[0];
+        let verifying_key = VerifyingKey::new(Arc::new(verifying_key.deref().clone()), num_variables);
+        let overflowing = Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            vec![(*function_name, (verifying_key, certificate.clone()))],
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap();
+
+        // The synthesis cost saturates instead of wrapping to a small value, so the minimum cost exceeds any fee.
+        // V10 prices deployments with cost V2, V16 with cost V3, and V22 with cost V5.
+        for consensus_version in [ConsensusVersion::V10, ConsensusVersion::V16, ConsensusVersion::V22] {
+            let (minimum_cost, (_, synthesis_cost, _, _)) =
+                deployment_cost(&process, &overflowing, consensus_version).unwrap();
+            assert_eq!(synthesis_cost, u64::MAX / MainnetV0::ARC_0005_COMPUTE_DISCOUNT);
+            assert!(minimum_cost > MainnetV0::MAX_FEE);
+        }
+
+        // Cost V1 (before V10) has no compute discount, so its saturated synthesis cost overflows the total.
+        let error = deployment_cost(&process, &overflowing, ConsensusVersion::V9).unwrap_err();
+        assert!(error.to_string().contains("The total cost computation overflowed"), "{error}");
     }
 
     // Test program with finalize blocks for cost comparison test
