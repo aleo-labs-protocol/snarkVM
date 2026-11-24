@@ -62,7 +62,7 @@ const MAX_PARTIAL_ROUNDS: usize = 64;
 type Limbs = [u64; 5];
 
 /// The limbs of 8 integers below 2^260: lane `l` of vector `k` holds limb `k` of integer `l`.
-type Lanes = [__m512i; 5];
+pub(super) type Lanes = [__m512i; 5];
 
 /// The constants of a Poseidon permutation of width 9 with the S-box `x^17`, each as the limbs of
 /// `c 2^260 mod p`, with the limbs of `p`.
@@ -308,12 +308,20 @@ fn partial_round(state: &mut [Lanes; WIDTH], round: &LanePartialRound, p: &Lanes
 /// words, below 2^256.
 #[inline]
 #[target_feature(enable = "avx512f")]
-fn limbs_shifted_4<P: Fp256Parameters>(x: &[Fp256<P>; 8]) -> Lanes {
+pub(super) fn limbs_shifted_4<P: Fp256Parameters>(x: &[Fp256<P>; 8]) -> Lanes {
     let mut w = [_mm512_setzero_si512(); 4];
     for (i, w) in w.iter_mut().enumerate() {
         let word = |l: usize| x[l].0.0[i] as i64;
         *w = _mm512_set_epi64(word(7), word(6), word(5), word(4), word(3), word(2), word(1), word(0));
     }
+    words_shifted_4(&w)
+}
+
+/// Returns the limbs of `x 2^4` for the 256-bit integers `x` whose words are `w`: lane `l` of
+/// vector `i` holds word `i` of integer `l`.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(super) fn words_shifted_4(w: &[__m512i; 4]) -> Lanes {
     let mask = _mm512_set1_epi64(MASK as i64);
     [
         _mm512_and_si512(_mm512_slli_epi64::<4>(w[0]), mask),
@@ -328,7 +336,7 @@ fn limbs_shifted_4<P: Fp256Parameters>(x: &[Fp256<P>; 8]) -> Lanes {
 /// limbs below 2^52.
 #[inline]
 #[target_feature(enable = "avx512f")]
-fn store<P: Fp256Parameters>(x: &mut [Fp256<P>; 8], v: &Lanes) {
+pub(super) fn store<P: Fp256Parameters>(x: &mut [Fp256<P>; 8], v: &Lanes) {
     let w = [
         _mm512_or_si512(v[0], _mm512_slli_epi64::<52>(v[1])),
         _mm512_or_si512(_mm512_srli_epi64::<12>(v[1]), _mm512_slli_epi64::<40>(v[2])),
