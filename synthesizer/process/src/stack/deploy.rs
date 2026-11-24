@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use super::*;
 
 impl<N: Network> Stack<N> {
@@ -102,7 +104,7 @@ impl<N: Network> Stack<N> {
     /// Checks the plaintext destinations of each synthesized function and the closures it executes.
     pub(crate) fn check_deployment_register_sizes(&self, max_bits: usize) -> Result<()> {
         let mut memoized = HashMap::new();
-        let mut checked_calls = std::collections::HashSet::new();
+        let mut checked_calls = HashSet::new();
         for function in self.program.functions().values() {
             self.check_scope_destinations(function.name(), function.instructions(), max_bits, &mut memoized)?;
             for instruction in function.instructions() {
@@ -158,12 +160,8 @@ impl<N: Network> Stack<N> {
                 continue;
             }
             for destination in instruction.destinations() {
-                let destination_type = types
-                    .destinations
-                    .get(&destination.locator())
-                    .ok_or_else(|| anyhow!("Register '{destination}' does not exist"))?;
-                if let RegisterType::Plaintext(pt) = destination_type {
-                    self.check_plaintext_type_size(pt, max_bits, memoized)?;
+                if let RegisterType::Plaintext(pt) = types.get_type(self, &destination)? {
+                    self.check_plaintext_type_size(&pt, max_bits, memoized)?;
                 }
             }
         }
@@ -359,6 +357,7 @@ impl<N: Network> Stack<N> {
                 Some(constraint_limit as u64),
                 Some(variable_limit),
                 non_zero_limit,
+                consensus_version >= ConsensusVersion::V23,
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));

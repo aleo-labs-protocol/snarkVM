@@ -208,4 +208,113 @@ pub trait Environment:
 
     /// Clears and initializes an empty environment.
     fn reset();
+
+    /// Replaces this thread's circuit state with the given state, and returns the previous one.
+    // Code outside this crate cannot construct a `CircuitState`, so it can only pass on a state this
+    // crate gives it. Only `with_fresh_circuit` may swap a returned state back in. Swapping one back
+    // anywhere else breaks the LIFO restore of nested `with_fresh_circuit` calls.
+    #[doc(hidden)]
+    fn swap_circuit_state(state: CircuitState<Self::BaseField>) -> CircuitState<Self::BaseField>;
+
+    /// Runs `logic` on a fresh circuit state for this thread, then restores the previous state, also when `logic` unwinds.
+    /// `logic` must return only console or ejected values, since circuit values refer to variables of the discarded circuit.
+    fn with_fresh_circuit<T>(logic: impl FnOnce() -> T) -> T {
+        let _guard = CircuitGuard::<Self> { outer: Some(Self::swap_circuit_state(CircuitState::fresh())) };
+        logic()
+    }
+}
+
+/// The thread-local state of a circuit.
+pub struct CircuitState<F: PrimeField> {
+    pub(crate) r1cs: R1CS<F>,
+    pub(crate) variable_limit: Option<u64>,
+    pub(crate) constraint_limit: Option<u64>,
+    pub(crate) non_zero_limit: Option<(u64, u64, u64)>,
+    pub(crate) in_witness: bool,
+}
+
+impl<F: PrimeField> CircuitState<F> {
+    /// Returns an empty circuit state with no limits, outside of witness mode.
+    pub(crate) fn fresh() -> Self {
+        Self {
+            r1cs: R1CS::new(),
+            variable_limit: None,
+            constraint_limit: None,
+            non_zero_limit: None,
+            in_witness: false,
+        }
+    }
+}
+
+/// Restores the circuit state that `Environment::with_fresh_circuit` replaced, when dropped or unwound.
+struct CircuitGuard<E: Environment> {
+    outer: Option<CircuitState<E::BaseField>>,
+}
+
+impl<E: Environment> Drop for CircuitGuard<E> {
+    fn drop(&mut self) {
+        if let Some(outer) = self.outer.take() {
+            E::swap_circuit_state(outer);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod fresh_circuit_tests {
+    use super::*;
+
+    type Snapshot = ((u64, u64, u64, u64, (u64, u64, u64)), Option<u64>, Option<u64>, Option<(u64, u64, u64)>, bool);
+
+    const FRESH: Snapshot = ((0, 1, 0, 0, (0, 0, 0)), None, None, None, false);
+
+    fn snapshot<E: Environment>(in_witness: fn() -> bool) -> Snapshot {
+        (E::count(), E::get_variable_limit(), E::get_constraint_limit(), E::get_non_zero_limit(), in_witness())
+    }
+
+    fn enforce<E: Environment>(num_constraints: usize) {
+        for _ in 0..num_constraints {
+            let variable = E::new_variable(Mode::Private, E::BaseField::one());
+            E::enforce(|| (variable.clone(), E::one(), variable)).unwrap();
+        }
+    }
+
+    fn seed_outer<E: Environment>(set_in_witness: fn(bool)) {
+        enforce::<E>(3);
+        E::set_variable_limit(Some(100));
+        E::set_constraint_limit(Some(101));
+        E::set_non_zero_limit(Some((102, 103, 104)));
+        set_in_witness(true);
+    }
+
+    pub(crate) fn check_nested<E: Environment>(in_witness: fn() -> bool, set_in_witness: fn(bool)) {
+        E::with_fresh_circuit(|| {
+            seed_outer::<E>(set_in_witness);
+            let outer = snapshot::<E>(in_witness);
+            E::with_fresh_circuit(|| {
+                assert_eq!(snapshot::<E>(in_witness), FRESH);
+                enforce::<E>(2);
+                E::set_variable_limit(Some(7));
+                E::set_constraint_limit(Some(8));
+                E::set_non_zero_limit(Some((9, 10, 11)));
+                set_in_witness(true);
+            });
+            assert_eq!(snapshot::<E>(in_witness), outer);
+        });
+    }
+
+    pub(crate) fn check_unwind<E: Environment>(in_witness: fn() -> bool, set_in_witness: fn(bool)) {
+        E::with_fresh_circuit(|| {
+            seed_outer::<E>(set_in_witness);
+            let outer = snapshot::<E>(in_witness);
+            let result = std::panic::catch_unwind(|| {
+                E::with_fresh_circuit(|| {
+                    enforce::<E>(2);
+                    E::set_constraint_limit(Some(1));
+                    enforce::<E>(1);
+                })
+            });
+            assert!(result.is_err(), "the constraint limit must halt synthesis");
+            assert_eq!(snapshot::<E>(in_witness), outer);
+        });
+    }
 }

@@ -22,7 +22,7 @@ use console::{
 use crate::{
     TranslationAssignment,
     compute_console_dynamic_or_external_record_id,
-    tests::test_utils::{CurrentAleo, CurrentNetwork},
+    tests::test_utils::{CurrentAleo, CurrentNetwork, circuit_snapshot, start_callers_synthesis},
 };
 
 use super::*;
@@ -815,4 +815,32 @@ fn test_prepare_verifier_inputs_infers_the_transition_map_value_type() {
     })
     .unwrap();
     assert!(batches.is_empty());
+}
+
+#[test]
+fn test_to_circuit_assignment_leaves_the_callers_circuit() {
+    use circuit::Environment;
+
+    let mut rng = TestRng::default();
+    let record_static_str = r#"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        codename: 1989u64.public,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }"#;
+    let (translation_assignment, translation_index) =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
+
+    CurrentAleo::with_fresh_circuit(|| {
+        let callers = start_callers_synthesis();
+
+        translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, None, None).unwrap();
+        assert_eq!(circuit_snapshot(), callers);
+
+        let halted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            translation_assignment.to_circuit_assignment::<CurrentAleo>(translation_index, None, Some(1), None)
+        }));
+        assert!(halted.is_err(), "the constraint limit must halt synthesis");
+        assert_eq!(circuit_snapshot(), callers);
+    });
 }

@@ -39,23 +39,14 @@ impl<N: Network> ArrayType<N> {
 
     /// Returns `true` if the `ArrayType` contains a string type.
     pub fn contains_string_type(&self) -> bool {
-        // Initialize depth counter and current array type.
         let mut array_type = self;
-
-        // Check nested array types up to the maximum data depth.
         for _ in 0..=N::MAX_DATA_DEPTH {
-            // Check if the current element type is a string type.
-            if array_type.next_element_type().contains_string_type() {
-                return true;
-            }
-            // If the next element is an array, continue to the next depth. Otherwise, we can stop checking.
-            if let PlaintextType::Array(next) = array_type.next_element_type() {
-                array_type = next;
-            } else {
-                return false;
+            match array_type.next_element_type() {
+                PlaintextType::Array(next) => array_type = next,
+                leaf => return leaf.contains_string_type(),
             }
         }
-        // If we reach here, it means we've exceeded the maximum depth without finding a non-array type.
+        // Treat arrays beyond the depth limit as containing a string.
         true
     }
 
@@ -228,6 +219,20 @@ mod tests {
         assert_eq!(array.length(), &U32::new(3));
         assert!(!array.is_empty());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_contains_string_type_at_every_depth() -> Result<()> {
+        for (leaf, is_string) in [("string", true), ("field", false), ("item", false), ("external.aleo/item", false)] {
+            let mut array = ArrayType::<CurrentNetwork>::new(PlaintextType::from_str(leaf)?, vec![U32::new(1)])?;
+            for depth in 1..=CurrentNetwork::MAX_DATA_DEPTH + 2 {
+                // Arrays nested beyond `MAX_DATA_DEPTH + 1` levels are treated as containing a string.
+                let expected = is_string || depth > CurrentNetwork::MAX_DATA_DEPTH + 1;
+                assert_eq!(array.contains_string_type(), expected, "{leaf} at depth {depth}");
+                array = ArrayType::new(PlaintextType::Array(array), vec![U32::new(1)])?;
+            }
+        }
         Ok(())
     }
 
