@@ -514,7 +514,7 @@ pub trait RegistersTrait<N: Network>: crate::sealed_execution::Sealed {
 /// It is a trait only to avoid circular dependencies.
 pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>>: crate::sealed_execution::Sealed {
     /// Returns the consensus version used to certify the enclosing function's circuit.
-    fn circuit_consensus_version(&self) -> ConsensusVersion;
+    fn circuit_version(&self) -> ConsensusVersion;
 
     /// Returns the transition signer, as a circuit.
     fn signer_circuit(&self) -> Result<circuit::Address<A>>;

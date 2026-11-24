@@ -430,7 +430,7 @@ fn test_closure_cannot_contain_call() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     // `add_program` runs `Stack::new`, the same well-formedness check that `deploy` performs,
     // without the cost of synthesizing verifying keys.
-    let result = vm.process().lock().add_program(&program);
+    let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
 
     assert!(result.is_err(), "A closure containing a `call` instruction should be rejected at stack initialization");
 }

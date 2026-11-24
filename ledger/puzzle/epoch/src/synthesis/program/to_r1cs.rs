@@ -42,7 +42,7 @@ impl<N: Network> EpochProgram<N> {
 
         // Initialize the registers.
         let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::rng())?, Default::default());
-        let mut registers = Registers::<N, A>::new(call_stack, register_types);
+        let mut registers = Registers::<N, A>::new(call_stack, register_types, self.stack.circuit_version());
         timing_event!("Initialize the registers");
 
         // Inject the circuit inputs.

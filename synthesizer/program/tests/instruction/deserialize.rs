@@ -75,7 +75,7 @@ fn sample_stack(
     let operands = vec![Operand::Register(r0)];
 
     // Initialize the stack.
-    let stack = Stack::new(shared_process(), &program)?;
+    let stack = Stack::new(shared_process(), &program, ConsensusVersion::latest())?;
 
     Ok((stack, operands, r1))
 }
@@ -298,7 +298,7 @@ fn test_deserialize_rejects_wrong_operand_length() {
             // Check that the correct length is accepted.
             let correct = program(opcode, &type_, size_in_bits, size_in_bits);
             assert!(
-                Stack::new(shared_process(), &correct).is_ok(),
+                Stack::new(shared_process(), &correct, ConsensusVersion::latest()).is_ok(),
                 "'{opcode}' should accept {size_in_bits} bits as '{type_}'"
             );
 
@@ -307,7 +307,7 @@ fn test_deserialize_rejects_wrong_operand_length() {
             for wrong_bits in wrong_lengths {
                 for (function_bits, finalize_bits) in [(wrong_bits, size_in_bits), (size_in_bits, wrong_bits)] {
                     let wrong = program(opcode, &type_, function_bits, finalize_bits);
-                    let error = Stack::new(shared_process(), &wrong)
+                    let error = Stack::new(shared_process(), &wrong, ConsensusVersion::latest())
                         .err()
                         .unwrap_or_else(|| panic!("'{opcode}' should reject {wrong_bits} bits as '{type_}'"));
                     assert!(

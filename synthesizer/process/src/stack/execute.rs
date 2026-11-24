@@ -16,11 +16,8 @@
 use super::*;
 
 impl<N: Network> Stack<N> {
-    /// Executes a program closure on the given inputs.
-    ///
-    /// # Errors
-    /// This method will halt if the given inputs are not the same length as the input statements.
-    pub fn execute_closure<A: circuit::Aleo<Network = N>>(
+    /// Executes a closure in the caller's function circuit, using that circuit's consensus version.
+    pub(super) fn execute_closure<A: circuit::Aleo<Network = N>>(
         &self,
         closure: &Closure<N>,
         inputs: &[circuit::Value<A>],
@@ -28,28 +25,7 @@ impl<N: Network> Stack<N> {
         signer: circuit::Address<A>,
         caller: circuit::Address<A>,
         tvk: circuit::Field<A>,
-    ) -> Result<Vec<circuit::Value<A>>, StackExecError> {
-        self.execute_closure_in_circuit(
-            closure,
-            inputs,
-            call_stack,
-            signer,
-            caller,
-            tvk,
-            self.deployment_consensus_version,
-        )
-    }
-
-    /// An imported closure uses the circuit rules of the function that calls it.
-    pub(super) fn execute_closure_in_circuit<A: circuit::Aleo<Network = N>>(
-        &self,
-        closure: &Closure<N>,
-        inputs: &[circuit::Value<A>],
-        call_stack: CallStack<N>,
-        signer: circuit::Address<A>,
-        caller: circuit::Address<A>,
-        tvk: circuit::Field<A>,
-        circuit_consensus_version: ConsensusVersion,
+        circuit_version: ConsensusVersion,
     ) -> Result<Vec<circuit::Value<A>>, StackExecError> {
         let timer = timing_span!("Stack::execute_closure").entered();
 
@@ -68,11 +44,8 @@ impl<N: Network> Stack<N> {
         let num_public = A::num_public();
 
         // Initialize the registers.
-        let mut registers = Registers::new_for_circuit(
-            call_stack,
-            self.get_register_types(closure.name())?.clone(),
-            circuit_consensus_version,
-        );
+        let mut registers =
+            Registers::new(call_stack, self.get_register_types(closure.name())?.clone(), circuit_version);
 
         use circuit::Eject;
 
@@ -233,7 +206,7 @@ impl<N: Network> Stack<N> {
             console_caller,
             console_root_tvk,
             rng,
-            self.deployment_consensus_version,
+            self.circuit_version,
         )
     }
 
@@ -244,16 +217,10 @@ impl<N: Network> Stack<N> {
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
-        circuit_consensus_version: ConsensusVersion,
+        circuit_version: ConsensusVersion,
     ) -> Result<Option<Response<N>>, StackExecError> {
         A::with_fresh_circuit(|| {
-            self.execute_function_inner::<A, R>(
-                call_stack,
-                console_caller,
-                console_root_tvk,
-                rng,
-                circuit_consensus_version,
-            )
+            self.execute_function_inner::<A, R>(call_stack, console_caller, console_root_tvk, rng, circuit_version)
         })
     }
 
@@ -264,7 +231,7 @@ impl<N: Network> Stack<N> {
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
-        circuit_consensus_version: ConsensusVersion,
+        circuit_version: ConsensusVersion,
     ) -> Result<Option<Response<N>>, StackExecError> {
         let timer = timing_span!("Stack::execute_function").entered();
 
@@ -348,11 +315,8 @@ impl<N: Network> Stack<N> {
         timing_event!("Verify the console request");
 
         // Initialize the registers.
-        let mut registers = Registers::new_for_circuit(
-            call_stack,
-            self.get_register_types(function.name())?.clone(),
-            circuit_consensus_version,
-        );
+        let mut registers =
+            Registers::new(call_stack, self.get_register_types(function.name())?.clone(), circuit_version);
 
         // Set the root tvk, from a parent request or the current request.
         let console_root_tvk = console_root_tvk.unwrap_or(*console_request.tvk());
@@ -807,14 +771,14 @@ mod tests {
                  cast self.signer 1u64 into r0 as token.record;
                  output r0 as token.record;",
         )?;
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, ConsensusVersion::latest())?;
         let function = stack.get_function(&Identifier::from_str("mint")?)?;
         let key = PrivateKey::new(&mut TestRng::default())?;
         let signer = Address::try_from(&key)?;
         let call_stack = CallStack::PackageRun(Vec::new(), key, Default::default());
         for (version, mode) in [(ConsensusVersion::V22, Mode::Private), (ConsensusVersion::V23, Mode::Constant)] {
             AleoV0::with_fresh_circuit(|| -> Result<()> {
-                let mut registers = Registers::<_, AleoV0>::new_for_circuit(
+                let mut registers = Registers::<_, AleoV0>::new(
                     call_stack.clone(),
                     stack.get_register_types(function.name())?,
                     version,
@@ -862,21 +826,17 @@ mod tests {
                  output r1 as field.public;",
         )?;
         let function = Identifier::from_str("run")?;
-        let mut library_stack = Stack::new(&process, &library)?;
         let mut key_for = |version| -> Result<_> {
-            let mut caller_stack = Stack::new(&process, &caller)?;
-            caller_stack.deployment_consensus_version = version;
+            let caller_stack = Stack::new(&process, &caller, version)?;
             caller_stack.synthesize_key::<circuit::AleoV0, _>(&function, rng)?;
             caller_stack.get_verifying_key(&function)
         };
-        library_stack.deployment_consensus_version = ConsensusVersion::V22;
-        process.lock().add_stack(library_stack.clone());
+        process.lock().add_program_with_edition(&library, 0, ConsensusVersion::V22)?;
         let legacy_key = key_for(ConsensusVersion::V22)?;
         let fixed_key = key_for(ConsensusVersion::V23)?;
         assert_ne!(legacy_key, fixed_key);
 
-        library_stack.deployment_consensus_version = ConsensusVersion::V23;
-        process.lock().add_stack(library_stack);
+        process.lock().add_program_with_edition(&library, 0, ConsensusVersion::V23)?;
         assert_eq!(legacy_key, key_for(ConsensusVersion::V22)?);
         assert_eq!(fixed_key, key_for(ConsensusVersion::V23)?);
         Ok(())

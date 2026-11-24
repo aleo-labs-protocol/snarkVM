@@ -346,7 +346,7 @@ pub struct Stack<N: Network> {
     /// The checksum of each component (function, closure, or view) in the program.
     component_checksums: IndexMap<Identifier<N>, [U8<N>; 32]>,
     /// The consensus version used to certify this program's function circuits.
-    pub(crate) deployment_consensus_version: ConsensusVersion,
+    circuit_version: ConsensusVersion,
     /// The program edition.
     program_edition: U16<N>,
     /// The number of amendments applied to the current program edition.
@@ -356,8 +356,13 @@ pub struct Stack<N: Network> {
 }
 
 impl<N: Network> Stack<N> {
+    /// Returns the consensus version used to certify this program's function circuits.
+    pub const fn circuit_version(&self) -> ConsensusVersion {
+        self.circuit_version
+    }
+
     /// Initializes a new stack given the process and the program.
-    pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+    pub fn new(process: &Process<N>, program: &Program<N>, circuit_version: ConsensusVersion) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
         // Check that the program is well-formed.
@@ -381,18 +386,23 @@ impl<N: Network> Stack<N> {
         }
 
         // Return the stack.
-        Stack::initialize(process, program)
+        Stack::initialize(process, program, circuit_version)
     }
 
     /// Partially initializes a new stack, given the process and the program, without checking for validity.
     /// Unlike `Stack::new`, this method accepts an explicit edition and skips upgrade validation,
     /// which is necessary for amendments that preserve the existing edition rather than incrementing it.
     /// A `Stack` created by this method must also call `initialize_and_check`.
-    pub fn new_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
+    pub fn new_raw(
+        process: &Process<N>,
+        program: &Program<N>,
+        edition: u16,
+        circuit_version: ConsensusVersion,
+    ) -> Result<Self> {
         // Check that the program is well-formed.
         check_program_is_well_formed(program)?;
         // Return the stack.
-        Stack::create_raw(process, program, edition)
+        Stack::create_raw(process, program, edition, circuit_version)
     }
 
     /// Initializes and checks the register state and well-formedness of the stack, even if it has already been initialized.

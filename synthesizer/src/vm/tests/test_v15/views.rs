@@ -48,7 +48,7 @@ fn test_view_output_type_mismatch_rejected() {
     if let Ok(program) = result {
         let rng = &mut TestRng::default();
         let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
-        let add_result = vm.process().lock().add_program(&program);
+        let add_result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(add_result.is_err(), "adding the program should reject type-mismatched view output");
     }
 }
@@ -403,7 +403,7 @@ fn test_finalize_calls_non_view_rejected() {
     // it first; either way it must NOT successfully deploy.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let result = vm.process().lock().add_program(&program);
+        let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(result.is_err(), "adding the program should reject a finalize that calls a non-view target");
     }
 }
@@ -611,7 +611,7 @@ fn test_finalize_calls_cross_program_non_view_rejected() {
 
     // Either parse or deploy must reject — same pattern as the same-program negative test.
     if let Ok(caller_program) = caller_program {
-        let result = vm.process().lock().add_program(&caller_program);
+        let result = vm.process().lock().add_program(&caller_program, ConsensusVersion::V15);
         assert!(
             result.is_err(),
             "adding the program should reject a finalize that calls a non-view target in an imported program"
@@ -657,7 +657,7 @@ fn test_finalize_call_arity_mismatch_rejected() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let result = vm.process().lock().add_program(&program);
+        let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(result.is_err(), "adding the program should reject a finalize-call with wrong arity");
     }
 }
@@ -702,7 +702,7 @@ fn test_finalize_call_destination_type_mismatch_rejected() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let result = vm.process().lock().add_program(&program);
+        let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(
             result.is_err(),
             "adding the program should reject when call destination type conflicts with downstream use"
@@ -784,7 +784,7 @@ fn test_finalize_call_self_locator_rejected() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let result = vm.process().lock().add_program(&program);
+        let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(result.is_err(), "adding the program should reject a finalize-call using a self-locator");
     }
 }
@@ -850,7 +850,7 @@ fn test_finalize_call_missing_import_rejected() {
     add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
 
     if let Ok(caller_program) = caller_program {
-        let result = vm.process().lock().add_program(&caller_program);
+        let result = vm.process().lock().add_program(&caller_program, ConsensusVersion::V15);
         assert!(
             result.is_err(),
             "adding the program should reject a finalize-call into a program that is not imported"
@@ -1093,7 +1093,7 @@ fn test_finalize_call_destination_count_mismatch_rejected() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let result = vm.process().lock().add_program(&program);
+        let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(
             result.is_err(),
             "adding the program should reject a finalize-call binding more destinations than the view returns"
@@ -1143,7 +1143,7 @@ fn test_finalize_call_input_type_mismatch_rejected() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let result = vm.process().lock().add_program(&program);
+        let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(result.is_err(), "adding the program should reject a finalize-call with a wrong-typed operand");
     }
 }
@@ -1585,7 +1585,7 @@ fn test_finalize_call_zero_output_view_with_destinations_rejected() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     if let Ok(program) = program {
-        let result = vm.process().lock().add_program(&program);
+        let result = vm.process().lock().add_program(&program, ConsensusVersion::V15);
         assert!(result.is_err(), "adding the program should reject binding destinations to a zero-output view");
     }
 }

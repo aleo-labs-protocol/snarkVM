@@ -17,7 +17,7 @@
 extern crate criterion;
 
 use snarkvm_console::{
-    network::MainnetV0,
+    network::{ConsensusVersion, MainnetV0},
     program::{Identifier, ProgramID},
     types::Field,
 };
@@ -52,7 +52,7 @@ fn bench_stack_new(c: &mut Criterion) {
                 // Construct the program.
                 Program::from_str(&format!("program {identifier}.aleo; function foo:")).unwrap()
             },
-            |program| Stack::<CurrentNetwork>::new(&process, program),
+            |program| Stack::<CurrentNetwork>::new(&process, program, ConsensusVersion::latest()),
             BatchSize::PerIteration,
         )
     });
@@ -86,7 +86,7 @@ fn bench_stack_new(c: &mut Criterion) {
                     ))
                     .unwrap()
                 },
-                |program| Stack::<CurrentNetwork>::new(&process, program),
+                |program| Stack::<CurrentNetwork>::new(&process, program, ConsensusVersion::latest()),
                 BatchSize::PerIteration,
             )
         });
@@ -150,7 +150,7 @@ fn add_program_at_depth(process: &mut Process<CurrentNetwork>, depth: usize) {
     };
 
     // Add the program to the process.
-    process.lock().add_program(&program).unwrap();
+    process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
 }
 
 // Samples a random identifier as a string.

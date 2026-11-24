@@ -23,8 +23,8 @@ use super::*;
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCircuit<N, A> for Registers<N, A> {
     #[inline]
-    fn circuit_consensus_version(&self) -> ConsensusVersion {
-        self.circuit_consensus_version
+    fn circuit_version(&self) -> ConsensusVersion {
+        self.circuit_version
     }
 
     /// Returns the transition signer, as a circuit.
@@ -374,7 +374,7 @@ mod tests {
         // Build a stack for a program that exercises every register type variant.
         let program = Program::<CurrentNetwork>::from_str(program_str).unwrap();
         let process = Process::<CurrentNetwork>::load().unwrap();
-        process.lock().add_program(&program).unwrap();
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
         let stack = process.get_stack(program_id).unwrap();
 
         let types: Vec<_> = cases.iter().map(|(t, _)| RegisterType::<CurrentNetwork>::from_str(t).unwrap()).collect();

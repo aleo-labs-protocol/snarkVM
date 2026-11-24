@@ -277,7 +277,7 @@ pub(crate) fn deployment_cost_v4<N: Network>(
     let synthesis_cost = combined_density.saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER) / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
-    let stack = Stack::new(process, deployment.program())?;
+    let stack = Stack::new(process, deployment.program(), ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
 
     // Compute the constructor cost in microcredits.
     let constructor_cost = constructor_cost_in_microcredits_v2(&stack, None)?;
@@ -349,7 +349,11 @@ fn inner_deployment_cost_v3_v5<N: Network>(
         / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
-    let stack = Stack::new(process, deployment.program())?;
+    let stack = Stack::new(
+        process,
+        deployment.program(),
+        consensus_version.unwrap_or(ConsensusVersion::LEGACY_CIRCUIT_VERSION),
+    )?;
 
     // Compute the constructor cost in microcredits.
     let constructor_cost = constructor_cost_in_microcredits_v2(&stack, consensus_version)?;
@@ -432,7 +436,7 @@ pub(crate) fn deployment_cost_v2<N: Network>(
         / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
-    let stack = Stack::new(process, deployment.program())?;
+    let stack = Stack::new(process, deployment.program(), ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
 
     // Compute the constructor cost in microcredits.
     let constructor_cost = constructor_cost_in_microcredits_v2(&stack, None)?;
@@ -508,7 +512,7 @@ pub fn deployment_cost_v1<N: Network>(
     let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER;
 
     // Compute a Stack for the deployment.
-    let stack = Stack::new(process, deployment.program())?;
+    let stack = Stack::new(process, deployment.program(), ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
 
     // Compute the constructor cost in microcredits.
     let constructor_cost = constructor_cost_in_microcredits_v1(&stack)?;
@@ -1565,8 +1569,8 @@ finalize price:
 ",
         )?;
         let process = Process::<MainnetV0>::load()?;
-        process.lock().add_program(&types)?;
-        let stack = Stack::new(&process, &program)?;
+        process.lock().add_program(&types, ConsensusVersion::latest())?;
+        let stack = Stack::new(&process, &program, ConsensusVersion::latest())?;
         let function_name = Identifier::from_str("price")?;
         let input = Value::<MainnetV0>::from_str(
             "[{ member: { enabled: true } }, { member: { enabled: false } }, { member: { enabled: true } }]",
@@ -1791,7 +1795,8 @@ function dummy:",
             .unwrap();
 
             // Verify the deployment costs.
-            let mut deployment_0 = process.deploy::<A, _>(&program_0, rng).unwrap();
+            let mut deployment_0 =
+                process.deploy::<A, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program_0, rng).unwrap();
             deployment_0.set_program_checksum_raw(Some(deployment_0.program().to_checksum()));
             deployment_0.set_program_owner_raw(Some(Address::rand(rng)));
             let expected_storage_cost = 879000;
@@ -1843,7 +1848,8 @@ function dummy:",
                 )
             );
 
-            let mut deployment_1 = process.deploy::<A, _>(&program_1, rng).unwrap();
+            let mut deployment_1 =
+                process.deploy::<A, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program_1, rng).unwrap();
             deployment_1.set_program_checksum_raw(Some(deployment_1.program().to_checksum()));
             deployment_1.set_program_owner_raw(Some(Address::rand(rng)));
             let expected_storage_cost = 878000;
@@ -1893,7 +1899,8 @@ function dummy:",
                 )
             );
 
-            let mut deployment_2 = process.deploy::<A, _>(&program_2, rng).unwrap();
+            let mut deployment_2 =
+                process.deploy::<A, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program_2, rng).unwrap();
             deployment_2.set_program_checksum_raw(Some(deployment_2.program().to_checksum()));
             deployment_2.set_program_owner_raw(Some(Address::rand(rng)));
             let expected_storage_cost = 911000;
@@ -1943,7 +1950,8 @@ function dummy:",
                 )
             );
 
-            let mut deployment_3 = process.deploy::<A, _>(&program_3, rng).unwrap();
+            let mut deployment_3 =
+                process.deploy::<A, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program_3, rng).unwrap();
             deployment_3.set_program_checksum_raw(Some(deployment_3.program().to_checksum()));
             deployment_3.set_program_owner_raw(Some(Address::rand(rng)));
             let expected_storage_cost = 943000;
@@ -2014,7 +2022,8 @@ function noop:",
         )
         .unwrap();
 
-        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        let mut deployment =
+            process.deploy::<AleoV0, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng).unwrap();
         deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
         deployment.set_program_owner_raw(Some(Address::rand(rng)));
 
@@ -2067,7 +2076,8 @@ function noop:",
         )
         .unwrap();
 
-        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        let mut deployment =
+            process.deploy::<AleoV0, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng).unwrap();
         deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
         deployment.set_program_owner_raw(Some(Address::rand(rng)));
 
@@ -2160,7 +2170,8 @@ finalize store:
         )
         .unwrap();
 
-        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        let mut deployment =
+            process.deploy::<AleoV0, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng).unwrap();
         deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
         deployment.set_program_owner_raw(Some(Address::rand(rng)));
 
@@ -2304,7 +2315,7 @@ finalize call_child:
 
         // Build the process with both programs
         let mut process = crate::test_helpers::sample_process(&child_program);
-        process.lock().add_program(&caller_program).unwrap();
+        process.lock().add_program(&caller_program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
 
         let function_name = Identifier::from_str("call_child").unwrap();
 
@@ -2484,9 +2495,9 @@ finalize main:
 
         // Build the process with all programs
         let mut process = crate::test_helpers::sample_process(&leaf_program);
-        process.lock().add_program(&level1_a_program).unwrap();
-        process.lock().add_program(&level1_b_program).unwrap();
-        process.lock().add_program(&root_program).unwrap();
+        process.lock().add_program(&level1_a_program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
+        process.lock().add_program(&level1_b_program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
+        process.lock().add_program(&root_program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
 
         let function_name = Identifier::from_str("main").unwrap();
 

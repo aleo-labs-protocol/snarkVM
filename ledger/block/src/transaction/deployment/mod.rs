@@ -433,7 +433,9 @@ pub mod test_helpers {
                     // Construct the process.
                     let process = Process::load().unwrap();
                     // Compute the deployment.
-                    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                    let deployment = process
+                        .deploy::<CurrentAleo, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng)
+                        .unwrap();
                     // Return the deployment.
                     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
                     Deployment::from_str(&deployment.to_string()).unwrap()

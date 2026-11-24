@@ -72,7 +72,7 @@ set r1 into group_data[r0];
     .unwrap();
 
     let process = Process::<CurrentNetwork>::load().unwrap();
-    process.lock().add_program(&program).unwrap();
+    process.lock().add_program(&program, ConsensusVersion::V22).unwrap();
     let stack = process.get_stack(program.id()).unwrap();
 
     // Returns the cost of the single `rand.chacha` command in the given finalize block.

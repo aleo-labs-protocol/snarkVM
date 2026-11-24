@@ -614,7 +614,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 let nonce = A::g_scalar_multiply(&randomizer);
 
                 // Locally constructed records have version 1. Pre-V23 circuits use a private input.
-                let mode = if registers.circuit_consensus_version() >= ConsensusVersion::V23 {
+                let mode = if registers.circuit_version() >= ConsensusVersion::V23 {
                     circuit::Mode::Constant
                 } else {
                     circuit::Mode::Private

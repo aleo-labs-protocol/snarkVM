@@ -21,7 +21,7 @@ use crate::synthesis::helpers::*;
 use circuit::{Mode, environment::R1CS};
 use console::{
     account::PrivateKey,
-    network::Network,
+    network::{ConsensusVersion, Network},
     prelude::{Itertools, ToBits as TBits, Uniform, Zero},
     program::{Field, Identifier, Literal, LiteralType, Value},
 };
@@ -106,7 +106,7 @@ function synthesize:
         // Initialize a new process.
         let process = Process::<N>::load()?;
         // Initialize the stack with the synthesis challenge program.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
 
         Ok(Self { stack, register_table, epoch_hash })
     }

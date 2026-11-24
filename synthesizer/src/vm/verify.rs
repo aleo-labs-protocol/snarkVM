@@ -343,7 +343,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
                     );
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
-                    let stack = Stack::new(&self.process, deployment.program())?;
+                    let stack = Stack::new(&self.process, deployment.program(), consensus_version)?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
                     // Before V14, record verifying keys are not allowed.
                     let num_functions = deployment.num_functions();
@@ -437,7 +437,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         consensus_config_value!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, current_block_height).ok_or_else(
                             || anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"),
                         )?;
-                    let stack = Stack::new(&self.process, deployment.program())?;
+                    let stack = Stack::new(&self.process, deployment.program(), consensus_version)?;
                     check_program_plaintext_sizes(deployment.program(), &stack, max_plaintext_type_bits)?;
                 }
 
@@ -823,7 +823,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     fn check_deployment_internal<R: CryptoRng + Rng>(&self, deployment: &Deployment<N>, rng: &mut R) -> Result<()> {
         // Retrieve the block height.
         let block_height = self.block_store().current_block_height();
-        // Determine which consensus version to use.
+        // This tip is the parent used by `Network::deployment_circuit_version` when the deployment is stored.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
 
         macro_rules! logic {
@@ -1233,7 +1233,7 @@ finalize verify:
                 ))
                 .expect("valid test fixture");
                 let process = Process::<CurrentNetwork>::load().expect("valid test fixture");
-                let stack = Stack::new(&process, &program).expect("valid test fixture");
+                let stack = Stack::new(&process, &program, ConsensusVersion::latest()).expect("valid test fixture");
                 let name = Identifier::from_str("verify").expect("valid test fixture");
                 let instruction =
                     SnarkVerification::<CurrentNetwork, VARIANT>::parse(&format!("{opcode} r0 r1 r2 r3 into r4"))
@@ -1341,7 +1341,7 @@ finalize verify:
         let program = crate::vm::test_helpers::sample_program();
 
         // Deploy the program.
-        let deployment = vm.deploy_raw(ConsensusVersion::V1, &program, rng).unwrap();
+        let deployment = vm.deploy_raw(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng).unwrap();
 
         // Get the size of the cache.
         let cache_size = vm.partially_verified_transactions.read().len();
@@ -1444,7 +1444,7 @@ finalize verify:
         let program = Program::credits().unwrap();
 
         // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(ConsensusVersion::V1, &program, rng).is_err());
+        assert!(vm.deploy_raw(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng).is_err());
 
         // Create a new `credits.aleo` program.
         let program = Program::from_str(
@@ -1463,7 +1463,7 @@ function compute:
         .unwrap();
 
         // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(ConsensusVersion::V1, &program, rng).is_err());
+        assert!(vm.deploy_raw(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng).is_err());
     }
 
     #[test]
@@ -2147,7 +2147,7 @@ function compute:
         );
         // A deployment check synthesizes its functions before its translations, and each function resets the
         // circuit, so only a translation synthesized directly observes the state that the halt leaves.
-        let stack = Stack::new(vm.process(), &good_program).expect("valid test fixture");
+        let stack = Stack::new(vm.process(), &good_program, ConsensusVersion::latest()).expect("valid test fixture");
         let record_name = Identifier::from_str("tok0").expect("valid test fixture");
         let translation = pool.install(|| {
             stack.synthesize_translation_key::<test_helpers::CurrentAleo, _>(&record_name, &mut TestRng::default())

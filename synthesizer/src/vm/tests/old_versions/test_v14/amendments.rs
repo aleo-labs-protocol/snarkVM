@@ -32,7 +32,7 @@ fn create_v3_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng 
     rng: &mut R,
 ) -> Result<Transaction<CurrentNetwork>> {
     // Create a deployment for the program.
-    let mut v3_deployment = vm.process().deploy::<CurrentAleo, _>(program, rng)?;
+    let mut v3_deployment = vm.process().deploy::<CurrentAleo, _>(ConsensusVersion::V14, program, rng)?;
 
     // Set the V3 deployment fields (amendment: checksum but no owner).
     // Translation VKs are retained if the program has records.
@@ -345,7 +345,8 @@ constructor:
     // Test 1: An amendment with wrong checksum should be rejected by the VM.
     // Note: Raw setters bypass construction validation, so the transaction is created,
     // but the VM will reject it during check_transaction because the checksum doesn't match.
-    let mut wrong_checksum_deployment = vm.process().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
+    let mut wrong_checksum_deployment =
+        vm.process().deploy::<CurrentAleo, _>(ConsensusVersion::V14, &deployed_program, rng)?;
     wrong_checksum_deployment.set_edition_raw(0);
     wrong_checksum_deployment.set_program_checksum_raw(Some([0u8; 32].map(U8::new))); // Wrong checksum
     wrong_checksum_deployment.set_program_owner_raw(None);
@@ -380,7 +381,8 @@ constructor:
 ",
     )?;
 
-    let mut nonexistent_deployment = vm.process().deploy::<CurrentAleo, _>(&nonexistent_program, rng)?;
+    let mut nonexistent_deployment =
+        vm.process().deploy::<CurrentAleo, _>(ConsensusVersion::V14, &nonexistent_program, rng)?;
     nonexistent_deployment.set_edition_raw(0);
     nonexistent_deployment.set_program_checksum_raw(Some(nonexistent_program.to_checksum()));
     nonexistent_deployment.set_program_owner_raw(None);
@@ -524,7 +526,7 @@ fn test_credits_cannot_be_amended() -> Result<()> {
     let credits_program = Program::credits()?;
 
     // Attempt to create a V3 deployment for credits.aleo - this should fail.
-    let result = vm.process().deploy::<CurrentAleo, _>(&credits_program, rng);
+    let result = vm.process().deploy::<CurrentAleo, _>(ConsensusVersion::V14, &credits_program, rng);
 
     // Verify that creating a deployment for credits.aleo fails.
     assert!(result.is_err(), "Creating a deployment for credits.aleo should fail");

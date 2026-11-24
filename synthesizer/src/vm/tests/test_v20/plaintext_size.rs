@@ -27,11 +27,14 @@ fn run_check_at_v20_with_imports(imports: &[&str], program_text: &str) -> Result
 
     // Add the imported programs, in topological order, so that the program under test resolves.
     for import in imports {
-        vm.process().lock().add_program(&Program::<CurrentNetwork>::from_str(import).unwrap()).unwrap();
+        vm.process()
+            .lock()
+            .add_program(&Program::<CurrentNetwork>::from_str(import).unwrap(), ConsensusVersion::V20)
+            .unwrap();
     }
 
     let program = Program::<CurrentNetwork>::from_str(program_text).unwrap();
-    let stack = Stack::new(vm.process(), &program).unwrap();
+    let stack = Stack::new(vm.process(), &program, ConsensusVersion::V20).unwrap();
     let max_bits = CurrentNetwork::LATEST_MAX_PLAINTEXT_TYPE_SIZE_IN_BITS();
     check_program_plaintext_sizes(&program, &stack, max_bits)
 }

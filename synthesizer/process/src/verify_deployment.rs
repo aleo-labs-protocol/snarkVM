@@ -70,11 +70,12 @@ impl<N: Network> Process<N> {
             // Note: `Stack::new` cannot be used here because it would increment the edition.
             // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
             let existing_stack = self.get_stack(program_id)?;
-            let stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+            let stack =
+                Stack::new_raw(self, deployment.program(), *existing_stack.program_edition(), consensus_version)?;
             stack.initialize_and_check(self)?;
             stack
         } else {
-            Stack::new(self, deployment.program())?
+            Stack::new(self, deployment.program(), consensus_version)?
         };
         timing_event!("Compute the stack");
 
@@ -159,7 +160,7 @@ mod tests {
         keys_program: &Program<CurrentNetwork>,
         rng: &mut TestRng,
     ) -> Deployment<CurrentNetwork> {
-        let keys = process.deploy::<CurrentAleo, _>(keys_program, rng).unwrap();
+        let keys = process.deploy::<CurrentAleo, _>(ConsensusVersion::latest(), keys_program, rng).unwrap();
         Deployment::new(
             0,
             program.clone(),
@@ -188,7 +189,8 @@ mod tests {
         .enumerate()
         {
             let program = cast_program(op, index, x);
-            let deployment = Process::load().unwrap().deploy::<CurrentAleo, _>(&program, rng).unwrap();
+            let deployment =
+                Process::load().unwrap().deploy::<CurrentAleo, _>(ConsensusVersion::latest(), &program, rng).unwrap();
             Process::load()
                 .unwrap()
                 .verify_deployment::<CurrentAleo, _>(ConsensusVersion::latest(), &deployment, rng)
@@ -204,7 +206,14 @@ mod tests {
         {
             let program = cast_program(op, index, x);
             let process = Process::load().unwrap();
-            assert!(try_vm_runtime(|| process.deploy::<CurrentAleo, _>(&program, &mut TestRng::default())).is_err());
+            assert!(
+                try_vm_runtime(|| process.deploy::<CurrentAleo, _>(
+                    ConsensusVersion::latest(),
+                    &program,
+                    &mut TestRng::default()
+                ))
+                .is_err()
+            );
 
             let deployment = deployment_with_keys_of(&process, &program, &cast_program(op, index, "2"), rng);
             let process = Process::load().unwrap();
@@ -294,7 +303,8 @@ mod tests {
         let large_program = Program::from_str(include_str!("./resources/large_functions.aleo"))?;
 
         // Create a deployment for the program.
-        let deployment = process.deploy::<CurrentAleo, _>(&large_program, rng)?;
+        let deployment =
+            process.deploy::<CurrentAleo, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &large_program, rng)?;
 
         // Verify the deployment.
         assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
@@ -359,11 +369,19 @@ mod tests {
         let process = Process::load()?;
 
         let program_with_31_mappings = program_with_mappings(31)?;
-        let deployment_with_31_mappings = process.deploy::<CurrentAleo, _>(&program_with_31_mappings, rng)?;
+        let deployment_with_31_mappings = process.deploy::<CurrentAleo, _>(
+            ConsensusVersion::LEGACY_CIRCUIT_VERSION,
+            &program_with_31_mappings,
+            rng,
+        )?;
         process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_31_mappings, rng)?;
 
         let program_with_32_mappings = program_with_mappings(32)?;
-        let deployment_with_32_mappings = process.deploy::<CurrentAleo, _>(&program_with_32_mappings, rng)?;
+        let deployment_with_32_mappings = process.deploy::<CurrentAleo, _>(
+            ConsensusVersion::LEGACY_CIRCUIT_VERSION,
+            &program_with_32_mappings,
+            rng,
+        )?;
         assert!(
             process
                 .verify_deployment::<CurrentAleo, _>(ConsensusVersion::V21, &deployment_with_32_mappings, rng)
@@ -374,7 +392,11 @@ mod tests {
         process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &deployment_with_32_mappings, rng)?;
 
         let program_with_128_mappings = program_with_mappings(128)?;
-        let deployment_with_128_mappings = process.deploy::<CurrentAleo, _>(&program_with_128_mappings, rng)?;
+        let deployment_with_128_mappings = process.deploy::<CurrentAleo, _>(
+            ConsensusVersion::LEGACY_CIRCUIT_VERSION,
+            &program_with_128_mappings,
+            rng,
+        )?;
         process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &deployment_with_128_mappings, rng)?;
 
         Ok(())
@@ -407,7 +429,7 @@ function private_output:
     fn test_static_call_to_constant_output_by_consensus_version() -> Result<()> {
         let rng = &mut TestRng::default();
         let process = Process::load()?;
-        process.lock().add_program(&Program::from_str(CONSTANT_OUTPUT_CALLEE)?)?;
+        process.lock().add_program(&Program::from_str(CONSTANT_OUTPUT_CALLEE)?, ConsensusVersion::latest())?;
 
         // Before V23, the caller's circuit depends on the value that synthesis samples for the constant output. The
         // verifier samples it with a seed derived from the deployment, which is fixed by the program. So only some
@@ -415,7 +437,7 @@ function private_output:
         let mut accepted = None;
         for attempt in 0..32 {
             let program = program_calling(&format!("calls_constant_{attempt}"), "constant_output")?;
-            let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+            let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::latest(), &program, rng)?;
             match process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &deployment, rng) {
                 Ok(()) => {
                     accepted = Some(deployment);
@@ -439,7 +461,7 @@ function private_output:
 
         // A call to a function without constant outputs is accepted at every consensus version.
         let program = program_calling("calls_private", "private_output")?;
-        let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+        let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::latest(), &program, rng)?;
         for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23, ConsensusVersion::latest()] {
             process.verify_deployment::<CurrentAleo, _>(consensus_version, &deployment, rng)?;
         }
@@ -460,7 +482,7 @@ program testing.aleo;
 function foo:
     add 0u8 1u8 into r0;",
         )?;
-        let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+        let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::latest(), &program, rng)?;
 
         let over_v1_variables = with_claimed_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES + 1);
         let over_v2_variables = with_claimed_variables(&deployment, CurrentNetwork::MAX_DEPLOYMENT_VARIABLES_V2 + 1);
@@ -587,7 +609,7 @@ finalize foo:
     fn test_synthesis_limits_after_call_by_consensus_version() -> Result<()> {
         let rng = &mut TestRng::default();
         let process = Process::load()?;
-        process.lock().add_program(&Program::from_str(LIMITS_CALLEE)?)?;
+        process.lock().add_program(&Program::from_str(LIMITS_CALLEE)?, ConsensusVersion::latest())?;
 
         let field = |name: &str| Identifier::<CurrentNetwork>::from_str(name)?.to_field();
         let dynamic_call = format!(
@@ -610,14 +632,17 @@ finalize foo:
         ];
 
         // An honest deployment whose function makes several calls, with record and future outputs, is accepted.
-        let deployment =
-            process.deploy::<CurrentAleo, _>(&Program::from_str(CALLS_RETURNING_RECORDS_AND_FUTURES)?, rng)?;
+        let deployment = process.deploy::<CurrentAleo, _>(
+            ConsensusVersion::latest(),
+            &Program::from_str(CALLS_RETURNING_RECORDS_AND_FUTURES)?,
+            rng,
+        )?;
         for consensus_version in [ConsensusVersion::V22, ConsensusVersion::V23] {
             verify_deployment_outcome(&process, consensus_version, &deployment).map_err(|error| anyhow!(error))?;
         }
 
         for (calls, program) in programs {
-            let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
+            let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::latest(), &program, rng)?;
             let vk = &deployment.verifying_keys()[0].1.0;
             let fewer_variables = with_claimed_variables(&deployment, vk.num_variables() / 2);
             let fewer_constraints = with_claimed_constraints(&deployment, vk.circuit_info.num_constraints / 2);

@@ -40,8 +40,11 @@ impl<N: Network> Stack<N> {
         }
 
         // Initialize the registers.
-        let mut registers =
-            Registers::<N, A>::new(call_stack.clone(), self.get_register_types(closure.name())?.clone());
+        let mut registers = Registers::<N, A>::new(
+            call_stack.clone(),
+            self.get_register_types(closure.name())?.clone(),
+            self.circuit_version,
+        );
         // Set the transition signer.
         registers.set_signer(signer);
         // Set the transition caller.
@@ -242,7 +245,8 @@ impl<N: Network> Stack<N> {
         }
 
         // Initialize the registers.
-        let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
+        let mut registers =
+            Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone(), self.circuit_version);
         // Set the transition signer.
         registers.set_signer(signer);
         // Set the transition caller.

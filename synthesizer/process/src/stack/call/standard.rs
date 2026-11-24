@@ -267,14 +267,14 @@ impl<N: Network> CallTrait<N> for Call<N> {
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
             timing_event!("Execute the closure");
             // Execute the closure, and load the outputs.
-            substack.execute_closure_in_circuit(
+            substack.execute_closure(
                 &closure,
                 &inputs,
                 registers.call_stack(),
                 registers.signer_circuit()?,
                 registers.caller_circuit()?,
                 registers.tvk_circuit()?,
-                registers.circuit_consensus_version(),
+                registers.circuit_version(),
             )?
         }
         // If the operator is a function, retrieve the function and compute the output.

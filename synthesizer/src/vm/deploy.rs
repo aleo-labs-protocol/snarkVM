@@ -105,7 +105,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the program.
                 let program = cast_ref!(&program as Program<$network>);
                 // Compute the deployment.
-                let deployment = $process.deploy_with_consensus_version::<$aleo, _>(consensus_version, program, rng)?;
+                let deployment = $process.deploy::<$aleo, _>(consensus_version, program, rng)?;
                 // Prepare the deployment.
                 Ok(cast_ref!(deployment as Deployment<N>).clone())
             }};

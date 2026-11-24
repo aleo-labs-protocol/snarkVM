@@ -43,6 +43,7 @@ pub fn sample_registers(
     let mut registers = Registers::<CurrentNetwork, CurrentAleo>::new(
         CallStack::evaluate(Authorization::try_from((vec![], vec![]))?)?,
         stack.get_register_types(function_name)?.clone(),
+        stack.circuit_version(),
     );
 
     // For each value, store the register and value.

@@ -211,7 +211,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let deployments = cfg_iter!(chunk)
                 .map(|(transaction_id, (height, _))| {
                     // Deployment verification uses the height of the parent block.
-                    let consensus_version = N::CONSENSUS_VERSION(height.saturating_sub(1))?;
+                    let consensus_version = N::deployment_circuit_version(*height)?;
                     // Retrieve the deployment from the transaction ID.
                     match transaction_store.get_deployment(transaction_id)? {
                         Some(deployment) => Ok((consensus_version, deployment)),
@@ -222,7 +222,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Add the deployments to the process.
             // Note: This iterator must be serial, to ensure deployments are loaded in the order of their dependencies.
             for (consensus_version, deployment) in &deployments {
-                process.load_deployment_with_consensus_version(*consensus_version, deployment)?;
+                process.load_deployment(*consensus_version, deployment)?;
             }
         }
 
@@ -3342,10 +3342,10 @@ function check:
         let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
-        process.lock().add_program(&child_program_1).unwrap();
-        process.lock().add_program(&child_program_2).unwrap();
-        process.lock().add_program(&parent_program).unwrap();
-        process.lock().add_program(&grandparent_program).unwrap();
+        process.lock().add_program(&child_program_1, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
+        process.lock().add_program(&child_program_2, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
+        process.lock().add_program(&parent_program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
+        process.lock().add_program(&grandparent_program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
 
         // Specify the function name on the parent program
         let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
@@ -3488,7 +3488,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment_1.fee_amount().unwrap(), 2483025);
         // Add the first program to the off-chain VM.
-        off_chain_vm.process().lock().add_program(&program_1).unwrap();
+        off_chain_vm.process().lock().add_program(&program_1, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
         // Deploy the second program.
         let deployment_2 = off_chain_vm.deploy(&private_key_2, &program_2, None, 0, None, rng).unwrap();
         // Check that the account has enough to pay for the deployment.
@@ -3606,7 +3606,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment.fee_amount().unwrap(), 2483025);
         // Add the program to the off-chain VM.
-        off_chain_vm.process().lock().add_program(&program).unwrap();
+        off_chain_vm.process().lock().add_program(&program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
         // Execute the program.
         let transaction = off_chain_vm
             .execute(

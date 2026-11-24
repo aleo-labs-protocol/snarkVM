@@ -17,29 +17,18 @@ use super::*;
 use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
-    /// Deploys the program using the legacy record-cast circuit.
+    /// Builds deployment keys and certificates with the circuit rules for the given consensus version.
     #[inline]
     pub fn deploy<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
-        program: &Program<N>,
-        rng: &mut R,
-    ) -> Result<Deployment<N>, ProcessDeployError> {
-        self.deploy_with_consensus_version::<A, R>(ConsensusVersion::V22, program, rng)
-    }
-
-    /// Builds deployment keys and certificates with the circuit rules for the given consensus version.
-    #[inline]
-    pub fn deploy_with_consensus_version<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
-        &self,
-        consensus_version: ConsensusVersion,
+        circuit_version: ConsensusVersion,
         program: &Program<N>,
         rng: &mut R,
     ) -> Result<Deployment<N>, ProcessDeployError> {
         let timer = timing_span!("Process::deploy").entered();
 
         // Compute the stack.
-        let mut stack = Stack::new(self, program)?;
-        stack.deployment_consensus_version = consensus_version;
+        let stack = Stack::new(self, program, circuit_version)?;
         timing_event!("Compute the stack");
 
         // Return the deployment.
@@ -51,30 +40,19 @@ impl<N: Network> Process<N> {
         Ok(deployment)
     }
 
-    /// Loads a deployment certified with the legacy record-cast circuit.
-    /// This method assumes the given deployment **is valid**.
-    #[inline]
-    pub fn load_deployment(&self, deployment: &Deployment<N>) -> Result<()> {
-        self.load_deployment_with_consensus_version(ConsensusVersion::V22, deployment)
-    }
-
     /// Loads a verified deployment with the consensus version used to certify its keys.
     #[inline]
-    pub fn load_deployment_with_consensus_version(
-        &self,
-        consensus_version: ConsensusVersion,
-        deployment: &Deployment<N>,
-    ) -> Result<()> {
+    pub fn load_deployment(&self, circuit_version: ConsensusVersion, deployment: &Deployment<N>) -> Result<()> {
         let timer = timing_span!("Process::load_deployment").entered();
 
         // Get the deployment version.
         let version = deployment.version()?;
 
         // Load the deployment based on its version.
-        let mut stack = match version {
+        let stack = match version {
             DeploymentVersion::V1 | DeploymentVersion::V2 => {
                 // Compute the program stack.
-                let mut stack = Stack::new(self, deployment.program())?;
+                let mut stack = Stack::new(self, deployment.program(), circuit_version)?;
                 timing_event!("Compute the stack");
 
                 // Set the program owner.
@@ -94,7 +72,8 @@ impl<N: Network> Process<N> {
                 // Compute a new stack with the same program and edition.
                 // Note: `Stack::new` cannot be used here because it would increment the edition.
                 // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
-                let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+                let mut stack =
+                    Stack::new_raw(self, deployment.program(), *existing_stack.program_edition(), circuit_version)?;
                 stack.initialize_and_check(self)?;
                 timing_event!("Compute the stack");
 
@@ -106,8 +85,6 @@ impl<N: Network> Process<N> {
                 stack
             }
         };
-
-        stack.deployment_consensus_version = consensus_version;
 
         // Insert all verifying keys (unified: functions + records).
         for (name, (verifying_key, _)) in deployment.verifying_keys() {

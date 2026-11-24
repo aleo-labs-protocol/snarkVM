@@ -108,10 +108,24 @@ impl<N: Network> Stack<N> {
 
         // Synthesize the proving and verifying key.
         let (proving_key, verifying_key) = self.universal_srs.to_circuit_key(&function_name.to_string(), assignment)?;
-        // Insert the proving key.
+        // The built-in credits program has no deployment certificate. Genesis loads its V0 keys
+        // and replaces them when synthesizing the proving keys.
+        if self.program_id() == &ProgramID::credits() {
+            self.insert_proving_key(function_name, proving_key)?;
+            return self.insert_verifying_key(function_name, verifying_key);
+        }
+        let mut verifying_keys = self.verifying_keys.write();
+        if let Some(stored_key) = verifying_keys.get(function_name) {
+            // The declared variable limit is deployment metadata. Only the underlying key identifies the circuit.
+            ensure!(
+                stored_key.deref() == verifying_key.deref(),
+                "Derived verifying key for '{}/{function_name}' does not match the stored key. Check the deployment circuit version.",
+                self.program_id()
+            );
+        }
         self.insert_proving_key(function_name, proving_key)?;
-        // Insert the verifying key.
-        self.insert_verifying_key(function_name, verifying_key)
+        verifying_keys.entry(*function_name).or_insert(verifying_key);
+        Ok(())
     }
 
     /// Synthesizes the proving key and verifying key for the translation circuit of the record with the given name.

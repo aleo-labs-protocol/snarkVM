@@ -31,7 +31,7 @@ const CYCLIC_STRUCT_CHILD: &str = "SNARKVM_CYCLIC_STRUCT_EQUIVALENCE_CHILD";
 // ---------- Helper ----------
 fn sample_stack(program_text: &str) -> Result<Stack<CurrentNetwork>> {
     let program = Program::from_str(program_text)?;
-    let stack = Stack::new(shared_process(), &program)?;
+    let stack = Stack::new(shared_process(), &program, ConsensusVersion::latest())?;
     Ok(stack)
 }
 
@@ -142,7 +142,7 @@ fn test_external_vs_local_struct_equivalence() -> Result<()> {
         struct Foo: x as u32; y as u32;
         function main:",
     )?;
-    process.lock().add_program(&external_program)?;
+    process.lock().add_program(&external_program, ConsensusVersion::latest())?;
 
     // Local program that imports external
     let local_program = Program::from_str(
@@ -151,7 +151,7 @@ fn test_external_vs_local_struct_equivalence() -> Result<()> {
         struct Foo: x as u32; y as u32;
         function main:",
     )?;
-    process.lock().add_program(&local_program)?;
+    process.lock().add_program(&local_program, ConsensusVersion::latest())?;
 
     // Retrieve the stack for the local program
     let s_local = process.get_stack(local_program.id())?;
@@ -187,7 +187,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
         struct Bar: a as u32; b as u32;
         function main:",
     )?;
-    process.lock().add_program(&external_program)?;
+    process.lock().add_program(&external_program, ConsensusVersion::latest())?;
 
     // ---------- Local program importing external ----------
     let local_program = Program::from_str(
@@ -197,7 +197,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
         struct Baz: f as Foo; g as u32;
         function main:",
     )?;
-    process.lock().add_program(&local_program)?;
+    process.lock().add_program(&local_program, ConsensusVersion::latest())?;
 
     // ---------- Retrieve the stack ----------
     let s_local = process.get_stack(local_program.id())?;
@@ -253,7 +253,7 @@ constructor:
     assert.eq true true;
 ",
         )?;
-        process.lock().add_program(&program_b)?;
+        process.lock().add_program(&program_b, ConsensusVersion::latest())?;
 
         let program_a = Program::from_str(
             r"
@@ -266,7 +266,7 @@ constructor:
     assert.eq true true;
 ",
         )?;
-        process.lock().add_program(&program_a)?;
+        process.lock().add_program(&program_a, ConsensusVersion::latest())?;
 
         let upgraded_program_b = Program::from_str(
             r"
@@ -279,7 +279,7 @@ constructor:
     assert.eq true true;
 ",
         )?;
-        process.lock().add_program(&upgraded_program_b)?;
+        process.lock().add_program(&upgraded_program_b, ConsensusVersion::latest())?;
 
         let stack_a = process.get_stack(program_a.id())?;
         let node = PlaintextType::Struct("Node".try_into()?);

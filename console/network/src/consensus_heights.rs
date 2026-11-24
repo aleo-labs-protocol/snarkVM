@@ -137,6 +137,9 @@ impl FromBytes for ConsensusVersion {
 }
 
 impl ConsensusVersion {
+    /// The last consensus version that uses a private input for locally cast record versions.
+    pub const LEGACY_CIRCUIT_VERSION: Self = Self::V22;
+
     pub fn latest() -> Self {
         last::<ConsensusVersion>().expect("At least one ConsensusVersion should be defined.")
     }

@@ -58,7 +58,7 @@ fn test_conditional_dynamic_call_target_deployment_via_signer() {
     // should be accepted by process.verify_deployment, but the outcome for each fixed deployment
     // should be the same across all calls to verify_deployment.
     for i in 0..N_EXPERIMENTS {
-        let deployment_attempt = process.deploy::<CurrentAleo, _>(&parse_program(i), rng);
+        let deployment_attempt = process.deploy::<CurrentAleo, _>(ConsensusVersion::V20, &parse_program(i), rng);
 
         match deployment_attempt {
             Ok(deployment) => {
@@ -137,7 +137,7 @@ fn test_conditional_dynamic_call_target_deployment_via_get_record_dynamic() {
     // should be accepted by process.verify_deployment, but the outcome for each fixed deployment
     // must be the same across all calls to verify_deployment.
     for i in 0..N_EXPERIMENTS {
-        let deployment_attempt = process.deploy::<CurrentAleo, _>(&parse_program(i), rng);
+        let deployment_attempt = process.deploy::<CurrentAleo, _>(ConsensusVersion::V20, &parse_program(i), rng);
 
         match deployment_attempt {
             Ok(deployment) => {

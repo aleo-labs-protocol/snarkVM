@@ -114,7 +114,7 @@ function test_serde_equivalence:
         let program = construct_program(variant, type_.clone(), bits_type.clone());
 
         // Add the program to the process.
-        process.lock().add_program(&program).unwrap();
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
 
         // Get the stack.
         let stack = process.get_stack(program.id()).unwrap();
@@ -230,7 +230,7 @@ finalize dummy:
     .unwrap();
 
     // Add the program to the process.
-    process.lock().add_program(&program0).unwrap();
+    process.lock().add_program(&program0, ConsensusVersion::latest()).unwrap();
 
     // Define a program with data types that we want to test.
     let program1 = Program::<CurrentNetwork>::from_str(
@@ -273,7 +273,7 @@ finalize dummy:
     .unwrap();
 
     // Add the program to the process.
-    process.lock().add_program(&program1).unwrap();
+    process.lock().add_program(&program1, ConsensusVersion::latest()).unwrap();
 
     // Get the stack.
     let stack = process.get_stack(program1.id()).unwrap();

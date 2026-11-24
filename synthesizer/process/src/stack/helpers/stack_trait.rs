@@ -500,7 +500,7 @@ function dynamic_func:
         .unwrap();
         // Add the program to a fresh process (no deployment needed for stack inspection).
         let process = Process::<CurrentNetwork>::load().unwrap();
-        process.lock().add_program(&program).unwrap();
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
         let stack = process.get_stack("dynamic_test.aleo").unwrap();
         // `dynamic_func` contains a `call.dynamic` instruction and must be detected.
         let function_name = Identifier::from_str("dynamic_func").unwrap();
@@ -539,8 +539,8 @@ function caller_func:
         .unwrap();
         // Add programs in dependency order: helper first, then caller.
         let process = Process::<CurrentNetwork>::load().unwrap();
-        process.lock().add_program(&helper_program).unwrap();
-        process.lock().add_program(&caller_program).unwrap();
+        process.lock().add_program(&helper_program, ConsensusVersion::latest()).unwrap();
+        process.lock().add_program(&caller_program, ConsensusVersion::latest()).unwrap();
         let stack = process.get_stack("caller.aleo").unwrap();
         // `caller_func` transitively reaches `call.dynamic` via `helper.aleo/dynamic_helper`.
         let function_name = Identifier::from_str("caller_func").unwrap();
@@ -626,7 +626,7 @@ function caller_func:
         // Build a stack for a program that exercises every register type variant.
         let program = Program::<CurrentNetwork>::from_str(program_str).unwrap();
         let process = Process::<CurrentNetwork>::load().unwrap();
-        process.lock().add_program(&program).unwrap();
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
         let stack = process.get_stack(program_id).unwrap();
 
         let types: Vec<_> = cases.iter().map(|(t, _)| RegisterType::<CurrentNetwork>::from_str(t).unwrap()).collect();
