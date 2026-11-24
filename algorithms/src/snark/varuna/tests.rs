@@ -1118,6 +1118,8 @@ mod varuna_hiding {
         use crate::polycommit::kzg10::KZGCommitment;
 
         let mut rng = TestRng::default();
+        // The setup and the proof are those of the other tests here, for a satisfied
+        // circuit within the SRS's degree, so they succeed.
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
@@ -1129,6 +1131,7 @@ mod varuna_hiding {
                 .unwrap();
 
         proof.commitments.h_0 = KZGCommitment(g1_point_outside_subgroup());
+        // Writing a proof to a vector cannot fail.
         let bytes = proof.to_bytes_le().unwrap();
 
         assert!(crate::snark::varuna::Proof::<Bls12_377>::read_le(&bytes[..]).is_err());
@@ -1141,12 +1144,15 @@ mod varuna_hiding {
         use snarkvm_utilities::serialize::*;
 
         let mut rng = TestRng::default();
+        // The setup is that of the other tests here, for a circuit within the SRS's
+        // degree, so it succeeds.
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
         let (circ, _) = TestCircuit::gen_rand(1, 26, 25, &mut rng);
         let (_, mut index_vk) = VarunaInst::circuit_setup(&universal_srs, &circ).unwrap();
 
         index_vk.circuit_commitments[0] = KZGCommitment(g1_point_outside_subgroup());
+        // Writing a verifying key to a vector cannot fail.
         let bytes = index_vk.to_bytes_le().unwrap();
 
         assert!(CircuitVerifyingKey::<Bls12_377>::deserialize_compressed_unchecked(&bytes[..]).is_ok());
