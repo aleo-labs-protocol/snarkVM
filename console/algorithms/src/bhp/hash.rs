@@ -175,8 +175,10 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHP<E, NUM_WI
     #[doc(hidden)]
     pub fn hash_8_lanes(&self, inputs: [&[bool]; 8]) -> Option<[Field<E>; 8]> {
         let len = inputs[0].len();
-        // The most input bits of one iteration.
-        let max_len = NUM_WINDOWS as usize * WINDOW_SIZE as usize * BHP_CHUNK_SIZE - Field::<E>::size_in_data_bits();
+        // The most input bits of one iteration. An instance whose iteration holds less than one field element
+        // takes no input here.
+        let max_len = (NUM_WINDOWS as usize * WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
+            .checked_sub(Field::<E>::size_in_data_bits())?;
         if !(1..=max_len).contains(&len) || inputs.iter().any(|input| input.len() != len) {
             return None;
         }
@@ -298,6 +300,14 @@ mod tests {
     #[test]
     fn test_hash_8_bhp1024() {
         check_hash_8_lengths::<8, 54>("AleoBHP1024", &mut TestRng::default());
+    }
+
+    /// An instance whose iteration holds less than one field element stays out of the lanes.
+    #[test]
+    fn test_hash_8_lanes_declines_a_small_instance() {
+        let bhp = BHP::<Console, 1, 57>::setup("Small").unwrap();
+        assert!(bhp.hash_8_lanes([[true; 5].as_slice(); 8]).is_none());
+        assert!(bhp.lane_tables.get().is_none());
     }
 
     /// The lane tables exist only after a call that `hash_8_lanes` takes, and only where the lanes run.

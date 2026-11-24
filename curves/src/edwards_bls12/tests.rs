@@ -738,8 +738,11 @@ fn test_add_table_entries_8() {
 #[test]
 fn test_edwards_add_entries_8_formulas() {
     let rng = &mut TestRng::default();
-    let edges = [Fq::zero(), Fq::one(), -Fq::one()];
-    let mut value = |extreme: f64| if rng.random_bool(extreme) { edges[rng.random_range(0..3)] } else { Fq::rand(rng) };
+    // The last edge has the largest stored words, `p - 1`.
+    let mut largest = <FqParameters as snarkvm_fields::FieldParameters>::MODULUS;
+    largest.0[0] -= 1;
+    let edges = [Fq::zero(), Fq::one(), -Fq::one(), snarkvm_fields::Fp256(largest, core::marker::PhantomData)];
+    let mut value = |extreme: f64| if rng.random_bool(extreme) { edges[rng.random_range(0..4)] } else { Fq::rand(rng) };
     for (iteration, extreme) in [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.0].into_iter().cycle().take(400).enumerate() {
         let start: [[Fq; 8]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| value(extreme)));
         let tables: [Vec<[Fq; 3]>; 3] =
