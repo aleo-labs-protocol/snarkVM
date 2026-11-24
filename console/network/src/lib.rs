@@ -390,6 +390,14 @@ pub trait Network:
             }
         }
     }
+    /// Returns the circuit version for a deployment or amendment accepted at the given block height.
+    /// Use the height of the latest accepted deployment or amendment for each program, including imports.
+    /// Deployment verification uses the parent block as its tip. Using the latest consensus version for
+    /// keys certified before V23 can select a different circuit.
+    /// Offline callers can load the deployed verifying keys before synthesis to detect a circuit mismatch.
+    fn deployment_circuit_version(accepted_height: u32) -> Result<ConsensusVersion> {
+        Self::CONSENSUS_VERSION(accepted_height.saturating_sub(1))
+    }
     /// Returns the height at which a specified consensus version becomes active.
     #[allow(non_snake_case)]
     fn CONSENSUS_HEIGHT(version: ConsensusVersion) -> Result<u32> {

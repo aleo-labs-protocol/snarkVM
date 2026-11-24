@@ -201,28 +201,33 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
 
     /// Adds a new program to the process, verifying that it is a valid addition.
     /// If the program exists, then the existing stack is replaced and discarded.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    /// Use the version that certified the program's keys. The on-chain VM uses `finalize_deployment` or `load_deployment`.
     #[inline]
-    pub fn add_program(&self, program: &Program<N>) -> Result<()> {
+    pub fn add_program(&self, program: &Program<N>, circuit_version: ConsensusVersion) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
         if program.id() != &credits_program_id {
-            self.add_stack(Stack::new(self.process, program)?);
+            self.add_stack(Stack::new(self.process, program, circuit_version)?);
         }
         Ok(())
     }
 
     /// Adds a new program with the given edition to the process, verifying that it is a valid addition.
     /// If the program exists, then the existing stack is replaced and discarded.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    /// Use the version that certified the program's keys. The on-chain VM uses `finalize_deployment` or `load_deployment`.
     #[inline]
-    pub fn add_program_with_edition(&self, program: &Program<N>, edition: u16) -> Result<()> {
+    pub fn add_program_with_edition(
+        &self,
+        program: &Program<N>,
+        edition: u16,
+        circuit_version: ConsensusVersion,
+    ) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
         if program.id() != &credits_program_id {
-            let stack = Stack::new_raw(self.process, program, edition)?;
+            let stack = Stack::new_raw(self.process, program, edition, circuit_version)?;
             stack.initialize_and_check(self.process)?;
             self.add_stack(stack);
         }
@@ -232,9 +237,17 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Adds a set of programs and editions, in topological order, to the process, deferring validation of the programs until all programs are added.
     /// If a program exists, then the existing stack is replaced and discarded.
     /// Either all programs are added or none are.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    /// Pass the height of each program's latest accepted deployment or amendment to `Network::deployment_circuit_version`.
+    /// Using `ConsensusVersion::latest()` can select a different circuit for a program certified before V23.
+    /// After adding the programs, insert their deployed verifying keys into the stacks before synthesizing proving keys
+    /// so synthesis can detect a circuit mismatch.
+    /// The on-chain VM uses `finalize_deployment` or `load_deployment`.
     #[inline]
-    pub fn add_programs_with_editions(&self, programs: &[(Program<N>, u16)]) -> Result<()> {
+    pub fn add_programs_with_editions(
+        &self,
+        programs: &[(Program<N>, u16)],
+        circuit_version: impl Fn(&ProgramID<N>) -> Result<ConsensusVersion>,
+    ) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // Defer cleanup of the uncommitted stacks.
@@ -244,7 +257,8 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         // Initialize raw stacks for each of the programs, skipping `credits.aleo`.
         for (program, edition) in programs {
             if program.id() != &credits_program_id {
-                self.stage_stack(Stack::new_raw(self.process, program, *edition)?)
+                let stack = Stack::new_raw(self.process, program, *edition, circuit_version(program.id())?)?;
+                self.stage_stack(stack);
             }
         }
         // For each stack, check and initialize it before adding it to the process.
@@ -316,7 +330,7 @@ impl<N: Network> Process<N> {
         timing_event!("Load credits program");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
         timing_event!("Initialize stack");
 
         // Synthesize the 'credits.aleo' circuit keys.
@@ -399,7 +413,7 @@ impl<N: Network> Process<N> {
         timing_event!("Load credits program");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
         timing_event!("Initialize stack");
 
         // Synthesize the 'credits.aleo' verifying keys.
@@ -450,7 +464,7 @@ impl<N: Network> Process<N> {
         timing_event!("Load credits program");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
         timing_event!("Initialize stack");
 
         // Synthesize the 'credits.aleo' verifying keys.
@@ -492,7 +506,7 @@ impl<N: Network> Process<N> {
         let program = Program::credits()?;
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, ConsensusVersion::LEGACY_CIRCUIT_VERSION)?;
 
         // Add the stack to the process.
         process.lock().add_stack(stack);
@@ -755,7 +769,7 @@ pub mod test_helpers {
 
         // Add the program to the process if doesn't yet exist.
         if !process.contains_program(program.id()) {
-            process.lock().add_program(program).unwrap();
+            process.lock().add_program(program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
         }
 
         // Compute the authorization.
@@ -890,7 +904,7 @@ function compute:
         // Construct a new process.
         let process = Process::load().unwrap();
         // Add the program to the process.
-        process.lock().add_program(program).unwrap();
+        process.lock().add_program(program, ConsensusVersion::LEGACY_CIRCUIT_VERSION).unwrap();
         // Return the process.
         process
     }

@@ -274,6 +274,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 registers.signer_circuit()?,
                 registers.caller_circuit()?,
                 registers.tvk_circuit()?,
+                registers.circuit_version(),
             )?
         }
         // If the operator is a function, retrieve the function and compute the output.

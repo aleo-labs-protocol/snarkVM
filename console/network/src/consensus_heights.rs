@@ -95,6 +95,7 @@ pub enum ConsensusVersion {
     ///      Prices the message in `sign.verify` by its encoded size in finalize.
     ///      Applies the plaintext size limit to instruction destinations during deployment verification.
     ///      Keeps the synthesis limits of a deployment check after a `call`.
+    ///      Fixes the record version at 1 in newly certified record casts.
     V23 = 23,
 }
 
@@ -137,6 +138,9 @@ impl FromBytes for ConsensusVersion {
 }
 
 impl ConsensusVersion {
+    /// The last consensus version that uses a private input for locally cast record versions.
+    pub const LEGACY_CIRCUIT_VERSION: Self = Self::V22;
+
     pub fn latest() -> Self {
         last::<ConsensusVersion>().expect("At least one ConsensusVersion should be defined.")
     }

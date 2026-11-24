@@ -181,6 +181,12 @@ impl<N: Network> Stack<N> {
     ) -> Result<()> {
         let timer = timing_span!("Stack::verify_deployment").entered();
 
+        ensure!(
+            consensus_version == self.circuit_version,
+            "Deployment verification version {consensus_version} does not match the stack circuit version {}",
+            self.circuit_version
+        );
+
         // NOTE: As developer, you will likely still want to confirm that your
         // deployment is within R1CS constraint and variable limits using
         // targeted and parallelized synthesis.

@@ -50,7 +50,7 @@ fn make_process(programs: &[&str]) -> Process<CurrentNetwork> {
     for src in programs {
         let (rest, program) = Program::<CurrentNetwork>::parse(src).unwrap(); // unwrap: valid test program
         assert!(rest.is_empty(), "Parser did not consume the full program string");
-        process.lock().add_program(&program).unwrap(); // unwrap: valid program in dependency order
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap(); // unwrap: valid program in dependency order
     }
     process
 }

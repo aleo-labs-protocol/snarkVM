@@ -251,7 +251,7 @@ fn test_dynamic_id_variant_checks() {
     // A standalone process mirroring the deployed programs, used to build the honest executions.
     let process = crate::Process::<CurrentNetwork>::load().unwrap();
     for program in [&issuer, &checker, &top] {
-        process.lock().add_program(program).unwrap();
+        process.lock().add_program(program, ConsensusVersion::V20).unwrap();
     }
 
     // A fabricated ticket record (owned by the caller) for the root-call record-input scenarios.

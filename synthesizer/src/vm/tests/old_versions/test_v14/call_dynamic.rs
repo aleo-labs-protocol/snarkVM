@@ -172,7 +172,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
 
     // Verify the proof in a fresh process that did not synthesize the credits translation key while proving.
     let verifier = Process::<CurrentNetwork>::load()?;
-    verifier.load_deployment(&deployment)?;
+    verifier.load_deployment(ConsensusVersion::V14, &deployment)?;
     let execution = transaction.execution().ok_or_else(|| anyhow!("Expected an execution transaction"))?;
     let execution_stacks = verifier.get_stacks(execution.transitions(), false)?;
     let error = Process::verify_execution(

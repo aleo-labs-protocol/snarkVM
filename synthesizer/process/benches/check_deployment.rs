@@ -152,7 +152,7 @@ function do:
     )
     .unwrap();
     // Create the stack.
-    let stack = Stack::new(&process, &program).unwrap();
+    let stack = Stack::new(&process, &program, ConsensusVersion::latest()).unwrap();
 
     // Declare the function name.
     let function_name = Identifier::from_str("do").unwrap();

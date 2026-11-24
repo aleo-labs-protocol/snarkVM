@@ -18,7 +18,10 @@ mod deploy;
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
-    console::{network::Network, program::ProgramID},
+    console::{
+        network::{ConsensusVersion, Network},
+        program::ProgramID,
+    },
     file::{AleoFile, Manifest},
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{process::Process, program::Program},
@@ -102,8 +105,13 @@ impl<N: Network> Package<N> {
         self.directory.join("imports")
     }
 
-    /// Returns a new process for the package.
-    pub fn get_process(&self) -> Result<Process<N>> {
+    /// Builds a process using the key certification version of each program.
+    /// For a new deployment, use the current tip version for the main program.
+    /// For a deployed program, use `Network::deployment_circuit_version` at the block that certified its current keys.
+    pub fn get_process(
+        &self,
+        circuit_version: impl Fn(&ProgramID<N>) -> Result<ConsensusVersion>,
+    ) -> Result<Process<N>> {
         // Load the default process.
         let process = Process::load()?;
         // Get the imported programs.
@@ -144,7 +152,7 @@ impl<N: Network> Package<N> {
             .collect::<Vec<_>>();
 
         // Load the programs.
-        process.lock().add_programs_with_editions(&programs_and_editions)?;
+        process.lock().add_programs_with_editions(&programs_and_editions, circuit_version)?;
 
         Ok(process)
     }
@@ -373,6 +381,8 @@ function main:
 
 #[cfg(test)]
 mod tests {
+    use super::ConsensusVersion;
+
     #[test]
     fn test_imports_directory() {
         // Samples a new package at a temporary directory.
@@ -409,9 +419,19 @@ mod tests {
             crate::package::test_helpers::sample_nested_package(),
             crate::package::test_helpers::sample_transfer_package(),
         ] {
-            // Get the process, and ensure it contains the main program.
-            let process = package.get_process().unwrap();
-            assert!(process.contains_program(package.program_id()));
+            let process = package
+                .get_process(|id| {
+                    Ok(if id == package.program_id() {
+                        ConsensusVersion::V23
+                    } else {
+                        ConsensusVersion::LEGACY_CIRCUIT_VERSION
+                    })
+                })
+                .unwrap();
+            assert_eq!(process.get_stack(package.program_id()).unwrap().circuit_version(), ConsensusVersion::V23);
+            for id in package.program().imports().keys() {
+                assert_eq!(process.get_stack(id).unwrap().circuit_version(), ConsensusVersion::LEGACY_CIRCUIT_VERSION);
+            }
 
             // Proactively remove the temporary directory (to conserve space).
             std::fs::remove_dir_all(directory).unwrap();

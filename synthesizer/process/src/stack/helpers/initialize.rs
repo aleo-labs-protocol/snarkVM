@@ -18,7 +18,11 @@ use super::*;
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, given the process and program.
     #[inline]
-    pub(crate) fn initialize(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+    pub(crate) fn initialize(
+        process: &Process<N>,
+        program: &Program<N>,
+        circuit_version: ConsensusVersion,
+    ) -> Result<Self> {
         // Compute the appropriate edition for the stack.
         let edition = match process.contains_program(program.id()) {
             // If the program does not exist in the process, use edition zero.
@@ -35,7 +39,7 @@ impl<N: Network> Stack<N> {
             }
         };
         // Construct a new stack.
-        let stack = Self::create_raw(process, program, edition)?;
+        let stack = Self::create_raw(process, program, edition, circuit_version)?;
         // Initialize and check the stack's validity.
         stack.initialize_and_check(process)?;
         // Return the stack.
@@ -44,7 +48,12 @@ impl<N: Network> Stack<N> {
 
     /// Create a new stack, given the process and program, without completely initializing or checking for validity.
     #[inline]
-    pub(crate) fn create_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
+    pub(crate) fn create_raw(
+        process: &Process<N>,
+        program: &Program<N>,
+        edition: u16,
+        circuit_version: ConsensusVersion,
+    ) -> Result<Self> {
         // Construct the stack for the program.
         let stack = Self {
             program: program.clone(),
@@ -66,6 +75,7 @@ impl<N: Network> Stack<N> {
                 .chain(program.closures().iter().map(|(name, closure)| (*name, closure.to_checksum())))
                 .chain(program.views().iter().map(|(name, view)| (*name, view.to_checksum())))
                 .collect(),
+            circuit_version,
             program_edition: U16::new(edition),
             program_amendment_count: 0,
             program_owner: None,

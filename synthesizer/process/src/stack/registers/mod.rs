@@ -32,6 +32,8 @@ use std::{cell::OnceCell, sync::OnceLock};
 pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     /// The current call stack.
     call_stack: CallStack<N>,
+    /// The consensus version of the function whose circuit contains these registers.
+    circuit_version: ConsensusVersion,
     /// The mapping of all registers to their defined types.
     register_types: RegisterTypes<N>,
     /// The mapping of assigned console registers to their values.
@@ -82,9 +84,10 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
     /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
     #[doc(hidden)]
     #[inline]
-    pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>) -> Self {
+    pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>, circuit_version: ConsensusVersion) -> Self {
         Self {
             call_stack,
+            circuit_version,
             register_types,
             console_registers: IndexMap::new(),
             circuit_registers: IndexMap::new(),

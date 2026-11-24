@@ -94,24 +94,39 @@ impl<N: Network> Stack<N> {
         Ok(())
     }
 
-    /// Synthesizes and stores the `(proving_key, verifying_key)` for the given function name and assignment.
+    /// Synthesizes and stores the `(proving_key, verifying_key)` for a function or record translation assignment.
     #[inline]
     pub fn synthesize_from_assignment(
         &self,
-        function_name: &Identifier<N>,
+        function_or_record_name: &Identifier<N>,
         assignment: &circuit::Assignment<N::Field>,
     ) -> Result<()> {
-        // If the proving and verifying key already exist, skip the synthesis for this function.
-        if self.contains_proving_key(function_name) && self.contains_verifying_key(function_name) {
+        // If the proving and verifying key already exist, skip the synthesis for this circuit.
+        if self.contains_proving_key(function_or_record_name) && self.contains_verifying_key(function_or_record_name) {
             return Ok(());
         }
 
         // Synthesize the proving and verifying key.
-        let (proving_key, verifying_key) = self.universal_srs.to_circuit_key(&function_name.to_string(), assignment)?;
-        // Insert the proving key.
-        self.insert_proving_key(function_name, proving_key)?;
-        // Insert the verifying key.
-        self.insert_verifying_key(function_name, verifying_key)
+        let (proving_key, verifying_key) =
+            self.universal_srs.to_circuit_key(&function_or_record_name.to_string(), assignment)?;
+        // The built-in credits program has no deployment certificate. Genesis loads its V0 function keys
+        // and replaces them when synthesizing the proving keys.
+        if self.program_id() == &ProgramID::credits() && self.program.contains_function(function_or_record_name) {
+            self.insert_proving_key(function_or_record_name, proving_key)?;
+            return self.insert_verifying_key(function_or_record_name, verifying_key);
+        }
+        let mut verifying_keys = self.verifying_keys.write();
+        if let Some(stored_key) = verifying_keys.get(function_or_record_name) {
+            // The declared variable limit is deployment metadata. Only the underlying key identifies the circuit.
+            ensure!(
+                stored_key.deref() == verifying_key.deref(),
+                "Derived verifying key for '{}/{function_or_record_name}' does not match the stored key.",
+                self.program_id()
+            );
+        }
+        self.insert_proving_key(function_or_record_name, proving_key)?;
+        verifying_keys.entry(*function_or_record_name).or_insert(verifying_key);
+        Ok(())
     }
 
     /// Synthesizes the proving key and verifying key for the translation circuit of the record with the given name.
@@ -170,12 +185,6 @@ impl<N: Network> Stack<N> {
         let circuit_assignment =
             translation_assignment.to_circuit_assignment::<A>(translation_index, None, None, None)?;
 
-        // Synthesize the proving and verifying key.
-        let (proving_key, verifying_key) =
-            self.universal_srs.to_circuit_key(&record_name.to_string(), &circuit_assignment)?;
-        // Insert the proving key.
-        self.insert_proving_key(&record_name, proving_key)?;
-        // Insert the verifying key.
-        self.insert_verifying_key(&record_name, verifying_key)
+        self.synthesize_from_assignment(&record_name, &circuit_assignment)
     }
 }

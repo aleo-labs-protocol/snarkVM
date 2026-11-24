@@ -43,11 +43,14 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         // Get the deployment version.
         let version = deployment.version()?;
 
+        // Deployment certificates are checked at the parent block height.
+        let circuit_version = N::deployment_circuit_version(state.block_height())?;
+
         // Finalize the deployment based on its version.
         match version {
             DeploymentVersion::V1 | DeploymentVersion::V2 => {
                 // Compute the program stack.
-                let mut stack = Stack::new(self.process, deployment.program()).into_indexed(
+                let mut stack = Stack::new(self.process, deployment.program(), circuit_version).into_indexed(
                     Some((*deploy_program_id, deployment.edition())),
                     None,
                     None::<(usize, Command<N>)>,
@@ -156,7 +159,12 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 // Compute a new stack with the same program and edition.
                 // Note: `Stack::new` cannot be used here because it would increment the edition.
                 // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
-                let mut stack = Stack::new_raw(self.process, deployment.program(), *existing_stack.program_edition())?;
+                let mut stack = Stack::new_raw(
+                    self.process,
+                    deployment.program(),
+                    *existing_stack.program_edition(),
+                    circuit_version,
+                )?;
                 stack.initialize_and_check(self.process)?;
                 timing_event!("Compute the stack");
 
@@ -994,7 +1002,8 @@ function compute:
         // Initialize a new process.
         let process = Process::load().unwrap();
         // Deploy the program.
-        let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+        let deployment =
+            process.deploy::<CurrentAleo, _>(ConsensusVersion::LEGACY_CIRCUIT_VERSION, &program, rng).unwrap();
 
         // Initialize a new block store.
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();

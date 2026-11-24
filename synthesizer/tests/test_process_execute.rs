@@ -61,7 +61,7 @@ fn run_test(process: &Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml
 
     // Add the programs into the process.
     for program in test.programs() {
-        if let Err(err) = process.lock().add_program(program) {
+        if let Err(err) = process.lock().add_program(program, ConsensusVersion::LEGACY_CIRCUIT_VERSION) {
             output
                 .get_mut(serde_yaml::Value::String("errors".to_string()))
                 .unwrap()

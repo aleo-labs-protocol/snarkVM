@@ -149,6 +149,7 @@ impl<N: Network> Package<N> {
 
 #[cfg(test)]
 mod tests {
+    use super::ConsensusVersion;
     type CurrentAleo = snarkvm_circuit::network::AleoV0;
 
     #[test]
@@ -157,7 +158,7 @@ mod tests {
         let (directory, package) = crate::package::test_helpers::sample_token_package();
 
         // Generate the process with the appropriate imports.
-        let process = package.get_process().unwrap();
+        let process = package.get_process(|_| Ok(ConsensusVersion::latest())).unwrap();
 
         // Deploy the package.
         let deployment = package.deploy::<CurrentAleo>(&process, None).unwrap();
@@ -179,7 +180,7 @@ mod tests {
         let (directory, package) = crate::package::test_helpers::sample_wallet_package();
 
         // Generate the process with the appropriate imports.
-        let process = package.get_process().unwrap();
+        let process = package.get_process(|_| Ok(ConsensusVersion::latest())).unwrap();
 
         // Deploy the package.
         let deployment = package.deploy::<CurrentAleo>(&process, None).unwrap();

@@ -1127,7 +1127,7 @@ mod tests {
         thread::spawn(move || {
             let process = Process::<CurrentNetwork>::load().expect("Failed to load process");
             // `Stack::new` runs `check_plaintext_type` over the `compute` input's struct graph.
-            let is_ok = Stack::new(&process, &program).is_ok();
+            let is_ok = Stack::new(&process, &program, ConsensusVersion::latest()).is_ok();
             let _ = sender.send(is_ok);
         });
 
@@ -1158,7 +1158,7 @@ mod tests {
         thread::spawn(move || {
             let process = Process::<CurrentNetwork>::load().expect("Failed to load process");
             // We only assert that type-checking terminates; the deployment itself may still be rejected.
-            let _ = Stack::new(&process, &program);
+            let _ = Stack::new(&process, &program, ConsensusVersion::latest());
             let _ = sender.send(());
         });
 
@@ -1187,7 +1187,7 @@ mod tests {
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             let process = Process::<CurrentNetwork>::load().expect("Failed to load process");
-            let is_ok = Stack::new(&process, &program).is_ok();
+            let is_ok = Stack::new(&process, &program, ConsensusVersion::latest()).is_ok();
             let _ = sender.send(is_ok);
         });
 
@@ -1226,10 +1226,12 @@ constructor:
 
         let process = Process::<CurrentNetwork>::load()?;
         // The program is valid when the output names the future that `async` produces.
-        Stack::new(&process, &program("dangling_local.aleo/foo.future")?)?;
+        Stack::new(&process, &program("dangling_local.aleo/foo.future")?, ConsensusVersion::latest())?;
         // No operand can hold an undefined future, so the operand-type check would also reject this output.
         // The lookup runs first, so its error is the one returned.
-        let Err(error) = Stack::new(&process, &program("dangling_local.aleo/missing.future")?) else {
+        let Err(error) =
+            Stack::new(&process, &program("dangling_local.aleo/missing.future")?, ConsensusVersion::latest())
+        else {
             bail!("Expected `Stack::new` to reject the program")
         };
         assert_eq!(error.root_cause().to_string(), "Function 'dangling_local.aleo/missing' is not defined.");
@@ -1263,10 +1265,11 @@ constructor:
 
         let process = Process::<CurrentNetwork>::load()?;
         // The program is valid when the output names the future that `async` produces.
-        Stack::new(&process, &program("dangling_external.aleo/foo.future")?)?;
+        Stack::new(&process, &program("dangling_external.aleo/foo.future")?, ConsensusVersion::latest())?;
         // No operand can hold an undefined future, so the operand-type check would also reject this output.
         // The lookup runs first, so its error is the one returned.
-        let Err(error) = Stack::new(&process, &program("credits.aleo/missing.future")?) else {
+        let Err(error) = Stack::new(&process, &program("credits.aleo/missing.future")?, ConsensusVersion::latest())
+        else {
             bail!("Expected `Stack::new` to reject the program")
         };
         assert_eq!(error.root_cause().to_string(), "Function 'credits.aleo/missing' is not defined.");

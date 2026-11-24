@@ -17,17 +17,18 @@ use super::*;
 use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
-    /// Deploys the given program ID, if it does not exist.
+    /// Builds deployment keys and certificates with the circuit rules for the given consensus version.
     #[inline]
     pub fn deploy<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
+        circuit_version: ConsensusVersion,
         program: &Program<N>,
         rng: &mut R,
     ) -> Result<Deployment<N>, ProcessDeployError> {
         let timer = timing_span!("Process::deploy").entered();
 
         // Compute the stack.
-        let stack = Stack::new(self, program)?;
+        let stack = Stack::new(self, program, circuit_version)?;
         timing_event!("Compute the stack");
 
         // Return the deployment.
@@ -39,10 +40,9 @@ impl<N: Network> Process<N> {
         Ok(deployment)
     }
 
-    /// Adds the newly-deployed program.
-    /// This method assumes the given deployment **is valid**.
+    /// Loads a verified deployment with the consensus version used to certify its keys.
     #[inline]
-    pub fn load_deployment(&self, deployment: &Deployment<N>) -> Result<()> {
+    pub fn load_deployment(&self, circuit_version: ConsensusVersion, deployment: &Deployment<N>) -> Result<()> {
         let timer = timing_span!("Process::load_deployment").entered();
 
         // Get the deployment version.
@@ -52,7 +52,7 @@ impl<N: Network> Process<N> {
         let stack = match version {
             DeploymentVersion::V1 | DeploymentVersion::V2 => {
                 // Compute the program stack.
-                let mut stack = Stack::new(self, deployment.program())?;
+                let mut stack = Stack::new(self, deployment.program(), circuit_version)?;
                 timing_event!("Compute the stack");
 
                 // Set the program owner.
@@ -72,7 +72,8 @@ impl<N: Network> Process<N> {
                 // Compute a new stack with the same program and edition.
                 // Note: `Stack::new` cannot be used here because it would increment the edition.
                 // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
-                let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+                let mut stack =
+                    Stack::new_raw(self, deployment.program(), *existing_stack.program_edition(), circuit_version)?;
                 stack.initialize_and_check(self)?;
                 timing_event!("Compute the stack");
 

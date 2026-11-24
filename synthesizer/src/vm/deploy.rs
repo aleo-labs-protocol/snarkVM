@@ -33,20 +33,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
     ) -> Result<Transaction<N>, VmDeployError> {
-        // Compute the deployment.
-        let mut deployment = self.deploy_raw(program, rng)?;
-        // Ensure the transaction is not empty.
-        if deployment.program().functions().is_empty() {
-            return Err(anyhow!("Attempted to create an empty transaction deployment").into());
-        }
         // Get a default query if one is not provided.
         let query = match query {
             Some(q) => q,
             None => &Query::VM(self.block_store().clone()),
         };
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        // Compute the deployment.
+        let mut deployment = self.deploy_raw(consensus_version, program, rng)?;
+        // Ensure the transaction is not empty.
+        if deployment.program().functions().is_empty() {
+            return Err(anyhow!("Attempted to create an empty transaction deployment").into());
+        }
         // If the `CONSENSUS_VERSION` is less than `V9`, unset the program checksum and the owner.
         // Otherwise, swap the default owner with the address of the private key.
-        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
         if consensus_version < ConsensusVersion::V9 {
             deployment.set_program_checksum_raw(None);
             deployment.set_program_owner_raw(None)
@@ -96,6 +96,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub(super) fn deploy_raw<R: Rng + CryptoRng>(
         &self,
+        consensus_version: ConsensusVersion,
         program: &Program<N>,
         rng: &mut R,
     ) -> Result<Deployment<N>, VmDeployError> {
@@ -104,7 +105,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the program.
                 let program = cast_ref!(&program as Program<$network>);
                 // Compute the deployment.
-                let deployment = $process.deploy::<$aleo, _>(program, rng)?;
+                let deployment = $process.deploy::<$aleo, _>(consensus_version, program, rng)?;
                 // Prepare the deployment.
                 Ok(cast_ref!(deployment as Deployment<N>).clone())
             }};

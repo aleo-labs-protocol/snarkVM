@@ -821,7 +821,7 @@ constructor:
 
         // Add the program to the process.
         // The program is well-formed and has no imports, so adding it does not fail.
-        vm.process().lock().add_program(&base_program).unwrap();
+        vm.process().lock().add_program(&base_program, ConsensusVersion::latest()).unwrap();
 
         // Initialize programs up to the maximum depth.
         for i in 2..=Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1 {
@@ -857,7 +857,7 @@ constructor:
 
             // Add the program to the process.
             // The program is well-formed and its imports are in the process, so adding it does not fail.
-            vm.process().lock().add_program(&program).unwrap();
+            vm.process().lock().add_program(&program, ConsensusVersion::latest()).unwrap();
         }
 
         // Authorize the program.

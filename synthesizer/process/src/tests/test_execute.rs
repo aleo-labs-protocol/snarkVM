@@ -1185,7 +1185,7 @@ function transfer:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.lock().add_program(&program1).unwrap();
+    process.lock().add_program(&program1, ConsensusVersion::V10).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -1330,7 +1330,7 @@ finalize compute:
     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -1456,7 +1456,7 @@ finalize compute:
     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -1597,7 +1597,7 @@ finalize mint_public:
     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -1740,7 +1740,7 @@ finalize mint_public:
     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program0, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program0, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -1781,7 +1781,7 @@ finalize init:
     let function_name = Identifier::from_str("init").unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program1, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program1, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -1913,7 +1913,7 @@ finalize compute:
     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -2043,7 +2043,7 @@ finalize b:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.lock().add_program(&program1).unwrap();
+    process.lock().add_program(&program1, ConsensusVersion::V10).unwrap();
 
     // Initialize another program (root node).
     let (string, program2) = Program::<CurrentNetwork>::parse(
@@ -2075,7 +2075,7 @@ finalize a:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.lock().add_program(&program2).unwrap();
+    process.lock().add_program(&program2, ConsensusVersion::V10).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -2246,7 +2246,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.lock().add_program(&program1).unwrap();
+    process.lock().add_program(&program1, ConsensusVersion::V10).unwrap();
 
     // Initialize another program (calls zero and one).
     let (string, program2) = Program::<CurrentNetwork>::parse(
@@ -2281,7 +2281,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.lock().add_program(&program2).unwrap();
+    process.lock().add_program(&program2, ConsensusVersion::V10).unwrap();
 
     // Initialize another program (calls two, one, zero).
     let (string, program3) = Program::<CurrentNetwork>::parse(
@@ -2320,7 +2320,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.lock().add_program(&program3).unwrap();
+    process.lock().add_program(&program3, ConsensusVersion::V10).unwrap();
 
     // Initialize another program (calls two and three).
     let (string, program4) = Program::<CurrentNetwork>::parse(
@@ -2357,7 +2357,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.lock().add_program(&program4).unwrap();
+    process.lock().add_program(&program4, ConsensusVersion::V10).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -2526,7 +2526,7 @@ finalize compute:
     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -2710,6 +2710,99 @@ function compute:
 }
 
 #[test]
+fn test_record_cast_deployment_keys_at_v23() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let process = Process::<CurrentNetwork>::load()?;
+    let program = Program::from_str(
+        "program record_cast.aleo;
+         record token:
+             owner as address.private;
+             amount as u64.private;
+         function digest:
+             input r0 as u64.private;
+             cast self.signer r0 into r1 as token.record;
+             hash.psd2 r1 into r2 as field;
+             output r2 as field.public;
+         constructor:
+             assert.eq true true;",
+    )?;
+    let function = Identifier::from_str("digest")?;
+    let private_key = PrivateKey::new(rng)?;
+    let legacy = process.deploy::<CurrentAleo, _>(ConsensusVersion::V22, &program, rng)?;
+    let fixed = process.deploy::<CurrentAleo, _>(ConsensusVersion::V23, &program, rng)?;
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &legacy, rng)?;
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &fixed, rng)?;
+    let err = process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &legacy, rng).unwrap_err();
+    assert!(err.to_string().contains("The certificate for function 'digest' is invalid"), "{err}");
+    // The legacy circuit exceeds the density limit certified for the V23 key.
+    let legacy_check = snarkvm_utilities::try_vm_runtime(|| {
+        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V22, &fixed, rng)
+    });
+    let halt = legacy_check.expect_err("Legacy synthesis must exceed the V23 key's limits");
+    let reason = halt.downcast_ref::<String>().expect("The circuit halt carries its reason");
+    assert!(reason.contains("Surpassed the circuit density limit"), "{reason}");
+
+    let mismatched = Process::<CurrentNetwork>::load()?;
+    mismatched.load_deployment(ConsensusVersion::V22, &fixed)?;
+    let stack = mismatched.get_stack(program.id())?;
+    let error =
+        stack.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &fixed, rng).expect_err("the stack uses V22");
+    assert!(error.to_string().contains("does not match the stack circuit version"), "{error}");
+    let certified_key = stack.get_verifying_key(&function)?;
+    let error = stack.synthesize_key::<CurrentAleo, _>(&function, rng).unwrap_err();
+    assert!(error.to_string().contains("does not match the stored key"), "{error}");
+    assert_eq!(stack.get_verifying_key(&function)?, certified_key);
+    assert!(!stack.contains_proving_key(&function));
+
+    let record = Identifier::from_str("token")?;
+    let translation_key = stack.get_verifying_key(&record)?;
+    stack.insert_verifying_key(&record, certified_key.clone())?;
+    let error =
+        stack.synthesize_translation_key::<CurrentAleo, _>(&record, rng).expect_err("the stored key belongs to digest");
+    assert!(error.to_string().contains("does not match the stored key"), "{error}");
+    assert_eq!(stack.get_verifying_key(&record)?, certified_key);
+    assert!(!stack.contains_proving_key(&record));
+    let translation_key = snarkvm_synthesizer_snark::VerifyingKey::new(
+        Arc::new((*translation_key).clone()),
+        translation_key.num_variables() + 1,
+    );
+    stack.insert_verifying_key(&record, translation_key.clone())?;
+    stack.synthesize_translation_key::<CurrentAleo, _>(&record, rng)?;
+    assert_eq!(stack.get_verifying_key(&record)?, translation_key);
+    assert!(stack.contains_proving_key(&record));
+
+    let check_loaded_keys = |rng: &mut TestRng| -> Result<()> {
+        let stack = process.get_stack(program.id())?;
+        let deployed_key = stack.get_verifying_key(&function)?;
+        stack.synthesize_key::<CurrentAleo, _>(&function, rng)?;
+        assert_eq!(stack.get_verifying_key(&function)?, deployed_key);
+        let inputs = [Value::from(Literal::U64(U64::new(7)))];
+        let authorization =
+            process.authorize::<CurrentAleo, _>(&private_key, program.id(), function, inputs.iter(), rng)?;
+        let expected = process.evaluate::<CurrentAleo>(authorization.replicate())?;
+        let (actual, _) = process.execute::<CurrentAleo, _>(authorization, rng)?;
+        assert_eq!(actual.outputs(), expected.outputs());
+        Ok(())
+    };
+
+    process.load_deployment(ConsensusVersion::V22, &legacy)?;
+    // The declared variable limit is metadata separate from the circuit key.
+    let stack = process.get_stack(program.id())?;
+    let key = stack.get_verifying_key(&function)?;
+    let key_with_higher_limit =
+        snarkvm_synthesizer_snark::VerifyingKey::new(Arc::new((*key).clone()), key.num_variables() + 1);
+    stack.insert_verifying_key(&function, key_with_higher_limit)?;
+    check_loaded_keys(rng)?;
+
+    // An amendment keeps the program and edition but replaces its keys.
+    let mut amendment = fixed;
+    amendment.set_program_owner_raw(None);
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V23, &amendment, rng)?;
+    process.load_deployment(ConsensusVersion::V23, &amendment)?;
+    check_loaded_keys(rng)
+}
+
+#[test]
 fn test_process_deploy_credits_program() {
     let rng = &mut TestRng::default();
 
@@ -2728,7 +2821,7 @@ fn test_process_deploy_credits_program() {
     let program = Program::credits().unwrap();
 
     // Create a deployment for the credits.aleo program.
-    let deployment = empty_process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = empty_process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
 
     // Ensure the deployment is valid on the empty process.
     empty_process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
@@ -2752,7 +2845,7 @@ function compute:
     .unwrap();
 
     // Create a deployment for the credits.aleo program.
-    let deployment = empty_process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = empty_process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
 
     // Ensure the deployment is valid on the empty process.
     empty_process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
@@ -2784,7 +2877,7 @@ function {function_name}:
     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
-    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V10, &program, rng).unwrap();
     // Check that the deployment verifies.
     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V10, &deployment, rng).unwrap();
     // Compute the fee.
@@ -2869,7 +2962,7 @@ fn test_long_import_chain() {
         ))
         .unwrap();
         // Add the program to the process.
-        process.lock().add_program(&program).unwrap();
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
     }
 
     // Add the `MAX_PROGRAM_DEPTH + 1` program to the process, which should fail.
@@ -2882,7 +2975,7 @@ fn test_long_import_chain() {
         MAX_PROGRAM_DEPTH + 1
     ))
     .unwrap();
-    let result = process.lock().add_program(&program);
+    let result = process.lock().add_program(&program, ConsensusVersion::latest());
     // Programs may create long import chains as long as number of calls does not exceed the maximum number of transitions.
     assert!(result.is_ok());
 }
@@ -2916,7 +3009,7 @@ fn test_long_import_chain_with_calls() {
         ))
         .unwrap();
         // Add the program to the process.
-        process.lock().add_program(&program).unwrap();
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
         // Check that the number of calls is correct.
         let stack = process.get_stack(program.id()).unwrap();
         let number_of_calls =
@@ -2936,7 +3029,7 @@ fn test_long_import_chain_with_calls() {
         Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2
     ))
     .unwrap();
-    let result = process.lock().add_program(&program);
+    let result = process.lock().add_program(&program, ConsensusVersion::latest());
     assert!(result.is_err())
 }
 
@@ -2951,7 +3044,7 @@ fn test_max_imports() {
         // Initialize a new program.
         let program = Program::from_str(&format!("program test{i}.aleo; function c:")).unwrap();
         // Add the program to the process.
-        process.lock().add_program(&program).unwrap();
+        process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
     }
 
     // Add a program importing all `MAX_IMPORTS` programs, which should pass.
@@ -2960,7 +3053,7 @@ fn test_max_imports() {
     let program =
         Program::from_str(&format!("{import_string}program test{}.aleo; function c:", CurrentNetwork::MAX_IMPORTS))
             .unwrap();
-    process.lock().add_program(&program).unwrap();
+    process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
 
     // Attempt to construct a program importing `MAX_IMPORTS + 1` programs, which should fail.
     let import_string =
@@ -2999,7 +3092,7 @@ fn test_program_exceeding_transaction_spend_limit() {
 
     // Attempt to deploy the program, which should succeed.
     let rng = &mut TestRng::default();
-    let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+    let deployment = process.deploy::<CurrentAleo, _>(ConsensusVersion::V8, &program, rng).unwrap();
     // Attempt to verify the deployment, which should fail.
     assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
 }
@@ -3019,7 +3112,7 @@ function twice:
     )
     .unwrap();
     let process = Process::<CurrentNetwork>::load().unwrap();
-    process.lock().add_program(&program).unwrap();
+    process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
 
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let mut authorize = |input: &str| {
@@ -3057,7 +3150,7 @@ fn test_authorize_requests_and_execute_reject_dynamic_root() {
     )
     .unwrap();
     let process = Process::<CurrentNetwork>::load().unwrap();
-    process.lock().add_program(&program).unwrap();
+    process.lock().add_program(&program, ConsensusVersion::latest()).unwrap();
     let stack = process.get_stack(program.id()).unwrap();
 
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -3117,7 +3210,7 @@ fn execute_with_resigned_callee(
         "import twin_a.aleo; program caller.aleo; function main: input r0 as u8.private; {call} output r1 as u8.private;"
     );
     for source in [twin("twin_a"), twin("twin_b"), caller] {
-        process.lock().add_program(&Program::from_str(&source).unwrap()).unwrap();
+        process.lock().add_program(&Program::from_str(&source).unwrap(), ConsensusVersion::latest()).unwrap();
     }
 
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -3226,7 +3319,7 @@ fn test_authorize_requests_rejects_callee_request_from_another_root() {
                 "import callee.aleo; program caller.aleo; function main: input r0 as u8.private; {call} output r1 as u8.private;"
             ),
         ] {
-            process.lock().add_program(&Program::from_str(&source).unwrap()).unwrap();
+            process.lock().add_program(&Program::from_str(&source).unwrap(), ConsensusVersion::latest()).unwrap();
         }
 
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -3305,7 +3398,7 @@ fn test_execution_keys_are_the_keys_execute_uses() {
 
     let process = Process::<CurrentNetwork>::load().unwrap();
     for program in &programs {
-        process.lock().add_program(program).unwrap();
+        process.lock().add_program(program, ConsensusVersion::latest()).unwrap();
     }
 
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -3431,8 +3524,8 @@ fn test_execution_keys_checks_each_key_is_of_its_kind() {
     .map(|source| Program::<CurrentNetwork>::from_str(source).unwrap());
 
     let process = Process::<CurrentNetwork>::load().unwrap();
-    process.lock().add_program(&token).unwrap();
-    process.lock().add_program(&wrapper).unwrap();
+    process.lock().add_program(&token, ConsensusVersion::latest()).unwrap();
+    process.lock().add_program(&wrapper, ConsensusVersion::latest()).unwrap();
 
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let mut request = |program: &str, function: &str, is_dynamic| {
@@ -3466,7 +3559,7 @@ fn test_execution_keys_checks_each_key_is_of_its_kind() {
     let message = process.execution_keys(&record_as_function).unwrap_err().to_string();
     assert_eq!(message, "Function 'token.aleo/pass' is not defined.");
 
-    process.lock().add_program_with_edition(&edition_1, 1).unwrap();
+    process.lock().add_program_with_edition(&edition_1, 1, ConsensusVersion::latest()).unwrap();
     let message = process.execution_keys(&authorization).unwrap_err().to_string();
     assert_eq!(message, "Record 'token.aleo/pass' is not defined.");
 }
@@ -3510,7 +3603,7 @@ fn authorize_dynamic_record_inputs(
 
     let process = Process::<CurrentNetwork>::load().unwrap();
     for program in &programs {
-        process.lock().add_program(program).unwrap();
+        process.lock().add_program(program, ConsensusVersion::latest()).unwrap();
     }
 
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
