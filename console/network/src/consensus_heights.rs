@@ -94,6 +94,7 @@ pub enum ConsensusVersion {
     ///      Prices non-raw hash and commitment inputs by their encoded size in finalize.
     ///      Prices the message in `sign.verify` by its encoded size in finalize.
     ///      Requires flat 65-byte ECDSA signatures and flat 32-byte precomputed ECDSA digests.
+    ///      Applies the plaintext size limit to instruction destinations during deployment verification.
     ///      Keeps the synthesis limits of a deployment check after a `call`.
     V23 = 23,
 }
