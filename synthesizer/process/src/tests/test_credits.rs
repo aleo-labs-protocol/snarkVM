@@ -2898,8 +2898,9 @@ mod sanity_checks {
         let call_stack =
             CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), CheckDeploymentSettings {
                 constraint_limit,
+                variable_limit: None,
+                non_zero_limit: None,
                 limits_hold_after_calls: true,
-                ..Default::default()
             });
         (call_stack, assignments)
     }

@@ -72,9 +72,12 @@ fn prepare_check_deployment<N: Network, A: snarkvm_circuit::Aleo<Network = N>>(
     // Initialize the assignments.
     let assignments = Assignments::<N>::default();
     // Initialize the call stack.
-    let mut settings = CheckDeploymentSettings::default();
-    settings.limits_hold_after_calls = true;
-    let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), settings);
+    let call_stack = CallStack::CheckDeployment(
+        vec![request],
+        *private_key,
+        assignments.clone(),
+        CheckDeploymentSettings::default(),
+    );
 
     // Benchmark synthesis of the circuit.
     c.bench_function(&format!("CheckDeployment for {function_name}"), |b| {

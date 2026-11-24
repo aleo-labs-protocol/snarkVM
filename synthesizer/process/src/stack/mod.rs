@@ -117,8 +117,8 @@ pub type MintedRecordTracker<N> = HashMap<Field<N>, (usize, u64)>;
 pub type InputRecordLikeTracker<N> = HashMap<Field<N>, Vec<(usize, usize)>>;
 
 /// The synthesis settings of a `CallStack::CheckDeployment`.
-/// Outside this crate, start from `CheckDeploymentSettings::default()` and set the fields.
-#[derive(Copy, Clone, Debug, Default)]
+/// The default sets no limits, and the limits do not hold after a `call`.
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct CheckDeploymentSettings {
     /// The constraint limit of the function circuit.
@@ -231,7 +231,7 @@ impl<N: Network> CallStack<N> {
                 requests.clone(),
                 *private_key,
                 Arc::new(RwLock::new(assignments.read().clone())),
-                *settings,
+                settings.clone(),
             ),
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
