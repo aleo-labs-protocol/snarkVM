@@ -17,6 +17,9 @@ use std::collections::HashSet;
 
 use super::*;
 
+use console::program::LiteralType;
+use snarkvm_synthesizer_program::{Command, Opcode};
+
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
     #[inline]
@@ -164,6 +167,47 @@ impl<N: Network> Stack<N> {
                     self.check_plaintext_type_size(&pt, max_bits, memoized)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Checks ECDSA signature and fixed-digest operand types in each scope that permits ECDSA verification.
+    pub(crate) fn check_ecdsa_operand_types(&self, check_constructor: bool) -> Result<()> {
+        let check = |commands: &[Command<N>], types: Option<&FinalizeTypes<N>>| -> Result<()> {
+            for command in commands {
+                let Command::Instruction(instruction) = command else { continue };
+                if !matches!(instruction.opcode(), Opcode::ECDSA(_)) {
+                    continue;
+                }
+                let types = types.ok_or_else(|| anyhow!("Missing register types for '{instruction}'"))?;
+                let check_operand = |index: usize, name: &str| -> Result<()> {
+                    let ty = types.get_type_from_operand(self, &instruction.operands()[index])?;
+                    // Stack initialization checks the outer length and the innermost element type.
+                    ensure!(
+                        matches!(&ty, FinalizeType::Plaintext(PlaintextType::Array(array))
+                            if array.next_element_type() == &PlaintextType::Literal(LiteralType::U8)),
+                        "Instruction '{}' expects a one-dimensional byte array for its {name}. Found '{ty}'",
+                        instruction.opcode()
+                    );
+                    Ok(())
+                };
+                check_operand(0, "signature")?;
+                if matches!(instruction, Instruction::ECDSAVerifyDigest(_) | Instruction::ECDSAVerifyDigestEth(_)) {
+                    check_operand(2, "digest")?;
+                }
+            }
+            Ok(())
+        };
+        if check_constructor && let Some(constructor) = self.program.constructor() {
+            check(constructor.commands(), self.constructor_types.read().as_ref())?;
+        }
+        let finalize_types = self.finalize_types.read();
+        for finalize in self.program.functions().values().filter_map(Function::finalize_logic) {
+            check(finalize.commands(), finalize_types.get(finalize.name()))?;
+        }
+        let view_types = self.view_types.read();
+        for view in self.program.views().values() {
+            check(view.commands(), view_types.get(view.name()))?;
         }
         Ok(())
     }
