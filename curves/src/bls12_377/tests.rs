@@ -37,7 +37,7 @@ use crate::{
         msm_lane_outputs,
     },
     templates::{
-        bls12::{Bls12Parameters, G1Prepared, G2Prepared},
+        bls12::{Bls12, Bls12Parameters, G1Prepared, G2Prepared, TwistType},
         short_weierstrass_jacobian::tests::sw_tests,
         twisted_edwards_extended::tests::edwards_test,
     },
@@ -1296,6 +1296,133 @@ fn test_miller_loop() {
 }
 
 #[test]
+fn test_miller_loop_scalar() {
+    let mut rng = TestRng::default();
+
+    // Direct `miller_loop_scalar` calls on 0, 1, 2, and 4 pairs.
+    assert_eq!(Bls12_377::miller_loop_scalar(&[]), Fq12::one());
+    for n in [1, 2, 4] {
+        let pairs = prepared_pairs(&mut rng, n, &[], &[]);
+        let refs: Vec<_> = pairs.iter().map(|(p, q)| (p, q)).collect();
+        assert_eq!(Bls12_377::miller_loop_scalar(&refs), miller_loop_of_pairs_reference(&pairs), "{n} pairs");
+    }
+
+    // 5-pair `product_of_pairings` mixing 2 points at infinity with 3 cancelling pairs on G1[r] x G2[r].
+    let p = G1Projective::prime_subgroup_generator() * Fr::rand(&mut rng);
+    let q = G2Projective::prime_subgroup_generator() * Fr::rand(&mut rng);
+    let (s1, s2) = (Fr::rand(&mut rng), Fr::rand(&mut rng));
+    let (a1, a2, a3) = ((p * s1).to_affine(), p.to_affine(), (-(p * (s1 + s2))).to_affine());
+    let (b1, b2) = (q.to_affine(), (q * s2).to_affine());
+    let (p1, p2, p3) = (a1.prepare(), a2.prepare(), a3.prepare());
+    let (q1, q2) = (b1.prepare(), b2.prepare());
+    let (z_p, z_q) = (G1Affine::zero().prepare(), G2Affine::zero().prepare());
+    let multi =
+        Bls12_377::product_of_pairings([(&z_p, &q1), (&p1, &q1), (&p2, &z_q), (&p2, &q2), (&p3, &q1)].into_iter());
+    let single_prod = Bls12_377::pairing(a1, b1) * Bls12_377::pairing(a2, b2) * Bls12_377::pairing(a3, b1);
+    assert_eq!(multi, single_prod);
+    assert_eq!(multi, Fq12::one());
+}
+
+#[test]
+fn test_miller_loop_scalar_parameter_variants() {
+    macro_rules! test_params {
+        ($name:ident, $twist:expr, $x:expr) => {
+            #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+            struct $name;
+            impl crate::sealed::Sealed for $name {}
+            impl Bls12Parameters for $name {
+                type Fp = Fq;
+                type Fp12Params = Fq12Parameters;
+                type Fp2Params = Fq2Parameters;
+                type Fp6Params = Fq6Parameters;
+                type G1Parameters = Bls12_377G1Parameters;
+                type G2Parameters = Bls12_377G2Parameters;
+
+                const TWIST_TYPE: TwistType = $twist;
+                const X: &'static [u64] = $x;
+                const X_IS_NEGATIVE: bool = false;
+            }
+        };
+    }
+
+    fn check_params<P>(rng: &mut TestRng, expected_first_bit: Option<bool>)
+    where
+        P: Bls12Parameters<
+                Fp = Fq,
+                Fp2Params = Fq2Parameters,
+                Fp6Params = Fq6Parameters,
+                Fp12Params = Fq12Parameters,
+                G1Parameters = Bls12_377G1Parameters,
+                G2Parameters = Bls12_377G2Parameters,
+            >,
+    {
+        assert_eq!(BitIteratorBE::new(P::X).nth(1), expected_first_bit);
+
+        let ell_schoolbook = |f: &Fq12, &(c0, mut c1, mut c2): &(Fq2, Fq2, Fq2), p: &G1Affine| -> Fq12 {
+            match P::TWIST_TYPE {
+                TwistType::M => {
+                    c2.mul_by_fp(&p.y);
+                    c1.mul_by_fp(&p.x);
+                    let line = Fq12::new(Fq6::new(c0, c1, Fq2::zero()), Fq6::new(Fq2::zero(), c2, Fq2::zero()));
+                    let mut via_sparse = *f;
+                    via_sparse.mul_by_014(&c0, &c1, &c2);
+                    let prod = fq12_schoolbook(f, &line);
+                    assert_eq!(via_sparse, prod);
+                    prod
+                }
+                TwistType::D => ell_reference(f, &(c0, c1, c2), [&p.x, &p.y]),
+            }
+        };
+
+        for n in [0, 1, 3] {
+            let owned: Vec<_> = (0..n)
+                .map(|_| {
+                    let p = G1Projective::rand(rng).to_affine();
+                    let q = G2Projective::rand(rng).to_affine();
+                    (G1Prepared::<P>::from_affine(p), G2Prepared::<P>::from_affine(q))
+                })
+                .collect();
+            let refs: Vec<_> = owned.iter().map(|(p, q)| (p, q)).collect();
+
+            let mut iters: Vec<_> = refs.iter().map(|(p, q)| (&p.0, q.ell_coeffs.iter())).collect();
+            let mut expected = Fq12::one();
+            for bit in BitIteratorBE::new(P::X).skip(1) {
+                expected = fq12_schoolbook(&expected, &expected);
+                for (p, coeffs) in &mut iters {
+                    // `from_affine` pushes one doubling line per step.
+                    expected = ell_schoolbook(&expected, coeffs.next().unwrap(), p);
+                }
+                if bit {
+                    for (p, coeffs) in &mut iters {
+                        // `from_affine` pushes one addition line per set bit.
+                        expected = ell_schoolbook(&expected, coeffs.next().unwrap(), p);
+                    }
+                }
+            }
+            assert!(iters.iter_mut().all(|(_, coeffs)| coeffs.next().is_none()));
+            assert_eq!(Bls12::<P>::miller_loop_scalar(&refs), expected);
+            assert_eq!(P::miller_loop_fp12(&refs), expected);
+        }
+    }
+
+    let mut rng = TestRng::default();
+    // `BitIteratorBE::new(P::X).skip(1)` starts at bit 62 of the most-significant `u64` word.
+    test_params!(DFirstBitSet, TwistType::D, &[0xd000_0000_0000_0001]);
+    test_params!(MFirstBitClear, TwistType::M, &[0xa000_0000_0000_0001]);
+    test_params!(MFirstBitSet, TwistType::M, &[0xd000_0000_0000_0001]);
+    test_params!(DEmptyX, TwistType::D, &[]);
+    test_params!(DLeadingZerosX, TwistType::D, &[0b101]);
+    test_params!(MMultiWordX, TwistType::M, &[0x8000_0000_0000_0003, 0xc000_0000_0000_0005]);
+
+    check_params::<DFirstBitSet>(&mut rng, Some(true));
+    check_params::<MFirstBitClear>(&mut rng, Some(false));
+    check_params::<MFirstBitSet>(&mut rng, Some(true));
+    check_params::<DEmptyX>(&mut rng, None);
+    check_params::<DLeadingZerosX>(&mut rng, Some(false));
+    check_params::<MMultiWordX>(&mut rng, Some(true));
+}
+
+#[test]
 fn test_bls12_377_miller_loop_lanes() {
     let mut rng = TestRng::default();
     let pairs = prepared_pairs(&mut rng, 2, &[], &[]);
@@ -2125,79 +2252,4 @@ fn test_bls12_377_cyclotomic_karabina_z2_zero_z3_nonzero() {
         assert_eq!(base.cyclotomic_exp_scalar(exp), expected);
     }
     assert_eq!(h1.cyclotomic_exp_scalar(&[2u64]), g);
-}
-
-#[test]
-fn test_bls12_377_miller_loop_first_iter_and_multi_pairing() {
-    let mut rng = TestRng::default();
-
-    // Reference Miller loop starting from `f = 1` via `square_in_place` + `mul_by_034` on every step.
-    let miller_loop_naive = |pairs: &[(&G1Prepared<Bls12_377Parameters>, &G2Prepared<Bls12_377Parameters>)]| -> Fq12 {
-        let mut iters: Vec<_> = pairs.iter().map(|(p, q)| (*p, q.ell_coeffs.iter())).collect();
-        let mut f = Fq12::one();
-        for bit in BitIteratorBE::new(Bls12_377Parameters::X).skip(1) {
-            f.square_in_place();
-            for &mut (p, ref mut coeffs) in &mut iters {
-                // `prepare` supplies one doubling line per step.
-                let &(mut c0, mut c1, c2) = coeffs.next().unwrap();
-                c0.mul_by_fp(&p.0.y);
-                c1.mul_by_fp(&p.0.x);
-                f.mul_by_034(&c0, &c1, &c2);
-            }
-            if bit {
-                for &mut (p, ref mut coeffs) in &mut iters {
-                    // `prepare` supplies one addition line per set bit.
-                    let &(mut c0, mut c1, c2) = coeffs.next().unwrap();
-                    c0.mul_by_fp(&p.0.y);
-                    c1.mul_by_fp(&p.0.x);
-                    f.mul_by_034(&c0, &c1, &c2);
-                }
-            }
-        }
-        f
-    };
-
-    // Check 0, 1, 2, and 4 prepared pairs against the naive loop and `miller_loop_of_pairs_reference`.
-    assert_eq!(Bls12_377::miller_loop(std::iter::empty()), Fq12::one());
-    assert_eq!(Bls12_377::miller_loop_scalar(&[]), Fq12::one());
-    assert_eq!(Bls12_377::product_of_pairings(std::iter::empty()), Fq12::one());
-
-    for n in [1usize, 2, 4] {
-        let owned: Vec<_> = (0..n)
-            .map(|_| {
-                (G1Projective::rand(&mut rng).to_affine().prepare(), G2Projective::rand(&mut rng).to_affine().prepare())
-            })
-            .collect();
-        let refs: Vec<_> = owned.iter().map(|(p, q)| (p, q)).collect();
-        let expected = miller_loop_naive(&refs);
-        assert_eq!(expected, miller_loop_of_pairs_reference(&owned));
-        assert_eq!(Bls12_377::miller_loop_scalar(&refs), expected);
-        assert_eq!(Bls12_377Parameters::miller_loop_fp12(&refs), expected);
-        assert_eq!(Bls12_377::miller_loop(refs.iter().copied()), expected);
-    }
-
-    // Verify 3-pair product_of_pairings consistency and cancellation on G1[r] x G2[r].
-    let r1 = Fr::rand(&mut rng);
-    let r2 = Fr::rand(&mut rng);
-    let p = G1Projective::prime_subgroup_generator() * r1;
-    let q = G2Projective::prime_subgroup_generator() * r2;
-    let s1 = Fr::rand(&mut rng);
-    let s2 = Fr::rand(&mut rng);
-    let a1 = (p * s1).to_affine();
-    let a2 = p.to_affine();
-    let a3 = (-(p * (s1 + s2))).to_affine();
-    let b1 = q.to_affine();
-    let b2 = (q * s2).to_affine();
-    let p1 = a1.prepare();
-    let p2 = a2.prepare();
-    let p3 = a3.prepare();
-    let q1 = b1.prepare();
-    let q2 = b2.prepare();
-    let z_p = G1Affine::zero().prepare();
-    let z_q = G2Affine::zero().prepare();
-    let multi =
-        Bls12_377::product_of_pairings([(&z_p, &q1), (&p1, &q1), (&p2, &z_q), (&p2, &q2), (&p3, &q1)].into_iter());
-    let single_prod = Bls12_377::pairing(a1, b1) * Bls12_377::pairing(a2, b2) * Bls12_377::pairing(a3, b1);
-    assert_eq!(multi, single_prod);
-    assert_eq!(multi, Fq12::one());
 }

@@ -84,7 +84,7 @@ pub struct Bls12<P: Bls12Parameters>(PhantomData<P>);
 type CoeffTriplet<T> = (Fp2<T>, Fp2<T>, Fp2<T>);
 
 impl<P: Bls12Parameters> Bls12<P> {
-    /// Evaluate the initial line function at point p when accumulator `f == 1` (`0` tower multiplications).
+    /// Evaluate the line function at point p when `f = 1`.
     #[inline]
     fn ell_from_one(coeffs: &CoeffTriplet<P::Fp2Params>, p: &G1Affine<P>) -> Fp12<P::Fp12Params> {
         let mut c0 = coeffs.0;
@@ -106,7 +106,6 @@ impl<P: Bls12Parameters> Bls12<P> {
     }
 
     /// Evaluate the line function at point p.
-    #[inline]
     fn ell(f: &mut Fp12<P::Fp12Params>, coeffs: &CoeffTriplet<P::Fp2Params>, p: &G1Affine<P>) {
         let mut c0 = coeffs.0;
         let mut c1 = coeffs.1;
