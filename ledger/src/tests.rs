@@ -3827,19 +3827,22 @@ fn test_find_records_filters_by_ownership() {
     assert!(unrelated_records.is_empty(), "Expected no records for unrelated view key");
 }
 
+/// Returns a ledger on the genesis fixture that prunes with the smallest retention window, the
+/// genesis private key, and the window.
+fn sample_pruning_ledger() -> (crate::test_helpers::CurrentLedger, PrivateKey<CurrentNetwork>, u32) {
+    let (validators, genesis) = crate::test_helpers::sample_genesis_committee();
+    let window = snarkvm_ledger_store::min_authority_retention_blocks::<CurrentNetwork>();
+    let options = crate::LoadOptions::default().with_authority_retention(Some(window));
+    let ledger =
+        crate::test_helpers::CurrentLedger::load_with_options(genesis, StorageMode::new_test(None), options).unwrap();
+    (ledger, validators[0], window)
+}
+
 /// A pruned block's authority reads as pruned, and the startup spot check passes over pruned blocks.
 #[test]
 fn test_pruned_authority_reads() {
-    use crate::test_helpers::{CurrentConsensusStore, CurrentLedger, CurrentNetwork};
-    use snarkvm_ledger_store::min_authority_retention_blocks;
-
-    let window = min_authority_retention_blocks::<CurrentNetwork>();
     let rng = &mut TestRng::default();
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
-    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
-    let options = crate::LoadOptions::default().with_authority_retention(Some(window));
-    let ledger = CurrentLedger::load_with_options(genesis, StorageMode::new_test(None), options).unwrap();
+    let (ledger, private_key, window) = sample_pruning_ledger();
     // Each block past the window prunes one more authority.
     while ledger.latest_height() < window + 20 {
         let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
@@ -3860,16 +3863,8 @@ fn test_pruned_authority_reads() {
 /// Blocks added through the VM prune the authority that leaves the window of a ledger loaded with pruning.
 #[test]
 fn test_pruned_authority_through_the_vm() {
-    use crate::test_helpers::{CurrentConsensusStore, CurrentLedger, CurrentNetwork};
-    use snarkvm_ledger_store::min_authority_retention_blocks;
-
-    let window = min_authority_retention_blocks::<CurrentNetwork>();
     let rng = &mut TestRng::default();
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
-    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
-    let options = crate::LoadOptions::default().with_authority_retention(Some(window));
-    let ledger = CurrentLedger::load_with_options(genesis, StorageMode::new_test(None), options).unwrap();
+    let (ledger, private_key, window) = sample_pruning_ledger();
     let block_store = ledger.vm().block_store();
 
     let mut advance = || {
