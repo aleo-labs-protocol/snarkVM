@@ -13,7 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use super::*;
+
+use console::program::LiteralType;
+use snarkvm_synthesizer_program::{Command, Opcode};
 
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
@@ -83,6 +88,130 @@ impl<N: Network> Stack<N> {
         )
     }
 
+    /// Checks a plaintext type against the raw bit limit. Cached struct sizes belong to their declaring program.
+    #[doc(hidden)]
+    pub fn check_plaintext_type_size(
+        &self,
+        pt: &PlaintextType<N>,
+        max_bits: usize,
+        memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+    ) -> Result<()> {
+        let bits = plaintext_size_in_bits_raw(self, pt, 0, memoized)?.0;
+        ensure!(
+            bits <= max_bits,
+            "Plaintext type '{pt}' exceeds the maximum allowed size in bits ({bits} > {max_bits})"
+        );
+        Ok(())
+    }
+
+    /// Checks the plaintext destinations of each synthesized function and the closures it executes.
+    pub(crate) fn check_deployment_register_sizes(&self, max_bits: usize) -> Result<()> {
+        let mut memoized = HashMap::new();
+        let mut checked_calls = HashSet::new();
+        for function in self.program.functions().values() {
+            self.check_scope_destinations(function.name(), function.instructions(), max_bits, &mut memoized)?;
+            for instruction in function.instructions() {
+                let Instruction::Call(call) = instruction else { continue };
+                let (program_id, name) = match call.operator() {
+                    CallOperator::Resource(name) => (self.program_id(), name),
+                    CallOperator::Locator(locator) => (locator.program_id(), locator.resource()),
+                };
+                if !checked_calls.insert((*program_id, *name)) {
+                    continue;
+                }
+                let callee = if program_id == self.program_id() {
+                    StackRef::Internal(self)
+                } else {
+                    StackRef::External(self.get_external_stack(program_id)?)
+                };
+                // Static call destinations use the callee's types, including structs from its own imports.
+                if let Some(closure) = callee.program.closures().get(name) {
+                    for output in closure.outputs() {
+                        if let RegisterType::Plaintext(pt) = output.register_type() {
+                            callee.check_plaintext_type_size(pt, max_bits, &mut memoized)?;
+                        }
+                    }
+                    // Synthesis executes closures inline. Closures cannot contain call instructions.
+                    callee.check_scope_destinations(name, closure.instructions(), max_bits, &mut memoized)?;
+                } else {
+                    for output in callee.get_function_ref(name)?.outputs() {
+                        if let ValueType::Constant(pt) | ValueType::Public(pt) | ValueType::Private(pt) =
+                            output.value_type()
+                        {
+                            callee.check_plaintext_type_size(pt, max_bits, &mut memoized)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks instruction destinations in the scope that defines their register types.
+    fn check_scope_destinations(
+        &self,
+        name: &Identifier<N>,
+        instructions: &[Instruction<N>],
+        max_bits: usize,
+        memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+    ) -> Result<()> {
+        let registers = self.register_types.read();
+        let types = registers.get(name).ok_or_else(|| anyhow!("Register types for '{name}' do not exist"))?;
+        for instruction in instructions {
+            // Static calls use their callee's declarations.
+            if matches!(instruction, Instruction::Call(_)) {
+                continue;
+            }
+            for destination in instruction.destinations() {
+                if let RegisterType::Plaintext(pt) = types.get_type(self, &destination)? {
+                    self.check_plaintext_type_size(&pt, max_bits, memoized)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks ECDSA signature and fixed-digest operand types in each scope that permits ECDSA verification.
+    pub(crate) fn check_ecdsa_operand_types(&self, check_constructor: bool) -> Result<()> {
+        let check = |commands: &[Command<N>], types: Option<&FinalizeTypes<N>>| -> Result<()> {
+            for command in commands {
+                let Command::Instruction(instruction) = command else { continue };
+                if !matches!(instruction.opcode(), Opcode::ECDSA(_)) {
+                    continue;
+                }
+                let types = types.ok_or_else(|| anyhow!("Missing register types for '{instruction}'"))?;
+                let check_operand = |index: usize, name: &str| -> Result<()> {
+                    let ty = types.get_type_from_operand(self, &instruction.operands()[index])?;
+                    // Stack initialization checks the outer length and the innermost element type.
+                    ensure!(
+                        matches!(&ty, FinalizeType::Plaintext(PlaintextType::Array(array))
+                            if array.next_element_type() == &PlaintextType::Literal(LiteralType::U8)),
+                        "Instruction '{}' expects a one-dimensional byte array for its {name}. Found '{ty}'",
+                        instruction.opcode()
+                    );
+                    Ok(())
+                };
+                check_operand(0, "signature")?;
+                if matches!(instruction, Instruction::ECDSAVerifyDigest(_) | Instruction::ECDSAVerifyDigestEth(_)) {
+                    check_operand(2, "digest")?;
+                }
+            }
+            Ok(())
+        };
+        if check_constructor && let Some(constructor) = self.program.constructor() {
+            check(constructor.commands(), self.constructor_types.read().as_ref())?;
+        }
+        let finalize_types = self.finalize_types.read();
+        for finalize in self.program.functions().values().filter_map(Function::finalize_logic) {
+            check(finalize.commands(), finalize_types.get(finalize.name()))?;
+        }
+        let view_types = self.view_types.read();
+        for view in self.program.views().values() {
+            check(view.commands(), view_types.get(view.name()))?;
+        }
+        Ok(())
+    }
+
     /// Checks each function in the program on the given verifying key and certificate.
     #[inline]
     pub fn verify_deployment<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
@@ -143,6 +272,12 @@ impl<N: Network> Stack<N> {
                 deployment.num_combined_constraints()? <= constraint_limit,
                 "The number of combined constraints exceeds the deployment limit"
             );
+        }
+
+        if consensus_version >= ConsensusVersion::V23 {
+            let max_bits = consensus_config_value_by_version!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, consensus_version)
+                .ok_or_else(|| anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"))?;
+            self.check_deployment_register_sizes(max_bits)?;
         }
 
         // Construct the call stacks and assignments used to verify the certificates.
@@ -263,10 +398,12 @@ impl<N: Network> Stack<N> {
                 vec![request],
                 burner_private_key,
                 assignments.clone(),
-                Some(constraint_limit as u64),
-                Some(variable_limit),
-                non_zero_limit,
-                consensus_version >= ConsensusVersion::V23,
+                CheckDeploymentSettings {
+                    constraint_limit: Some(constraint_limit as u64),
+                    variable_limit: Some(variable_limit),
+                    non_zero_limit,
+                    limits_hold_after_calls: consensus_version >= ConsensusVersion::V23,
+                },
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));
@@ -274,31 +411,25 @@ impl<N: Network> Stack<N> {
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.random())).collect::<Vec<_>>();
-        // Each job synthesizes in the VM scope of this thread. `certificate.verify` may wait on rayon, so it runs
-        // outside, and its panics reach the host panic hook.
-        VmScope::parallel(|vm_scope| {
-            cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
-                |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
-                    // Synthesize the circuit.
-                    if let Err(err) =
-                        vm_scope.run(|| self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng))
-                    {
-                        bail!("Failed to synthesize the circuit for '{function_name}': {err}")
-                    }
-                    // Check the certificate.
-                    match assignments.read().last() {
-                        None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
-                        Some((assignment, _metrics)) => {
-                            // Ensure the certificate is valid.
-                            if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
-                                bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
-                            }
+        cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
+            |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
+                // Synthesize the circuit.
+                if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {
+                    bail!("Failed to synthesize the circuit for '{function_name}': {err}")
+                }
+                // Check the certificate.
+                match assignments.read().last() {
+                    None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
+                    Some((assignment, _metrics)) => {
+                        // Ensure the certificate is valid.
+                        if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
+                            bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
                         }
-                    };
-                    Ok(())
-                },
-            )
-        })?;
+                    }
+                };
+                Ok(())
+            },
+        )?;
 
         // If the deployment contains translation verifying keys, verify them.
         if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
@@ -369,64 +500,137 @@ impl<N: Network> Stack<N> {
             // Note: `Deployment::check_is_ordered` (called above) ensures that the translation
             // verifying keys appear in the same order as the program's record definitions, so
             // `zip_eq` correctly pairs each record assignment with its corresponding key.
-            // As above, each job synthesizes in the VM scope of this thread.
-            VmScope::parallel(|vm_scope| {
-                cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
-                |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
-                    // Construct the variable, constraint and non-zero element counts to pass to the translation-circuit
-                    // synthesizer as bounds. These are only enforced in ConsensusVersion::V18 and later.
-                    let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V18 {
-                        (None, None, None)
+            cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
+            |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
+                // Construct the variable, constraint and non-zero element counts to pass to the translation-circuit
+                // synthesizer as bounds. These are only enforced in ConsensusVersion::V18 and later.
+                let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V18 {
+                    (None, None, None)
+                } else {
+                    let variable_limit = Some(verifying_key.num_variables());
+
+                    let constraint_limit = if verifying_key.circuit_info.num_constraints >= 1 {
+                        // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
+                        Some(verifying_key.circuit_info.num_constraints as u64 - 1)
                     } else {
-                        let variable_limit = Some(verifying_key.num_variables());
-
-                        let constraint_limit = if verifying_key.circuit_info.num_constraints >= 1 {
-                            // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
-                            Some(verifying_key.circuit_info.num_constraints as u64 - 1)
-                        } else {
-                            bail!("The constraint limit of 0 for translation circuit for record '{record_name}' is invalid");
-                        };
-
-                        // Set the density limit, accounting for one non-zero entry (with value 1) added to each of A, B and C
-                        // in order to make the Varuna zerocheck hiding.
-                        let info = verifying_key.circuit_info;
-                        let non_zero_limit = if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
-                            Some((
-                                info.num_non_zero_a as u64 - 1,
-                                info.num_non_zero_b as u64 - 1,
-                                info.num_non_zero_c as u64 - 1,
-                            ))
-                        } else {
-                            bail!(
-                                "The claimed number of non-zero entries for translation circuit for record '{}' is less than the one added by the Varuna hiding constraint (A: {}, B: {}, C: {})",
-                                record_name,
-                                info.num_non_zero_a,
-                                info.num_non_zero_b,
-                                info.num_non_zero_c,
-                            );
-                        };
-
-                        (variable_limit, constraint_limit, non_zero_limit)
+                        bail!("The constraint limit of 0 for translation circuit for record '{record_name}' is invalid");
                     };
 
-                    // Synthesize the circuit.
-                    match vm_scope.run(|| translation_assignment.to_circuit_assignment::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)) {
-                        Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
-                        Ok(circuit_assignment) => {
-                            // Ensure the certificate is valid.
-                            ensure!(
-                                certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
-                                "The translation-circuit certificate for record '{record_name}' is invalid in '{program_id}'"
-                            );
-                            Ok(())
-                        },
-                    }
-                })
+                    // Set the density limit, accounting for one non-zero entry (with value 1) added to each of A, B and C
+                    // in order to make the Varuna zerocheck hiding.
+                    let info = verifying_key.circuit_info;
+                    let non_zero_limit = if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
+                        Some((
+                            info.num_non_zero_a as u64 - 1,
+                            info.num_non_zero_b as u64 - 1,
+                            info.num_non_zero_c as u64 - 1,
+                        ))
+                    } else {
+                        bail!(
+                            "The claimed number of non-zero entries for translation circuit for record '{}' is less than the one added by the Varuna hiding constraint (A: {}, B: {}, C: {})",
+                            record_name,
+                            info.num_non_zero_a,
+                            info.num_non_zero_b,
+                            info.num_non_zero_c,
+                        );
+                    };
+
+                    (variable_limit, constraint_limit, non_zero_limit)
+                };
+
+                // Synthesize the circuit.
+                match translation_assignment.to_circuit_assignment::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit) {
+                    Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
+                    Ok(circuit_assignment) => {
+                        // Ensure the certificate is valid.
+                        ensure!(
+                            certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
+                            "The translation-circuit certificate for record '{record_name}' is invalid in '{program_id}'"
+                        );
+                        Ok(())
+                    },
+                }
             })?;
         }
 
         drop(timer);
 
         Ok(())
+    }
+}
+
+/// Returns the `(size, height)` in bits of the given plaintext type, excluding any type metadata.
+///
+/// Each struct reference is resolved against the program that declares it, since a struct declared
+/// in an external program may refer to structs local to that program, or to structs in programs
+/// that the current program does not import.
+///
+/// `memoized` records the result for each `(program, struct)` pair already sized, so that a struct shared by many
+/// members is expanded at most once. Without this, a program in which every member of each struct refers to the
+/// same earlier struct forms an acyclic graph with exponentially many paths, and this walk would make up to
+/// `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
+///
+/// `height` is the number of levels below a type at which its deepest node sits (a literal is `0`). It lets a
+/// memoized hit at a deeper position re-apply the depth check the skipped recursion would have performed on that
+/// node, so the memoization changes only the running time and never the result.
+fn plaintext_size_in_bits_raw<N: Network>(
+    stack: &Stack<N>,
+    plaintext_type: &PlaintextType<N>,
+    depth: usize,
+    memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+) -> Result<(usize, usize)> {
+    // Ensure that the depth is within the maximum limit.
+    ensure!(depth <= N::MAX_DATA_DEPTH, "Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
+
+    match plaintext_type {
+        PlaintextType::Literal(literal_type) => Ok((literal_type.size_in_bits::<N>() as usize, 0)),
+        PlaintextType::Struct(struct_name) => {
+            // If this struct has already been sized in the current traversal, reuse that result.
+            let key = (*stack.program_id(), *struct_name);
+            if let Some(&(size, height)) = memoized.get(&key) {
+                ensure!(
+                    depth.saturating_add(height) <= N::MAX_DATA_DEPTH,
+                    "Plaintext depth exceeds maximum limit: {}",
+                    N::MAX_DATA_DEPTH
+                );
+                return Ok((size, height));
+            }
+
+            // Add up the sizes of the members, which are declared in the same program.
+            let members = stack.program().get_struct(struct_name)?.members();
+            let mut total = 0usize;
+            // Track the maximum height of any member's subtree.
+            let mut member_height = 0usize;
+            for member_type in members.values() {
+                let (member_size, subtree_height) =
+                    plaintext_size_in_bits_raw(stack, member_type, depth + 1, memoized)?;
+                total =
+                    total.checked_add(member_size).ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
+                member_height = member_height.max(subtree_height);
+            }
+
+            // The struct sits one level above its deepest member; a memberless struct recurses nowhere.
+            let height = match members.is_empty() {
+                true => 0,
+                false => member_height + 1,
+            };
+            memoized.insert(key, (total, height));
+            Ok((total, height))
+        }
+        PlaintextType::ExternalStruct(locator) => {
+            // Resolve the struct, and therefore its members, against the external program.
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            plaintext_size_in_bits_raw(&external_stack, &PlaintextType::Struct(*locator.resource()), depth, memoized)
+        }
+        PlaintextType::Array(array_type) => {
+            // Multiply the size of an element by the length of the array.
+            let (element_size, element_height) =
+                plaintext_size_in_bits_raw(stack, array_type.next_element_type(), depth + 1, memoized)?;
+            let total = element_size
+                .checked_mul(**array_type.length() as usize)
+                .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
+            // The array sits one level above its element.
+            Ok((total, element_height + 1))
+        }
     }
 }

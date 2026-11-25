@@ -70,8 +70,9 @@ pub trait Environment:
     const MAX_STRING_BYTES: u32 = u8::MAX as u32;
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
+    #[track_caller]
     fn halt<S: Into<String>, T>(message: S) -> T {
-        panic!("{}", message.into())
+        snarkvm_utilities::vm_halt(message.into())
     }
 }
 

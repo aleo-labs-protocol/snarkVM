@@ -28,7 +28,6 @@ use snarkvm_ledger_block::Transaction;
 use snarkvm_ledger_store::{ConsensusStore, StorageMode};
 use snarkvm_synthesizer_process::Process;
 use snarkvm_utilities::TestRng;
-use std::panic::AssertUnwindSafe;
 
 // This test checks that:
 //   - programs without constructors can be deployed before V9
@@ -989,8 +988,8 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Verify that the sum function fails on overflow.
-    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        vm.execute(
+    let error = vm
+        .execute(
             &caller_private_key,
             ("dependent.aleo", "sum"),
             vec![Value::from_str("255u8")?, Value::from_str("1u8")?].into_iter(),
@@ -999,8 +998,8 @@ constructor:
             None,
             rng,
         )
-    }));
-    assert!(result.is_err());
+        .unwrap_err();
+    assert!(error.to_string().contains("'dependency.aleo/sum' is not satisfied"), "{error}");
 
     // Get a valid execution before the dependency upgrade.
     let sum_unchecked = vm.execute(

@@ -193,6 +193,7 @@ pub trait Environment:
     fn set_non_zero_limit(limit: Option<(u64, u64, u64)>);
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
+    #[track_caller]
     fn halt<S: Into<String>, T>(message: S) -> T {
         <Self::Network as console::Environment>::halt(message)
     }

@@ -629,3 +629,14 @@ fn test_isomorphism() {
 
     assert_eq!(fr_element, fr_element_reconstructed);
 }
+
+#[test]
+fn test_checked_mul_by_cofactor_inv_off_the_curve() {
+    // `(x, 0)` is not on the curve, and its product with the inverse of the cofactor has a zero Z.
+    let x = Fq::from_str("7647702037709885229845698841124471395615470129800647510314961670563126650261")
+        .expect("The literal is a field element");
+    let point = EdwardsAffine::from_coordinates_unchecked((x, Fq::zero()));
+    assert!(!point.is_on_curve());
+    assert_eq!(point.checked_mul_by_cofactor_inv(), None);
+    assert!(std::panic::catch_unwind(|| point.mul_by_cofactor_inv()).is_err());
+}

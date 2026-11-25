@@ -98,9 +98,13 @@ impl<E: Environment> Group<E> {
         Self { group: self.group.double().double() }
     }
 
-    /// Returns `self / COFACTOR`.
+    /// Returns `self / COFACTOR`. Halts where the division has no affine result, which can only happen for a point
+    /// that is not on the curve.
     pub fn div_by_cofactor(&self) -> Self {
-        Self { group: self.group.to_affine().mul_by_cofactor_inv().into() }
+        match self.group.to_affine().checked_mul_by_cofactor_inv() {
+            Some(point) => Self { group: point.into() },
+            None => E::halt("Failed to divide a point that is not on the curve by the cofactor"),
+        }
     }
 }
 
