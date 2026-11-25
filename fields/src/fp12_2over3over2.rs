@@ -29,17 +29,34 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait Fp12Parameters: 'static + Copy + Clone + Debug + Default + PartialEq + Eq + Hash + Send + Sync {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait Fp12Parameters:
+    crate::sealed_parameters::Sealed + 'static + Copy + Clone + Debug + Default + PartialEq + Eq + Hash + Send + Sync
+{
     type Fp6Params: Fp6Parameters;
 
     /// Coefficients for the Frobenius automorphism.
     const FROBENIUS_COEFF_FP12_C1: [Fp2<Fp2Params<Self>>; 12];
+
+    /// Sets `a` to `a * b`. An override must not fall back to `Fp12::mul_assign`, which calls this
+    /// hook; `Fp12::mul_assign_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_assign_fp12(a: &mut Fp12<Self>, b: &Fp12<Self>) {
+        a.mul_assign_scalar(b)
+    }
+
+    /// Returns `a^exp` by the chain of `Fp12::cyclotomic_exp`. `exp` lists the words of the exponent,
+    /// the least significant first. An override must not fall back to `Fp12::cyclotomic_exp`, which
+    /// calls this hook; `Fp12::cyclotomic_exp_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn cyclotomic_exp_fp12(a: &Fp12<Self>, exp: &[u64]) -> Fp12<Self> {
+        a.cyclotomic_exp_scalar(exp)
+    }
 }
 
-type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
+pub(crate) type Fp2Params<P> = <<P as Fp12Parameters>::Fp6Params as Fp6Parameters>::Fp2Params;
 
 /// An element of Fp12, represented by c0 + c1 * v
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -104,6 +121,16 @@ impl<P: Fp12Parameters> Fp12<P> {
         self.c0 = bb;
         self.c0 = Self::mul_fp6_by_nonresidue(&self.c0);
         self.c0.add_assign(aa);
+    }
+
+    /// Sets `self` to `self * other` by the scalar path, without `Fp12Parameters::mul_assign_fp12`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_assign_scalar(&mut self, other: &Self) {
+        let v0 = self.c0 * other.c0;
+        let v1 = self.c1 * other.c1;
+        self.c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1;
+        self.c0 = v0 + Self::mul_fp6_by_nonresidue(&v1);
     }
 
     pub fn cyclotomic_square(&self) -> Self {
@@ -172,9 +199,14 @@ impl<P: Fp12Parameters> Fp12<P> {
         result
     }
 
+    /// Exponentiates `self` by `exp` (least-significant word first), assuming `self` lies in the
+    /// cyclotomic subgroup `G_{Phi_6(p^2)}` (or is zero).
     pub fn cyclotomic_exp<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::one();
+        P::cyclotomic_exp_fp12(self, exp.as_ref())
+    }
 
+    fn cyclotomic_exp_uncompressed(&self, exp: &[u64]) -> Self {
+        let mut res = Self::one();
         let mut found_one = false;
 
         for i in BitIteratorBE::new(exp) {
@@ -193,6 +225,148 @@ impl<P: Fp12Parameters> Fp12<P> {
             }
         }
         res
+    }
+
+    /// Batch-decompresses `batch` (`1 <= batch.len() <= 16`) via a single stack-allocated `Fp2`
+    /// Montgomery inversion and multiplies each recovered element into `res_opt`.
+    ///
+    /// Every caller ensures `z2 != 0` or `z3 != 0` for each entry, so every denominator (`4 * z2`
+    /// or `z3`) and their product `acc` are nonzero in `Fp2`.
+    fn decompress_and_mul_batch(batch: &[KarabinaCompressed<P>], res_opt: &mut Option<Self>) -> bool {
+        let n = batch.len();
+        debug_assert!((1..=16).contains(&n));
+
+        let mut denoms = [Fp2::zero(); 16];
+        let mut prods = [Fp2::zero(); 16];
+        let mut is_case1 = [false; 16];
+        let mut acc = Fp2::one();
+
+        for i in 0..n {
+            let c = &batch[i];
+            if !c.z2.is_zero() {
+                denoms[i] = c.z2.double().double();
+                is_case1[i] = true;
+            } else {
+                denoms[i] = c.z3;
+                is_case1[i] = false;
+            }
+            acc *= &denoms[i];
+            prods[i] = acc;
+        }
+
+        // Defensive check: `acc` is a product of nonzero `Fp2` elements (`4 * z2` or `z3`), so `inverse` returns `Some`.
+        let Some(mut inv_acc) = acc.inverse() else {
+            return false;
+        };
+
+        let mut d_invs = [Fp2::zero(); 16];
+        for i in (0..n).rev() {
+            let prev = if i > 0 { prods[i - 1] } else { Fp2::one() };
+            d_invs[i] = inv_acc * prev;
+            inv_acc *= &denoms[i];
+        }
+
+        let fp2_nr = <P::Fp6Params as Fp6Parameters>::mul_fp2_by_nonresidue;
+        for i in 0..n {
+            let c = &batch[i];
+            let z1 = if is_case1[i] {
+                let z4s = c.z4.square();
+                let uz5s = fp2_nr(&c.z5.square());
+                let num = uz5s + z4s.double() + z4s - c.z3.double();
+                num * d_invs[i]
+            } else {
+                (c.z4 * c.z5).double() * d_invs[i]
+            };
+            let z34 = c.z3 * c.z4;
+            let inner = z1.square().double() + c.z2 * c.z5 - (z34.double() + z34);
+            let z0 = fp2_nr(&inner) + Fp2::one();
+            let elem = Self::new(Fp6::new(z0, c.z4, c.z3), Fp6::new(c.z2, z1, c.z5));
+            match res_opt {
+                Some(res) => *res *= &elem,
+                None => *res_opt = Some(elem),
+            }
+        }
+
+        true
+    }
+
+    /// Returns `self^exp` by the scalar Karabina compressed chain, without
+    /// `Fp12Parameters::cyclotomic_exp_fp12`. Assumes `self` lies in `G_{Phi_6(p^2)}` (or is zero).
+    #[doc(hidden)]
+    pub fn cyclotomic_exp_scalar(&self, exp: &[u64]) -> Self {
+        let Some(top_idx) = exp.iter().rposition(|&w| w != 0) else {
+            return Self::one();
+        };
+        let total_bits = top_idx * 64 + (64 - exp[top_idx].leading_zeros() as usize);
+        if total_bits == 1 {
+            return *self;
+        }
+        // Inputs with `z2 == 0` and `z3 == 0` (such as `0` and `1`) fall back to the uncompressed chain.
+        if self.c1.c0.is_zero() && self.c0.c2.is_zero() {
+            return self.cyclotomic_exp_uncompressed(exp);
+        }
+
+        // Square in Karabina (2013) compressed coordinates and flush the 16-slot stack buffer via
+        // Montgomery batch inversion whenever it fills.
+        let mut res_opt = if (exp[0] & 1) != 0 { Some(*self) } else { None };
+        let mut comp = KarabinaCompressed::<P> { z2: self.c1.c0, z3: self.c0.c2, z4: self.c0.c1, z5: self.c1.c2 };
+        let mut needed = [KarabinaCompressed::<P>::default(); 16];
+        let mut n = 0usize;
+
+        for bit_idx in 1..total_bits {
+            comp = comp.square();
+            if ((exp[bit_idx / 64] >> (bit_idx % 64)) & 1) != 0 {
+                if comp.z2.is_zero() && comp.z3.is_zero() {
+                    return self.cyclotomic_exp_uncompressed(exp);
+                }
+                needed[n] = comp;
+                n += 1;
+                if n == 16 {
+                    if !Self::decompress_and_mul_batch(&needed, &mut res_opt) {
+                        return self.cyclotomic_exp_uncompressed(exp);
+                    }
+                    n = 0;
+                }
+            }
+        }
+
+        if n > 0 && !Self::decompress_and_mul_batch(&needed[..n], &mut res_opt) {
+            return self.cyclotomic_exp_uncompressed(exp);
+        }
+
+        res_opt.unwrap_or_else(Self::one)
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+struct KarabinaCompressed<P: Fp12Parameters> {
+    z2: Fp2<Fp2Params<P>>,
+    z3: Fp2<Fp2Params<P>>,
+    z4: Fp2<Fp2Params<P>>,
+    z5: Fp2<Fp2Params<P>>,
+}
+
+impl<P: Fp12Parameters> KarabinaCompressed<P> {
+    #[inline(always)]
+    fn fp4_square(z0: &Fp2<Fp2Params<P>>, z1: &Fp2<Fp2Params<P>>) -> (Fp2<Fp2Params<P>>, Fp2<Fp2Params<P>>) {
+        let fp2_nr = <P::Fp6Params as Fp6Parameters>::mul_fp2_by_nonresidue;
+        let tmp = *z0 * z1;
+        let t0 = (*z0 + z1) * (*z0 + fp2_nr(z1)) - tmp - fp2_nr(&tmp);
+        let t1 = tmp.double();
+        (t0, t1)
+    }
+
+    #[inline(always)]
+    fn square(self) -> Self {
+        let (t2, t3) = Self::fp4_square(&self.z2, &self.z3);
+        let (t4, t5) = Self::fp4_square(&self.z4, &self.z5);
+        let nr_t5 = <P::Fp6Params as Fp6Parameters>::mul_fp2_by_nonresidue(&t5);
+        KarabinaCompressed {
+            z2: (nr_t5 + self.z2).double() + nr_t5,
+            z3: (t4 - self.z3).double() + t4,
+            z4: (t2 - self.z4).double() + t2,
+            z5: (t3 + self.z5).double() + t3,
+        }
     }
 }
 
@@ -228,6 +402,8 @@ impl<P: Fp12Parameters> One for Fp12<P> {
         self.c0.is_one() && self.c1.is_zero()
     }
 }
+
+impl<P: Fp12Parameters> crate::sealed::Sealed for Fp12<P> {}
 
 impl<P: Fp12Parameters> Field for Fp12<P> {
     type BasePrimeField = <Fp6<P::Fp6Params> as Field>::BasePrimeField;
@@ -411,12 +587,8 @@ impl<P: Fp12Parameters> SubAssign<&'_ Self> for Fp12<P> {
 
 impl<P: Fp12Parameters> MulAssign<&'_ Self> for Fp12<P> {
     #[inline]
-    #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &Self) {
-        let v0 = self.c0 * other.c0;
-        let v1 = self.c1 * other.c1;
-        self.c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1;
-        self.c0 = v0 + Self::mul_fp6_by_nonresidue(&v1);
+        P::mul_assign_fp12(self, other);
     }
 }
 

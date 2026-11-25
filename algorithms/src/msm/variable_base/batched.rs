@@ -21,7 +21,6 @@ use snarkvm_utilities::{BigInteger, cfg_into_iter};
 
 use itertools::Itertools;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[cfg(target_arch = "x86_64")]
@@ -377,7 +376,8 @@ fn batched_window<G: AffineCurve>(
 ///
 /// Every nonzero digit is odd and below `2^(STRAUS_WINDOW - 1)` in magnitude,
 /// so each base needs a table of `2^(STRAUS_WINDOW - 2)` odd multiples.
-const STRAUS_WINDOW: usize = 5;
+#[doc(hidden)]
+pub const STRAUS_WINDOW: usize = 5;
 
 /// Writes the width-`window` non-adjacent form of the low `num_bits` bits of
 /// `scalar` into `digits`, least significant digit first.
@@ -487,11 +487,35 @@ pub fn straus<G: AffineCurve, const WINDOW: usize>(
     sum
 }
 
+/// The fewest bases that `msm` sums by the bucket method. Below it, each window
+/// holds too few points to amortize its batched inversions, and the curve's
+/// lanes and Straus's method are several times faster.
+pub(super) const BUCKET_MIN_BASES: usize = 32;
+
+/// Returns the sum of `base * scalar` through `AffineCurve::msm_lanes`, over
+/// the shorter of `bases` and `scalars`, or `None` if the curve has no lane
+/// path for them or a scalar is not below the modulus.
+fn msm_in_lanes<G: AffineCurve>(
+    bases: &[G],
+    scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+) -> Option<G::Projective> {
+    let terms = bases
+        .iter()
+        .zip(scalars)
+        .map(|(base, scalar)| Some((*base, G::ScalarField::from_bigint(*scalar)?)))
+        .collect::<Option<Vec<_>>>()?;
+    G::msm_lanes(&[&terms])?.into_iter().next()
+}
+
+/// Returns the sum of `base * scalar`.
+///
+/// Hazard: for a base outside the prime-order subgroup, the curve's GLV
+/// multiplication and its lanes can return another sum than Straus's method,
+/// which differs by a point whose order divides the cofactor. So the sum
+/// depends on the CPU. A pairing maps that point to one, so a pairing check on
+/// the sum does not.
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    // Below 32 bases, each window of the bucket method holds too few points to
-    // amortize its batched inversions, and Straus's method is several times
-    // faster.
-    if bases.len() < 32 {
+    if bases.len() < BUCKET_MIN_BASES {
         debug_assert!(scalars.len() <= bases.len());
         // A zero scalar adds nothing and a unit scalar adds its base, so
         // neither needs a table or a scalar multiplication.
@@ -517,9 +541,10 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         if let ([base], [scalar]) = (&*bases, &*scalars)
             && let Some(scalar) = G::ScalarField::from_bigint(*scalar)
         {
-            // GLV is correct only on the prime-order subgroup.
-            debug_assert!(base.is_in_correct_subgroup_assuming_on_curve());
             return sum + base.to_projective() * scalar;
+        }
+        if let Some(in_lanes) = msm_in_lanes(&bases, &scalars) {
+            return sum + in_lanes;
         }
         sum + straus::<G, STRAUS_WINDOW>(&bases, &scalars)
     } else {

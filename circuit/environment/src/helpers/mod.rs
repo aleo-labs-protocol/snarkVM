@@ -16,13 +16,8 @@
 mod assignment;
 pub use assignment::*;
 
-pub mod circuit_type;
-pub use circuit_type::*;
-
 pub mod constraint;
 pub use constraint::*;
-
-pub(super) mod converter;
 
 pub mod count;
 pub use count::*;
@@ -41,6 +36,10 @@ pub use variable::*;
 
 pub mod r1cs;
 pub use r1cs::*;
+
+#[cfg(feature = "test-helpers")]
+#[doc(hidden)]
+pub mod snapshot;
 
 pub mod updatable_count;
 pub use updatable_count::*;

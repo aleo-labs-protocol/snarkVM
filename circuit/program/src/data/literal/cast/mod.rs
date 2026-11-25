@@ -160,6 +160,28 @@ fn cast_identifier_to_type<A: Aleo>(input: &IdentifierLiteral<A>, to_type: Liter
     impl_cast_body!(identifier, cast, input, to_type)
 }
 
+/// Returns the count of a constant cast to an address or a group element.
+///
+/// A zero input gives the identity, whose subgroup check folds its doubling.
+/// `UPDATE_COUNT` locates these counts in this file, not in the file of the calling test.
+#[cfg(test)]
+fn constant_cast_to_group_count<T: console_root::prelude::Zero>(
+    value: &T,
+) -> snarkvm_circuit_types::environment::UpdatableCount {
+    match value.is_zero() {
+        true => snarkvm_circuit_types::environment::count_is!(6, 0, 0, 0),
+        false => snarkvm_circuit_types::environment::count_is!(9, 0, 0, 0),
+    }
+}
+
+/// Checks a constant cast to `address` or `group`, asserting `constant_cast_to_group_count` of each value.
+#[cfg(test)]
+macro_rules! check_constant_cast_to_group {
+    ($circuit_type:ty, $console_type:ty) => {
+        check_cast_by_value::<$circuit_type, $console_type>(Mode::Constant, constant_cast_to_group_count)
+    };
+}
+
 #[cfg(test)]
 macro_rules! impl_check_cast {
     ($fun:ident, $circuit_type:ty, $console_type:ty) => {
@@ -171,9 +193,22 @@ macro_rules! impl_check_cast {
             $console_type: console::Cast<ConsoleType>,
             $circuit_type: crate::Cast<CircuitType>,
         {
+            check_cast_by_value::<CircuitType, ConsoleType>(mode, |_| count)
+        }
+
+        /// Checks the cast as `check_cast` does, asserting the count that `count` returns for each sampled value.
+        fn check_cast_by_value<CircuitType, ConsoleType>(mode: Mode, count: impl Fn(&$console_type) -> UpdatableCount)
+        where
+            CircuitType: Eject,
+            <CircuitType as Eject>::Primitive: Debug + PartialEq<ConsoleType>,
+            ConsoleType: Debug,
+            $console_type: console::Cast<ConsoleType>,
+            $circuit_type: crate::Cast<CircuitType>,
+        {
             let rng = &mut TestRng::default();
             for i in 0..ITERATIONS {
                 let (console_value, circuit_value) = sample_values(i, mode, rng);
+                let count = count(&console_value);
                 match console_value.$fun() {
                     // If the console cast fails and the mode is constant, then the circuit cast should fail.
                     Err(_) if mode == Mode::Constant => {
@@ -213,5 +248,7 @@ macro_rules! impl_check_cast {
         }
     };
 }
+#[cfg(test)]
+pub(super) use check_constant_cast_to_group;
 #[cfg(test)]
 pub(super) use impl_check_cast;

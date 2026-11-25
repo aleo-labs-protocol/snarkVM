@@ -22,14 +22,11 @@ pub use program::*;
 use circuit::Aleo;
 use console::network::Network;
 use snarkvm_ledger_puzzle::PuzzleTrait;
+use snarkvm_utilities::locks::RwLock;
 
 use anyhow::{Result, bail};
 use core::{marker::PhantomData, num::NonZeroUsize};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
 use lru::LruCache;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rand_chacha::ChaChaRng;
 use std::sync::Arc;
 
@@ -168,6 +165,27 @@ mod tests {
         let leaves_1 = puzzle.to_leaves(epoch_hash, &mut ChaChaRng::seed_from_u64(0)).unwrap();
         // Ensure the leaves match.
         assert_eq!(leaves_0, leaves_1);
+    }
+
+    #[test]
+    fn test_to_leaves_leaves_the_callers_circuit() {
+        use circuit::{Environment, Inject};
+
+        let epoch_hash = <CurrentNetwork as Network>::BlockHash::default();
+        let puzzle = SynthesisPuzzle::<CurrentNetwork, CurrentAleo>::new();
+        let program = puzzle.get_epoch_program(epoch_hash).unwrap();
+        let inputs = program.construct_inputs(&mut ChaChaRng::seed_from_u64(0)).unwrap();
+
+        CurrentAleo::with_fresh_circuit(|| {
+            // A caller part way through its own synthesis on this thread.
+            let a = circuit::Field::<CurrentAleo>::new(circuit::Mode::Private, console::types::Field::from_u64(3));
+            CurrentAleo::assert_eq(&a, &a).unwrap();
+            CurrentAleo::set_constraint_limit(Some(1 << 31));
+            let callers = (CurrentAleo::count(), CurrentAleo::get_constraint_limit());
+
+            program.to_leaves::<CurrentAleo>(inputs).unwrap();
+            assert_eq!((CurrentAleo::count(), CurrentAleo::get_constraint_limit()), callers);
+        });
     }
 
     #[test]

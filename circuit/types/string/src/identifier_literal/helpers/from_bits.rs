@@ -20,22 +20,23 @@ impl<E: Environment> FromBits for IdentifierLiteral<E> {
 
     /// Creates an identifier literal from a list of little-endian bits.
     ///
+    /// - If fewer than SIZE_IN_BITS bits are provided, halts, as console rejects them.
     /// - If more than SIZE_IN_BITS bits are provided, upper bits are asserted to be zero.
-    /// - If fewer than SIZE_IN_BITS bits are provided, the input is zero-padded.
     /// - Validates the identifier format (character set, first char is a letter, trailing nulls).
     fn from_bits_le(bits_le: &[Self::Boolean]) -> Self {
+        // Ensure there are enough bits.
+        if bits_le.len() < SIZE_IN_BITS {
+            E::halt("Not enough bits for identifier literal")
+        }
+
         // If there are more bits than needed, assert upper bits are zero.
         if bits_le.len() > SIZE_IN_BITS {
             Boolean::assert_bits_are_zero(&bits_le[SIZE_IN_BITS..]);
         }
 
-        // Resize to exactly SIZE_IN_BITS: truncates if longer, zero-pads if shorter.
-        let mut padded = bits_le.to_vec();
-        padded.resize(SIZE_IN_BITS, Boolean::constant(false));
-
         // Convert bits to bytes using chunks.
         let mut bytes_vec = Vec::with_capacity(SIZE_IN_BYTES);
-        for chunk in padded.chunks(8) {
+        for chunk in bits_le[..SIZE_IN_BITS].chunks(8) {
             bytes_vec.push(U8::from_bits_le(chunk));
         }
         // Note. This unwrap is safe since the length of `bytes_vec` matches SIZE_IN_BYTES.
@@ -205,5 +206,24 @@ mod tests {
         // Circuit should be unsatisfied.
         assert!(!Circuit::is_satisfied());
         Circuit::reset();
+    }
+
+    #[test]
+    fn test_from_bits_le_short_input_halts() {
+        use console::FromBits as _;
+
+        // "ab" as 16 bits, without the zero padding to SIZE_IN_BITS.
+        let expected = console::IdentifierLiteral::<<CurrentEnvironment as Environment>::Network>::new("ab").unwrap();
+        let bits = expected.to_bits_le()[..16].to_vec();
+
+        // Console rejects the short input, and so must the circuit.
+        assert!(
+            console::IdentifierLiteral::<<CurrentEnvironment as Environment>::Network>::from_bits_le(&bits).is_err()
+        );
+        let bits: Vec<_> = bits.iter().map(|b| Boolean::<CurrentEnvironment>::new(Mode::Private, *b)).collect();
+        let payload = std::panic::catch_unwind(|| IdentifierLiteral::<CurrentEnvironment>::from_bits_le(&bits))
+            .expect_err("The circuit should halt");
+        let halt = payload.downcast_ref::<snarkvm_utilities::VmHalt>().expect("The panic should be a VM halt");
+        assert!(halt.message().contains("Not enough bits for identifier literal"), "Unexpected halt message: {halt}");
     }
 }

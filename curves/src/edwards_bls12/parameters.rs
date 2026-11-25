@@ -19,16 +19,18 @@ use crate::{
     templates::twisted_edwards_extended::{Affine, Projective},
     traits::{AffineCurve, ModelParameters, MontgomeryParameters, TwistedEdwardsParameters},
 };
-use snarkvm_fields::field;
+use snarkvm_fields::{ExponentSchedule, field};
 use snarkvm_utilities::biginteger::BigInteger256;
 
-use std::str::FromStr;
+use std::{str::FromStr, sync::OnceLock};
 
 pub type EdwardsAffine = Affine<EdwardsParameters>;
 pub type EdwardsProjective = Projective<EdwardsParameters>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EdwardsParameters;
+
+impl crate::sealed::Sealed for EdwardsParameters {}
 
 impl ModelParameters for EdwardsParameters {
     type BaseField = Fq;
@@ -53,6 +55,17 @@ impl TwistedEdwardsParameters for EdwardsParameters {
     /// EDWARDS_D = 3021
     const EDWARDS_D: Fq =
         field!(Fq, BigInteger256([0xd047ffffffff5e30, 0xf0a91026ffff57d2, 0x9013f560d102582, 0x9fd242ca7be5700,]));
+    /// MODULUS_MINUS_ONE_DIV_FOUR = 2111115437357092606062206234695386632843974833788515956983808363979352309760
+    const MODULUS_MINUS_ONE_DIV_FOUR: &'static [u64] =
+        &[0x4284600000000000, 0x566a9dbfb4000000, 0x982d1347970dec00, 0x4aad957a68b2955];
+    /// SQRT_MINUS_ONE = 880904806456922042258150504921383618666682042621506879489
+    const SQRT_MINUS_ONE: Fq =
+        field!(Fq, BigInteger256([0x4bcacfd5d2103b0e, 0x4597a1b1b0ddeb5c, 0x713273b2dd764c92, 0x1208f485585ae1ea,]));
+
+    fn modulus_minus_one_div_four_schedule() -> &'static ExponentSchedule {
+        static SCHEDULE: OnceLock<ExponentSchedule> = OnceLock::new();
+        SCHEDULE.get_or_init(|| ExponentSchedule::new(Self::MODULUS_MINUS_ONE_DIV_FOUR))
+    }
 
     /// Multiplication by `a` is just negation.
     /// Is `a` 1 or -1?

@@ -15,7 +15,6 @@
 
 use super::*;
 
-#[cfg(feature = "view_key")]
 impl<N: Network> TryFrom<ViewKey<N>> for GraphKey<N> {
     type Error = Error;
 
@@ -25,7 +24,6 @@ impl<N: Network> TryFrom<ViewKey<N>> for GraphKey<N> {
     }
 }
 
-#[cfg(feature = "view_key")]
 impl<N: Network> TryFrom<&ViewKey<N>> for GraphKey<N> {
     type Error = Error;
 

@@ -31,7 +31,6 @@ use crate::{
     },
 };
 use anyhow::{Result, anyhow};
-use blake2::Digest;
 use hex::FromHex;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{SerializationError, serialize::*};
@@ -106,20 +105,6 @@ impl<F: PrimeField, SM: SNARKMode> PartialOrd for Circuit<F, SM> {
     }
 }
 
-/// Feeds every written byte into a BLAKE2s-256 hasher.
-struct Blake2sWriter(blake2::Blake2s256);
-
-impl Write for Blake2sWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.update(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
     pub fn hash(
         index_info: &CircuitInfo,
@@ -127,12 +112,13 @@ impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
         b: &Matrix<F>,
         c: &Matrix<F>,
     ) -> Result<CircuitId, SerializationError> {
-        let mut blake2 = Blake2sWriter(blake2::Blake2s256::new());
-        index_info.serialize_uncompressed(&mut blake2)?;
-        a.serialize_uncompressed(&mut blake2)?;
-        b.serialize_uncompressed(&mut blake2)?;
-        c.serialize_uncompressed(&mut blake2)?;
-        Ok(CircuitId(blake2.0.finalize().into()))
+        // Unkeyed BLAKE2s-256.
+        let mut hasher = blake2s_simd::Params::new().hash_length(32).to_state();
+        index_info.serialize_uncompressed(&mut hasher)?;
+        a.serialize_uncompressed(&mut hasher)?;
+        b.serialize_uncompressed(&mut hasher)?;
+        c.serialize_uncompressed(&mut hasher)?;
+        Ok(CircuitId(*hasher.finalize().as_array()))
     }
 
     /// The maximum degree required to represent polynomials of this index.

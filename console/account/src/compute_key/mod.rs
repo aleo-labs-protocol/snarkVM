@@ -27,7 +27,6 @@ mod try_from;
 
 pub use cache::ComputeKeyCache;
 
-#[cfg(feature = "private_key")]
 use crate::PrivateKey;
 
 use snarkvm_console_network::prelude::*;

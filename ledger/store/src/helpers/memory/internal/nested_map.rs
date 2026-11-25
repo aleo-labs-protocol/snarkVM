@@ -17,13 +17,12 @@
 
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::network::prelude::*;
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::{
+    bytes::unchecked_deserialize,
+    locks::{Mutex, RwLock},
+};
 
 use anyhow::Context;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::{Mutex, RwLock};
-#[cfg(not(feature = "locktick"))]
-use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, btree_map},
@@ -98,6 +97,14 @@ impl<
             checkpoint: Default::default(),
         }
     }
+}
+
+impl<
+    M: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+> crate::sealed::SealedNestedMap<M, K, V> for NestedMemoryMap<M, K, V>
+{
 }
 
 impl<

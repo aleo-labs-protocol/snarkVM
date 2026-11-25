@@ -102,7 +102,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rejected_id: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("VM::check_transaction");
+        let timer = timing_span!("VM::check_transaction").entered();
 
         // Get the current block height for consensus version checks.
         let current_block_height = self.block_store().current_block_height();
@@ -135,7 +135,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 bail!("Failed to compute the Merkle root of the transaction: {error}\n{transaction}");
             }
         };
-        lap!(timer, "Verify the transaction ID");
+        timing_event!("Verify the transaction ID");
 
         /* Transition */
 
@@ -167,7 +167,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure the transition commitments are unique.
         ensure_is_unique!("transition commitment", self, contains_tcm, transaction.transition_commitments());
 
-        lap!(timer, "Check for duplicate elements");
+        timing_event!("Check for duplicate elements");
 
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
@@ -679,7 +679,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", t.program_id()))?;
                         let program = stack.program();
                         Ok(program
-                            .get_function(t.function_name())?
+                            .get_function_ref(t.function_name())?
                             .finalize_logic()
                             .map_or(0, FinalizeCore::num_writes))
                     })
@@ -717,7 +717,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             self.partially_verified_transactions.write().push(cache_key, checksum);
         }
 
-        finish!(timer, "Verify the transaction");
+        timing_event!("Verify the transaction");
+        drop(timer);
         Ok(())
     }
 
@@ -820,9 +821,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// use `VM::check_transaction` instead.
     #[inline]
     fn check_deployment_internal<R: CryptoRng + Rng>(&self, deployment: &Deployment<N>, rng: &mut R) -> Result<()> {
-        // Retrieve the block height.
+        // Deployment verification uses the stored block height. On an activation block, the constructor
+        // runs under the new rules before deployment verification starts using them on the next block.
         let block_height = self.block_store().current_block_height();
-        // Determine which consensus version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
 
         macro_rules! logic {
@@ -835,9 +836,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Process the logic.
-        let timer = timer!("VM::check_deployment");
+        let timer = timing_span!("VM::check_deployment").entered();
         let result = process!(self, logic).map_err(|error| anyhow!("Deployment verification failed - {error}"));
-        finish!(timer);
+        drop(timer);
         result
     }
 
@@ -852,7 +853,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
         is_partially_verified: bool,
     ) -> Result<()> {
-        let timer = timer!("VM::check_execution");
+        let timer = timing_span!("VM::check_execution").entered();
 
         // Retrieve the block height.
         let block_height = self.block_store().current_block_height();
@@ -899,7 +900,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 execution_stacks,
             ),
         };
-        lap!(timer, "Verify the execution");
+        timing_event!("Verify the execution");
 
         // Ensure the global state root exists in the block store.
         let result = match verification {
@@ -911,7 +912,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             },
             Err(error) => bail!("Execution verification failed - {error}"),
         };
-        finish!(timer, "Check the global state root");
+        timing_event!("Check the global state root");
+        drop(timer);
         result
     }
 
@@ -926,7 +928,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         deployment_or_execution_id: Field<N>,
         is_partially_verified: bool,
     ) -> Result<()> {
-        let timer = timer!("VM::check_fee");
+        let timer = timing_span!("VM::check_fee").entered();
 
         // Ensure the fee does not exceed the limit.
         let fee_amount = fee.amount()?;
@@ -963,7 +965,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(_) => bail!("VM safely halted during fee verification"),
             },
         };
-        lap!(timer, "Verify the fee");
+        timing_event!("Verify the fee");
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
         //  to the speculation layer.
@@ -996,7 +998,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             },
             Err(error) => bail!("Fee verification failed - {error}"),
         };
-        finish!(timer, "Check the global state root");
+        timing_event!("Check the global state root");
+        drop(timer);
         result
     }
 }
@@ -1005,28 +1008,27 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 mod tests {
     use super::*;
 
-    use crate::vm::test_helpers::sample_finalize_state;
     use console::account::ViewKey;
 
-    #[cfg(feature = "test")]
-    use console::algorithms::{ECDSASignature, Keccak256};
-    use console::{account::Address, types::Field};
-    use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
-    #[cfg(feature = "test")]
+    use console::{
+        account::Address,
+        algorithms::{ECDSASignature, Keccak256},
+        types::Field,
+    };
+    use snarkvm_ledger_block::{Transaction, Transition};
     use snarkvm_utilities::bytes_from_bits_le;
 
-    #[cfg(feature = "test")]
     use k256::elliptic_curve::Generate;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     #[test]
-    #[cfg(feature = "test")]
+    #[ignore = "slow"]
     fn test_varuna_v3_transaction_boundary() {
         let rng = &mut TestRng::fixed(3104);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
         let mut vm = test_helpers::sample_vm_at_height(height - 1, rng);
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).expect("valid test fixture");
         let inputs = [
             Value::from_str(&address.to_string()).expect("valid test fixture"),
@@ -1060,12 +1062,12 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test")]
+    #[ignore = "slow"]
     fn test_varuna_v3_inclusion_and_deployment_boundary() -> Result<()> {
         let rng = &mut TestRng::fixed(3107);
         let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21)?;
         let mut vm = test_helpers::sample_vm_at_height(height - 2, rng);
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key)?;
         let view_key = ViewKey::try_from(&private_key)?;
         let inputs = [Value::from_str(&address.to_string())?, Value::from_str("100000000u64")?];
@@ -1155,7 +1157,7 @@ function identity:
     }
 
     #[test]
-    #[cfg(feature = "test")]
+    #[ignore = "slow"]
     fn test_varuna_v3_snark_instructions_boundary() {
         use console::{program::Register, types::U8};
         use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -1303,7 +1305,7 @@ finalize verify:
     #[test]
     fn test_verify() {
         let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let (vm, _) = crate::vm::test_helpers::sample_vm_past_v8();
 
         // Fetch a deployment transaction.
         let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
@@ -1360,7 +1362,7 @@ finalize verify:
     #[test]
     fn test_verify_execution() {
         let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let (vm, _) = crate::vm::test_helpers::sample_vm_past_v8();
 
         // Fetch execution transactions.
         let transactions = [
@@ -1398,7 +1400,7 @@ finalize verify:
     #[test]
     fn test_verify_fee() {
         let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let (vm, _) = crate::vm::test_helpers::sample_vm_past_v8();
 
         // Fetch execution transactions.
         let transactions = [
@@ -1431,151 +1433,6 @@ finalize verify:
                 _ => panic!("Expected an execution with a fee"),
             }
         }
-    }
-
-    #[test]
-    #[ignore]
-    fn test_check_transaction_execution() {
-        let rng = &mut TestRng::default();
-
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Fetch a valid execution transaction with a private fee.
-        let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
-        let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
-        vm.check_transaction(&valid_transaction, None, rng).unwrap();
-        // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
-
-        // Fetch a valid execution transaction with a public fee.
-        let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
-        let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
-        vm.check_transaction(&valid_transaction, None, rng).unwrap();
-        // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
-
-        // Fetch a valid execution transaction with no fee.
-        let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_without_fee(rng);
-        let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
-        vm.check_transaction(&valid_transaction, None, rng).unwrap();
-        // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
-    }
-
-    #[test]
-    #[ignore]
-    fn test_verify_deploy_and_execute() {
-        // Initialize the RNG.
-        let rng = &mut TestRng::default();
-
-        // Initialize a new caller.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-        let address = Address::try_from(&caller_private_key).unwrap();
-
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-
-        // Fetch the unspent records.
-        let records = genesis.records().collect::<indexmap::IndexMap<_, _>>();
-
-        // Prepare the fee.
-        let credits = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
-
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy.
-        let program = crate::vm::test_helpers::sample_program();
-        let deployment_transaction = vm.deploy(&caller_private_key, &program, Some(credits), 10, None, rng).unwrap();
-
-        // Construct the new block header.
-        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
-            .speculate(
-                sample_finalize_state(1),
-                time_since_last_block,
-                Some(0u64),
-                vec![],
-                &None.into(),
-                [deployment_transaction].iter(),
-                rng,
-            )
-            .unwrap();
-        assert!(aborted_transaction_ids.is_empty());
-
-        // Construct the metadata associated with the block.
-        let deployment_metadata = Metadata::new(
-            CurrentNetwork::ID,
-            1,
-            1,
-            0,
-            0,
-            CurrentNetwork::GENESIS_COINBASE_TARGET,
-            CurrentNetwork::GENESIS_PROOF_TARGET,
-            genesis.last_coinbase_target(),
-            genesis.last_coinbase_timestamp(),
-            genesis.timestamp().saturating_add(time_since_last_block),
-        )
-        .unwrap();
-
-        let deployment_header = Header::from(
-            vm.block_store().current_state_root(),
-            transactions.to_transactions_root().unwrap(),
-            transactions.to_finalize_root(ratified_finalize_operations).unwrap(),
-            ratifications.to_ratifications_root().unwrap(),
-            Field::zero(),
-            Field::zero(),
-            deployment_metadata,
-        )
-        .unwrap();
-
-        // Construct a new block for the deploy transaction.
-        let deployment_block = Block::new_beacon(
-            &caller_private_key,
-            genesis.hash(),
-            deployment_header,
-            ratifications,
-            None.into(),
-            vec![],
-            transactions,
-            aborted_transaction_ids,
-            rng,
-        )
-        .unwrap();
-
-        // Add the deployment block.
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Fetch the unspent records.
-        let records = deployment_block.records().collect::<indexmap::IndexMap<_, _>>();
-
-        // Prepare the inputs.
-        let inputs = [
-            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-            Value::<CurrentNetwork>::from_str("10u64").unwrap(),
-        ]
-        .into_iter();
-
-        // Prepare the fee.
-        let credits = Some(records.values().next().unwrap().decrypt(&caller_view_key).unwrap());
-
-        // Execute.
-        let transaction =
-            vm.execute(&caller_private_key, ("testing.aleo", "initialize"), inputs, credits, 10, None, rng).unwrap();
-        let cache_key = create_cache_key_for_test(&vm, &transaction);
-
-        // Verify.
-        vm.check_transaction(&transaction, None, rng).unwrap();
-        // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
     }
 
     #[test]
@@ -1614,13 +1471,9 @@ function compute:
         let rng = &mut TestRng::default();
 
         // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
+        let (vm, _) = crate::vm::test_helpers::sample_vm_past_v8();
         // Fetch the caller's private key.
-        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
@@ -1684,20 +1537,20 @@ function compute:
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_none());
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_varuna_migration() {
         let rng = &mut TestRng::default();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Create a transaction with on the old version.
         let address = Address::try_from(&private_key).unwrap();
@@ -1738,7 +1591,7 @@ function compute:
         // Sample a new VM
         let new_vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         new_vm.add_next_block(&genesis).unwrap();
 
@@ -1748,20 +1601,20 @@ function compute:
         assert!(new_vm.check_transaction(&transaction_v2, None, rng).is_err());
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_program_rules_migration() {
         let rng = &mut TestRng::default();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Advance the ledger past ConsensusV4 where the new varuna version starts to take place.
         let transactions: [Transaction<CurrentNetwork>; 0] = [];
@@ -1899,20 +1752,65 @@ function compute:
         ]);
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
+    fn test_fixed_digest_deployment_at_v23_activation() -> Result<()> {
+        let rng = &mut TestRng::default();
+        let activation = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V23)?;
+        let vm = test_helpers::sample_vm_at_height(activation - 1, rng);
+        let private_key = test_helpers::sample_genesis_private_key();
+        let program = Program::from_str(&format!(
+            "program digest_boundary.aleo;
+             function identity:
+                 input r0 as field.private;
+                 output r0 as field.private;
+             constructor:
+                 cast {} into r0 as [u8; 65u32];
+                 cast {} into r1 as [u8; 20u32];
+                 cast 0u8 into r2 as [u8; 1u32];
+                 cast {} into r3 as [[u8; 1u32]; 32u32];
+                 ecdsa.verify.digest.eth r0 r1 r3 into r4;",
+            "1u8 ".repeat(65),
+            "0u8 ".repeat(20),
+            "r2 ".repeat(32),
+        ))?;
+        let tx = vm.deploy(&private_key, &program, None, 0, None, rng)?;
+
+        // Deployment verification uses the stored tip. The constructor runs at the candidate block height.
+        vm.check_transaction(&tx, None, rng)?;
+        let block = test_helpers::sample_next_block(&vm, &private_key, std::slice::from_ref(&tx), rng)?;
+        assert_eq!(block.height(), activation);
+        assert_eq!(block.transactions().num_rejected(), 1);
+        vm.add_next_block(&block)?;
+        let rejected = block.transactions().iter().next().expect("The block contains the rejected deployment");
+        let reason = vm.finalize_store().get_rejected_reason(&rejected.id())?;
+        assert!(
+            matches!(reason, Some(RejectedReason::Finalize { ref command, .. })
+                if matches!(command.as_ref(), Command::Instruction(crate::Instruction::ECDSAVerifyDigestEth(_)))),
+            "unexpected rejection reason: {reason:?}"
+        );
+
+        // Once the activation block is stored, deployment verification rejects the constructor's digest type.
+        let deployment = tx.deployment().expect("VM::deploy returns a deployment transaction");
+        let error = vm.check_deployment_internal(deployment, rng).unwrap_err();
+        assert!(error.to_string().contains("one-dimensional byte array"), "unexpected error: {error}");
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "slow"]
     fn test_ecdsa_migration() {
         let rng = &mut TestRng::default();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Deploy a test program to the ledger.
         let program_id = ProgramID::<CurrentNetwork>::from_str("dummy_program.aleo").unwrap();
@@ -2059,20 +1957,20 @@ function compute:
         assert!(vm.block_store().get_confirmed_transaction(&invalid_tx_id).unwrap().unwrap().is_rejected());
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_increased_array_size() {
         let rng = &mut TestRng::default();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Deploy a test program to the ledger.
         let program_id = ProgramID::<CurrentNetwork>::from_str("dummy_program.aleo").unwrap();
@@ -2115,20 +2013,20 @@ function compute:
         assert!(vm.check_transaction(&deployment, None, rng).is_ok());
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_block_timestamp_migration() {
         let rng = &mut TestRng::default();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key();
 
         // Deploy a test program to the ledger.
         let program_id = ProgramID::<CurrentNetwork>::from_str("dummy_program.aleo").unwrap();
@@ -2216,320 +2114,269 @@ function compute:
         assert!(vm.block_store().get_confirmed_transaction(&valid_tx_id).unwrap().unwrap().is_accepted());
         assert!(vm.block_store().get_confirmed_transaction(&invalid_tx_id).unwrap().unwrap().is_rejected());
     }
+
+    #[test]
+    #[ignore = "slow"]
+    fn test_halted_deployment_does_not_reject_later_deployments() {
+        use snarkvm_synthesizer_snark::VerifyingKey;
+        use std::{ops::Deref, sync::Arc};
+
+        let rng = &mut TestRng::default();
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).expect("valid test fixture");
+        let vm = test_helpers::sample_vm_at_height(height, rng);
+        let private_key = test_helpers::sample_genesis_private_key();
+
+        // Records make verification synthesize translation circuits.
+        let mut good_src = String::from("program dirty_good.aleo;\n\n");
+        for i in 0..8 {
+            good_src
+                .push_str(&format!("record tok{i}:\n    owner as address.private;\n    amount as u64.private;\n\n"));
+        }
+        good_src.push_str("constructor:\n    assert.eq true true;\n\n");
+        good_src.push_str(
+            "function foo:\n    input r0 as u32.private;\n    add r0 r0 into r1;\n    output r1 as u32.private;\n",
+        );
+        let good_program = Program::<CurrentNetwork>::from_str(&good_src).expect("valid test fixture");
+        let good_tx = vm.deploy(&private_key, &good_program, None, 0, None, rng).expect("valid test fixture");
+
+        let mut halt_src = String::from("program dirty_halt.aleo;\n\nconstructor:\n    assert.eq true true;\n\n");
+        for i in 0..8 {
+            halt_src.push_str(&format!(
+                "function f{i}:\n    input r0 as u32.private;\n    add r0 r0 into r1;\n    output r1 as u32.private;\n\n"
+            ));
+        }
+        let halt_program = Program::<CurrentNetwork>::from_str(&halt_src).expect("valid test fixture");
+        let honest_tx = vm.deploy(&private_key, &halt_program, None, 0, None, rng).expect("valid test fixture");
+        let Transaction::Deploy(_, _, _, honest_deployment, _) = &honest_tx else {
+            panic!("expected a deployment transaction")
+        };
+
+        // Under-reported constraint counts make every function's synthesis halt.
+        let tampered = honest_deployment
+            .verifying_keys()
+            .iter()
+            .map(|(id, (vk, cert))| {
+                let mut vk_deref = vk.deref().clone();
+                vk_deref.circuit_info.num_constraints -= 2;
+                (*id, (VerifyingKey::new(Arc::new(vk_deref), vk.num_variables()), cert.clone()))
+            })
+            .collect();
+        let bad_deployment = Deployment::new(
+            honest_deployment.edition(),
+            honest_deployment.program().clone(),
+            tampered,
+            honest_deployment.program_checksum(),
+            honest_deployment.program_owner(),
+        )
+        .expect("valid test fixture");
+        let deployment_id = bad_deployment.to_deployment_id().expect("valid test fixture");
+        let owner = ProgramOwner::new(&private_key, deployment_id, rng).expect("valid test fixture");
+        let base_fee = *honest_tx.base_fee_amount().expect("valid test fixture");
+        let auth = vm.authorize_fee_public(&private_key, base_fee, 0, deployment_id, rng).expect("valid test fixture");
+        let fee = vm.execute_fee_authorization(auth, None, rng).expect("valid test fixture");
+        let bad_tx = Transaction::from_deployment(owner, bad_deployment, fee).expect("valid test fixture");
+
+        // One thread, so every synthesis below runs on the worker that halts.
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().expect("valid test fixture");
+        let check = |tx: &Transaction<CurrentNetwork>| {
+            vm.partially_verified_transactions().write().clear();
+            pool.install(|| vm.check_transaction(tx, None, &mut TestRng::default()))
+        };
+
+        let control = check(&good_tx);
+        assert!(control.is_ok(), "a valid deployment must verify on clean threads: {control:?}");
+        let bad = check(&bad_tx);
+        assert!(
+            bad.as_ref().err().is_some_and(|e| e.to_string().contains("VM safely halted")),
+            "the under-reported deployment must halt: {bad:?}"
+        );
+        // A deployment check synthesizes its functions before its translations, and each function resets the
+        // circuit, so only a translation synthesized directly observes the state that the halt leaves.
+        let stack = Stack::new(vm.process(), &good_program).expect("valid test fixture");
+        let record_name = Identifier::from_str("tok0").expect("valid test fixture");
+        let translation = pool.install(|| {
+            stack.synthesize_translation_key::<test_helpers::CurrentAleo, _>(&record_name, &mut TestRng::default())
+        });
+        assert!(translation.is_ok(), "a translation must synthesize after a halt: {translation:?}");
+        let after = check(&good_tx);
+        assert!(after.is_ok(), "a valid deployment must still verify after a halt: {after:?}");
+    }
+
+    mod memory_intensive {
+        use super::*;
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_check_transaction_execution() {
+            let rng = &mut TestRng::default();
+
+            // Initialize the VM.
+            let (vm, _) = crate::vm::test_helpers::sample_vm_past_v8();
+
+            // Fetch a valid execution transaction with a private fee.
+            let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+            let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
+            vm.check_transaction(&valid_transaction, None, rng).unwrap();
+            // Ensure the partially_verified_transactions cache is updated.
+            assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
+
+            // Fetch a valid execution transaction with a public fee.
+            let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
+            let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
+            vm.check_transaction(&valid_transaction, None, rng).unwrap();
+            // Ensure the partially_verified_transactions cache is updated.
+            assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
+
+            // Fetch a valid execution transaction with no fee.
+            let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_without_fee(rng);
+            let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
+            vm.check_transaction(&valid_transaction, None, rng).unwrap();
+            // Ensure the partially_verified_transactions cache is updated.
+            assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
+        }
+
+        #[test]
+        #[ignore = "memory intensive"]
+        fn test_verify_deploy_and_execute() {
+            // Initialize the RNG.
+            let rng = &mut TestRng::default();
+
+            // Initialize a new caller.
+            let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key();
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+            let address = Address::try_from(&caller_private_key).unwrap();
+
+            // Initialize the VM.
+            let (vm, block) = crate::vm::test_helpers::sample_vm_past_v8();
+
+            // Fetch the unspent records.
+            let records = block.records().collect::<indexmap::IndexMap<_, _>>();
+
+            // Prepare the fee.
+            let credits = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
+
+            // Deploy.
+            let program = crate::vm::test_helpers::sample_program();
+            let deployment_transaction =
+                vm.deploy(&caller_private_key, &program, Some(credits), 10, None, rng).unwrap();
+
+            // Construct a new block for the deploy transaction.
+            let deployment_block =
+                crate::vm::test_helpers::sample_next_block(&vm, &caller_private_key, &[deployment_transaction], rng)
+                    .unwrap();
+            assert!(deployment_block.aborted_transaction_ids().is_empty());
+
+            // Add the deployment block.
+            vm.add_next_block(&deployment_block).unwrap();
+
+            // Fetch the unspent records.
+            let records = deployment_block.records().collect::<indexmap::IndexMap<_, _>>();
+
+            // Prepare the inputs.
+            let inputs = [
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("10u64").unwrap(),
+            ]
+            .into_iter();
+
+            // Prepare the fee.
+            let credits = Some(records.values().next().unwrap().decrypt(&caller_view_key).unwrap());
+
+            // Execute.
+            let transaction = vm
+                .execute(&caller_private_key, ("testing.aleo", "initialize"), inputs, credits, 10, None, rng)
+                .unwrap();
+            let cache_key = create_cache_key_for_test(&vm, &transaction);
+
+            // Verify.
+            vm.check_transaction(&transaction, None, rng).unwrap();
+            // Ensure the partially_verified_transactions cache is updated.
+            assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
+        }
+    }
 }
 
-#[cfg(feature = "test")]
 #[cfg(test)]
 mod credits_migration_tests {
     use super::*;
 
-    use console::{
-        account::{Address, ViewKey},
-        program::Entry,
-    };
+    use console::account::{Address, ViewKey};
     use snarkvm_ledger_block::Transition;
 
+    type CurrentAleo = test_helpers::CurrentAleo;
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
-    const RECORD_UPGRADE_LIMIT: u64 = 1_000_000_000_000u64;
     const TOTAL_UPGRADE_LIMIT: u64 = 4_000_000_000_000u64;
 
-    #[ignore]
     #[test]
-    fn test_inclusion_migration() {
-        // 1. Check that `upgrade` is not callable before migration
-        // 2. Construct blocks until migration occurs
-        // 3. Check that records generated at exactly the migration block requires `upgrade`.
-        // 4. Check that records from before the `upgrade_block_height` can't be spent.
-        // 5. Check that `upgrade` works on the above record.
-        // 6. Check that `upgrade` does not work on already upgraded records.
-        // 7. Check that the upgraded records can now be spent.
-        // 8. Check that the records above 500,000 credits are properly aborted.
-
+    #[ignore = "slow"]
+    fn test_upgrade_pool_limit() {
         let rng = &mut TestRng::default();
 
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        // Initialize the VM past the migration, on a genesis block whose records `upgrade` accepts.
+        let (mut vm, private_key, genesis) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
+        let height = CurrentNetwork::INCLUSION_UPGRADE_HEIGHT().unwrap() + 1;
+        crate::vm::test_helpers::advance_vm_to_height(&mut vm, private_key, height, rng);
         let view_key = ViewKey::try_from(&private_key).unwrap();
-        let address = Address::try_from(&private_key).unwrap();
+        let records = genesis.records().map(|(_, record)| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
 
-        // Track the total upgraded amount.
-        let mut total_upgraded = 0;
-
-        // Fetch the unspent record.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let genesis_records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
-
-        let split_transactions: Vec<_> = (0..4)
-            .map(|i| {
-                let inputs = [
-                    Value::<CurrentNetwork>::Record(genesis_records[i].clone()),
-                    Value::<CurrentNetwork>::from_str(&format!("{RECORD_UPGRADE_LIMIT}u64")).unwrap(),
-                ]
-                .into_iter();
-                vm.execute(&private_key, ("credits.aleo", "split"), inputs, None, 0, None, rng).unwrap()
-            })
-            .collect();
-
-        // Create a new block that includes the split.
-        let next_block =
-            crate::vm::test_helpers::sample_next_block(&vm, &private_key, &split_transactions, rng).unwrap();
-        vm.add_next_block(&next_block).unwrap();
-
-        // Fetch the records from the new block.
-        let split_records =
-            next_block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let split_records = split_records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
-
-        // Create more splits
-        let more_split_transactions: Vec<_> = (0..4)
-            .map(|i| {
-                let inputs = [
-                    Value::<CurrentNetwork>::Record(split_records[2 * i + 1].clone()),
-                    Value::<CurrentNetwork>::from_str(&format!("{RECORD_UPGRADE_LIMIT}u64")).unwrap(),
-                ]
-                .into_iter();
-                vm.execute(&private_key, ("credits.aleo", "split"), inputs, None, 0, None, rng).unwrap()
-            })
-            .collect();
-
-        // Create a new block that includes the split.
-        let next_block =
-            crate::vm::test_helpers::sample_next_block(&vm, &private_key, &more_split_transactions, rng).unwrap();
-        vm.add_next_block(&next_block).unwrap();
-
-        // Fetch the records from the new block.
-        let additional_split_records =
-            next_block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let additional_split_records =
-            additional_split_records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
-
-        // ----------------------------------------------------------------------------------------
-        // 1. Check that `upgrade` is not callable before migration
-        // ----------------------------------------------------------------------------------------
-
-        let microcredits = Identifier::from_str("microcredits").unwrap();
-        let upgrade_1 = {
-            let record_to_spend = split_records[0].clone();
-            let amount = match record_to_spend.data().get(&microcredits) {
-                Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => **amount,
-                _ => panic!("Invalid record"),
-            };
-            assert!(amount <= RECORD_UPGRADE_LIMIT);
-            total_upgraded += amount;
-            let inputs = [Value::<CurrentNetwork>::Record(record_to_spend)].into_iter();
+        let credits = ProgramID::from_str("credits.aleo").unwrap();
+        let pool = Identifier::from_str("pool").unwrap();
+        let pool_key = Plaintext::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc").unwrap();
+        let set_pool = |amount: u64| {
+            let value = Value::from_str(&format!("{amount}u64")).unwrap();
+            vm.finalize_store().update_key_value(credits, pool, pool_key.clone(), value).unwrap();
+        };
+        let get_pool = || vm.finalize_store().get_value_confirmed(credits, pool, &pool_key).unwrap();
+        let upgrade = |record: &Record<CurrentNetwork, Plaintext<CurrentNetwork>>, rng: &mut TestRng| {
+            let inputs = [Value::<CurrentNetwork>::Record(record.clone())].into_iter();
             vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap()
         };
-        assert!(vm.check_transaction(&upgrade_1, None, rng).is_err());
+        let amount = crate::vm::test_helpers::UPGRADABLE_RECORD_AMOUNT;
 
-        // ----------------------------------------------------------------------------------------
-        // 2. Construct blocks until migration occurs
-        // ----------------------------------------------------------------------------------------
+        // An upgrade that takes the pool one microcredit past the limit is aborted.
+        set_pool(TOTAL_UPGRADE_LIMIT - amount + 1);
+        let transaction = upgrade(&records[0], rng);
+        let block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().len(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 1);
+        vm.add_next_block(&block).unwrap();
 
-        let upgrade_height = CurrentNetwork::INCLUSION_UPGRADE_HEIGHT().unwrap();
+        // The upgrades in one block add up, and the one that passes the limit is aborted.
+        set_pool(1);
+        let transactions = records.iter().map(|record| upgrade(record, rng)).collect::<Vec<_>>();
+        let block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), transactions.len() - 1);
+        assert_eq!(block.aborted_transaction_ids(), &vec![transactions.last().unwrap().id()]);
+        vm.add_next_block(&block).unwrap();
+        let filled = 1 + (transactions.len() as u64 - 1) * amount;
+        assert_eq!(get_pool(), Some(Value::from_str(&format!("{filled}u64")).unwrap()));
 
-        while vm.block_store().current_block_height() <= upgrade_height {
-            let mut transactions = vec![];
-            // Add the split transaction to the block created at exactly `INCLUSION_UPGRADE_HEIGHT`
-            if vm.block_store().current_block_height() == upgrade_height - 1 {
-                let split_transaction_3 = {
-                    let inputs = [
-                        Value::<CurrentNetwork>::Record(additional_split_records[1].clone()),
-                        Value::<CurrentNetwork>::from_str(&format!("{RECORD_UPGRADE_LIMIT}u64")).unwrap(),
-                    ]
-                    .into_iter();
-                    vm.execute(&private_key, ("credits.aleo", "split"), inputs, None, 0, None, rng).unwrap()
-                };
-
-                transactions.push(split_transaction_3.clone());
-            }
-            // Call the function
-            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
-            vm.add_next_block(&next_block).unwrap();
-        }
-
-        // ----------------------------------------------------------------------------------------
-        // 3. Check that records generated at exactly the migration block requires `upgrade`.
-        // ----------------------------------------------------------------------------------------
-
-        // Fetch the records created at the migration block.
-        let migration_block_hash = vm.block_store().get_block_hash(upgrade_height).unwrap().unwrap();
-        let migration_block_transactions =
-            vm.block_store().get_block_transactions(&migration_block_hash).unwrap().unwrap();
-        let split_records_2 = migration_block_transactions
-            .transitions()
-            .cloned()
-            .flat_map(Transition::into_records)
-            .collect::<IndexMap<_, _>>();
-        let split_records_2 =
-            split_records_2.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
-
-        // Check that a `transfer_private` is invalid.
-        {
-            let inputs = [
-                Value::<CurrentNetwork>::Record(split_records_2[0].clone()),
-                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
-            ]
-            .into_iter();
-            assert!(
-                vm.execute(&private_key, ("credits.aleo", "transfer_private"), inputs, None, 0, None, rng).is_err()
-            );
-        }
-
-        // Check that an `upgrade` is valid.
-        {
-            let record_to_spend = split_records_2[0].clone();
-            let amount = match record_to_spend.data().get(&microcredits) {
-                Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => **amount,
-                _ => panic!("Invalid record"),
-            };
-            assert!(amount <= RECORD_UPGRADE_LIMIT);
-            let inputs = [Value::<CurrentNetwork>::Record(record_to_spend)].into_iter();
-            let upgrade = vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap();
-            assert!(vm.check_transaction(&upgrade, None, rng).is_ok());
-        }
-
-        // ----------------------------------------------------------------------------------------
-        // 4. Check that records from before the `upgrade_block_height` can't be spent.
-        // ----------------------------------------------------------------------------------------
-
-        let record_to_spend = split_records[0].clone();
-        let inputs = [
-            Value::<CurrentNetwork>::Record(record_to_spend),
-            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
-        ]
-        .into_iter();
-        assert!(vm.execute(&private_key, ("credits.aleo", "transfer_private"), inputs, None, 0, None, rng).is_err());
-
-        // ----------------------------------------------------------------------------------------
-        // 5. Check that `upgrade` works on the above record.
-        // ----------------------------------------------------------------------------------------
-
-        let upgrade_2 = {
-            let record_to_spend = split_records[0].clone();
-            let amount = match record_to_spend.data().get(&microcredits) {
-                Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => **amount,
-                _ => panic!("Invalid record"),
-            };
-            assert!(amount <= RECORD_UPGRADE_LIMIT);
-            let inputs = [Value::<CurrentNetwork>::Record(record_to_spend)].into_iter();
-            vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap()
-        };
-        assert!(vm.check_transaction(&upgrade_2, None, rng).is_ok());
-
-        let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[upgrade_2], rng).unwrap();
-        vm.add_next_block(&next_block).unwrap();
-        assert_eq!(next_block.transactions().len(), 1);
-
-        // ----------------------------------------------------------------------------------------
-        // 6. Check that `upgrade` does not work on already upgraded records.
-        // ----------------------------------------------------------------------------------------
-
-        // Fetch the records from the new block.
-        let upgraded_records =
-            next_block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let upgraded_records =
-            upgraded_records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
-
-        let record_to_spend = upgraded_records[0].clone();
-        let inputs = [Value::<CurrentNetwork>::Record(record_to_spend)].into_iter();
-        assert!(vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).is_err());
-
-        // ----------------------------------------------------------------------------------------
-        // 7. Check that the upgraded records can now be spent.
-        // ----------------------------------------------------------------------------------------
-
-        let transfer_private = {
-            let record_to_spend = upgraded_records[0].clone();
-            let inputs = [
-                Value::<CurrentNetwork>::Record(record_to_spend),
-                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
-            ]
-            .into_iter();
-            vm.execute(&private_key, ("credits.aleo", "transfer_private"), inputs, None, 0, None, rng).unwrap()
-        };
-
-        assert!(vm.check_transaction(&transfer_private, None, rng).is_ok());
-
-        // ----------------------------------------------------------------------------------------
-        // 8. Check that the upgrades will abort if we are past the upgrade limit.
-        // ----------------------------------------------------------------------------------------
-
-        let upgrades: Vec<_> = (1..4)
-            .map(|i| {
-                let record_to_spend = split_records[2 * i].clone();
-                let amount = match record_to_spend.data().get(&microcredits) {
-                    Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => **amount,
-                    _ => panic!("Invalid record"),
-                };
-                assert!(amount <= RECORD_UPGRADE_LIMIT);
-                total_upgraded += amount;
-                let inputs = [Value::<CurrentNetwork>::Record(record_to_spend)].into_iter();
-                vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap()
-            })
-            .collect();
-
-        let additional_upgrades: Vec<_> = (0..4)
-            .map(|i| {
-                let record_to_spend = additional_split_records[2 * i].clone();
-                let amount = match record_to_spend.data().get(&microcredits) {
-                    Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => **amount,
-                    _ => panic!("Invalid record"),
-                };
-                assert!(amount <= RECORD_UPGRADE_LIMIT);
-                total_upgraded += amount;
-                let inputs = [Value::<CurrentNetwork>::Record(record_to_spend)].into_iter();
-                vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap()
-            })
-            .collect();
-
-        let combined_upgrades = [upgrades, additional_upgrades].concat();
-
-        let next_block =
-            crate::vm::test_helpers::sample_next_block(&vm, &private_key, &combined_upgrades, rng).unwrap();
-        vm.add_next_block(&next_block).unwrap();
-        // Ensure that the total upgraded amount is properly bound.
-        assert!(total_upgraded > TOTAL_UPGRADE_LIMIT);
-        println!("\n\n TOTAL UPGRADED: {total_upgraded}\n\n");
-        let num_aborted = usize::try_from((total_upgraded - TOTAL_UPGRADE_LIMIT) / RECORD_UPGRADE_LIMIT).unwrap();
-        assert_eq!(next_block.transactions().len() + num_aborted, combined_upgrades.len());
-        assert_eq!(next_block.aborted_transaction_ids().len(), num_aborted);
-        assert!(num_aborted > 0);
+        // An upgrade that fills the pool to the limit is accepted.
+        set_pool(TOTAL_UPGRADE_LIMIT - amount);
+        let transaction = upgrade(records.last().unwrap(), rng);
+        let block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        vm.add_next_block(&block).unwrap();
+        assert_eq!(get_pool(), Some(Value::from_str(&format!("{TOTAL_UPGRADE_LIMIT}u64")).unwrap()));
     }
 
-    #[cfg(feature = "test")]
     #[test]
+    #[ignore = "slow"]
     fn test_inclusion_local_records() {
-        // 1. Check that records that have not been upgraded can't be spent via calls
-        // 2. Check that `credits.aleo/upgrade` can be called invoked directly.
-        // 3. Check that local records can be spent and checked properly.
+        // 1. Check that `credits.aleo/upgrade` can be called invoked directly.
+        // 2. Check that local records can be spent and checked properly.
+        // 3. Check that records that have not been upgraded can't be spent via calls
         let rng = &mut TestRng::default();
 
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        // Initialize the VM on a genesis block whose records `upgrade` accepts.
+        let (vm, private_key, genesis) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
         let view_key = ViewKey::try_from(&private_key).unwrap();
         let address = Address::try_from(&private_key).unwrap();
 
-        // Fetch the unspent record.
+        // Fetch the unspent records, which predate the migration.
         let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let genesis_records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
+        let old_records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
 
         // Deploy the program.
         let program = Program::from_str(
@@ -2563,39 +2410,6 @@ function local_transfer:
         vm.add_next_block(&crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[deployment], rng).unwrap())
             .unwrap();
 
-        // Create a split transaction before the migration.
-        let split_transaction = {
-            let inputs = [
-                Value::<CurrentNetwork>::Record(genesis_records[0].clone()),
-                Value::<CurrentNetwork>::from_str("500_000_000_000u64").unwrap(), // Use the upgrade limit
-            ]
-            .into_iter();
-            vm.execute(&private_key, ("credits.aleo", "split"), inputs, None, 0, None, rng).unwrap()
-        };
-        // Create a split transaction before the migration.
-        let split_transaction_2 = {
-            let inputs = [
-                Value::<CurrentNetwork>::Record(genesis_records[1].clone()),
-                Value::<CurrentNetwork>::from_str("500_000_000_000u64").unwrap(), // Use the upgrade limit
-            ]
-            .into_iter();
-            vm.execute(&private_key, ("credits.aleo", "split"), inputs, None, 0, None, rng).unwrap()
-        };
-        // Create a new block that includes the split.
-        let next_block = crate::vm::test_helpers::sample_next_block(
-            &vm,
-            &private_key,
-            &[split_transaction, split_transaction_2],
-            rng,
-        )
-        .unwrap();
-        vm.add_next_block(&next_block).unwrap();
-
-        // Fetch the records from the new block.
-        let split_records =
-            next_block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let split_records = split_records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
-
         // ----------------------------------------------------------------------------------------
         // Construct blocks until migration occurs
         // ----------------------------------------------------------------------------------------
@@ -2607,25 +2421,11 @@ function local_transfer:
         }
 
         // ----------------------------------------------------------------------------------------
-        // 1. Check that records that have not been upgraded can't be spent via calls
-        // ----------------------------------------------------------------------------------------
-
-        let inputs = [
-            Value::<CurrentNetwork>::Record(split_records[0].clone()),
-            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
-        ]
-        .into_iter();
-        assert!(
-            vm.execute(&private_key, ("test_local_calls.aleo", "proxy_transfer"), inputs, None, 0, None, rng).is_err()
-        );
-
-        // ----------------------------------------------------------------------------------------
-        // 2. Check that `credits.aleo/upgrade` can be invoked by a user.
+        // 1. Check that `credits.aleo/upgrade` can be invoked by a user.
         // ----------------------------------------------------------------------------------------
 
         // Upgrade an old record
-        let inputs = [Value::<CurrentNetwork>::Record(split_records[0].clone())].into_iter();
+        let inputs = [Value::<CurrentNetwork>::Record(old_records[0].clone())].into_iter();
         let upgrade = vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap();
         assert!(vm.check_transaction(&upgrade, None, rng).is_ok());
 
@@ -2646,7 +2446,7 @@ function local_transfer:
         assert!(vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).is_err());
 
         // ----------------------------------------------------------------------------------------
-        // 3. Check that local transfers cannot be invoked until the program is re-deployed.
+        // 2. Check that local transfers cannot be invoked until the program is re-deployed.
         //    After the program is re-deployed, local transfers should work.
         // ----------------------------------------------------------------------------------------
 
@@ -2657,8 +2457,8 @@ function local_transfer:
             Value::<CurrentNetwork>::from_str("10u64").unwrap(),
         ];
 
-        // Create a transaction with local transfers, which should fail, because the program has not been re-deployed.
-        let local_transfer = vm
+        // The prover rejects the local transfer, because the program has not been re-deployed.
+        let error = vm
             .execute(
                 &private_key,
                 ("test_local_calls.aleo", "local_transfer"),
@@ -2668,7 +2468,29 @@ function local_transfer:
                 None,
                 rng,
             )
+            .unwrap_err();
+        assert!(error.to_string().contains("Cannot execute test_local_calls.aleo on edition 0"), "{error}");
+
+        // Prove the local transfer without the VM's edition check, to check that the verifier rejects it too.
+        let authorization =
+            vm.authorize(&private_key, "test_local_calls.aleo", "local_transfer", inputs.clone(), rng).unwrap();
+        let (_, mut trace) = vm.process().execute::<CurrentAleo, _>(authorization, rng).unwrap();
+        trace.prepare(&Query::VM(vm.block_store().clone())).unwrap();
+        let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
+        let execution = trace
+            .prove_execution::<CurrentAleo, _>(
+                "test_local_calls.aleo/local_transfer",
+                varuna_version_from_consensus(consensus_version),
+                rng,
+            )
             .unwrap();
+        let (base_fee, _) = execution_cost(vm.process(), &execution, consensus_version).unwrap();
+        let fee_authorization =
+            vm.authorize_fee_public(&private_key, base_fee, 0, execution.to_execution_id().unwrap(), rng).unwrap();
+        let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
+        let local_transfer = Transaction::from_execution(execution, Some(fee)).unwrap();
+        let error = vm.check_transaction(&local_transfer, None, rng).unwrap_err();
+        assert!(error.to_string().contains("cannot be zero for `ConsensusVersion::V8` or greater"), "{error}");
         let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[local_transfer], rng).unwrap();
         assert_eq!(next_block.transactions().num_accepted(), 0);
         assert_eq!(next_block.transactions().num_rejected(), 0);
@@ -2692,137 +2514,126 @@ function local_transfer:
         assert_eq!(next_block.transactions().num_accepted(), 1);
         assert_eq!(next_block.transactions().num_rejected(), 0);
         assert_eq!(next_block.aborted_transaction_ids().len(), 0);
+
+        // ----------------------------------------------------------------------------------------
+        // 3. Check that records that have not been upgraded can't be spent via calls
+        // ----------------------------------------------------------------------------------------
+
+        let mut proxy_transfer = |record: &Record<CurrentNetwork, Plaintext<CurrentNetwork>>| {
+            let inputs = [
+                Value::<CurrentNetwork>::Record(record.clone()),
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ]
+            .into_iter();
+            vm.execute(&private_key, ("test_local_calls.aleo", "proxy_transfer"), inputs, None, 0, None, rng)
+        };
+        assert!(proxy_transfer(&upgraded_records[0]).is_ok());
+        let error = proxy_transfer(&old_records[1]).unwrap_err();
+        assert!(error.to_string().contains("does not satisfy the circuit's constraints"), "{error}");
     }
 
-    #[cfg(feature = "test")]
-    #[test]
-    fn test_inclusion_for_custom_records() {
-        // 1. Deploy a program with custom records
-        // 2. Mint the records
-        // 3. Check that the records can be spent prior to migration
-        // 4. Construct blocks until migration occurs
-        // 5. Check that the records are be spent after migration
+    mod memory_intensive {
+        use super::*;
 
-        let rng = &mut TestRng::default();
+        #[ignore = "memory intensive"]
+        #[test]
+        fn test_inclusion_migration() {
+            // 1. Check that `upgrade` is not callable before migration
+            // 2. Construct blocks until migration occurs
+            // 3. Check that records from before the `upgrade_block_height` can't be spent.
+            // 4. Check that `upgrade` works on the above record.
+            // 5. Check that `upgrade` does not work on already upgraded records.
+            // 6. Check that the upgraded records can now be spent.
 
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
+            let rng = &mut TestRng::default();
 
-        // Fetch the private key.
-        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-        let view_key = ViewKey::try_from(&private_key).unwrap();
-        let address = Address::try_from(&private_key).unwrap();
+            // Initialize the VM on a genesis block whose records `upgrade` accepts.
+            let (vm, private_key, genesis) = crate::vm::test_helpers::sample_vm_with_upgradable_records();
+            let view_key = ViewKey::try_from(&private_key).unwrap();
+            let address = Address::try_from(&private_key).unwrap();
 
-        // ----------------------------------------------------------------------------------------
-        // 1. Deploy a program with custom records
-        // ----------------------------------------------------------------------------------------
+            // Fetch the unspent records, which predate the migration.
+            let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+            let old_records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
 
-        // Deploy the program.
-        let program = Program::from_str(
-            r"
-program token.aleo;
+            // ----------------------------------------------------------------------------------------
+            // 1. Check that `upgrade` is not callable before migration
+            // ----------------------------------------------------------------------------------------
 
-record token:
-    owner as address.private;
-    amount as u64.private;
+            let upgrade_1 = {
+                let inputs = [Value::<CurrentNetwork>::Record(old_records[0].clone())].into_iter();
+                vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap()
+            };
+            assert!(vm.check_transaction(&upgrade_1, None, rng).is_err());
 
-function mint:
-    input r0 as address.private;
-    input r1 as u64.private;
-    cast r0 r1 into r2 as token.record;
-    output r2 as token.record;
+            // ----------------------------------------------------------------------------------------
+            // 2. Construct blocks until migration occurs
+            // ----------------------------------------------------------------------------------------
 
-function transfer:
-    input r0 as token.record;
-    input r1 as address.private;
-    input r2 as u64.private;
-    sub r0.amount r2 into r3;
-    cast r1 r2 into r4 as token.record;
-    cast r0.owner r3 into r5 as token.record;
-    output r4 as token.record;
-    output r5 as token.record;
-    ",
-        )
-        .unwrap();
+            while vm.block_store().current_block_height() <= CurrentNetwork::INCLUSION_UPGRADE_HEIGHT().unwrap() {
+                let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[], rng).unwrap();
+                vm.add_next_block(&next_block).unwrap();
+            }
 
-        let deployment = vm.deploy(&private_key, &program, None, 1, None, rng).unwrap();
-        vm.add_next_block(&crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[deployment], rng).unwrap())
-            .unwrap();
+            // ----------------------------------------------------------------------------------------
+            // 3. Check that records from before the `upgrade_block_height` can't be spent.
+            // ----------------------------------------------------------------------------------------
 
-        // ----------------------------------------------------------------------------------------
-        // 2. Mint the records
-        // ----------------------------------------------------------------------------------------
-
-        let mint = {
             let inputs = [
+                Value::<CurrentNetwork>::Record(old_records[0].clone()),
                 Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-                Value::<CurrentNetwork>::from_str("100000u64").unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
             ]
             .into_iter();
-            vm.execute(&private_key, ("token.aleo", "mint"), inputs, None, 0, None, rng).unwrap()
-        };
-        assert!(vm.check_transaction(&mint, None, rng).is_ok());
+            assert!(
+                vm.execute(&private_key, ("credits.aleo", "transfer_private"), inputs, None, 0, None, rng).is_err()
+            );
 
-        let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[mint], rng).unwrap();
-        vm.add_next_block(&next_block).unwrap();
-        assert_eq!(next_block.transactions().len(), 1);
+            // ----------------------------------------------------------------------------------------
+            // 4. Check that `upgrade` works on the above record.
+            // ----------------------------------------------------------------------------------------
 
-        // Fetch the records from the new block.
-        let minted_records =
-            next_block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        let minted_records =
-            minted_records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
+            let upgrade_2 = {
+                let inputs = [Value::<CurrentNetwork>::Record(old_records[0].clone())].into_iter();
+                vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).unwrap()
+            };
+            assert!(vm.check_transaction(&upgrade_2, None, rng).is_ok());
 
-        // ----------------------------------------------------------------------------------------
-        // 3. Check that the records can be spent prior to migration
-        // ----------------------------------------------------------------------------------------
-
-        let transfer_1 = {
-            let inputs = [
-                Value::<CurrentNetwork>::Record(minted_records[0].clone()),
-                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-                Value::<CurrentNetwork>::from_str("1000u64").unwrap(),
-            ]
-            .into_iter();
-            vm.execute(&private_key, ("token.aleo", "transfer"), inputs, None, 0, None, rng).unwrap()
-        };
-        assert!(vm.check_transaction(&transfer_1, None, rng).is_ok());
-
-        // ----------------------------------------------------------------------------------------
-        // 4. Construct blocks until migration occurs
-        // ----------------------------------------------------------------------------------------
-
-        while vm.block_store().current_block_height() < CurrentNetwork::INCLUSION_UPGRADE_HEIGHT().unwrap() {
-            // Call the function
-            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[], rng).unwrap();
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[upgrade_2], rng).unwrap();
             vm.add_next_block(&next_block).unwrap();
+            assert_eq!(next_block.transactions().len(), 1);
+
+            // ----------------------------------------------------------------------------------------
+            // 5. Check that `upgrade` does not work on already upgraded records.
+            // ----------------------------------------------------------------------------------------
+
+            // Fetch the records from the new block.
+            let upgraded_records =
+                next_block.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+            let upgraded_records =
+                upgraded_records.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
+
+            let record_to_spend = upgraded_records[0].clone();
+            let inputs = [Value::<CurrentNetwork>::Record(record_to_spend)].into_iter();
+            assert!(vm.execute(&private_key, ("credits.aleo", "upgrade"), inputs, None, 0, None, rng).is_err());
+
+            // ----------------------------------------------------------------------------------------
+            // 6. Check that the upgraded records can now be spent.
+            // ----------------------------------------------------------------------------------------
+
+            let transfer_private = {
+                let record_to_spend = upgraded_records[0].clone();
+                let inputs = [
+                    Value::<CurrentNetwork>::Record(record_to_spend),
+                    Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                    Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+                ]
+                .into_iter();
+                vm.execute(&private_key, ("credits.aleo", "transfer_private"), inputs, None, 0, None, rng).unwrap()
+            };
+
+            assert!(vm.check_transaction(&transfer_private, None, rng).is_ok());
         }
-
-        // ----------------------------------------------------------------------------------------
-        // 5. Check that the records can be spent after migration
-        // ----------------------------------------------------------------------------------------
-
-        // Re-deploy the program.
-        let deployment = vm.deploy(&private_key, &program, None, 1, None, rng).unwrap();
-        let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
-        assert_eq!(next_block.transactions().num_accepted(), 1);
-        assert_eq!(next_block.transactions().num_rejected(), 0);
-        assert_eq!(next_block.aborted_transaction_ids().len(), 0);
-        vm.add_next_block(&next_block).unwrap();
-
-        let transfer_2 = {
-            let inputs = [
-                Value::<CurrentNetwork>::Record(minted_records[0].clone()),
-                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-                Value::<CurrentNetwork>::from_str("1000u64").unwrap(),
-            ]
-            .into_iter();
-            vm.execute(&private_key, ("token.aleo", "transfer"), inputs, None, 0, None, rng).unwrap()
-        };
-        assert!(vm.check_transaction(&transfer_2, None, rng).is_ok());
     }
 }

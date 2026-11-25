@@ -28,8 +28,8 @@ pub(super) const MAINNET_STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64); 9] = [
     (1817078399i64, 2_500_000_000_000u64), /* 2027-07-31 23:59:59 UTC */
 ];
 
-/// The stake required to land one solution per epoch at various points in time for canary and testnet.
-pub(super) const CANARY_AND_TESTNET_STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64); 9] = [
+/// The stake required to land one solution per epoch at various points in time for testnet.
+pub(super) const TESTNET_STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64); 9] = [
     (1754006399i64, 1_000_000_000u64),  /* 2025-07-31 23:59:59 UTC */
     (1761955199i64, 2_500_000_000u64),  /* 2025-10-31 23:59:59 UTC */
     (1769903999i64, 5_000_000_000u64),  /* 2026-01-31 23:59:59 UTC */
@@ -52,9 +52,7 @@ pub(super) const CANARY_AND_TESTNET_STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64)
 pub fn stake_requirements_per_solution<N: Network>() -> &'static [(i64, u64)] {
     match N::ID {
         console::network::MainnetV0::ID => &MAINNET_STAKE_REQUIREMENTS_PER_SOLUTION,
-        console::network::TestnetV0::ID | console::network::CanaryV0::ID => {
-            &CANARY_AND_TESTNET_STAKE_REQUIREMENTS_PER_SOLUTION
-        }
+        console::network::TestnetV0::ID => &TESTNET_STAKE_REQUIREMENTS_PER_SOLUTION,
         _ => &MAINNET_STAKE_REQUIREMENTS_PER_SOLUTION,
     }
 }

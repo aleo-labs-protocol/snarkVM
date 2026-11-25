@@ -13,13 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use super::*;
+
+use console::program::LiteralType;
+use snarkvm_synthesizer_program::{Command, Opcode};
 
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
     #[inline]
     pub fn deploy<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<Deployment<N>> {
-        let timer = timer!("Stack::deploy");
+        let timer = timing_span!("Stack::deploy").entered();
 
         // Ensure the program contains functions.
         ensure!(!self.program.functions().is_empty(), "Program '{}' has no functions", self.program.id());
@@ -31,17 +36,17 @@ impl<N: Network> Stack<N> {
         for function_name in self.program.functions().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_key::<A, R>(function_name, rng)?;
-            lap!(timer, "Synthesize key for {function_name}");
+            timing_event!("Synthesize key for {function_name}");
 
             // Retrieve the proving key.
             let proving_key = self.get_proving_key(function_name)?;
             // Retrieve the verifying key.
             let verifying_key = self.get_verifying_key(function_name)?;
-            lap!(timer, "Retrieve the keys for {function_name}");
+            timing_event!("Retrieve the keys for {function_name}");
 
             // Certify the circuit.
             let certificate = Certificate::certify(&function_name.to_string(), &proving_key, &verifying_key)?;
-            lap!(timer, "Certify the circuit");
+            timing_event!("Certify the circuit");
 
             // Add the verifying key and certificate to the bundle.
             verifying_keys.push((*function_name, (verifying_key, certificate)));
@@ -51,24 +56,24 @@ impl<N: Network> Stack<N> {
         for record_name in self.program.records().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_translation_key::<A, R>(record_name, rng)?;
-            lap!(timer, "Synthesize key for translation circuit for {record_name}");
+            timing_event!("Synthesize key for translation circuit for {record_name}");
 
             // Retrieve the proving key.
             let proving_key = self.get_proving_key(record_name)?;
 
             // Retrieve the verifying key.
             let verifying_key = self.get_verifying_key(record_name)?;
-            lap!(timer, "Retrieve the keys for translation circuit for {record_name}");
+            timing_event!("Retrieve the keys for translation circuit for {record_name}");
 
             // Certify the circuit.
             let certificate = Certificate::certify(&record_name.to_string(), &proving_key, &verifying_key)?;
-            lap!(timer, "Certify the circuit");
+            timing_event!("Certify the circuit");
 
             // Add the verifying key and certificate to the bundle.
             verifying_keys.push((*record_name, (verifying_key, certificate)));
         }
 
-        finish!(timer);
+        drop(timer);
 
         // Return the deployment.
         // Note: The owner placeholder `Address::zero()` is unconditionally overwritten by
@@ -83,6 +88,130 @@ impl<N: Network> Stack<N> {
         )
     }
 
+    /// Checks a plaintext type against the raw bit limit. Cached struct sizes belong to their declaring program.
+    #[doc(hidden)]
+    pub fn check_plaintext_type_size(
+        &self,
+        pt: &PlaintextType<N>,
+        max_bits: usize,
+        memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+    ) -> Result<()> {
+        let bits = plaintext_size_in_bits_raw(self, pt, 0, memoized)?.0;
+        ensure!(
+            bits <= max_bits,
+            "Plaintext type '{pt}' exceeds the maximum allowed size in bits ({bits} > {max_bits})"
+        );
+        Ok(())
+    }
+
+    /// Checks the plaintext destinations of each synthesized function and the closures it executes.
+    pub(crate) fn check_deployment_register_sizes(&self, max_bits: usize) -> Result<()> {
+        let mut memoized = HashMap::new();
+        let mut checked_calls = HashSet::new();
+        for function in self.program.functions().values() {
+            self.check_scope_destinations(function.name(), function.instructions(), max_bits, &mut memoized)?;
+            for instruction in function.instructions() {
+                let Instruction::Call(call) = instruction else { continue };
+                let (program_id, name) = match call.operator() {
+                    CallOperator::Resource(name) => (self.program_id(), name),
+                    CallOperator::Locator(locator) => (locator.program_id(), locator.resource()),
+                };
+                if !checked_calls.insert((*program_id, *name)) {
+                    continue;
+                }
+                let callee = if program_id == self.program_id() {
+                    StackRef::Internal(self)
+                } else {
+                    StackRef::External(self.get_external_stack(program_id)?)
+                };
+                // Static call destinations use the callee's types, including structs from its own imports.
+                if let Some(closure) = callee.program.closures().get(name) {
+                    for output in closure.outputs() {
+                        if let RegisterType::Plaintext(pt) = output.register_type() {
+                            callee.check_plaintext_type_size(pt, max_bits, &mut memoized)?;
+                        }
+                    }
+                    // Synthesis executes closures inline. Closures cannot contain call instructions.
+                    callee.check_scope_destinations(name, closure.instructions(), max_bits, &mut memoized)?;
+                } else {
+                    for output in callee.get_function_ref(name)?.outputs() {
+                        if let ValueType::Constant(pt) | ValueType::Public(pt) | ValueType::Private(pt) =
+                            output.value_type()
+                        {
+                            callee.check_plaintext_type_size(pt, max_bits, &mut memoized)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks instruction destinations in the scope that defines their register types.
+    fn check_scope_destinations(
+        &self,
+        name: &Identifier<N>,
+        instructions: &[Instruction<N>],
+        max_bits: usize,
+        memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+    ) -> Result<()> {
+        let registers = self.register_types.read();
+        let types = registers.get(name).ok_or_else(|| anyhow!("Register types for '{name}' do not exist"))?;
+        for instruction in instructions {
+            // Static calls use their callee's declarations.
+            if matches!(instruction, Instruction::Call(_)) {
+                continue;
+            }
+            for destination in instruction.destinations() {
+                if let RegisterType::Plaintext(pt) = types.get_type(self, &destination)? {
+                    self.check_plaintext_type_size(&pt, max_bits, memoized)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks ECDSA signature and fixed-digest operand types in each scope that permits ECDSA verification.
+    pub(crate) fn check_ecdsa_operand_types(&self, check_constructor: bool) -> Result<()> {
+        let check = |commands: &[Command<N>], types: Option<&FinalizeTypes<N>>| -> Result<()> {
+            for command in commands {
+                let Command::Instruction(instruction) = command else { continue };
+                if !matches!(instruction.opcode(), Opcode::ECDSA(_)) {
+                    continue;
+                }
+                let types = types.ok_or_else(|| anyhow!("Missing register types for '{instruction}'"))?;
+                let check_operand = |index: usize, name: &str| -> Result<()> {
+                    let ty = types.get_type_from_operand(self, &instruction.operands()[index])?;
+                    // Stack initialization checks the outer length and the innermost element type.
+                    ensure!(
+                        matches!(&ty, FinalizeType::Plaintext(PlaintextType::Array(array))
+                            if array.next_element_type() == &PlaintextType::Literal(LiteralType::U8)),
+                        "Instruction '{}' expects a one-dimensional byte array for its {name}. Found '{ty}'",
+                        instruction.opcode()
+                    );
+                    Ok(())
+                };
+                check_operand(0, "signature")?;
+                if matches!(instruction, Instruction::ECDSAVerifyDigest(_) | Instruction::ECDSAVerifyDigestEth(_)) {
+                    check_operand(2, "digest")?;
+                }
+            }
+            Ok(())
+        };
+        if check_constructor && let Some(constructor) = self.program.constructor() {
+            check(constructor.commands(), self.constructor_types.read().as_ref())?;
+        }
+        let finalize_types = self.finalize_types.read();
+        for finalize in self.program.functions().values().filter_map(Function::finalize_logic) {
+            check(finalize.commands(), finalize_types.get(finalize.name()))?;
+        }
+        let view_types = self.view_types.read();
+        for view in self.program.views().values() {
+            check(view.commands(), view_types.get(view.name()))?;
+        }
+        Ok(())
+    }
+
     /// Checks each function in the program on the given verifying key and certificate.
     #[inline]
     pub fn verify_deployment<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
@@ -94,12 +223,12 @@ impl<N: Network> Stack<N> {
         // validator computes the same result.
         _rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("Stack::verify_deployment");
+        let timer = timing_span!("Stack::verify_deployment").entered();
 
         // NOTE: As developer, you will likely still want to confirm that your
         // deployment is within R1CS constraint and variable limits using
         // targeted and parallelized synthesis.
-        if cfg!(all(feature = "dev_skip_checks", feature = "test_consensus_heights")) {
+        if cfg!(all(feature = "dev_skip_checks", feature = "dev-network")) {
             return Ok(());
         }
 
@@ -145,6 +274,12 @@ impl<N: Network> Stack<N> {
             );
         }
 
+        if consensus_version >= ConsensusVersion::V23 {
+            let max_bits = consensus_config_value_by_version!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, consensus_version)
+                .ok_or_else(|| anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"))?;
+            self.check_deployment_register_sizes(max_bits)?;
+        }
+
         // Construct the call stacks and assignments used to verify the certificates.
         let mut call_stacks = Vec::with_capacity(deployment.function_verifying_keys().len());
 
@@ -159,11 +294,10 @@ impl<N: Network> Stack<N> {
             "The number of functions in the program does not match the number of function verifying keys"
         );
 
-        #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
         // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
         if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-            finish!(timer);
+            drop(timer);
             return Ok(());
         }
 
@@ -208,7 +342,7 @@ impl<N: Network> Stack<N> {
                     _ => self.sample_value(&burner_address, &input_type.into(), &mut seeded_rng),
                 })
                 .collect::<Result<Vec<_>>>()?;
-            lap!(timer, "Sample the inputs");
+            timing_event!("Sample the inputs");
             // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
             let is_root = true;
 
@@ -227,7 +361,7 @@ impl<N: Network> Stack<N> {
                 // `CheckDeployment` synthesis depends on the ambient RNG. See the burner note above.
                 &mut sub_seeded_rng,
             )?;
-            lap!(timer, "Compute the request for {}", function.name());
+            timing_event!("Compute the request for {}", function.name());
             // Initialize the assignments.
             let assignments = Assignments::<N>::default();
             // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
@@ -264,9 +398,12 @@ impl<N: Network> Stack<N> {
                 vec![request],
                 burner_private_key,
                 assignments.clone(),
-                Some(constraint_limit as u64),
-                Some(variable_limit),
-                non_zero_limit,
+                CheckDeploymentSettings {
+                    constraint_limit: Some(constraint_limit as u64),
+                    variable_limit: Some(variable_limit),
+                    non_zero_limit,
+                    limits_hold_after_calls: consensus_version >= ConsensusVersion::V23,
+                },
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));
@@ -335,7 +472,7 @@ impl<N: Network> Stack<N> {
                     let is_external_record = Uniform::rand(&mut sub_seeded_rng);
                     let id_static = Uniform::rand(&mut sub_seeded_rng);
 
-                    lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
+                    timing_event!("Sample the inputs to the translation circuit for record {record_name}");
 
                     Ok((
                         record_name,
@@ -416,8 +553,84 @@ impl<N: Network> Stack<N> {
             })?;
         }
 
-        finish!(timer);
+        drop(timer);
 
         Ok(())
+    }
+}
+
+/// Returns the `(size, height)` in bits of the given plaintext type, excluding any type metadata.
+///
+/// Each struct reference is resolved against the program that declares it, since a struct declared
+/// in an external program may refer to structs local to that program, or to structs in programs
+/// that the current program does not import.
+///
+/// `memoized` records the result for each `(program, struct)` pair already sized, so that a struct shared by many
+/// members is expanded at most once. Without this, a program in which every member of each struct refers to the
+/// same earlier struct forms an acyclic graph with exponentially many paths, and this walk would make up to
+/// `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
+///
+/// `height` is the number of levels below a type at which its deepest node sits (a literal is `0`). It lets a
+/// memoized hit at a deeper position re-apply the depth check the skipped recursion would have performed on that
+/// node, so the memoization changes only the running time and never the result.
+fn plaintext_size_in_bits_raw<N: Network>(
+    stack: &Stack<N>,
+    plaintext_type: &PlaintextType<N>,
+    depth: usize,
+    memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
+) -> Result<(usize, usize)> {
+    // Ensure that the depth is within the maximum limit.
+    ensure!(depth <= N::MAX_DATA_DEPTH, "Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
+
+    match plaintext_type {
+        PlaintextType::Literal(literal_type) => Ok((literal_type.size_in_bits::<N>() as usize, 0)),
+        PlaintextType::Struct(struct_name) => {
+            // If this struct has already been sized in the current traversal, reuse that result.
+            let key = (*stack.program_id(), *struct_name);
+            if let Some(&(size, height)) = memoized.get(&key) {
+                ensure!(
+                    depth.saturating_add(height) <= N::MAX_DATA_DEPTH,
+                    "Plaintext depth exceeds maximum limit: {}",
+                    N::MAX_DATA_DEPTH
+                );
+                return Ok((size, height));
+            }
+
+            // Add up the sizes of the members, which are declared in the same program.
+            let members = stack.program().get_struct(struct_name)?.members();
+            let mut total = 0usize;
+            // Track the maximum height of any member's subtree.
+            let mut member_height = 0usize;
+            for member_type in members.values() {
+                let (member_size, subtree_height) =
+                    plaintext_size_in_bits_raw(stack, member_type, depth + 1, memoized)?;
+                total =
+                    total.checked_add(member_size).ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
+                member_height = member_height.max(subtree_height);
+            }
+
+            // The struct sits one level above its deepest member; a memberless struct recurses nowhere.
+            let height = match members.is_empty() {
+                true => 0,
+                false => member_height + 1,
+            };
+            memoized.insert(key, (total, height));
+            Ok((total, height))
+        }
+        PlaintextType::ExternalStruct(locator) => {
+            // Resolve the struct, and therefore its members, against the external program.
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            plaintext_size_in_bits_raw(&external_stack, &PlaintextType::Struct(*locator.resource()), depth, memoized)
+        }
+        PlaintextType::Array(array_type) => {
+            // Multiply the size of an element by the length of the array.
+            let (element_size, element_height) =
+                plaintext_size_in_bits_raw(stack, array_type.next_element_type(), depth + 1, memoized)?;
+            let total = element_size
+                .checked_mul(**array_type.length() as usize)
+                .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
+            // The array sits one level above its element.
+            Ok((total, element_height + 1))
+        }
     }
 }

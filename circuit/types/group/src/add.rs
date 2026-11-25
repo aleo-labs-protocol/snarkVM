@@ -109,31 +109,6 @@ impl<E: Environment> AddAssign<&Self> for Group<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Add<Group<E>, Output = Group<E>>> for Group<E> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::less_than(4, 0, 0, 0),
-            (Mode::Constant, _) | (_, Mode::Constant) => Count::is(2, 0, 3, 3),
-            (_, _) => Count::is(2, 0, 6, 6),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Add<Group<E>, Output = Group<E>>> for Group<E> {
-    type Case = (Mode, Mode);
-
-    // TODO: This implementation is incorrect. In the case where one operand is a constant and is equal to zero, then the output mode
-    //  is that of the other operand.
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,8 +125,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a + b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            assert_count!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()), candidate);
+            assert_scope!();
         });
     }
 
@@ -165,8 +139,7 @@ mod tests {
             let mut candidate = a.clone();
             candidate += b;
             assert_eq!(*expected, candidate.eject_value(), "({} + {})", a.eject_value(), b.eject_value());
-            assert_count!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()));
-            assert_output_mode!(Add(Group, Group) => Group, &(a.eject_mode(), b.eject_mode()), candidate);
+            assert_scope!();
         });
     }
 
@@ -192,6 +165,20 @@ mod tests {
 
     fn run_test(mode_a: Mode, mode_b: Mode) {
         let mut rng = TestRng::default();
+
+        let generator = console::Group::<<Circuit as Environment>::Network>::generator();
+        let points = [console::Group::zero(), generator, -generator, generator.double()];
+        for first in points {
+            for second in points {
+                let a = Group::<Circuit>::new(mode_a, first);
+                let b = Group::<Circuit>::new(mode_b, second);
+
+                let expected = first + second;
+
+                check_add(&format!("Add: {first} + {second}"), &expected, &a, &b);
+                check_add_assign(&format!("AddAssign: {first} + {second}"), &expected, &a, &b);
+            }
+        }
 
         for i in 0..ITERATIONS {
             let first = Uniform::rand(&mut rng);
@@ -270,19 +257,23 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Field division by zero")]
     fn test_add_zero_x_denominator() {
         let one = console::Field::one();
         let d = console::Field::<<Circuit as Environment>::Network>::new(<Circuit as Environment>::EDWARDS_D);
-        let _ = inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, -d.inverse().expect("d is nonzero"));
+        check_halts(
+            || inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, -d.inverse().expect("d is nonzero")),
+            "Field division by zero",
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Field division by zero")]
     fn test_add_zero_y_denominator() {
         let one = console::Field::one();
         let d = console::Field::<<Circuit as Environment>::Network>::new(<Circuit as Environment>::EDWARDS_D);
-        let _ = inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, d.inverse().expect("d is nonzero"));
+        check_halts(
+            || inject_unchecked::<Circuit>(one, one) + inject_unchecked(one, d.inverse().expect("d is nonzero")),
+            "Field division by zero",
+        );
     }
 
     #[test]

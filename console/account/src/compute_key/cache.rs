@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-#[cfg(feature = "signature")]
 use crate::Signature;
 
 use std::{collections::HashMap, sync::Arc};
@@ -158,7 +157,6 @@ impl<N: Network> ComputeKeyCache<N> {
     }
 }
 
-#[cfg(feature = "signature")]
 impl<N: Network> ComputeKeyCache<N> {
     /// Returns the signer's address if `signature` is valid for `message`, and `None` otherwise,
     /// as `Signature::verify_and_recover_signer` does.

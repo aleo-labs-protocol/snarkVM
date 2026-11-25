@@ -18,10 +18,10 @@ use snarkvm_fields::{Field, PrimeField, SquareRootField, ToConstraintField};
 
 use core::{fmt::Debug, hash::Hash, iter};
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait PairingEngine: Sized + 'static + Copy + Debug + PartialEq + Eq + Hash + Sync + Send {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait PairingEngine:
+    crate::sealed::Sealed + Sized + 'static + Copy + Debug + PartialEq + Eq + Hash + Sync + Send
+{
     /// This is the scalar field of the G1/G2 groups.
     type Fr: PrimeField + SquareRootField + Into<<Self::Fr as PrimeField>::BigInteger>;
 
@@ -30,8 +30,12 @@ pub trait PairingEngine: Sized + 'static + Copy + Debug + PartialEq + Eq + Hash 
         + From<Self::G1Affine>;
 
     /// The affine representation of an element in G1.
-    type G1Affine: AffineCurve<BaseField = Self::Fq, ScalarField = Self::Fr, Projective = Self::G1Projective>
-        + PairingCurve<PairWith = Self::G2Affine, PairingResult = Self::Fqk>
+    type G1Affine: AffineCurve<
+            BaseField = Self::Fq,
+            ScalarField = Self::Fr,
+            Projective = Self::G1Projective,
+            Coordinates = (Self::Fq, Self::Fq, bool),
+        > + PairingCurve<PairWith = Self::G2Affine, PairingResult = Self::Fqk>
         + From<Self::G1Projective>
         + ToConstraintField<Self::Fq>;
 

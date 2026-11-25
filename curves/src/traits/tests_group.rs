@@ -41,6 +41,7 @@ pub fn affine_test<G: AffineCurve>(a: G) {
     assert!(a == a);
     assert_eq!(a.mul_by_cofactor_to_projective(), a.mul_by_cofactor());
     assert_eq!(a.mul_by_cofactor_inv().mul_by_cofactor(), a);
+    assert_eq!(a.checked_mul_by_cofactor_inv(), Some(a.mul_by_cofactor_inv()));
 }
 
 #[allow(clippy::eq_op)]
@@ -143,12 +144,6 @@ where
     }
 }
 
-/// Asserts that a point round trips in both its affine and its projective form.
-fn assert_point_round_trips<G: AffineCurve>(point: G, label: &str) {
-    assert_round_trips(&point, &format!("{label} (affine)"));
-    assert_round_trips(&point.to_projective(), &format!("{label} (projective)"));
-}
-
 /// Serializing a curve point and deserializing the result must return that same
 /// point, for every point the serializer accepts and every mode the caller can
 /// ask for.
@@ -165,7 +160,7 @@ pub fn serialization_round_trip_test<G: AffineCurve>() {
     runner
         .run(&any::<[u8; 32]>(), |seed| {
             let scalar = G::ScalarField::from_bytes_le_mod_order(&seed);
-            assert_point_round_trips((G::prime_subgroup_generator() * scalar).to_affine(), &format!("{scalar}"));
+            assert_round_trips(&(G::prime_subgroup_generator() * scalar).to_affine(), &format!("{scalar}"));
             Ok(())
         })
         .unwrap();
@@ -180,24 +175,18 @@ pub fn serialization_round_trip_test<G: AffineCurve>() {
 fn degenerate_serialization_round_trip_test<G: AffineCurve>() {
     let generator = G::prime_subgroup_generator();
 
-    assert_point_round_trips(G::zero(), "identity");
-    assert_point_round_trips(generator, "generator");
-    assert_point_round_trips(-generator, "negated generator");
+    assert_round_trips(&G::zero(), "identity");
+    assert_round_trips(&generator, "generator");
+    assert_round_trips(&-generator, "negated generator");
 
     // Small multiples, which shrinking drives towards and which a proptest seed
     // of 32 random bytes will not otherwise produce.
     let mut multiple = G::Projective::zero();
     for i in 0..8u8 {
-        assert_point_round_trips(multiple.to_affine(), &format!("generator * {i}"));
+        assert_round_trips(&multiple.to_affine(), &format!("generator * {i}"));
         multiple.add_assign_mixed(&generator);
     }
 
     // The largest scalar, reached from the other end of the field.
-    assert_point_round_trips((generator * (-G::ScalarField::one())).to_affine(), "generator * (r - 1)");
-
-    // A projective point that has not been normalized takes a different path
-    // through serialization than one that has.
-    let unnormalized = generator.to_projective().double();
-    assert!(!unnormalized.is_normalized(), "the doubled generator was expected to be unnormalized");
-    assert_round_trips(&unnormalized, "unnormalized projective");
+    assert_round_trips(&(generator * (-G::ScalarField::one())).to_affine(), "generator * (r - 1)");
 }

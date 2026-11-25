@@ -13,6 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Aleo programs and their components, with their text and byte encodings.
+//!
+//! # Stability
+//!
+//! The instruction and command types (`Instruction`, `Command`, `Operand`, `Opcode`, and the type of each
+//! instruction and command), and the component methods that return or accept them, are internal to snarkVM.
+//! They are public only for other snarkVM crates. They are hidden from the documentation and are not covered by
+//! semantic versioning: their layout and API may change in any release. The text and byte encodings of a program
+//! do not change with them.
+
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
@@ -54,6 +64,14 @@ pub use mapping::*;
 
 mod traits;
 pub use traits::*;
+
+/// Seals [`StackTrait`], [`RegistersTrait`], [`RegistersSigner`], [`RegistersCircuit`],
+/// [`FinalizeRegistersState`] and [`FinalizeStoreTrait`]. `snarkvm-synthesizer-process` and
+/// `snarkvm-ledger-store` implement it, so it is public, but it is not part of the API.
+#[doc(hidden)]
+pub mod sealed_execution {
+    pub trait Sealed {}
+}
 
 mod bytes;
 mod parse;
@@ -133,7 +151,6 @@ enum ProgramLabel<N: Network> {
     Identifier(Identifier<N>),
 }
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -1509,6 +1526,25 @@ mapping message:
         // Ensure the retrieved mapping matches.
         assert_eq!(mapping.to_string(), program.get_mapping(&Identifier::from_str("message")?)?.to_string());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_contains_string_type_in_program_components() -> Result<()> {
+        for (leaf, expected) in [("field", false), ("string", true)] {
+            let array =
+                (0..CurrentNetwork::MAX_DATA_DEPTH).fold(leaf.to_string(), |element, _| format!("[{element}; 1u32]"));
+            for component in [
+                format!("mapping items: key as {array}.public; value as field.public;"),
+                format!("mapping items: key as field.public; value as {array}.public;"),
+                format!("struct item: data as {array};"),
+                format!("record item: owner as address.private; data as {array}.private;"),
+                format!("function run: input r0 as {array}.private;"),
+            ] {
+                let program = Program::<CurrentNetwork>::from_str(&format!("program example.aleo; {component}"))?;
+                assert_eq!(program.contains_string_type(), expected, "{component}");
+            }
+        }
         Ok(())
     }
 

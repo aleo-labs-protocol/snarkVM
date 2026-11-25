@@ -22,13 +22,11 @@ a number of instances of the large one_to_many_records transaction.
    cargo bench --bench prepare_advance_multirecord -- --clean
  - Obtain time measurements with:
    cargo bench --bench prepare_advance_multirecord
-   The --serial feature can be added to deactivate parallelism.
  - In order to run any of the above on a number of transfer_public instead, pass --transfer_public.
 */
 
 use std::{env, fs, io::Write, path::Path, time::Instant};
 
-use aleo_std::StorageMode;
 use snarkvm_console::{
     account::{Address, PrivateKey, ViewKey},
     network::{
@@ -45,6 +43,7 @@ use snarkvm_ledger::{
     store::{ConsensusStore, helpers::memory::ConsensusMemory},
     test_helpers::chain_builder::{GenerateBlockOptions, GenerateBlocksOptions, TestChainBuilder},
 };
+use snarkvm_ledger_store::StorageMode;
 use snarkvm_synthesizer::{program::Program, vm::VM};
 
 type CurrentNetwork = MainnetV0;
@@ -79,9 +78,7 @@ fn genesis_with_fixed_committee_seed(
 fn main() {
     /////////////////////////// User defined
     // Number of transactions to generate and check in each of the two cases:
-    // simple (transfer_public) and complex (one_to_many_records). Right now,
-    // this is set to ConsensusState::MAXIMUM_CONFIRMED_TRANSACTIONS, which is 8
-    // in test environments.
+    // simple (transfer_public) and complex (one_to_many_records).
     let n_transactions = 8;
     ///////////////////////////
 

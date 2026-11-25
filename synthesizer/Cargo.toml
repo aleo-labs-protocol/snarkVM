@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer"
-version = "4.13.0"
+version = "4.13.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Synthesizer for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -24,50 +24,14 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-locktick = [
-  "dep:locktick",
-  "snarkvm-ledger-puzzle/locktick",
-  "snarkvm-ledger-puzzle-epoch/locktick",
-  "snarkvm-ledger-store/locktick",
-  "snarkvm-synthesizer-process/locktick"
-]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-profiler = [ "snarkvm-algorithms/profiler" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
-serial = [
-  "snarkvm-console/serial",
-  "snarkvm-ledger-block/serial",
-  "snarkvm-ledger-committee/serial",
-  "snarkvm-ledger-query/serial",
-  "snarkvm-ledger-store/serial",
-  "snarkvm-synthesizer-process/serial",
-  "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
-]
-setup = [ ]
-test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
-test-old-consensus-versions = [ "test" ]
-timer = [ "aleo-std/timer" ]
-wasm = [
-  "snarkvm-console/wasm",
-  "snarkvm-ledger-block/wasm",
-  "snarkvm-ledger-committee/wasm",
-  "snarkvm-ledger-query/wasm",
-  "snarkvm-ledger-store/wasm",
-  "snarkvm-synthesizer-process/wasm",
-  "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
-]
-dev-print = [
-  "snarkvm-console/dev-print",
-  "snarkvm-synthesizer-snark/dev-print",
-  "snarkvm-utilities/dev-print"
-]
+test-helpers = [ ]
+wasm = [ "snarkvm-console/wasm", "snarkvm-synthesizer-process/wasm" ]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
-snark-print = [ "snarkvm-algorithms/snark-print" ]
-test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
-memory-intensive = [ ]
+# Lowers network parameters (consensus heights, genesis targets) for local test and development networks; never enable it to join a public network, including testnet.
+dev-network = [ "snarkvm-console/dev-network", "snarkvm-synthesizer-process/dev-network" ]
 
 [[bench]]
 name = "kary_merkle_tree"
@@ -134,10 +98,6 @@ workspace = true
 [dependencies.snarkvm-utilities]
 workspace = true
 
-[dependencies.aleo-std]
-workspace = true
-features = [ "storage" ]
-
 [dependencies.anyhow]
 workspace = true
 
@@ -148,15 +108,7 @@ features = [ "serde", "rayon" ]
 [dependencies.itertools]
 workspace = true
 
-[dependencies.locktick]
-workspace = true
-features = [ "parking_lot" ]
-optional = true
-
 [dependencies.lru]
-workspace = true
-
-[dependencies.parking_lot]
 workspace = true
 
 [dependencies.rand]
@@ -181,7 +133,7 @@ features = [ "sync" ]
 workspace = true
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+workspace = true
 
 [dev-dependencies.anyhow]
 workspace = true
@@ -200,13 +152,9 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem" ]
+features = [ "filesystem", "test-helpers", "dev-network" ]
 
 [dev-dependencies.snarkvm-ledger-committee]
-workspace = true
-features = [ "test-helpers" ]
-
-[dev-dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 features = [ "test-helpers" ]
 
@@ -216,7 +164,7 @@ features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-synthesizer-process]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-synthesizer-snark]
 workspace = true
@@ -233,10 +181,6 @@ version = "0.9"
 
 [dev-dependencies.tempfile]
 workspace = true
-
-[dev-dependencies.test-log]
-version = "0.2"
-features = [ "trace" ]
 
 [dev-dependencies.walkdir]
 version = "2"

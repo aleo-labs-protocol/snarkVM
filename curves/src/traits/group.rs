@@ -14,8 +14,8 @@
 // limitations under the License.
 
 use crate::{PairingEngine, templates::short_weierstrass_jacobian};
-use snarkvm_fields::{Field, PrimeField, SquareRootField, Zero};
-use snarkvm_utilities::{FromBytes, ToBytes, rand::Uniform, serialize::*};
+use snarkvm_fields::{ExponentSchedule, Field, PrimeField, SquareRootField, Zero};
+use snarkvm_utilities::{ToBytes, rand::Uniform, serialize::*};
 
 use core::{
     fmt::{Debug, Display},
@@ -23,22 +23,17 @@ use core::{
     iter,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use serde::{Serialize, de::DeserializeOwned};
 
 /// Projective representation of an elliptic curve point guaranteed to be in the prime order subgroup.
 ///
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait ProjectiveCurve:
-    CanonicalSerialize
-    + CanonicalDeserialize
+    crate::sealed::Sealed
     + Copy
     + Clone
     + Debug
     + Display
     + Default
-    + FromBytes
     + Send
     + Sync
     + 'static
@@ -59,7 +54,6 @@ pub trait ProjectiveCurve:
     + for<'a> SubAssign<&'a Self>
     + PartialEq<Self::Affine>
     + Sized
-    + ToBytes
     + iter::Sum
     + From<<Self as ProjectiveCurve>::Affine>
 {
@@ -97,11 +91,6 @@ pub trait ProjectiveCurve:
         copy
     }
 
-    /// Adds an affine element to this element.
-    fn sub_assign_mixed(&mut self, other: &Self::Affine) {
-        self.add_assign_mixed(&-*other);
-    }
-
     /// Returns `self + self`.
     #[must_use]
     fn double(&self) -> Self;
@@ -118,19 +107,17 @@ pub trait ProjectiveCurve:
 /// Affine representation of an elliptic curve point guaranteed to be
 /// in the correct prime order subgroup.
 ///
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 #[allow(clippy::wrong_self_convention)]
 pub trait AffineCurve:
-    CanonicalSerialize
+    crate::sealed::Sealed
+    + CanonicalSerialize
     + CanonicalDeserialize
     + Copy
     + Clone
     + Debug
     + Display
     + Default
-    + FromBytes
     + Send
     + Sync
     + 'static
@@ -141,8 +128,6 @@ pub trait AffineCurve:
     + PartialEq<Self::Projective>
     + Mul<Self::ScalarField, Output = Self::Projective>
     + Sized
-    + Serialize
-    + DeserializeOwned
     + ToBytes
     + From<<Self as AffineCurve>::Projective>
     + Zero
@@ -207,6 +192,18 @@ pub trait AffineCurve:
     /// an integer.
     fn mul_bits(&self, bits: impl Iterator<Item = bool>) -> Self::Projective;
 
+    /// Returns the sum of `base * scalar` over the pairs of each of `msms`, or `None` if the curve
+    /// has no lane path for them.
+    ///
+    /// Hazard: for a base outside the prime-order subgroup, a lane computes the curve's GLV
+    /// product, which can differ from the scalar multiple `scalar * base` by a point whose order
+    /// divides the cofactor. Such a sum depends on the CPU. A pairing maps that point to one, so a
+    /// pairing check on the sum does not.
+    #[doc(hidden)]
+    fn msm_lanes(_msms: &[&[(Self, Self::ScalarField)]]) -> Option<Vec<Self::Projective>> {
+        None
+    }
+
     /// Multiply this element by the cofactor.
     #[must_use]
     fn mul_by_cofactor(&self) -> Self {
@@ -218,9 +215,21 @@ pub trait AffineCurve:
     #[must_use]
     fn mul_by_cofactor_inv(&self) -> Self;
 
+    /// Returns [`Self::mul_by_cofactor_inv`], or `None` where it would panic, which can only happen for a point that
+    /// is not on the curve.
+    #[must_use]
+    fn checked_mul_by_cofactor_inv(&self) -> Option<Self>;
+
     /// Checks that the point is in the prime order subgroup given the point on the curve.
     #[must_use]
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool;
+
+    /// Returns a point with the given x-coordinate that is in the prime order subgroup, if there is one.
+    /// Checks the candidate with the larger y-coordinate first.
+    fn subgroup_point_from_x_coordinate(x: Self::BaseField) -> Option<Self> {
+        let (p1, p2) = Self::pair_from_x_coordinate(x)?;
+        [p2, p1].into_iter().find(Self::is_in_correct_subgroup_assuming_on_curve)
+    }
 
     /// Returns the x-coordinate of the point.
     #[must_use]
@@ -245,15 +254,12 @@ pub trait AffineCurve:
     fn batch_add_loop_2(a: &mut Self, b: Self, inversion_tmp: &mut Self::BaseField);
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait PairingCurve: AffineCurve {
     type Engine: PairingEngine<Fr = Self::ScalarField>;
     type Prepared: CanonicalSerialize
         + CanonicalDeserialize
         + ToBytes
-        + FromBytes
         + PartialEq
         + Eq
         + Default
@@ -274,17 +280,15 @@ pub trait PairingCurve: AffineCurve {
     fn pairing_with(&self, other: &Self::PairWith) -> Self::PairingResult;
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
-pub trait ModelParameters: 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized {
+/// This trait is sealed. Only snarkVM implements it.
+pub trait ModelParameters:
+    crate::sealed::Sealed + 'static + Copy + Clone + Debug + PartialEq + Eq + Hash + Send + Sync + Sized
+{
     type BaseField: Field + SquareRootField;
     type ScalarField: PrimeField + SquareRootField + Into<<Self::ScalarField as PrimeField>::BigInteger>;
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait ShortWeierstrassParameters: ModelParameters {
     /// The coefficient `A` of the short Weierstrass curve.
     const WEIERSTRASS_A: Self::BaseField;
@@ -335,11 +339,18 @@ pub trait ShortWeierstrassParameters: ModelParameters {
         p: short_weierstrass_jacobian::Projective<Self>,
         by: Self::ScalarField,
     ) -> short_weierstrass_jacobian::Projective<Self>;
+
+    /// Returns the sum of `mul_projective` of each pair of each of `msms`, or `None` if there is no
+    /// lane path for them. See `AffineCurve::msm_lanes` for bases outside the prime-order subgroup.
+    #[doc(hidden)]
+    fn msm_lanes(
+        _msms: &[&[(short_weierstrass_jacobian::Affine<Self>, Self::ScalarField)]],
+    ) -> Option<Vec<short_weierstrass_jacobian::Projective<Self>>> {
+        None
+    }
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait TwistedEdwardsParameters: ModelParameters {
     /// The coefficient `A` of the twisted Edwards curve.
     const EDWARDS_A: Self::BaseField;
@@ -351,6 +362,14 @@ pub trait TwistedEdwardsParameters: ModelParameters {
     const COFACTOR_INV: Self::ScalarField;
     /// The affine generator of the twisted Edwards curve.
     const AFFINE_GENERATOR_COEFFS: (Self::BaseField, Self::BaseField);
+    /// A square root of `-1` in the base field. `Affine::subgroup_point_from_x_coordinate` requires
+    /// `a = -1`, a non-square `d`, and `4r` points on the curve with `r` odd.
+    const SQRT_MINUS_ONE: Self::BaseField;
+    /// `(q - 1) / 4` for the base field modulus `q`, as little-endian limbs.
+    const MODULUS_MINUS_ONE_DIV_FOUR: &'static [u64];
+
+    /// Returns the sliding-window schedule for the exponent `MODULUS_MINUS_ONE_DIV_FOUR`.
+    fn modulus_minus_one_div_four_schedule() -> &'static ExponentSchedule;
 
     type MontgomeryParameters: MontgomeryParameters<BaseField = Self::BaseField>;
 
@@ -362,9 +381,7 @@ pub trait TwistedEdwardsParameters: ModelParameters {
     }
 }
 
-/// Implementing this trait outside snarkVM is not supported. The next major release seals it,
-/// which breaks such implementations. Code that needs to implement it should define its own
-/// trait instead. Bounds on it and calls through it are unaffected.
+/// This trait is sealed. Only snarkVM implements it.
 pub trait MontgomeryParameters: ModelParameters {
     /// The coefficient `A` of the Montgomery curve.
     const MONTGOMERY_A: Self::BaseField;

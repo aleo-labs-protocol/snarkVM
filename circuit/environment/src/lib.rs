@@ -15,13 +15,11 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::type_complexity)]
+#![warn(clippy::cast_possible_truncation)]
 
 extern crate snarkvm_console_network as console;
 
 pub use snarkvm_circuit_environment_witness::rename_selfs;
-
-pub mod canary_circuit;
-pub use canary_circuit::*;
 
 pub mod circuit;
 pub use circuit::*;
@@ -45,43 +43,46 @@ pub use testnet_circuit::*;
 pub mod traits;
 pub use traits::*;
 
+/// Seals [`Environment`]. `snarkvm-circuit-network` implements it for its networks, so it is
+/// public, but it is not part of the API.
+#[doc(hidden)]
+pub mod sealed_circuit_environment {
+    pub trait Sealed {}
+}
+
 pub mod prelude {
     pub use crate::{
-        CircuitType,
         ConstraintUnsatisfied,
-        Count,
         Environment,
         LinearCombination,
         Mode,
-        OutputMode,
         Variable,
-        count,
         count_is,
         count_less_than,
-        output_mode,
         rename_selfs,
         traits::*,
         witness,
         witness_mode,
     };
+    #[doc(no_inline)]
+    pub use console::prelude::{
+        Debug,
+        Display,
+        Error,
+        Formatter,
+        FromStr,
+        One as _,
+        Result,
+        Zero as _,
+        bail,
+        ensure,
+        fmt,
+    };
     pub use console::{
         Parser,
         ParserResult,
         TypeName,
-        prelude::{
-            Debug,
-            Display,
-            Error,
-            Formatter,
-            FromStr,
-            One as _,
-            Result,
-            Zero as _,
-            bail,
-            ensure,
-            fmt,
-            has_duplicates,
-        },
+        prelude::has_duplicates,
         traits::{
             Double as _,
             FromBits as _,
@@ -102,6 +103,7 @@ pub mod prelude {
     #[cfg(debug_assertions)]
     pub use snarkvm_curves::AffineCurve as _;
 
+    #[doc(no_inline)]
     pub use core::ops::{
         Add,
         AddAssign,
@@ -127,8 +129,11 @@ pub mod prelude {
         Sub,
         SubAssign,
     };
+    #[doc(no_inline)]
     pub use indexmap::IndexMap;
+    #[doc(no_inline)]
     pub use itertools::Itertools;
+    #[doc(no_inline)]
     pub use nom::{
         branch::alt,
         bytes::complete::tag,
@@ -137,5 +142,6 @@ pub mod prelude {
         multi::{many0, many1},
         sequence::{pair, terminated},
     };
+    #[doc(no_inline)]
     pub use num_traits::{self, Inv, One as NumOne, Pow, Unsigned};
 }

@@ -20,6 +20,7 @@ use crate::{
     InclusionVersion,
     Process,
     Trace,
+    Translation,
     execution_cost,
     execution_cost_for_authorization,
 };
@@ -38,18 +39,15 @@ use snarkvm_ledger_store::{
     BlockStore,
     FinalizeStorage,
     FinalizeStore,
+    StorageMode,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};
 use snarkvm_synthesizer_snark::UniversalSRS;
+use snarkvm_utilities::locks::RwLock;
 
-use aleo_std::StorageMode;
 use indexmap::{IndexMap, IndexSet};
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
@@ -3558,6 +3556,51 @@ fn test_dynamic_record_inputs_are_checked_without_entry_data() {
     process.execute::<CurrentAleo, _>(decoded, rng).unwrap();
 }
 
+/// `Translation::prepare_verifier_inputs` takes a map of owned functions, and the verifier calls
+/// `prepare_verifier_inputs_internal` with a map of borrowed functions. Both return the same batches for an execution
+/// that translates a local record and an external record.
+#[test]
+fn test_prepare_verifier_inputs_matches_for_owned_and_borrowed_functions() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let (process, _, _, authorization) = authorize_dynamic_record_inputs(rng);
+    let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng)?;
+    let transitions = trace.transitions();
+
+    let stacks =
+        transitions.iter().map(|transition| process.get_stack(transition.program_id())).collect::<Result<Vec<_>>>()?;
+    let functions = transitions
+        .iter()
+        .zip_eq(&stacks)
+        .map(|(transition, stack)| stack.get_function_ref(transition.function_name()))
+        .collect::<Result<Vec<_>>>()?;
+    let owned = transitions
+        .iter()
+        .zip_eq(&functions)
+        .map(|(transition, function)| (*transition.id(), (transition, (*function).clone())))
+        .collect::<HashMap<_, _>>();
+    let borrowed = transitions
+        .iter()
+        .zip_eq(&functions)
+        .map(|(transition, function)| (*transition.id(), (transition, *function)))
+        .collect::<HashMap<_, _>>();
+    let get_verifying_key = |(program_id, record_name): &(ProgramID<CurrentNetwork>, Identifier<CurrentNetwork>)| {
+        process.get_stack(program_id)?.get_verifying_key(record_name)
+    };
+
+    let from_owned = Translation::prepare_verifier_inputs(transitions.iter(), &owned, &get_verifying_key)?;
+    let from_borrowed =
+        Translation::prepare_verifier_inputs_internal(transitions.iter(), &borrowed, &get_verifying_key)?;
+
+    // One batch for the local `token.aleo/note` and one for the external `token.aleo/ticket`, one input each.
+    assert_eq!(from_owned.iter().map(|(_, inputs)| inputs.len()).collect::<Vec<_>>(), [1, 1]);
+    // The batches come from a `HashMap`, so their order differs between calls.
+    assert_eq!(from_owned.len(), from_borrowed.len());
+    for batch in &from_owned {
+        assert!(from_borrowed.contains(batch), "Missing batch from the borrowed map");
+    }
+    Ok(())
+}
+
 /// A dynamic callee request that takes a record other than the call's input, or the same record with the owner's
 /// visibility changed, is rejected by `authorize_requests` and by `execute`, before `execute` creates the callee's key.
 /// A different record fails the inputs check, and a changed visibility fails the callee's input types. Both callees
@@ -3617,5 +3660,106 @@ fn test_dynamic_record_inputs_reject_another_record() {
             let stack = process.get_stack(ProgramID::from_str(program).unwrap()).unwrap();
             assert!(!stack.contains_proving_key(&Identifier::from_str(function).unwrap()), "{case}");
         }
+    }
+}
+
+/// Each function builds a scalar from a caller-supplied input. The circuit only constrains the input to be less than
+/// the scalar modulus, so an input at or above the modulus leaves the circuit unsatisfied.
+const UNCHECKED_SCALAR_PROGRAM: &str = r"
+program unchecked_scalar.aleo;
+function with_output:
+    input r0 as [boolean; 251u32].private;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+    output r1 as scalar.private;
+function no_output:
+    input r0 as [boolean; 251u32].private;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+function used_internally:
+    input r0 as [boolean; 251u32].private;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+    mul group::GEN r1 into r2;
+    output r2 as group.private;
+function cast_field:
+    input r0 as field.private;
+    cast r0 into r1 as scalar;
+    output r1 as scalar.private;
+";
+
+/// Returns the functions of `UNCHECKED_SCALAR_PROGRAM`, each with an input below the scalar modulus and an input at
+/// or above it.
+fn unchecked_scalar_cases() -> Vec<(&'static str, Value<CurrentNetwork>, Value<CurrentNetwork>)> {
+    let bits = |bit: bool| Value::Plaintext(Plaintext::from_bit_array(vec![bit; 251], 251).unwrap());
+    // The scalar modulus is 2111115437357092606062206234695386632838870926408408195193685246394721360383.
+    let below_modulus =
+        Value::from_str("2111115437357092606062206234695386632838870926408408195193685246394721360382field").unwrap();
+    let modulus =
+        Value::from_str("2111115437357092606062206234695386632838870926408408195193685246394721360383field").unwrap();
+    vec![
+        ("with_output", bits(false), bits(true)),
+        ("no_output", bits(false), bits(true)),
+        ("used_internally", bits(false), bits(true)),
+        ("cast_field", below_modulus, modulus),
+    ]
+}
+
+/// `authorize` refuses an input that leaves the circuit unsatisfied, and authorizes and executes an input that does
+/// not.
+#[test]
+fn test_authorize_rejects_unsatisfied_circuit() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(UNCHECKED_SCALAR_PROGRAM).unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+
+    for (function, valid, invalid) in unchecked_scalar_cases() {
+        let authorization =
+            process.authorize::<CurrentAleo, _>(&private_key, program.id(), function, [valid].iter(), rng).unwrap();
+        process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        let error = process
+            .authorize::<CurrentAleo, _>(&private_key, program.id(), function, [invalid].iter(), rng)
+            .map(|_| ())
+            .expect_err(function);
+        assert!(format!("{error:#}").contains("is not satisfied"), "{function}: {error:#}");
+    }
+}
+
+/// `execute_function` in `PackageRun` mode refuses an input that leaves the circuit unsatisfied.
+#[test]
+fn test_package_run_rejects_unsatisfied_circuit() {
+    let rng = &mut TestRng::default();
+
+    let program = Program::<CurrentNetwork>::from_str(UNCHECKED_SCALAR_PROGRAM).unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    process.lock().add_program(&program).unwrap();
+    let stack = process.get_stack(program.id()).unwrap();
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+
+    for (function, valid, invalid) in unchecked_scalar_cases() {
+        let function_name = Identifier::from_str(function).unwrap();
+        let input_types = stack.get_function(&function_name).unwrap().input_types();
+        let mut package_run = |input: Value<CurrentNetwork>| {
+            let request = Request::sign(
+                &private_key,
+                *program.id(),
+                function_name,
+                [input].iter(),
+                &input_types,
+                None,
+                true,
+                None,
+                false,
+                rng,
+            )
+            .unwrap();
+            let call_stack = CallStack::PackageRun(vec![request], private_key, Default::default());
+            stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng).map(|_| ()).map_err(Error::from)
+        };
+
+        package_run(valid).unwrap();
+        let error = package_run(invalid).expect_err(function);
+        assert!(format!("{error:#}").contains("is not satisfied"), "{function}: {error:#}");
     }
 }

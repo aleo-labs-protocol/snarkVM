@@ -27,24 +27,66 @@ use core::any::TypeId;
 pub struct VariableBase;
 
 impl VariableBase {
+    /// Returns the sum of `base * scalar`. See `batched::msm` for bases
+    /// outside the prime-order subgroup.
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
+        #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+        // TODO SNP: where to set the threshold
+        if TypeId::of::<G>() == TypeId::of::<G1Affine>() && scalars.len() > 1024 {
+            let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, <G::ScalarField as PrimeField>::BigInteger>(
+                bases, scalars,
+            );
+            return crate::cuda_must_succeed!(result, "MSM");
+        }
+        Self::msm_on_cpu(bases, scalars)
+    }
+
+    /// Variable base MSM on the CPU, in every build.
+    fn msm_on_cpu<G: AffineCurve>(
+        bases: &[G],
+        scalars: &[<G::ScalarField as PrimeField>::BigInteger],
+    ) -> G::Projective {
         // For BLS12-377, we perform variable base MSM using a batched addition
         // technique.
         if TypeId::of::<G>() == TypeId::of::<G1Affine>() {
-            #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-            // TODO SNP: where to set the threshold
-            if scalars.len() > 1024 {
-                let result = snarkvm_algorithms_cuda::msm::<G, G::Projective, <G::ScalarField as PrimeField>::BigInteger>(
-                    bases, scalars,
-                );
-                return crate::cuda_must_succeed!(result, "MSM");
-            }
             batched::msm(bases, scalars)
         }
         // For all other curves, we perform variable base MSM using Pippenger's algorithm.
         else {
             standard::msm(bases, scalars)
         }
+    }
+
+    /// Multi-scalar multiplications over field elements, several at once.
+    ///
+    /// Returns the sum of `base * scalar` over each of `msms`, in their
+    /// order. Every MSM runs on the CPU, also in a `cuda` build. The MSMs
+    /// below the bucket method's cutoff go together through
+    /// `AffineCurve::msm_lanes` where the curve has lanes. Every other MSM
+    /// takes the method that [`Self::msm`] picks for its size on the CPU.
+    /// See `batched::msm` for bases outside the prime-order subgroup.
+    ///
+    /// Hazard: do not send these MSMs to a CUDA device. Proof verification
+    /// calls this function, both in `VM::check_transaction` and in finalize's
+    /// `snark.verify`, and the VM catches a panic there as a failed check. A
+    /// device error panics, so a validator with a failing device would abort
+    /// or reject a valid transaction and commit a block that differs from its
+    /// peers' blocks.
+    pub fn msm_many<G: AffineCurve>(msms: &[&[(G, G::ScalarField)]]) -> Vec<G::Projective> {
+        let msm = |terms: &[(G, G::ScalarField)]| {
+            let (bases, scalars): (Vec<_>, Vec<_>) =
+                terms.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+            Self::msm_on_cpu(&bases, &scalars)
+        };
+        let is_small = |terms: &[(G, G::ScalarField)]| terms.len() < batched::BUCKET_MIN_BASES;
+        let small: Vec<_> = msms.iter().copied().filter(|terms| is_small(terms)).collect();
+        let mut small_sums = G::msm_lanes(&small).map(Vec::into_iter);
+        msms.iter()
+            .map(|terms| {
+                let sum = small_sums.as_mut().filter(|_| is_small(terms)).and_then(Iterator::next);
+                sum.unwrap_or_else(|| msm(terms))
+            })
+            .collect()
     }
 
     #[cfg(test)]
@@ -113,7 +155,8 @@ mod tests {
     #[test]
     fn test_msm_small_edge_cases() {
         use snarkvm_curves::ProjectiveCurve;
-        use snarkvm_fields::{Field, One, Zero};
+        use snarkvm_fields::{Field, FieldParameters, One, Zero};
+        use snarkvm_utilities::BigInteger;
 
         let two = Fr::from(2u64);
         let special = [
@@ -153,6 +196,15 @@ mod tests {
             let naive = VariableBase::msm_naive(bases.as_slice(), all_special.as_slice()).to_affine();
             let candidate = batched::msm(bases.as_slice(), all_special.as_slice()).to_affine();
             assert_eq!(naive, candidate, "MSM size: {msm_size}, special scalars");
+
+            // A scalar at or above the modulus, below 2^253.
+            let mut above = scalars.clone();
+            let mut big = <Fr as PrimeField>::Parameters::MODULUS;
+            big.add_nocarry(&(msm_size as u64).into());
+            above[msm_size / 2] = big;
+            let naive = VariableBase::msm_naive(bases.as_slice(), above.as_slice()).to_affine();
+            let candidate = batched::msm(bases.as_slice(), above.as_slice()).to_affine();
+            assert_eq!(naive, candidate, "MSM size: {msm_size}, a scalar above the modulus");
         }
     }
 
@@ -211,6 +263,54 @@ mod tests {
         }
     }
 
+    /// `msm_many` over MSMs of mixed sizes, with an empty MSM, a base at
+    /// infinity and a zero scalar among them, gives each MSM's `msm`.
+    #[test]
+    fn test_msm_many() {
+        use itertools::Itertools;
+        use snarkvm_curves::ProjectiveCurve;
+        use snarkvm_fields::Zero;
+        use snarkvm_utilities::Uniform;
+
+        let mut rng = TestRng::default();
+        let mut msms: Vec<Vec<(G1Affine, Fr)>> = [0, 1, 2, 5, 31, 32, 64]
+            .into_iter()
+            .map(|n| (0..n).map(|_| (G1Affine::rand(&mut rng), Fr::rand(&mut rng))).collect())
+            .collect();
+        msms[3][2].0 = G1Affine::zero();
+        msms[5][7].1 = Fr::zero();
+        let slices: Vec<&[_]> = msms.iter().map(Vec::as_slice).collect();
+        let sums = VariableBase::msm_many(&slices);
+        assert_eq!(sums.len(), msms.len());
+        for (msm, sum) in msms.iter().zip_eq(&sums) {
+            let (bases, scalars): (Vec<_>, Vec<_>) =
+                msm.iter().map(|(base, scalar)| (*base, scalar.to_bigint())).unzip();
+            assert_eq!(sum.to_affine(), VariableBase::msm(&bases, &scalars).to_affine(), "{} bases", msm.len());
+        }
+    }
+
+    /// `msm` and `batched::msm` on more bases than scalars sum over the
+    /// first bases, one per scalar, below and above the bucket method's
+    /// cutoff; `msm_many` of those pairs gives the same sum.
+    #[test]
+    fn test_msm_more_bases_than_scalars() {
+        use snarkvm_curves::ProjectiveCurve;
+
+        let mut rng = TestRng::default();
+        for (num_bases, num_scalars) in [(5, 2), (40, 3), (40, 33)] {
+            let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, num_bases);
+            let (_, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, num_scalars);
+            let naive = VariableBase::msm_naive(&bases[..num_scalars], &scalars).to_affine();
+            let case = format!("{num_bases} bases, {num_scalars} scalars");
+            assert_eq!(VariableBase::msm(&bases, &scalars).to_affine(), naive, "{case}");
+            assert_eq!(batched::msm(&bases, &scalars).to_affine(), naive, "{case}");
+            // `create_scalar_bases` draws each scalar below the modulus.
+            let pairs: Vec<_> =
+                bases.iter().zip(&scalars).map(|(base, scalar)| (*base, Fr::from_bigint(*scalar).unwrap())).collect();
+            assert_eq!(VariableBase::msm_many(&[pairs.as_slice()])[0].to_affine(), naive, "{case}");
+        }
+    }
+
     /// Bases at infinity must survive the trip to the device.
     ///
     /// The device slot is wider than the host point, so a copy that misplaces
@@ -248,7 +348,6 @@ mod tests {
     /// An MSM of no points returns zero with every coordinate written.
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     #[test]
-    #[allow(deprecated)]
     fn test_msm_cuda_of_no_points_is_zero() {
         use snarkvm_curves::bls12_377::G1Projective;
         use snarkvm_fields::Zero;
@@ -256,8 +355,31 @@ mod tests {
 
         let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&[], &[])
             .unwrap_or_else(|e| panic!("{e}"));
-        let zero = G1Projective::zero();
-        assert_eq!((sum.x, sum.y, sum.z), (zero.x, zero.y, zero.z));
+        // `==` reads only `z` of a zero point, while `Debug` prints every coordinate.
+        assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()));
+    }
+
+    /// An MSM that sums to zero returns zero with every coordinate written,
+    /// whether every term is zero or the terms cancel.
+    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+    #[test]
+    fn test_msm_cuda_summing_to_zero_is_zero() {
+        use snarkvm_curves::bls12_377::G1Projective;
+        use snarkvm_fields::Zero;
+        use snarkvm_utilities::BigInteger256;
+
+        let g = G1Affine::prime_subgroup_generator();
+        for i in 11..15 {
+            let n = 1 << i;
+            let cancelling: Vec<_> = (0..n).map(|j| if j % 2 == 0 { g } else { -g }).collect();
+            for (bases, scalar) in [(vec![g; n], 0), (cancelling, 1)] {
+                let scalars = vec![BigInteger256::from(scalar); n];
+                let sum = snarkvm_algorithms_cuda::msm::<G1Affine, G1Projective, BigInteger256>(&bases, &scalars)
+                    .unwrap_or_else(|e| panic!("{e}"));
+                // `==` reads only `z` of a zero point, while `Debug` prints every coordinate.
+                assert_eq!(format!("{sum:?}"), format!("{:?}", G1Projective::zero()), "size {n}, scalar {scalar}");
+            }
+        }
     }
 
     /// blst's routines run the ADX code only if its CPUID constructor is in the

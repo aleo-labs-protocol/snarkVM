@@ -120,7 +120,7 @@ mod tests {
         network::MainnetV0,
         prelude::{One, TestRng, Uniform, Zero},
     };
-    use snarkvm_circuit_types::environment::{Circuit, Eject, Inject, Mode, UpdatableCount, count_is, count_less_than};
+    use snarkvm_circuit_types::environment::{Circuit, Eject, Inject, Mode, UpdatableCount, count_is};
 
     use std::fmt::Debug;
 
@@ -144,10 +144,7 @@ mod tests {
 
     #[test]
     fn test_field_to_address() {
-        check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
-            Mode::Constant,
-            count_less_than!(4303, 0, 0, 0),
-        );
+        check_constant_cast_lossy_to_group!(Address<Circuit>, console_root::types::Address<MainnetV0>);
         check_cast_lossy::<Address<Circuit>, console_root::types::Address<MainnetV0>>(
             Mode::Public,
             count_is!(2029, 0, 6745, 6750),
@@ -186,10 +183,7 @@ mod tests {
 
     #[test]
     fn test_field_to_group() {
-        check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
-            Mode::Constant,
-            count_less_than!(4303, 0, 0, 0),
-        );
+        check_constant_cast_lossy_to_group!(Group<Circuit>, console_root::types::Group<MainnetV0>);
         check_cast_lossy::<Group<Circuit>, console_root::types::Group<MainnetV0>>(
             Mode::Public,
             count_is!(2029, 0, 6745, 6750),

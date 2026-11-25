@@ -15,6 +15,13 @@
 
 #![forbid(unsafe_code)]
 
+/// The `metrics` crate, for dependents that install a recorder or record metrics of their own.
+///
+/// Hazard: a dependent that depends on `metrics` directly can build a second copy of it. A
+/// recorder installed in that copy does not receive snarkVM's metrics.
+#[doc(hidden)]
+pub use metrics;
+
 const GAUGE_NAMES: &[&str] = &[
     committee::TOTAL_STAKE,
     rocksdb::COMPACTION_PENDING,

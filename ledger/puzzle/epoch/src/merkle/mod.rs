@@ -26,7 +26,6 @@ use core::marker::PhantomData;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 const MIN_NUMBER_OF_LEAVES: usize = 100_000;

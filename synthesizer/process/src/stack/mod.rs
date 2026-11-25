@@ -86,13 +86,9 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
+use snarkvm_utilities::{locks::RwLock, timing_event, timing_span};
 
-use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
-#[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
-#[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
 use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
@@ -100,7 +96,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
@@ -121,6 +116,21 @@ pub type MintedRecordTracker<N> = HashMap<Field<N>, (usize, u64)>;
 /// receiving the value and the input index `j`.
 pub type InputRecordLikeTracker<N> = HashMap<Field<N>, Vec<(usize, usize)>>;
 
+/// The synthesis settings of a `CallStack::CheckDeployment`.
+/// The default sets no limits, and the limits do not hold after a `call`.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct CheckDeploymentSettings {
+    /// The constraint limit of the function circuit.
+    pub constraint_limit: Option<u64>,
+    /// The variable limit of the function circuit.
+    pub variable_limit: Option<u64>,
+    /// The limits on the non-zero entries of A, B and C of the function circuit.
+    pub non_zero_limit: Option<(u64, u64, u64)>,
+    /// Whether the limits also hold after a `call`.
+    pub limits_hold_after_calls: bool,
+}
+
 /// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
@@ -140,7 +150,7 @@ pub enum CallStack<N: Network> {
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
-    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>, Option<(u64, u64, u64)>),
+    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, CheckDeploymentSettings),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
@@ -182,6 +192,18 @@ impl<N: Network> CallStack<N> {
 }
 
 impl<N: Network> CallStack<N> {
+    /// In `CheckDeployment` mode, sets the synthesis limits of the current circuit. After a `call`, sets them only if
+    /// the limits hold after calls.
+    pub(crate) fn set_synthesis_limits<A: circuit::Aleo<Network = N>>(&self, after_call: bool) {
+        if let CallStack::CheckDeployment(.., settings) = self
+            && (!after_call || settings.limits_hold_after_calls)
+        {
+            A::set_constraint_limit(settings.constraint_limit);
+            A::set_variable_limit(settings.variable_limit);
+            A::set_non_zero_limit(settings.non_zero_limit);
+        }
+    }
+
     /// Returns a new and independent replica of the call stack.
     pub fn replicate(&self) -> Self {
         match self {
@@ -205,20 +227,11 @@ impl<N: Network> CallStack<N> {
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
-            CallStack::CheckDeployment(
-                requests,
-                private_key,
-                assignments,
-                constraint_limit,
-                variable_limit,
-                non_zero_limit,
-            ) => CallStack::CheckDeployment(
+            CallStack::CheckDeployment(requests, private_key, assignments, settings) => CallStack::CheckDeployment(
                 requests.clone(),
                 *private_key,
                 Arc::new(RwLock::new(assignments.read().clone())),
-                *constraint_limit,
-                *variable_limit,
-                *non_zero_limit,
+                settings.clone(),
             ),
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
@@ -465,7 +478,7 @@ impl<N: Network> Stack<N> {
 
     /// Returns the constructor types for the program.
     #[inline]
-    pub fn get_constructor_types(&self) -> Result<FinalizeTypes<N>> {
+    pub(crate) fn get_constructor_types(&self) -> Result<FinalizeTypes<N>> {
         // Retrieve the constructor types.
         match self.constructor_types.read().as_ref() {
             Some(constructor_types) => Ok(constructor_types.clone()),
@@ -474,6 +487,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Returns the register types for the given closure or function name.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn get_register_types(&self, name: &Identifier<N>) -> Result<RegisterTypes<N>> {
         // Retrieve the register types.
@@ -484,6 +500,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Returns the register types for the given finalize name.
+    ///
+    /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
+    #[doc(hidden)]
     #[inline]
     pub fn get_finalize_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
         // Retrieve the finalize types.
@@ -495,7 +514,7 @@ impl<N: Network> Stack<N> {
 
     /// Returns the register types for the given view function name.
     #[inline]
-    pub fn get_view_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
+    pub(crate) fn get_view_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
         match self.view_types.read().get(name) {
             Some(view_types) => Ok(view_types.clone()),
             None => bail!("View types for '{name}' do not exist"),

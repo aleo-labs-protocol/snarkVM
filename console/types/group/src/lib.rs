@@ -40,6 +40,7 @@ mod zero;
 
 pub use window_table::GroupWindowTable;
 
+#[doc(no_inline)]
 pub use snarkvm_console_network_environment::prelude::*;
 pub use snarkvm_console_types_boolean::Boolean;
 pub use snarkvm_console_types_field::Field;
@@ -72,18 +73,9 @@ impl<E: Environment> Group<E> {
     /// The coefficient B for the Montgomery curve equation.
     pub const MONTGOMERY_B: Field<E> = Field::<E>::new(E::MONTGOMERY_B);
 
-    /// Initializes a new group without checking that `group` is a group element.
-    #[deprecated(
-        since = "4.13.0",
-        note = "use `Group::try_new`, which rejects invalid points; `from_xy_coordinates_unchecked` skips the check"
-    )]
-    pub fn new(group: E::Affine) -> Self {
-        Self::new_unchecked(group)
-    }
-
     /// Initializes a new group, if `group` is on the curve and in the prime-order subgroup.
     pub fn try_new(group: E::Affine) -> Result<Self> {
-        // The subgroup check reads the Edwards `t` coordinate, which a caller can set to any value.
+        // The subgroup check reads the Edwards `t` coordinate. This rebuilds it from x and y.
         let group = E::Affine::from_coordinates_unchecked((group.to_x_coordinate(), group.to_y_coordinate()));
         ensure!(group.is_on_curve(), "Group element is not on the curve");
         ensure!(group.is_in_correct_subgroup_assuming_on_curve(), "Group element is not in the prime-order subgroup");
@@ -109,9 +101,13 @@ impl<E: Environment> Group<E> {
         Self { group: self.group.double().double() }
     }
 
-    /// Returns `self / COFACTOR`.
+    /// Returns `self / COFACTOR`. Halts where the division has no affine result, which can only happen for a point
+    /// that is not on the curve.
     pub fn div_by_cofactor(&self) -> Self {
-        Self { group: self.group.to_affine().mul_by_cofactor_inv().into() }
+        match self.group.to_affine().checked_mul_by_cofactor_inv() {
+            Some(point) => Self { group: point.into() },
+            None => E::halt("Failed to divide a point that is not on the curve by the cofactor"),
+        }
     }
 }
 
@@ -194,24 +190,6 @@ mod tests {
             let point = element.add_mixed(&order_two).to_affine();
             assert!(point.is_on_curve());
             assert!(Group::<CurrentEnvironment>::try_new(point).is_err());
-        }
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_try_new_ignores_a_forged_t() {
-        let mut rng = TestRng::default();
-
-        let order_two = Affine::from_coordinates_unchecked((BaseField::zero(), -BaseField::one()));
-        for _ in 0..ITERATIONS {
-            let element = Group::<CurrentEnvironment>::rand(&mut rng);
-            let point = element.to_affine();
-            let forged = Affine::new(point.to_x_coordinate(), point.to_y_coordinate(), BaseField::rand(&mut rng));
-            assert_eq!(element, Group::try_new(forged).unwrap());
-
-            let point = element.add_mixed(&order_two).to_affine();
-            let forged = Affine::new(point.to_x_coordinate(), point.to_y_coordinate(), BaseField::rand(&mut rng));
-            assert!(Group::<CurrentEnvironment>::try_new(forged).is_err());
         }
     }
 

@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
+#![warn(clippy::cast_possible_truncation)]
 
 extern crate snarkvm_console_types_scalar as console;
 
@@ -29,7 +30,7 @@ pub mod ternary;
 #[cfg(test)]
 use console::{TestRng, Uniform};
 #[cfg(test)]
-use snarkvm_circuit_environment::{assert_count, assert_output_mode, assert_scope, count, output_mode};
+use snarkvm_circuit_environment::assert_scope;
 
 use snarkvm_circuit_environment::prelude::*;
 use snarkvm_circuit_types_boolean::Boolean;

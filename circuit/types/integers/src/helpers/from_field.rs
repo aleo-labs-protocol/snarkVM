@@ -24,13 +24,16 @@ impl<E: Environment, I: IntegerType> FromField for Integer<E, I> {
     ///   1. If the field element is larger than the integer domain, then the operation will fail.
     ///   2. If the field element is smaller than the integer domain, then the operation will succeed.
     fn from_field(field: Self::Field) -> Self {
+        // Note: `unwrap()` is safe as the integer is at most 128 bits.
+        let i_bits = usize::try_from(I::BITS).unwrap();
+
         // Note: We are reconstituting the integer from the base field.
         // This is safe as the number of bits in the integer is less than the base field modulus,
         // and thus will always fit within a single base field element.
         debug_assert!(I::BITS < E::BaseField::size_in_bits() as u64);
 
         // Extract the integer bits from the field element, **without** a carry bit.
-        let bits_le = field.to_lower_bits_le(I::BITS as usize);
+        let bits_le = field.to_lower_bits_le(i_bits);
 
         // Return the integer.
         Integer { bits_le, phantom: Default::default() }

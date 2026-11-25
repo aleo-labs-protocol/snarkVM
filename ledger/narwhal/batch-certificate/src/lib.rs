@@ -34,7 +34,6 @@ use core::hash::{Hash, Hasher};
 use indexmap::IndexSet;
 use std::{collections::HashSet, sync::OnceLock};
 
-#[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Clone)]
@@ -209,6 +208,7 @@ impl<N: Network> BatchCertificate<N> {
 }
 
 #[cfg(any(test, feature = "test-helpers"))]
+#[doc(hidden)]
 pub mod test_helpers {
     use super::*;
     use console::{account::PrivateKey, network::MainnetV0, prelude::TestRng, types::Field};

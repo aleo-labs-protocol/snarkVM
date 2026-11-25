@@ -18,6 +18,7 @@
 #![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
+#[doc(no_inline)]
 pub use snarkvm_console_types::prelude::*;
 
 pub mod bhp;

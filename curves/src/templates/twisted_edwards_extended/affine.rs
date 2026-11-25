@@ -19,11 +19,11 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, TwistedEdwardsParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, PrimeField, SquareRootField, Zero};
-use snarkvm_utilities::{FromBytes, ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
+use snarkvm_utilities::{ToBytes, bititerator::BitIteratorBE, rand::Uniform, serialize::*};
 
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
-    io::{Read, Result as IoResult, Write},
+    io::{Result as IoResult, Write},
     ops::{Mul, Neg},
 };
 
@@ -32,25 +32,17 @@ use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
 };
-use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Affine<P: Parameters> {
-    #[deprecated(since = "4.13.0", note = "use `to_x_coordinate`")]
-    pub x: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "use `to_y_coordinate`")]
-    pub y: P::BaseField,
-    #[deprecated(since = "4.13.0", note = "multiply the x and y coordinates")]
-    pub t: P::BaseField,
+    pub(crate) x: P::BaseField,
+    pub(crate) y: P::BaseField,
+    pub(crate) t: P::BaseField,
 }
 
 impl<P: Parameters> Affine<P> {
     #[inline]
-    #[deprecated(
-        since = "4.13.0",
-        note = "use `AffineCurve::from_coordinates`, which rejects invalid points; `from_coordinates_unchecked` skips the check"
-    )]
-    pub fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
+    pub(crate) fn new(x: P::BaseField, y: P::BaseField, t: P::BaseField) -> Self {
         Self { x, y, t }
     }
 }
@@ -64,6 +56,25 @@ impl<P: Parameters> Zero for Affine<P> {
     #[inline]
     fn is_zero(&self) -> bool {
         self.x.is_zero() & self.y.is_one()
+    }
+}
+
+impl<P: Parameters> Affine<P> {
+    /// Returns `F = N^((q - 1) / 4)`, where `N = ((x - i) * (1 + y))^2 * (1 - d * x^2)` and `i^2 = -1`.
+    ///
+    /// On a curve with `a = -1`, a non-square `d`, and `4r` points with `r` odd, `F` is the reduced 4-Tate pairing
+    /// `t(T4, P)` with `T4 = (i, 0)`, because `N / (-4 * x^4)` has divisor `4(T4) - 4(O)`, and `-4 = (1 + i)^4` and
+    /// `x^4` are fourth powers. So `F = 1` iff the point is in the prime order subgroup
+    /// (Koshelev, <https://eprint.iacr.org/2022/037>, Lemma 1).
+    /// The exceptions are `(0, -1)` and `T4`, where `F` is zero. Neither point is in the subgroup.
+    ///
+    /// `F` says nothing about a point off the curve, so it doesn't replace a subgroup check on an unvalidated point.
+    pub(crate) fn quartic_character(&self) -> P::BaseField {
+        const { assert!(matches!(P::COFACTOR, [4]), "`quartic_character` requires a cofactor of 4") };
+        let one = P::BaseField::one();
+        debug_assert!(P::EDWARDS_A == -one, "`quartic_character` requires `a = -1`");
+        let numerator = (self.x - P::SQRT_MINUS_ONE) * (one + self.y);
+        P::modulus_minus_one_div_four_schedule().pow(&(numerator.square() * (one - P::EDWARDS_D * self.x.square())))
     }
 }
 
@@ -85,6 +96,8 @@ impl<P: Parameters> Display for Affine<P> {
         write!(f, "Affine(x={}, y={})", self.x, self.y)
     }
 }
+
+impl<P: Parameters> crate::sealed::Sealed for Affine<P> {}
 
 impl<P: Parameters> AffineCurve for Affine<P> {
     type BaseField = P::BaseField;
@@ -204,12 +217,35 @@ impl<P: Parameters> AffineCurve for Affine<P> {
         (*self * P::COFACTOR_INV).into()
     }
 
+    fn checked_mul_by_cofactor_inv(&self) -> Option<Self> {
+        let product = *self * P::COFACTOR_INV;
+        // The conversion to affine inverts Z, and panics where Z is zero.
+        match product.z.is_zero() {
+            true => None,
+            false => Some(product.into()),
+        }
+    }
+
     fn to_projective(&self) -> Projective<P> {
         (*self).into()
     }
 
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
         self.mul_bits(BitIteratorBE::new(P::ScalarField::characteristic())).is_zero()
+    }
+
+    fn subgroup_point_from_x_coordinate(x: Self::BaseField) -> Option<Self> {
+        let (p1, p2) = Self::pair_from_x_coordinate(x)?;
+        // `p2 = -(p1 + T2)` with `T2 = (0, -1)`, and `t(T4, T2) = -1`, so `t(T4, p2) = -t(T4, p1)^-1`.
+        // One character therefore decides both candidates. `p1` is never `T2`, because it holds the smaller root.
+        let character = p1.quartic_character();
+        if character.is_one() {
+            Some(p1)
+        } else if (-character).is_one() {
+            Some(p2)
+        } else {
+            None
+        }
     }
 
     fn to_x_coordinate(&self) -> Self::BaseField {
@@ -291,15 +327,6 @@ impl<P: Parameters> ToBytes for Affine<P> {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.x.write_le(&mut writer)?;
         self.y.write_le(&mut writer)
-    }
-}
-
-impl<P: Parameters> FromBytes for Affine<P> {
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read_le(&mut reader)?;
-        let y = P::BaseField::read_le(&mut reader)?;
-        Ok(Self::new(x, y, x * y))
     }
 }
 

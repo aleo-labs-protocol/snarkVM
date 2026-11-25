@@ -125,42 +125,38 @@ mod tests {
         let rng = &mut TestRng::default();
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
-        // Construct a chain of blocks.
+        // Construct a chain of blocks after genesis.
         let mut previous_hash = None;
-        let blocks: Vec<_> = (0..NUM_BLOCKS)
+        let blocks: Vec<_> = (1..NUM_BLOCKS)
             .map(|h| {
                 let transactions = Transactions::from(&[]);
                 let ratifications = Ratifications::try_from(vec![]).unwrap();
-                let header = if h == 0 {
-                    Header::genesis(&ratifications, &transactions, vec![]).unwrap()
-                } else {
-                    // Use mock metadata to save compute time.
-                    let metadata = Metadata::new(
-                        CurrentNetwork::ID,
-                        (h * 2) as u64,
-                        h,
-                        0,
-                        (h * 1000) as u128,
-                        CurrentNetwork::GENESIS_COINBASE_TARGET,
-                        CurrentNetwork::GENESIS_PROOF_TARGET + 1,
-                        CurrentNetwork::GENESIS_COINBASE_TARGET,
-                        CurrentNetwork::GENESIS_TIMESTAMP + ((h - 1) * 100) as i64,
-                        CurrentNetwork::GENESIS_TIMESTAMP + (h * 100) as i64,
-                    )
-                    .unwrap();
+                // Use mock metadata to save compute time.
+                let metadata = Metadata::new(
+                    CurrentNetwork::ID,
+                    (h * 2) as u64,
+                    h,
+                    0,
+                    (h * 1000) as u128,
+                    CurrentNetwork::GENESIS_COINBASE_TARGET,
+                    CurrentNetwork::GENESIS_PROOF_TARGET + 1,
+                    CurrentNetwork::GENESIS_COINBASE_TARGET,
+                    CurrentNetwork::GENESIS_TIMESTAMP + ((h - 1) * 100) as i64,
+                    CurrentNetwork::GENESIS_TIMESTAMP + (h * 100) as i64,
+                )
+                .unwrap();
 
-                    let previous_state_root: <CurrentNetwork as Network>::StateRoot = rng.random();
-                    Header::<CurrentNetwork>::from(
-                        previous_state_root,
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        Field::from_u32(1),
-                        metadata,
-                    )
-                    .unwrap()
-                };
+                let previous_state_root: <CurrentNetwork as Network>::StateRoot = rng.random();
+                let header = Header::<CurrentNetwork>::from(
+                    previous_state_root,
+                    Field::from_u32(1),
+                    Field::from_u32(1),
+                    Field::from_u32(1),
+                    Field::from_u32(1),
+                    Field::from_u32(1),
+                    metadata,
+                )
+                .unwrap();
                 let block_hash = rng.random();
                 let authority = Authority::<CurrentNetwork>::new_beacon(&private_key, block_hash, rng).unwrap();
 
@@ -183,7 +179,7 @@ mod tests {
             .collect();
 
         let mut cache = BlockCache::new(vec![]).unwrap();
-        let mut blocks = blocks.into_iter().skip(1);
+        let mut blocks = blocks.into_iter();
 
         // First, fill up the cache.
         while cache.blocks.len() < (BlockCache::BLOCK_CACHE_SIZE as usize) {

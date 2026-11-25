@@ -1,0 +1,71 @@
+# Circuit shape of `mul_bits` for each operand mode and a fixed set of group elements.
+# Line: <type.mode of each operand> | <value of each constant operand, _ for a variable one, or *> : <result>
+# A `_` stands for each value of a variable operand. The test checks that they give one result.
+# Result: constants public private constraints nonzeros(A/B/C) output-mode digest, or halt.
+# The digest is the first 64 bits of a SHA-256 hash of the constraint structure: the order of the constraints, and the constant,
+# coefficients and variables of each linear combination.
+# A mixed output mode counts the constant, public and private bits.
+# The test also checks each case with the console operation. A defined case must give the console
+# value in a satisfied circuit. An undefined case must halt or leave the circuit unsatisfied.
+# A `*` line gives the result of each case of its block that has no line of its own.
+# Regenerate: UPDATE_CIRCUIT_SNAPSHOTS=1 cargo test -p snarkvm-circuit-types-group --test snapshots
+group.constant boolean[8].constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[8].constant | G 2^8-1 : 49 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[8].constant | 2G 2^8-1 : 49 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[8].constant | -G 2^8-1 : 49 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[8].constant | sampled 2^8-1 : 49 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[8].public | zero _ : 7 0 47 47 33/66/66 private 0328c03c62cdc786
+group.constant boolean[8].public | G _ : 21 0 70 70 85/107/105 private 4236098de4ccc762
+group.constant boolean[8].public | 2G _ : 21 0 70 70 85/107/105 private 760962eb036b8786
+group.constant boolean[8].public | -G _ : 21 0 70 70 85/107/105 private c60791f5d3cad277
+group.constant boolean[8].public | sampled _ : 21 0 70 70 85/107/105 private 548bc088601cd433
+group.constant boolean[8].private | zero _ : 7 0 47 47 33/66/66 private ea3034dbe33ed35b
+group.constant boolean[8].private | G _ : 21 0 70 70 85/107/105 private c5971aa40ddeff28
+group.constant boolean[8].private | 2G _ : 21 0 70 70 85/107/105 private af93f42c13317890
+group.constant boolean[8].private | -G _ : 21 0 70 70 85/107/105 private 8aeae5b8772be0a3
+group.constant boolean[8].private | sampled _ : 21 0 70 70 85/107/105 private 813b671f76c39297
+group.public boolean[8].constant | _ 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.public boolean[8].constant | _ 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+group.public boolean[8].constant | _ 2^8-1 : 21 0 77 77 84/119/105 private c42a4544a9c79fe8
+group.public boolean[8].public | _ _ : 21 0 93 93 115/135/136 private c0ed51f08ce7d940
+group.public boolean[8].private | _ _ : 21 0 93 93 115/135/136 private df6c20cd604362ce
+group.private boolean[8].constant | _ 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.private boolean[8].constant | _ 1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+group.private boolean[8].constant | _ 2^8-1 : 21 0 77 77 84/119/105 private 51bf99c24bc5fee1
+group.private boolean[8].public | _ _ : 21 0 93 93 115/135/136 private 4aaf34c95677409a
+group.private boolean[8].private | _ _ : 21 0 93 93 115/135/136 private 7a0cefebf4a9fa0c
+group.constant boolean[251].constant | * : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | G r-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | G r : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | G 2^251-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | 2G r-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | 2G r : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | 2G 2^251-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | -G r-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | -G r : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | -G 2^251-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | sampled r-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | sampled r : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].constant | sampled 2^251-1 : 1750 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.constant boolean[251].public | zero _ : 250 0 1748 1748 1248/2496/2496 private 5cb15b889b907f66
+group.constant boolean[251].public | G _ : 750 0 2500 2500 3001/3752/3750 private 9391506782f0e0d7
+group.constant boolean[251].public | 2G _ : 750 0 2500 2500 3001/3752/3750 private 45e1a7e5b2aa4f1b
+group.constant boolean[251].public | -G _ : 750 0 2500 2500 3001/3752/3750 private fc3208c4e367bfb8
+group.constant boolean[251].public | sampled _ : 750 0 2500 2500 3001/3752/3750 private 234c6fd45937531f
+group.constant boolean[251].private | zero _ : 250 0 1748 1748 1248/2496/2496 private cb2e38c81f0511f7
+group.constant boolean[251].private | G _ : 750 0 2500 2500 3001/3752/3750 private 416577bcdd5dbd22
+group.constant boolean[251].private | 2G _ : 750 0 2500 2500 3001/3752/3750 private 1170294210f663b3
+group.constant boolean[251].private | -G _ : 750 0 2500 2500 3001/3752/3750 private 4bcc702ea03f9aa1
+group.constant boolean[251].private | sampled _ : 750 0 2500 2500 3001/3752/3750 private 519d6dba9f1a5380
+group.public boolean[251].constant | * : 750 0 2750 2750 3000/4250/3750 private 237cd7e44f6d3cca
+group.public boolean[251].constant | _ 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.public boolean[251].constant | _ 1 : 0 0 0 0 0/0/0 public e3b0c44298fc1c14
+group.public boolean[251].constant | _ 2^251-1 : 750 0 2750 2750 3000/4250/3750 private 3e4ba9387ec895f2
+group.public boolean[251].public | _ _ : 750 0 3252 3252 4003/4752/4753 private f514b51f0e031fd2
+group.public boolean[251].private | _ _ : 750 0 3252 3252 4003/4752/4753 private e0f827d929aa5820
+group.private boolean[251].constant | * : 750 0 2750 2750 3000/4250/3750 private 147ef2ed70dda980
+group.private boolean[251].constant | _ 0 : 0 0 0 0 0/0/0 constant e3b0c44298fc1c14
+group.private boolean[251].constant | _ 1 : 0 0 0 0 0/0/0 private e3b0c44298fc1c14
+group.private boolean[251].constant | _ 2^251-1 : 750 0 2750 2750 3000/4250/3750 private f4601e5f57ce6ab8
+group.private boolean[251].public | _ _ : 750 0 3252 3252 4003/4752/4753 private ddeb452b4e942167
+group.private boolean[251].private | _ _ : 750 0 3252 3252 4003/4752/4753 private 4c040a2a54bb064b

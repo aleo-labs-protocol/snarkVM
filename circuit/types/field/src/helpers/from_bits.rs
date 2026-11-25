@@ -79,25 +79,6 @@ impl<E: Environment> FromBits for Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn FromBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = Vec<Mode>;
-
-    fn count(_modes: &Self::Case) -> Count {
-        todo!()
-    }
-}
-
-impl<E: Environment> OutputMode<dyn FromBits<Boolean = Boolean<E>>> for Field<E> {
-    type Case = Vec<Mode>;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case.iter().all(|mode| mode.is_constant()) {
-            true => Mode::Constant,
-            false => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,7 +108,9 @@ mod tests {
             });
 
             // Add excess zero bits.
-            let candidate = [given_bits, vec![Boolean::new(mode, false); i as usize]].concat();
+            // Note: `unwrap()` is safe as `i` is less than `ITERATIONS`.
+            let num_excess_bits = usize::try_from(i).unwrap();
+            let candidate = [given_bits, vec![Boolean::new(mode, false); num_excess_bits]].concat();
 
             Circuit::scope(format!("Excess {mode} {i}"), || {
                 let candidate = Field::<Circuit>::from_bits_le(&candidate);
@@ -172,7 +155,9 @@ mod tests {
             });
 
             // Add excess zero bits.
-            let candidate = [vec![Boolean::new(mode, false); i as usize], given_bits].concat();
+            // Note: `unwrap()` is safe as `i` is less than `ITERATIONS`.
+            let num_excess_bits = usize::try_from(i).unwrap();
+            let candidate = [vec![Boolean::new(mode, false); num_excess_bits], given_bits].concat();
 
             Circuit::scope(format!("Excess {mode} {i}"), || {
                 let candidate = Field::<Circuit>::from_bits_be(&candidate);

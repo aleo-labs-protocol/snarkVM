@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_circuit_environment::{Circuit, CircuitType};
 
 #[allow(clippy::only_used_in_recursion)]
 impl<E: Environment> Pow<Field<E>> for Field<E> {
@@ -76,64 +75,6 @@ impl<E: Environment> Pow<&Field<E>> for &Field<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Pow<Field<E>, Output = Field<E>>> for Field<E> {
-    type Case = (CircuitType<Field<E>>, CircuitType<Field<E>>);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0.mode(), case.1.mode()) {
-            (Mode::Constant, Mode::Constant) => Count::is(253, 0, 0, 0),
-            (_, Mode::Constant) => match &case.1 {
-                CircuitType::Constant(constant) => {
-                    // Find the first instance (from the MSB) of a `true` bit.
-                    let exponent_bits = constant.eject_value().to_bits_be();
-                    let index = exponent_bits
-                        .iter()
-                        .position(|b| *b)
-                        .unwrap_or(console::Field::<<Circuit as Environment>::Network>::size_in_bits() - 1);
-
-                    // Calculate the number of squares and multiplications as follows:
-                    //   `num_squares` := number of remaining bits after the first nonzero bit (from MSB -> LSB)
-                    //   `num_multiplications` := number of `true` bits after the first nonzero bit (from MSB -> LSB)
-                    let num_squares =
-                        (console::Field::<<Circuit as Environment>::Network>::size_in_bits() - index - 1) as u64;
-                    let num_multiplications = exponent_bits[index + 1..].iter().map(|bit| *bit as u64).sum::<u64>();
-
-                    // The number of private variables, constraints, and gates are both: num_squares + num_multiplications
-                    let num_private = num_squares + num_multiplications;
-                    let num_constraints = num_private;
-                    Count::is(253, 0, num_private, num_constraints)
-                }
-                _ => E::halt(format!(
-                    "Constant is required to determine the `Count` for {} POW {}",
-                    case.0.mode(),
-                    case.1.mode()
-                )),
-            },
-            (Mode::Constant, _) => Count::is(0, 0, 1009, 1011),
-            (_, _) => Count::is(0, 0, 1262, 1264),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Pow<Field<E>, Output = Field<E>>> for Field<E> {
-    type Case = (CircuitType<Field<E>>, CircuitType<Field<E>>);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0.mode(), case.1.mode()) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (mode_a, Mode::Constant) => match &case.1 {
-                CircuitType::Constant(constant) => match constant.eject_value() {
-                    value if value.is_zero() => Mode::Constant,
-                    value if value.is_one() => mode_a,
-                    _ => Mode::Private,
-                },
-                _ => E::halt("The constant is required to determine the output mode of Public * Constant"),
-            },
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::hash::{DefaultHasher, Hash, Hasher};
@@ -191,8 +132,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a.pow(b);
             assert_eq!(*expected, candidate.eject_value(), "({}^{})", a.eject_value(), b.eject_value());
-            assert_count!(Pow(Field, Field) => Field, &(CircuitType::from(a), CircuitType::from(b)));
-            assert_output_mode!(Pow(Field, Field) => Field, &(CircuitType::from(a), CircuitType::from(b)), candidate);
+            assert_scope!();
         });
     }
 

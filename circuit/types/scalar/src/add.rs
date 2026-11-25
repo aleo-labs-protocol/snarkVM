@@ -100,28 +100,6 @@ impl<E: Environment> AddAssign<&Scalar<E>> for Scalar<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Add<Scalar<E>, Output = Scalar<E>>> for Scalar<E> {
-    type Case = (Mode, Mode);
-
-    fn count(case: &Self::Case) -> Count {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Count::is(1, 0, 0, 0),
-            (_, _) => Count::is(1, 0, 755, 757),
-        }
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Add<Scalar<E>, Output = Scalar<E>>> for Scalar<E> {
-    type Case = (Mode, Mode);
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match (case.0, case.1) {
-            (Mode::Constant, Mode::Constant) => Mode::Constant,
-            (_, _) => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,8 +123,7 @@ mod tests {
         Circuit::scope(name, || {
             let candidate = a + b;
             assert_eq!(expected, candidate.eject_value(), "{case}");
-            assert_count!(Add(Scalar, Scalar) => Scalar, &(mode_a, mode_b));
-            assert_output_mode!(Add(Scalar, Scalar) => Scalar, &(mode_a, mode_b), candidate);
+            assert_scope!();
         });
     }
 

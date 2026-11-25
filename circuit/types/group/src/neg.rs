@@ -33,25 +33,6 @@ impl<E: Environment> Neg for &Group<E> {
     }
 }
 
-impl<E: Environment> Metrics<dyn Neg<Output = Group<E>>> for Group<E> {
-    type Case = Mode;
-
-    fn count(_case: &Self::Case) -> Count {
-        Count::is(0, 0, 0, 0)
-    }
-}
-
-impl<E: Environment> OutputMode<dyn Neg<Output = Group<E>>> for Group<E> {
-    type Case = Mode;
-
-    fn output_mode(case: &Self::Case) -> Mode {
-        match case {
-            Mode::Constant => Mode::Constant,
-            _ => Mode::Private,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -65,11 +46,9 @@ mod tests {
         candidate_input: Group<Circuit>,
     ) {
         Circuit::scope(name, || {
-            let mode = candidate_input.eject_mode();
             let candidate_output = -candidate_input;
             assert_eq!(expected, candidate_output.eject_value());
-            assert_count!(Neg(Group) => Group, &mode);
-            assert_output_mode!(Neg(Group) => Group, &mode, candidate_output);
+            assert_scope!();
         });
     }
 

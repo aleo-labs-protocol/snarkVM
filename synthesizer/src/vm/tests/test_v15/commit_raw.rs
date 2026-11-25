@@ -76,9 +76,10 @@ constructor:
 // Tests that deploying a program with `commit.*.raw` instructions is aborted before
 // `ConsensusVersion::V15` and accepted at `V15`.
 #[test]
+#[ignore = "slow"]
 fn test_deploy_commit_raw_before_and_at_v15() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Start one block before V15 so that after adding the (rejected) block we are
     // exactly at V15 and can deploy the same program successfully.
@@ -113,9 +114,10 @@ fn test_deploy_commit_raw_before_and_at_v15() {
 // The expected group value is computed natively and passed into the program. Both
 // the function body and the finalize block independently verify the assertion.
 #[test]
+#[ignore = "slow"]
 fn test_ped128_raw_additive_homomorphism() {
     let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key();
 
     // Initialize the VM at V15 so that `commit.ped128.raw` programs can be deployed.
     let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();

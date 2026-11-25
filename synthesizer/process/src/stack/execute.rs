@@ -29,7 +29,7 @@ impl<N: Network> Stack<N> {
         caller: circuit::Address<A>,
         tvk: circuit::Field<A>,
     ) -> Result<Vec<circuit::Value<A>>, StackExecError> {
-        let timer = timer!("Stack::execute_closure");
+        let timer = timing_span!("Stack::execute_closure").entered();
 
         // Ensure the call stack is not `Evaluate`.
         if matches!(call_stack, CallStack::Evaluate(..)) {
@@ -40,7 +40,7 @@ impl<N: Network> Stack<N> {
         if closure.inputs().len() != inputs.len() {
             return Err(anyhow!("Expected {} inputs, found {}", closure.inputs().len(), inputs.len()).into());
         }
-        lap!(timer, "Check the number of inputs");
+        timing_event!("Check the number of inputs");
 
         // Retrieve the number of public variables in the circuit.
         let num_public = A::num_public();
@@ -62,7 +62,7 @@ impl<N: Network> Stack<N> {
         registers.set_tvk(tvk.eject_value());
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(tvk);
-        lap!(timer, "Initialize the registers");
+        timing_event!("Initialize the registers");
 
         // Store the inputs.
         closure.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
@@ -74,7 +74,7 @@ impl<N: Network> Stack<N> {
             // Assign the circuit input to the register.
             registers.store_circuit(self, register, input.clone())
         })?;
-        lap!(timer, "Store the inputs");
+        timing_event!("Store the inputs");
 
         // Execute the instructions.
         for (ix, instruction) in closure.instructions().iter().enumerate() {
@@ -92,7 +92,7 @@ impl<N: Network> Stack<N> {
                 return Err(IndexedInstructionError::new(ix, format!("{instruction}"), err).into());
             }
         }
-        lap!(timer, "Execute the instructions");
+        timing_event!("Execute the instructions");
 
         // Ensure the number of public variables remains the same.
         if A::num_public() != num_public {
@@ -182,9 +182,9 @@ impl<N: Network> Stack<N> {
             })
             .map(|res| res.map_err(StackExecError::Anyhow))
             .collect();
-        lap!(timer, "Load the outputs");
+        timing_event!("Load the outputs");
 
-        finish!(timer);
+        drop(timer);
         outputs
     }
 
@@ -197,25 +197,32 @@ impl<N: Network> Stack<N> {
     /// This method will halt if the given inputs are not the same length as the input statements.
     pub fn execute_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
+        call_stack: CallStack<N>,
+        console_caller: Option<ProgramID<N>>,
+        console_root_tvk: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Option<Response<N>>, StackExecError> {
+        A::with_fresh_circuit(|| self.execute_function_inner::<A, R>(call_stack, console_caller, console_root_tvk, rng))
+    }
+
+    /// Executes a program function on the given inputs, in the current circuit state.
+    fn execute_function_inner<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
+        &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Option<Response<N>>, StackExecError> {
-        let timer = timer!("Stack::execute_function");
+        let timer = timing_span!("Stack::execute_function").entered();
 
         // Ensure the global constants for the Aleo environment are initialized.
         A::initialize_global_constants();
-        // Ensure the circuit environment is clean.
+        // Discard the constants that the first initialization on a thread adds to the circuit.
         A::reset();
 
-        // If in 'CheckDeployment' mode, set the constraint limit and variable limit.
-        // We do not have to reset it after function calls because `CheckDeployment` mode does not execute those.
-        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit, non_zero_limit) = &call_stack {
-            A::set_constraint_limit(*constraint_limit);
-            A::set_variable_limit(*variable_limit);
-            A::set_non_zero_limit(*non_zero_limit);
-        }
+        // If in 'CheckDeployment' mode, set the synthesis limits. A `call` ejects the circuit, which clears them, and
+        // restores them if the call stack says that the limits hold after calls.
+        call_stack.set_synthesis_limits::<A>(false);
 
         // Retrieve the next request.
         let console_request = call_stack.pop()?;
@@ -264,14 +271,14 @@ impl<N: Network> Stack<N> {
         let input_types = function.input_types();
         // Retrieve the output types.
         let output_types = function.output_types();
-        lap!(timer, "Retrieve the input and output types");
+        timing_event!("Retrieve the input and output types");
 
         // Ensure the inputs match their expected types.
         console_request.inputs().iter().zip_eq(&input_types).try_for_each(|(input, input_type)| {
             // Ensure the input matches the input type in the function.
             self.matches_value_type(input, input_type)
         })?;
-        lap!(timer, "Verify the input types");
+        timing_event!("Verify the input types");
 
         // Retrieve the program checksum, if the program has a constructor.
         let program_checksum = match self.program().contains_constructor() {
@@ -285,7 +292,7 @@ impl<N: Network> Stack<N> {
         if !console_request.verify(&input_types, console_is_root, program_checksum) {
             return Err(anyhow!("[Execute] Request is invalid").into());
         }
-        lap!(timer, "Verify the console request");
+        timing_event!("Verify the console request");
 
         // Initialize the registers.
         let mut registers = Registers::new(call_stack, self.get_register_types(function.name())?.clone());
@@ -318,7 +325,7 @@ impl<N: Network> Stack<N> {
 
         // Ensure the request has a valid signature, inputs, and transition view key.
         A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum))?;
-        lap!(timer, "Verify the circuit request");
+        timing_event!("Verify the circuit request");
 
         // Set the transition signer.
         registers.set_signer(*console_request.signer());
@@ -335,7 +342,7 @@ impl<N: Network> Stack<N> {
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(request.tvk().clone());
 
-        lap!(timer, "Initialize the registers");
+        timing_event!("Initialize the registers");
 
         Self::log_circuit::<A>("Request", &call_stack_type);
 
@@ -355,7 +362,7 @@ impl<N: Network> Stack<N> {
             // Assign the circuit input to the register.
             registers.store_circuit(self, register, input.clone())
         })?;
-        lap!(timer, "Store the inputs");
+        timing_event!("Store the inputs");
 
         // Initialize a tracker to determine if there are any function calls.
         let mut contains_function_call = false;
@@ -419,7 +426,7 @@ impl<N: Network> Stack<N> {
                 _ => {}
             }
         }
-        lap!(timer, "Execute the instructions");
+        timing_event!("Execute the instructions");
 
         // Load the outputs.
         let output_operands = &function.outputs().iter().map(|output| output.operand()).collect::<Vec<_>>();
@@ -505,7 +512,7 @@ impl<N: Network> Stack<N> {
                 }
             })
             .collect::<Result<Vec<_>>>()?;
-        lap!(timer, "Load the outputs");
+        timing_event!("Load the outputs");
 
         // Map the output operands into registers.
         let output_registers = output_operands
@@ -540,7 +547,7 @@ impl<N: Network> Stack<N> {
             &output_types,
             &output_registers,
         );
-        lap!(timer, "Construct the response");
+        timing_event!("Construct the response");
 
         Self::log_circuit::<A>("Response", &call_stack_type);
 
@@ -550,41 +557,41 @@ impl<N: Network> Stack<N> {
 
         Self::log_circuit::<A>("Complete", &call_stack_type);
 
-        // Eject the response.
-        let console_response =
-            if matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::CheckDeployment(..)) {
-                // When synthesizing proving/verifying keys or checking the latter, the values in
-                // the Response object are not relevant, and neither is its console counterpart.
-                None
-            } else {
-                let console_response = response.eject_value();
+        // When synthesizing proving/verifying keys or checking the latter, the values in the Response
+        // object are not relevant, and neither is its console counterpart.
+        let eject_response =
+            !matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::CheckDeployment(..));
 
-                if console_response.outputs().len() != output_types.len() {
-                    return Err(anyhow!("Number of outputs does not match number of output types").into());
-                }
-
-                // Ensure the outputs matches the expected value types.
-                console_response.outputs().iter().zip_eq(&output_types).try_for_each(|(output, output_type)| {
-                    // Ensure the output matches its expected type.
-                    self.matches_value_type(output, output_type)
-                })?;
-
-                Some(console_response)
-            };
-
-        // If the circuit is in `Execute` or `PackageRun` mode, then ensure the circuit is satisfied.
-        if matches!(registers.call_stack_ref(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
-            // If the circuit is empty or not satisfied, then throw an error.
-            if A::num_constraints() == 0 || !A::is_satisfied() {
-                return Err(anyhow!(
-                    "'{}/{}' is not satisfied on the given inputs ({} constraints).",
-                    self.program.id(),
-                    function.name(),
-                    A::num_constraints()
-                )
-                .into());
-            }
+        // Ensure the circuit is satisfied before ejecting the response. An unsatisfied circuit can hold
+        // values that `eject_value` halts on, e.g. a scalar that is not less than the scalar modulus.
+        if eject_response && (A::num_constraints() == 0 || !A::is_satisfied()) {
+            return Err(anyhow!(
+                "'{}/{}' is not satisfied on the given inputs ({} constraints).",
+                self.program.id(),
+                function.name(),
+                A::num_constraints()
+            )
+            .into());
         }
+
+        // Eject the response.
+        let console_response = if eject_response {
+            let console_response = response.eject_value();
+
+            if console_response.outputs().len() != output_types.len() {
+                return Err(anyhow!("Number of outputs does not match number of output types").into());
+            }
+
+            // Ensure the outputs matches the expected value types.
+            console_response.outputs().iter().zip_eq(&output_types).try_for_each(|(output, output_type)| {
+                // Ensure the output matches its expected type.
+                self.matches_value_type(output, output_type)
+            })?;
+
+            Some(console_response)
+        } else {
+            None
+        };
 
         // Eject the circuit assignment and reset the circuit.
         let assignment = A::eject_assignment_and_reset();
@@ -595,7 +602,7 @@ impl<N: Network> Stack<N> {
             if !self.contains_proving_key(function.name()) {
                 // Add the circuit key to the mapping.
                 self.synthesize_from_assignment(function.name(), &assignment)?;
-                lap!(timer, "Synthesize the {} circuit key", function.name());
+                timing_event!("Synthesize the {} circuit key", function.name());
             }
         }
         // If the circuit is in `Authorize` mode, then save the transition.
@@ -614,10 +621,10 @@ impl<N: Network> Stack<N> {
 
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
-            lap!(timer, "Save the transition");
+            timing_event!("Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, assignments, _, _, _) = registers.call_stack_ref() {
+        else if let CallStack::CheckDeployment(_, _, assignments, ..) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
@@ -629,7 +636,7 @@ impl<N: Network> Stack<N> {
             };
             // Add the assignment to the assignments.
             assignments.write().push((assignment, metrics));
-            lap!(timer, "Save the circuit assignment");
+            timing_event!("Save the circuit assignment");
         }
         // If the circuit is in `Execute` mode, then execute the circuit into a transition.
         else if let CallStack::Execute(_, trace, translations) = registers.call_stack_ref() {
@@ -686,10 +693,10 @@ impl<N: Network> Stack<N> {
             };
             // Add the assignment to the assignments.
             assignments.write().push((assignment, metrics));
-            lap!(timer, "Save the circuit assignment");
+            timing_event!("Save the circuit assignment");
         }
 
-        finish!(timer);
+        drop(timer);
 
         // Return the response.
         Ok(console_response)
@@ -704,8 +711,8 @@ impl<N: Network> Stack<N> {
         call_stack_type: impl std::fmt::Display,
     ) {
         #[cfg(debug_assertions)]
-        {
-            use snarkvm_utilities::dev_println;
+        if snarkvm_utilities::tracing::enabled!(snarkvm_utilities::tracing::Level::TRACE) {
+            use snarkvm_utilities::tracing::trace;
 
             use colored::Colorize as _;
 
@@ -717,7 +724,7 @@ impl<N: Network> Stack<N> {
             let scope = scope.to_string().bold();
 
             // Print the log.
-            dev_println!(
+            trace!(
                 "{is_satisfied} {call_stack_type:width$} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
                 width = 20
             );

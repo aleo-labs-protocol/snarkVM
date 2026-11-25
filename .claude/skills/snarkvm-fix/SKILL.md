@@ -83,9 +83,9 @@ Present a concrete plan:
 
 For each change:
 1. **Write failing test** that reproduces the bug or covers the new behavior
-2. **Verify it fails**: `cargo test -p <crate> -- test_name --nocapture`
+2. **Verify it fails**: `cargo test -p <crate> -- --include-ignored test_name --nocapture`
 3. **Implement minimal fix** — match existing code style
-4. **Verify it passes**: `cargo test -p <crate> -- test_name --nocapture`
+4. **Verify it passes**: `cargo test -p <crate> -- --include-ignored test_name --nocapture`
 
 For pure style/nit fixes (no behavioral change), batch them without tests.
 

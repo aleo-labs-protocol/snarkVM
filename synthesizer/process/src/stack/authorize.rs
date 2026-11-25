@@ -36,7 +36,7 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        let timer = timer!("Stack::authorize");
+        let timer = timing_span!("Stack::authorize").entered();
 
         // Get the program ID.
         let program_id = *self.program.id();
@@ -44,7 +44,7 @@ impl<N: Network> Stack<N> {
         let function_name = function_name.try_into().map_err(|_| anyhow!("Invalid function name"))?;
         // Retrieve the input types.
         let input_types = self.get_function(&function_name)?.input_types();
-        lap!(timer, "Retrieve the input types");
+        timing_event!("Retrieve the input types");
         // Set is_root to true.
         let is_root = true;
         // Retrieve the program checksum, if the program has a constructor.
@@ -70,14 +70,15 @@ impl<N: Network> Stack<N> {
             false,
             rng,
         )?;
-        lap!(timer, "Compute the request");
+        timing_event!("Compute the request");
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
         // Construct the call stack.
         let call_stack = CallStack::Authorize(vec![request], Some(*private_key), authorization.clone());
         // Construct the authorization from the function.
         let _response = self.execute_function::<A, R>(call_stack, caller, root_tvk, rng)?;
-        finish!(timer, "Construct the authorization from the function");
+        timing_event!("Construct the authorization from the function");
+        drop(timer);
 
         // Return the authorization.
         Ok(authorization)
@@ -93,7 +94,7 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        let timer = timer!("Stack::authorize_unchecked");
+        let timer = timing_span!("Stack::authorize_unchecked").entered();
 
         // Get the program ID.
         let program_id = *self.program.id();
@@ -101,7 +102,7 @@ impl<N: Network> Stack<N> {
         let function_name = function_name.try_into().map_err(|_| anyhow!("Invalid function name"))?;
         // Retrieve the input types.
         let input_types = self.get_function(&function_name)?.input_types();
-        lap!(timer, "Retrieve the input types");
+        timing_event!("Retrieve the input types");
         // Set is_root to true.
         let is_root = true;
 
@@ -127,14 +128,15 @@ impl<N: Network> Stack<N> {
             false,
             rng,
         )?;
-        lap!(timer, "Compute the request");
+        timing_event!("Compute the request");
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
         // Construct the call stack.
         let call_stack = CallStack::Authorize(vec![request], Some(*private_key), authorization.clone());
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
-        finish!(timer, "Construct the authorization from the function");
+        timing_event!("Construct the authorization from the function");
+        drop(timer);
 
         // Return the authorization.
         Ok(authorization)
@@ -177,7 +179,7 @@ impl<N: Network> Stack<N> {
         rng: &mut R,
     ) -> Result<(Authorization<N>, RecordFlowTracker, RecordNameTracker<N>, ProgramChecksumTracker<N>), StackAuthError>
     {
-        let timer = timer!("Stack::sample_authorization");
+        let timer = timing_span!("Stack::sample_authorization").entered();
 
         if program_id != *self.program.id() {
             return Err(anyhow!("Program ID mismatch").into());
@@ -187,7 +189,7 @@ impl<N: Network> Stack<N> {
         let program_id = *self.program.id();
         // Retrieve the input types.
         let input_types = self.get_function(&function_name)?.input_types();
-        lap!(timer, "Retrieve the input types");
+        timing_event!("Retrieve the input types");
 
         // This is the root request and does not have a caller.
         let caller = None;
@@ -197,7 +199,7 @@ impl<N: Network> Stack<N> {
         // Compute the mock request.
         let mocked_request = Request::sample(address, program_id, function_name, inputs, &input_types, false, rng)?;
 
-        lap!(timer, "Compute the mocked request");
+        timing_event!("Compute the mocked request");
         // Initialize the authorization.
         let authorization = Authorization::new(mocked_request.clone());
         // Initialize Arc-wrapped trackers for static records minted in the transaction and static,
@@ -214,7 +216,7 @@ impl<N: Network> Stack<N> {
         );
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
-        lap!(timer, "Construct the mocked authorization from the function");
+        timing_event!("Construct the mocked authorization from the function");
 
         // Collate the information on minted and consumed records:
         let mut record_tracking = HashMap::new();
@@ -231,7 +233,8 @@ impl<N: Network> Stack<N> {
         let record_names = authorization.collect_record_names(self)?;
         let program_checksums = authorization.collect_program_checksums(self)?;
 
-        finish!(timer, "Gather record-tracking and other auxiliary information");
+        timing_event!("Gather record-tracking and other auxiliary information");
+        drop(timer);
 
         // Return the authorization and record tracking.
         Ok((authorization, record_tracking, record_names, program_checksums))
@@ -245,7 +248,7 @@ impl<N: Network> Stack<N> {
         request: Request<N>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        let timer = timer!("Stack::authorize_request");
+        let timer = timing_span!("Stack::authorize_request").entered();
 
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
@@ -257,7 +260,8 @@ impl<N: Network> Stack<N> {
         let root_tvk = None;
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
-        finish!(timer, "Construct the authorization from the function");
+        timing_event!("Construct the authorization from the function");
+        drop(timer);
 
         // Return the authorization.
         Ok(authorization)
@@ -272,7 +276,7 @@ impl<N: Network> Stack<N> {
         requests: Vec<Request<N>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        let timer = timer!("Stack::authorize_requests");
+        let timer = timing_span!("Stack::authorize_requests").entered();
 
         if requests.is_empty() {
             return Err(anyhow!("No requests provided").into());
@@ -320,7 +324,8 @@ impl<N: Network> Stack<N> {
         // Populate the authorization by processing the call stack.
         let _response = self.evaluate_function::<A, R>(call_stack, None, None, rng)?;
 
-        finish!(timer, "Construct the authorization from the function");
+        timing_event!("Construct the authorization from the function");
+        drop(timer);
 
         if authorization.transitions().len() != num_requests {
             return Err(anyhow!(

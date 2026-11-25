@@ -90,7 +90,6 @@ impl<N: Network> Signature<N> {
 }
 
 #[cfg(test)]
-#[cfg(feature = "private_key")]
 mod tests {
     use super::*;
     use snarkvm_console_network::MainnetV0;

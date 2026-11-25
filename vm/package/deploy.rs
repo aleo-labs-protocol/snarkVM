@@ -121,7 +121,7 @@ impl<N: Network> Package<N> {
         // Retrieve the main program ID.
         let program_id = program.id();
 
-        dev_println!("⏳ Deploying '{}'...\n", program_id.to_string());
+        trace!("Deploying '{program_id}'...");
 
         // Initialize the RNG.
         let rng = &mut rand::rng();

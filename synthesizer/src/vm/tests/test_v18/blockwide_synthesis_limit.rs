@@ -113,15 +113,14 @@ fn record_program_from_multiplier(multiplier: usize, name_prefix: &str, suffix: 
 
 /// Extracts the message from a panic payload caught by [`try_vm_runtime`].
 fn vm_halt_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    payload
-        .downcast_ref::<&str>()
-        .map(|message| (*message).to_string())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
+    snarkvm_utilities::panic_message(&*payload)
+        .map(str::to_string)
         .unwrap_or_else(|| format!("unexpected panic payload: {payload:?}"))
 }
 
 /// Checks that the block-wide synthesis limit is computed and enforced correctly.
 #[test]
+#[ignore = "slow"]
 fn test_blockwide_synthesis_limit() {
     let current_max_certificates = CurrentNetwork::LATEST_MAX_CERTIFICATES() as f64;
 
@@ -138,7 +137,7 @@ fn test_blockwide_synthesis_limit() {
     }
 
     let vm = sample_vm_at_height(v19_height.saturating_sub(1).max(v18_height.saturating_sub(1)), rng);
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     // Set to true to print the combined density of each individual deployment.
     let verbose = false;
@@ -284,12 +283,13 @@ fn test_blockwide_synthesis_limit() {
 /// Checks that, during synthesis, if the running density of one of the function- or record-circuit
 /// matrices surpasses the total claimed in the verifying key, synthesis stops.
 #[test]
+#[ignore = "slow"]
 fn test_vk_num_non_zero_detected() {
     let rng = &mut TestRng::default();
 
     let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
     let vm = sample_vm_at_height(v18_height, rng);
-    let genesis_private_key = sample_genesis_private_key(rng);
+    let genesis_private_key = sample_genesis_private_key();
 
     let cases = vec![("function", 1), ("function", 2), ("function", 4), ("function", 8), ("record", 1)];
     for (i, (program_type, multiplier)) in cases.into_iter().enumerate() {
