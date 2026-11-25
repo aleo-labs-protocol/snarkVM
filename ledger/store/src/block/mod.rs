@@ -809,10 +809,9 @@ pub trait BlockStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Se
             .collect::<Result<Vec<_>>>()?;
 
         atomic_batch_scope!(self, {
-            // Prune from the watermark through the height that expires with this block. Opening the store
-            // leaves the watermark at that height, so this is one height unless the watermark fell behind.
-            // It is ahead after blocks were removed or a restart with a larger window; then inserts prune
-            // nothing until the window reaches it.
+            // Prune from the watermark through the height that expires with this block: one height, unless
+            // the watermark fell behind. A watermark ahead of that height, after blocks were removed or a
+            // restart with a larger window, prunes nothing.
             if let Some(retention_blocks) = authority_retention
                 && let Some(expired_height) = block.height().checked_sub(retention_blocks)
                 && let watermark = speculative_authority_pruned_below(self)?.unwrap_or(1)
@@ -1558,7 +1557,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             // Block heights start at zero, so the latest height is one less than the number of leaves.
             && let Some(latest_height) = cache_end_height.checked_sub(1)
         {
-            // Catch up the watermark here, in chunks, so that an insert prunes one height.
+            // Catch up the watermark in chunks, so that an insert does not prune a long range in one batch.
             prune_expired_authorities(&storage, latest_height, retention_blocks).context(AUTHORITY_PRUNING_FAILED)?;
         }
 
@@ -2297,6 +2296,16 @@ mod tests {
         (blocks, certificate_id)
     }
 
+    /// Inserts `block` into `storage` with a state root derived from its height.
+    fn insert_block<B: BlockStorage<CurrentNetwork>>(
+        storage: &B,
+        block: &Block<CurrentNetwork>,
+        retention: Option<u32>,
+    ) {
+        let state_root = <CurrentNetwork as Network>::StateRoot::from(Field::from_u32(block.height()));
+        storage.insert(state_root, block, retention).unwrap();
+    }
+
     /// Returns a block hash derived from a height, for tests that fill the maps directly.
     fn hash_at(height: u32) -> <CurrentNetwork as Network>::BlockHash {
         Field::<CurrentNetwork>::from_u32(height).into()
@@ -2759,20 +2768,16 @@ mod tests {
         let rng = &mut TestRng::default();
         let blocks = sample_block_chain(105, rng);
         let storage = BlockMemory::<CurrentNetwork>::open(StorageMode::new_test(None)).unwrap();
-        let insert = |block: &Block<CurrentNetwork>, retention| {
-            let state_root = <CurrentNetwork as Network>::StateRoot::from(Field::from_u32(block.height()));
-            storage.insert(state_root, block, retention).unwrap();
-        };
         for block in &blocks[..102] {
-            insert(block, Some(TEST_RETENTION));
+            insert_block(&storage, block, Some(TEST_RETENTION));
         }
         assert_eq!(storage.confirmed_authority_pruned_below().unwrap(), Some(2));
 
         // Two inserts that do not prune leave the watermark two heights behind.
         for block in &blocks[102..104] {
-            insert(block, None);
+            insert_block(&storage, block, None);
         }
-        insert(&blocks[104], Some(TEST_RETENTION));
+        insert_block(&storage, &blocks[104], Some(TEST_RETENTION));
         assert_eq!(storage.confirmed_authority_pruned_below().unwrap(), Some(5));
         for block in &blocks[2..5] {
             assert!(!storage.authority_map().contains_key_confirmed(&block.hash()).unwrap());
@@ -2789,17 +2794,13 @@ mod tests {
         let blocks = sample_block_chain(103, rng);
         let temp_dir = Arc::new(tempfile::tempdir().unwrap());
         let storage = BlockDB::<CurrentNetwork>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
-        let insert = |block: &Block<CurrentNetwork>| {
-            let state_root = <CurrentNetwork as Network>::StateRoot::from(Field::from_u32(block.height()));
-            storage.insert(state_root, block, Some(TEST_RETENTION)).unwrap();
-        };
         for block in &blocks[..101] {
-            insert(block);
+            insert_block(&storage, block, Some(TEST_RETENTION));
         }
 
         storage.pause_atomic_writes().unwrap();
-        insert(&blocks[101]);
-        insert(&blocks[102]);
+        insert_block(&storage, &blocks[101], Some(TEST_RETENTION));
+        insert_block(&storage, &blocks[102], Some(TEST_RETENTION));
         assert_eq!(speculative_authority_pruned_below(&storage).unwrap(), None);
         storage.unpause_atomic_writes::<false>().unwrap();
 
@@ -2864,7 +2865,6 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.to_string().contains("Failed to prune expired authority data"), "{error}");
-        // A malformed watermark is corruption, so the cause tells the operator to resync.
         assert!(format!("{error:#}").contains("Resync the store"), "{error:#}");
     }
 

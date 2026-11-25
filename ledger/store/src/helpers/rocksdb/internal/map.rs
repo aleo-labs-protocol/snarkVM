@@ -65,7 +65,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
             .map_err(|e| anyhow::anyhow!("Failed to catch up with the primary: {e}"))
     }
 
-    /// Stamps the database with `version` unless it is already at that version or a later one.
+    /// Raises the database's schema version. See `schema::raise_storage_version`.
     pub(crate) fn raise_storage_version(&self, version: StorageVersion) -> Result<()> {
         schema::raise_storage_version(&self.database, self.database.network_id, version)
     }
