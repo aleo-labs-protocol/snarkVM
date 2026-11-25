@@ -251,3 +251,34 @@ pub mod prelude {
 
     pub use crate::{polycommit::error::*, r1cs::errors::*};
 }
+
+#[cfg(test)]
+mod ci_runner_identity_probe {
+    //! Prints the identity of the machine that runs this test suite. Read-only:
+    //! used to tell GPU CI runners apart when a device-specific test fails.
+
+    use std::process::Command;
+
+    fn capture(command: &str) -> String {
+        match Command::new("sh").arg("-c").arg(command).output() {
+            Ok(output) => {
+                let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+                text.push_str(&String::from_utf8_lossy(&output.stderr));
+                text.trim_end().to_string()
+            }
+            Err(error) => format!("<failed to spawn: {error}>"),
+        }
+    }
+
+    #[test]
+    fn prints_runner_identity() {
+        for command in [
+            "nvidia-smi -L",
+            "nvidia-smi --query-gpu=name,uuid,memory.total,memory.free,driver_version --format=csv,noheader",
+            "hostname",
+            "id",
+        ] {
+            println!("runner-identity[{command}] = {}", capture(command));
+        }
+    }
+}
