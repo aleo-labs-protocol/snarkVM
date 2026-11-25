@@ -557,41 +557,41 @@ impl<N: Network> Stack<N> {
 
         Self::log_circuit::<A>("Complete", &call_stack_type);
 
-        // Eject the response.
-        let console_response =
-            if matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::CheckDeployment(..)) {
-                // When synthesizing proving/verifying keys or checking the latter, the values in
-                // the Response object are not relevant, and neither is its console counterpart.
-                None
-            } else {
-                let console_response = response.eject_value();
+        // When synthesizing proving/verifying keys or checking the latter, the values in the Response
+        // object are not relevant, and neither is its console counterpart.
+        let eject_response =
+            !matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::CheckDeployment(..));
 
-                if console_response.outputs().len() != output_types.len() {
-                    return Err(anyhow!("Number of outputs does not match number of output types").into());
-                }
-
-                // Ensure the outputs matches the expected value types.
-                console_response.outputs().iter().zip_eq(&output_types).try_for_each(|(output, output_type)| {
-                    // Ensure the output matches its expected type.
-                    self.matches_value_type(output, output_type)
-                })?;
-
-                Some(console_response)
-            };
-
-        // If the circuit is in `Execute` or `PackageRun` mode, then ensure the circuit is satisfied.
-        if matches!(registers.call_stack_ref(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
-            // If the circuit is empty or not satisfied, then throw an error.
-            if A::num_constraints() == 0 || !A::is_satisfied() {
-                return Err(anyhow!(
-                    "'{}/{}' is not satisfied on the given inputs ({} constraints).",
-                    self.program.id(),
-                    function.name(),
-                    A::num_constraints()
-                )
-                .into());
-            }
+        // Ensure the circuit is satisfied before ejecting the response. An unsatisfied circuit can hold
+        // values that `eject_value` halts on, e.g. a scalar that is not less than the scalar modulus.
+        if eject_response && (A::num_constraints() == 0 || !A::is_satisfied()) {
+            return Err(anyhow!(
+                "'{}/{}' is not satisfied on the given inputs ({} constraints).",
+                self.program.id(),
+                function.name(),
+                A::num_constraints()
+            )
+            .into());
         }
+
+        // Eject the response.
+        let console_response = if eject_response {
+            let console_response = response.eject_value();
+
+            if console_response.outputs().len() != output_types.len() {
+                return Err(anyhow!("Number of outputs does not match number of output types").into());
+            }
+
+            // Ensure the outputs matches the expected value types.
+            console_response.outputs().iter().zip_eq(&output_types).try_for_each(|(output, output_type)| {
+                // Ensure the output matches its expected type.
+                self.matches_value_type(output, output_type)
+            })?;
+
+            Some(console_response)
+        } else {
+            None
+        };
 
         // Eject the circuit assignment and reset the circuit.
         let assignment = A::eject_assignment_and_reset();
