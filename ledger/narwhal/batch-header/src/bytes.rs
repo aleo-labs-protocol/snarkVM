@@ -18,7 +18,20 @@ use super::*;
 impl<N: Network> BatchHeader<N> {
     /// Reads the batch header either with or without checks on the data, decoding the
     /// signature's compute key only if `cache` holds no earlier decode of the same bytes.
-    pub fn read_le_with_cache<R: Read>(
+    pub fn read_le_with_cache<R: Read>(reader: R, unchecked: bool, cache: &mut ComputeKeyCache<N>) -> IoResult<Self> {
+        let batch = Self::read_le_with_cache_uncounted(reader, unchecked, cache)?;
+        // Count the verified signature in the cache.
+        if !unchecked {
+            cache.count_verification(&batch.signature.compute_key());
+        }
+        Ok(batch)
+    }
+
+    /// Reads the batch header as `read_le_with_cache` does, but leaves its signature uncounted in `cache`.
+    ///
+    /// A reader of data that encloses the header calls it, and counts the signature once that data passes its
+    /// remaining checks.
+    pub fn read_le_with_cache_uncounted<R: Read>(
         mut reader: R,
         unchecked: bool,
         cache: &mut ComputeKeyCache<N>,
@@ -115,10 +128,6 @@ impl<N: Network> BatchHeader<N> {
         // Ensure the batch ID matches.
         if batch.batch_id != batch_id {
             return Err(error("Invalid batch ID"));
-        }
-        // Count the verified signature in the cache.
-        if !unchecked {
-            cache.count_verification(&batch.signature.compute_key());
         }
         Ok(batch)
     }

@@ -37,7 +37,7 @@ impl<N: Network> BatchCertificate<N> {
 
         // Read the batch header and signatures.
         let batch_header = match cache.as_deref_mut() {
-            Some(cache) => BatchHeader::read_le_with_cache(&mut reader, unchecked, cache)?,
+            Some(cache) => BatchHeader::read_le_with_cache_uncounted(&mut reader, unchecked, cache)?,
             None => BatchHeader::read_le_with_unchecked(&mut reader, unchecked)?,
         };
         let signatures = Self::read_signatures(&mut reader, unchecked, cache.as_deref_mut())?;
@@ -49,6 +49,7 @@ impl<N: Network> BatchCertificate<N> {
         let certificate = Self::from_internal(batch_header, signatures, cache.as_deref()).map_err(error)?;
         // Count the verified signatures in the cache.
         if let Some(cache) = cache {
+            cache.count_verification(&certificate.batch_header().signature().compute_key());
             for signature in certificate.signatures() {
                 cache.count_verification(&signature.compute_key());
             }
@@ -230,6 +231,8 @@ mod tests {
         for signature in certificate.signatures() {
             assert!(!cache.has_pk_sig_table(&signature.compute_key()));
         }
+        // The header passes its own checks on every read.
+        assert!(!cache.has_pk_sig_table(&certificate.batch_header().signature().compute_key()));
     }
 
     #[test]
