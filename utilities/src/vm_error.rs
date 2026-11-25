@@ -18,6 +18,7 @@ pub use std::error::Error;
 use std::{
     any::Any,
     fmt,
+    io::{self, Write},
     panic,
     sync::{
         Once,
@@ -123,7 +124,7 @@ fn install_vm_halt_hook() {
                 if tracing::event_enabled!(tracing::Level::ERROR) {
                     tracing::error!("VM halted at {location}: {halt}");
                 } else {
-                    eprintln!("VM halted at {location}: {halt}");
+                    let _ = writeln!(io::stderr(), "VM halted at {location}: {halt}");
                 }
                 previous_hook(info);
             }
@@ -183,8 +184,9 @@ mod tests {
 
     use std::{
         env,
+        io,
         panic,
-        process::{Command, Output},
+        process::{Command, Output, Stdio},
         sync::{
             Arc,
             Barrier,
@@ -204,16 +206,22 @@ mod tests {
 
     /// Runs the test with the given path in a fresh process, because panic hooks and `Once` state are process-global.
     fn run_in_child_process(test_path: &str) -> Output {
+        run_in_child_process_with_stderr(test_path, Stdio::piped())
+    }
+
+    fn run_in_child_process_with_stderr(test_path: &str, stderr: Stdio) -> Output {
         let output = Command::new(env::current_exe().expect("Failed to locate the test executable"))
             .args([test_path, "--exact", "--nocapture"])
             .env(CHILD_PROCESS_ENV, "1")
+            .stderr(stderr)
             .output()
             .expect("Failed to launch the child test process");
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
             output.status.success() && stdout.contains("1 passed"),
-            "Child test failed.\nstdout:\n{stdout}\nstderr:\n{}",
+            "Child test failed ({}).\nstdout:\n{stdout}\nstderr:\n{}",
+            output.status,
             String::from_utf8_lossy(&output.stderr)
         );
         output
@@ -363,6 +371,24 @@ mod tests {
             .expect_err("The halt should unwind");
         assert_eq!(halt_message(&*payload), "a halt after the VM runtime");
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 2, "The halt should reach the host hook");
+    }
+
+    #[test]
+    fn test_uncaught_halt_with_broken_stderr_reaches_host_hook() {
+        if !is_child_process() {
+            let (reader, writer) = io::pipe().expect("Failed to open a pipe");
+            drop(reader);
+            run_in_child_process_with_stderr(
+                "vm_error::tests::test_uncaught_halt_with_broken_stderr_reaches_host_hook",
+                Stdio::from(writer),
+            );
+            return;
+        }
+        let host_panic_count = install_counting_host_hook();
+        let payload = panic::catch_unwind(|| vm_halt("a halt with broken stderr".to_string()))
+            .expect_err("The halt should unwind");
+        assert_eq!(halt_message(&*payload), "a halt with broken stderr");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halt should reach the host hook");
     }
 
     /// An uncaught halt is printed to stderr where the halting thread has no subscriber that enables the event, also
