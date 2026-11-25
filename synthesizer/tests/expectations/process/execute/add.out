@@ -5,43 +5,43 @@ outputs:
 - - 0i8
 - - 10i8
 - - -40i8
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i8'' is not satisfied on the given inputs (13664 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i8'' is not satisfied on the given inputs (13664 constraints): the console evaluation halted'
 - - 30000i16
 - - -30000i16
 - - -10000i16
 - - 10000i16
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i16'' is not satisfied on the given inputs (13688 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i16'' is not satisfied on the given inputs (13688 constraints): the console evaluation halted'
 - - 30000000i32
 - - -30000000i32
 - - -10000000i32
 - - 10000000i32
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i32'' is not satisfied on the given inputs (13736 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i32'' is not satisfied on the given inputs (13736 constraints): the console evaluation halted'
 - - 30000000000000i64
 - - -30000000000000i64
 - - -10000000000000i64
 - - 10000000000000i64
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i64'' is not satisfied on the given inputs (13832 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i64'' is not satisfied on the given inputs (13832 constraints): the console evaluation halted'
 - - 30000000000000000000000i128
 - - -30000000000000000000000i128
 - - -10000000000000000000000i128
 - - 10000000000000000000000i128
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i128'' is not satisfied on the given inputs (14024 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_i128'' is not satisfied on the given inputs (14024 constraints): the console evaluation halted'
 - - 15u8
 - - 220u8
 - - 0u8
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u8'' is not satisfied on the given inputs (13659 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u8'' is not satisfied on the given inputs (13659 constraints): the console evaluation halted'
 - - 30000u16
 - - 50000u16
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u16'' is not satisfied on the given inputs (13683 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u16'' is not satisfied on the given inputs (13683 constraints): the console evaluation halted'
 - - 30000000u32
 - - 4000000000u32
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u32'' is not satisfied on the given inputs (13731 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u32'' is not satisfied on the given inputs (13731 constraints): the console evaluation halted'
 - - 30000000000000u64
 - - 17000000000000000000u64
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u64'' is not satisfied on the given inputs (13827 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u64'' is not satisfied on the given inputs (13827 constraints): the console evaluation halted'
 - - 30000000000000000000000u128
 - - 300000000000000000000000000000000000000u128
-- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u128'' is not satisfied on the given inputs (14019 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''add.aleo/add_u128'' is not satisfied on the given inputs (14019 constraints): the console evaluation halted'
 - - 96field
 - - 8444461749428370424248824938781546531375899335154063827935233455917409239040field
 - - 0field
