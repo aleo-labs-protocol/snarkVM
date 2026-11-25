@@ -33,7 +33,7 @@ use anyhow::{Result, anyhow, bail};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum StorageVersion {
-    /// No schema record, or a database stamped by the build that introduced the record.
+    /// No schema record, or a database that has not needed a later version.
     V0 = 0,
     /// The block metadata map may hold the authority-pruning marker. A database is stamped `V1` when
     /// it is first opened with authority pruning, before anything is pruned, so a `V0` database is
@@ -49,7 +49,7 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::V1;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum MetadataKey {
-    /// The [`StorageVersion`] the database was last written under, as a little-endian `u32`.
+    /// The database's [`StorageVersion`], as a little-endian `u32`.
     StorageVersion = 0,
 }
 
@@ -132,7 +132,7 @@ pub(crate) fn migrate_storage(database: &rocksdb::DB, network_id: u16) -> Result
 }
 
 /// Stamps `database` with `version` unless it is already at that version or a later one. The stamp
-/// is synced to disk, so it outlasts a crash that any later write survives.
+/// is synced to disk before this returns, so no later write can survive a crash that loses it.
 pub(crate) fn raise_storage_version(database: &rocksdb::DB, network_id: u16, version: StorageVersion) -> Result<()> {
     if get_storage_version(database, network_id)? < version {
         set_storage_version(database, network_id, version)?;
