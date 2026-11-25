@@ -18,7 +18,7 @@ outputs:
 - - 1000i16
 - - 10000i16
 - - 32767i16
-- 'Stack authorization failed: Stack execution failed: ''abs.aleo/abs_i16'' is not satisfied on the given inputs (12399 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''abs.aleo/abs_i16'' is not satisfied on the given inputs (12399 constraints): Integer absolute value failed on: -32768'
 - - 0i32
 - - 1i32
 - - 1000i32
@@ -38,7 +38,7 @@ outputs:
 - - 1000i64
 - - 10000000000i64
 - - 9223372036854775807i64
-- 'Stack authorization failed: Stack execution failed: ''abs.aleo/abs_i64'' is not satisfied on the given inputs (12543 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''abs.aleo/abs_i64'' is not satisfied on the given inputs (12543 constraints): Integer absolute value failed on: -9223372036854775808'
 - - 0i128
 - - 1i128
 - - 1000i128
@@ -48,4 +48,4 @@ outputs:
 - - 1000i128
 - - 10000000000000000000000000000i128
 - - 170141183460469231731687303715884105727i128
-- 'Stack authorization failed: Stack execution failed: ''abs.aleo/abs_i128'' is not satisfied on the given inputs (12735 constraints).'
+- 'Stack authorization failed: Stack execution failed: ''abs.aleo/abs_i128'' is not satisfied on the given inputs (12735 constraints): Integer absolute value failed on: -170141183460469231731687303715884105728'

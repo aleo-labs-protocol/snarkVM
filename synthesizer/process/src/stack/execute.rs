@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_utilities::{panic_message, try_vm_runtime};
 
 impl<N: Network> Stack<N> {
     /// Executes a program closure on the given inputs.
@@ -565,12 +566,22 @@ impl<N: Network> Stack<N> {
         // Ensure the circuit is satisfied before ejecting the response. An unsatisfied circuit can hold
         // values that `eject_value` halts on, e.g. a scalar that is not less than the scalar modulus.
         if eject_response && (A::num_constraints() == 0 || !A::is_satisfied()) {
-            return Err(anyhow!(
-                "'{}/{}' is not satisfied on the given inputs ({} constraints).",
+            let unsatisfied = format!(
+                "'{}/{}' is not satisfied on the given inputs ({} constraints)",
                 self.program.id(),
                 function.name(),
                 A::num_constraints()
-            )
+            );
+            return Err(match self.explain_unsatisfied::<A, R>(
+                registers.call_stack_ref(),
+                &console_request,
+                console_caller,
+                console_root_tvk,
+                rng,
+            ) {
+                Some(reason) => anyhow!("{unsatisfied}: {reason}"),
+                None => anyhow!("{unsatisfied}."),
+            }
             .into());
         }
 
@@ -700,6 +711,34 @@ impl<N: Network> Stack<N> {
 
         // Return the response.
         Ok(console_response)
+    }
+
+    /// Evaluates `request` in the console, after its circuit in `Authorize` or `PackageRun` mode is unsatisfied, and
+    /// returns the error or halt message of the evaluation. Returns `None` in other modes, if the evaluation succeeds,
+    /// or if a panic carries no message.
+    fn explain_unsatisfied<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
+        &self,
+        call_stack: &CallStack<N>,
+        request: &Request<N>,
+        caller: Option<ProgramID<N>>,
+        root_tvk: Field<N>,
+        rng: &mut R,
+    ) -> Option<String> {
+        let private_key = match call_stack {
+            CallStack::Authorize(_, private_key, _) => *private_key,
+            CallStack::PackageRun(_, private_key, _) => Some(*private_key),
+            // `Execute` mode evaluates each instruction in the console before it synthesizes it, so its evaluation
+            // has already passed.
+            _ => return None,
+        };
+        // A fresh authorization keeps the evaluation's requests and transitions out of the caller's authorization.
+        let call_stack = CallStack::Authorize(vec![request.clone()], private_key, Authorization::new(request.clone()));
+        // The console evaluation halts on some inputs, e.g. on an integer overflow.
+        match try_vm_runtime(|| self.evaluate_function::<A, R>(call_stack, caller, Some(root_tvk), rng)) {
+            Ok(Ok(_)) => None,
+            Ok(Err(error)) => Some(format!("{error:#}")),
+            Err(payload) => panic_message(&*payload).map(str::to_string),
+        }
     }
 }
 
