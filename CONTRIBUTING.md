@@ -28,7 +28,7 @@ The right measurement depends on the change. Measure at the highest level that t
 
 ### How to measure
 
-- **Use one quiet machine.** We use an AWS `c8i.4xlarge` (Granite Rapids, 16 vCPUs). We are also happy to look at measurements from a `c7i.4xlarge` (Sapphire Rapids, 16 vCPUs). Do not compare results from different machines or different CPU vendors. Nothing else may run on the machine during a measurement, including your own builds.
+- **Use one quiet machine.** Our reference machine is an AWS `c8i.4xlarge` (Granite Rapids, 16 vCPUs). We are also happy to look at measurements from a `c7i.4xlarge` (Sapphire Rapids, 16 vCPUs). Do not compare results from different machines or different CPU vendors. Nothing else may run on the machine during a measurement, including your own builds.
 - **Build first, then wait.** Wait until the load average falls and no `cargo` or `rustc` process runs. We have seen results taken straight after a build run 25–40% slow for several runs.
 - **Record the load average during the run.** If something disturbs a run, discard the run and take it again. Do not keep a disturbed run because the disturbance looks small.
 - **Prefer one binary with a switch.** For example, read an environment variable that selects the old or the new code path. Then both arms have the same code layout. The switch can live on a measurement branch. The pull request does not need to keep it.
