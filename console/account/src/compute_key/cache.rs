@@ -16,7 +16,10 @@
 use super::*;
 use crate::Signature;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 
 /// The serialized size of a compute key: the x-coordinates of `pk_sig` and `pr_sig`.
 const COMPUTE_KEY_SIZE: usize = 64;
@@ -43,8 +46,8 @@ pub struct ComputeKeyCache<N: Network> {
 struct CacheEntry<N: Network> {
     /// The compute key. It holds `sk_prf` once a checked read has needed it.
     compute_key: ComputeKey<N>,
-    /// The address of `compute_key`, normalized, once a verification has been counted.
-    address: Option<Address<N>>,
+    /// The address of `compute_key`, normalized, once a verification has derived it.
+    address: OnceLock<Address<N>>,
     /// The number of verifications that have asked for `pk_sig_table`.
     verifications: u32,
     /// The window table of `pk_sig`, built once `PK_SIG_TABLE_MIN_VERIFICATIONS` verifications have asked for it.
@@ -107,12 +110,17 @@ impl<N: Network> ComputeKeyCache<N> {
             tracing::warn!("Clearing the compute-key cache, which is full at {} keys", self.capacity);
             self.keys.clear();
         }
-        self.keys.insert(bytes, CacheEntry { compute_key, address: None, verifications: 0, pk_sig_table: None });
+        self.keys.insert(bytes, CacheEntry {
+            compute_key,
+            address: OnceLock::new(),
+            verifications: 0,
+            pk_sig_table: None,
+        });
         Ok(compute_key)
     }
 
-    /// Counts a successful verification of a signature by `compute_key`. It derives the key's address on the first
-    /// count, and builds the key's `pk_sig` table once enough verifications have been counted.
+    /// Counts a successful verification of a signature by `compute_key`, and builds the key's `pk_sig` table once
+    /// enough verifications have been counted.
     ///
     /// Call it only once the data the signature covers has passed every other check, so that rejected data
     /// builds nothing. A compute key that no read through this cache returned is ignored.
@@ -123,9 +131,6 @@ impl<N: Network> ComputeKeyCache<N> {
         else {
             return;
         };
-        if entry.address.is_none() {
-            entry.address = Some(entry.compute_key.public_address());
-        }
         if entry.pk_sig_table.is_none() {
             entry.verifications += 1;
             if entry.verifications >= PK_SIG_TABLE_MIN_VERIFICATIONS {
@@ -161,12 +166,15 @@ impl<N: Network> ComputeKeyCache<N> {
     /// Returns the signer's address if `signature` is valid for `message`, and `None` otherwise,
     /// as `Signature::verify_and_recover_signer` does.
     ///
-    /// The check uses what `count_verification` has derived for the signer's compute key. Like
-    /// `Signature::verify_and_recover_signer`, it takes only published signatures.
+    /// The check keeps the signer's address in the cache, and uses the `pk_sig` table that `count_verification`
+    /// has built. Like `Signature::verify_and_recover_signer`, it takes only published signatures.
     pub fn verify_and_recover_signer(&self, signature: &Signature<N>, message: &[Field<N>]) -> Option<Address<N>> {
         let entry = self.entry(&signature.compute_key());
         let pk_sig_table = entry.and_then(|entry| entry.pk_sig_table.as_deref());
-        let address = entry.and_then(|entry| entry.address).unwrap_or_else(|| signature.compute_key().public_address());
+        let address = match entry {
+            Some(entry) => *entry.address.get_or_init(|| signature.compute_key().public_address()),
+            None => signature.compute_key().public_address(),
+        };
         signature.verify_published_challenge(&address, message, pk_sig_table).then_some(address)
     }
 }
@@ -320,10 +328,12 @@ mod tests {
             let signature = private_key.sign(&message, rng).unwrap();
             let expected = signature.verify_and_recover_signer(&message);
             assert!(expected.is_some());
+            // The first verification derives the address, and the entry keeps it.
+            assert_eq!(cache.entry(&compute_key).unwrap().address.get().is_some(), i > 0);
             assert_eq!(cache.verify_and_recover_signer(&signature, &message), expected);
+            assert_eq!(cache.entry(&compute_key).unwrap().address.get(), Some(&compute_key.to_address()));
             assert_eq!(cache.verify_and_recover_signer(&signature, &[Field::rand(rng)]), None);
             assert_eq!(cache.has_pk_sig_table(&compute_key), i >= PK_SIG_TABLE_MIN_VERIFICATIONS);
-            assert_eq!(cache.entry(&compute_key).unwrap().address, (i > 0).then(|| compute_key.to_address()));
             cache.count_verification(&compute_key);
         }
     }
