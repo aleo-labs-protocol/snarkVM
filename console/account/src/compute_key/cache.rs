@@ -124,7 +124,7 @@ impl<N: Network> ComputeKeyCache<N> {
             return;
         };
         if entry.address.is_none() {
-            entry.address = Some(Address::new(entry.compute_key.public_address().normalized()));
+            entry.address = Some(entry.compute_key.public_address());
         }
         if entry.pk_sig_table.is_none() {
             entry.verifications += 1;
@@ -161,14 +161,13 @@ impl<N: Network> ComputeKeyCache<N> {
     /// Returns the signer's address if `signature` is valid for `message`, and `None` otherwise,
     /// as `Signature::verify_and_recover_signer` does.
     ///
-    /// The check uses what `count_verification` has derived for the signer's compute key.
+    /// The check uses what `count_verification` has derived for the signer's compute key. Like
+    /// `Signature::verify_and_recover_signer`, it takes only published signatures.
     pub fn verify_and_recover_signer(&self, signature: &Signature<N>, message: &[Field<N>]) -> Option<Address<N>> {
         let entry = self.entry(&signature.compute_key());
         let pk_sig_table = entry.and_then(|entry| entry.pk_sig_table.as_deref());
-        // A normalized address converts to affine, for hashing and comparison, without an inversion.
-        let address =
-            entry.and_then(|entry| entry.address).unwrap_or_else(|| Address::new(signature.to_address().normalized()));
-        signature.verify_challenge(&address, message, pk_sig_table).then_some(address)
+        let address = entry.and_then(|entry| entry.address).unwrap_or_else(|| signature.compute_key().public_address());
+        signature.verify_published_challenge(&address, message, pk_sig_table).then_some(address)
     }
 }
 
@@ -364,7 +363,10 @@ mod tests {
             }
         };
         let forged = Signature::from((challenge, nonce + challenge * private_key.sk_sig(), flipped_key));
-        assert!(forged.verify_challenge(&address, &message, None), "the forged signature checks out against `address`");
+        assert!(
+            forged.verify_published_challenge(&address, &message, None),
+            "the forged signature checks out against `address`"
+        );
 
         // The cache must not lend the honest key's address to the flipped key.
         assert_eq!(forged.verify_and_recover_signer(&message), None);
