@@ -260,8 +260,8 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
 }
 
 /// Wraps a failure to open the consensus store. The `snarkos clean` advice is left out for an
-/// [`IncompatibleStore`] (a store with a newer schema) and for a failed startup pruning, which the
-/// next open resumes: nothing is wrong with the store.
+/// [`IncompatibleStore`] (a store with a newer schema), which has nothing wrong with it, and for a
+/// failed startup pruning, whose cause says to resync the store if it is inconsistent.
 fn store_open_error(error: anyhow::Error) -> anyhow::Error {
     if error.chain().any(|cause| cause.is::<IncompatibleStore>() || cause.to_string() == AUTHORITY_PRUNING_FAILED) {
         anyhow::anyhow!("Failed to load ledger\n\n{error:#}\n")

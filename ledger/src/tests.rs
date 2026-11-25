@@ -3915,12 +3915,12 @@ fn test_store_open_error_advice() {
     assert!(!error.contains("snarkos clean"), "{error}");
     assert!(error.contains("Failed to open the block store"), "{error}");
 
-    let failed_pruning = anyhow::anyhow!("bad watermark")
+    let failed_pruning = anyhow::anyhow!("IO error: No space left on device")
         .context(snarkvm_ledger_store::AUTHORITY_PRUNING_FAILED)
         .context("Failed to open the block store");
     let error = crate::store_open_error(failed_pruning).to_string();
     assert!(!error.contains("snarkos clean"), "{error}");
-    assert!(error.contains("bad watermark"), "{error}");
+    assert!(error.contains("No space left on device"), "{error}");
 
     let error = crate::store_open_error(anyhow::anyhow!("Corruption: bad block")).to_string();
     assert!(error.contains("snarkos clean"), "{error}");

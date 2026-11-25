@@ -255,6 +255,12 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.id_map().catch_up_with_primary()
     }
 
+    /// Stamps the database with the version that authority pruning needs.
+    fn allow_authority_pruning(&self) -> Result<()> {
+        // Any map can be used to retrieve the common RocksDB instance.
+        self.id_map().raise_storage_version(internal::StorageVersion::V1)
+    }
+
     /// Creates the block tree based on the contents of the storage.
     fn create_block_tree(&self) -> Result<BlockTree<N>> {
         fn construct_from_scratch<N: Network>(storage: &BlockDB<N>) -> Result<BlockTree<N>> {
