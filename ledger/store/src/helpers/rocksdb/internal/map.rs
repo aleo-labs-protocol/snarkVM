@@ -65,6 +65,11 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
             .map_err(|e| anyhow::anyhow!("Failed to catch up with the primary: {e}"))
     }
 
+    /// Raises the database's schema version. See `schema::raise_storage_version`.
+    pub(crate) fn raise_storage_version(&self, version: StorageVersion) -> Result<()> {
+        schema::raise_storage_version(&self.database, self.database.network_id, version)
+    }
+
     /// Reads RocksDB internal properties and publishes them to the metrics registry.
     /// Any map can be used since they all share the same underlying `RocksDB` instance.
     #[cfg(feature = "metrics")]
