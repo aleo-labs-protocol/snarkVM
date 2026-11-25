@@ -605,4 +605,5 @@ lto = "thin"
 debug = "line-tables-only"
 
 [profile.test]
-opt-level = 2
+# At 0 the tests run 4-8x slower; the ADX and IFMA code paths do not make up for it.
+opt-level = 1
