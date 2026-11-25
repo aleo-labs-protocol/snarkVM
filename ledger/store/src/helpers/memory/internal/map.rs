@@ -390,6 +390,26 @@ impl<
     }
 
     ///
+    /// Returns the (key, value) pair for the least confirmed key ≥ the given bound,
+    /// or `None` if no such entry exists in this map.
+    ///
+    /// Uses `BTreeMap::range` for O(log n) performance.
+    ///
+    fn get_ceiling_confirmed<Q>(&'a self, bound: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        Q: Serialize + ?Sized,
+    {
+        let bound_bytes = bincode::serialize(bound)?;
+        // Note: The 'unwrap' is safe here, because the keys are defined by us.
+        Ok(self
+            .map
+            .read()
+            .range(bound_bytes..)
+            .next()
+            .map(|(k, v)| (Cow::Owned(unchecked_deserialize(k).unwrap()), Cow::Owned(v.clone()))))
+    }
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {

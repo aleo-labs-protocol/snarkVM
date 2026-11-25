@@ -43,6 +43,9 @@ use std::{
 /// A block height encoded in big-endian byte order for lexicographic history keys.
 pub type BlockHeight = [u8; 4];
 
+/// One page of a mapping's entries, and the key to resume after if more keys follow.
+pub type MappingPage<N> = (Vec<(Plaintext<N>, Value<N>)>, Option<Plaintext<N>>);
+
 // Key 0 in the same storage metadata prefix holds the schema version.
 pub(crate) const HISTORY_METADATA_KEY: u8 = 1;
 
@@ -1155,6 +1158,77 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         Ok(value.into_owned())
     }
 
+    /// Returns one page of a mapping's entries at a covered height, and the key to resume after.
+    ///
+    /// The page visits at most `limit` keys that follow `after` in stored key order, which is the
+    /// order of the serialized keys. A visited key with no value at `height` adds no entry, so a
+    /// page can hold fewer than `limit` entries. The resume key is `None` when no key follows.
+    pub fn get_mapping_at_height(
+        &self,
+        program: ProgramID<N>,
+        mapping: Identifier<N>,
+        height: u32,
+        after: Option<&Plaintext<N>>,
+        limit: usize,
+    ) -> Result<MappingPage<N>> {
+        ensure!(limit > 0, "A mapping history page must visit at least one key");
+        let (start, _) = self
+            .get_program_history_range(&program, height)?
+            .ok_or_else(|| anyhow!("Program history for '{program}' is unavailable at block {height}"))?;
+        let start = start.to_be_bytes();
+        let Some((created, true)) = self.mapping_history_at_height(program, start, mapping, height)? else {
+            return Ok((Vec::new(), None));
+        };
+
+        let key_history = self.storage.key_history_map();
+        let mut entries = Vec::new();
+        let mut last = after.cloned();
+        let mut visited = 0usize;
+        loop {
+            // Seek past every version of the last key, or to the first key of the mapping.
+            let next = match &last {
+                Some(key) => {
+                    key_history.get_ceiling_confirmed(&(program, start, mapping, key, u32::MAX.to_be_bytes()))?
+                }
+                None => key_history.get_ceiling_confirmed(&(program, start, mapping))?,
+            };
+            let Some((stored_key, _)) = next else {
+                return Ok((entries, None));
+            };
+            let (found_program, found_start, found_mapping, key, first_version) = stored_key.into_owned();
+            if found_program != program || found_start != start || found_mapping != mapping {
+                return Ok((entries, None));
+            }
+            // A version at `u32::MAX` would make the seek return the same key again.
+            ensure!(
+                last.as_ref() != Some(&key),
+                "Mapping history for '{program}/{mapping}' has a version at the maximum height"
+            );
+            if visited == limit {
+                return Ok((entries, last));
+            }
+            visited += 1;
+
+            // The first version of a key is its oldest, so a later first version means no value yet.
+            let probe = (program, start, mapping, key, height.to_be_bytes());
+            if u32::from_be_bytes(first_version) <= height
+                && let Some((stored_key, value)) = key_history.get_floor_confirmed(&probe)?
+            {
+                let (found_program, found_start, found_mapping, found_key, version) = stored_key.into_owned();
+                if found_program == program
+                    && found_start == start
+                    && found_mapping == mapping
+                    && found_key == probe.3
+                    && u32::from_be_bytes(version) >= created
+                    && let Some(value) = value.into_owned()
+                {
+                    entries.push((found_key, value));
+                }
+            }
+            last = Some(probe.3);
+        }
+    }
+
     /// Starts an atomic batch write operation.
     pub fn start_atomic(&self) {
         self.storage.start_atomic();
@@ -2194,8 +2268,138 @@ mod tests {
                     let found = finalize_store.get_value_at_height(program_id, *mapping, key, height).unwrap();
                     assert_eq!(found, expected, "'{program_id}/{mapping}[{key}]' at height {height}");
                 }
+                let mut expected = entries.clone().unwrap_or_default();
+                let mut found = collect_mapping_at_height(finalize_store, program_id, *mapping, height, 3);
+                expected.sort_by_key(|(key, _)| key.to_string());
+                found.sort_by_key(|(key, _)| key.to_string());
+                assert_eq!(found, expected, "'{program_id}/{mapping}' at height {height}");
             }
         }
+    }
+
+    /// Reads a whole mapping at a height in pages of at most `limit` keys.
+    fn collect_mapping_at_height<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+        program_id: ProgramID<CurrentNetwork>,
+        mapping: Identifier<CurrentNetwork>,
+        height: u32,
+        limit: usize,
+    ) -> Vec<(Plaintext<CurrentNetwork>, Value<CurrentNetwork>)> {
+        let mut entries = Vec::new();
+        let mut after = None;
+        loop {
+            let (page, next) =
+                finalize_store.get_mapping_at_height(program_id, mapping, height, after.as_ref(), limit).unwrap();
+            assert!(page.len() <= limit);
+            entries.extend(page);
+            match next {
+                Some(key) => after = Some(key),
+                None => return entries,
+            }
+        }
+    }
+
+    fn check_mapping_at_height_pages<P: FinalizeStorage<CurrentNetwork>>(
+        finalize_store: &FinalizeStore<CurrentNetwork, P>,
+    ) -> Result<()> {
+        let program_id = ProgramID::from_str("hello.aleo")?;
+        // The second mapping name extends the first, so that a scan that leaves its mapping fails.
+        let mapping = Identifier::from_str("records")?;
+        let neighbour = Identifier::from_str("records_two")?;
+        let keys = sample_history_keys();
+        let value = |number: u64| Value::from(Literal::U64(U64::new(number)));
+        finalize_store.configure_history(vec![program_id], false)?;
+
+        // Block 0 inserts every key.
+        finalize_store.start_atomic();
+        finalize_store.initialize_mapping(program_id, mapping)?;
+        finalize_store.initialize_mapping(program_id, neighbour)?;
+        for (index, key) in keys.iter().enumerate() {
+            finalize_store.insert_key_value(program_id, mapping, key.clone(), value(index as u64))?;
+        }
+        finalize_store.insert_key_value(program_id, neighbour, keys[0].clone(), value(100))?;
+        finalize_store.record_program_history(0)?;
+        finalize_store.finish_atomic()?;
+
+        // Block 1 removes one key and updates another.
+        finalize_store.start_atomic();
+        finalize_store.remove_key_value(program_id, mapping, &keys[1])?;
+        finalize_store.update_key_value(program_id, mapping, keys[2].clone(), value(20))?;
+        finalize_store.record_program_history(1)?;
+        finalize_store.finish_atomic()?;
+
+        // Block 2 resets the mapping to one key.
+        finalize_store.start_atomic();
+        finalize_store.replace_mapping(program_id, mapping, vec![(keys[4].clone(), value(40))])?;
+        finalize_store.record_program_history(2)?;
+        finalize_store.finish_atomic()?;
+
+        // Block 3 inserts a key that the reset removed.
+        finalize_store.start_atomic();
+        finalize_store.insert_key_value(program_id, mapping, keys[6].clone(), value(60))?;
+        finalize_store.record_program_history(3)?;
+        finalize_store.finish_atomic()?;
+
+        let sorted = |mut entries: Vec<(Plaintext<CurrentNetwork>, Value<CurrentNetwork>)>| {
+            entries.sort_by_key(|(key, _)| key.to_string());
+            entries
+        };
+        let at_genesis: Vec<_> = keys.iter().cloned().zip((0..).map(value)).collect();
+        let mut at_one = at_genesis.clone();
+        at_one[2].1 = value(20);
+        at_one.remove(1);
+
+        // Every page size returns the same entries in the same order.
+        let whole = collect_mapping_at_height(finalize_store, program_id, mapping, 0, usize::MAX);
+        assert_eq!(sorted(whole.clone()), sorted(at_genesis));
+        for limit in [1, 3, keys.len(), keys.len() + 1] {
+            assert_eq!(collect_mapping_at_height(finalize_store, program_id, mapping, 0, limit), whole);
+        }
+
+        // A full page names the key to resume after, and the last page names none.
+        let (page, next) = finalize_store.get_mapping_at_height(program_id, mapping, 0, None, 3)?;
+        assert_eq!(page, whole[..3]);
+        assert_eq!(next.as_ref(), Some(&whole[2].0));
+        let (page, next) =
+            finalize_store.get_mapping_at_height(program_id, mapping, 0, next.as_ref(), keys.len() - 3)?;
+        assert_eq!(page, whole[3..]);
+        assert_eq!(next, None);
+        let last = &whole[whole.len() - 1].0;
+        assert_eq!(finalize_store.get_mapping_at_height(program_id, mapping, 0, Some(last), 3)?, (Vec::new(), None));
+
+        // Each height returns the entries that were confirmed after it.
+        assert_eq!(sorted(collect_mapping_at_height(finalize_store, program_id, mapping, 1, 3)), sorted(at_one));
+        assert_eq!(collect_mapping_at_height(finalize_store, program_id, mapping, 2, 3), vec![(
+            keys[4].clone(),
+            value(40)
+        )]);
+        assert_eq!(
+            sorted(collect_mapping_at_height(finalize_store, program_id, mapping, 3, 1)),
+            sorted(vec![(keys[4].clone(), value(40)), (keys[6].clone(), value(60))])
+        );
+        assert_eq!(collect_mapping_at_height(finalize_store, program_id, neighbour, 3, 3), vec![(
+            keys[0].clone(),
+            value(100)
+        )]);
+
+        // A mapping that does not exist has no entries.
+        let missing = Identifier::from_str("missing")?;
+        assert_eq!(finalize_store.get_mapping_at_height(program_id, missing, 3, None, 3)?, (Vec::new(), None));
+        // A height without history and an empty page are errors.
+        assert!(finalize_store.get_mapping_at_height(program_id, mapping, 4, None, 3).is_err());
+        assert!(finalize_store.get_mapping_at_height(program_id, mapping, 3, None, 0).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_mapping_at_height_pages_memory() -> Result<()> {
+        check_mapping_at_height_pages(&sample_memory_finalize_store())
+    }
+
+    #[cfg(feature = "rocks")]
+    #[test]
+    fn test_mapping_at_height_pages_rocksdb() -> Result<()> {
+        check_mapping_at_height_pages(&sample_rocksdb_finalize_store())
     }
 
     /// Runs random mapping operations over many blocks, then checks every height of history against

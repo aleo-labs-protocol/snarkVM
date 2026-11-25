@@ -555,6 +555,41 @@ impl<
     }
 
     ///
+    /// Returns the (key, value) pair for the least confirmed key ≥ the given bound,
+    /// or `None` if no such entry exists in this map.
+    ///
+    /// Uses RocksDB `seek` for O(log n) performance.
+    ///
+    fn get_ceiling_confirmed<Q>(&'a self, bound: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        Q: Serialize + ?Sized,
+    {
+        let mut raw_bound = self.context.clone();
+        bincode::serialize_into(&mut raw_bound, bound)?;
+
+        let mut iter = self.database.raw_iterator();
+        iter.seek(&raw_bound);
+
+        if !iter.valid() {
+            return Ok(None);
+        }
+
+        let (k_bytes, v_bytes) = match iter.item() {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        // Verify this entry belongs to the same map (compare the map-ID bytes in the context).
+        if k_bytes.len() < PREFIX_LEN || k_bytes[2..][..2] != self.context[2..][..2] {
+            return Ok(None);
+        }
+
+        let k: K = unchecked_deserialize(&k_bytes[PREFIX_LEN..])?;
+        let v: V = unchecked_deserialize(v_bytes)?;
+        Ok(Some((Cow::Owned(k), Cow::Owned(v))))
+    }
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {

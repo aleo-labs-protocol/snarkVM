@@ -185,6 +185,32 @@ pub trait MapRead<
         Q: PartialEq + Eq + Hash + Serialize + ?Sized;
 
     ///
+    /// Returns the (key, value) pair for the least confirmed key whose serialized form is ≥ the
+    /// serialized `bound`, or `None` if no such entry exists.
+    ///
+    /// Together with `get_floor_confirmed`, this walks composite keys in serialized order without
+    /// visiting every entry. The `bound` can be a leading sub-tuple of a tuple key, which sorts
+    /// before every key that it prefixes, since `bincode` serializes tuple fields in order.
+    ///
+    fn get_ceiling_confirmed<Q>(&'a self, bound: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        Q: Serialize + ?Sized,
+    {
+        // Default implementation: scan every confirmed entry and keep the least key at or above the bound.
+        let bound = bincode::serialize(bound)?;
+        let mut least: Option<Vec<u8>> = None;
+        let mut ceiling = None;
+        for (key, value) in self.iter_confirmed() {
+            let bytes = bincode::serialize(key.as_ref())?;
+            if bytes >= bound && least.as_ref().is_none_or(|least| bytes < *least) {
+                least = Some(bytes);
+                ceiling = Some((key, value));
+            }
+        }
+        Ok(ceiling)
+    }
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator;
