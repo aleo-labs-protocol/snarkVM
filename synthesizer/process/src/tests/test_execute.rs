@@ -3769,9 +3769,10 @@ fn test_package_run_rejects_unsatisfied_circuit() {
     }
 }
 
-/// `authorize` names the instruction or halt that fails in the console evaluation when the circuit is unsatisfied.
+/// `authorize` names the instruction that fails in the console evaluation when the circuit is unsatisfied. A halt adds
+/// no operand values.
 #[test]
-fn test_authorize_unsatisfied_circuit_names_the_failure() {
+fn test_authorize_unsatisfied_circuit_names_the_failure() -> Result<()> {
     let rng = &mut TestRng::default();
 
     let child = Program::<CurrentNetwork>::from_str(
@@ -3789,8 +3790,7 @@ function caller_is_signer:
     input r0 as u8.private;
     assert.eq self.caller self.signer;
 ",
-    )
-    .unwrap();
+    )?;
     let parent = Program::<CurrentNetwork>::from_str(
         r"
 import unsatisfied_child.aleo;
@@ -3799,44 +3799,58 @@ function call_caller_is_signer:
     input r0 as u8.private;
     call unsatisfied_child.aleo/caller_is_signer r0;
 ",
-    )
-    .unwrap();
-    let process = Process::<CurrentNetwork>::load().unwrap();
-    process.lock().add_program(&child).unwrap();
-    process.lock().add_program(&parent).unwrap();
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    let signer = Address::try_from(&private_key).unwrap();
-    let parent_address = parent.id().to_address().unwrap();
+    )?;
+    let process = Process::<CurrentNetwork>::load()?;
+    process.lock().add_program(&child)?;
+    process.lock().add_program(&parent)?;
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
+    let signer = Address::try_from(&private_key)?;
+    let parent_address = parent.id().to_address()?;
 
     let cases = [
-        (child.id(), "add_u8", vec!["255u8", "1u8"], vec![
-            "'unsatisfied_child.aleo/add_u8' is not satisfied on the given inputs (".to_string(),
-            " constraints): Integer addition failed on: 255u8 and 1u8".to_string(),
-        ]),
-        (child.id(), "caller_is_not_signer", vec!["0u8"], vec![
-            "'unsatisfied_child.aleo/caller_is_not_signer' is not satisfied on the given inputs (".to_string(),
-            format!(
-                " constraints): Instruction (assert.neq self.caller self.signer;) at index 0 failed: 'assert.neq' \
+        (
+            child.id(),
+            "add_u8",
+            vec!["255u8", "1u8"],
+            (
+                "'unsatisfied_child.aleo/add_u8' is not satisfied on the given inputs (".to_string(),
+                " constraints): the console evaluation halted".to_string(),
+            ),
+        ),
+        (
+            child.id(),
+            "caller_is_not_signer",
+            vec!["0u8"],
+            (
+                "'unsatisfied_child.aleo/caller_is_not_signer' is not satisfied on the given inputs (".to_string(),
+                format!(
+                    " constraints): Instruction (assert.neq self.caller self.signer;) at index 0 failed: 'assert.neq' \
                  failed: '{signer}' is equal to '{signer}' (should not be equal)"
+                ),
             ),
-        ]),
-        (parent.id(), "call_caller_is_signer", vec!["0u8"], vec![
-            "'unsatisfied_child.aleo/caller_is_signer' is not satisfied on the given inputs (".to_string(),
-            format!(
-                " constraints): Instruction (assert.eq self.caller self.signer;) at index 0 failed: 'assert.eq' \
+        ),
+        (
+            parent.id(),
+            "call_caller_is_signer",
+            vec!["0u8"],
+            (
+                "'unsatisfied_child.aleo/caller_is_signer' is not satisfied on the given inputs (".to_string(),
+                format!(
+                    " constraints): Instruction (assert.eq self.caller self.signer;) at index 0 failed: 'assert.eq' \
                  failed: '{parent_address}' is not equal to '{signer}' (should be equal)"
+                ),
             ),
-        ]),
+        ),
     ];
-    for (program_id, function, inputs, expected) in cases {
-        let inputs = inputs.into_iter().map(|input| Value::<CurrentNetwork>::from_str(input).unwrap());
-        let error = process
-            .authorize::<CurrentAleo, _>(&private_key, program_id, function, inputs, rng)
-            .map(|_| ())
-            .expect_err(function)
-            .to_string();
-        for part in expected {
-            assert!(error.contains(&part), "{function}: expected '{part}' in '{error}'");
-        }
+    for (program_id, function, inputs, (contained, suffix)) in cases {
+        let inputs = inputs.into_iter().map(Value::<CurrentNetwork>::from_str).collect::<Result<Vec<_>>>()?;
+        let Err(error) = process.authorize::<CurrentAleo, _>(&private_key, program_id, function, inputs.iter(), rng)
+        else {
+            bail!("{function}: expected an error");
+        };
+        let error = error.to_string();
+        assert!(error.contains(&contained), "{function}: expected '{contained}' in '{error}'");
+        assert!(error.ends_with(&suffix), "{function}: expected '{error}' to end with '{suffix}'");
     }
+    Ok(())
 }

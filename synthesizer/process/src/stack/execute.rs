@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_utilities::{panic_message, try_vm_runtime};
+use snarkvm_utilities::{VmHalt, try_vm_runtime};
 
 impl<N: Network> Stack<N> {
     /// Executes a program closure on the given inputs.
@@ -714,8 +714,8 @@ impl<N: Network> Stack<N> {
     }
 
     /// Evaluates `request` in the console, after its circuit in `Authorize` or `PackageRun` mode is unsatisfied, and
-    /// returns the error or halt message of the evaluation. Returns `None` in other modes, if the evaluation succeeds,
-    /// or if a panic carries no message.
+    /// describes how the evaluation fails. Returns `None` in other modes, where panics abort, if the evaluation
+    /// succeeds, or if it panics without a VM halt.
     fn explain_unsatisfied<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
         call_stack: &CallStack<N>,
@@ -724,6 +724,10 @@ impl<N: Network> Stack<N> {
         root_tvk: Field<N>,
         rng: &mut R,
     ) -> Option<String> {
+        // Where panics abort, e.g. on `wasm32-unknown-unknown`, a halt in the evaluation would end the process.
+        if !cfg!(panic = "unwind") {
+            return None;
+        }
         let private_key = match call_stack {
             CallStack::Authorize(_, private_key, _) => *private_key,
             CallStack::PackageRun(_, private_key, _) => Some(*private_key),
@@ -733,11 +737,13 @@ impl<N: Network> Stack<N> {
         };
         // A fresh authorization keeps the evaluation's requests and transitions out of the caller's authorization.
         let call_stack = CallStack::Authorize(vec![request.clone()], private_key, Authorization::new(request.clone()));
-        // The console evaluation halts on some inputs, e.g. on an integer overflow.
+        // A `call` in the evaluation signs its child request with fresh randomness, so the child's `tvk` differs from
+        // the circuit's, and a failure that depends on a value derived from it may not recur.
         match try_vm_runtime(|| self.evaluate_function::<A, R>(call_stack, caller, Some(root_tvk), rng)) {
             Ok(Ok(_)) => None,
             Ok(Err(error)) => Some(format!("{error:#}")),
-            Err(payload) => panic_message(&*payload).map(str::to_string),
+            // A halt message can hold operand values, which can be private inputs.
+            Err(payload) => payload.is::<VmHalt>().then(|| "the console evaluation halted".to_string()),
         }
     }
 }
