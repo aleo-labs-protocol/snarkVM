@@ -207,7 +207,8 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V21, 20_234_000),
     // Target: October 13, 2026 at ~08:00 UTC (evening of October 12 PT)
     (ConsensusVersion::V22, 20_415_000),
-    (ConsensusVersion::V23, u32::MAX),
+    // Target: December 2, 2026 at 09:00 UTC
+    (ConsensusVersion::V23, 22_079_000),
 ];
 
 /// The consensus version heights when the `dev-network` feature is enabled.
