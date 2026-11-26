@@ -7,9 +7,8 @@ run from [`benchmarks.yml`](.github/workflows/benchmarks.yml).
 the manifests, and nightly on `staging`.
 [`synthesizer-integration.yml`](.github/workflows/synthesizer-integration.yml)
 runs the command of `test-merge (synthesizer-integration)` when a pull request
-into a branch other than a release branch changes `synthesizer/`. `ci-ok` does
-not cover it, so do not make its check required: a pull request that it skips
-could not merge.
+into a branch other than a release branch changes `synthesizer/`. Do not make
+its check required: a pull request that it skips could not merge.
 
 Jobs run in one of two places:
 

@@ -4,8 +4,8 @@
 # `test-merge (synthesizer-integration)`, on the schedule and the release
 # branches.
 #
-# `ci-ok` does not cover this workflow. Do not make this check required: a
-# pull request that this workflow skips never reports it, and so cannot merge.
+# Do not make this check required: a pull request that this workflow skips
+# never reports it, and so cannot merge.
 name: synthesizer-integration
 
 # A separate workflow because path filters are per workflow.
