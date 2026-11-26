@@ -55,8 +55,9 @@ use snarkvm_ledger_store::{
 use snarkvm_synthesizer::vm::VM;
 use snarkvm_synthesizer_process::Process;
 use snarkvm_synthesizer_program::Program;
+use snarkvm_utilities::load_or_build_fixture;
 
-use std::sync::OnceLock;
+use std::{cell::RefCell, collections::HashMap, sync::OnceLock};
 
 mod genesis_fixture;
 pub use genesis_fixture::load_or_build_genesis_fixture;
@@ -182,7 +183,7 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
 /******************************************* Deployment *******************************************/
 
 #[inline]
-pub fn sample_deployment_v1(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v1(edition: u16, _rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -202,13 +203,15 @@ function compute:
             )
             .unwrap();
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-            // Construct the process.
-            let process = Process::load().unwrap();
-            // Compute the deployment.
-            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Return the deployment.
-            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-            Deployment::from_str(&deployment.to_string()).unwrap()
+            sample_fixture("deployment-v1", &[], |rng| {
+                // Construct the process.
+                let process = Process::load().unwrap();
+                // Compute the deployment.
+                let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                // Return the deployment.
+                // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                Deployment::from_str(&deployment.to_string()).unwrap()
+            })
         })
         .clone();
     // Create a new deployment with the desired edition.
@@ -243,13 +246,15 @@ function compute:
             )
             .unwrap();
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-            // Construct the process.
-            let process = Process::load().unwrap();
-            // Compute the deployment.
-            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Return the deployment.
-            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-            Deployment::from_str(&deployment.to_string()).unwrap()
+            sample_fixture("deployment-v2", &[], |rng| {
+                // Construct the process.
+                let process = Process::load().unwrap();
+                // Compute the deployment.
+                let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                // Return the deployment.
+                // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                Deployment::from_str(&deployment.to_string()).unwrap()
+            })
         })
         .clone();
     // Create a new deployment with the desired edition.
@@ -289,13 +294,15 @@ function compute:
             )
             .unwrap();
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-            // Construct the process.
-            let process = Process::load().unwrap();
-            // Compute the deployment.
-            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Return the deployment.
-            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-            Deployment::from_str(&deployment.to_string()).unwrap()
+            sample_fixture("deployment-v2-translation-keys", &[], |rng| {
+                // Construct the process.
+                let process = Process::load().unwrap();
+                // Compute the deployment.
+                let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                // Return the deployment.
+                // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                Deployment::from_str(&deployment.to_string()).unwrap()
+            })
         })
         .clone();
     // Create a new deployment with the desired edition.
@@ -369,16 +376,20 @@ pub fn sample_rejected_execution(rng: &mut TestRng) -> Rejected<CurrentNetwork> 
 
 /********************************************** Fee ***********************************************/
 
-/// Samples a random hardcoded private fee.
+/// Returns a private fee for a fixed ID.
+///
+/// Every call returns the same fee. It does not depend on `_rng`, and `_rng` is not advanced.
 #[inline]
-pub fn sample_fee_private_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
+pub fn sample_fee_private_hardcoded(_rng: &mut TestRng) -> Fee<CurrentNetwork> {
     static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            // Sample a deployment or execution ID.
-            let deployment_or_execution_id = Field::rand(rng);
-            // Sample a fee.
-            sample_fee_private(deployment_or_execution_id, rng)
+            sample_fixture("fee-private", &genesis_fixture_key(), |rng| {
+                // Sample a deployment or execution ID.
+                let deployment_or_execution_id = Field::rand(rng);
+                // Sample a fee.
+                sample_fee_private(deployment_or_execution_id, rng)
+            })
         })
         .clone()
 }
@@ -429,16 +440,20 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     Fee::from_str(&fee.to_string()).unwrap()
 }
 
-/// Samples a random hardcoded public fee.
+/// Returns a public fee for a fixed ID.
+///
+/// Every call returns the same fee. It does not depend on `_rng`, and `_rng` is not advanced.
 #[inline]
-pub fn sample_fee_public_hardcoded(rng: &mut TestRng) -> Fee<CurrentNetwork> {
+pub fn sample_fee_public_hardcoded(_rng: &mut TestRng) -> Fee<CurrentNetwork> {
     static INSTANCE: OnceLock<Fee<CurrentNetwork>> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            // Sample a deployment or execution ID.
-            let deployment_or_execution_id = Field::rand(rng);
-            // Sample a fee.
-            sample_fee_public(deployment_or_execution_id, rng)
+            sample_fixture("fee-public", &genesis_fixture_key(), |rng| {
+                // Sample a deployment or execution ID.
+                let deployment_or_execution_id = Field::rand(rng);
+                // Sample a fee.
+                sample_fee_public(deployment_or_execution_id, rng)
+            })
         })
         .clone()
 }
@@ -557,9 +572,43 @@ fn sample_deployment_and_private_key(
     (deployment, private_key)
 }
 
-/// Samples a random deployment transaction with a private or public fee.
+/// The largest edition of a deployment transaction that the test processes share.
+///
+/// Each shared edition has its own fixture files. A transaction with a larger edition, such as a random one,
+/// is built for each call and writes no file.
+const MAX_SHARED_EDITION: u16 = 3;
+
+/// Samples a deployment transaction with a private or public fee.
+///
+/// For an edition up to `MAX_SHARED_EDITION`, the n-th call on a thread for a version, an edition, a choice of
+/// translation keys and a fee kind returns the n-th such transaction, which is the same in every test process of
+/// the binary. It does not depend on `rng`, and `rng` is not advanced. A version 1 deployment has edition 0 or 1.
 #[inline]
 pub fn sample_deployment_transaction(
+    version: u8,
+    edition: u16,
+    has_translation_keys: bool,
+    is_fee_private: bool,
+    rng: &mut TestRng,
+) -> Transaction<CurrentNetwork> {
+    let edition = match version {
+        1 => edition % 2,
+        _ => edition,
+    };
+    if edition > MAX_SHARED_EDITION {
+        return build_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng);
+    }
+    let name = format!(
+        "deploy-v{version}-edition-{edition}-translation-keys-{has_translation_keys}-private-fee-{is_fee_private}"
+    );
+    sample_nth_fixture(&name, &genesis_fixture_key(), |rng| {
+        build_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng)
+    })
+}
+
+/// Builds a deployment transaction with a private or public fee.
+#[inline]
+fn build_deployment_transaction(
     version: u8,
     edition: u16,
     has_translation_keys: bool,
@@ -585,26 +634,32 @@ pub fn sample_deployment_transaction(
     Transaction::from_deployment(owner, deployment, fee).unwrap()
 }
 
-/// Samples a random execution transaction with a private or public fee.
+/// Returns an execution transaction with a private or public fee.
+///
+/// The n-th call on a thread for an index and a fee kind returns the n-th such transaction,
+/// which is the same in every test process of the binary. It does not depend on `_rng`, and `_rng` is not advanced.
 #[inline]
 pub fn sample_execution_transaction_with_fee(
     is_fee_private: bool,
-    rng: &mut TestRng,
+    _rng: &mut TestRng,
     index: usize,
 ) -> Transaction<CurrentNetwork> {
-    // Sample an execution.
-    let execution = crate::sample_execution(rng, index);
-    // Compute the execution ID.
-    let execution_id = execution.to_execution_id().unwrap();
+    let name = format!("execute-{index}-private-fee-{is_fee_private}");
+    sample_nth_fixture(&name, &genesis_fixture_key(), |rng| {
+        // Sample an execution.
+        let execution = crate::sample_execution(rng, index);
+        // Compute the execution ID.
+        let execution_id = execution.to_execution_id().unwrap();
 
-    // Sample the fee.
-    let fee = match is_fee_private {
-        true => crate::sample_fee_private(execution_id, rng),
-        false => crate::sample_fee_public(execution_id, rng),
-    };
+        // Sample the fee.
+        let fee = match is_fee_private {
+            true => crate::sample_fee_private(execution_id, rng),
+            false => crate::sample_fee_public(execution_id, rng),
+        };
 
-    // Construct an execution transaction.
-    Transaction::from_execution(execution, Some(fee)).unwrap()
+        // Construct an execution transaction.
+        Transaction::from_execution(execution, Some(fee)).unwrap()
+    })
 }
 
 /// Samples a large transaction.
@@ -665,7 +720,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
     Transaction::from_execution(execution, Some(fee)).unwrap()
 }
 
-/// Samples a random private fee transaction.
+/// Returns the fee transaction of `sample_fee_private_hardcoded`.
 #[inline]
 pub fn sample_fee_private_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
     // Sample a private fee.
@@ -674,7 +729,7 @@ pub fn sample_fee_private_transaction(rng: &mut TestRng) -> Transaction<CurrentN
     Transaction::from_fee(fee).unwrap()
 }
 
-/// Samples a random public fee transaction.
+/// Returns the fee transaction of `sample_fee_public_hardcoded`.
 #[inline]
 pub fn sample_fee_public_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
     // Sample a public fee.
@@ -747,6 +802,41 @@ fn genesis_fixture() -> &'static (PrivateKey<CurrentNetwork>, Block<CurrentNetwo
     })
 }
 
+/// Returns the key of the fixtures that hold a proof for the genesis block: the hash of that block.
+#[inline]
+fn genesis_fixture_key() -> Vec<u8> {
+    genesis_fixture().1.hash().to_string().into_bytes()
+}
+
+/// Returns the fixture `name` of the running test binary, which `build` builds from an RNG that `name` seeds.
+///
+/// The test processes of one binary share the fixture through a file beside the binary.
+/// `key` holds the inputs of `build` that are not in `name`.
+#[inline]
+fn sample_fixture<T: FromBytes + ToBytes>(name: &str, key: &[u8], build: impl FnOnce(&mut TestRng) -> T) -> T {
+    // Hash the name (FNV-1a), so that each fixture has its own random values.
+    let seed = name
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3));
+    load_or_build_fixture(&format!("test-helpers-{name}"), key, |_| true, || build(&mut TestRng::from_seed(seed)))
+}
+
+/// Returns the fixture `{name}-{n}` for the n-th call with `name` on this thread.
+///
+/// Two calls on one thread return different fixtures, and every thread gets the same fixtures in the same order.
+#[inline]
+fn sample_nth_fixture<T: FromBytes + ToBytes>(name: &str, key: &[u8], build: impl FnOnce(&mut TestRng) -> T) -> T {
+    thread_local! {
+        static CALLS: RefCell<HashMap<String, usize>> = RefCell::new(HashMap::new());
+    }
+    let call = CALLS.with_borrow_mut(|calls| {
+        let calls = calls.entry(name.to_string()).or_default();
+        *calls += 1;
+        *calls - 1
+    });
+    sample_fixture(&format!("{name}-{call}"), key, build)
+}
+
 /// Builds the genesis fixture from an RNG with the given seed.
 #[inline]
 fn build_genesis_fixture(seed: u64) -> (PrivateKey<CurrentNetwork>, Block<CurrentNetwork>) {
@@ -810,6 +900,38 @@ mod tests {
         // The helpers return the genesis fixture.
         assert_eq!((&private_key, &block), (&genesis_fixture().0, &genesis_fixture().1));
         assert_eq!(&transactions, block.transactions());
+    }
+
+    #[test]
+    fn test_shared_samples_do_not_advance_rng() {
+        let rng = &mut TestRng::fixed(1);
+        sample_fee_public_transaction(rng);
+        sample_execution_transaction_with_fee(false, rng, 0);
+        sample_deployment_transaction(1, 0, false, false, rng);
+        sample_deployment_transaction(2, 0, false, false, rng);
+        assert_eq!(rng.random::<u64>(), TestRng::fixed(1).random::<u64>());
+    }
+
+    #[test]
+    fn test_shared_samples_follow_the_call_order_of_a_thread() {
+        // Samples the first two public-fee transactions of a thread, for an execution and for a deployment.
+        fn sample() -> [Transaction<CurrentNetwork>; 4] {
+            let rng = &mut TestRng::default();
+            [
+                sample_execution_transaction_with_fee(false, rng, 0),
+                sample_execution_transaction_with_fee(false, rng, 0),
+                sample_deployment_transaction(2, 0, false, false, rng),
+                sample_deployment_transaction(2, 0, false, false, rng),
+            ]
+        }
+
+        // Two samples of one kind on one thread are different transactions.
+        let samples = std::thread::spawn(sample).join().expect("The sampling thread panicked");
+        assert_ne!(samples[0].id(), samples[1].id());
+        assert_ne!(samples[2].id(), samples[3].id());
+        // Another new thread gets the same transactions in the same order.
+        let other_samples = std::thread::spawn(sample).join().expect("The sampling thread panicked");
+        assert_eq!(samples, other_samples);
     }
 
     #[test]
