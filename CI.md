@@ -5,6 +5,10 @@ run from [`benchmarks.yml`](.github/workflows/benchmarks.yml).
 [`gpu-test.yml`](.github/workflows/gpu-test.yml) runs the CUDA kernels on a
 `gpu` fleet box, built for `sm_86`, when a pull request changes `algorithms/` or
 the manifests, and nightly on `staging`.
+[`synthesizer-integration.yml`](.github/workflows/synthesizer-integration.yml)
+runs the command of `test-merge (synthesizer-integration)` when a pull request
+into a branch other than a release branch changes `synthesizer/`. Do not make
+its check required: a pull request that it skips could not merge.
 
 Jobs run in one of two places:
 
