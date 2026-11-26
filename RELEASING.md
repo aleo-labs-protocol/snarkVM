@@ -1,0 +1,61 @@
+# Releasing
+
+snarkVM releases are crates.io first. Merging a workspace version-bump PR into `staging` runs `.github/workflows/publish-crates.yml`, publishes unpublished lockstep snarkVM crate versions to crates.io, and creates one GitHub tag and release named `v{version}` from the umbrella `snarkvm` crate.
+
+Do not publish normal releases with manual `cargo publish`. The workflow uses crates.io Trusted Publishing through GitHub OIDC, so it does not require a long-lived crates.io token.
+
+This flow is based on ProvableHQ/leo's release-plz publishing flow, with Leo's binary release artifact dispatch removed.
+
+## Normal Release Flow
+
+1. Open a PR that bumps the workspace version across all lockstep snarkVM crates.
+2. Confirm the version bump is consistent across the lockstep crate set.
+3. Merge the PR to `staging`.
+4. Let `.github/workflows/publish-crates.yml` publish the crates and create the single `v{version}` tag and GitHub release.
+
+The `snarkvm-testchain-generator` binary helper is not part of the lockstep release set.
+
+## Dry Run
+
+Use the Actions tab to run `Publish Crates` manually with `dry_run` set to `true`.
+
+The dry run checks what release-plz would publish and reports the planned single tag without publishing crates, creating tags, or creating GitHub releases.
+
+## Trusted Publishing Setup
+
+Trusted Publishing is a one-time crates.io setup for each published crate. Configure it for `snarkvm` and each already-published `snarkvm-*` crate:
+
+1. Open the crate on crates.io.
+2. Go to Settings, then Trusted Publishing.
+3. Select Add.
+4. Set Owner to `aleo-labs-protocol`.
+5. Set Repository to `snarkVM`.
+6. Set Workflow filename to `publish-crates.yml`.
+7. Set Environment to `crates-io`.
+
+The `publish` job runs in the `crates-io` GitHub environment. In the repository's Settings, then Environments, restrict `crates-io` deployment branches to `staging`. With the environment set on crates.io, a copy of the workflow run from another branch cannot obtain a publishing token.
+
+The Owner must be the repository's current GitHub owner, because the workflow requests its publishing token under the `aleo-labs-protocol/snarkVM` identity. A crate enrolled under a previous owner does not match that identity.
+
+This setup is inherently per crate and should be scripted across the crate set. It does not mean release-plz creates per-crate tags at release time; `release-plz.toml` keeps GitHub tags and releases on the umbrella `snarkvm` crate only.
+
+## Before Enabling
+
+The push trigger matches any `Cargo.toml`, `release-plz.toml` or workflow edit on `staging`, including the commit that introduces this workflow. It does not check that the push is a workspace version bump. With release-plz's default `release_always = true`, every run publishes all eligible crate versions that are not yet on crates.io.
+
+Before this workflow first runs on `staging`, the crates.io owner should:
+
+1. Confirm the workspace version currently on `staging` is one that is intended to publish.
+2. Enroll Trusted Publishing for every published crate and restrict the `crates-io` environment to `staging` as described above.
+3. Resolve the tag collision and new crate bootstrap cases below.
+4. Run the dry run and confirm it lists the intended package and version set and a single `v{version}` tag.
+
+## Tag Collisions
+
+`release-plz release` treats an existing `v{version}` git tag as already released and will skip publishing the umbrella `snarkvm` crate and creating its release for that version, even if crates.io has not yet received it. Before enabling this flow, make sure the next workspace version does not already have a matching upstream tag. If a stale or pre-created `v{version}` tag exists for a version that was never published, remove or migrate it first.
+
+## New Crate Bootstrap
+
+Trusted Publishing cannot reserve a brand-new crate name. A new `snarkvm-*` crate needs one initial manual `cargo publish` with a crates.io token before Trusted Publishing can be enabled for that crate.
+
+After the first publish and Trusted Publishing setup, the normal workflow takes over for later versions.
