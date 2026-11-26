@@ -162,10 +162,9 @@ A test name filter alone skips an ignored test. Add `--include-ignored` to run o
 
 ## Forks
 
-A fork's pull request runs nothing on the fleet. Every self-hosted job checks
-that the head repository is this one. The hosted jobs, including the hosted
-`test` entries, still run. The fleet jobs show as skipped, so the run can look
-green when it tested only the hosted jobs. Push a fork's change to a branch
-here and test it there before it merges. The fleet's `target/` and sccache
-persist between jobs, so anyone who can push a branch here can affect later
-builds there. That is the same trust as push access; do not widen the guard.
+GitHub holds every run of an outside contributor's pull request until a
+maintainer approves it. An approved run runs every job, the fleet jobs
+included: their guard checks `github.repository`, which names this repository
+on a fork's pull request too, and only keeps them out of mirrors. The fleet's
+`target/` and sccache persist between jobs, so the fork's code can affect later
+builds there. Approve a fork's run only after you read its change.
