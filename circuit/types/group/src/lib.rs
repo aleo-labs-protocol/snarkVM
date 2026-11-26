@@ -248,6 +248,15 @@ fn small_order_points<E: Environment>() -> [console::Group<E::Network>; 4] {
     [(zero, one), (zero, -one), (x, zero), (-x, zero)].map(|(x, y)| console::Group::from_xy_coordinates_unchecked(x, y))
 }
 
+/// Checks that `operation` halts with a message that contains `expected`.
+#[cfg(test)]
+fn check_halts<R>(operation: impl FnOnce() -> R, expected: &str) {
+    let payload =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation)).err().expect("The operation should halt");
+    let halt = payload.downcast_ref::<snarkvm_utilities::VmHalt>().expect("The panic should be a VM halt");
+    assert!(halt.message().contains(expected), "Unexpected halt message: {halt}");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -136,11 +136,7 @@ fn run_and_check(test: &ProgramTest, genesis: &OnceLock<Genesis>) -> Result<(), 
     }));
     match result {
         Ok(result) => result.map_err(|error| format!("{error:#}")),
-        Err(panic) => {
-            let message =
-                panic.downcast_ref::<&str>().copied().or_else(|| panic.downcast_ref::<String>().map(String::as_str));
-            Err(format!("panicked: {}", message.unwrap_or("<unknown>")))
-        }
+        Err(panic) => Err(format!("panicked: {}", snarkvm_utilities::panic_message(&*panic).unwrap_or("<unknown>"))),
     }
 }
 

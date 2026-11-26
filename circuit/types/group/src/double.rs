@@ -146,17 +146,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Field division by zero")]
     fn test_double_zero_x_denominator() {
         let zero = console::Field::zero();
-        inject_unchecked::<Circuit>(zero, zero).double();
+        check_halts(|| inject_unchecked::<Circuit>(zero, zero).double(), "Field division by zero");
     }
 
     #[test]
-    #[should_panic(expected = "Field division by zero")]
     fn test_double_zero_y_denominator() {
         let x = small_order_points::<Circuit>()[2].to_x_coordinate();
-        inject_unchecked::<Circuit>(x, console::Field::one()).double();
+        check_halts(|| inject_unchecked::<Circuit>(x, console::Field::one()).double(), "Field division by zero");
     }
 
     #[test]

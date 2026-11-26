@@ -15,155 +15,190 @@
 
 pub use std::error::Error;
 
-use std::{cell::Cell, marker::PhantomData, panic, sync::Once};
+use std::{
+    any::Any,
+    fmt,
+    io::{self, Write},
+    panic,
+    sync::{
+        Once,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
-thread_local! {
-    /// Whether the current thread is executing inside the VM runtime.
-    static IN_VM_RUNTIME: Cell<bool> = const { Cell::new(false) };
+/// The panic payload of a VM halt.
+///
+/// Console and circuit operations halt by panicking with this payload, for example on a division by zero or on an
+/// invalid group element. So do the functions that run a program, such as `Process::authorize`, `Process::execute`
+/// and `Process::deploy`, when the program halts.
+///
+/// A caller that must not unwind runs the operation with [`try_vm_runtime`] and checks the payload type. Any other
+/// payload is a bug, and the caller keeps unwinding:
+///
+/// ```
+/// use snarkvm_utilities::{VmHalt, try_vm_runtime};
+/// use std::panic::resume_unwind;
+///
+/// fn run<T>(operation: impl FnOnce() -> T) -> Result<T, String> {
+///     try_vm_runtime(operation).map_err(|payload| match payload.downcast::<VmHalt>() {
+///         Ok(halt) => format!("the program halted: {halt}"),
+///         Err(payload) => resume_unwind(payload),
+///     })
+/// }
+///
+/// assert_eq!(run(|| 1 + 1), Ok(2));
+/// ```
+///
+/// A bare `catch_unwind` also catches a halt, but the panic hook then treats the halt as uncaught. It logs the halt at
+/// the error level and passes it to the host's panic hook.
+///
+/// The payload travels with the panic, also when rayon re-raises the panic of a job on the thread that waits on the
+/// job. Panic hooks and code that read only `String` and `&str` payloads do not see the message of a halt;
+/// [`panic_message`] reads all three.
+#[derive(Debug)]
+pub struct VmHalt {
+    message: String,
 }
 
-/// Ensures the VM-aware panic hook is installed exactly once.
-static INSTALL_VM_RUNTIME_HOOK: Once = Once::new();
+impl VmHalt {
+    /// Returns the halt message.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
 
-/// Installs a panic hook that distinguishes VM halts from unrelated panics.
-fn install_vm_runtime_hook() {
-    INSTALL_VM_RUNTIME_HOOK.call_once(|| {
+impl fmt::Display for VmHalt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+/// Returns the message of a panic payload that is a [`VmHalt`], a `String` or a `&str`.
+pub fn panic_message(payload: &(dyn Any + Send)) -> Option<&str> {
+    payload
+        .downcast_ref::<VmHalt>()
+        .map(VmHalt::message)
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+}
+
+/// Ensures the VM halt hook is installed exactly once.
+static INSTALL_VM_HALT_HOOK: Once = Once::new();
+
+/// The number of [`try_vm_runtime`] calls that are running, on any thread.
+static ACTIVE_VM_RUNTIMES: AtomicUsize = AtomicUsize::new(0);
+
+/// Installs a panic hook for VM halts, which passes every other panic to the previous hook.
+///
+/// While any [`try_vm_runtime`] call runs, the hook logs a halt at the debug level, without a backtrace, because the
+/// halt is likely an expected outcome that the call catches. A caught halt can come from a program with private
+/// inputs, so release builds log only its location. The caught payload holds the message.
+///
+/// While no [`try_vm_runtime`] call runs, nothing in snarkVM catches the halt. The hook logs the halt with its message
+/// at the error level, or prints it to stderr if the tracing subscriber of the halting thread does not enable that
+/// event, and then passes it to the previous hook. The previous hook does not see the message, because panic hooks format only `String` and `&str` payloads.
+///
+/// A halt message can hold the values of the operands, including private inputs. An uncaught halt is reported with
+/// its message, because it ends the caller's own operation, and the host's panic hook received the message before
+/// halts had a `VmHalt` payload.
+///
+/// A halt on a thread outside [`try_vm_runtime`] while another thread is inside one is only logged at the debug
+/// level, even if no caller catches it.
+fn install_vm_halt_hook() {
+    INSTALL_VM_HALT_HOOK.call_once(|| {
         let previous_hook = panic::take_hook();
 
         panic::set_hook(Box::new(move |info| {
-            if IN_VM_RUNTIME.try_with(Cell::get).unwrap_or(false) {
+            let Some(halt) = info.payload().downcast_ref::<VmHalt>() else {
+                return previous_hook(info);
+            };
+            let location = info.location().map_or_else(|| "an unknown location".to_string(), ToString::to_string);
+            if ACTIVE_VM_RUNTIMES.load(Ordering::SeqCst) > 0 {
                 #[cfg(debug_assertions)]
-                {
-                    // Remove all words up to "panicked".
-                    let trimmed = info
-                        .to_string()
-                        .split_ascii_whitespace()
-                        .skip_while(|&word| word != "panicked")
-                        .collect::<Vec<&str>>()
-                        .join(" ");
-
-                    // Have the message start with "VM safely halted".
-                    let msg = trimmed.replacen("panicked", "VM safely halted", 1);
-                    eprintln!("{msg}");
-                }
+                tracing::debug!("VM halted at {location}: {halt}");
+                #[cfg(not(debug_assertions))]
+                tracing::debug!("VM halted at {location}");
             } else {
+                // `tracing::dispatcher::has_been_set` stays true after a scoped subscriber exits, and on threads
+                // without the scoped subscriber of another thread.
+                if tracing::event_enabled!(tracing::Level::ERROR) {
+                    tracing::error!("VM halted at {location}: {halt}");
+                } else {
+                    let _ = writeln!(io::stderr(), "VM halted at {location}: {halt}");
+                }
                 previous_hook(info);
             }
         }));
     });
 }
 
-/// Provides a VM runtime environment which will safely halt
-/// without producing logs that look like unexpected behavior.
-/// In debug mode, it prints to stderr using the format: "VM safely halted at {location}: {halt message}".
-/// In release mode, it prints nothing.
+/// Halts the VM with the given message, by panicking with a [`VmHalt`] payload.
 ///
-/// Only the current thread is inside the VM runtime, including any rayon job it runs while it waits on others. Code in
-/// `f` that waits on rayon jobs starts them through [`VmScope::parallel`]. Their halting code then runs inside the VM
-/// runtime on any thread, and unrelated jobs that the waiting thread runs stay outside it.
-/// Jobs that `f` starts without it run outside the VM runtime on other threads, so their halts reach the previous
-/// panic hook.
-///
-/// Panics outside the VM runtime go to the panic hook that was present on the first invocation. Custom panic hooks
-/// should be installed before calling this function for the first time.
+/// Panic hooks should be installed before the first halt or [`try_vm_runtime`], because the VM halt hook passes
+/// panics to the hook that was present then.
 ///
 /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
 #[doc(hidden)]
+#[cold]
+#[track_caller]
+pub fn vm_halt(message: String) -> ! {
+    install_vm_halt_hook();
+    panic::panic_any(VmHalt { message })
+}
+
+/// Counts a running [`try_vm_runtime`] call until it drops.
+struct ActiveVmRuntime;
+
+impl ActiveVmRuntime {
+    fn enter() -> Self {
+        ACTIVE_VM_RUNTIMES.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for ActiveVmRuntime {
+    fn drop(&mut self) {
+        ACTIVE_VM_RUNTIMES.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Runs `f` and catches its panics. The error holds the panic payload, which is a [`VmHalt`] for a VM halt.
+///
+/// Use it instead of `catch_unwind` around operations that can halt. While it runs, the panic hook treats a halt as
+/// caught: it logs the halt at the debug level and does not pass it to the host's panic hook. Every other panic
+/// reaches the host's panic hook.
+///
+/// Rayon re-raises the panic of a job on the thread that waits on it, so this also catches halts in the rayon jobs
+/// that `f` waits on.
 #[inline]
 pub fn try_vm_runtime<R, F: FnOnce() -> R>(f: F) -> std::thread::Result<R> {
-    install_vm_runtime_hook();
+    install_vm_halt_hook();
 
-    // Perform the operation that may panic.
-    VmScope::INSIDE.run(|| panic::catch_unwind(panic::AssertUnwindSafe(f)))
-}
-
-/// Whether the thread that captured this scope was inside [`try_vm_runtime`].
-///
-/// Jobs borrow the scope from [`VmScope::parallel`], so they can use it with `par_iter`, `join` and `scope`, whose panics
-/// return to the waiting thread. It cannot move into a `rayon::spawn` job, whose panic reaches no `try_vm_runtime`.
-///
-/// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct VmScope {
-    in_vm_runtime: bool,
-}
-
-impl VmScope {
-    const INSIDE: Self = Self { in_vm_runtime: true };
-    const OUTSIDE: Self = Self { in_vm_runtime: false };
-
-    /// Runs `f`, which starts rayon jobs, with the VM scope of the current thread. Each job calls [`VmScope::run`] on
-    /// that scope around the code that may halt.
-    ///
-    /// The current thread is outside the VM runtime until `f` returns. A thread that waits on rayon jobs can run
-    /// unrelated jobs, and their panics must reach the previous panic hook.
-    #[inline]
-    pub fn parallel<R>(f: impl FnOnce(&Self) -> R) -> R {
-        let scope = Self::current();
-        Self::OUTSIDE.run(|| f(&scope))
-    }
-
-    /// Runs `f` on the current thread in this VM scope. `f` must not wait on rayon jobs, because the thread can then
-    /// run unrelated jobs in this scope.
-    #[inline]
-    pub fn run<R>(&self, f: impl FnOnce() -> R) -> R {
-        let _guard = self.enter();
-        f()
-    }
-
-    /// Captures the VM scope of the current thread.
-    #[inline]
-    fn current() -> Self {
-        Self { in_vm_runtime: IN_VM_RUNTIME.with(Cell::get) }
-    }
-
-    /// Gives the current thread this VM scope until the guard drops.
-    #[inline]
-    fn enter(&self) -> VmScopeGuard {
-        let previous = IN_VM_RUNTIME.with(|is_active| is_active.replace(self.in_vm_runtime));
-        VmScopeGuard { previous, _not_send: PhantomData }
-    }
-}
-
-/// Restores the previous VM scope of its thread when it drops, also during an unwind.
-#[must_use = "the VM scope ends when the guard drops"]
-struct VmScopeGuard {
-    previous: bool,
-    /// Keeps the guard on the thread whose scope it restores.
-    _not_send: PhantomData<*const ()>,
-}
-
-impl Drop for VmScopeGuard {
-    #[inline]
-    fn drop(&mut self) {
-        IN_VM_RUNTIME.with(|is_active| is_active.set(self.previous));
-    }
+    let _active = ActiveVmRuntime::enter();
+    panic::catch_unwind(panic::AssertUnwindSafe(f))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{IN_VM_RUNTIME, VmScope, try_vm_runtime};
+    use super::{VmHalt, panic_message, try_vm_runtime, vm_halt};
 
     use std::{
-        cell::Cell,
         env,
+        io,
         panic,
-        process::{Command, Output},
+        process::{Command, Output, Stdio},
         sync::{
             Arc,
             Barrier,
             atomic::{AtomicUsize, Ordering},
+            mpsc,
         },
         thread,
+        time::Duration,
     };
 
-    const CHILD_PROCESS_ENV: &str = "SNARKVM_VM_RUNTIME_HOOK_CHILD";
+    const CHILD_PROCESS_ENV: &str = "SNARKVM_VM_HALT_HOOK_CHILD";
     const NUM_VM_THREADS: usize = 8;
-
-    fn in_vm_runtime() -> bool {
-        IN_VM_RUNTIME.with(Cell::get)
-    }
 
     fn is_child_process() -> bool {
         env::var_os(CHILD_PROCESS_ENV).is_some()
@@ -171,22 +206,28 @@ mod tests {
 
     /// Runs the test with the given path in a fresh process, because panic hooks and `Once` state are process-global.
     fn run_in_child_process(test_path: &str) -> Output {
+        run_in_child_process_with_stderr(test_path, Stdio::piped())
+    }
+
+    fn run_in_child_process_with_stderr(test_path: &str, stderr: Stdio) -> Output {
         let output = Command::new(env::current_exe().expect("Failed to locate the test executable"))
             .args([test_path, "--exact", "--nocapture"])
             .env(CHILD_PROCESS_ENV, "1")
+            .stderr(stderr)
             .output()
             .expect("Failed to launch the child test process");
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
             output.status.success() && stdout.contains("1 passed"),
-            "Child test failed.\nstdout:\n{stdout}\nstderr:\n{}",
+            "Child test failed ({}).\nstdout:\n{stdout}\nstderr:\n{}",
+            output.status,
             String::from_utf8_lossy(&output.stderr)
         );
         output
     }
 
-    /// Installs a host hook that counts its calls, then the VM hook on top of it.
+    /// Installs a host hook that counts its calls, then the VM halt hook on top of it.
     fn install_counting_host_hook() -> Arc<AtomicUsize> {
         let host_panic_count = Arc::new(AtomicUsize::new(0));
         let host_panic_count_ = host_panic_count.clone();
@@ -197,213 +238,228 @@ mod tests {
         host_panic_count
     }
 
-    #[test]
-    fn test_try_vm_runtime_success() {
-        assert_eq!(try_vm_runtime(|| 42).unwrap(), 42);
+    /// Returns the message of a caught halt, and fails if the payload is not a halt.
+    fn halt_message(payload: &(dyn std::any::Any + Send)) -> &str {
+        payload.downcast_ref::<VmHalt>().expect("The payload should be a VM halt").message()
     }
 
     #[test]
-    fn test_try_vm_runtime_preserves_panic_payload() {
-        let result = try_vm_runtime(|| panic!("expected VM halt"));
-        let payload = result.expect_err("VM panic should be caught");
-        assert_eq!(payload.downcast_ref::<&str>(), Some(&"expected VM halt"));
+    fn test_try_vm_runtime_success() {
+        assert_eq!(try_vm_runtime(|| 42).expect("A VM operation that returns cannot halt"), 42);
+    }
+
+    #[test]
+    fn test_try_vm_runtime_preserves_halt_payload() {
+        let payload =
+            try_vm_runtime(|| vm_halt("expected VM halt".to_string())).expect_err("The halt should be caught");
+        assert_eq!(halt_message(&*payload), "expected VM halt");
     }
 
     #[test]
     fn test_nested_try_vm_runtime() {
         let result = try_vm_runtime(|| {
-            let inner = try_vm_runtime(|| panic!("inner VM halt"));
-            assert!(inner.is_err(), "Inner VM panic should be caught");
-            panic!("outer VM halt");
+            let inner = try_vm_runtime(|| vm_halt("inner VM halt".to_string()));
+            assert_eq!(halt_message(&*inner.expect_err("The inner halt should be caught")), "inner VM halt");
+            vm_halt("outer VM halt".to_string());
         });
-
-        assert!(result.is_err(), "Outer VM panic should be caught");
+        assert_eq!(halt_message(&*result.expect_err("The outer halt should be caught")), "outer VM halt");
     }
 
     #[test]
-    fn test_vm_scope_carries_flag_to_another_thread() {
-        let scope = try_vm_runtime(VmScope::current).unwrap();
+    fn test_panic_message() {
+        let halt = try_vm_runtime(|| vm_halt("a halt".to_string())).expect_err("The halt should be caught");
+        assert_eq!(panic_message(&*halt), Some("a halt"));
 
-        thread::spawn(move || {
-            assert!(!in_vm_runtime());
-            scope.run(|| assert!(in_vm_runtime()));
-            assert!(!in_vm_runtime());
+        let string = panic::catch_unwind(|| panic!("{}", "a String")).expect_err("The panic should be caught");
+        assert_eq!(panic_message(&*string), Some("a String"));
 
-            assert!(panic::catch_unwind(|| scope.run(|| panic!("VM halt"))).is_err());
-            assert!(!in_vm_runtime(), "The flag should be restored during an unwind");
-        })
-        .join()
-        .unwrap();
+        let str = panic::catch_unwind(|| panic!("a &str")).expect_err("The panic should be caught");
+        assert_eq!(panic_message(&*str), Some("a &str"));
+
+        let other = panic::catch_unwind(|| panic::panic_any(7u8)).expect_err("The panic should be caught");
+        assert_eq!(panic_message(&*other), None);
     }
 
+    /// Concurrent halts skip the host hook, and unrelated panics reach it before, during and after them.
     #[test]
-    fn test_vm_scope_parallel_leaves_vm_runtime_while_waiting() {
-        try_vm_runtime(|| {
-            VmScope::parallel(|scope| {
-                assert!(!in_vm_runtime());
-                scope.run(|| assert!(in_vm_runtime()));
-                assert!(!in_vm_runtime());
-            });
-            assert!(in_vm_runtime());
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn test_parallel_vm_runtime_preserves_host_hook() {
-        if is_child_process() {
-            run_parallel_vm_runtime_child();
+    fn test_concurrent_halts_preserve_host_hook() {
+        if !is_child_process() {
+            run_in_child_process("vm_error::tests::test_concurrent_halts_preserve_host_hook");
             return;
         }
+        let host_panic_count = install_counting_host_hook();
 
-        let output = run_in_child_process("vm_error::tests::test_parallel_vm_runtime_preserves_host_hook");
+        let ready = Arc::new(Barrier::new(NUM_VM_THREADS + 1));
+        let host_panic_finished = Arc::new(Barrier::new(NUM_VM_THREADS + 1));
+        let handles = (0..NUM_VM_THREADS)
+            .map(|index| {
+                let ready = ready.clone();
+                let host_panic_finished = host_panic_finished.clone();
+                thread::spawn(move || {
+                    try_vm_runtime(|| {
+                        // Keep every VM operation active while an unrelated panic fires on this thread's parent.
+                        ready.wait();
+                        host_panic_finished.wait();
+                        vm_halt(format!("VM operation {index} halted"));
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
 
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        #[cfg(debug_assertions)]
-        assert_eq!(stderr.matches("VM safely halted").count(), NUM_VM_THREADS, "Unexpected stderr:\n{stderr}");
-        #[cfg(not(debug_assertions))]
-        assert!(!stderr.contains("VM safely halted"), "Unexpected stderr:\n{stderr}");
+        ready.wait();
+        let unrelated_panic = panic::catch_unwind(|| panic!("unrelated host panic"));
+        assert!(unrelated_panic.is_err());
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The unrelated panic should reach the host hook");
+
+        // Let the VM operations halt concurrently now that the unrelated panic has been observed.
+        host_panic_finished.wait();
+        for handle in handles {
+            let result = handle.join().expect("The VM thread should not panic outside try_vm_runtime");
+            assert!(result.is_err(), "The halt should be caught");
+        }
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halts should not reach the host hook");
+
+        let later_panic = panic::catch_unwind(|| panic!("later host panic"));
+        assert!(later_panic.is_err());
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 2, "The host hook should stay installed after halts");
     }
 
-    fn run_parallel_vm_runtime_child() {
+    /// A panic that is not a halt reaches the host hook, even inside `try_vm_runtime`, and is still caught.
+    #[test]
+    fn test_other_panic_in_vm_runtime_reaches_host_hook() {
+        if !is_child_process() {
+            run_in_child_process("vm_error::tests::test_other_panic_in_vm_runtime_reaches_host_hook");
+            return;
+        }
+        let host_panic_count = install_counting_host_hook();
+
+        let payload = try_vm_runtime(|| panic!("a bug in the VM")).expect_err("The panic should be caught");
+        assert_eq!(panic_message(&*payload), Some("a bug in the VM"));
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The panic should reach the host hook");
+    }
+
+    /// A halt while no `try_vm_runtime` runs reaches the host hook, also before the first `try_vm_runtime` and after a
+    /// caught halt.
+    #[test]
+    fn test_halt_outside_vm_runtime_reaches_host_hook() {
+        if !is_child_process() {
+            let output = run_in_child_process("vm_error::tests::test_halt_outside_vm_runtime_reaches_host_hook");
+            // The child sets no tracing subscriber, so the hook prints the messages of the uncaught halts.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains(": a halt before any VM runtime"), "Unexpected stderr:\n{stderr}");
+            assert!(stderr.contains(": a halt after the VM runtime"), "Unexpected stderr:\n{stderr}");
+            assert!(!stderr.contains("a caught halt"), "Unexpected stderr:\n{stderr}");
+            return;
+        }
         let host_panic_count = Arc::new(AtomicUsize::new(0));
         let host_panic_count_ = host_panic_count.clone();
         panic::set_hook(Box::new(move |_| {
             host_panic_count_.fetch_add(1, Ordering::SeqCst);
         }));
 
-        let ready = Arc::new(Barrier::new(NUM_VM_THREADS + 1));
-        let host_panic_finished = Arc::new(Barrier::new(NUM_VM_THREADS + 1));
-        let mut handles = Vec::with_capacity(NUM_VM_THREADS);
+        // `vm_halt` installs the VM halt hook on top of the host hook.
+        let payload = panic::catch_unwind(|| vm_halt("a halt before any VM runtime".to_string()))
+            .expect_err("The halt should unwind");
+        assert_eq!(halt_message(&*payload), "a halt before any VM runtime");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halt should reach the host hook");
 
-        for index in 0..NUM_VM_THREADS {
-            let ready = ready.clone();
-            let host_panic_finished = host_panic_finished.clone();
-            handles.push(thread::spawn(move || {
-                try_vm_runtime(|| {
-                    // Keep every VM operation active while an unrelated panic fires on this thread's parent.
-                    ready.wait();
-                    host_panic_finished.wait();
-                    panic!("VM operation {index} failed");
-                })
-            }));
-        }
+        let payload = try_vm_runtime(|| vm_halt("a caught halt".to_string())).expect_err("The halt should be caught");
+        assert_eq!(halt_message(&*payload), "a caught halt");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The caught halt should not reach the host hook");
 
-        // All VM calls have installed the dispatcher and entered their thread-local runtime scopes.
-        ready.wait();
-
-        let unrelated_panic = panic::catch_unwind(|| panic!("unrelated host panic"));
-        assert!(unrelated_panic.is_err(), "Unrelated panic should be caught by the test");
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "Host hook should receive the unrelated panic");
-
-        // Let the VM operations halt concurrently now that the unrelated panic has been observed.
-        host_panic_finished.wait();
-        for handle in handles {
-            let result = handle.join().expect("VM worker should not panic outside try_vm_runtime");
-            assert!(result.is_err(), "VM panic should be caught");
-        }
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "VM panics should not reach the host hook");
-
-        let later_panic = panic::catch_unwind(|| panic!("later host panic"));
-        assert!(later_panic.is_err(), "Later panic should be caught by the test");
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 2, "Host hook should remain installed after VM calls");
+        let payload = panic::catch_unwind(|| vm_halt("a halt after the VM runtime".to_string()))
+            .expect_err("The halt should unwind");
+        assert_eq!(halt_message(&*payload), "a halt after the VM runtime");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 2, "The halt should reach the host hook");
     }
 
     #[test]
-    fn test_vm_scope_captured_outside_vm_runtime_reaches_host_hook() {
+    fn test_uncaught_halt_with_broken_stderr_reaches_host_hook() {
         if !is_child_process() {
-            run_in_child_process("vm_error::tests::test_vm_scope_captured_outside_vm_runtime_reaches_host_hook");
+            let (reader, writer) = io::pipe().expect("Failed to open a pipe");
+            drop(reader);
+            run_in_child_process_with_stderr(
+                "vm_error::tests::test_uncaught_halt_with_broken_stderr_reaches_host_hook",
+                Stdio::from(writer),
+            );
             return;
         }
         let host_panic_count = install_counting_host_hook();
-
-        let scope = VmScope::current();
-        let result = try_vm_runtime(|| scope.run(|| panic!("panic outside the VM runtime")));
-        assert!(result.is_err());
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The panic should reach the host hook");
+        let payload = panic::catch_unwind(|| vm_halt("a halt with broken stderr".to_string()))
+            .expect_err("The halt should unwind");
+        assert_eq!(halt_message(&*payload), "a halt with broken stderr");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halt should reach the host hook");
     }
 
+    /// An uncaught halt is printed to stderr where the halting thread has no subscriber that enables the event, also
+    /// after a scoped subscriber has exited, and while another thread holds one.
     #[test]
-    fn test_vm_scope_halt_on_rayon_worker_skips_host_hook() {
+    fn test_uncaught_halt_without_thread_subscriber_prints_message() {
         if !is_child_process() {
-            run_in_child_process("vm_error::tests::test_vm_scope_halt_on_rayon_worker_skips_host_hook");
+            let output =
+                run_in_child_process("vm_error::tests::test_uncaught_halt_without_thread_subscriber_prints_message");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains(": a halt after a scoped subscriber"), "Unexpected stderr:\n{stderr}");
+            assert!(stderr.contains(": a halt on another thread"), "Unexpected stderr:\n{stderr}");
+            assert!(!stderr.contains("a halt in a scoped subscriber"), "Unexpected stderr:\n{stderr}");
+            return;
+        }
+        let host_panic_count = install_counting_host_hook();
+        let subscriber = || tracing_subscriber::fmt().with_writer(std::io::sink).finish();
+
+        // The scoped subscriber receives the event, so the halt is not printed to stderr.
+        tracing::subscriber::with_default(subscriber(), || {
+            let payload = panic::catch_unwind(|| vm_halt("a halt in a scoped subscriber".to_string()))
+                .expect_err("The halt should unwind");
+            assert_eq!(halt_message(&*payload), "a halt in a scoped subscriber");
+        });
+
+        let payload = panic::catch_unwind(|| vm_halt("a halt after a scoped subscriber".to_string()))
+            .expect_err("The halt should unwind");
+        assert_eq!(halt_message(&*payload), "a halt after a scoped subscriber");
+
+        tracing::subscriber::with_default(subscriber(), || {
+            let payload = thread::spawn(|| vm_halt("a halt on another thread".to_string()))
+                .join()
+                .expect_err("The halt should unwind");
+            assert_eq!(halt_message(&*payload), "a halt on another thread");
+        });
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 3, "Each uncaught halt should reach the host hook");
+    }
+
+    /// Halts on rayon workers skip the host hook, and their payload reaches `try_vm_runtime` on the waiting thread.
+    #[test]
+    fn test_halt_on_rayon_worker_skips_host_hook() {
+        if !is_child_process() {
+            run_in_child_process("vm_error::tests::test_halt_on_rayon_worker_skips_host_hook");
             return;
         }
         let host_panic_count = install_counting_host_hook();
 
         // This thread is not in the pool, so the job runs on the pool's worker.
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
-        let result =
-            try_vm_runtime(|| VmScope::parallel(|scope| pool.install(|| scope.run(|| panic!("VM halt on a worker")))));
-        assert!(result.is_err());
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().expect("Failed to build the thread pool");
+        let payload = try_vm_runtime(|| pool.install(|| vm_halt("VM halt on a worker".to_string())))
+            .expect_err("The halt should be caught");
+        assert_eq!(halt_message(&*payload), "VM halt on a worker");
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 0, "The halt should not reach the host hook");
-
-        // The worker has left the VM scope.
-        let result = pool.install(|| panic::catch_unwind(|| panic!("unrelated panic on the worker")));
-        assert!(result.is_err());
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The unrelated panic should reach the host hook");
 
         // A VM operation on a worker halts in both jobs of a join. The barrier holds each job until the other one
         // runs on the other worker.
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().expect("Failed to build the thread pool");
         let barrier = Barrier::new(2);
-        let halt = |scope: &VmScope| {
-            scope.run(|| {
-                barrier.wait();
-                panic!("VM halt in a join")
-            })
+        let halt = || {
+            barrier.wait();
+            vm_halt("VM halt in a join".to_string())
         };
-        let result =
-            pool.install(|| try_vm_runtime(|| VmScope::parallel(|scope| rayon::join(|| halt(scope), || halt(scope)))));
-        assert!(result.is_err());
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The halts should not reach the host hook");
+        let payload =
+            pool.install(|| try_vm_runtime(|| rayon::join(halt, halt))).expect_err("The halts should be caught");
+        assert_eq!(halt_message(&*payload), "VM halt in a join");
+        assert_eq!(host_panic_count.load(Ordering::SeqCst), 0, "The halts should not reach the host hook");
     }
 
-    /// An unrelated panic on a rayon worker reaches the host hook while another thread is inside the VM runtime.
-    #[test]
-    fn test_unrelated_rayon_panic_during_vm_runtime_reaches_host_hook() {
-        use rayon::prelude::*;
-
-        if !is_child_process() {
-            run_in_child_process("vm_error::tests::test_unrelated_rayon_panic_during_vm_runtime_reaches_host_hook");
-            return;
-        }
-        let host_panic_count = install_counting_host_hook();
-
-        let vm_started = Arc::new(Barrier::new(2));
-        let host_panic_finished = Arc::new(Barrier::new(2));
-        let (vm_started_, host_panic_finished_) = (vm_started.clone(), host_panic_finished.clone());
-        let vm = thread::spawn(move || {
-            try_vm_runtime(|| {
-                vm_started_.wait();
-                host_panic_finished_.wait();
-            })
-        });
-
-        // The VM operation is active while the unrelated job panics.
-        vm_started.wait();
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
-        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            pool.install(|| {
-                (0..8).into_par_iter().for_each(|i| {
-                    if i == 5 {
-                        panic!("unrelated panic on a worker");
-                    }
-                })
-            })
-        }));
-        assert!(result.is_err());
-        assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The unrelated panic should reach the host hook");
-
-        host_panic_finished.wait();
-        vm.join().unwrap().unwrap();
-    }
-
-    /// A worker that waits on a join inside the VM runtime runs an unrelated job that panics.
+    /// A worker that waits on a join inside `try_vm_runtime` runs an unrelated job that panics.
     #[test]
     fn test_job_stolen_by_waiting_vm_thread_reaches_host_hook() {
-        use std::{sync::mpsc, time::Duration};
-
         if !is_child_process() {
             run_in_child_process("vm_error::tests::test_job_stolen_by_waiting_vm_thread_reaches_host_hook");
             return;
@@ -419,7 +475,7 @@ mod tests {
                     let _ = unrelated_unwound_tx.send(());
                 })
                 .build()
-                .unwrap(),
+                .expect("Failed to build the thread pool"),
         );
         let (second_job_started_tx, second_job_started_rx) = mpsc::channel();
         let (spawn_now_tx, spawn_now_rx) = mpsc::channel();
@@ -428,9 +484,9 @@ mod tests {
         // Injects the unrelated job once the VM thread is about to wait.
         let pool_ = pool.clone();
         let spawner = thread::spawn(move || {
-            spawn_now_rx.recv().unwrap();
+            spawn_now_rx.recv().expect("The VM thread should signal the spawn");
             pool_.spawn(move || {
-                unrelated_ran_tx.send(rayon::current_thread_index()).unwrap();
+                unrelated_ran_tx.send(rayon::current_thread_index()).expect("The second job should be waiting");
                 panic!("unrelated panic in a stolen job");
             });
         });
@@ -438,29 +494,25 @@ mod tests {
         let (vm_thread, stolen_on) = pool.install(move || {
             let vm_thread = rayon::current_thread_index();
             let stolen_on = try_vm_runtime(move || {
-                VmScope::parallel(move |scope| {
-                    let ((), stolen_on) = rayon::join(
-                        move || {
-                            // The other worker runs the second job, so this thread then waits on it.
-                            second_job_started_rx.recv().unwrap();
-                            spawn_now_tx.send(()).unwrap();
-                        },
-                        move || {
-                            scope.run(|| {
-                                second_job_started_tx.send(()).unwrap();
-                                // The other worker is busy until the unrelated job has run on the waiting thread.
-                                unrelated_ran_rx.recv().unwrap()
-                            })
-                        },
-                    );
-                    stolen_on
-                })
+                let ((), stolen_on) = rayon::join(
+                    move || {
+                        // The other worker runs the second job, so this thread then waits on it.
+                        second_job_started_rx.recv().expect("The second job should start");
+                        spawn_now_tx.send(()).expect("The spawner should be waiting");
+                    },
+                    move || {
+                        second_job_started_tx.send(()).expect("The first job should be waiting");
+                        // The other worker is busy until the unrelated job has run on the waiting thread.
+                        unrelated_ran_rx.recv().expect("The unrelated job should run")
+                    },
+                );
+                stolen_on
             })
-            .unwrap();
+            .expect("The VM operation should not panic");
             (vm_thread, stolen_on)
         });
-        spawner.join().unwrap();
-        unrelated_unwound_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        spawner.join().expect("The spawner should not panic");
+        unrelated_unwound_rx.recv_timeout(Duration::from_secs(10)).expect("The unrelated job should unwind");
 
         assert_eq!(stolen_on, vm_thread, "The unrelated job should run on the waiting VM thread");
         assert_eq!(host_panic_count.load(Ordering::SeqCst), 1, "The unrelated panic should reach the host hook");

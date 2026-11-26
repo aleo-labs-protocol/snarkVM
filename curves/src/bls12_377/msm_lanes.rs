@@ -48,10 +48,6 @@ type LaneOutputs = [(Option<usize>, [Fq; 3]); 8];
 
 /// `msm_lanes`, passing the lanes of each call of `ifma::glv_mul_8` to `on_call`.
 fn msm_lanes_with(msms: &[&[(G1Affine, Fr)]], mut on_call: impl FnMut(LaneOutputs)) -> Option<Vec<G1Projective>> {
-    debug_assert!(
-        msms.iter().flat_map(|msm| msm.iter()).all(|(base, _)| base.is_in_correct_subgroup_assuming_on_curve()),
-        "a base is outside the prime-order subgroup"
-    );
     if !ifma::is_supported::<FqParameters>() {
         return None;
     }

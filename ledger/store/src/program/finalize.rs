@@ -92,6 +92,10 @@ fn to_key_id<N: Network>(
 /// This trait is sealed. Only snarkVM implements it.
 pub trait FinalizeStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Send + Sync {
     /// Whether a mapping reset in an atomic batch retains writes to previously absent keys.
+    ///
+    /// This must match how the backend's nested map commits a reset. For RocksDB, see
+    /// `NestedDataMap::finish_atomic`. If that behavior changes, change this constant too,
+    /// or mapping history stops matching committed state.
     const RETAINS_PENDING_WRITES_ON_RESET: bool;
 
     /// The committee storage.
