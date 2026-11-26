@@ -204,7 +204,9 @@ pub enum BlockMetadataKey {
 /// This assumes no rollback. After `BlockStore::remove_last_n(n)`, the stored watermark can be up to `n`
 /// heights above the result, and those heights cannot be served. This is accepted: production rolls back
 /// only one block, on a failed finalize with the memory backend, and BFT never rolls back committed blocks.
-/// Rolling back below the watermark is not supported.
+/// Rolling back below the watermark is not supported. A rollback that leaves fewer than `BLOCK_CACHE_SIZE`
+/// blocks at or above the watermark leaves a store that fails to open, because opening reads that many of
+/// the latest blocks.
 pub fn oldest_retained_authority_height(latest_height: u32, retention_blocks: u32) -> u32 {
     latest_height.saturating_sub(retention_blocks.saturating_sub(1))
 }
