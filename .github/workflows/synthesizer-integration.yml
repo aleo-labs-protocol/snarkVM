@@ -37,7 +37,8 @@ env:
 jobs:
   synthesizer-integration:
     runs-on: [self-hosted, linux, x64, cpu]
-    # The fleet runs jobs only from this repository; see "Forks" in CI.md.
+    # Keeps the job out of mirrors. An approved fork's pull request still runs
+    # it, as it runs ci.yml's fleet jobs; see "Forks" in CI.md.
     if: github.repository == 'aleo-labs-protocol/snarkVM'
     timeout-minutes: 90
     steps:
