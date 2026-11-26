@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-account"
-version = "4.13.1"
+version = "5.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Account operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
