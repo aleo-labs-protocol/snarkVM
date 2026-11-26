@@ -912,7 +912,10 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         batch.delete_range(&lower, &upper);
         let (mut kept, mut removed) = (0, 0);
         while let Some((key, value)) = iter.item() {
-            if retain(&unchecked_deserialize::<V>(value)?) {
+            let decoded = unchecked_deserialize::<V>(value).map_err(|error| {
+                anyhow::anyhow!("Malformed row ({error}): the store is inconsistent. Resync the store.")
+            })?;
+            if retain(&decoded) {
                 batch.put(key, value);
                 kept += 1;
             } else {
@@ -2015,6 +2018,15 @@ mod tests {
             assert_eq!(rows(&map), after_first);
             // An empty slice is a caller error, not a silent no-op.
             assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
+        }
+
+        #[test]
+        fn test_malformed_row_says_to_resync() {
+            let (map, _) = setup(&ROWS);
+            let prefix = map_prefix(0, MapID::Test(TestMap::Test));
+            map.database.put([&prefix[..], &[0x40, 0]].concat(), b"x").unwrap();
+            let error = map.retain_range(&[], None, |_| false).unwrap_err();
+            assert!(error.to_string().contains("Resync the store"), "{error}");
         }
 
         /// A plan marks only the slices whose flushed files hold deletions. Each plan flushes once;
