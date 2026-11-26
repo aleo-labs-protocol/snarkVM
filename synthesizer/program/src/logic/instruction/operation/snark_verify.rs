@@ -116,6 +116,26 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
     }
 }
 
+/// Checks that `snark.verify` may use `version` at `consensus_version`.
+/// It accepts every version from the oldest sound one up to the one that the consensus version requires.
+/// V1 and V2 are interchangeable until V3 is required, and V3 stays accepted after it.
+fn check_varuna_version(version: VarunaVersion, consensus_version: Option<ConsensusVersion>) -> Result<()> {
+    let Some(consensus_version) = consensus_version else {
+        return Ok(());
+    };
+    let tier = |version: VarunaVersion| (version as u8).max(VarunaVersion::V2 as u8);
+    let newest = tier(console::network::varuna_version_from_consensus(consensus_version));
+    let oldest = newest.min(VarunaVersion::V3 as u8);
+    let version = tier(version);
+    if version > newest {
+        Err(io_error("Invalid Varuna version").into())
+    } else if version < oldest {
+        Err(io_error(format!("Varuna V{oldest} is required for snark verification")).into())
+    } else {
+        Ok(())
+    }
+}
+
 /// Perform the snark verification based on the variant.
 #[rustfmt::skip]
 macro_rules! do_snark_verification {
@@ -139,18 +159,7 @@ macro_rules! do_snark_verification {
         let varuna_version = || match $varuna_version {
             Value::Plaintext(Plaintext::Literal(Literal::U8(version), _)) => {
                 let version = VarunaVersion::from_bytes_le(&[*version])?;
-                match version {
-                    VarunaVersion::V1 | VarunaVersion::V2 => {
-                        if $consensus_version.is_some_and(|version| version >= ConsensusVersion::V21) {
-                            return Err(io_error("Varuna V3 is required for snark verification").into());
-                        }
-                    }
-                    VarunaVersion::V3 => {
-                        if $consensus_version.is_some_and(|version| version < ConsensusVersion::V21) {
-                            return Err(io_error("Invalid Varuna version").into());
-                        }
-                    }
-                }
+                check_varuna_version(version, $consensus_version)?;
                 Ok(version)
             }
             _ => bail!("Expected the Varuna version to be a U8 literal."),
@@ -614,5 +623,38 @@ mod tests {
         assert_eq!(is.operands[2], Operand::Register(Register::Locator(2)), "The third operand is incorrect");
         assert_eq!(is.operands[3], Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
         assert_eq!(is.destination, Register::Locator(4), "The destination register is incorrect");
+    }
+
+    #[test]
+    fn test_check_varuna_version() {
+        use ConsensusVersion::*;
+        use VarunaVersion as Varuna;
+
+        let invalid = "Invalid Varuna version";
+        let v3_required = "Varuna V3 is required for snark verification";
+        // For each consensus version: the outcome for V1, V2, V3 and V4.
+        let cases = [
+            (V1, [None, None, Some(invalid), Some(invalid)]),
+            (V3, [None, None, Some(invalid), Some(invalid)]),
+            (V4, [None, None, Some(invalid), Some(invalid)]),
+            (V20, [None, None, Some(invalid), Some(invalid)]),
+            (V21, [Some(v3_required), Some(v3_required), None, Some(invalid)]),
+            (V23, [Some(v3_required), Some(v3_required), None, Some(invalid)]),
+            (V24, [Some(v3_required), Some(v3_required), None, None]),
+        ];
+        for (consensus_version, expected) in cases {
+            for (version, expected) in [Varuna::V1, Varuna::V2, Varuna::V3, Varuna::V4].into_iter().zip_eq(expected) {
+                let result = check_varuna_version(version, Some(consensus_version));
+                match expected {
+                    None => assert!(result.is_ok(), "{version:?} at {consensus_version:?}: {result:?}"),
+                    Some(message) => {
+                        assert_eq!(result.unwrap_err().to_string(), message, "{version:?} at {consensus_version:?}")
+                    }
+                }
+            }
+        }
+        for version in [Varuna::V1, Varuna::V2, Varuna::V3, Varuna::V4] {
+            assert!(check_varuna_version(version, None).is_ok());
+        }
     }
 }

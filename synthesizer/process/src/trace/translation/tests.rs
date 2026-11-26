@@ -176,7 +176,7 @@ fn test_varuna_v3_translation_key_reuse() -> Result<()> {
                 expected_key = Some(vk.clone());
             }
             let inputs = assignment.public_inputs().iter().map(|variable| variable.value()).collect::<Vec<_>>();
-            for version in [VarunaVersion::V2, VarunaVersion::V3] {
+            for version in [VarunaVersion::V2, VarunaVersion::V3, VarunaVersion::V4] {
                 let proof = pk.prove("translation", version, &assignment, rng)?;
                 assert!(vk.verify("translation", version, &inputs, &proof));
             }

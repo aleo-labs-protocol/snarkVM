@@ -142,7 +142,7 @@ pub fn execution_cost_for_authorization<N: Network>(
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
     let hiding_mode = true;
 
-    // Varuna V2 and V3 use the same serialized proof layout.
+    // Every Varuna version from V2 uses the same serialized proof layout.
     let varuna_version = VarunaVersion::V2;
 
     let expected_proof_size = u64::try_from(proof_size::<N>(&batch_sizes, varuna_version, hiding_mode)?)?;

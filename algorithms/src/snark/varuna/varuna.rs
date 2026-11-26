@@ -18,6 +18,7 @@ use crate::{
     AlgebraicSponge,
     SNARK,
     SNARKError,
+    crypto_hash::sha256::Sha256Writer,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
         Commitment,
@@ -36,7 +37,7 @@ use crate::{
         SNARKMode,
         UniversalSRS,
         VarunaVersion,
-        ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
+        ahp::{AHPError, AHPForR1CS, CircuitId, CircuitInfo, EvaluationsProvider},
         proof,
         prover,
         witness_label,
@@ -56,7 +57,7 @@ use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
 use itertools::Itertools;
 use rand::{CryptoRng, Rng};
-use std::{borrow::Borrow, collections::BTreeMap, ops::Deref, sync::Arc};
+use std::{borrow::Borrow, collections::BTreeMap, io::Write, ops::Deref, sync::Arc};
 
 use crate::srs::UniversalProver;
 
@@ -139,15 +140,41 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
     fn init_sponge<'a>(
         fs_parameters: &FS::Parameters,
         inputs_and_batch_sizes: &BTreeMap<CircuitId, (usize, &[Vec<E::Fr>])>,
-        circuit_commitments: impl Iterator<Item = &'a [crate::polycommit::sonic_pc::Commitment<E>]>,
+        circuit_keys: impl Iterator<Item = &'a CircuitVerifyingKey<E>>,
         varuna_version: VarunaVersion,
-    ) -> FS {
+    ) -> Result<FS> {
         let mut sponge = FS::new_with_parameters(fs_parameters);
+        let circuit_commitments = |vk: &'a CircuitVerifyingKey<E>| vk.circuit_commitments.as_slice();
+        match varuna_version {
+            VarunaVersion::V1 | VarunaVersion::V2 => Self::absorb_statement(
+                &mut sponge,
+                Self::PROTOCOL_NAME,
+                inputs_and_batch_sizes,
+                circuit_keys.map(circuit_commitments),
+            ),
+            VarunaVersion::V3 => Self::absorb_statement(
+                &mut sponge,
+                b"VARUNA-2026-V3",
+                inputs_and_batch_sizes,
+                circuit_keys.map(circuit_commitments),
+            ),
+            VarunaVersion::V4 => sponge.absorb_bytes(&Self::statement_digest(
+                inputs_and_batch_sizes,
+                circuit_keys.map(|vk| (&vk.circuit_info, circuit_commitments(vk))),
+            )?),
+        }
+        Ok(sponge)
+    }
 
-        sponge.absorb_bytes(match varuna_version {
-            VarunaVersion::V1 | VarunaVersion::V2 => Self::PROTOCOL_NAME,
-            VarunaVersion::V3 => b"VARUNA-2026-V3",
-        });
+    /// Absorbs the protocol name and the whole statement, as versions before
+    /// `VarunaVersion::V4` do.
+    fn absorb_statement<'a>(
+        sponge: &mut FS,
+        protocol_name: &[u8],
+        inputs_and_batch_sizes: &BTreeMap<CircuitId, (usize, &[Vec<E::Fr>])>,
+        circuit_commitments: impl Iterator<Item = &'a [Commitment<E>]>,
+    ) {
+        sponge.absorb_bytes(protocol_name);
         for (batch_size, inputs) in inputs_and_batch_sizes.values() {
             sponge.absorb_bytes(&(*batch_size as u64).to_le_bytes());
             for input in inputs.iter() {
@@ -157,7 +184,43 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         for circuit_specific_commitments in circuit_commitments {
             sponge.absorb_native_field_elements(circuit_specific_commitments);
         }
-        sponge
+    }
+
+    /// Returns the SHA-256 digest of the statement, which `VarunaVersion::V4`
+    /// absorbs in place of the statement.
+    ///
+    /// The hashed bytes are the label `VARUNA-2026-V4` and the number of
+    /// circuits; then, for each circuit in `CircuitId` order, its circuit
+    /// info and its commitments preceded by their number; then, for each
+    /// circuit in the same order, its batch size and each instance's padded
+    /// public input preceded by its length. The circuit info, field elements
+    /// and commitments have fixed-size encodings and every list is preceded
+    /// by its length, so distinct statements hash distinct byte strings.
+    /// The circuit IDs order the circuits but are not hashed.
+    pub(super) fn statement_digest<'a>(
+        inputs_and_batch_sizes: &BTreeMap<CircuitId, (usize, &[Vec<E::Fr>])>,
+        mut circuit_keys: impl Iterator<Item = (&'a CircuitInfo, &'a [Commitment<E>])>,
+    ) -> Result<[u8; 32]> {
+        let mut digest = Sha256Writer::default();
+        digest.write_all(b"VARUNA-2026-V4")?;
+        (inputs_and_batch_sizes.len() as u64).write_le(&mut digest)?;
+        for _ in 0..inputs_and_batch_sizes.len() {
+            let (circuit_info, commitments) =
+                circuit_keys.next().ok_or_else(|| anyhow!("Expected a verifying key for each circuit"))?;
+            circuit_info.write_le(&mut digest)?;
+            (commitments.len() as u64).write_le(&mut digest)?;
+            commitments.write_le(&mut digest)?;
+        }
+        ensure!(circuit_keys.next().is_none(), "Expected verifying keys for {} circuits", inputs_and_batch_sizes.len());
+        for (batch_size, inputs) in inputs_and_batch_sizes.values() {
+            ensure!(inputs.len() == *batch_size, "Expected {batch_size} public inputs, found {}", inputs.len());
+            (*batch_size as u64).write_le(&mut digest)?;
+            for input in inputs.iter() {
+                (input.len() as u64).write_le(&mut digest)?;
+                input.write_le(&mut digest)?;
+            }
+        }
+        Ok(digest.finalize())
     }
 
     fn init_sponge_for_certificate(
@@ -407,11 +470,9 @@ where
 
         let committer_key = CommitterUnionKey::union(keys_to_constraints.keys().map(|pk| pk.committer_key.deref()));
 
-        let circuit_commitments =
-            keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
+        let circuit_keys = keys_to_constraints.keys().map(|pk| &pk.circuit_verifying_key);
         trace!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
-        let mut sponge =
-            Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
+        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_keys, varuna_version)?;
 
         // --------------------------------------------------------------------
         // First round
@@ -469,7 +530,7 @@ where
         let (prover_prepare_third_message, prover_state, verifier_prepare_third_msg, verifier_state) = {
             match varuna_version {
                 VarunaVersion::V1 => (None, prover_state, None, verifier_state),
-                VarunaVersion::V2 | VarunaVersion::V3 => {
+                VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                     let (prover_prepare_third_message, prover_state) = AHPForR1CS::<_, SM>::prover_prepare_third_round(
                         &verifier_first_message,
                         &verifier_second_msg,
@@ -533,7 +594,7 @@ where
                     &mut sponge,
                 );
             }
-            VarunaVersion::V2 | VarunaVersion::V3 => {
+            VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                 if prover_third_message.is_some() {
                     return Err(anyhow!("Expected prover to not contribute sums in the third round."))?;
                 }
@@ -544,7 +605,7 @@ where
         // Extract the prover's third message to be used in the verifier's third round.
         let prover_third_message = match varuna_version {
             VarunaVersion::V1 => prover_third_message,
-            VarunaVersion::V2 | VarunaVersion::V3 => prover_prepare_third_message,
+            VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => prover_prepare_third_message,
         }
         .ok_or_else(|| anyhow!("Prover did not contribute sums in the expected round."))?;
 
@@ -922,7 +983,7 @@ where
         let circuit_commitments = keys_to_inputs.keys().map(|vk| vk.circuit_commitments.as_slice());
         trace!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge =
-            Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
+            Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, keys_to_inputs.keys().copied(), varuna_version)?;
 
         // --------------------------------------------------------------------
         // First round
@@ -954,7 +1015,7 @@ where
         let verifier_state = {
             match varuna_version {
                 VarunaVersion::V1 => verifier_state,
-                VarunaVersion::V2 | VarunaVersion::V3 => {
+                VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                     let _prepare_third_round_time = timing_span!("Prep third round").entered();
                     Self::absorb_sums(&proof.third_msg.sums.clone().into_iter().flatten().collect_vec(), &mut sponge);
                     let (_, verifier_state) = AHPForR1CS::<_, SM>::verifier_prepare_third_round(
@@ -982,7 +1043,7 @@ where
                         &mut sponge,
                     );
                 }
-                VarunaVersion::V2 | VarunaVersion::V3 => {
+                VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                     Self::absorb_labeled(&third_commitments, &mut sponge);
                 }
             }

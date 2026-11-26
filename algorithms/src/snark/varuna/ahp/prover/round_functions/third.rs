@@ -117,7 +117,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Send the assigned matrix sums to the verifier only in VarunaVersion::V1.
         let msg = match varuna_version {
             VarunaVersion::V1 => Some(msg),
-            VarunaVersion::V2 | VarunaVersion::V3 => None,
+            VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => None,
         };
 
         let g_1 = DensePolynomial::from_coefficients_slice(&x_g_1_sum.coeffs[1..]);
@@ -229,7 +229,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 Some(z_m_at_alpha),
                             )
                         }
-                        VarunaVersion::V2 | VarunaVersion::V3 => {
+                        VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                             Self::calculate_lineval_sumcheck_instance_witness_polys(
                                 label,
                                 variable_domain,

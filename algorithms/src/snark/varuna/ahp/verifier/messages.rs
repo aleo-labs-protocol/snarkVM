@@ -178,7 +178,7 @@ pub fn select_third_round_challenges<F: PrimeField>(
             }
             Ok((*alpha, first_round_batch_combiners.clone(), F::one(), *eta_b, *eta_c))
         }
-        VarunaVersion::V2 | VarunaVersion::V3 => {
+        VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
             let SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
             if eta_b.is_some() || eta_c.is_some() {
                 return Err(anyhow::anyhow!(

@@ -171,7 +171,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
                 let [alpha, eta_b, eta_c]: [_; 3] = first.try_into().map_err(anyhow::Error::msg)?;
                 (alpha, Some(eta_b), Some(eta_c))
             }
-            VarunaVersion::V2 | VarunaVersion::V3 => {
+            VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                 let elems = fs_rng.squeeze_nonnative_field_elements(1);
                 let alpha = elems[0];
                 (alpha, None, None)
@@ -209,7 +209,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
                 let [eta_b, eta_c]: [_; 2] = elems.as_slice().try_into().map_err(anyhow::Error::msg)?;
                 (TargetField::one(), eta_b, eta_c)
             }
-            VarunaVersion::V3 => {
+            VarunaVersion::V3 | VarunaVersion::V4 => {
                 let elems = fs_rng.squeeze_nonnative_field_elements(3);
                 let [eta_a, eta_b, eta_c]: [_; 3] = elems.as_slice().try_into().map_err(anyhow::Error::msg)?;
                 (eta_a, eta_b, eta_c)

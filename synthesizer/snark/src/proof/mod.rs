@@ -52,8 +52,8 @@ impl<N: Network> Deref for Proof<N> {
 ///  - `hiding`: indicates whether the proof system is run in ZK mode
 ///
 /// *Returns*:
-///  - `Ok(size)` for `VarunaVersion::V2` and `VarunaVersion::V3`, where `size` is the size of the proof
-///    in bytes.
+///  - `Ok(size)` for every version from `VarunaVersion::V2`, where `size` is the size of the proof in
+///    bytes.
 ///  - `Err` for `VarunaVersion::V1`.
 pub fn proof_size<N: Network>(
     batch_sizes: &[usize],

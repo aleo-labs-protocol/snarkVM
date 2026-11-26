@@ -49,8 +49,11 @@ mod varuna {
 
         let version = VarunaVersion::from_bytes_le(&[3]).expect("V3 must have a stable version encoding");
         assert_eq!(version.to_bytes_le().expect("valid test fixture"), [3]);
+        let version = VarunaVersion::from_bytes_le(&[4]).expect("V4 must have a stable version encoding");
+        assert_eq!(version, VarunaVersion::V4);
+        assert_eq!(version.to_bytes_le().expect("valid test fixture"), [4]);
         assert!(VarunaVersion::from_bytes_le(&[0]).is_err());
-        assert!(VarunaVersion::from_bytes_le(&[4]).is_err());
+        assert!(VarunaVersion::from_bytes_le(&[5]).is_err());
     }
 
     #[test]
@@ -152,7 +155,8 @@ mod varuna {
 
             let mut proof_sizes = Vec::new();
             let mut snapshot = String::new();
-            for version in [VarunaVersion::V2, VarunaVersion::V3] {
+            let versions = [VarunaVersion::V2, VarunaVersion::V3, VarunaVersion::V4];
+            for version in versions {
                 let proof = Inst::<SM>::prove_batch(&prover, &parameters, version, &prover_inputs, rng)
                     .expect("valid test fixture");
                 let bytes = proof.to_bytes_le().expect("valid test fixture");
@@ -178,11 +182,12 @@ mod varuna {
                     proof_size::<Bls12_377>(proof.batch_sizes(), version, SM::ZK).expect("valid test fixture")
                 );
                 proof_sizes.push(bytes.len());
-                let other_version = if version == VarunaVersion::V2 { VarunaVersion::V3 } else { VarunaVersion::V2 };
-                assert!(
-                    !Inst::<SM>::verify_batch(&verifier, &parameters, other_version, &verifier_inputs, &proof)
-                        .unwrap_or(false)
-                );
+                for other_version in versions.into_iter().filter(|other_version| *other_version != version) {
+                    assert!(
+                        !Inst::<SM>::verify_batch(&verifier, &parameters, other_version, &verifier_inputs, &proof)
+                            .unwrap_or(false)
+                    );
+                }
 
                 let mut wrong_inputs = inputs.clone();
                 wrong_inputs[0][0][1] += Fr::from(1u64);
@@ -193,7 +198,7 @@ mod varuna {
                         .unwrap_or(false)
                 );
             }
-            assert_eq!(proof_sizes[0], proof_sizes[1]);
+            assert!(proof_sizes.iter().all(|size| *size == proof_sizes[0]));
             snapshot
         }
 
@@ -201,10 +206,142 @@ mod varuna {
         expect_test::expect![[r#"
             hiding=true V2=03673be9a6b1aa62629164620492ffc9f30b677c80dd0f8b05a8f8c63a6cc965
             hiding=true V3=f6a95d87ce3026bc71199b3e419d0cf93d065ffe06ad88600e08b90806fd6666
+            hiding=true V4=43b72046a048afb12381629282a3d6bda6fb0d1f2c2d18d28d97f328ef27b812
             hiding=false V2=1247d0fc9643ed261fb7633b39e06fde7d287708eab5861ead4970e3f2521a86
             hiding=false V3=514f2f98043b5945abd3115fd305056ed28162e4e5135c4818333d8113b994ca
+            hiding=false V4=6e995f7e2b776534943f45e7d9bc2283c8e9be7e3aa3fd60caa1971edd827b5c
         "#]]
         .assert_eq(&snapshot);
+    }
+
+    /// V4 hashes each input padded to the input domain, so an input verifies
+    /// alike with or without its padding, and a nonzero padding entry is
+    /// rejected.
+    #[test]
+    fn test_varuna_v4_input_padding() {
+        use crate::fft::EvaluationDomain;
+        use snarkvm_fields::{One, Zero};
+
+        let rng = &mut TestRng::fixed(4104);
+        let srs = VarunaSonicInst::universal_setup(512).expect("valid test fixture");
+        let prover = srs.to_universal_prover().expect("valid test fixture");
+        let verifier = srs.to_universal_verifier().expect("valid test fixture");
+        let parameters = FS::sample_parameters();
+        let (circuit, inputs) = TestCircuit::gen_rand(2, 32, 25, rng);
+        let (pk, vk) = VarunaSonicInst::circuit_setup(&srs, &circuit).expect("valid test fixture");
+        let proof = VarunaSonicInst::prove(&prover, &parameters, &pk, VarunaVersion::V4, &circuit, rng)
+            .expect("valid test fixture");
+
+        let domain_size =
+            EvaluationDomain::<Fr>::new(vk.circuit_info.num_public_inputs).expect("valid test fixture").size();
+        let mut padded = inputs.clone();
+        padded.resize(domain_size, Fr::zero());
+        assert!(padded.len() > inputs.len());
+        let mut changed_padding = padded.clone();
+        *changed_padding.last_mut().expect("valid test fixture") = Fr::one();
+        for (input, valid) in [(&inputs, true), (&padded, true), (&changed_padding, false)] {
+            let verified =
+                VarunaSonicInst::verify(&verifier, &parameters, &vk, VarunaVersion::V4, input.as_slice(), &proof)
+                    .expect("valid test fixture");
+            assert_eq!(verified, valid);
+        }
+    }
+
+    /// The V4 digest binds each verifying key's circuit info and commitments,
+    /// not its stored circuit ID, so a proof verifies under a key whose stored
+    /// ID differs from the ID of the circuit, as it does under V3.
+    #[test]
+    fn test_varuna_v4_ignores_the_stored_circuit_id() {
+        let rng = &mut TestRng::fixed(4106);
+        let srs = VarunaSonicInst::universal_setup(512).expect("valid test fixture");
+        let prover = srs.to_universal_prover().expect("valid test fixture");
+        let verifier = srs.to_universal_verifier().expect("valid test fixture");
+        let parameters = FS::sample_parameters();
+        let (circuit, inputs) = TestCircuit::gen_rand(2, 32, 25, rng);
+        let (pk, vk) = VarunaSonicInst::circuit_setup(&srs, &circuit).expect("valid test fixture");
+        let mut other_id = vk.clone();
+        other_id.id.0[0] ^= 1;
+        assert_ne!(other_id.id, pk.circuit.id);
+        for version in [VarunaVersion::V3, VarunaVersion::V4] {
+            let proof =
+                VarunaSonicInst::prove(&prover, &parameters, &pk, version, &circuit, rng).expect("valid test fixture");
+            for vk in [&vk, &other_id] {
+                let verified = VarunaSonicInst::verify(&verifier, &parameters, vk, version, inputs.as_slice(), &proof)
+                    .expect("valid test fixture");
+                assert!(verified, "{version:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_varuna_v4_statement_digest_binds_the_statement() {
+        use crate::{
+            polycommit::{kzg10::KZGCommitment, sonic_pc::Commitment},
+            snark::varuna::ahp::{CircuitId, CircuitInfo},
+        };
+        use snarkvm_curves::{ProjectiveCurve, bls12_377::G1Projective};
+
+        type Inst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
+        type Statement = [(u8, CircuitInfo, usize, Vec<Vec<Fr>>, Vec<Commitment<Bls12_377>>)];
+
+        let digest = |statement: &Statement| {
+            let inputs = statement
+                .iter()
+                .map(|(id, _, batch_size, inputs, _)| (CircuitId([*id; 32]), (*batch_size, inputs.as_slice())))
+                .collect();
+            let keys = statement.iter().map(|(_, info, _, _, commitments)| (info, commitments.as_slice()));
+            Inst::statement_digest(&inputs, keys).map(hex::encode)
+        };
+        let info = |num_constraints| CircuitInfo {
+            num_public_inputs: 4,
+            num_public_and_private_variables: 8,
+            num_constraints,
+            num_non_zero_a: 16,
+            num_non_zero_b: 16,
+            num_non_zero_c: 16,
+        };
+        let (i, j) = (info(8), info(9));
+        let [a, b, c, d] = [1u64, 2, 3, 4].map(Fr::from);
+        let [g, h, k] = [1u64, 2, 3]
+            .map(|n| KZGCommitment::<Bls12_377>((G1Projective::prime_subgroup_generator() * Fr::from(n)).to_affine()));
+
+        let one = digest(&[(1, i, 1, vec![vec![a, b]], vec![g])]).expect("valid test fixture");
+        expect_test::expect!["592299ffb98ba5e0218e955a34836b9e1bd92c27f51b41eeb5e579d850ebd232"].assert_eq(&one);
+
+        // The same field elements, split differently into instances.
+        assert_ne!(
+            digest(&[(1, i, 2, vec![vec![a, b], vec![c, d]], vec![g])]).expect("valid test fixture"),
+            digest(&[(1, i, 2, vec![vec![a], vec![b, c, d]], vec![g])]).expect("valid test fixture"),
+        );
+        // The same commitments, split differently between circuits.
+        assert_ne!(
+            digest(&[(1, i, 1, vec![vec![a]], vec![g, h]), (2, j, 1, vec![vec![b]], vec![k])])
+                .expect("valid test fixture"),
+            digest(&[(1, i, 1, vec![vec![a]], vec![g]), (2, j, 1, vec![vec![b]], vec![h, k])])
+                .expect("valid test fixture"),
+        );
+        // The same instances, assigned to different circuits.
+        assert_ne!(
+            digest(&[(1, i, 1, vec![vec![a]], vec![g]), (2, j, 1, vec![vec![b]], vec![h])])
+                .expect("valid test fixture"),
+            digest(&[(1, i, 1, vec![vec![b]], vec![g]), (2, j, 1, vec![vec![a]], vec![h])])
+                .expect("valid test fixture"),
+        );
+        // Other circuit info with the same inputs and commitments.
+        assert_ne!(one, digest(&[(1, j, 1, vec![vec![a, b]], vec![g])]).expect("valid test fixture"));
+        // Another circuit ID with the same key data and inputs: the ID is not hashed.
+        assert_eq!(one, digest(&[(2, i, 1, vec![vec![a, b]], vec![g])]).expect("valid test fixture"));
+        // An extra zero element changes the digest.
+        assert_ne!(one, digest(&[(1, i, 1, vec![vec![a, b, Fr::from(0u64)]], vec![g])]).expect("valid test fixture"));
+        // A batch size that differs from the number of instances is rejected.
+        assert!(digest(&[(1, i, 2, vec![vec![a, b]], vec![g])]).is_err());
+        // A number of verifying keys that differs from the number of circuits is
+        // rejected.
+        let instances = [vec![a]];
+        let inputs = BTreeMap::from([(CircuitId([1; 32]), (1, instances.as_slice()))]);
+        assert!(Inst::statement_digest(&inputs, std::iter::empty()).is_err());
+        let (g, h) = ([g], [h]);
+        assert!(Inst::statement_digest(&inputs, [(&i, g.as_slice()), (&i, h.as_slice())].into_iter()).is_err());
     }
 
     #[test]
@@ -294,6 +431,7 @@ mod varuna {
                         VarunaVersion::V1 => VarunaVersion::V2,
                         VarunaVersion::V2 => VarunaVersion::V1,
                         VarunaVersion::V3 => VarunaVersion::V2,
+                        VarunaVersion::V4 => VarunaVersion::V3,
                     };
 
                     for i in 0..5 {
@@ -624,6 +762,7 @@ mod varuna_hiding {
             VarunaVersion::V1 => VarunaVersion::V2,
             VarunaVersion::V2 => VarunaVersion::V1,
             VarunaVersion::V3 => VarunaVersion::V2,
+            VarunaVersion::V4 => VarunaVersion::V3,
         };
 
         for _ in 0..num_times {
@@ -871,11 +1010,12 @@ mod varuna_hiding {
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
-        for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
+        for varuna_version in [VarunaVersion::V1, VarunaVersion::V2, VarunaVersion::V4] {
             let wrong_varuna_version = match varuna_version {
                 VarunaVersion::V1 => VarunaVersion::V2,
                 VarunaVersion::V2 => VarunaVersion::V1,
                 VarunaVersion::V3 => VarunaVersion::V2,
+                VarunaVersion::V4 => VarunaVersion::V3,
             };
             let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
             println!("Called circuit setup");
@@ -1635,9 +1775,10 @@ mod proof_vector {
     /// host fails in one of them. The `rand` generators and the SRS bytes
     /// `universal_setup` produces also move it, so a dependency bump can land
     /// here without a prover change.
-    const EXPECTED: [(VarunaVersion, &str); 2] = [
+    const EXPECTED: [(VarunaVersion, &str); 3] = [
         (VarunaVersion::V2, "620d8f2272d8496df5832bddeffa3cf70ed48c192ce6caffb624c27f73db34b3"),
         (VarunaVersion::V3, "8e2b36c08794204430f20e5e1c26e52b7d8e4588acc8d7799669d9365bd8ef70"),
+        (VarunaVersion::V4, "6533c6efe024679df48972d50e473c65e48d15c5312ae30439b3a9a2b3cfa962"),
     ];
 
     #[test]

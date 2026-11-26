@@ -45,6 +45,7 @@ pub enum VarunaVersion {
     V1 = 1,
     V2 = 2,
     V3 = 3,
+    V4 = 4,
 }
 
 impl ToBytes for VarunaVersion {
@@ -60,6 +61,7 @@ impl FromBytes for VarunaVersion {
             1 => Ok(Self::V1),
             2 => Ok(Self::V2),
             3 => Ok(Self::V3),
+            4 => Ok(Self::V4),
             _ => Err(io_error("Invalid Varuna version")),
         }
     }

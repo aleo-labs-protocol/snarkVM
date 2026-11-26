@@ -1025,8 +1025,20 @@ mod tests {
     #[test]
     #[ignore = "slow"]
     fn test_varuna_v3_transaction_boundary() {
-        let rng = &mut TestRng::fixed(3104);
-        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
+        check_varuna_transaction_boundary(ConsensusVersion::V21, 3104);
+    }
+
+    #[test]
+    #[ignore = "slow"]
+    fn test_varuna_v4_transaction_boundary() {
+        check_varuna_transaction_boundary(ConsensusVersion::V24, 4104);
+    }
+
+    /// Checks that a transaction proven before `activation` is rejected from `activation` on, and that one
+    /// proven at `activation` is accepted.
+    fn check_varuna_transaction_boundary(activation: ConsensusVersion, seed: u64) {
+        let rng = &mut TestRng::fixed(seed);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(activation).expect("valid test fixture");
         let mut vm = test_helpers::sample_vm_at_height(height - 1, rng);
         let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key).expect("valid test fixture");
@@ -1064,8 +1076,20 @@ mod tests {
     #[test]
     #[ignore = "slow"]
     fn test_varuna_v3_inclusion_and_deployment_boundary() -> Result<()> {
-        let rng = &mut TestRng::fixed(3107);
-        let height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21)?;
+        check_varuna_inclusion_and_deployment_boundary(ConsensusVersion::V21, 3107)
+    }
+
+    #[test]
+    #[ignore = "slow"]
+    fn test_varuna_v4_inclusion_and_deployment_boundary() -> Result<()> {
+        check_varuna_inclusion_and_deployment_boundary(ConsensusVersion::V24, 4107)
+    }
+
+    /// Checks that private transfers and deployments proven before `activation` are rejected from `activation`
+    /// on, and that the deployment's certificates still verify with a fee proven at `activation`.
+    fn check_varuna_inclusion_and_deployment_boundary(activation: ConsensusVersion, seed: u64) -> Result<()> {
+        let rng = &mut TestRng::fixed(seed);
+        let height = CurrentNetwork::CONSENSUS_HEIGHT(activation)?;
         let mut vm = test_helpers::sample_vm_at_height(height - 2, rng);
         let private_key = test_helpers::sample_genesis_private_key();
         let address = Address::try_from(&private_key)?;
@@ -1159,6 +1183,17 @@ function identity:
     #[test]
     #[ignore = "slow"]
     fn test_varuna_v3_snark_instructions_boundary() {
+        check_varuna_snark_instructions_boundary(ConsensusVersion::V21, 3105);
+    }
+
+    #[test]
+    #[ignore = "slow"]
+    fn test_varuna_v4_snark_instructions_boundary() {
+        check_varuna_snark_instructions_boundary(ConsensusVersion::V24, 4105);
+    }
+
+    /// Checks which Varuna versions `snark.verify` and `snark.verify.batch` accept around `activation`.
+    fn check_varuna_snark_instructions_boundary(activation: ConsensusVersion, seed: u64) {
         use console::{program::Register, types::U8};
         use snarkvm_algorithms::snark::varuna::VarunaVersion;
         use snarkvm_synthesizer_process::FinalizeRegisters;
@@ -1166,8 +1201,8 @@ function identity:
         use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS};
         use std::sync::OnceLock;
 
-        fn check<const VARIANT: u8>() {
-            let rng = &mut TestRng::fixed(3105);
+        fn check<const VARIANT: u8>(activation: ConsensusVersion, seed: u64) {
+            let rng = &mut TestRng::fixed(seed);
             let assignment = snarkvm_synthesizer_snark::test_helpers::sample_assignment();
             let srs = UniversalSRS::<CurrentNetwork>::load().expect("valid test fixture");
             let (pk, vk) = srs.to_circuit_key("test", &assignment).expect("valid test fixture");
@@ -1184,7 +1219,7 @@ function identity:
             let vk_len = vk_bytes.len();
             let one = Field::<CurrentNetwork>::one();
             let input = Plaintext::Array(vec![Plaintext::from(Literal::Field(one)); 2], OnceLock::new());
-            for version in [VarunaVersion::V1, VarunaVersion::V2, VarunaVersion::V3] {
+            for version in [VarunaVersion::V1, VarunaVersion::V2, VarunaVersion::V3, VarunaVersion::V4] {
                 let proof = if VARIANT == 0 {
                     pk.prove("test", version, &assignment, rng).expect("valid test fixture")
                 } else {
@@ -1239,7 +1274,7 @@ finalize verify:
                     SnarkVerification::<CurrentNetwork, VARIANT>::parse(&format!("{opcode} r0 r1 r2 r3 into r4"))
                         .expect("valid test fixture")
                         .1;
-                let activation = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V21).expect("valid test fixture");
+                let activation = CurrentNetwork::CONSENSUS_HEIGHT(activation).expect("valid test fixture");
                 for height in [activation - 1, activation, activation + 1] {
                     let state = FinalizeGlobalState::from(u64::from(height), height, None, [0; 32], None, None);
                     let mut registers = FinalizeRegisters::new(
@@ -1261,7 +1296,14 @@ finalize verify:
                             .expect("valid test fixture");
                     }
                     let result = instruction.finalize(&stack, None, &mut registers);
-                    let allowed = (height >= activation) == (version == VarunaVersion::V3);
+                    let required = varuna_version_from_consensus(
+                        CurrentNetwork::CONSENSUS_VERSION(height).expect("valid test fixture"),
+                    );
+                    // V1 and V2 are interchangeable, and V3 stays accepted once a newer version is required.
+                    let tier = |version: VarunaVersion| (version as u8).max(VarunaVersion::V2 as u8);
+                    let newest = tier(required);
+                    let oldest = newest.min(VarunaVersion::V3 as u8);
+                    let allowed = (oldest..=newest).contains(&tier(version));
                     if allowed {
                         result.expect("valid test fixture");
                         assert_eq!(
@@ -1272,21 +1314,19 @@ finalize verify:
                         );
                     } else {
                         let error = result.unwrap_err().to_string();
-                        assert!(
-                            error.contains(if height < activation {
-                                "Invalid Varuna version"
-                            } else {
-                                "Varuna V3 is required"
-                            }),
-                            "{error}"
-                        );
+                        let expected = if tier(version) > newest {
+                            "Invalid Varuna version".to_string()
+                        } else {
+                            format!("Varuna V{oldest} is required")
+                        };
+                        assert!(error.contains(&expected), "{error}");
                     }
                 }
             }
         }
 
-        check::<0>();
-        check::<1>();
+        check::<0>(activation, seed);
+        check::<1>(activation, seed);
     }
 
     fn create_cache_key_for_test<N: Network, C: ConsensusStorage<N>>(
