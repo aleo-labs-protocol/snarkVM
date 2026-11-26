@@ -779,8 +779,8 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
 
     /// Plans a sliced compaction of this map after flushing the database: one entry per slice (see
     /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. The maps
-    /// share one column family, so a file straddling the map's edge can carry a neighbour's deletions
-    /// and mark an edge slice.
+    /// share one column family, so a file is judged by all the deletions in it: on a live node a
+    /// flushed file spans this map and holds deletions, and marks every slice.
     pub(crate) fn compaction_plan(&self) -> Result<Vec<bool>> {
         self.database.flush()?;
         // Slice 0 of 1 is the whole map.
@@ -819,7 +819,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
             Some(next) => [&prefix[..], &(u16::from_be_bytes(next) - 1).to_be_bytes(), &[0xff; 30][..]].concat(),
             None => [&prefix[..], &[0xff; 32][..]].concat(),
         };
-        Ok((self.key_range(&start, None)?.0, end))
+        Ok(([&prefix[..], &start[..]].concat(), end))
     }
 
     /// This map's key prefix.
@@ -912,7 +912,10 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         batch.delete_range(&lower, &upper);
         let (mut kept, mut removed) = (0, 0);
         while let Some((key, value)) = iter.item() {
-            if retain(&unchecked_deserialize::<V>(value)?) {
+            let decoded = unchecked_deserialize::<V>(value).map_err(|error| {
+                anyhow::anyhow!("Malformed row ({error}): the store is inconsistent. Resync the store.")
+            })?;
+            if retain(&decoded) {
                 batch.put(key, value);
                 kept += 1;
             } else {
@@ -2017,8 +2020,17 @@ mod tests {
             assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
         }
 
+        #[test]
+        fn test_malformed_row_says_to_resync() {
+            let (map, _) = setup(&ROWS);
+            let prefix = map_prefix(0, MapID::Test(TestMap::Test));
+            map.database.put([&prefix[..], &[0x40, 0]].concat(), b"x").unwrap();
+            let error = map.retain_range(&[], None, |_| false).unwrap_err();
+            assert!(error.to_string().contains("Resync the store"), "{error}");
+        }
+
         /// A plan marks only the slices whose flushed files hold deletions. Each plan flushes once;
-        /// with at most two flushed files, no automatic compaction merges them.
+        /// with at most three flushed files, no automatic compaction merges them.
         #[test]
         fn test_compaction_plan_marks_slices_with_deletions() {
             let (map, neighbours) = setup(&ROWS);

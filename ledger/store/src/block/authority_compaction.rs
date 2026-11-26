@@ -95,7 +95,7 @@ struct Signal {
 /// the compaction thread holds only its [`Signal`] and a weak reference.
 #[derive(Default)]
 pub(super) struct CompactionState {
-    /// The number of authorities pruned since the authority map was compacted.
+    /// The authorities pruned at insert time since a compaction last started, one per insert.
     pruned: AtomicU32,
     signal: Arc<Signal>,
     /// The last compaction started.
@@ -143,10 +143,11 @@ impl Drop for CompactionState {
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
-    /// Counts the authority pruned by the insert of the block at `height`, if any, and starts a
-    /// compaction every [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`] of them, subject to
-    /// [`AUTHORITY_COMPACTION_MIN_INTERVAL`]. Counts by height, so after a rollback or a reopen with a
-    /// larger window it overstates until the watermark catches up.
+    /// Counts one pruned authority for the insert of the block at `height`, if one expires with it,
+    /// and starts a compaction every [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`] of them, subject to
+    /// [`AUTHORITY_COMPACTION_MIN_INTERVAL`]. The count is by height, not by what the insert pruned:
+    /// after a rollback or a reopen with a larger window, inserts prune nothing and the count
+    /// overstates until the window reaches the watermark.
     pub(super) fn count_insert_time_pruning(&self, height: u32) {
         let Some(retention) = self.authority_retention else {
             return;
