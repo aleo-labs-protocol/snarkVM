@@ -23,6 +23,17 @@ impl<N: Network> ComputeKey<N> {
         // Compute the address := pk_sig + pr_sig + pk_prf.
         Address::new(self.pk_sig + self.pr_sig + pk_prf)
     }
+
+    /// Returns the address corresponding to the compute key, normalized, for a compute key that is public.
+    ///
+    /// `sk_prf` stays secret until the compute key is published, so `to_address` keeps `g_scalar_multiply`.
+    /// A normalized address converts to affine, for hashing and comparison, without an inversion.
+    pub(crate) fn public_address(&self) -> Address<N> {
+        // Compute pk_prf := G^sk_prf.
+        let pk_prf = N::g_scalar_multiply_public(&self.sk_prf());
+        // Compute the address := pk_sig + pr_sig + pk_prf.
+        Address::new((self.pk_sig + self.pr_sig + pk_prf).normalized())
+    }
 }
 
 #[cfg(test)]

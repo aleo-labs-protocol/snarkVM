@@ -30,7 +30,7 @@ use crate::{ComputeKey, ComputeKeyCache, PrivateKey};
 
 use crate::address::Address;
 use snarkvm_console_network::prelude::*;
-use snarkvm_console_types::{Boolean, Field, Scalar};
+use snarkvm_console_types::{Boolean, Field, Group, GroupWindowTable, Scalar};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Signature<N: Network> {
