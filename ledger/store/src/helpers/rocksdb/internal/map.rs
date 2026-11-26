@@ -779,8 +779,8 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
 
     /// Plans a sliced compaction of this map after flushing the database: one entry per slice (see
     /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. The maps
-    /// share one column family, so a file straddling the map's edge can carry a neighbour's deletions
-    /// and mark an edge slice.
+    /// share one column family, so a file is judged by all the deletions in it: on a live node a
+    /// flushed file spans this map and holds deletions, and marks every slice.
     pub(crate) fn compaction_plan(&self) -> Result<Vec<bool>> {
         self.database.flush()?;
         // Slice 0 of 1 is the whole map.
