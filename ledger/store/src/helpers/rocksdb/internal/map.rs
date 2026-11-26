@@ -819,7 +819,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
             Some(next) => [&prefix[..], &(u16::from_be_bytes(next) - 1).to_be_bytes(), &[0xff; 30][..]].concat(),
             None => [&prefix[..], &[0xff; 32][..]].concat(),
         };
-        Ok((self.key_range(&start, None)?.0, end))
+        Ok(([&prefix[..], &start[..]].concat(), end))
     }
 
     /// This map's key prefix.
@@ -2030,7 +2030,7 @@ mod tests {
         }
 
         /// A plan marks only the slices whose flushed files hold deletions. Each plan flushes once;
-        /// with at most two flushed files, no automatic compaction merges them.
+        /// with at most three flushed files, no automatic compaction merges them.
         #[test]
         fn test_compaction_plan_marks_slices_with_deletions() {
             let (map, neighbours) = setup(&ROWS);
