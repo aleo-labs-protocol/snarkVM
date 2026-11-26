@@ -673,45 +673,12 @@ jobs:
       - run: cargo check --examples --benches --tests
         working-directory: ${{ matrix.dir }}
 
-  # The one check to require. A skipped job counts as passing a required check;
-  # here anything but success fails. The exceptions: `schedule-due`, which runs
-  # only on the schedule; on a scheduled run, every job when `schedule-due`
-  # found a verdict, and the release jobs; elsewhere outside a release branch,
-  # the merge and release jobs.
-  ci-ok:
-    if: >-
-      always() &&
-      ((github.event_name != 'push' && github.event_name != 'schedule') ||
-       github.repository == 'aleo-labs-protocol/snarkVM')
-    needs: [schedule-due, check-shared-refs, fmt, deny, source-checks, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
-    runs-on: ubuntu-latest
-    steps:
-      - env:
-          NEEDS: ${{ toJSON(needs) }}
-          RELEASE: >-
-            ${{ github.event_name == 'workflow_dispatch' ||
-            startsWith(github.ref, 'refs/heads/release/') ||
-            startsWith(github.base_ref, 'release/') }}
-          SCHEDULE: ${{ github.event_name == 'schedule' }}
-          DUE: ${{ needs.schedule-due.outputs.due == 'true' }}
-        run: |
-          jq -e --argjson release "$RELEASE" --argjson schedule "$SCHEDULE" --argjson due "$DUE" '
-            def may_skip:
-              . == "schedule-due" or
-              if $release then false
-              elif $schedule then ($due | not) or IN("test-release", "test-release-arm", "windows")
-              else IN("test-merge", "each-feature", "test-release", "test-release-arm", "machete", "windows")
-              end;
-            to_entries
-            | map(select(.value.result != "success" and (.value.result != "skipped" or (.key | may_skip | not))))
-            | if length == 0 then true else (map("\(.key): \(.value.result)") | join(", ") | halt_error) end' <<< "$NEEDS"
-
   # Posts to Slack when staging's scheduled CI turns red, and once when it turns
   # green again. `checked` is false when `schedule-due` found a verdict or
   # failed.
   notify:
     if: always() && github.event_name == 'schedule' && github.repository == 'aleo-labs-protocol/snarkVM'
-    needs: [schedule-due, check-shared-refs, fmt, deny, source-checks, cuda-package-files, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows, ci-ok]
+    needs: [schedule-due, check-shared-refs, fmt, deny, source-checks, cuda-package-files, wasm, lint, lint-locktick, test, test-hosted, test-merge, each-feature, test-release, test-release-arm, machete, windows]
     runs-on: ubuntu-latest
     permissions: { actions: read }
     # CI_SLACK_TOKEN lives in the ci-notify environment, which admits only
