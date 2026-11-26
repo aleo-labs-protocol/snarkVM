@@ -27,9 +27,17 @@ use core::any::TypeId;
 pub struct VariableBase;
 
 impl VariableBase {
-    /// Returns the sum of `base * scalar`. See `batched::msm` for bases
-    /// outside the prime-order subgroup.
+    /// Returns the sum of `bases[i] * scalars[i]` over `0..scalars.len()`.
+    ///
+    /// Panics if `scalars.len() > bases.len()`. Each scalar must be below
+    /// `2^G::ScalarField::size_in_bits()`. See `batched::msm` for bases outside
+    /// the prime-order subgroup.
     pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
+        assert!(scalars.len() <= bases.len());
+        debug_assert!(
+            scalars.iter().all(|s| batched::scalar_fits_in_bits(s, G::ScalarField::size_in_bits())),
+            "MSM scalars must be below 2^size_in_bits()",
+        );
         #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
         // TODO SNP: where to set the threshold
         if TypeId::of::<G>() == TypeId::of::<G1Affine>() && scalars.len() > 1024 {
@@ -309,6 +317,52 @@ mod tests {
                 bases.iter().zip(&scalars).map(|(base, scalar)| (*base, Fr::from_bigint(*scalar).unwrap())).collect();
             assert_eq!(VariableBase::msm_many(&[pairs.as_slice()])[0].to_affine(), naive, "{case}");
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_msm_panics_when_more_scalars_than_bases() {
+        let mut rng = TestRng::default();
+        let (bases, _) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 4);
+        let (_, scalars) = create_scalar_bases::<G1Affine, Fr>(&mut rng, 5);
+        let _ = VariableBase::msm(&bases, &scalars);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_msm_edwards_panics_when_more_scalars_than_bases() {
+        use snarkvm_curves::edwards_bls12::{EdwardsAffine, Fr as EdwardsFr};
+
+        let mut rng = TestRng::default();
+        let (bases, _) = create_scalar_bases::<EdwardsAffine, EdwardsFr>(&mut rng, 4);
+        let (_, scalars) = create_scalar_bases::<EdwardsAffine, EdwardsFr>(&mut rng, 5);
+        let _ = VariableBase::msm(&bases, &scalars);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "MSM scalars must be below 2^size_in_bits()")]
+    fn test_msm_debug_panics_on_scalar_at_size_in_bits() {
+        use snarkvm_utilities::{BigInteger256, Uniform};
+
+        let mut rng = TestRng::default();
+        let bases = [G1Affine::rand(&mut rng)];
+        let scalars = [BigInteger256::new([0, 0, 0, 1u64 << 61])];
+        let _ = VariableBase::msm(&bases, &scalars);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "MSM scalars must be below 2^size_in_bits()")]
+    fn test_msm_edwards_debug_panics_on_scalar_at_size_in_bits() {
+        use snarkvm_curves::edwards_bls12::EdwardsAffine;
+        use snarkvm_utilities::{BigInteger256, Uniform};
+
+        let mut rng = TestRng::default();
+        let bases = [EdwardsAffine::rand(&mut rng)];
+        // `edwards_bls12::Fr::size_in_bits()` is 251 (`64 * 3 + 59`).
+        let scalars = [BigInteger256::new([0, 0, 0, 1u64 << 59])];
+        let _ = VariableBase::msm(&bases, &scalars);
     }
 
     /// Bases at infinity must survive the trip to the device.

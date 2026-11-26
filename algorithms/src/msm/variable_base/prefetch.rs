@@ -29,13 +29,19 @@ macro_rules! prefetch_slice {
     };
 }
 
+/// Prefetches up to two `bases` entries for `batched::batch_add_write`,
+/// masking out bit 31 (`SIGN_BIT`) and skipping `NOOP` (`u32::MAX`) on the
+/// second slot.
 #[macro_export]
 macro_rules! prefetch_slice_write {
     ($curve: ident, $slice_1: ident, $slice_2: ident, $prefetch_iter: ident) => {
         if let Some((idp_1, idp_2)) = $prefetch_iter.next() {
-            $crate::msm::variable_base::prefetch::prefetch::<$curve>(&$slice_1[*idp_1 as usize]);
-            if *idp_2 != !0u32 {
-                $crate::msm::variable_base::prefetch::prefetch::<$curve>(&$slice_2[*idp_2 as usize]);
+            const SIGN_INDEX_MASK: u32 = !(1u32 << 31);
+            $crate::msm::variable_base::prefetch::prefetch::<$curve>(&$slice_1[(*idp_1 & SIGN_INDEX_MASK) as usize]);
+            if *idp_2 != u32::MAX {
+                $crate::msm::variable_base::prefetch::prefetch::<$curve>(
+                    &$slice_2[(*idp_2 & SIGN_INDEX_MASK) as usize],
+                );
             }
         }
     };

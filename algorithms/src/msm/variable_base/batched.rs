@@ -24,7 +24,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 #[cfg(target_arch = "x86_64")]
-use crate::prefetch_slice;
+use crate::{prefetch_slice, prefetch_slice_write};
 
 /// Tag bit in [`BucketPosition::scalar_index`] marking a negated base during
 /// the initial read from `bases` in [`batch_add_write`].
@@ -41,10 +41,15 @@ const SIGN_BIT: u32 = 1 << 31;
 const SCALAR_INDEX_MASK: u32 = !SIGN_BIT;
 const NOOP: u32 = u32::MAX;
 
-/// Window bounds for [`best_window_size`].
+/// Window-width bounds for [`best_window_size`].
+///
+/// With signed digits, an interior window of width `c` allocates `2^(c - 1)`
+/// affine buckets (`8,192` buckets at `c = 14` and `16,384` at `c = 15`, or
+/// `832 KiB` and `1,664 KiB` for 104-byte `G1Affine` points), bounding
+/// per-window bucket memory when windows run in parallel.
 const MIN_BUCKET_WINDOW: usize = 5;
-const L1_CACHE_MAX_WINDOW: usize = 14;
-const L2_CACHE_MAX_WINDOW: usize = 15;
+const DEFAULT_MAX_BUCKET_WINDOW: usize = 14;
+const LARGE_MSM_MAX_BUCKET_WINDOW: usize = 15;
 
 #[derive(Copy, Clone, Debug)]
 pub struct BucketPosition {
@@ -180,12 +185,7 @@ fn batch_add_write<G: AffineCurve>(
     // We run two loops over the data separated by an inversion
     for (idx, idy) in index.iter() {
         #[cfg(target_arch = "x86_64")]
-        if let Some(&(idp_1, idp_2)) = prefetch_iter.next() {
-            crate::msm::variable_base::prefetch::prefetch::<G>(&bases[(idp_1 & SCALAR_INDEX_MASK) as usize]);
-            if idp_2 != NOOP {
-                crate::msm::variable_base::prefetch::prefetch::<G>(&bases[(idp_2 & SCALAR_INDEX_MASK) as usize]);
-            }
-        }
+        prefetch_slice_write!(G, bases, bases, prefetch_iter);
 
         if *idy == NOOP {
             addition_result.push(load_signed_base(bases, *idx));
@@ -367,6 +367,20 @@ pub(super) fn batch_add<G: AffineCurve>(
     res
 }
 
+/// Returns `true` if every bit of `scalar` at or above `num_bits` is zero.
+#[inline]
+pub(super) fn scalar_fits_in_bits<B: BigInteger>(scalar: &B, num_bits: usize) -> bool {
+    let limbs = scalar.as_ref();
+    let top_limb = num_bits / 64;
+    let rem_bits = num_bits % 64;
+    if let Some(&word) = limbs.get(top_limb)
+        && (word >> rem_bits) != 0
+    {
+        return false;
+    }
+    limbs.iter().skip(top_limb + 1).all(|&w| w == 0)
+}
+
 /// Extracts `width` (`<= 16`) bits starting at `bit_offset` from `limbs`,
 /// masking every bit at or above `num_bits` to zero.
 #[inline]
@@ -388,6 +402,84 @@ fn extract_bits(limbs: &[u64], bit_offset: usize, width: usize, num_bits: usize)
     (value & ((1u64 << valid) - 1)) as u32
 }
 
+/// 64-bit word with every `c`-th bit set starting at bit 0, for `c` in
+/// `2..=16`.
+const BASE_REPEAT: [u64; 17] = {
+    let mut table = [0u64; 17];
+    let mut c = 2;
+    while c <= 16 {
+        let mut repeat = 0u64;
+        let mut bit = 0;
+        while bit < 64 {
+            repeat |= 1u64 << bit;
+            bit += c;
+        }
+        table[c] = repeat;
+        c += 1;
+    }
+    table
+};
+
+/// First four 64-bit limbs of `sum_{k >= 0} 2^(k * c + c - 1)` for `c` in
+/// `2..=16`.
+const HALF_PATTERNS: [[u64; 4]; 17] = {
+    let mut table = [[0u64; 4]; 17];
+    let mut c = 2;
+    while c <= 16 {
+        let mut limb = 0;
+        while limb < 4 {
+            let first_bit = (2 * c - 1 - ((64 * limb) % c)) % c;
+            table[c][limb] = BASE_REPEAT[c] << first_bit;
+            limb += 1;
+        }
+        c += 1;
+    }
+    table
+};
+
+/// Returns limb `limb` of `sum_{k >= 0} 2^(k * c + c - 1)`.
+#[inline]
+const fn half_pattern_limb(c: usize, limb: usize) -> u64 {
+    if limb < 4 {
+        HALF_PATTERNS[c][limb]
+    } else {
+        let first_bit = (2 * c - 1 - ((64 * limb) % c)) % c;
+        BASE_REPEAT[c] << first_bit
+    }
+}
+
+/// Returns the incoming carry (`0` or `1`) into `window` (`bit_offset = window
+/// * c <= num_bits`) under signed base-`2^c` recoding.
+///
+/// With signed digits bounded above by `2^(c - 1)`, the maximum value of the
+/// low `w * c` bits that produces no carry into `window = w` is
+/// `sum_{k = 0}^{w - 1} 2^(k * c + c - 1)`. Comparing the low `w * c` bits of
+/// `limbs` against that periodic bit pattern decides the carry in at most
+/// `limbs.len()` word comparisons.
+#[inline]
+fn carry_into_window(limbs: &[u64], bit_offset: usize, c: usize) -> u32 {
+    if bit_offset == 0 {
+        return 0;
+    }
+    let top_limb = (bit_offset - 1) / 64;
+    let used_bits = ((bit_offset - 1) % 64) + 1;
+    let mask = u64::MAX >> (64 - used_bits);
+
+    let s_top = limbs.get(top_limb).copied().unwrap_or(0) & mask;
+    let p_top = half_pattern_limb(c, top_limb) & mask;
+    if s_top != p_top {
+        return u32::from(s_top > p_top);
+    }
+    for limb in (0..top_limb).rev() {
+        let s_word = limbs.get(limb).copied().unwrap_or(0);
+        let p_word = half_pattern_limb(c, limb);
+        if s_word != p_word {
+            return u32::from(s_word > p_word);
+        }
+    }
+    0
+}
+
 /// Returns the signed base-`2^c` digit of the low `num_bits` bits of `scalar`
 /// at `window` (`0 <= window < num_windows`, where `num_windows = num_bits / c
 /// + 1`).
@@ -405,39 +497,30 @@ fn extract_bits(limbs: &[u64], bit_offset: usize, width: usize, num_bits: usize)
 #[inline]
 fn signed_window_digit<B: BigInteger>(scalar: &B, window: usize, c: usize, num_windows: usize, num_bits: usize) -> i32 {
     let limbs = scalar.as_ref();
-    let half = 1u32 << (c - 1);
-
-    // Carry into `window`: in signed base `2^c` with digits bounded above by
-    // `half = 2^(c - 1)`, the low `window * c` bits exceed the maximum
-    // carry-free value `half * (1 + 2^c + ... + 2^((window - 1) * c))` if and
-    // only if the highest lower window not equal to `half` exceeds `half`.
-    let mut carry = 0u32;
-    let mut prev_window = window;
-    while prev_window > 0 {
-        prev_window -= 1;
-        let prev_bits = extract_bits(limbs, prev_window * c, c, num_bits);
-        if prev_bits != half {
-            carry = u32::from(prev_bits > half);
-            break;
-        }
-    }
+    let bit_offset = window * c;
+    let carry = carry_into_window(limbs, bit_offset, c);
 
     if window + 1 == num_windows {
         let top_bits = num_bits % c;
-        return (extract_bits(limbs, window * c, top_bits, num_bits) + carry) as i32;
+        return (extract_bits(limbs, bit_offset, top_bits, num_bits) + carry) as i32;
     }
 
+    let half = 1u32 << (c - 1);
     let full = 1u32 << c;
-    let value = extract_bits(limbs, window * c, c, num_bits) + carry;
+    let value = extract_bits(limbs, bit_offset, c, num_bits) + carry;
     if value > half { value as i32 - full as i32 } else { value as i32 }
 }
 
 /// Selects the window width `c` that minimizes estimated group-operation cost
-/// under signed digits while keeping each window's bucket table within cache.
+/// under signed digits, capping each window's bucket table at `2^13` buckets
+/// below `500,000` bases on `x86_64` and `2^14` buckets otherwise.
 #[inline]
 fn best_window_size(num_scalars: usize, num_bits: usize) -> usize {
-    let max_window =
-        if cfg!(target_arch = "x86_64") && num_scalars < 500_000 { L1_CACHE_MAX_WINDOW } else { L2_CACHE_MAX_WINDOW };
+    let max_window = if cfg!(target_arch = "x86_64") && num_scalars < 500_000 {
+        DEFAULT_MAX_BUCKET_WINDOW
+    } else {
+        LARGE_MSM_MAX_BUCKET_WINDOW
+    };
     let mut best_c = MIN_BUCKET_WINDOW;
     let mut best_cost = u128::MAX;
     for c in MIN_BUCKET_WINDOW..=max_window {
@@ -497,23 +580,30 @@ fn batched_window<G: AffineCurve>(
     res
 }
 
-/// Computes the bucket MSM over `bases` and `scalars` with an explicit signed
-/// window width `c` (`2 <= c <= 16`).
+/// Computes the bucket MSM over `bases[..scalars.len()]` and `scalars` with an
+/// explicit signed window width `c` (`2 <= c <= 16`).
+///
+/// Panics if `scalars.len() > bases.len()`. Each scalar must be below
+/// `2^G::ScalarField::size_in_bits()`.
 pub(super) fn bucket_msm_with_window<G: AffineCurve>(
     bases: &[G],
     scalars: &[<G::ScalarField as PrimeField>::BigInteger],
     c: usize,
 ) -> G::Projective {
-    debug_assert!(scalars.len() <= bases.len());
-    let n = bases.len().min(scalars.len());
+    assert!(scalars.len() <= bases.len());
+    let n = scalars.len();
     if n == 0 {
         return G::Projective::zero();
     }
-    let (bases, scalars) = (&bases[..n], &scalars[..n]);
+    let bases = &bases[..n];
     assert!((2..=16).contains(&c));
     assert!(n < SCALAR_INDEX_MASK as usize);
 
     let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
+    debug_assert!(
+        scalars.iter().all(|s| scalar_fits_in_bits(s, num_bits)),
+        "MSM scalars must be below 2^size_in_bits()",
+    );
     let num_windows = num_bits / c + 1;
 
     let window_sums: Vec<_> =
@@ -585,9 +675,12 @@ fn recode_naf<B: BigInteger>(scalar: &B, window: usize, num_bits: usize, digits:
     digits[num_bits] = carry as i8;
 }
 
-/// Computes the MSM by Straus's method: one shared doubling per digit
-/// position, and for every base a table of odd multiples that a nonzero digit
-/// selects from.
+/// Computes the MSM over `bases[..scalars.len()]` and `scalars` by Straus's
+/// method: one shared doubling per digit position, and for every base a table
+/// of odd multiples that a nonzero digit selects from.
+///
+/// Panics if `scalars.len() > bases.len()`. Each scalar must be below
+/// `2^G::ScalarField::size_in_bits()`.
 #[doc(hidden)]
 pub fn straus<G: AffineCurve, const WINDOW: usize>(
     bases: &[G],
@@ -595,9 +688,9 @@ pub fn straus<G: AffineCurve, const WINDOW: usize>(
 ) -> G::Projective {
     const { assert!(WINDOW >= 2 && WINDOW <= 8) };
     let table_len = 1usize << (WINDOW - 2);
-    debug_assert!(scalars.len() <= bases.len());
-    let n = bases.len().min(scalars.len());
-    let (bases, scalars) = (&bases[..n], &scalars[..n]);
+    assert!(scalars.len() <= bases.len());
+    let n = scalars.len();
+    let bases = &bases[..n];
 
     // Tables: the odd multiples `[1, 3, ..., 2 * table_len - 1] * base`, built
     // from an affine `2 * base` by mixed additions and normalized in one batch.
@@ -617,6 +710,10 @@ pub fn straus<G: AffineCurve, const WINDOW: usize>(
 
     // Digits: one row per scalar, most significant position last.
     let num_bits = G::ScalarField::size_in_bits();
+    debug_assert!(
+        scalars.iter().all(|s| scalar_fits_in_bits(s, num_bits)),
+        "MSM scalars must be below 2^size_in_bits()",
+    );
     let stride = num_bits + 1;
     let mut digits = vec![0i8; n * stride];
     for (scalar, row) in scalars.iter().zip_eq(digits.chunks_exact_mut(stride)) {
@@ -665,7 +762,11 @@ fn msm_in_lanes<G: AffineCurve>(
     G::msm_lanes(&[&terms])?.into_iter().next()
 }
 
-/// Returns the sum of `base * scalar`.
+/// Returns the sum of `bases[i] * scalars[i]` over `0..scalars.len()`.
+///
+/// Panics if `scalars.len() > bases.len()`. Each scalar must be below
+/// `2^G::ScalarField::size_in_bits()`; bits at or above `size_in_bits()` are
+/// ignored.
 ///
 /// Hazard: for a base outside the prime-order subgroup, the curve's GLV
 /// multiplication and its lanes can return another sum than Straus's method,
@@ -673,16 +774,23 @@ fn msm_in_lanes<G: AffineCurve>(
 /// depends on the CPU. A pairing maps that point to one, so a pairing check on
 /// the sum does not.
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {
-    if bases.len() < BUCKET_MIN_BASES {
-        debug_assert!(scalars.len() <= bases.len());
+    assert!(scalars.len() <= bases.len());
+    let n = scalars.len();
+    let bases = &bases[..n];
+    let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
+    debug_assert!(
+        scalars.iter().all(|s| scalar_fits_in_bits(s, num_bits)),
+        "MSM scalars must be below 2^size_in_bits()",
+    );
+
+    if n < BUCKET_MIN_BASES {
         // A zero scalar adds nothing and a unit scalar adds its base, so
         // neither needs a table or a scalar multiplication.
         let one = <G::ScalarField as PrimeField>::BigInteger::from(1u64);
         let mut sum = G::Projective::zero();
         let (bases, scalars) = if scalars.iter().any(|scalar| scalar.is_zero() || *scalar == one) {
-            let mut rest = (Vec::with_capacity(scalars.len()), Vec::with_capacity(scalars.len()));
-            // Bases past the last scalar have no scalar, so `zip` stops there.
-            for (base, scalar) in bases.iter().zip(scalars) {
+            let mut rest = (Vec::with_capacity(n), Vec::with_capacity(n));
+            for (base, scalar) in bases.iter().zip_eq(scalars) {
                 if *scalar == one {
                     sum.add_assign_mixed(base);
                 } else if !scalar.is_zero() {
@@ -706,8 +814,6 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         }
         sum + straus::<G, STRAUS_WINDOW>(&bases, &scalars)
     } else {
-        let n = bases.len().min(scalars.len());
-        let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
         let c = best_window_size(n, num_bits);
         bucket_msm_with_window(bases, scalars, c)
     }
@@ -900,23 +1006,73 @@ mod tests {
                 }
             }
         }
+
+        // Exercise `half_pattern_limb` beyond the 4-limb table (`limb >= 4`) on
+        // 377-bit scalars across `c in 2..=16`.
+        let num_bits_384 = 377usize;
+        let one_384 = snarkvm_utilities::BigInteger384::from(1u64);
+        for c in 2..=16 {
+            let half = 1u32 << (c - 1);
+            let full = 1u32 << c;
+            let num_windows = num_bits_384 / c + 1;
+            let mut tie_384 = snarkvm_utilities::BigInteger384::from(0u64);
+            for w in 0..num_windows {
+                for b in 0..c {
+                    let pos = w * c + b;
+                    if pos < num_bits_384 && ((half >> b) & 1 == 1) {
+                        tie_384.0[pos / 64] |= 1u64 << (pos % 64);
+                    }
+                }
+            }
+            let mut tie_minus_one = tie_384;
+            let _ = tie_minus_one.sub_noborrow(&one_384);
+            let mut tie_plus_one = tie_384;
+            let _ = tie_plus_one.add_nocarry(&one_384);
+            for bit in num_bits_384..384 {
+                tie_plus_one.0[bit / 64] &= !(1u64 << (bit % 64));
+            }
+            for scalar in [tie_384, tie_minus_one, tie_plus_one, snarkvm_utilities::BigInteger384::rand(&mut rng)] {
+                let mut s = scalar;
+                for bit in num_bits_384..384 {
+                    s.0[bit / 64] &= !(1u64 << (bit % 64));
+                }
+                let mut carry = 0u32;
+                for w in 0..num_windows {
+                    let got = signed_window_digit(&s, w, c, num_windows, num_bits_384);
+                    let expected = if w + 1 == num_windows {
+                        (extract_bits(s.as_ref(), w * c, num_bits_384 % c, num_bits_384) + carry) as i32
+                    } else {
+                        let val = extract_bits(s.as_ref(), w * c, c, num_bits_384) + carry;
+                        if val > half {
+                            carry = 1;
+                            val as i32 - full as i32
+                        } else {
+                            carry = 0;
+                            val as i32
+                        }
+                    };
+                    assert_eq!(got, expected, "384-bit c={c} w={w}");
+                }
+            }
+        }
     }
 
     #[test]
     fn test_best_window_size() {
+        assert_eq!(core::mem::size_of::<G1Affine>(), 104);
         let sizes =
             [32, 48, 64, 128, 256, 512, 1024, 2048, 4096, 10_000, 32_768, 65_536, 100_000, 262_144, 500_000, 1_000_000];
         let mut prev = MIN_BUCKET_WINDOW;
         for n in sizes {
             let c = best_window_size(n, 253);
-            assert!((MIN_BUCKET_WINDOW..=L2_CACHE_MAX_WINDOW).contains(&c), "n={n}: c={c}");
+            assert!((MIN_BUCKET_WINDOW..=LARGE_MSM_MAX_BUCKET_WINDOW).contains(&c), "n={n}: c={c}");
             if cfg!(target_arch = "x86_64") && n < 500_000 {
-                assert!(c <= L1_CACHE_MAX_WINDOW, "n={n}: c={c}");
+                assert!(c <= DEFAULT_MAX_BUCKET_WINDOW, "n={n}: c={c}");
             }
             assert!(c >= prev, "window regressed at n={n}: {c} < {prev}");
             prev = c;
         }
-        assert_eq!(best_window_size(1usize << 30, 253), L2_CACHE_MAX_WINDOW);
+        assert_eq!(best_window_size(1usize << 30, 253), LARGE_MSM_MAX_BUCKET_WINDOW);
     }
 
     /// Differential test of the signed-digit bucket MSM across every window
@@ -1029,14 +1185,17 @@ mod tests {
         }
     }
 
-    /// Exercises `batched::msm` across the Straus/bucket cutoff, multi-batch
-    /// flush boundaries (`batch_size = 300`, `batch_size / 2 = 150`), and
-    /// unequal `(bases.len() > scalars.len())` slices on the bucket path.
+    /// Exercises `batched::msm` across the Straus/bucket cutoff, mid-loop batch
+    /// flushes on both `x86_64` (`batch_size = 300`, `batch_size / 2 = 150`)
+    /// and other targets such as ARM (`batch_size = 3000`, `batch_size / 2
+    /// = 1500`), and unequal `(bases.len() > scalars.len())` slices.
     #[test]
     fn test_bucket_msm_sizes_and_batch_boundaries() {
         let mut rng = TestRng::default();
-        let max_size = 601;
-        let mut bases = (0..max_size).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+        let max_size = 3601;
+        let proj_bases =
+            (0..max_size).map(|_| <G1Affine as AffineCurve>::Projective::rand(&mut rng)).collect::<Vec<_>>();
+        let mut bases = <G1Affine as AffineCurve>::Projective::batch_normalization_into_affine(proj_bases);
         bases[10] = G1Affine::zero();
         bases[20] = bases[5];
         bases[21] = -bases[5];
@@ -1045,17 +1204,111 @@ mod tests {
         scalars[1] = Fr::one().to_bigint();
         scalars[2] = (-Fr::one()).to_bigint();
 
-        for size in [32, 33, 48, 64, 65, 128, 256, 300, 301, 512, 601] {
+        for size in [32, 33, 48, 64, 65, 128, 256, 300, 301, 512, 601, 3001, 3601] {
             let expected = standard::msm(&bases[..size], &scalars[..size]).to_affine();
             let got = msm(&bases[..size], &scalars[..size]).to_affine();
             assert_eq!(got, expected, "size={size}");
         }
 
-        for (num_bases, num_scalars) in [(64, 32), (64, 45)] {
+        // Populate three negative window-0 buckets of sizes `(3200, 3200, 10)`
+        // (`-Fr::from(2)`, `-Fr::from(4)`, `-Fr::from(6)` have low `c` bits
+        // `2^c - 1`, `2^c - 3`, `2^c - 5`, giving digits `-1`, `-3`, `-5`) so
+        // both `batch_add_write` (`1600 >= 1500` with remaining buckets) and
+        // `batch_add_in_place_same_slice` (`800 + 800 = 1600 >= 1500` with a
+        // trailing bucket) flush mid-loop and post-loop even when `batch_size`
+        // is `3000` (non-x86_64 targets).
+        let collide_bases: Vec<_> = bases.iter().copied().cycle().take(6410).collect();
+        let mut collide_scalars = Vec::with_capacity(6410);
+        collide_scalars.extend(std::iter::repeat_n((-Fr::from(2u64)).to_bigint(), 3200));
+        collide_scalars.extend(std::iter::repeat_n((-Fr::from(4u64)).to_bigint(), 3200));
+        collide_scalars.extend(std::iter::repeat_n((-Fr::from(6u64)).to_bigint(), 10));
+        let expected_collide = standard::msm(&collide_bases, &collide_scalars).to_affine();
+        assert_eq!(msm(&collide_bases, &collide_scalars).to_affine(), expected_collide);
+
+        for (num_bases, num_scalars) in [(64, 3), (64, 32), (64, 45)] {
             let expected = standard::msm(&bases[..num_scalars], &scalars[..num_scalars]).to_affine();
             let got = msm(&bases[..num_bases], &scalars[..num_scalars]).to_affine();
             assert_eq!(got, expected, "bases={num_bases}, scalars={num_scalars}");
         }
+    }
+
+    #[test]
+    fn test_scalar_fits_in_bits_boundaries() {
+        assert!(scalar_fits_in_bits(&BigInteger256::from(0u64), 0));
+        assert!(!scalar_fits_in_bits(&BigInteger256::from(1u64), 0));
+        for num_bits in [1, 63, 64, 65, 128, 129, 192, 252, 253, 255] {
+            let max_ok = mask_bigint_low_bits(BigInteger256::new([u64::MAX; 4]), num_bits);
+            assert!(scalar_fits_in_bits(&max_ok, num_bits), "max_ok failed at {num_bits}");
+            let mut at_bound = BigInteger256::from(0u64);
+            at_bound.0[num_bits / 64] = 1u64 << (num_bits % 64);
+            assert!(!scalar_fits_in_bits(&at_bound, num_bits), "2^{num_bits} accepted");
+            if num_bits / 64 + 1 < 4 {
+                let mut higher_limb = BigInteger256::from(0u64);
+                higher_limb.0[3] = 1;
+                assert!(!scalar_fits_in_bits(&higher_limb, num_bits), "higher limb accepted at {num_bits}");
+            }
+        }
+        assert!(scalar_fits_in_bits(&BigInteger256::new([u64::MAX; 4]), 256));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_batched_msm_panics_more_scalars_small() {
+        let mut rng = TestRng::default();
+        let bases = (0..10).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+        let scalars = (0..11).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
+        let _ = msm(&bases, &scalars);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_batched_msm_panics_more_scalars_bucket() {
+        let mut rng = TestRng::default();
+        let bases = (0..32).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+        let scalars = (0..33).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
+        let _ = msm(&bases, &scalars);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_straus_panics_more_scalars() {
+        let mut rng = TestRng::default();
+        let bases = (0..4).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+        let scalars = (0..5).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
+        let _ = straus::<G1Affine, STRAUS_WINDOW>(&bases, &scalars);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "MSM scalars must be below 2^size_in_bits()")]
+    fn test_straus_debug_panics_scalar_above_num_bits() {
+        let mut rng = TestRng::default();
+        let bases = (0..4).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+        let mut scalars = (0..4).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
+        scalars[1].0[3] |= 1u64 << 61;
+        let _ = straus::<G1Affine, STRAUS_WINDOW>(&bases, &scalars);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "MSM scalars must be below 2^size_in_bits()")]
+    fn test_batched_msm_debug_panics_scalar_above_num_bits_small() {
+        let mut rng = TestRng::default();
+        let bases = (0..4).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+        let mut scalars = (0..4).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
+        scalars[2].0[3] |= 1u64 << 61;
+        let _ = msm(&bases, &scalars);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "MSM scalars must be below 2^size_in_bits()")]
+    fn test_batched_msm_debug_panics_scalar_above_num_bits_bucket() {
+        let mut rng = TestRng::default();
+        let bases = (0..32).map(|_| G1Affine::rand(&mut rng)).collect::<Vec<_>>();
+        let mut scalars = (0..32).map(|_| Fr::rand(&mut rng).to_bigint()).collect::<Vec<_>>();
+        scalars[31].0[3] |= 1u64 << 61;
+        let _ = msm(&bases, &scalars);
     }
 
     /// Isolates singleton negative buckets, paired negative doublings,
