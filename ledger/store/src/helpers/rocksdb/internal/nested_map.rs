@@ -392,9 +392,8 @@ impl<
     /// Returns the number of confirmed entries in the map.
     ///
     fn len_map_confirmed(&self, map: &M) -> Result<usize> {
-        // Obtain the nested map prefix and its final part.
+        // Obtain the nested map prefix.
         let prefix = self.create_prefixed_map(map)?;
-        let serialized_map = &prefix[PREFIX_LEN + 4..];
 
         // A raw iterator doesn't allocate.
         let mut iter = self.database.raw_iterator();
@@ -405,10 +404,8 @@ impl<
         let mut len = 0usize;
         while iter.valid() {
             if let Some(key) = iter.key() {
-                // Only compare the nested map - the network ID and the outer map
-                // ID are guaranteed to remain the same as long as there is more
-                // than a single map in the database.
-                if !key[PREFIX_LEN + 4..].starts_with(serialized_map) {
+                // A neighboring map ID can contain the same serialized map.
+                if !key.starts_with(&prefix) {
                     // If the nested map ID is different, it's the end of iteration.
                     break;
                 }
@@ -421,6 +418,7 @@ impl<
             }
         }
 
+        iter.status()?;
         Ok(len)
     }
 
@@ -1123,7 +1121,7 @@ mod tests {
     fn test_iter_from_nested_to_non_nested() {
         // Open a storage with a DataMap right after a NestedDataMap.
         let database = RocksDB::open(0, StorageMode::new_test(None)).expect("Failed to open a test database");
-        let test_storage = TestStorage3::open(database);
+        let test_storage = TestStorage3::open(database.clone());
 
         // Insert 5 (confirmed) records into a nested map 77.
         for i in 0..5 {
@@ -1134,6 +1132,11 @@ mod tests {
         for i in 0..5 {
             test_storage.own_map.insert(usize::MAX - i, (usize::MAX - i).to_string()).expect("Failed to insert");
         }
+
+        let foreign_nested_map: NestedDataMap<usize, usize, String> =
+            open_map_testing_from_db(database, MapID::Test(TestMap::Test5));
+        foreign_nested_map.insert(88, 0, "foreign".to_string()).expect("Failed to insert");
+        assert_eq!(test_storage.own_nested_map.len_map_confirmed(&88).unwrap(), 0);
 
         // We should be able to collect the 5 records from the nested data map.
         let confirmed = test_storage.own_nested_map.get_map_confirmed(&77).unwrap();

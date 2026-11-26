@@ -46,7 +46,11 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::V0;
 pub(crate) enum MetadataKey {
     /// The [`StorageVersion`] the database was last written under, as a little-endian `u32`.
     StorageVersion = 0,
+    /// Program history configuration and its last indexed height.
+    ProgramHistory = 1,
 }
+
+const _: () = assert!(MetadataKey::ProgramHistory as u8 == crate::program::HISTORY_METADATA_KEY);
 
 impl StorageVersion {
     /// Decodes a version this build knows how to open.
@@ -72,7 +76,7 @@ pub(crate) fn map_prefix(network_id: u16, map_id: MapID) -> [u8; PREFIX_LEN] {
 }
 
 /// Returns the raw database key for a metadata entry.
-fn metadata_key(network_id: u16, key: MetadataKey) -> Vec<u8> {
+pub(super) fn metadata_key(network_id: u16, key: MetadataKey) -> Vec<u8> {
     let mut raw = map_prefix(network_id, MapID::Metadata(MetadataMap::Metadata)).to_vec();
     raw.push(key as u8);
     raw
@@ -171,6 +175,43 @@ mod tests {
             assert!(db.get(key).unwrap().is_none(), "{key:?}");
         }
         assert_eq!(db.get(&kept).unwrap().unwrap(), b"program");
+    }
+
+    #[test]
+    fn test_delete_mapping_history_keeps_ledger_state() -> Result<()> {
+        let db = RocksDB::open(NETWORK_ID, StorageMode::new_test(None))?;
+        let mut history = Vec::with_capacity(6);
+        for map in [
+            ProgramMap::MappingUpdate,
+            ProgramMap::MappingUpdateHeights,
+            ProgramMap::StakingRewards,
+            ProgramMap::ProgramHistory,
+            ProgramMap::MappingHistory,
+            ProgramMap::KeyHistory,
+        ] {
+            let mut key = map_prefix(NETWORK_ID, MapID::Program(map)).to_vec();
+            key.push(1);
+            db.put(&key, b"history")?;
+            history.push(key);
+        }
+        let history_metadata = metadata_key(NETWORK_ID, MetadataKey::ProgramHistory);
+        db.put(&history_metadata, b"history")?;
+        let mut kept = map_prefix(NETWORK_ID, MapID::Program(ProgramMap::ProgramID)).to_vec();
+        kept.push(1);
+        db.put(&kept, b"program")?;
+        let mut kept_value = map_prefix(NETWORK_ID, MapID::Program(ProgramMap::KeyValueID)).to_vec();
+        kept_value.push(1);
+        db.put(&kept_value, b"value")?;
+
+        db.delete_mapping_history()?;
+        for key in &history {
+            assert!(db.get(key)?.is_none(), "{key:?}");
+        }
+        assert!(db.get(&history_metadata)?.is_none());
+        assert_eq!(db.get(&kept)?.as_deref(), Some(&b"program"[..]));
+        assert_eq!(db.get(&kept_value)?.as_deref(), Some(&b"value"[..]));
+        assert!(db.get(metadata_key(NETWORK_ID, MetadataKey::StorageVersion))?.is_some());
+        Ok(())
     }
 
     #[test]
