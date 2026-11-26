@@ -1548,7 +1548,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             authority_retention,
             authority_compaction: Default::default(),
         };
-        if store.authority_pruned_below()?.is_some() {
+        if store.authority_retention.is_some() && store.authority_pruned_below()?.is_some() {
             store.compact_authorities();
         }
         Ok(store)

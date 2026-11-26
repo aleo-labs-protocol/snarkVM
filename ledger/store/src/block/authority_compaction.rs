@@ -143,12 +143,11 @@ impl Drop for CompactionState {
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
-    /// Counts one pruned authority for the insert of the block at `height`, if an authority expires
-    /// with it, and starts a compaction every [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`] of them, subject
-    /// to [`AUTHORITY_COMPACTION_MIN_INTERVAL`]. It counts by height, not what the insert pruned. The
-    /// two agree while the watermark is at the expiring height, where open leaves it. After a rollback
-    /// or a reopen with a larger window the watermark is ahead, the insert prunes nothing, and the
-    /// count overstates until the window reaches the watermark.
+    /// Counts one pruned authority for the insert of the block at `height`, if one expires with it,
+    /// and starts a compaction every [`AUTHORITY_COMPACTION_INTERVAL_BLOCKS`] of them, subject to
+    /// [`AUTHORITY_COMPACTION_MIN_INTERVAL`]. The count is by height, not by what the insert pruned:
+    /// after a rollback or a reopen with a larger window, inserts prune nothing and the count
+    /// overstates until the window reaches the watermark.
     pub(super) fn count_insert_time_pruning(&self, height: u32) {
         let Some(retention) = self.authority_retention else {
             return;
