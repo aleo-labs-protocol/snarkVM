@@ -209,7 +209,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Not enough bits for identifier literal")]
     fn test_from_bits_le_short_input_halts() {
         use console::FromBits as _;
 
@@ -222,6 +221,9 @@ mod tests {
             console::IdentifierLiteral::<<CurrentEnvironment as Environment>::Network>::from_bits_le(&bits).is_err()
         );
         let bits: Vec<_> = bits.iter().map(|b| Boolean::<CurrentEnvironment>::new(Mode::Private, *b)).collect();
-        IdentifierLiteral::<CurrentEnvironment>::from_bits_le(&bits);
+        let payload = std::panic::catch_unwind(|| IdentifierLiteral::<CurrentEnvironment>::from_bits_le(&bits))
+            .expect_err("The circuit should halt");
+        let halt = payload.downcast_ref::<snarkvm_utilities::VmHalt>().expect("The panic should be a VM halt");
+        assert!(halt.message().contains("Not enough bits for identifier literal"), "Unexpected halt message: {halt}");
     }
 }

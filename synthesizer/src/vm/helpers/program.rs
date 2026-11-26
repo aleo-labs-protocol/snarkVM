@@ -16,7 +16,7 @@
 use crate::Stack;
 use console::{
     prelude::{Network, cfg_iter},
-    program::{EntryType, FinalizeType, Identifier, Locator, PlaintextType, ProgramID, RegisterType, ValueType},
+    program::{EntryType, FinalizeType, Identifier, Locator, PlaintextType, RegisterType, ValueType},
 };
 use snarkvm_synthesizer_program::{Program, StackTrait};
 
@@ -115,14 +115,8 @@ pub fn check_program_plaintext_sizes<N: Network>(
     let mut memoized = HashMap::new();
 
     // Check a single plaintext type against the budget.
-    let mut check = |pt: &PlaintextType<N>| -> Result<()> {
-        let bits = plaintext_size_in_bits_raw(stack, pt, 0, &mut memoized)?.0;
-        ensure!(
-            bits <= max_bits,
-            "Plaintext type '{pt}' exceeds the maximum allowed size in bits ({bits} > {max_bits})"
-        );
-        Ok(())
-    };
+    let mut check =
+        |pt: &PlaintextType<N>| -> Result<()> { stack.check_plaintext_type_size(pt, max_bits, &mut memoized) };
 
     // Check function inputs, outputs, and finalize arguments.
     for (_, function) in program.functions() {
@@ -196,80 +190,4 @@ pub fn check_program_plaintext_sizes<N: Network>(
     }
 
     Ok(())
-}
-
-/// Returns the `(size, height)` in bits of the given plaintext type, excluding any type metadata.
-///
-/// Each struct reference is resolved against the program that declares it, since a struct declared
-/// in an external program may refer to structs local to that program, or to structs in programs
-/// that the current program does not import.
-///
-/// `memoized` records the result for each `(program, struct)` pair already sized, so that a struct shared by many
-/// members is expanded at most once. Without this, a program in which every member of each struct refers to the
-/// same earlier struct forms an acyclic graph with exponentially many paths, and this walk would make up to
-/// `MAX_STRUCT_ENTRIES ^ MAX_STRUCTS` recursive calls.
-///
-/// `height` is the number of levels below a type at which its deepest node sits (a literal is `0`). It lets a
-/// memoized hit at a deeper position re-apply the depth check the skipped recursion would have performed on that
-/// node, so the memoization changes only the running time and never the result.
-fn plaintext_size_in_bits_raw<N: Network>(
-    stack: &Stack<N>,
-    plaintext_type: &PlaintextType<N>,
-    depth: usize,
-    memoized: &mut HashMap<(ProgramID<N>, Identifier<N>), (usize, usize)>,
-) -> Result<(usize, usize)> {
-    // Ensure that the depth is within the maximum limit.
-    ensure!(depth <= N::MAX_DATA_DEPTH, "Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
-
-    match plaintext_type {
-        PlaintextType::Literal(literal_type) => Ok((literal_type.size_in_bits::<N>() as usize, 0)),
-        PlaintextType::Struct(struct_name) => {
-            // If this struct has already been sized in the current traversal, reuse that result.
-            let key = (*stack.program_id(), *struct_name);
-            if let Some(&(size, height)) = memoized.get(&key) {
-                ensure!(
-                    depth.saturating_add(height) <= N::MAX_DATA_DEPTH,
-                    "Plaintext depth exceeds maximum limit: {}",
-                    N::MAX_DATA_DEPTH
-                );
-                return Ok((size, height));
-            }
-
-            // Add up the sizes of the members, which are declared in the same program.
-            let members = stack.program().get_struct(struct_name)?.members();
-            let mut total = 0usize;
-            // Track the maximum height of any member's subtree.
-            let mut member_height = 0usize;
-            for member_type in members.values() {
-                let (member_size, subtree_height) =
-                    plaintext_size_in_bits_raw(stack, member_type, depth + 1, memoized)?;
-                total =
-                    total.checked_add(member_size).ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
-                member_height = member_height.max(subtree_height);
-            }
-
-            // The struct sits one level above its deepest member; a memberless struct recurses nowhere.
-            let height = match members.is_empty() {
-                true => 0,
-                false => member_height + 1,
-            };
-            memoized.insert(key, (total, height));
-            Ok((total, height))
-        }
-        PlaintextType::ExternalStruct(locator) => {
-            // Resolve the struct, and therefore its members, against the external program.
-            let external_stack = stack.get_external_stack(locator.program_id())?;
-            plaintext_size_in_bits_raw(&external_stack, &PlaintextType::Struct(*locator.resource()), depth, memoized)
-        }
-        PlaintextType::Array(array_type) => {
-            // Multiply the size of an element by the length of the array.
-            let (element_size, element_height) =
-                plaintext_size_in_bits_raw(stack, array_type.next_element_type(), depth + 1, memoized)?;
-            let total = element_size
-                .checked_mul(**array_type.length() as usize)
-                .ok_or_else(|| anyhow!("`plaintext_size_in_bits_raw` overflowed"))?;
-            // The array sits one level above its element.
-            Ok((total, element_height + 1))
-        }
-    }
 }

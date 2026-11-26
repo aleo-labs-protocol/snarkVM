@@ -113,10 +113,8 @@ fn record_program_from_multiplier(multiplier: usize, name_prefix: &str, suffix: 
 
 /// Extracts the message from a panic payload caught by [`try_vm_runtime`].
 fn vm_halt_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    payload
-        .downcast_ref::<&str>()
-        .map(|message| (*message).to_string())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
+    snarkvm_utilities::panic_message(&*payload)
+        .map(str::to_string)
         .unwrap_or_else(|| format!("unexpected panic payload: {payload:?}"))
 }
 

@@ -25,7 +25,18 @@ use crate::{
 use console::{
     algorithms::{ECDSASignature, Keccak256, Keccak384, Keccak512, Sha3_256, Sha3_384, Sha3_512},
     network::prelude::*,
-    program::{Boolean, Identifier, Literal, LiteralType, Locator, PlaintextType, Register, RegisterType, Value},
+    program::{
+        Boolean,
+        Identifier,
+        Literal,
+        LiteralType,
+        Locator,
+        Plaintext,
+        PlaintextType,
+        Register,
+        RegisterType,
+        Value,
+    },
 };
 use snarkvm_utilities::bytes_from_bits_le;
 
@@ -295,7 +306,7 @@ macro_rules! do_ecdsa_verification {
     }};
 }
 
-/// Evaluate an ECDSA verification operation.
+/// Evaluate an ECDSA verification operation with the latest consensus rules.
 ///
 /// This allows running the verification without the machinery of stacks and registers.
 /// This is necessary for the Leo interpreter.
@@ -305,7 +316,7 @@ pub fn evaluate_ecdsa_verification<N: Network>(
     public_key: &Value<N>,
     message: &Value<N>,
 ) -> Result<bool> {
-    evaluate_ecdsa_verification_internal(variant, signature, public_key, message)
+    evaluate_ecdsa_verification_internal(variant, signature, public_key, message, ConsensusVersion::latest())
 }
 
 fn evaluate_ecdsa_verification_internal<N: Network>(
@@ -313,7 +324,24 @@ fn evaluate_ecdsa_verification_internal<N: Network>(
     signature: &Value<N>,
     public_key: &Value<N>,
     message: &Value<N>,
+    consensus_version: ConsensusVersion,
 ) -> Result<bool> {
+    if consensus_version >= ConsensusVersion::V23 {
+        let check_bytes = |value: &Value<N>, length: usize, name: &str| -> Result<()> {
+            ensure!(
+                matches!(value, Value::Plaintext(Plaintext::Array(elements, _))
+                    if elements.len() == length
+                        && elements.iter().all(|element| matches!(element, Plaintext::Literal(Literal::U8(_), _)))),
+                "Instruction '{}' expects a {length}-byte {name} array",
+                variant.opcode()
+            );
+            Ok(())
+        };
+        check_bytes(signature, ECDSASignature::SIGNATURE_SIZE_IN_BYTES, "signature")?;
+        if matches!(variant, ECDSAVerifyVariant::Digest | ECDSAVerifyVariant::DigestEth) {
+            check_bytes(message, ECDSASignature::PREHASH_SIZE_IN_BYTES, "digest")?;
+        }
+    }
     Ok(do_ecdsa_verification!(variant, signature, public_key, message))
 }
 
@@ -348,14 +376,18 @@ impl<N: Network, const VARIANT: u8> ECDSAVerify<N, VARIANT> {
         }
 
         // Retrieve the inputs.
-        // Note: There is no need to check the types here, as this is done in `output_types`.
         let signature = registers.load(stack, &self.operands[0])?;
         let public_key = registers.load(stack, &self.operands[1])?;
         let message = registers.load(stack, &self.operands[2])?;
 
         // Perform the verification.
-        let output =
-            evaluate_ecdsa_verification_internal(ECDSAVerifyVariant::new(VARIANT), &signature, &public_key, &message)?;
+        let output = evaluate_ecdsa_verification_internal(
+            ECDSAVerifyVariant::new(VARIANT),
+            &signature,
+            &public_key,
+            &message,
+            N::CONSENSUS_VERSION(registers.state().block_height())?,
+        )?;
         let output = Literal::Boolean(Boolean::new(output));
 
         // Store the output.
@@ -624,6 +656,57 @@ mod tests {
     use console::network::MainnetV0;
 
     type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_fixed_digest_shape() -> Result<()> {
+        use console::{algorithms::RecoveryID, types::U8};
+        use k256::ecdsa::{SigningKey, signature::hazmat::PrehashSigner};
+
+        let signing_key = SigningKey::from_slice(&[1; 32])?;
+        let digest = [0u8; ECDSASignature::PREHASH_SIZE_IN_BYTES];
+        let (signature, recovery_id) = signing_key.sign_prehash(&digest)?;
+        let signature = ECDSASignature { signature, recovery_id: RecoveryID { recovery_id, chain_id: None } };
+        let byte_array = |bytes: &[u8]| {
+            Value::<CurrentNetwork>::Plaintext(Plaintext::Array(
+                bytes.iter().map(|byte| Plaintext::from(Literal::U8(U8::new(*byte)))).collect(),
+                Default::default(),
+            ))
+        };
+        let bytes = signature.to_bytes_le()?;
+        let signature = byte_array(&bytes);
+        let nested_signature = Value::Plaintext(Plaintext::Array(
+            bytes.iter().map(|byte| Plaintext::from([U8::new(*byte)])).collect(),
+            Default::default(),
+        ));
+        let key = signing_key.verifying_key();
+        let flat = byte_array(&digest);
+        let nested =
+            Value::Plaintext(Plaintext::Array(vec![Plaintext::from([U8::new(0)]); digest.len()], Default::default()));
+
+        let public_key = byte_array(key.to_sec1_point(true).as_bytes());
+        for variant in [ECDSAVerifyVariant::Digest, ECDSAVerifyVariant::HashKeccak256Raw] {
+            let verify = |version| {
+                evaluate_ecdsa_verification_internal(variant.clone(), &nested_signature, &public_key, &flat, version)
+            };
+            verify(ConsensusVersion::V22)?;
+            assert!(verify(ConsensusVersion::V23).unwrap_err().to_string().contains("65-byte signature"));
+        }
+
+        for (variant, key) in [
+            (ECDSAVerifyVariant::Digest, byte_array(key.to_sec1_point(true).as_bytes())),
+            (ECDSAVerifyVariant::DigestEth, byte_array(&ECDSASignature::ethereum_address_from_public_key(key)?)),
+        ] {
+            assert!(evaluate_ecdsa_verification(variant.clone(), &signature, &key, &flat)?);
+            let verify = |message: &Value<CurrentNetwork>, version| {
+                evaluate_ecdsa_verification_internal(variant.clone(), &signature, &key, message, version)
+            };
+            assert!(verify(&nested, ConsensusVersion::V22)?);
+            for invalid in [&nested, &byte_array(&digest[1..]), &byte_array(&[0; 33])] {
+                assert!(verify(invalid, ConsensusVersion::V23).is_err());
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_parse() {
