@@ -206,10 +206,10 @@ mod varuna {
         expect_test::expect![[r#"
             hiding=true V2=03673be9a6b1aa62629164620492ffc9f30b677c80dd0f8b05a8f8c63a6cc965
             hiding=true V3=f6a95d87ce3026bc71199b3e419d0cf93d065ffe06ad88600e08b90806fd6666
-            hiding=true V4=43b72046a048afb12381629282a3d6bda6fb0d1f2c2d18d28d97f328ef27b812
+            hiding=true V4=7c7ac26a29e79a6da2da8a4f5c4ec9be6c6dba725c96a60a9793f359f97a9805
             hiding=false V2=1247d0fc9643ed261fb7633b39e06fde7d287708eab5861ead4970e3f2521a86
             hiding=false V3=514f2f98043b5945abd3115fd305056ed28162e4e5135c4818333d8113b994ca
-            hiding=false V4=6e995f7e2b776534943f45e7d9bc2283c8e9be7e3aa3fd60caa1971edd827b5c
+            hiding=false V4=eb5e3a1f363d40a60f834e406bb245f6047e4185c170d015829b48cfbc0f699d
         "#]]
         .assert_eq(&snapshot);
     }
@@ -647,6 +647,9 @@ mod varuna {
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
         SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
 
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V4, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V4, &mut rng);
+
         SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
         SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
 
@@ -709,6 +712,9 @@ mod varuna {
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
         SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
+
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V4, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V4, &mut rng);
 
         SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
         SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
@@ -945,6 +951,7 @@ mod varuna_hiding {
 
         test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
         test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V4, &mut rng);
         test_serde_json(num_constraints, num_variables, &mut rng);
         test_bincode(num_constraints, num_variables, &mut rng);
     }
@@ -981,6 +988,7 @@ mod varuna_hiding {
 
         test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
         test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V4, &mut rng);
         test_serde_json(num_constraints, num_variables, &mut rng);
         test_bincode(num_constraints, num_variables, &mut rng);
     }
@@ -1778,7 +1786,7 @@ mod proof_vector {
     const EXPECTED: [(VarunaVersion, &str); 3] = [
         (VarunaVersion::V2, "620d8f2272d8496df5832bddeffa3cf70ed48c192ce6caffb624c27f73db34b3"),
         (VarunaVersion::V3, "8e2b36c08794204430f20e5e1c26e52b7d8e4588acc8d7799669d9365bd8ef70"),
-        (VarunaVersion::V4, "6533c6efe024679df48972d50e473c65e48d15c5312ae30439b3a9a2b3cfa962"),
+        (VarunaVersion::V4, "fc7a5842f3dd15263c20c14a3607ebc09e9df62e2d66cede266bd38b1d3302ca"),
     ];
 
     #[test]

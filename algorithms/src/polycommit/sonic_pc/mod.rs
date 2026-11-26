@@ -15,6 +15,7 @@
 
 use crate::{
     AlgebraicSponge,
+    algebraic_sponge::compact,
     fft::DensePolynomial,
     msm::variable_base::VariableBase,
     polycommit::{PCError, kzg10},
@@ -492,11 +493,28 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     where
         Commitment<E>: 'a,
     {
+        Self::batch_check_with(vk, commitments, query_set, values, proof, fs_rng, false)
+    }
+
+    /// `batch_check`, where `compact` selects the compact encoding of the
+    /// opening proofs in the sponge that derives the pairing-check randomizers.
+    pub(crate) fn batch_check_with<'a>(
+        vk: &UniversalVerifier<E>,
+        commitments: impl IntoIterator<Item = &'a LabeledCommitment<Commitment<E>>>,
+        query_set: &QuerySet<E::Fr>,
+        values: &Evaluations<E::Fr>,
+        proof: &BatchProof<E>,
+        fs_rng: &mut S,
+        compact: bool,
+    ) -> Result<bool>
+    where
+        Commitment<E>: 'a,
+    {
         let commitments = commitments
             .into_iter()
             .map(|c| (c.label().to_owned(), (c.degree_bound(), vec![(c.commitment().0, E::Fr::one())])))
             .collect();
-        Self::batch_check_terms(vk, commitments, query_set, values, proof, fs_rng)
+        Self::batch_check_terms(vk, commitments, query_set, values, proof, fs_rng, compact)
     }
 
     /// `batch_check` of commitments given as sums of terms: `commitments` maps
@@ -512,6 +530,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         values: &Evaluations<E::Fr>,
         proof: &BatchProof<E>,
         fs_rng: &mut S,
+        compact: bool,
     ) -> Result<bool> {
         let _batch_check_time =
             timing_span!("Checking commitments", commitments = commitments.len(), queries = query_set.len()).entered();
@@ -525,8 +544,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         ensure!(query_to_labels_map.len() == proof.0.len());
 
         let mut private_sponge = fs_rng.clone();
-        for proof in &proof.0 {
-            proof.absorb_into_sponge(&mut private_sponge);
+        if compact {
+            Self::absorb_proofs_compact(&proof.0, &mut private_sponge);
+        } else {
+            for proof in &proof.0 {
+                proof.absorb_into_sponge(&mut private_sponge);
+            }
         }
 
         let mut randomizer = E::Fr::one();
@@ -668,6 +691,35 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     where
         Commitment<E>: 'a,
     {
+        Self::check_combinations_with(
+            vk,
+            linear_combinations,
+            commitments,
+            query_set,
+            evaluations,
+            proof,
+            fs_rng,
+            false,
+        )
+    }
+
+    /// `check_combinations`, where `compact` selects the compact encoding of
+    /// the opening proofs in the sponge that derives the pairing-check
+    /// randomizers.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn check_combinations_with<'a>(
+        vk: &UniversalVerifier<E>,
+        linear_combinations: impl IntoIterator<Item = &'a LinearCombination<E::Fr>>,
+        commitments: impl IntoIterator<Item = &'a LabeledCommitment<Commitment<E>>>,
+        query_set: &QuerySet<E::Fr>,
+        evaluations: &Evaluations<E::Fr>,
+        proof: &BatchLCProof<E>,
+        fs_rng: &mut S,
+        compact: bool,
+    ) -> Result<bool>
+    where
+        Commitment<E>: 'a,
+    {
         let BatchLCProof { proof } = proof;
         let label_comm_map = commitments.into_iter().map(|c| (c.label(), c)).collect::<BTreeMap<_, _>>();
 
@@ -709,7 +761,16 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             }
         }
 
-        Self::batch_check_terms(vk, lc_commitments, query_set, &evaluations, proof, fs_rng)
+        Self::batch_check_terms(vk, lc_commitments, query_set, &evaluations, proof, fs_rng, compact)
+    }
+
+    /// Absorbs each proof's `w` as a compressed point, with one more flag bit
+    /// per proof for whether it carries `random_v`, then the `random_v`s
+    /// present.
+    fn absorb_proofs_compact(proofs: &[kzg10::KZGProof<E>], sponge: &mut S) {
+        let presence = proofs.iter().map(|proof| proof.random_v.is_some());
+        compact::absorb_points_and_bits(sponge, proofs.iter().map(|proof| proof.w), presence);
+        compact::absorb_scalars(sponge, proofs.iter().filter_map(|proof| proof.random_v));
     }
 }
 
@@ -1287,14 +1348,17 @@ mod tests {
             let check = |evaluations: &Evaluations<Fr>, proof: &BatchProof<Bls12_377>| {
                 // The template's own check passed with these labels, so the only
                 // errors `batch_check` returns, missing labels, cannot occur.
-                PC_Bls12_377::batch_check(
-                    &verification_key,
-                    &commitments,
-                    &query_set,
-                    evaluations,
-                    proof,
-                    &mut Sponge::new(),
-                )
+                check_both_encodings(|compact| {
+                    PC_Bls12_377::batch_check_with(
+                        &verification_key,
+                        &commitments,
+                        &query_set,
+                        evaluations,
+                        proof,
+                        &mut Sponge::new(),
+                        compact,
+                    )
+                })
                 .unwrap()
             };
             assert!(check(&evaluations, &proof));
@@ -1393,14 +1457,17 @@ mod tests {
                          proof: &BatchProof<_>| {
                 // The template's own check passed with these labels, so the only errors
                 // `batch_check_terms` returns, missing labels, cannot occur.
-                PC_Bls12_377::batch_check_terms(
-                    &verification_key,
-                    terms,
-                    &query_set,
-                    evaluations,
-                    proof,
-                    &mut Sponge::new(),
-                )
+                check_both_encodings(|compact| {
+                    PC_Bls12_377::batch_check_terms(
+                        &verification_key,
+                        terms.clone(),
+                        &query_set,
+                        evaluations,
+                        proof,
+                        &mut Sponge::new(),
+                        compact,
+                    )
+                })
                 .unwrap()
             };
             // Each commitment `c` as `a c + (1 - a) c` for a random `a`, and with the
@@ -1517,14 +1584,17 @@ mod tests {
             let shifted: Vec<_> = commitments.iter().map(shift).collect();
             // `batch_check` errs only on a missing label, and `shift` keeps every label.
             let check = |evaluations: &super::Evaluations<Fr>| {
-                PC_Bls12_377::batch_check(
-                    &verification_key,
-                    &shifted,
-                    &query_set,
-                    evaluations,
-                    &proof,
-                    &mut Sponge::new(),
-                )
+                check_both_encodings(|compact| {
+                    PC_Bls12_377::batch_check_with(
+                        &verification_key,
+                        &shifted,
+                        &query_set,
+                        evaluations,
+                        &proof,
+                        &mut Sponge::new(),
+                        compact,
+                    )
+                })
                 .unwrap()
             };
             assert!(check(&evaluations), "a commitment shifted out of G1 failed, lanes off: {lanes_off}");

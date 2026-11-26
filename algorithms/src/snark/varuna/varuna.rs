@@ -18,6 +18,7 @@ use crate::{
     AlgebraicSponge,
     SNARK,
     SNARKError,
+    algebraic_sponge::compact,
     crypto_hash::sha256::Sha256Writer,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
@@ -235,36 +236,53 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         Ok(sponge)
     }
 
-    fn absorb_labeled_with_sums(
+    /// Returns whether `varuna_version` absorbs scalars and points compactly.
+    fn compact_encoding(varuna_version: VarunaVersion) -> bool {
+        match varuna_version {
+            VarunaVersion::V1 | VarunaVersion::V2 | VarunaVersion::V3 => false,
+            VarunaVersion::V4 => true,
+        }
+    }
+
+    fn absorb_labeled_with_sums<'a>(
         comms: &[LabeledCommitment<Commitment<E>>],
-        sums: &[prover::MatrixSums<E::Fr>],
+        sums: impl IntoIterator<Item = &'a prover::MatrixSums<E::Fr>>,
         sponge: &mut FS,
+        compact: bool,
     ) {
-        let commitments: Vec<_> = comms.iter().map(|c| *c.commitment()).collect();
-        Self::absorb_with_sums(&commitments, sums, sponge)
-    }
-
-    fn absorb_labeled(comms: &[LabeledCommitment<Commitment<E>>], sponge: &mut FS) {
-        let commitments: Vec<_> = comms.iter().map(|c| *c.commitment()).collect();
-        Self::absorb(&commitments, sponge);
-    }
-
-    fn absorb(commitments: &[Commitment<E>], sponge: &mut FS) {
-        let sponge_time = timing_span!("Absorbing commitments").entered();
-        sponge.absorb_native_field_elements(commitments);
-        drop(sponge_time);
-    }
-
-    fn absorb_with_sums(commitments: &[Commitment<E>], sums: &[prover::MatrixSums<E::Fr>], sponge: &mut FS) {
         let sponge_time = timing_span!("Absorbing commitments and message").entered();
-        Self::absorb(commitments, sponge);
-        Self::absorb_sums(sums, sponge);
+        Self::absorb_labeled(comms, sponge, compact);
+        Self::absorb_sums(sums, sponge, compact);
         drop(sponge_time);
     }
 
-    fn absorb_sums(sums: &[prover::MatrixSums<E::Fr>], sponge: &mut FS) {
-        for sum in sums.iter() {
-            sponge.absorb_nonnative_field_elements([sum.sum_a, sum.sum_b, sum.sum_c]);
+    fn absorb_labeled(comms: &[LabeledCommitment<Commitment<E>>], sponge: &mut FS, compact: bool) {
+        let sponge_time = timing_span!("Absorbing commitments").entered();
+        let commitments = comms.iter().map(|c| *c.commitment());
+        if compact {
+            compact::absorb_points(sponge, commitments.map(|c| c.0));
+        } else {
+            sponge.absorb_native_field_elements(&commitments.collect::<Vec<_>>());
+        }
+        drop(sponge_time);
+    }
+
+    fn absorb_sums<'a>(sums: impl IntoIterator<Item = &'a prover::MatrixSums<E::Fr>>, sponge: &mut FS, compact: bool) {
+        if compact {
+            compact::absorb_scalars(sponge, sums.into_iter().flat_map(prover::MatrixSums::iter));
+        } else {
+            for sum in sums {
+                sponge.absorb_nonnative_field_elements([sum.sum_a, sum.sum_b, sum.sum_c]);
+            }
+        }
+    }
+
+    fn absorb_evaluations(evaluations: &proof::Evaluations<E::Fr>, sponge: &mut FS, compact: bool) {
+        let evaluations = evaluations.to_field_elements();
+        if compact {
+            compact::absorb_scalars(sponge, evaluations);
+        } else {
+            sponge.absorb_nonnative_field_elements(evaluations);
         }
     }
 }
@@ -473,6 +491,7 @@ where
         let circuit_keys = keys_to_constraints.keys().map(|pk| &pk.circuit_verifying_key);
         trace!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_keys, varuna_version)?;
+        let compact = Self::compact_encoding(varuna_version);
 
         // --------------------------------------------------------------------
         // First round
@@ -490,7 +509,7 @@ where
             )?
         };
 
-        Self::absorb_labeled(&first_commitments, &mut sponge);
+        Self::absorb_labeled(&first_commitments, &mut sponge, compact);
 
         let (verifier_first_message, verifier_state) = AHPForR1CS::<_, SM>::verifier_first_round(
             &batch_sizes,
@@ -518,7 +537,7 @@ where
             )?
         };
 
-        Self::absorb_labeled(&second_commitments, &mut sponge);
+        Self::absorb_labeled(&second_commitments, &mut sponge, compact);
 
         let (verifier_second_msg, verifier_state) =
             AHPForR1CS::<_, SM>::verifier_second_round(verifier_state, &mut sponge, varuna_version)?;
@@ -538,10 +557,7 @@ where
                         zk_rng,
                     )?;
 
-                    Self::absorb_sums(
-                        &prover_prepare_third_message.sums.clone().into_iter().flatten().collect_vec(),
-                        &mut sponge,
-                    );
+                    Self::absorb_sums(prover_prepare_third_message.sums.iter().flatten(), &mut sponge, compact);
 
                     let (verifier_prepare_third_msg, verifier_state) =
                         AHPForR1CS::<_, SM>::verifier_prepare_third_round(
@@ -590,15 +606,16 @@ where
                 }
                 Self::absorb_labeled_with_sums(
                     &third_commitments,
-                    &prover_third_message.sums.into_iter().flatten().collect_vec(),
+                    prover_third_message.sums.iter().flatten(),
                     &mut sponge,
+                    compact,
                 );
             }
             VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                 if prover_third_message.is_some() {
                     return Err(anyhow!("Expected prover to not contribute sums in the third round."))?;
                 }
-                Self::absorb_labeled(&third_commitments, &mut sponge);
+                Self::absorb_labeled(&third_commitments, &mut sponge, compact);
             }
         }
 
@@ -629,7 +646,7 @@ where
             )?
         };
 
-        Self::absorb_labeled_with_sums(&fourth_commitments, &prover_fourth_message.sums, &mut sponge);
+        Self::absorb_labeled_with_sums(&fourth_commitments, &prover_fourth_message.sums, &mut sponge, compact);
 
         let (verifier_fourth_msg, verifier_state) =
             AHPForR1CS::<_, SM>::verifier_fourth_round(verifier_state, &mut sponge)?;
@@ -656,7 +673,7 @@ where
             )?
         };
 
-        Self::absorb_labeled(&fifth_commitments, &mut sponge);
+        Self::absorb_labeled(&fifth_commitments, &mut sponge, compact);
 
         let verifier_state = AHPForR1CS::<_, SM>::verifier_fifth_round(verifier_state, &mut sponge)?;
         // --------------------------------------------------------------------
@@ -754,7 +771,7 @@ where
         };
 
         let absorb_time = timing_span!("Absorbing evaluations").entered();
-        sponge.absorb_nonnative_field_elements(evaluations.to_field_elements());
+        Self::absorb_evaluations(&evaluations, &mut sponge, compact);
         drop(absorb_time);
 
         let pc_proof = SonicKZG10::<E, FS>::open_combinations(
@@ -984,12 +1001,13 @@ where
         trace!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge =
             Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, keys_to_inputs.keys().copied(), varuna_version)?;
+        let compact = Self::compact_encoding(varuna_version);
 
         // --------------------------------------------------------------------
         // First round
         let (_, verifier_state) = {
             let _first_round_time = timing_span!("First round").entered();
-            Self::absorb_labeled(&first_commitments, &mut sponge);
+            Self::absorb_labeled(&first_commitments, &mut sponge, compact);
             AHPForR1CS::<_, SM>::verifier_first_round(
                 &batch_sizes,
                 &circuit_infos,
@@ -1005,7 +1023,7 @@ where
         // Second round
         let (_, verifier_state) = {
             let _second_round_time = timing_span!("Second round").entered();
-            Self::absorb_labeled(&second_commitments, &mut sponge);
+            Self::absorb_labeled(&second_commitments, &mut sponge, compact);
             AHPForR1CS::<_, SM>::verifier_second_round(verifier_state, &mut sponge, varuna_version)?
         };
         // --------------------------------------------------------------------
@@ -1017,7 +1035,7 @@ where
                 VarunaVersion::V1 => verifier_state,
                 VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
                     let _prepare_third_round_time = timing_span!("Prep third round").entered();
-                    Self::absorb_sums(&proof.third_msg.sums.clone().into_iter().flatten().collect_vec(), &mut sponge);
+                    Self::absorb_sums(proof.third_msg.sums.iter().flatten(), &mut sponge, compact);
                     let (_, verifier_state) = AHPForR1CS::<_, SM>::verifier_prepare_third_round(
                         verifier_state,
                         &batch_sizes,
@@ -1039,12 +1057,13 @@ where
                 VarunaVersion::V1 => {
                     Self::absorb_labeled_with_sums(
                         &third_commitments,
-                        &proof.third_msg.sums.clone().into_iter().flatten().collect_vec(),
+                        proof.third_msg.sums.iter().flatten(),
                         &mut sponge,
+                        compact,
                     );
                 }
                 VarunaVersion::V2 | VarunaVersion::V3 | VarunaVersion::V4 => {
-                    Self::absorb_labeled(&third_commitments, &mut sponge);
+                    Self::absorb_labeled(&third_commitments, &mut sponge, compact);
                 }
             }
             AHPForR1CS::<_, SM>::verifier_third_round(verifier_state, &mut sponge)?
@@ -1055,7 +1074,7 @@ where
         // Fourth round
         let (_, verifier_state) = {
             let _fourth_round_time = timing_span!("Fourth round").entered();
-            Self::absorb_labeled_with_sums(&fourth_commitments, &proof.fourth_msg.sums, &mut sponge);
+            Self::absorb_labeled_with_sums(&fourth_commitments, &proof.fourth_msg.sums, &mut sponge, compact);
             AHPForR1CS::<_, SM>::verifier_fourth_round(verifier_state, &mut sponge)?
         };
         // --------------------------------------------------------------------
@@ -1064,7 +1083,7 @@ where
         // Fifth round
         let verifier_state = {
             let _fifth_round_time = timing_span!("Fifth round").entered();
-            Self::absorb_labeled(&fifth_commitments, &mut sponge);
+            Self::absorb_labeled(&fifth_commitments, &mut sponge, compact);
             AHPForR1CS::<_, SM>::verifier_fifth_round(verifier_state, &mut sponge)?
         };
         // --------------------------------------------------------------------
@@ -1096,7 +1115,7 @@ where
         drop(query_set_time);
 
         let absorb_time = timing_span!("Absorbing evaluations").entered();
-        sponge.absorb_nonnative_field_elements(proof.evaluations.to_field_elements());
+        Self::absorb_evaluations(&proof.evaluations, &mut sponge, compact);
         drop(absorb_time);
 
         let mut evaluations = Evaluations::new();
@@ -1137,7 +1156,7 @@ where
 
         let evaluations_are_correct = {
             let _pc_time = timing_span!("Checking linear combinations with PC").entered();
-            SonicKZG10::<E, FS>::check_combinations(
+            SonicKZG10::<E, FS>::check_combinations_with(
                 universal_verifier,
                 lc_s.values(),
                 &commitments,
@@ -1145,6 +1164,7 @@ where
                 &evaluations,
                 &proof.pc_proof,
                 &mut sponge,
+                compact,
             )?
         };
 
