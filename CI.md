@@ -21,7 +21,7 @@ Jobs run in one of two places:
 
 | Event | Runs |
 |---|---|
-| Pull request | `fmt`, `deny`, `source-checks`, `wasm`, `lint`, `lint-locktick`, `test`, `ci-ok` |
+| Pull request | `fmt`, `deny`, `source-checks`, `wasm`, `lint`, `lint-locktick`, `test` |
 | Schedule, every 6 hours, on the head of `staging` | `schedule-due`; unless it finds a verdict, the above plus `test-merge`, `each-feature`, `machete`; then `notify` |
 | Push to or pull request into `release/**`, or manual dispatch | the pull request set, plus `test-merge`, `each-feature`, `machete`, `test-release`, `windows` |
 | Push to `staging` | nothing |
@@ -35,7 +35,6 @@ rows.
 
 | Job | Runner | Trigger | Timeout (min) | What it runs | CircleCI job |
 |---|---|---|---|---|---|
-| `ci-ok` | hosted | all | | fails unless every job that runs on the event succeeded, and every `test` entry; on a release branch or a pull request into one, also fails if a merge or release job was skipped; on a scheduled run that `schedule-due` lets through, also fails if a merge job was skipped; the check to require | |
 | `schedule-due` | hosted | schedule | | decides whether the scheduled run tests the head of `staging`; see [Schedule](#schedule) | |
 | `notify` | hosted | schedule | | posts to Slack when the scheduled run turns red, and once when it turns green again | |
 | `check-shared-refs` | hosted | all | | checks that each `aleo-labs-protocol/gh-actions` ref is a release tag, and that each matrix `name` axis lists the same names as its `include` | |
@@ -76,11 +75,9 @@ filter matched no test.
 A job with no timeout gets the GitHub default of six hours. Only hosted jobs
 have none, and a hosted job holds no fleet box.
 
-A pull request that changes only Markdown files starts no run, so it gets no
-`ci-ok` check. The files under `curves/documentation` do not count: they are
-compiled into `snarkvm-curves`. A push to a release branch runs everything. If
-a branch rule ever requires `ci-ok`, such a pull request cannot merge until a
-workflow reports that check for it.
+A pull request that changes only Markdown files starts no run. The files under
+`curves/documentation` do not count: they are compiled into `snarkvm-curves`. A
+push to a release branch runs everything.
 
 ## Schedule
 
@@ -165,9 +162,9 @@ A test name filter alone skips an ignored test. Add `--include-ignored` to run o
 
 ## Forks
 
-A fork's pull request runs nothing on the fleet. Every self-hosted job checks
-that the head repository is this one. The hosted jobs, including the hosted
-`test` entries, still run, but `ci-ok` fails, so a fork's change merges only
-after it is pushed to a branch here. The fleet's `target/` and sccache
-persist between jobs, so anyone who can push a branch here can affect later
-builds there. That is the same trust as push access; do not widen the guard.
+GitHub holds every run of an outside contributor's pull request until a
+maintainer approves it. An approved run runs every job, the fleet jobs
+included: their guard checks `github.repository`, which names this repository
+on a fork's pull request too, and only keeps them out of mirrors. The fleet's
+`target/` and sccache persist between jobs, so the fork's code can affect later
+builds there. Approve a fork's run only after you read its change.
