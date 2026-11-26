@@ -42,6 +42,9 @@ workspace = true
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
 workspace = true
 
+[dependencies.snarkvm-ledger-narwhal-batch-header]
+workspace = true
+
 [dependencies.snarkvm-ledger-puzzle]
 workspace = true
 
@@ -88,6 +91,10 @@ optional = true
 
 [dependencies.tracing]
 workspace = true
+
+[dev-dependencies.snarkvm-ledger-authority]
+workspace = true
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true

@@ -65,6 +65,11 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
             .map_err(|e| anyhow::anyhow!("Failed to catch up with the primary: {e}"))
     }
 
+    /// Raises the database's schema version. See `schema::raise_storage_version`.
+    pub(crate) fn raise_storage_version(&self, version: StorageVersion) -> Result<()> {
+        schema::raise_storage_version(&self.database, self.database.network_id, version)
+    }
+
     /// Reads RocksDB internal properties and publishes them to the metrics registry.
     /// Any map can be used since they all share the same underlying `RocksDB` instance.
     #[cfg(feature = "metrics")]
@@ -734,6 +739,12 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
 }
 
 impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K, V> {
+    /// Compacts this map's keys. See `RocksDB::compact_prefix`.
+    pub fn compact(&self) -> Result<()> {
+        let prefix = <[u8; PREFIX_LEN]>::try_from(self.context.as_slice())?;
+        self.database.compact_prefix(prefix)
+    }
+
     #[inline]
     fn create_prefixed_key<Q>(&self, key: &Q) -> Result<SmallVec<[u8; 64]>>
     where

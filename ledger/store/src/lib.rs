@@ -58,8 +58,11 @@ pub use snarkvm_utilities::storage::{StorageMode, aleo_dir, aleo_ledger_dir, ale
 ///     type TransactionStorage = TransactionMemory<MainnetV0>;
 ///     type TransitionStorage = TransitionMemory<MainnetV0>;
 ///
-///     fn open<S: Into<StorageMode>>(storage: S) -> anyhow::Result<Self> {
-///         ConsensusMemory::open(storage).map(Self)
+///     fn open_with_authority_retention<S: Into<StorageMode>>(
+///         storage: S,
+///         authority_retention: Option<u32>,
+///     ) -> anyhow::Result<Self> {
+///         ConsensusMemory::open_with_authority_retention(storage, authority_retention).map(Self)
 ///     }
 ///
 ///     fn finalize_store(&self) -> &FinalizeStore<MainnetV0, Self::FinalizeStorage> {
@@ -260,6 +263,18 @@ mod sealed {
 }
 
 use console::prelude::{Result, bail};
+
+/// A store whose schema is newer than this build. Nothing is wrong with it, so do not delete it.
+#[derive(Debug)]
+pub struct IncompatibleStore(pub String);
+
+impl std::fmt::Display for IncompatibleStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for IncompatibleStore {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FinalizeMode {
