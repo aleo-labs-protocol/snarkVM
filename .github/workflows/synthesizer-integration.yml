@@ -1,0 +1,58 @@
+# Runs the synthesizer integration tests on pull requests that change
+# `synthesizer/`. The tests compare outputs and error messages against the
+# files in synthesizer/tests/expectations. ci.yml runs them only as
+# `test-merge (synthesizer-integration)`, on the schedule and the release
+# branches.
+#
+# `ci-ok` does not cover this workflow. Do not make this check required: a
+# pull request that this workflow skips never reports it, and so cannot merge.
+name: synthesizer-integration
+
+# A separate workflow because path filters are per workflow.
+on:
+  # A change outside `synthesizer/` can also change an expectation, for example
+  # an error message in `console/`. The schedule in ci.yml covers it.
+  pull_request:
+    # A pull request into a release branch runs `test-merge` in ci.yml.
+    branches-ignore: ['release/**']
+    paths:
+      - 'synthesizer/**'
+      - '.github/workflows/synthesizer-integration.yml'
+      # Exclusions are evaluated last, so a change to both a doc and code still
+      # runs.
+      - '!**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_MIN_STACK: 67108864
+
+jobs:
+  synthesizer-integration:
+    runs-on: [self-hosted, linux, x64, cpu]
+    # The fleet runs jobs only from this repository; see "Forks" in CI.md.
+    if: github.repository == 'aleo-labs-protocol/snarkVM'
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # gh-actions is ours; check-shared-refs requires a @vN tag here, not a SHA.
+      - uses: aleo-labs-protocol/gh-actions/.github/actions/runner-job-setup@v2
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+        with: { tool: cargo-nextest@0.9.114 }
+      # The same command as `test-merge (synthesizer-integration)` in ci.yml.
+      # Keep the two equal.
+      - name: Test
+        env:
+          # The synthesizer integration tests print the events that `RUST_LOG` enables.
+          RUST_LOG: snarkvm=debug
+          NEXTEST_PROFILE: ci
+          NEXTEST_NO_TESTS: fail
+        run: cargo nextest run -p snarkvm-synthesizer -j 4 --test '*'
