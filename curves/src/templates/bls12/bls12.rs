@@ -34,7 +34,7 @@ use snarkvm_fields::{
     PrimeField,
     SquareRootField,
     Zero,
-    fp6_3over2::Fp6Parameters,
+    fp6_3over2::{Fp6, Fp6Parameters},
 };
 use snarkvm_utilities::bititerator::BitIteratorBE;
 
@@ -84,6 +84,27 @@ pub struct Bls12<P: Bls12Parameters>(PhantomData<P>);
 type CoeffTriplet<T> = (Fp2<T>, Fp2<T>, Fp2<T>);
 
 impl<P: Bls12Parameters> Bls12<P> {
+    /// Evaluate the line function at point p when `f = 1`.
+    #[inline]
+    fn ell_from_one(coeffs: &CoeffTriplet<P::Fp2Params>, p: &G1Affine<P>) -> Fp12<P::Fp12Params> {
+        let mut c0 = coeffs.0;
+        let mut c1 = coeffs.1;
+        let mut c2 = coeffs.2;
+
+        match P::TWIST_TYPE {
+            TwistType::M => {
+                c2.mul_by_fp(&p.y);
+                c1.mul_by_fp(&p.x);
+                Fp12::new(Fp6::new(c0, c1, Fp2::zero()), Fp6::new(Fp2::zero(), c2, Fp2::zero()))
+            }
+            TwistType::D => {
+                c0.mul_by_fp(&p.y);
+                c1.mul_by_fp(&p.x);
+                Fp12::new(Fp6::new(c0, Fp2::zero(), Fp2::zero()), Fp6::new(c1, c2, Fp2::zero()))
+            }
+        }
+    }
+
     /// Evaluate the line function at point p.
     fn ell(f: &mut Fp12<P::Fp12Params>, coeffs: &CoeffTriplet<P::Fp2Params>, p: &G1Affine<P>) {
         let mut c0 = coeffs.0;
@@ -108,21 +129,44 @@ impl<P: Bls12Parameters> Bls12<P> {
     /// the scalar path, without `Bls12Parameters::miller_loop_fp12`.
     #[doc(hidden)]
     pub fn miller_loop_scalar(pairs: &[(&G1Prepared<P>, &G2Prepared<P>)]) -> Fp12<P::Fp12Params> {
-        let mut pairs: Vec<_> = pairs.iter().map(|(p, q)| (*p, q.ell_coeffs.iter())).collect();
+        if pairs.is_empty() {
+            return Fp12::one();
+        }
 
-        let mut f = Fp12::one();
+        let mut pairs: Vec<_> = pairs.iter().map(|(p, q)| (*p, q.ell_coeffs.iter())).collect();
+        let mut bits = BitIteratorBE::new(P::X).skip(1);
 
         // `prepare` gives a G2 point one line for each step of this loop. A `G2Prepared` with fewer
         // lines panics at its `unwrap`.
-        for i in BitIteratorBE::new(P::X).skip(1) {
+        let mut f = if let Some(first_bit) = bits.next() {
+            // `pairs` is non-empty, and `prepare` supplies the initial doubling line for `pairs[0]`.
+            let mut acc = Self::ell_from_one(pairs[0].1.next().unwrap(), &pairs[0].0.0);
+            for &mut (p, ref mut coeffs) in &mut pairs[1..] {
+                // `prepare` supplies the initial doubling line for each remaining pair.
+                Self::ell(&mut acc, coeffs.next().unwrap(), &p.0);
+            }
+            if first_bit {
+                for &mut (p, ref mut coeffs) in &mut pairs {
+                    // `prepare` supplies the addition line when `first_bit` is set.
+                    Self::ell(&mut acc, coeffs.next().unwrap(), &p.0);
+                }
+            }
+            acc
+        } else {
+            Fp12::one()
+        };
+
+        for i in bits {
             f.square_in_place();
 
             for &mut (p, ref mut coeffs) in &mut pairs {
+                // `prepare` supplies one doubling line for each remaining bit of `P::X`.
                 Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
             }
 
             if i {
                 for &mut (p, ref mut coeffs) in &mut pairs {
+                    // `prepare` supplies one addition line for each remaining set bit of `P::X`.
                     Self::ell(&mut f, coeffs.next().unwrap(), &p.0);
                 }
             }
