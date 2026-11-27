@@ -1005,7 +1005,8 @@ mod tests {
             let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
             let database = RocksDB::open(CurrentNetwork::ID, storage_mode.clone()).unwrap();
             // Two rows in each slice, by the first byte of their keys. One is deleted after a flush,
-            // so a file holds the deletion.
+            // so the run's own flush writes the deletions to a file. That leaves too few files for
+            // a compaction of RocksDB's own, which would drop the deletions before the run does.
             let authority = snarkvm_ledger_authority::test_helpers::sample_beacon_authority(&mut TestRng::default());
             let hash = |slice: u16, row: u32| -> <CurrentNetwork as Network>::BlockHash {
                 Field::<CurrentNetwork>::from_u32(u32::from(slice) * 0x40 + row).into()
@@ -1018,16 +1019,15 @@ mod tests {
             for slice in 0..SLICES {
                 storage.authority_map().remove(&hash(slice, 1)).unwrap();
             }
-            database.flush().unwrap();
             let files = || database.live_files().unwrap();
             let names = || files().into_iter().map(|file| file.name).collect::<Vec<_>>();
             let deletions = || files().iter().map(|file| file.num_deletions).sum::<u64>();
-            assert_eq!(deletions(), u64::from(SLICES));
 
             let (store, gate) = open_with_gate(&storage_mode);
-            // The thread stores the run before it waits for its first slice.
+            // The thread flushes and stores the run before it waits for its first slice.
             wait_until(|| stored(&store) != AuthorityCompaction::default());
             assert_eq!(stored(&store), cursor(0));
+            assert_eq!(deletions(), u64::from(SLICES));
             for slice in 0..SLICES {
                 let before = names();
                 if slice + 1 < SLICES {
