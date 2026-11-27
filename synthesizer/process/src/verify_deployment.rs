@@ -415,27 +415,6 @@ mod tests {
         assert_eq!(host_hook_calls.load(Ordering::SeqCst), 0, "the halt must not reach the host hook");
     }
 
-    /// Use `cargo test profiler --features timer` to run this test.
-    #[ignore]
-    #[test]
-    fn test_profiler() -> Result<()> {
-        let rng = &mut TestRng::default();
-
-        // Initialize the process.
-        let process = Process::load()?;
-
-        // Fetch the large program to deploy.
-        let large_program = Program::from_str(include_str!("./resources/large_functions.aleo"))?;
-
-        // Create a deployment for the program.
-        let deployment = process.deploy::<CurrentAleo, _>(&large_program, rng)?;
-
-        // Verify the deployment.
-        assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
-
-        bail!("\n\nRemember to #[ignore] this test!\n\n")
-    }
-
     /// Sets the claimed variable count on the first verifying key of `deployment`.
     fn with_claimed_variables<N: Network>(deployment: &Deployment<N>, num_variables: u64) -> Deployment<N> {
         let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];

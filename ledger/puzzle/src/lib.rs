@@ -370,7 +370,7 @@ mod tests {
 
     use anyhow::Result;
     use core::marker::PhantomData;
-    use rand::{CryptoRng, RngExt, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaChaRng;
 
     type CurrentNetwork = console::network::MainnetV0;
@@ -676,41 +676,5 @@ mod tests {
                 assert_eq!(puzzle.get_proof_target(solution).unwrap(), proof_target);
             }
         }
-    }
-
-    /// Use `cargo test profiler --features timer` to run this test.
-    #[ignore]
-    #[test]
-    fn test_profiler() -> Result<()> {
-        fn sample_address_and_counter(rng: &mut impl CryptoRng) -> (Address<CurrentNetwork>, u64) {
-            let private_key = PrivateKey::new(rng).unwrap();
-            let address = Address::try_from(private_key).unwrap();
-            let counter = rng.next_u64();
-            (address, counter)
-        }
-
-        let mut rng = rand::rng();
-
-        // Initialize a new puzzle.
-        let puzzle = sample_puzzle();
-
-        // Initialize an epoch hash.
-        let epoch_hash = rng.random();
-
-        for batch_size in [1, 2, <CurrentNetwork as Network>::MAX_SOLUTIONS] {
-            // Generate the solutions.
-            let solutions = (0..batch_size)
-                .map(|_| {
-                    let (address, counter) = sample_address_and_counter(&mut rng);
-                    puzzle.prove(epoch_hash, address, counter, None).unwrap()
-                })
-                .collect::<Vec<_>>();
-            // Construct the solutions.
-            let solutions = PuzzleSolutions::new(solutions).unwrap();
-            // Verify the solutions.
-            puzzle.check_solutions(&solutions, epoch_hash, 0u64).unwrap();
-        }
-
-        bail!("\n\nRemember to #[ignore] this test!\n\n")
     }
 }
