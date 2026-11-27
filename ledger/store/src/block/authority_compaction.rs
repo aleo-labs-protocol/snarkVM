@@ -104,6 +104,12 @@ impl AuthorityCompaction {
     fn due_at(&self) -> u32 {
         if self.slices > 0 { 0 } else { self.compacted_below.saturating_add(AUTHORITY_COMPACTION_INTERVAL_BLOCKS) }
     }
+
+    /// The value of [`Signal::due_at`] for this state on a store whose watermark is `watermark`.
+    fn insert_trigger(&self, watermark: u32) -> u32 {
+        let due_at = self.due_at();
+        if watermark >= due_at { 0 } else { due_at }
+    }
 }
 
 /// Reads the value of a compaction key. A failed read counts as no value: the state is advisory.
@@ -277,7 +283,11 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
         return Ok(());
     };
     let mut run = AuthorityCompaction::read(storage, watermark);
-    if watermark < run.due_at() || stopping(signal, state) {
+    // The inserts must see what this thread decides: nothing due until the watermark gets there,
+    // or a run that is due until it has finished, whatever ends this attempt.
+    let due_at = run.insert_trigger(watermark);
+    signal.due_at.store(due_at, Ordering::SeqCst);
+    if due_at > 0 || stopping(signal, state) {
         return Ok(());
     }
     if run.slices == 0 {
@@ -367,7 +377,9 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
         #[cfg(test)]
         gate.as_deref(),
     )?;
-    signal.due_at.store(finished.due_at(), Ordering::SeqCst);
+    // The watermark read at the start decides whether the next run is due already. An insert that
+    // has moved the watermark since then compares equal to it.
+    signal.due_at.store(finished.insert_trigger(watermark), Ordering::SeqCst);
     info!("Compacted {to_compact} of {total} authority slices in {:.1} s", progress.elapsed_secs());
     Ok(())
 }
@@ -377,7 +389,8 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
 struct Signal {
     /// Set at shutdown, so no compaction starts and the running one stops after its current step.
     stop: AtomicBool,
-    /// The watermark from which an authority map compaction is due. See [`AuthorityCompaction::due_at`].
+    /// What an insert compares the watermark it leaves with: 0 while a run is due, else the
+    /// watermark from which the next one is. See [`AuthorityCompaction::insert_trigger`].
     due_at: AtomicU32,
 }
 
@@ -439,35 +452,39 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         if !self.storage.compacts_authority_map() {
             return Ok(());
         }
-        let watermark = self.authority_pruned_below()?;
-        let due_at = watermark.map(|w| AuthorityCompaction::read(&self.storage, w)).unwrap_or_default().due_at();
-        self.authority_compaction.signal.due_at.store(due_at, Ordering::SeqCst);
-        let Some(watermark) = watermark else {
+        let signal = &self.authority_compaction.signal;
+        let Some(watermark) = self.authority_pruned_below()? else {
+            signal.due_at.store(AuthorityCompaction::default().due_at(), Ordering::SeqCst);
             return Ok(());
         };
+        // A run that is due stays due for the inserts if this start fails or does not finish it.
+        let due_at = AuthorityCompaction::read(&self.storage, watermark).insert_trigger(watermark);
+        signal.due_at.store(due_at, Ordering::SeqCst);
         // The startup pass removed the certificate rows below the watermark.
         let certificate_below = certificate_compaction_due(&self.storage, watermark, retention).then_some(watermark);
-        if watermark >= due_at || certificate_below.is_some() {
+        if due_at == 0 || certificate_below.is_some() {
             self.start_compaction(certificate_below);
         }
         Ok(())
     }
 
-    /// Starts a compaction if the insert of the block at `height` has advanced the watermark to
-    /// where one is due. A due run that cannot start now, or that fails, stays due, so each later
-    /// insert tries again; [`AUTHORITY_COMPACTION_MIN_INTERVAL`] spaces the starts.
+    /// Starts a compaction if a run is due already, or the insert of the block at `height` has
+    /// advanced the watermark to where one is. A due run that cannot start now, or that fails, stays
+    /// due, so each later insert tries again; [`AUTHORITY_COMPACTION_MIN_INTERVAL`] spaces the starts.
     pub(super) fn compact_if_due(&self, height: u32) {
         let Some(retention) = self.authority_retention else {
             return;
         };
-        // The insert at the retention height expires genesis, which is never pruned.
-        if height <= retention || !self.storage.compacts_authority_map() {
+        if !self.storage.compacts_authority_map() {
             return;
         }
-        // The watermark after this insert, unless it is ahead already: after a rollback or a
-        // reopen with a larger window an insert prunes nothing, and nothing is due.
-        let watermark = oldest_retained_authority_height(height, retention);
-        if watermark >= self.authority_compaction.signal.due_at.load(Ordering::SeqCst) {
+        let due_at = self.authority_compaction.signal.due_at.load(Ordering::SeqCst);
+        // An insert up to the retention height prunes nothing: the one at that height expires
+        // genesis, which is never pruned. A later one leaves this watermark, unless the stored one
+        // is ahead already, after a rollback or a reopen with a larger window; then it prunes
+        // nothing either, and only a run that was due before it is due.
+        let advanced_to = || height > retention && oldest_retained_authority_height(height, retention) >= due_at;
+        if due_at == 0 || advanced_to() {
             self.start_compaction(None);
         }
     }
@@ -1031,7 +1048,7 @@ mod tests {
             wait_finished(&store);
             assert_eq!(stored(&store), cursor(1));
             assert_eq!((gate.passed(), gate.compacted()), (2, 1));
-            assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), DUE);
+            assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), 0);
 
             // The error says which slice failed and what happens next.
             fail(&gate);
@@ -1081,6 +1098,97 @@ mod tests {
             assert_eq!(run(), "injected flush failure");
             // Neither attempt stored a run.
             assert_eq!(AuthorityCompaction::read(&storage, DUE), AuthorityCompaction::default());
+        }
+
+        /// A storage whose first run is due but has not started, because its trigger fell inside the
+        /// floor, and its chain, of which heights `0..=TRIGGER` are inserted. Its certificate map is
+        /// recorded as compacted at the watermark if `certificate_compacted`.
+        fn new_due_storage(certificate_compacted: bool) -> (StorageMode, Vec<Block<CurrentNetwork>>) {
+            let storage_mode = new_storage();
+            let blocks = sample_chain();
+            let store = open_with(&storage_mode, Some(TEST_RETENTION));
+            store.authority_compaction.last.lock().started = Some(Instant::now());
+            let before = compactions();
+            for block in &blocks[..=TRIGGER as usize] {
+                store.insert(block).unwrap();
+            }
+            assert_eq!((compactions(), stored(&store)), (before, AuthorityCompaction::default()));
+            assert_eq!(store.authority_pruned_below().unwrap(), Some(DUE));
+            if certificate_compacted {
+                store.storage.put_compaction_state(CERTIFICATE_KEY, DUE.to_le_bytes().to_vec()).unwrap();
+            }
+            drop(store);
+            (storage_mode, blocks)
+        }
+
+        /// Checks that the first insert after the floor starts the run that is due, although it
+        /// prunes nothing and the run has not finished.
+        fn check_next_insert_starts_the_run(store: &Store, blocks: &[Block<CurrentNetwork>]) {
+            assert_eq!(store.authority_pruned_below().unwrap(), Some(DUE));
+            assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), 0);
+            clear_floor(store);
+            let before = compactions();
+            store.insert(&blocks[TRIGGER as usize + 1]).unwrap();
+            assert_eq!((compactions(), stored(store)), (before + 1, finished(DUE)));
+            assert_eq!(store.authority_pruned_below().unwrap(), Some(DUE));
+        }
+
+        /// Ensures a run that was due at an open and failed is retried by the next insert after the
+        /// floor, when a window enlarged at that open, even past the tip, keeps inserts from pruning.
+        #[test]
+        fn test_failed_run_is_retried_after_enlarging_the_window() {
+            for retention in [TEST_RETENTION + 2, TRIGGER + 10] {
+                let (storage_mode, blocks) = new_due_storage(true);
+                let (store, gate) = with_gate(|| open_with(&storage_mode, Some(retention)));
+                compact_slices(&gate, 1);
+                gate.fail_job.store(true, Ordering::SeqCst);
+                gate.release(usize::from(SLICES));
+                wait_finished(&store);
+                assert_eq!(stored(&store), cursor(1));
+                check_next_insert_starts_the_run(&store, &blocks);
+            }
+        }
+
+        /// Ensures the run that was due at an open is started by the next insert after the floor
+        /// when the certificate map compaction failed first and ended the thread.
+        #[test]
+        fn test_run_starts_after_a_failed_certificate_compaction() {
+            for retention in [TEST_RETENTION + 2, TRIGGER + 10] {
+                let (storage_mode, blocks) = new_due_storage(false);
+                let gate = Arc::new(Gate::default());
+                gate.fail_job.store(true, Ordering::SeqCst);
+                gate.release(usize::from(SLICES));
+                let store = gated(&gate, || open_with(&storage_mode, Some(retention)));
+                wait_finished(&store);
+                assert_eq!((stored(&store), gate.passed()), (AuthorityCompaction::default(), 0));
+                check_next_insert_starts_the_run(&store, &blocks);
+            }
+        }
+
+        /// Ensures that once a start has found nothing due, inserts start nothing until the
+        /// watermark is where a run is due. Here the stored state is ahead of a store that has not
+        /// pruned yet, so the open cannot use it.
+        #[test]
+        fn test_start_that_finds_nothing_due_is_not_repeated() {
+            let storage_mode = new_storage();
+            let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
+            storage.put_compaction_state(KEY, finished(DUE).to_bytes()).unwrap();
+            drop(storage);
+            let store = open_with(&storage_mode, Some(TEST_RETENTION));
+
+            let mut starts = Vec::new();
+            for block in &sample_block_chain(TRIGGER + DUE + 2, &mut TestRng::default()) {
+                clear_floor(&store);
+                let before = compactions();
+                store.insert(block).unwrap();
+                if compactions() > before {
+                    starts.push(block.height());
+                }
+            }
+            // The first start finds the stored state valid and nothing due; the second is the run
+            // that is due an interval later.
+            assert_eq!(starts, [TRIGGER, TRIGGER + DUE]);
+            assert_eq!(stored(&store), finished(2 * DUE));
         }
 
         /// Ensures a store that refuses the cursor write stops the run.
