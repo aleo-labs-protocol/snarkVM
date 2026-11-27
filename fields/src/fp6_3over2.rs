@@ -51,6 +51,30 @@ pub trait Fp6Parameters:
     fn mul_fp2_by_nonresidue(fe: &Fp2<Self::Fp2Params>) -> Fp2<Self::Fp2Params> {
         Self::NONRESIDUE * fe
     }
+
+    /// Sets `a` to `a * b`. An override must not fall back to `Fp6::mul_assign`, which calls this
+    /// hook; `Fp6::mul_assign_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_assign_fp6(a: &mut Fp6<Self>, b: &Fp6<Self>) {
+        a.mul_assign_scalar(b);
+    }
+
+    /// Sets `a` to `a^2`. An override must not fall back to `Fp6::square_in_place`, which calls this
+    /// hook; `Fp6::square_in_place_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn square_in_place_fp6(a: &mut Fp6<Self>) {
+        a.square_in_place_scalar();
+    }
+
+    /// Sets `a` to `a * (c0 + c1 * v)`. An override must not fall back to `Fp6::mul_by_01`, which
+    /// calls this hook; `Fp6::mul_by_01_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_by_01_fp6(a: &mut Fp6<Self>, c0: &Fp2<Self::Fp2Params>, c1: &Fp2<Self::Fp2Params>) {
+        a.mul_by_01_scalar(c0, c1);
+    }
 }
 
 /// An element of Fp6, represented by c0 + c1 * v + c2 * v^(2).
@@ -79,75 +103,69 @@ impl<P: Fp6Parameters> Fp6<P> {
         self.c2.mul_assign(element);
     }
 
+    #[inline]
     pub fn mul_by_1(&mut self, c1: &Fp2<P::Fp2Params>) {
-        let mut b_b = self.c1;
-        b_b.mul_assign(c1);
-
-        let mut t1 = *c1;
-        {
-            let mut tmp = self.c1;
-            tmp.add_assign(self.c2);
-
-            t1.mul_assign(&tmp);
-            t1.sub_assign(&b_b);
-            t1 = P::mul_fp2_by_nonresidue(&t1);
-        }
-
-        let mut t2 = *c1;
-        {
-            let mut tmp = self.c0;
-            tmp.add_assign(self.c1);
-
-            t2.mul_assign(&tmp);
-            t2.sub_assign(&b_b);
-        }
-
-        self.c0 = t1;
-        self.c1 = t2;
-        self.c2 = b_b;
+        let t0 = P::mul_fp2_by_nonresidue(&(self.c2 * c1));
+        let t1 = self.c0 * c1;
+        let t2 = self.c1 * c1;
+        self.c0 = t0;
+        self.c1 = t1;
+        self.c2 = t2;
     }
 
+    #[inline]
     pub fn mul_by_01(&mut self, c0: &Fp2<P::Fp2Params>, c1: &Fp2<P::Fp2Params>) {
-        let mut a_a = self.c0;
-        let mut b_b = self.c1;
-        a_a.mul_assign(c0);
-        b_b.mul_assign(c1);
+        P::mul_by_01_fp6(self, c0, c1);
+    }
 
-        let mut t1 = *c1;
-        {
-            let mut tmp = self.c1;
-            tmp.add_assign(self.c2);
+    /// Sets `self` to `self * (c0 + c1 * v)` by the default path, without `Fp6Parameters::mul_by_01_fp6`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_by_01_scalar(&mut self, c0: &Fp2<P::Fp2Params>, c1: &Fp2<P::Fp2Params>) {
+        let a_a = self.c0 * c0;
+        let b_b = self.c1 * c1;
 
-            t1.mul_assign(&tmp);
-            t1.sub_assign(&b_b);
-            t1 = P::mul_fp2_by_nonresidue(&t1);
-            t1.add_assign(a_a);
-        }
-
-        let mut t3 = *c0;
-        {
-            let mut tmp = self.c0;
-            tmp.add_assign(self.c2);
-
-            t3.mul_assign(&tmp);
-            t3.sub_assign(&a_a);
-            t3.add_assign(b_b);
-        }
-
-        let mut t2 = *c0;
-        t2.add_assign(c1);
-        {
-            let mut tmp = self.c0;
-            tmp.add_assign(self.c1);
-
-            t2.mul_assign(&tmp);
-            t2.sub_assign(&a_a);
-            t2.sub_assign(&b_b);
-        }
+        let t1 = P::mul_fp2_by_nonresidue(&(*c1 * (self.c1 + self.c2) - b_b)) + a_a;
+        let t3 = *c0 * (self.c0 + self.c2) - a_a + b_b;
+        let t2 = (*c0 + c1) * (self.c0 + self.c1) - a_a - b_b;
 
         self.c0 = t1;
         self.c1 = t2;
         self.c2 = t3;
+    }
+
+    /// Sets `self` to `self * other` by the default Karatsuba path, without `Fp6Parameters::mul_assign_fp6`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_assign_scalar(&mut self, other: &Self) {
+        let v0 = self.c0 * other.c0;
+        let v1 = self.c1 * other.c1;
+        let v2 = self.c2 * other.c2;
+
+        let c0 = P::mul_fp2_by_nonresidue(&((self.c1 + self.c2) * (other.c1 + other.c2) - v1 - v2)) + v0;
+        let c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1 + P::mul_fp2_by_nonresidue(&v2);
+        let c2 = (self.c0 + self.c2) * (other.c0 + other.c2) - v0 - v2 + v1;
+
+        self.c0 = c0;
+        self.c1 = c1;
+        self.c2 = c2;
+    }
+
+    /// Sets `self` to `self^2` by the default Chung-Hasan SQR2 path, without `Fp6Parameters::square_in_place_fp6`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn square_in_place_scalar(&mut self) -> &mut Self {
+        let s0 = self.c0.square();
+        let s1 = (self.c0 * self.c1).double();
+        let s2 = (self.c0 - self.c1 + self.c2).square();
+        let s3 = (self.c1 * self.c2).double();
+        let s4 = self.c2.square();
+
+        self.c0 = s0 + P::mul_fp2_by_nonresidue(&s3);
+        self.c1 = s1 + P::mul_fp2_by_nonresidue(&s4);
+        self.c2 = s1 + s2 + s3 - s0 - s4;
+
+        self
     }
 }
 
@@ -220,17 +238,9 @@ impl<P: Fp6Parameters> Field for Fp6<P> {
         result
     }
 
+    #[inline]
     fn square_in_place(&mut self) -> &mut Self {
-        let s0 = self.c0.square();
-        let s1 = (self.c0 * self.c1).double();
-        let s2 = (self.c0 - self.c1 + self.c2).square();
-        let s3 = (self.c1 * self.c2).double();
-        let s4 = self.c2.square();
-
-        self.c0 = s0 + P::mul_fp2_by_nonresidue(&s3);
-        self.c1 = s1 + P::mul_fp2_by_nonresidue(&s4);
-        self.c2 = s1 + s2 + s3 - s0 - s4;
-
+        P::square_in_place_fp6(self);
         self
     }
 
@@ -390,17 +400,7 @@ impl<P: Fp6Parameters> SubAssign<&'_ Self> for Fp6<P> {
 impl<P: Fp6Parameters> MulAssign<&'_ Self> for Fp6<P> {
     #[inline]
     fn mul_assign(&mut self, other: &Self) {
-        let v0 = self.c0 * other.c0;
-        let v1 = self.c1 * other.c1;
-        let v2 = self.c2 * other.c2;
-
-        let c0 = P::mul_fp2_by_nonresidue(&((self.c1 + self.c2) * (other.c1 + other.c2) - v1 - v2)) + v0;
-        let c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1 + P::mul_fp2_by_nonresidue(&v2);
-        let c2 = (self.c0 + self.c2) * (other.c0 + other.c2) - v0 - v2 + v1;
-
-        self.c0 = c0;
-        self.c1 = c1;
-        self.c2 = c2;
+        P::mul_assign_fp6(self, other);
     }
 }
 

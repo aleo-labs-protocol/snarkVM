@@ -20,9 +20,71 @@ use snarkvm_fields::{
 };
 use snarkvm_utilities::biginteger::BigInteger384;
 
-use crate::bls12_377::{Fq, Fq2, Fq2Parameters};
+use crate::bls12_377::{Fq, Fq2, Fq2Parameters, Fq2Unreduced, P2_2, P2_4, P2_6, P2_10, P2_12, P2_20, P2_30};
 
 pub type Fq6 = Fp6<Fq6Parameters>;
+
+/// Unreduced 768-bit cubic-over-quadratic extension element (`c0 + c1 * v + c2 * v^2`, `v^3 = u`).
+#[derive(Copy, Clone)]
+pub(crate) struct Fq6Unreduced {
+    pub(crate) c0: Fq2Unreduced,
+    pub(crate) c1: Fq2Unreduced,
+    pub(crate) c2: Fq2Unreduced,
+}
+
+impl Fq6Unreduced {
+    /// Unreduced Karatsuba multiplication (`6` unreduced `Fq2` muls = `18` 6x6 muls, zero Montgomery reductions).
+    /// Output bounds: every `.c0 < 36 * p^2` and every `.c1 < 20 * p^2`.
+    #[inline]
+    pub(crate) fn mul(a: &Fq6, b: &Fq6) -> Self {
+        let v0 = Fq2Unreduced::mul(&a.c0, &b.c0);
+        let v1 = Fq2Unreduced::mul(&a.c1, &b.c1);
+        let v2 = Fq2Unreduced::mul(&a.c2, &b.c2);
+
+        let t0 = Fq2Unreduced::mul(&(a.c1 + a.c2), &(b.c1 + b.c2));
+        let t1 = Fq2Unreduced::mul(&(a.c0 + a.c1), &(b.c0 + b.c1));
+        let t2 = Fq2Unreduced::mul(&(a.c0 + a.c2), &(b.c0 + b.c2));
+
+        let s0 = t0.sub2_with_bias(&v1, &v2, &P2_12, &P2_4);
+        let c0 = v0.add(&s0.mul_by_u(&P2_30));
+
+        let s1 = t1.sub2_with_bias(&v0, &v1, &P2_12, &P2_4);
+        let c1 = s1.add(&v2.mul_by_u(&P2_10));
+
+        let c2 = t2.sub2_with_bias(&v0, &v2, &P2_12, &P2_4).add(&v1);
+        Self { c0, c1, c2 }
+    }
+
+    /// Unreduced sparse multiplication `a * (c0 + c1 * v)` (`5` unreduced `Fq2` muls, zero Montgomery reductions).
+    /// Output bounds: every `.c0 < 26 * p^2` and every `.c1 < 14 * p^2`, with `out.c2 < (18, 6) * p^2`.
+    #[inline]
+    pub(crate) fn mul_by_01(a: &Fq6, c0: &Fq2, c1: &Fq2) -> Self {
+        let aa = Fq2Unreduced::mul(&a.c0, c0);
+        let bb = Fq2Unreduced::mul(&a.c1, c1);
+
+        let t1 = Fq2Unreduced::mul(&(a.c1 + a.c2), c1);
+        let s1 = t1.sub_with_bias(&bb, &P2_6, &P2_2);
+        let out_c0 = aa.add(&s1.mul_by_u(&P2_20));
+
+        let t3 = Fq2Unreduced::mul(&(a.c0 + a.c2), c0);
+        let out_c2 = t3.sub_with_bias(&aa, &P2_6, &P2_2).add(&bb);
+
+        let t2 = Fq2Unreduced::mul(&(a.c0 + a.c1), &(*c0 + c1));
+        let out_c1 = t2.sub2_with_bias(&aa, &bb, &P2_12, &P2_4);
+
+        Self { c0: out_c0, c1: out_c1, c2: out_c2 }
+    }
+
+    #[inline(always)]
+    pub(crate) fn add(&self, other: &Self) -> Self {
+        Self { c0: self.c0.add(&other.c0), c1: self.c1.add(&other.c1), c2: self.c2.add(&other.c2) }
+    }
+
+    #[inline(always)]
+    pub(crate) fn reduce(self) -> Fq6 {
+        Fq6::new(self.c0.reduce(), self.c1.reduce(), self.c2.reduce())
+    }
+}
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Fq6Parameters;
@@ -251,6 +313,35 @@ impl Fp6Parameters for Fq6Parameters {
         let c0 = Fq2Parameters::mul_fp_by_nonresidue(&fe.c1);
         let c1 = fe.c0;
         field!(Fq2, c0, c1)
+    }
+
+    #[inline]
+    fn mul_assign_fp6(a: &mut Fq6, b: &Fq6) {
+        *a = Fq6Unreduced::mul(a, b).reduce();
+    }
+
+    /// Lazy-reduced Chung-Hasan SQR2 squaring (`3` unreduced `Fq2` squares + `2` unreduced `Fq2` muls,
+    /// `6` Montgomery reductions; all limbs `< 42 * p^2 < p * 2^384`).
+    #[inline]
+    fn square_in_place_fp6(a: &mut Fq6) {
+        let s0 = Fq2Unreduced::square(&a.c0);
+        let ab = Fq2Unreduced::mul(&a.c0, &a.c1);
+        let s1 = ab.add(&ab);
+        let s2 = Fq2Unreduced::square(&(a.c0 - a.c1 + a.c2));
+        let bc = Fq2Unreduced::mul(&a.c1, &a.c2);
+        let s3 = bc.add(&bc);
+        let s4 = Fq2Unreduced::square(&a.c2);
+
+        let c0 = s0.add(&s3.mul_by_u(&P2_20));
+        let c1 = s1.add(&s4.mul_by_u(&P2_10));
+        let c2 = s1.add(&s2).add(&s3).sub2_with_bias(&s0, &s4, &P2_12, &P2_4);
+
+        *a = Fq6Unreduced { c0, c1, c2 }.reduce();
+    }
+
+    #[inline]
+    fn mul_by_01_fp6(a: &mut Fq6, c0: &Fq2, c1: &Fq2) {
+        *a = Fq6Unreduced::mul_by_01(a, c0, c1).reduce();
     }
 }
 

@@ -46,6 +46,51 @@ pub trait Fp12Parameters:
         a.mul_assign_scalar(b)
     }
 
+    /// Sets `a` to `a * b` by the scalar path, without `Fp12Parameters::mul_assign_fp12`. An
+    /// override must not fall back to `Fp12::mul_assign` or `Fp12::mul_assign_scalar`.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_assign_fp12_scalar(a: &mut Fp12<Self>, b: &Fp12<Self>) {
+        let v0 = a.c0 * b.c0;
+        let v1 = a.c1 * b.c1;
+        a.c1 = (a.c0 + a.c1) * (b.c0 + b.c1) - v0 - v1;
+        a.c0 = v0 + Fp12::<Self>::mul_fp6_by_nonresidue(&v1);
+    }
+
+    /// Sets `a` to `a^2`. An override must not fall back to `Fp12::square_in_place`, which calls
+    /// this hook; `Fp12::square_in_place_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn square_in_place_fp12(a: &mut Fp12<Self>) {
+        a.square_in_place_scalar();
+    }
+
+    /// Sets `a` to `a * (c0 + c3 * w + c4 * v * w)`. An override must not fall back to
+    /// `Fp12::mul_by_034`, which calls this hook; `Fp12::mul_by_034_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_by_034_fp12(
+        a: &mut Fp12<Self>,
+        c0: &Fp2<Fp2Params<Self>>,
+        c3: &Fp2<Fp2Params<Self>>,
+        c4: &Fp2<Fp2Params<Self>>,
+    ) {
+        a.mul_by_034_scalar(c0, c3, c4);
+    }
+
+    /// Sets `a` to `a * (c0 + c1 * v + c4 * v * w)`. An override must not fall back to
+    /// `Fp12::mul_by_014`, which calls this hook; `Fp12::mul_by_014_scalar` does not.
+    #[doc(hidden)]
+    #[inline]
+    fn mul_by_014_fp12(
+        a: &mut Fp12<Self>,
+        c0: &Fp2<Fp2Params<Self>>,
+        c1: &Fp2<Fp2Params<Self>>,
+        c4: &Fp2<Fp2Params<Self>>,
+    ) {
+        a.mul_by_014_scalar(c0, c1, c4);
+    }
+
     /// Returns `a^exp` by the chain of `Fp12::cyclotomic_exp`. `exp` lists the words of the exponent,
     /// the least significant first. An override must not fall back to `Fp12::cyclotomic_exp`, which
     /// calls this hook; `Fp12::cyclotomic_exp_scalar` does not.
@@ -91,7 +136,16 @@ impl<P: Fp12Parameters> Fp12<P> {
         Fp6::new(new_c0, new_c1, new_c2)
     }
 
+    #[inline]
     pub fn mul_by_034(&mut self, c0: &Fp2<Fp2Params<P>>, c3: &Fp2<Fp2Params<P>>, c4: &Fp2<Fp2Params<P>>) {
+        P::mul_by_034_fp12(self, c0, c3, c4);
+    }
+
+    /// Sets `self` to `self * (c0 + c3 * w + c4 * v * w)` by the default path, without
+    /// `Fp12Parameters::mul_by_034_fp12`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_by_034_scalar(&mut self, c0: &Fp2<Fp2Params<P>>, c3: &Fp2<Fp2Params<P>>, c4: &Fp2<Fp2Params<P>>) {
         let a0 = self.c0.c0 * c0;
         let a1 = self.c0.c1 * c0;
         let a2 = self.c0.c2 * c0;
@@ -107,7 +161,16 @@ impl<P: Fp12Parameters> Fp12<P> {
         self.c0 = a + Self::mul_fp6_by_nonresidue(&b);
     }
 
+    #[inline]
     pub fn mul_by_014(&mut self, c0: &Fp2<Fp2Params<P>>, c1: &Fp2<Fp2Params<P>>, c4: &Fp2<Fp2Params<P>>) {
+        P::mul_by_014_fp12(self, c0, c1, c4);
+    }
+
+    /// Sets `self` to `self * (c0 + c1 * v + c4 * v * w)` by the default path, without
+    /// `Fp12Parameters::mul_by_014_fp12`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn mul_by_014_scalar(&mut self, c0: &Fp2<Fp2Params<P>>, c1: &Fp2<Fp2Params<P>>, c4: &Fp2<Fp2Params<P>>) {
         let mut aa = self.c0;
         aa.mul_by_01(c0, c1);
         let mut bb = self.c1;
@@ -127,10 +190,28 @@ impl<P: Fp12Parameters> Fp12<P> {
     #[doc(hidden)]
     #[inline]
     pub fn mul_assign_scalar(&mut self, other: &Self) {
-        let v0 = self.c0 * other.c0;
-        let v1 = self.c1 * other.c1;
-        self.c1 = (self.c0 + self.c1) * (other.c0 + other.c1) - v0 - v1;
-        self.c0 = v0 + Self::mul_fp6_by_nonresidue(&v1);
+        P::mul_assign_fp12_scalar(self, other);
+    }
+
+    /// Sets `self` to `self^2` by the default complex path, without `Fp12Parameters::square_in_place_fp12`.
+    #[doc(hidden)]
+    #[inline]
+    pub fn square_in_place_scalar(&mut self) -> &mut Self {
+        let mut ab = self.c0;
+        ab.mul_assign(&self.c1);
+        let mut c0c1 = self.c0;
+        c0c1.add_assign(self.c1);
+        let mut c0 = self.c1;
+        c0 = Self::mul_fp6_by_nonresidue(&c0);
+        c0.add_assign(self.c0);
+        c0.mul_assign(&c0c1);
+        c0.sub_assign(&ab);
+        self.c1 = ab;
+        self.c1.add_assign(ab);
+        ab = Self::mul_fp6_by_nonresidue(&ab);
+        c0.sub_assign(&ab);
+        self.c0 = c0;
+        self
     }
 
     pub fn cyclotomic_square(&self) -> Self {
@@ -459,21 +540,9 @@ impl<P: Fp12Parameters> Field for Fp12<P> {
         copy
     }
 
+    #[inline]
     fn square_in_place(&mut self) -> &mut Self {
-        let mut ab = self.c0;
-        ab.mul_assign(&self.c1);
-        let mut c0c1 = self.c0;
-        c0c1.add_assign(self.c1);
-        let mut c0 = self.c1;
-        c0 = Self::mul_fp6_by_nonresidue(&c0);
-        c0.add_assign(self.c0);
-        c0.mul_assign(&c0c1);
-        c0.sub_assign(&ab);
-        self.c1 = ab;
-        self.c1.add_assign(ab);
-        ab = Self::mul_fp6_by_nonresidue(&ab);
-        c0.sub_assign(&ab);
-        self.c0 = c0;
+        P::square_in_place_fp12(self);
         self
     }
 
