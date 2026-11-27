@@ -115,13 +115,14 @@ Node commands (all take [--retention <blocks>], default the network's window):
 
 Certificate pass candidates (raw writes to the certificate map, bench only; the store's own pass is
 `restart`). 256 key-range slices on 4 threads with the store's read options, one WriteBatch per slice:
-  cert-pass <db_dir> --below <height> --mode none|scan|point|rewrite|design [--cap <keys>] [--threads <n>]
-            [--flush] [--compact plain|force] [--then-open] [--bg-compact plain|force]
+  cert-pass <db_dir> --below <height> --mode none|scan|point|rewrite|design|design-early [--cap <keys>]
+            [--threads <n>] [--flush] [--compact plain|force] [--then-open] [--bg-compact plain|force]
             [--load none|scan|write:<heights_per_sec>] [--source <sample>]
         Removes the rows of heights in 1..<below>. scan: counts only. rewrite: the store's write, a
         range delete of the slice and puts of the kept rows. point: one delete per removed row.
         design: collects delete keys up to --cap (default 262144); writes them if the slice loses at
         most half its rows and no more than the cap, otherwise scans again and rewrites.
+        design-early: as design, but the first scan of a slice ends once it passes the cap.
         --flush flushes after the pass, timed apart. --compact compacts the certificate prefix after
         it: plain is the store's compact_range, force also rewrites the bottom level.
         --then-open then opens the store as a node, prints the time since the process started, and
@@ -1155,6 +1156,8 @@ Build:
         /// Deletes if the slice loses at most half its rows and no more than the cap; otherwise a
         /// second scan that rewrites.
         Design,
+        /// As `Design`, but the first scan ends as soon as it has seen more removed rows than the cap.
+        DesignEarly,
     }
 
     impl PassMode {
@@ -1165,6 +1168,7 @@ Build:
                 "point" => Self::Point,
                 "rewrite" => Self::Rewrite,
                 "design" => Self::Design,
+                "design-early" => Self::DesignEarly,
                 other => bail!("unknown mode {other}"),
             })
         }
@@ -1191,8 +1195,9 @@ Build:
         entries: u64,
     }
 
-    /// Visits the rows in `lower..upper` with the read options of the store's `retain_range`.
-    fn scan_range(db: &RocksDB, lower: &[u8], upper: &[u8], mut visit: impl FnMut(&[u8], &[u8])) -> Result<()> {
+    /// Visits the rows in `lower..upper` with the read options of the store's `retain_range`, until
+    /// `visit` returns `false`.
+    fn scan_range(db: &RocksDB, lower: &[u8], upper: &[u8], mut visit: impl FnMut(&[u8], &[u8]) -> bool) -> Result<()> {
         let mut options = rocksdb::ReadOptions::default();
         options.set_total_order_seek(true);
         options.set_iterate_lower_bound(lower.to_vec());
@@ -1202,7 +1207,9 @@ Build:
         let mut iter = db.raw_iterator_opt(options);
         iter.seek(lower);
         while let Some((key, value)) = iter.item() {
-            visit(key, value);
+            if !visit(key, value) {
+                break;
+            }
             iter.next();
         }
         iter.status()?;
@@ -1230,6 +1237,7 @@ Build:
         perf.reset();
         let timer = Instant::now();
         let mut batch = rocksdb::WriteBatch::default();
+        let design = matches!(mode, PassMode::Design | PassMode::DesignEarly);
         if mode == PassMode::Rewrite {
             // The range delete applies before the puts that follow it.
             batch.delete_range(lower, upper);
@@ -1238,7 +1246,7 @@ Build:
             stats.row_bytes += (key.len() + value.len()) as u64;
             if is_removable(value, below) {
                 stats.removed += 1;
-                if mode == PassMode::Point || (mode == PassMode::Design && batch.len() < cap) {
+                if mode == PassMode::Point || (design && batch.len() < cap) {
                     batch.delete(key);
                 }
             } else {
@@ -1247,6 +1255,7 @@ Build:
                     batch.put(key, value);
                 }
             }
+            mode != PassMode::DesignEarly || stats.removed <= cap as u64
         })?;
         stats.scan_secs = timer.elapsed().as_secs_f64();
         stats.tombstones = perf.metric(PerfMetric::InternalDeleteSkippedCount);
@@ -1256,10 +1265,12 @@ Build:
         match mode {
             PassMode::None | PassMode::Scan => {}
             _ if stats.removed == 0 => {}
-            PassMode::Design if !deletes_fit => {
+            _ if design && !deletes_fit => {
                 stats.dropped_bytes = batch.size_in_bytes();
                 drop(batch);
                 let rewrite = pass_range(db, lower, upper, below, PassMode::Rewrite, cap)?;
+                // The first scan may have ended early.
+                (stats.kept, stats.removed, stats.row_bytes) = (rewrite.kept, rewrite.removed, rewrite.row_bytes);
                 stats.rescan_secs = rewrite.scan_secs;
                 stats.write_secs = rewrite.write_secs;
                 stats.batch_bytes = rewrite.batch_bytes;
@@ -1686,6 +1697,7 @@ Build:
                 } else if kept.len() < big_keys {
                     kept.push((key.to_vec(), value.to_vec()));
                 }
+                true
             })?;
             let scan_secs = timer.elapsed().as_secs_f64();
             let timer = Instant::now();
