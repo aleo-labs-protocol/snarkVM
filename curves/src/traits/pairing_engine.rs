@@ -58,7 +58,11 @@ pub trait PairingEngine:
     /// The extension field that hosts the target group of the pairing.
     type Fqk: Field;
 
-    /// Perform a miller loop with some number of (G1, G2) pairs.
+    /// Performs a Miller loop over `(G1, G2)` pairs.
+    ///
+    /// Only `Self::final_exponentiation(&Self::miller_loop(..))` is stable. The raw value is
+    /// defined only up to a factor that [`Self::final_exponentiation`] removes, so it can change
+    /// between versions.
     #[must_use]
     fn miller_loop<'a, I>(i: I) -> Self::Fqk
     where

@@ -22,6 +22,7 @@ use crate::{
         Fq6Parameters,
         Fq12,
         Fq12Parameters,
+        FqParameters,
         g1::Bls12_377G1Parameters,
         g2::Bls12_377G2Parameters,
     },
@@ -58,9 +59,16 @@ impl Bls12Parameters for Bls12_377Parameters {
     const X_IS_NEGATIVE: bool = false;
 
     fn miller_loop_fp12(pairs: &[(&G1Prepared<Self>, &G2Prepared<Self>)]) -> Fq12 {
-        let lines: Vec<_> = pairs.iter().map(|(p, q)| ([&p.0.x, &p.0.y], q.ell_coeffs.as_slice())).collect();
-        snarkvm_fields::ifma::miller_loop_fp12(&Fq12::one(), Self::X, &lines)
-            .unwrap_or_else(|| Bls12::<Self>::miller_loop_scalar(pairs))
+        if snarkvm_fields::ifma::is_supported::<FqParameters>()
+            && let Some(scales) = Bls12::<Self>::g1_d_scales(pairs)
+        {
+            let lines: Vec<_> =
+                scales.iter().zip(pairs).map(|([s0, s1], (_, q))| ([s0, s1], q.ell_coeffs.as_slice())).collect();
+            if let Some(f) = snarkvm_fields::ifma::miller_loop_fp12(&Fq12::one(), Self::X, &lines) {
+                return f;
+            }
+        }
+        Bls12::<Self>::miller_loop_scalar(pairs)
     }
 }
 

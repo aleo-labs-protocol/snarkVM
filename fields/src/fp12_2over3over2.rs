@@ -91,6 +91,46 @@ impl<P: Fp12Parameters> Fp12<P> {
         Fp6::new(new_c0, new_c1, new_c2)
     }
 
+    /// Multiplies `self` by `1 + (c3 + c4 * v) * w`.
+    #[inline]
+    pub fn mul_by_34(&mut self, c3: &Fp2<Fp2Params<P>>, c4: &Fp2<Fp2Params<P>>) {
+        let a = self.c0;
+        let b = self.c1;
+        let c34 = *c3 + c4;
+
+        let b0 = b.c0 * c3;
+        let b1 = b.c1 * c4;
+        let d0 = P::Fp6Params::mul_fp2_by_nonresidue(&(b.c2 * c4)) + b0;
+        let d1 = (b.c0 + b.c1) * c34 - b0 - b1;
+        let d2 = b.c2 * c3 + b1;
+
+        let a0 = a.c0 * c3;
+        let a1 = a.c1 * c4;
+        let e0 = P::Fp6Params::mul_fp2_by_nonresidue(&(a.c2 * c4)) + a0;
+        let e1 = (a.c0 + a.c1) * c34 - a0 - a1;
+        let e2 = a.c2 * c3 + a1;
+
+        self.c0 = Fp6::new(a.c0 + P::Fp6Params::mul_fp2_by_nonresidue(&d2), a.c1 + d0, a.c2 + d1);
+        self.c1 = Fp6::new(b.c0 + e0, b.c1 + e1, b.c2 + e2);
+    }
+
+    /// Multiplies `self` by `(1 + c1 * v) + (c4 * v) * w`.
+    #[inline]
+    pub fn mul_by_14(&mut self, c1: &Fp2<Fp2Params<P>>, c4: &Fp2<Fp2Params<P>>) {
+        let mut a_v1 = self.c0;
+        a_v1.mul_by_1(c1);
+
+        let mut b_v4 = self.c1;
+        b_v4.mul_by_1(c4);
+
+        let c14 = *c1 + c4;
+        let mut ab = self.c0 + self.c1;
+        ab.mul_by_1(&c14);
+
+        self.c1 += ab - a_v1 - b_v4;
+        self.c0 += a_v1 + Self::mul_fp6_by_nonresidue(&b_v4);
+    }
+
     pub fn mul_by_034(&mut self, c0: &Fp2<Fp2Params<P>>, c3: &Fp2<Fp2Params<P>>, c4: &Fp2<Fp2Params<P>>) {
         let a0 = self.c0.c0 * c0;
         let a1 = self.c0.c1 * c0;

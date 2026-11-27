@@ -309,17 +309,6 @@ pub(super) fn mask_sub(src: &[__m512i; 8], m: __mmask8, x: &[__m512i; 8], y: &[_
     v
 }
 
-/// Returns `x + y` in the lanes of `m` and `src` in the others, limb by limb.
-#[inline]
-#[target_feature(enable = "avx512f")]
-pub(super) fn mask_add(src: &[__m512i; 8], m: __mmask8, x: &[__m512i; 8], y: &[__m512i; 8]) -> [__m512i; 8] {
-    let mut v = [_mm512_setzero_si512(); 8];
-    for k in 0..8 {
-        v[k] = _mm512_mask_add_epi64(src[k], m, x[k], y[k]);
-    }
-    v
-}
-
 /// Returns `x` in the lanes of `m` and `src` in the others.
 #[inline]
 #[target_feature(enable = "avx512f")]
