@@ -67,6 +67,110 @@ fn test_open_allocates_little_disk_space() {
     assert!(allocated < MAX_ALLOCATED_BYTES, "The database allocates {allocated} bytes on disk");
 }
 
+/// Returns the value of `name` in the aggregated table properties of `database`.
+fn table_property(database: &RocksDB, name: &str) -> u64 {
+    let properties = database
+        .property_value("rocksdb.aggregated-table-properties")
+        .expect("Failed to read the table properties")
+        .expect("The table properties are missing");
+    properties
+        .split(';')
+        .filter_map(|property| property.trim().split_once('='))
+        .find(|(key, _)| *key == name)
+        .unwrap_or_else(|| panic!("The table properties have no '{name}': {properties}"))
+        .1
+        .parse()
+        .expect("The table property is not a number")
+}
+
+#[test]
+fn test_table_files_have_partitioned_filters() {
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
+
+    for i in 0..1000u32 {
+        map.insert(i, i.to_string()).expect("Failed to insert");
+    }
+    map.database.flush().expect("Failed to flush");
+
+    assert!(table_property(&map.database, "filter block size") > 0);
+    assert!(table_property(&map.database, "# index partitions") > 0);
+
+    // Lookups read the table file, as the flush emptied the memtable.
+    for i in 0..1000u32 {
+        assert_eq!(map.get_confirmed(&i).expect("Failed to get").map(|value| value.into_owned()), Some(i.to_string()));
+    }
+    for i in 1000..2000u32 {
+        assert!(!map.contains_key_confirmed(&i).expect("Failed to check"));
+    }
+}
+
+#[test]
+fn test_seeks_stay_in_the_map_with_filters() {
+    let storage = StorageMode::new_test(None);
+    let open = |map_id| {
+        RocksDB::open_map::<_, u32, u32, _>(0, storage.clone(), MapID::Test(map_id)).expect("Failed to open data map")
+    };
+    let (first, second, empty) = (open(TestMapID::Test), open(TestMapID::Test2), open(TestMapID::Test3));
+
+    // Each map is in a table file of its own, so that the filter of a file holds the prefix of one map.
+    // The keys are below 256, so that the order of their serialized bytes is their numeric order.
+    for map in [&first, &second] {
+        for key in [10u32, 20, 30] {
+            map.insert(key, key).expect("Failed to insert");
+        }
+        map.database.flush().expect("Failed to flush");
+    }
+    assert!(table_property(&first.database, "filter block size") > 0);
+
+    let floor = |map: &crate::helpers::rocksdb::DataMap<u32, u32>, key: u32| {
+        map.get_floor_confirmed(&key).expect("Failed to get the floor").map(|(key, _)| key.into_owned())
+    };
+    for map in [&first, &second] {
+        assert_eq!(floor(map, 5), None);
+        assert_eq!(floor(map, 10), Some(10));
+        assert_eq!(floor(map, 25), Some(20));
+        assert_eq!(floor(map, 200), Some(30));
+        assert_eq!(map.len_confirmed(), 3);
+        assert_eq!(map.keys_confirmed().map(|key| key.into_owned()).collect::<Vec<_>>(), vec![10, 20, 30]);
+    }
+    assert_eq!(floor(&empty, 25), None);
+    assert_eq!(empty.len_confirmed(), 0);
+    assert_eq!(empty.keys_confirmed().count(), 0);
+}
+
+#[test]
+fn test_table_config_parse() {
+    use super::{FilterPolicy, TableConfig};
+
+    const MIB: usize = 1024 * 1024;
+
+    let default = TableConfig::parse(None, None, None).expect("Failed to parse the defaults");
+    assert_eq!(default, TableConfig {
+        filter_policy: FilterPolicy::Bloom,
+        filter_bits_per_key: 10.0,
+        block_cache_size: 2048 * MIB
+    });
+    assert_eq!(TableConfig::parse(Some("bloom"), Some("10"), Some("2048")).expect("Failed to parse"), default);
+
+    for (value, expected) in
+        [("ribbon", FilterPolicy::Ribbon), ("hybrid", FilterPolicy::Hybrid), ("none", FilterPolicy::None)]
+    {
+        let config = TableConfig::parse(Some(value), Some("9.9"), Some("1")).expect("Failed to parse");
+        assert_eq!(config, TableConfig { filter_policy: expected, filter_bits_per_key: 9.9, block_cache_size: MIB });
+    }
+
+    for value in ["", "Bloom", "bloom ", "0", "1"] {
+        assert!(TableConfig::parse(Some(value), None, None).is_err(), "Accepted the filter policy '{value}'");
+    }
+    for value in ["", "0", "0.5", "-10", "nan", "inf", "ten"] {
+        assert!(TableConfig::parse(None, Some(value), None).is_err(), "Accepted '{value}' bits per key");
+    }
+    for value in ["", "0", "-1", "1.5", "2048MiB", "18446744073709551615"] {
+        assert!(TableConfig::parse(None, None, Some(value)).is_err(), "Accepted a block cache of '{value}' MiB");
+    }
+}
+
 #[test]
 fn test_dropping_last_handle_deletes_test_directory() {
     let storage = StorageMode::new_test(None);
