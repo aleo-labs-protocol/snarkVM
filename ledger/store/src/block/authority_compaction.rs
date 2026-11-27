@@ -116,6 +116,60 @@ fn compaction_state_bytes<N: Network, B: BlockStorage<N>>(storage: &B, key: Bloc
     }
 }
 
+/// Returns the watermark the certificate map was last compacted at, on a store whose watermark is
+/// `watermark`: 0 if it never was, or if the stored value is unreadable.
+fn certificate_compacted_below<N: Network, B: BlockStorage<N>>(storage: &B, watermark: u32) -> u32 {
+    let Some(bytes) = compaction_state_bytes(storage, BlockMetadataKey::CertificateCompaction) else {
+        return 0;
+    };
+    match <[u8; 4]>::try_from(bytes.as_slice()).map(u32::from_le_bytes) {
+        Ok(below) if below <= watermark => below,
+        _ => {
+            debug!("Ignoring the malformed certificate compaction state {bytes:?}");
+            0
+        }
+    }
+}
+
+/// Returns whether the certificate map is due for a compaction after a startup pass that removed
+/// the rows below `below`. The pass's own removals do not decide it: a compaction that was killed
+/// left its rows removed and its work undone.
+pub(super) fn certificate_compaction_due<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> bool {
+    storage.compacts_authority_map() && below > certificate_compacted_below(storage, below)
+}
+
+/// Compacts the certificate map after a startup pass that removed the rows below `below`, so the
+/// next pass reads only live rows, and records `below` once the compaction has finished.
+pub(super) fn compact_certificate_map<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
+    let compacted_below = certificate_compacted_below(storage, below);
+    #[cfg(test)]
+    CERTIFICATE_COMPACTIONS.with(|count| count.set(count.get() + 1));
+    info!("Compacting the certificate map; this can take a while");
+    let timer = Instant::now();
+    let errors_before = storage.background_error_count();
+    storage.compact_certificate_map()?;
+    let failed = job_failed(
+        storage,
+        errors_before,
+        #[cfg(test)]
+        None,
+    );
+    // After a failed compaction this rewrites the unchanged value, as a probe.
+    let recorded = if failed { compacted_below } else { below };
+    put_compaction_state(
+        storage,
+        BlockMetadataKey::CertificateCompaction,
+        recorded.to_le_bytes().to_vec(),
+        #[cfg(test)]
+        None,
+    )?;
+    if failed {
+        return Err(job_failure(storage, format_args!("the certificate map compaction"), "The next start retries it."));
+    }
+    info!("Compacted the certificate map in {:.1} s", timer.elapsed().as_secs_f64());
+    Ok(())
+}
+
 /// Writes the value of a compaction key. The write doubles as a probe: after a failed flush or
 /// compaction RocksDB can refuse every write until the process restarts, and a failed flush does
 /// not show in [`BlockStorage::background_error_count`].
@@ -450,6 +504,8 @@ impl Gate {
 
 #[cfg(test)]
 thread_local! {
+    /// The number of certificate map compactions started on this thread.
+    static CERTIFICATE_COMPACTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// The number of authority map compactions started on this thread.
     static AUTHORITY_COMPACTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// How this thread's stores compact: inline (`None`), or on a thread driven by the gate.
@@ -886,6 +942,43 @@ mod tests {
                 |gate| gate.fail_put.store(true, Ordering::SeqCst),
                 "The ledger store refuses writes after a storage error: injected. Restart the node.",
             );
+        }
+
+        /// Ensures the certificate map is compacted at an open whose watermark is past the one its
+        /// last finished compaction recorded, whether or not the startup pass removed rows, so a
+        /// compaction that was killed before it was recorded runs again.
+        #[test]
+        fn test_certificate_compaction_reruns_until_recorded() {
+            const KEY: BlockMetadataKey = BlockMetadataKey::CertificateCompaction;
+            let storage_mode = new_storage();
+            let store = open_with(&storage_mode, Some(TEST_RETENTION));
+            for block in &sample_chain() {
+                store.insert(block).unwrap();
+            }
+            let watermark = store.authority_pruned_below().unwrap().unwrap();
+            // Inserts prune without compacting the certificate map.
+            assert!(store.storage.block_metadata_map().get_confirmed(&KEY).unwrap().is_none());
+            drop(store);
+
+            let reopen = || {
+                let before = CERTIFICATE_COMPACTIONS.with(|count| count.get());
+                let store = open_with(&storage_mode, Some(TEST_RETENTION));
+                let compactions = CERTIFICATE_COMPACTIONS.with(|count| count.get()) - before;
+                (store, compactions)
+            };
+            let (store, compactions) = reopen();
+            assert_eq!(compactions, 1);
+            assert_eq!(certificate_compacted_below(&store.storage, watermark), watermark);
+            drop(store);
+            let (store, compactions) = reopen();
+            assert_eq!(compactions, 0);
+
+            // A killed compaction leaves the key as it was; the pass has nothing left to remove.
+            store.storage.put_compaction_state(KEY, 0u32.to_le_bytes().to_vec()).unwrap();
+            drop(store);
+            let (store, compactions) = reopen();
+            assert_eq!(compactions, 1);
+            assert_eq!(certificate_compacted_below(&store.storage, watermark), watermark);
         }
 
         /// Ensures a secondary instance opened with a retention window, and a primary opened

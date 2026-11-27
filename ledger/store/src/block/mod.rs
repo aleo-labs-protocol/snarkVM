@@ -397,36 +397,28 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(
 }
 
 /// Removes the certificate indexes of blocks below `below` by rewriting the certificate map with
-/// only the other rows, then compacts the map. It runs on every startup that prunes, since inserts
-/// leave these rows behind.
+/// only the other rows, then compacts the map if it is due. It runs on every startup that prunes,
+/// since inserts leave these rows behind.
 fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
     debug!("Removing certificate indexes of pruned blocks below block {below}");
     let timer = std::time::Instant::now();
     let (kept, removed) = storage.retain_certificate_indexes(|index| !is_pruned_height(below, index.0))?;
     if removed == 0 {
         debug!("No certificate indexes of pruned blocks to remove ({:.1} s)", timer.elapsed().as_secs_f64());
-        return Ok(());
+    } else {
+        info!(
+            "Removed {removed} certificate indexes of pruned blocks, kept {kept}, in {:.1} s",
+            timer.elapsed().as_secs_f64()
+        );
     }
-    info!(
-        "Removed {removed} certificate indexes of pruned blocks, kept {kept}, in {:.1} s",
-        timer.elapsed().as_secs_f64()
-    );
 
-    // The rewrite leaves the old copy of every rewritten slice behind. Compact so the next scan reads
-    // only live rows.
-    #[cfg(test)]
-    CERTIFICATE_COMPACTIONS.with(|count| count.set(count.get() + 1));
-    info!("Compacting the certificate map; this can take a while");
-    let timer = std::time::Instant::now();
-    storage.compact_certificate_map()?;
-    info!("Compacted the certificate map in {:.1} s", timer.elapsed().as_secs_f64());
+    // A failed compaction costs the next scan time, not the open.
+    if authority_compaction::certificate_compaction_due(storage, below)
+        && let Err(error) = authority_compaction::compact_certificate_map(storage, below)
+    {
+        error!("Failed to compact the certificate map: {error:#}");
+    }
     Ok(())
-}
-
-#[cfg(test)]
-thread_local! {
-    /// The number of compactions the certificate pass has started on this thread.
-    static CERTIFICATE_COMPACTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// A trait for block storage.
@@ -2665,26 +2657,6 @@ mod tests {
         assert!(error.contains("authority"), "{error}");
     }
 
-    /// Ensures the certificate pass compacts when it removed rows, and not when it removed none.
-    #[cfg(feature = "rocks")]
-    #[test]
-    fn test_certificate_pass_compacts_after_removals_rocksdb() {
-        let temp_dir = Arc::new(tempfile::tempdir().unwrap());
-        let storage = BlockDB::<CurrentNetwork>::open(StorageMode::new_test(Some(temp_dir))).unwrap();
-        atomic_batch_scope!(storage, { set_authority_pruned_below(&storage, 2) }).unwrap();
-        let compactions = || CERTIFICATE_COMPACTIONS.with(|count| count.get());
-        let before = compactions();
-
-        storage.certificate_map().insert(Field::from_u32(0), (2, 1)).unwrap();
-        prune_certificate_indexes(&storage, 2).unwrap();
-        assert_eq!(compactions(), before);
-
-        storage.certificate_map().insert(Field::from_u32(1), (1, 1)).unwrap();
-        prune_certificate_indexes(&storage, 2).unwrap();
-        assert_eq!(compactions(), before + 1);
-        assert_eq!(storage.certificate_map().len_confirmed(), 1);
-    }
-
     /// The certificate ID of the test row at `height`, spread over the key space so every slice holds
     /// some rows: its first byte is `height * 37 % 256`.
     fn test_certificate_id(height: u32) -> Field<CurrentNetwork> {
@@ -2693,8 +2665,7 @@ mod tests {
 
     /// Runs startup pruning on a chain of `latest_height + 1` heights, with one certificate row per
     /// height a previous run left (`watermark` and above, and genesis), and checks that only the rows
-    /// of genesis and the retained heights remain, that the map was compacted once, and that a rerun
-    /// changes nothing.
+    /// of genesis and the retained heights remain, and that a rerun changes nothing.
     fn check_startup_certificate_pass<B: BlockStorage<CurrentNetwork>>(
         storage: B,
         latest_height: u32,
@@ -2708,17 +2679,12 @@ mod tests {
             atomic_batch_scope!(storage, { set_authority_pruned_below(&storage, watermark) }).unwrap();
         }
 
-        let compactions = || CERTIFICATE_COMPACTIONS.with(|count| count.get());
-        let before = compactions();
         prune_expired_authorities(&storage, latest_height, TEST_RETENTION).unwrap();
-        assert_eq!(compactions(), before + 1);
         assert_eq!(
             speculative_authority_pruned_below(&storage).unwrap(),
             Some(oldest_retained_authority_height(latest_height, TEST_RETENTION))
         );
         assert_only_retained_certificates(&storage, latest_height);
-        // The rerun removed nothing and did not compact.
-        assert_eq!(compactions(), before + 1);
     }
 
     /// Checks that only the certificate rows of genesis and the retained heights remain, and that a
