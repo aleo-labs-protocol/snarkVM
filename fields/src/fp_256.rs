@@ -52,7 +52,7 @@ pub trait Fp256Parameters: FieldParameters<BigInteger = BigInteger> {
     fn sqrt_tables() -> &'static SqrtTables<Fp256<Self>>;
 }
 
-// The CUDA FFI reads this by bytes.
+// The CUDA FFI reads this by bytes, and `adx::fp256::limbs` casts it to its limbs.
 #[derive(Copy, Clone, Default, PartialEq, Eq, Hash, Zeroize)]
 #[repr(transparent)]
 pub struct Fp256<P: Fp256Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
@@ -68,6 +68,15 @@ impl<P: Fp256Parameters> Fp256<P> {
     const MODULUS_62: [i64; 5] = safegcd::to_signed62(&P::MODULUS.0);
     const MODULUS_INV_62: u64 = P::INV.wrapping_neg() & safegcd::M62;
     const R2_62: [i64; 5] = safegcd::to_signed62(&P::R2.0);
+    /// The most terms that `sum_of_products` takes. The running value stays below about `(n + 1) p`,
+    /// and above `R` it loses its top carry, which gives a wrong element. This limit keeps
+    /// `(n + 1) p < R`, from the top limb of `p`.
+    const SUM_OF_PRODUCTS_LIMIT: u64 = {
+        let limit = u64::MAX / (P::MODULUS.0[3] + 1) - 1;
+        // `Fp2` and the point formulas take 2 terms.
+        assert!(limit >= 2);
+        limit
+    };
 
     #[inline]
     fn is_valid(&self) -> bool {
@@ -204,6 +213,71 @@ impl<P: Fp256Parameters> Fp256<P> {
         self.reduce();
     }
 
+    /// Returns `sum a_i b_i` by the Rust body, which `sum_of_products` runs without ADX and BMI2.
+    #[doc(hidden)]
+    pub fn sum_of_products_scalar(a: &[Self], b: &[Self]) -> Self {
+        fn inner<P: Fp256Parameters>(a: &[Fp256<P>], b: &[Fp256<P>]) -> Fp256<P> {
+            // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
+            // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
+            // the result as a double-width intermediate representation, which is then fully
+            // reduced at the end. Here however we have pairs of multiplications (a_i, b_i),
+            // the results of which are summed.
+            //
+            // The intuition for this algorithm is two-fold:
+            // - We can interleave the operand scanning for each pair, by processing the jth
+            //   limb of each `a_i` together. As these have the same offset within the overall
+            //   operand scanning flow, their results can be summed directly.
+            // - We can interleave the multiplication and reduction steps, resulting in a
+            //   single bitshift by the limb size after each iteration. This means we only
+            //   need to store a single extra limb overall, instead of keeping around all the
+            //   intermediate results and eventually having twice as many limbs.
+
+            // Algorithm 2, line 2
+            let (u0, u1, u2, u3) = (0..4).fold((0, 0, 0, 0), |(u0, u1, u2, u3), j| {
+                // Algorithm 2, line 3
+                // For each pair in the overall sum of products:
+                let (t0, t1, t2, t3, mut t4) =
+                    a.iter().zip(b).fold((u0, u1, u2, u3, 0), |(t0, t1, t2, t3, mut t4), (a, b)| {
+                        // Compute digit_j x row and accumulate into `u`.
+                        let mut carry = 0;
+                        let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);
+                        let t1 = fa::mac_with_carry(t1, a.0.0[j], b.0.0[1], &mut carry);
+                        let t2 = fa::mac_with_carry(t2, a.0.0[j], b.0.0[2], &mut carry);
+                        let t3 = fa::mac_with_carry(t3, a.0.0[j], b.0.0[3], &mut carry);
+                        let _ = fa::adc(&mut t4, 0, carry);
+
+                        (t0, t1, t2, t3, t4)
+                    });
+
+                // Algorithm 2, lines 4-5
+                // This is a single step of the usual Montgomery reduction process.
+                let k = t0.wrapping_mul(P::INV);
+                let mut carry = 0;
+                let _ = fa::mac_with_carry(t0, k, P::MODULUS.0[0], &mut carry);
+                let r1 = fa::mac_with_carry(t1, k, P::MODULUS.0[1], &mut carry);
+                let r2 = fa::mac_with_carry(t2, k, P::MODULUS.0[2], &mut carry);
+                let r3 = fa::mac_with_carry(t3, k, P::MODULUS.0[3], &mut carry);
+                let _ = fa::adc(&mut t4, 0, carry);
+                let r4 = t4;
+
+                (r1, r2, r3, r4)
+            });
+
+            // Because we represent F_p elements in non-redundant form, we need a final
+            // conditional subtraction to ensure the output is in range.
+            let mut result = Fp256(BigInteger([u0, u1, u2, u3]), PhantomData);
+            result.reduce();
+            result
+        }
+
+        assert!(
+            a.len().min(b.len()) as u64 <= Self::SUM_OF_PRODUCTS_LIMIT,
+            "sum_of_products takes too many terms for this modulus"
+        );
+
+        inner(a, b)
+    }
+
     /// Sets `self` to `self^2` by the Rust body, which `square_in_place` runs without ADX and BMI2.
     #[doc(hidden)]
     #[inline(always)]
@@ -304,71 +378,20 @@ impl<P: Fp256Parameters> Field for Fp256<P> {
 
     #[inline]
     fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
-        fn inner<P: Fp256Parameters>(a: &[Fp256<P>], b: &[Fp256<P>]) -> Fp256<P> {
-            // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
-            // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
-            // the result as a double-width intermediate representation, which is then fully
-            // reduced at the end. Here however we have pairs of multiplications (a_i, b_i),
-            // the results of which are summed.
-            //
-            // The intuition for this algorithm is two-fold:
-            // - We can interleave the operand scanning for each pair, by processing the jth
-            //   limb of each `a_i` together. As these have the same offset within the overall
-            //   operand scanning flow, their results can be summed directly.
-            // - We can interleave the multiplication and reduction steps, resulting in a
-            //   single bitshift by the limb size after each iteration. This means we only
-            //   need to store a single extra limb overall, instead of keeping around all the
-            //   intermediate results and eventually having twice as many limbs.
-
-            // Algorithm 2, line 2
-            let (u0, u1, u2, u3) = (0..4).fold((0, 0, 0, 0), |(u0, u1, u2, u3), j| {
-                // Algorithm 2, line 3
-                // For each pair in the overall sum of products:
-                let (t0, t1, t2, t3, mut t4) =
-                    a.iter().zip(b).fold((u0, u1, u2, u3, 0), |(t0, t1, t2, t3, mut t4), (a, b)| {
-                        // Compute digit_j x row and accumulate into `u`.
-                        let mut carry = 0;
-                        let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);
-                        let t1 = fa::mac_with_carry(t1, a.0.0[j], b.0.0[1], &mut carry);
-                        let t2 = fa::mac_with_carry(t2, a.0.0[j], b.0.0[2], &mut carry);
-                        let t3 = fa::mac_with_carry(t3, a.0.0[j], b.0.0[3], &mut carry);
-                        let _ = fa::adc(&mut t4, 0, carry);
-
-                        (t0, t1, t2, t3, t4)
-                    });
-
-                // Algorithm 2, lines 4-5
-                // This is a single step of the usual Montgomery reduction process.
-                let k = t0.wrapping_mul(P::INV);
-                let mut carry = 0;
-                let _ = fa::mac_with_carry(t0, k, P::MODULUS.0[0], &mut carry);
-                let r1 = fa::mac_with_carry(t1, k, P::MODULUS.0[1], &mut carry);
-                let r2 = fa::mac_with_carry(t2, k, P::MODULUS.0[2], &mut carry);
-                let r3 = fa::mac_with_carry(t3, k, P::MODULUS.0[3], &mut carry);
-                let _ = fa::adc(&mut t4, 0, carry);
-                let r4 = t4;
-
-                (r1, r2, r3, r4)
-            });
-
-            // Because we represent F_p elements in non-redundant form, we need a final
-            // conditional subtraction to ensure the output is in range.
-            let mut result = Fp256(BigInteger([u0, u1, u2, u3]), PhantomData);
-            result.reduce();
-            result
-        }
-
-        // The running value stays below about `(n + 1) p`, and above `R` it loses its top carry, which
-        // gives a wrong element. This limit keeps `(n + 1) p < R`, from the top limb of `p`.
-        let limit = const {
-            let limit = u64::MAX / (P::MODULUS.0[3] + 1) - 1;
-            // `Fp2` and the point formulas take 2 terms.
-            assert!(limit >= 2);
-            limit
-        };
-        assert!(a.len().min(b.len()) as u64 <= limit, "sum_of_products takes too many terms for this modulus");
-
-        inner(a, b)
+        adx_or!(
+            {
+                use crate::adx::fp256 as adx;
+                assert!(
+                    a.len().min(b.len()) as u64 <= Self::SUM_OF_PRODUCTS_LIMIT,
+                    "sum_of_products takes too many terms for this modulus"
+                );
+                let limbs = adx::sum_of_products(adx::limbs(a), adx::limbs(b), &Self::ADX_MODULUS);
+                let mut result = Self(BigInteger(limbs), PhantomData);
+                result.reduce();
+                result
+            },
+            Self::sum_of_products_scalar(a, b)
+        )
     }
 
     #[inline]

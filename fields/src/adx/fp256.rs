@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Montgomery products over four limbs.
+//! The Montgomery product, the square, and the sum of `n` products, over four limbs.
 //!
 //! `q` holds the limbs of the modulus `p`, least significant first, and then `-p^-1 mod 2^64`.
 //! The operands are below `p`, and the top limb of `p` is below `2^63 - 1`.
@@ -23,6 +23,20 @@
 //! `2^64 - 1` sets the same carry.
 
 use core::arch::asm;
+
+use crate::{Fp256, Fp256Parameters};
+
+/// Returns the limbs of the field elements, in place.
+#[inline(always)]
+pub(crate) fn limbs<P: Fp256Parameters>(elements: &[Fp256<P>]) -> &[[u64; 4]] {
+    const {
+        assert!(size_of::<Fp256<P>>() == size_of::<[u64; 4]>());
+        assert!(align_of::<Fp256<P>>() == align_of::<[u64; 4]>());
+    };
+    // SAFETY: `Fp256` and its `BigInteger256` are `repr(transparent)` over `[u64; 4]`, so the two
+    // slices have the same layout and the same length.
+    unsafe { core::slice::from_raw_parts(elements.as_ptr().cast(), elements.len()) }
+}
 
 /// Adds `rdx b` to `t` in `r11` to `r14`, with `lo` on the `adox` chain and `hi` on the `adcx`
 /// chain, and leaves the top limb in `rcx`.
@@ -72,6 +86,29 @@ macro_rules! reduce {
             "adox r14, ",
             $top,
             "\n",
+        )
+    };
+}
+
+/// Adds `a_i[j] b_i` to `t` in `r11` to `r14` for every pair, with `j` the byte offset `$offset`
+/// of the limb in `a_i`, and leaves the fifth limb of `t` in `r15`. `r8` and `rsi` point to `a_0`
+/// and `b_0` before and after it, `r9` points to the end of `b`, and `r10` holds the bytes of `b`.
+macro_rules! rows {
+    ($offset:literal) => {
+        concat!(
+            "xor r15d, r15d\n",
+            "2:\n",
+            "mov rdx, qword ptr [r8 + ",
+            $offset,
+            "]\n",
+            row!(),
+            "add r15, rcx\n",
+            "add r8, 32\n",
+            "add rsi, 32\n",
+            "cmp rsi, r9\n",
+            "jne 2b\n",
+            "sub r8, r10\n",
+            "sub rsi, r10\n",
         )
     };
 }
@@ -210,6 +247,64 @@ pub(crate) fn square(a: &[u64; 4], q: &[u64; 5]) -> [u64; 4] {
             out("r12") t1,
             out("r13") t2,
             out("r14") t3,
+            out("r15") _,
+            options(pure, readonly, nostack),
+        );
+    }
+    [t0, t1, t2, t3]
+}
+
+/// Returns an integer in `[0, 2p)` congruent to `sum a_i b_i 2^-256 mod p` over the `n` pairs of
+/// `a` and `b`, where `n` is the length of the shorter one and `(n + 1) p < 2^256`.
+///
+/// Step `j` adds `sum a_i[j] b_i + m p` to the accumulator `u`, with `m < 2^64`, and divides by
+/// `2^64`. If `u < (n + 1) p`, the sum is below `(n + 1) p + (2^64 - 1) (n + 1) p = 2^64 (n + 1) p`,
+/// so 5 limbs hold it, and `u < (n + 1) p` again after the division, so 4 limbs hold `u`. The
+/// result is `(sum a_i b_i + M p) / 2^256` for some `M < 2^256`, which is below `2p` as
+/// `n p < 2^256`.
+///
+/// Every step is exact modulo `2^320`, as in the Rust body, so the two return the same limbs for
+/// any limbs of `a` and `b`.
+#[inline(always)]
+pub(crate) fn sum_of_products(a: &[[u64; 4]], b: &[[u64; 4]], q: &[u64; 5]) -> [u64; 4] {
+    let terms = a.len().min(b.len());
+    if terms == 0 {
+        return [0; 4];
+    }
+    let (a, b) = (&a[..terms], b[..terms].as_ptr_range());
+    let (t0, t1, t2, t3): (u64, u64, u64, u64);
+    // SAFETY: The module compiles only with `target_feature = "adx"` and `"bmi2"`, so `mulx`,
+    // `adcx` and `adox` exist. `a` and the range `b` hold `terms` elements of 4 limbs, and `terms`
+    // is not zero. Each loop runs `terms` times, until `rsi` reaches the end of `b`, and reads
+    // only the 4 limbs at `rsi` and one limb of the 4 at `r8`, which advance together. `q` is a
+    // reference to 5 limbs, and the assembly reads only `[rdi]` to `[rdi + 32]`. It writes no
+    // memory and no stack.
+    unsafe {
+        asm!(
+            // t = sum a_i[0] b_i, then reduce.
+            rows!("0"),
+            reduce!("r15"),
+            // t += sum a_i[1] b_i, then reduce.
+            rows!("8"),
+            reduce!("r15"),
+            // t += sum a_i[2] b_i, then reduce.
+            rows!("16"),
+            reduce!("r15"),
+            // t += sum a_i[3] b_i, then reduce.
+            rows!("24"),
+            reduce!("r15"),
+            inout("r8") a.as_ptr() => _,
+            inout("rsi") b.start => _,
+            in("r9") b.end,
+            in("r10") size_of_val(a),
+            in("rdi") q.as_ptr(),
+            out("rax") _,
+            out("rcx") _,
+            out("rdx") _,
+            inout("r11") 0u64 => t0,
+            inout("r12") 0u64 => t1,
+            inout("r13") 0u64 => t2,
+            inout("r14") 0u64 => t3,
             out("r15") _,
             options(pure, readonly, nostack),
         );

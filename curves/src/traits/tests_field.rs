@@ -26,6 +26,7 @@ use snarkvm_fields::{
     One,
     PrimeField,
     SquareRootField,
+    Zero,
     batch_inversion,
     batch_inversion_and_mul,
     traits::{FftParameters, FieldParameters},
@@ -802,6 +803,68 @@ scalar_path_test!(fp384_scalar_path_test, fp384_edge_values, Fp384, Fp384Paramet
     u64::MAX,
     p
 ]);
+
+/// Checks that `Fp256::sum_of_products` returns the limbs of `sum_of_products_scalar` for 0 to
+/// `max_terms` terms, on edge values, on random values, and on limbs that are not below the modulus.
+pub fn fp256_sum_of_products_scalar_path_test<P: Fp256Parameters>(rng: &mut TestRng, max_terms: usize) {
+    let check = |a: &[Fp256<P>], b: &[Fp256<P>]| {
+        let actual = Fp256::sum_of_products(a, b);
+        let expected = Fp256::sum_of_products_scalar(a, b);
+        assert_eq!(actual.0, expected.0, "{a:?} . {b:?}");
+    };
+    let raw = |limbs: [u64; 4]| Fp256::<P>(BigInteger256(limbs), PhantomData);
+    let p = P::MODULUS.0;
+    let limb_edges = [
+        Fp256::zero(),
+        Fp256::one(),
+        -Fp256::one(),
+        raw([1, 0, 0, 0]),
+        raw([2, 0, 0, 0]),
+        raw([u64::MAX - 18, 0, 0, 0]),
+        raw([p[0] - 1, p[1], p[2], p[3]]),
+        raw([u64::MAX, u64::MAX, u64::MAX, p[3] - 1]),
+        raw([0, 0, 0, p[3] - 1]),
+        raw([u64::MAX, u64::MAX, u64::MAX, 0]),
+    ];
+    let edges = fp256_edge_values::<P>();
+    for terms in 0..=max_terms {
+        // The same pair of limb edges in every term.
+        for x in &limb_edges {
+            for y in &limb_edges {
+                check(&vec![*x; terms], &vec![*y; terms]);
+            }
+        }
+        for _ in 0..20_000 {
+            let mut pick =
+                || if rng.random_bool(0.5) { edges[rng.random_range(0..edges.len())] } else { Fp256::rand(rng) };
+            let a: Vec<Fp256<P>> = (0..terms).map(|_| pick()).collect();
+            let b: Vec<Fp256<P>> = (0..terms).map(|_| pick()).collect();
+            check(&a, &b);
+        }
+        for _ in 0..20_000 {
+            let a: Vec<Fp256<P>> = (0..terms).map(|_| Fp256::rand(rng)).collect();
+            let b: Vec<Fp256<P>> = (0..terms).map(|_| Fp256::rand(rng)).collect();
+            check(&a, &b);
+        }
+        // Limbs up to `2^256 - 1`, which no element has. Both bodies wrap the same way.
+        for _ in 0..2_000 {
+            let mut pick = || raw(std::array::from_fn(|_| if rng.random_bool(0.25) { u64::MAX } else { rng.random() }));
+            let a: Vec<Fp256<P>> = (0..terms).map(|_| pick()).collect();
+            let b: Vec<Fp256<P>> = (0..terms).map(|_| pick()).collect();
+            check(&a, &b);
+        }
+    }
+    // The shorter slice sets the number of terms.
+    let a: Vec<Fp256<P>> = (0..max_terms).map(|_| Fp256::rand(rng)).collect();
+    let b: Vec<Fp256<P>> = (0..max_terms).map(|_| Fp256::rand(rng)).collect();
+    for i in 0..=max_terms {
+        for j in 0..=max_terms {
+            let terms = i.min(j);
+            let expected = Fp256::sum_of_products_scalar(&a[..terms], &b[..terms]);
+            assert_eq!(Fp256::sum_of_products(&a[..i], &b[..j]).0, expected.0, "{i} and {j} elements");
+        }
+    }
+}
 
 pub fn fp384_inverse_test<P: Fp384Parameters>(rng: &mut TestRng) {
     inverse_test(rng, |x| Fp384::<P>(x, PhantomData), |a| a.0);

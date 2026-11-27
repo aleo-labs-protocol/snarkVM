@@ -51,8 +51,10 @@ use crate::{
             bench_sqrt,
             field_serialization_test,
             field_test,
+            fp256_edge_values,
             fp256_inverse_test,
             fp256_scalar_path_test,
+            fp256_sum_of_products_scalar_path_test,
             fp384_edge_values,
             fp384_inverse_test,
             fp384_scalar_path_test,
@@ -73,6 +75,7 @@ use snarkvm_fields::{
     Fp2Parameters,
     LegendreSymbol::*,
     One,
+    PoseidonDefaultField,
     PrimeField,
     SquareRootField,
     Zero,
@@ -118,6 +121,37 @@ fn test_bls12_377_fr_inverse() {
 #[test]
 fn test_bls12_377_fr_scalar_path() {
     fp256_scalar_path_test::<FrParameters>(&mut TestRng::default());
+}
+
+#[test]
+fn test_bls12_377_fr_sum_of_products_scalar_path() {
+    fp256_sum_of_products_scalar_path_test::<FrParameters>(&mut TestRng::default(), 12);
+}
+
+/// Checks the rows of the Poseidon matrix of rate 8, which have 9 terms, against edge and random
+/// states.
+#[test]
+fn test_fr_sum_of_products_matches_scalar_on_poseidon_rows() {
+    let check = |state: &[Fr], row: &[Fr]| {
+        let sum = Fr::sum_of_products(state, row);
+        assert_eq!((sum.0).0, (Fr::sum_of_products_scalar(state, row).0).0, "{state:?} . {row:?}");
+        assert_eq!(sum, state.iter().zip(row).map(|(x, m)| *x * m).sum::<Fr>());
+    };
+    // The parameters exist for every rate up to 8, so this cannot fail.
+    let mds = <Fr as PoseidonDefaultField>::default_poseidon_parameters::<8>().unwrap().mds;
+    assert_eq!(mds.len(), 9);
+    let edges = fp256_edge_values::<FrParameters>();
+    let mut rng = TestRng::default();
+    for row in &mds {
+        assert_eq!(row.len(), 9);
+        for x in &edges {
+            check(&[*x; 9], row);
+        }
+        for _ in 0..20_000 {
+            let state: [Fr; 9] = std::array::from_fn(|_| Fr::rand(&mut rng));
+            check(&state, row);
+        }
+    }
 }
 
 #[test]

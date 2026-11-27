@@ -66,6 +66,23 @@ fn fp256(c: &mut Criterion) {
         })
     });
 
+    // 9 terms, as in a row of the Poseidon matrix of rate 8.
+    c.bench_function("fp256_sum_of_products_9", |b| {
+        b.iter(|| {
+            for (v1, v2) in values.chunks_exact(9).zip(values.chunks_exact(9).skip(1)) {
+                black_box(Fp256::sum_of_products(black_box(v1), black_box(v2)));
+            }
+        })
+    });
+
+    c.bench_function("fp256_sum_of_products_scalar_9", |b| {
+        b.iter(|| {
+            for (v1, v2) in values.chunks_exact(9).zip(values.chunks_exact(9).skip(1)) {
+                black_box(Fp256::sum_of_products_scalar(black_box(v1), black_box(v2)));
+            }
+        })
+    });
+
     c.bench_function("fp256_inverse", |b| {
         b.iter(|| {
             for v in values.iter() {
