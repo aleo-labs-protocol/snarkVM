@@ -851,6 +851,33 @@ mod tests {
             assert_eq!(AuthorityCompaction::read(&storage, DUE).next, 2);
         }
 
+        /// Ensures a write of the compaction state lands at once, and stays, whatever becomes of a
+        /// block batch that is open or paused meanwhile, as during the VM's block insert.
+        #[test]
+        fn test_compaction_state_bypasses_block_batches() {
+            let store = open(true);
+            let blocks = sample_block_chain(2, &mut TestRng::default());
+            store.insert(&blocks[0]).unwrap();
+
+            // A batch scope that is open on another thread, then aborted.
+            store.storage.start_atomic();
+            store.storage.put_compaction_state(KEY, cursor(1).to_bytes()).unwrap();
+            assert_eq!(stored(&store), cursor(1));
+            store.storage.abort_atomic();
+            assert_eq!(stored(&store), cursor(1));
+
+            // A paused batch that holds a block, then is discarded.
+            store.pause_atomic_writes().unwrap();
+            store.insert_deferring_block_tree(&blocks[1]).unwrap();
+            store.storage.put_compaction_state(KEY, cursor(2).to_bytes()).unwrap();
+            assert_eq!(stored(&store), cursor(2));
+            store.abort_atomic();
+            store.discard_prepared_block_tree();
+            store.unpause_atomic_writes::<true>().unwrap();
+            assert_eq!(stored(&store), cursor(2));
+            assert!(store.storage.id_map().get_confirmed(&1).unwrap().is_none());
+        }
+
         /// Ensures an open reads compaction state it cannot use as none, and still opens.
         #[test]
         fn test_open_ignores_malformed_compaction_state() {
