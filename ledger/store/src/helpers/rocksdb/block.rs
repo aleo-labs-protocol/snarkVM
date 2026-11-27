@@ -228,8 +228,10 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     }
 
     /// Compacts the certificate map.
+    // BENCH ONLY, not for merging: the bench variant that measures `ForceOptimized` against the
+    // plain `compact_range` this call makes on the PR head. Slice 0 of 1 is the whole map.
     fn compact_certificate_map(&self) -> Result<()> {
-        self.certificate_map.compact()
+        self.certificate_map.compact_slice(0, 1)
     }
 
     fn compacts_authority_map(&self) -> bool {
