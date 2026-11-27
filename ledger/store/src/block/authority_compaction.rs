@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Compaction of the authority map after pruning, on a background thread.
+//! Compaction of the certificate and authority maps after pruning, on a background thread.
 
 use super::*;
 
@@ -137,18 +137,18 @@ fn certificate_compacted_below<N: Network, B: BlockStorage<N>>(storage: &B, wate
 /// it: a compaction that was killed left its rows removed and its work undone. Until then the
 /// deleted rows cost the next pass a longer scan. A pass that removed more rows than it kept has
 /// pruned more than the window, so the compaction that clears the slices it rewrote is always due.
-pub(super) fn certificate_compaction_due<N: Network, B: BlockStorage<N>>(
-    storage: &B,
-    below: u32,
-    retention: u32,
-) -> bool {
-    storage.compacts_authority_map()
-        && below - certificate_compacted_below(storage, below) >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS.min(retention)
+fn certificate_compaction_due<N: Network, B: BlockStorage<N>>(storage: &B, below: u32, retention: u32) -> bool {
+    below - certificate_compacted_below(storage, below) >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS.min(retention)
 }
 
 /// Compacts the certificate map after a startup pass that removed the rows below `below`, so the
-/// next pass reads only live rows, and records `below` once the compaction has finished.
-pub(super) fn compact_certificate_map<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
+/// next pass reads only live rows, and records `below` once the compaction has finished. RocksDB
+/// cannot interrupt the compaction, so a stop waits for it.
+fn compact_certificate_map<N: Network, B: BlockStorage<N>>(
+    storage: &B,
+    below: u32,
+    #[cfg(test)] gate: Option<&Gate>,
+) -> Result<()> {
     let compacted_below = certificate_compacted_below(storage, below);
     #[cfg(test)]
     CERTIFICATE_COMPACTIONS.with(|count| count.set(count.get() + 1));
@@ -160,7 +160,7 @@ pub(super) fn compact_certificate_map<N: Network, B: BlockStorage<N>>(storage: &
         storage,
         errors_before,
         #[cfg(test)]
-        None,
+        gate,
     );
     // After a failed compaction this rewrites the unchanged value, as a probe.
     let recorded = if failed { compacted_below } else { below };
@@ -169,7 +169,7 @@ pub(super) fn compact_certificate_map<N: Network, B: BlockStorage<N>>(storage: &
         BlockMetadataKey::CertificateCompaction,
         recorded.to_le_bytes().to_vec(),
         #[cfg(test)]
-        None,
+        gate,
     )?;
     if failed {
         return Err(job_failure(storage, format_args!("the certificate map compaction"), "The next start retries it."));
@@ -187,13 +187,14 @@ fn put_compaction_state<N: Network, B: BlockStorage<N>>(
     value: Vec<u8>,
     #[cfg(test)] gate: Option<&Gate>,
 ) -> Result<()> {
+    let refused = |error: anyhow::Error| {
+        anyhow!("The ledger store refuses writes after a storage error: {error:#}. Restart the node.")
+    };
     #[cfg(test)]
-    let refused = gate.is_some_and(|gate| gate.fail_put.swap(false, Ordering::SeqCst));
-    #[cfg(not(test))]
-    let refused = false;
-    let result = if refused { Err(anyhow!("injected")) } else { storage.put_compaction_state(key, value) };
-    result
-        .map_err(|error| anyhow!("The ledger store refuses writes after a storage error: {error:#}. Restart the node."))
+    if gate.is_some_and(|gate| gate.fail_put.swap(false, Ordering::SeqCst)) {
+        return Err(refused(anyhow!("injected")));
+    }
+    storage.put_compaction_state(key, value).map_err(refused)
 }
 
 /// Returns whether a background job of the storage failed since it counted `errors_before` of
@@ -218,6 +219,47 @@ fn job_failure<N: Network, B: BlockStorage<N>>(storage: &B, step: std::fmt::Argu
     }
 }
 
+/// Returns whether the compaction thread must stop: `signal` says so, or every store sharing
+/// `state` is gone. The thread must not upgrade `state`: holding the last strong reference would
+/// run the state's drop, and its join, on the thread.
+fn stopping(signal: &Signal, state: &Weak<CompactionState>) -> bool {
+    signal.stop.load(Ordering::SeqCst) || state.strong_count() == 0
+}
+
+/// The work of the compaction thread: the certificate map, if a startup pass below
+/// `certificate_below` left it due, then the authority map. A failure ends it.
+fn compact<N: Network, B: BlockStorage<N>>(
+    storage: &B,
+    signal: &Signal,
+    state: &Weak<CompactionState>,
+    certificate_below: Option<u32>,
+    #[cfg(test)] gate: Option<Arc<Gate>>,
+) -> Result<()> {
+    if let Some(below) = certificate_below
+        && !stopping(signal, state)
+    {
+        #[cfg(test)]
+        if let Some(gate) = &gate {
+            gate.hold_certificate_compaction(|| stopping(signal, state));
+        }
+        compact_certificate_map(
+            storage,
+            below,
+            #[cfg(test)]
+            gate.as_deref(),
+        )
+        .context("Failed to compact the certificate map")?;
+    }
+    compact_authority_slices(
+        storage,
+        signal,
+        state,
+        #[cfg(test)]
+        gate,
+    )
+    .context("Failed to compact the authority map")
+}
+
 /// Compacts the authority map slice by slice (see [`BlockStorage::compact_authority_slice`]) if a
 /// run is due: one is unfinished, or the watermark is an interval past the last finished run's.
 /// The cursor is stored after each slice, so the next start resumes a run that was stopped or
@@ -230,14 +272,11 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
     #[cfg(test)] gate: Option<Arc<Gate>>,
 ) -> Result<()> {
     const KEY: BlockMetadataKey = BlockMetadataKey::AuthorityCompaction;
-    // The thread must not upgrade `state`: holding the last strong reference would run the state's
-    // drop, and its join, on this thread.
-    let stopping = || signal.stop.load(Ordering::SeqCst) || state.strong_count() == 0;
     let Some(watermark) = storage.confirmed_authority_pruned_below()? else {
         return Ok(());
     };
     let mut run = AuthorityCompaction::read(storage, watermark);
-    if watermark < run.due_at() || stopping() {
+    if watermark < run.due_at() || stopping(signal, state) {
         return Ok(());
     }
     if run.slices == 0 {
@@ -257,9 +296,9 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
     for i in run.next..total {
         #[cfg(test)]
         if let Some(gate) = &gate {
-            gate.wait(stopping);
+            gate.wait(|| stopping(signal, state));
         }
-        if stopping() {
+        if stopping(signal, state) {
             info!("Stopped the authority map compaction before slice {i} of {total}; the next start resumes there");
             return Ok(());
         }
@@ -316,13 +355,13 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
 /// What the compaction thread shares with the stores.
 #[derive(Default)]
 struct Signal {
-    /// Set at shutdown, so no compaction starts and the running one stops between slices.
+    /// Set at shutdown, so no compaction starts and the running one stops after its current step.
     stop: AtomicBool,
     /// The watermark from which an authority map compaction is due. See [`AuthorityCompaction::due_at`].
     due_at: AtomicU32,
 }
 
-/// The state of the background authority map compaction, shared by the clones of a [`BlockStore`];
+/// The state of the background compaction, shared by the clones of a [`BlockStore`];
 /// the compaction thread holds only its [`Signal`] and a weak reference.
 #[derive(Default)]
 pub(super) struct CompactionState {
@@ -345,8 +384,8 @@ impl LastRun {
 }
 
 impl CompactionState {
-    /// Stops the compaction, if one runs, and waits for it: the running slice finishes, then the
-    /// thread is joined.
+    /// Stops the compaction, if one runs, and waits for it: the running authority slice or
+    /// certificate map compaction finishes, then the thread is joined.
     fn stop_and_join(&self) {
         self.signal.stop.store(true, Ordering::SeqCst);
         let Some(thread) = self.last.lock().thread.take() else {
@@ -357,7 +396,7 @@ impl CompactionState {
         // A failed join means the thread panicked, and the process is aborting.
         let _ = thread.join();
         if running {
-            info!("Waited {:.1} s for the authority map compaction to finish its slice", timer.elapsed().as_secs_f64());
+            info!("Waited {:.1} s for the background compaction to finish its step", timer.elapsed().as_secs_f64());
             #[cfg(test)]
             AUTHORITY_COMPACTION_RUNNING_JOINS.with(|count| count.set(count.get() + 1));
         }
@@ -372,17 +411,24 @@ impl Drop for CompactionState {
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
-    /// At open, after startup pruning: reads the stored compaction state, sets from it the
-    /// watermark at which an insert starts a compaction, and starts one now if it is due.
-    pub(super) fn start_due_compaction(&self) -> Result<()> {
-        if self.authority_retention.is_none() || !self.storage.compacts_authority_map() {
+    /// At the open of a store that prunes with `retention`, after startup pruning: reads the stored
+    /// compaction state, sets from it the watermark at which an insert starts a compaction, and
+    /// starts one now if either map is due. Only this start compacts the certificate map, whose
+    /// rows only the startup pass removes.
+    pub(super) fn start_due_compaction(&self, retention: u32) -> Result<()> {
+        if !self.storage.compacts_authority_map() {
             return Ok(());
         }
         let watermark = self.authority_pruned_below()?;
         let due_at = watermark.map(|w| AuthorityCompaction::read(&self.storage, w)).unwrap_or_default().due_at();
         self.authority_compaction.signal.due_at.store(due_at, Ordering::SeqCst);
-        if watermark.is_some_and(|watermark| watermark >= due_at) {
-            self.start_compaction();
+        let Some(watermark) = watermark else {
+            return Ok(());
+        };
+        // The startup pass removed the certificate rows below the watermark.
+        let certificate_below = certificate_compaction_due(&self.storage, watermark, retention).then_some(watermark);
+        if watermark >= due_at || certificate_below.is_some() {
+            self.start_compaction(certificate_below);
         }
         Ok(())
     }
@@ -401,14 +447,14 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // The watermark after this insert, unless it is ahead already: after a rollback or a
         // reopen with a larger window an insert prunes nothing, and nothing is due.
         if height - retention + 1 >= self.authority_compaction.signal.due_at.load(Ordering::SeqCst) {
-            self.start_compaction();
+            self.start_compaction(None);
         }
     }
 
-    /// Starts a compaction on a background thread if this store prunes, unless one runs, the floor
-    /// applies, or the store is stopping; returns whether one started. A panic on the thread aborts
-    /// the process.
-    pub(super) fn start_compaction(&self) -> bool {
+    /// Starts a compaction (see [`compact`]) on a background thread if this store prunes, unless one
+    /// runs, the floor applies, or the store is stopping; returns whether one started. A panic on
+    /// the thread aborts the process.
+    pub(super) fn start_compaction(&self, certificate_below: Option<u32>) -> bool {
         if self.authority_retention.is_none() || !self.storage.compacts_authority_map() {
             return false;
         }
@@ -426,17 +472,18 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         let (storage, state) = (self.storage.clone(), Arc::downgrade(compaction));
         let compact = move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                compact_authority_slices(
+                compact(
                     &storage,
                     &signal,
                     &state,
+                    certificate_below,
                     #[cfg(test)]
                     gate,
                 )
             }));
             match result {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => error!("Failed to compact the authority map: {error:#}"),
+                Ok(Err(error)) => error!("{error:#}"),
                 Err(_) => {
                     error!("The authority map compaction panicked");
                     std::process::abort();
@@ -466,7 +513,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
     }
 
-    /// Stops the background authority map compaction; see `CompactionState::stop_and_join`.
+    /// Stops the background compaction; see `CompactionState::stop_and_join`.
     pub fn stop_background_work(&self) {
         self.authority_compaction.stop_and_join();
     }
@@ -485,6 +532,9 @@ struct Gate {
     fail_job: AtomicBool,
     /// Makes the next write of the compaction state fail.
     fail_put: AtomicBool,
+    /// 1 holds the certificate map compaction back until a stop is requested, as a compaction that
+    /// is running when the request arrives; 2 says that it is being held.
+    hold_certificate: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -496,6 +546,14 @@ impl Gate {
 
     fn passed(&self) -> usize {
         self.passed.load(Ordering::SeqCst)
+    }
+
+    fn hold_certificate_compaction(&self, stopping: impl Fn() -> bool) {
+        if self.hold_certificate.compare_exchange(1, 2, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            while !stopping() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
     }
 
     /// Waits for a released slice, or for `stopping`.
@@ -558,7 +616,7 @@ mod tests {
     #[test]
     fn test_memory_storage_compacts_nothing() {
         let store = open_pruning::<BlockMemory<_>>(StorageMode::new_test(None));
-        assert!(!store.start_compaction());
+        assert!(!store.start_compaction(None));
         let rng = &mut TestRng::default();
         let before = compactions();
         for block in &sample_block_chain(TEST_RETENTION + AUTHORITY_COMPACTION_INTERVAL_BLOCKS + 2, rng) {
@@ -604,6 +662,7 @@ mod tests {
         type Store = BlockStore<CurrentNetwork, BlockDB<CurrentNetwork>>;
 
         const KEY: BlockMetadataKey = BlockMetadataKey::AuthorityCompaction;
+        const CERTIFICATE_KEY: BlockMetadataKey = BlockMetadataKey::CertificateCompaction;
 
         /// The lowest watermark at which a store that never compacted is due.
         const DUE: u32 = AUTHORITY_COMPACTION_INTERVAL_BLOCKS;
@@ -623,14 +682,16 @@ mod tests {
             StorageMode::new_test(Some(Arc::new(tempfile::tempdir().unwrap())))
         }
 
-        /// A new test storage that has pruned up to `watermark`, with `state` as its stored
-        /// compaction state.
+        /// A new test storage that has pruned up to `watermark`. With `state`, it has compacted
+        /// before: `state` is its authority compaction state, and its certificate map is compacted
+        /// at `watermark`.
         fn new_pruned_storage(watermark: u32, state: Option<AuthorityCompaction>) -> StorageMode {
             let storage_mode = new_storage();
             let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
             atomic_batch_scope!(storage, { set_authority_pruned_below(&storage, watermark) }).unwrap();
             if let Some(state) = state {
                 storage.put_compaction_state(KEY, state.to_bytes()).unwrap();
+                storage.put_compaction_state(CERTIFICATE_KEY, watermark.to_le_bytes().to_vec()).unwrap();
             }
             storage_mode
         }
@@ -724,7 +785,7 @@ mod tests {
             assert_eq!(gate.passed(), 0);
             assert!(store.authority_compaction.last.lock().thread.is_none());
             clear_floor(&store);
-            assert!(!store.start_compaction());
+            assert!(!store.start_compaction(None));
         }
 
         /// Ensures dropping the last store, while the thread waits between slices, stops and joins
@@ -783,7 +844,7 @@ mod tests {
             {
                 let storage_mode = new_pruned_storage(DUE, None);
                 let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
-                for key in [KEY, BlockMetadataKey::CertificateCompaction] {
+                for key in [KEY, CERTIFICATE_KEY] {
                     if bytes.is_empty() {
                         let map_id = MapID::Block(BlockMap::Metadata);
                         let raw: DataMap<BlockMetadataKey, u8> =
@@ -815,7 +876,7 @@ mod tests {
                 (Some(DUE), None, true, true),
                 (Some(DUE - 1), None, true, false),
                 (None, None, true, false),
-                // Compacted before.
+                // Compacted before, the certificate map at this watermark.
                 (Some(2 * DUE), Some(finished(DUE)), true, true),
                 (Some(2 * DUE - 1), Some(finished(DUE)), true, false),
                 // An unfinished run resumes whatever the watermark.
@@ -923,11 +984,11 @@ mod tests {
             assert_eq!(stored(&store), cursor);
 
             // The run stays due, and the floor holds its retry back.
-            assert!(!store.start_compaction());
+            assert!(!store.start_compaction(None));
             clear_floor(&store);
             let gate = Arc::new(Gate::default());
             gate.release(usize::from(SLICES));
-            assert!(gated(&gate, || store.start_compaction()));
+            assert!(gated(&gate, || store.start_compaction(None)));
             wait_finished(&store);
             assert_eq!(gate.passed(), usize::from(SLICES) - 1);
             assert_eq!(stored(&store), AuthorityCompaction { compacted_below: DUE, ..Default::default() });
@@ -989,11 +1050,56 @@ mod tests {
             assert!(certificate_compaction_due(&storage, 3, 3));
         }
 
+        /// Ensures the certificate map is compacted on the compaction thread, not by the open, and
+        /// that a stop requested meanwhile waits for the compaction, which is then recorded, and
+        /// lets nothing start after it.
+        #[test]
+        fn test_stop_waits_for_the_certificate_compaction() {
+            let storage_mode = new_pruned_storage(DUE, None);
+            let gate = Arc::new(Gate::default());
+            gate.hold_certificate.store(1, Ordering::SeqCst);
+            gate.release(usize::from(SLICES));
+            let store = gated(&gate, || open_with(&storage_mode, Some(TEST_RETENTION)));
+            wait_until(|| gate.hold_certificate.load(Ordering::SeqCst) == 2);
+            assert!(thread_running(&store));
+            assert_eq!(certificate_compacted_below(&store.storage, DUE), 0);
+
+            let before = running_joins();
+            store.stop_background_work();
+            assert_eq!(running_joins(), before + 1);
+            assert_eq!(certificate_compacted_below(&store.storage, DUE), DUE);
+            assert_eq!((stored(&store), gate.passed()), (AuthorityCompaction::default(), 0));
+        }
+
+        /// Ensures a certificate map compaction during which a background job failed is not
+        /// recorded, ends the thread before the authority map, and runs again at the next open.
+        #[test]
+        fn test_failed_certificate_compaction_is_retried() {
+            let storage_mode = new_pruned_storage(DUE, None);
+            let gate = Arc::new(Gate::default());
+            gate.fail_job.store(true, Ordering::SeqCst);
+            gate.release(usize::from(SLICES));
+            let store = gated(&gate, || open_with(&storage_mode, Some(TEST_RETENTION)));
+            wait_finished(&store);
+            assert_eq!(certificate_compacted_below(&store.storage, DUE), 0);
+            assert_eq!((stored(&store), gate.passed()), (AuthorityCompaction::default(), 0));
+
+            gate.fail_job.store(true, Ordering::SeqCst);
+            let error = compact_certificate_map(&store.storage, DUE, Some(&gate)).unwrap_err().to_string();
+            let expected = "A RocksDB background job failed during the certificate map compaction; see the RocksDB \
+                            LOG. The next start retries it.";
+            assert_eq!(error, expected);
+            drop(store);
+
+            let (store, compactions) = open_counting_certificate_compactions(&storage_mode);
+            assert_eq!(compactions, 1);
+            assert_eq!(certificate_compacted_below(&store.storage, DUE), DUE);
+        }
+
         /// Ensures the certificate map is compacted whether or not the startup pass removed rows,
         /// so a compaction that was killed before it was recorded runs again.
         #[test]
         fn test_certificate_compaction_reruns_until_recorded() {
-            const KEY: BlockMetadataKey = BlockMetadataKey::CertificateCompaction;
             let storage_mode = new_storage();
             let store = open_with(&storage_mode, Some(TEST_RETENTION));
             for block in &sample_chain() {
@@ -1001,7 +1107,7 @@ mod tests {
             }
             let watermark = store.authority_pruned_below().unwrap().unwrap();
             // Inserts prune without compacting the certificate map.
-            assert!(store.storage.block_metadata_map().get_confirmed(&KEY).unwrap().is_none());
+            assert!(store.storage.block_metadata_map().get_confirmed(&CERTIFICATE_KEY).unwrap().is_none());
             drop(store);
 
             let reopen = || open_counting_certificate_compactions(&storage_mode);
@@ -1013,7 +1119,7 @@ mod tests {
             assert_eq!(compactions, 0);
 
             // A killed compaction leaves the key as it was; the pass has nothing left to remove.
-            store.storage.put_compaction_state(KEY, 0u32.to_le_bytes().to_vec()).unwrap();
+            store.storage.put_compaction_state(CERTIFICATE_KEY, 0u32.to_le_bytes().to_vec()).unwrap();
             drop(store);
             let (store, compactions) = reopen();
             assert_eq!(compactions, 1);
@@ -1034,7 +1140,7 @@ mod tests {
                 assert_eq!(store.authority_pruned_below().unwrap(), Some(DUE));
                 assert_eq!(compactions(), 0);
                 assert!(!thread_running(store));
-                for key in [KEY, BlockMetadataKey::CertificateCompaction] {
+                for key in [KEY, CERTIFICATE_KEY] {
                     assert!(store.storage.block_metadata_map().get_confirmed(&key).unwrap().is_none());
                 }
             };

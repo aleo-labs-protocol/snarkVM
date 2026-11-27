@@ -356,7 +356,7 @@ fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(
     let watermark = speculative_authority_pruned_below(storage)?;
     let floor = oldest_retained_authority_height(latest_height, retention_blocks);
     if let Some(below) = prune_authority_range(storage, watermark, floor)? {
-        prune_certificate_indexes(storage, below, retention_blocks)?;
+        prune_certificate_indexes(storage, below)?;
     }
     Ok(())
 }
@@ -396,14 +396,10 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(
     Ok(Some(floor))
 }
 
-/// Removes the certificate indexes of blocks below `below`, in one pass over the certificate map,
-/// then compacts the map if it is due. It runs on every startup that prunes, since inserts leave
-/// these rows behind.
-fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(
-    storage: &B,
-    below: u32,
-    retention_blocks: u32,
-) -> Result<()> {
+/// Removes the certificate indexes of blocks below `below`, in one pass over the certificate map.
+/// It runs on every startup that prunes, since inserts leave these rows behind. The compaction
+/// thread compacts the map afterwards, when that is due.
+fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
     debug!("Removing certificate indexes of pruned blocks below block {below}");
     let timer = std::time::Instant::now();
     let (kept, removed) = storage.retain_certificate_indexes(|index| !is_pruned_height(below, index.0))?;
@@ -414,13 +410,6 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(
             "Removed {removed} certificate indexes of pruned blocks, kept {kept}, in {:.1} s",
             timer.elapsed().as_secs_f64()
         );
-    }
-
-    // A failed compaction costs the next scan time, not the open.
-    if authority_compaction::certificate_compaction_due(storage, below, retention_blocks)
-        && let Err(error) = authority_compaction::compact_certificate_map(storage, below)
-    {
-        error!("Failed to compact the certificate map: {error:#}");
     }
     Ok(())
 }
@@ -1507,8 +1496,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Initializes the block storage and its cache. With `authority_retention`, prunes the authority data
     /// older than that many blocks, and keeps pruning as blocks are inserted. A secondary instance does
     /// not prune: its primary does, and the secondary sees the result when it catches up. A pruning
-    /// RocksDB store also compacts its authority map on a background thread, each time pruning has
-    /// advanced an interval since the last compaction, which [`Self::stop_background_work`] stops.
+    /// RocksDB store also compacts its certificate and authority maps on a background thread, each
+    /// time pruning has advanced an interval since the map's last compaction, which
+    /// [`Self::stop_background_work`] stops.
     ///
     /// Whether this store prunes or not, reads report the authorities below its watermark as pruned.
     pub fn open_with_authority_retention<S: Into<StorageMode>>(
@@ -1568,8 +1558,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             authority_retention,
             authority_compaction: Default::default(),
         };
-        if store.authority_retention.is_some() {
-            store.start_due_compaction()?;
+        if let Some(retention_blocks) = store.authority_retention {
+            store.start_due_compaction(retention_blocks)?;
         }
         Ok(store)
     }
