@@ -97,6 +97,8 @@ pub enum ConsensusVersion {
     ///      Applies the plaintext size limit to instruction destinations during deployment verification.
     ///      Keeps the synthesis limits of a deployment check after a `call`.
     V23 = 23,
+    /// V24: Unscheduled. No rule gates on it yet.
+    V24 = 24,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -132,6 +134,7 @@ impl FromBytes for ConsensusVersion {
             21 => Ok(Self::V21),
             22 => Ok(Self::V22),
             23 => Ok(Self::V23),
+            24 => Ok(Self::V24),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -180,6 +183,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     // Target: October 20, 2026 at ~18:00 UTC
     (ConsensusVersion::V22, 22_962_000),
     (ConsensusVersion::V23, u32::MAX),
+    (ConsensusVersion::V24, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -209,6 +213,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V22, 20_415_000),
     // Target: December 2, 2026 at 09:00 UTC
     (ConsensusVersion::V23, 22_079_000),
+    (ConsensusVersion::V24, u32::MAX),
 ];
 
 /// The consensus version heights when the `dev-network` feature is enabled.
@@ -239,6 +244,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V21, 24),
     (ConsensusVersion::V22, 25),
     (ConsensusVersion::V23, 26),
+    (ConsensusVersion::V24, 27),
 ];
 
 /// Asserts that the given consensus version heights are well-formed.
@@ -728,6 +734,7 @@ mod tests {
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V21), VarunaVersion::V3);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V22), VarunaVersion::V3);
         assert_eq!(varuna_version_from_consensus(ConsensusVersion::V23), VarunaVersion::V3);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V24), VarunaVersion::V3);
     }
 
     /// Ensure that every published consensus height table is well-formed.
