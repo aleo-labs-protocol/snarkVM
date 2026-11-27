@@ -785,16 +785,8 @@ mod tests {
             // See test_v14.rs and deployment.rs tests for amendment coverage.
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 1),
-            Transaction::from_fee(snarkvm_ledger_test_helpers::sample_fee_private(
-                snarkvm_console::types::Field::rand(rng),
-                rng,
-            ))
-            .unwrap(),
-            Transaction::from_fee(snarkvm_ledger_test_helpers::sample_fee_public(
-                snarkvm_console::types::Field::rand(rng),
-                rng,
-            ))
-            .unwrap(),
+            snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),
+            snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng),
         ] {
             let transaction_id = transaction.id();
             let transition_ids = transaction.transition_ids();
