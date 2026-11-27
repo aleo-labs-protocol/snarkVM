@@ -22,7 +22,7 @@ use snarkvm_utilities::ToBytes;
 // each pair is the x-coordinate of the hash.
 
 // Display new expectations with:
-// cargo test -p snarkvm-console-algorithms print_bhp_expectations -- --ignored --nocapture
+// cargo run -p snarkvm-console-algorithms --example bhp_expectations
 
 static EXPECTATIONS_256: [(usize, [u8; 32]); 10] = [
     (172, [
@@ -201,12 +201,14 @@ static EXPECTATIONS_1024: [(usize, [u8; 32]); 10] = [
 ];
 
 // Deterministic input of a given length.
+// This must match `bits` in `examples/bhp_expectations.rs`.
 fn bits(len: usize) -> Vec<bool> {
     let mut rng = TestRng::from_seed(1012147);
     (0..len).map(|_| bool::rand(&mut rng)).collect()
 }
 
 /// Input lengths to test.
+/// This must match `representative_lengths` in `examples/bhp_expectations.rs`.
 fn representative_lengths(min_len: usize, max_len: usize) -> Vec<usize> {
     let mid = (min_len + max_len) / 2;
     let mut v = vec![
@@ -322,39 +324,3 @@ bhp_hasher_uncompressed_vector_test!(test_bhp_vector_256, 3, 57, "BHPVec256", EX
 bhp_hasher_uncompressed_vector_test!(test_bhp_vector_512, 6, 43, "BHPVec512", EXPECTATIONS_512);
 bhp_hasher_uncompressed_vector_test!(test_bhp_vector_768, 15, 23, "BHPVec768", EXPECTATIONS_768);
 bhp_hasher_uncompressed_vector_test!(test_bhp_vector_1024, 8, 54, "BHPVec1024", EXPECTATIONS_1024);
-
-#[test]
-#[ignore]
-fn print_bhp_expectations() -> Result<()> {
-    let print_row = |label: &str, n: usize, bytes: &[u8]| {
-        eprint!("EXPECTATIONS_{label} ({n}): [");
-        for (i, b) in bytes.iter().enumerate() {
-            if i > 0 {
-                eprint!(", ");
-            }
-            eprint!("0x{b:02x}");
-        }
-        eprintln!("]");
-    };
-
-    macro_rules! display_expectations {
-        ($label:literal, $nw:literal, $ws:literal, $domain:literal) => {{
-            type H = BHPHasher<Console, $nw, $ws>;
-            let h = H::setup($domain)?;
-            let min = H::MIN_BITS + 1;
-            let max = H::MAX_BITS;
-            eprintln!(
-                "--- BHP {} (WINDOW_SIZE = {} windows, NUM_WINDOWS = {}, domain = {}) ---",
-                $label, $ws, $nw, $domain
-            );
-            for &n in &representative_lengths(min, max) {
-                print_row($label, n, &h.hash_uncompressed(&bits(n))?.to_bytes_le()?);
-            }
-        }};
-    }
-    display_expectations!("256", 3, 57, "BHPVec256");
-    display_expectations!("512", 6, 43, "BHPVec512");
-    display_expectations!("768", 15, 23, "BHPVec768");
-    display_expectations!("1024", 8, 54, "BHPVec1024");
-    Ok(())
-}

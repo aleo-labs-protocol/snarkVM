@@ -363,35 +363,6 @@ fn test_edwards_to_montgomery_point() {
     assert_eq!(y, y_reconstructed);
 }
 
-#[ignore]
-#[test]
-fn print_montgomery_to_weierstrass_parameters() {
-    const A: Fq = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_A;
-    const B: Fq = <EdwardsParameters as MontgomeryParameters>::MONTGOMERY_B;
-
-    let two = Fq::one() + Fq::one();
-    let three = Fq::one() + two;
-    let nine = three + (three + three);
-    let twenty_seven = nine + (nine + nine);
-
-    let a2 = A.square();
-    let a3 = A * a2;
-    let b2 = B.square();
-    let b3 = B * b2;
-
-    // Let a = (3 - A^2) / (3 * B^2).
-    let numerator = three - a2;
-    let denominator = three * b2;
-    let a = numerator * denominator.inverse().unwrap();
-
-    // Let b = (2 * A^3 - 9 * A) / (27 * B^3).
-    let numerator = (two * a3) - (nine * A);
-    let denominator = twenty_seven * b3;
-    let b = numerator * denominator.inverse().unwrap();
-
-    println!("A - {a}\nB - {b}");
-}
-
 #[test]
 #[allow(clippy::many_single_char_names)]
 fn test_isomorphism() {
