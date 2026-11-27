@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{PoseidonGrainLFSR, PrimeField, serial_batch_inversion_and_mul};
+use crate::{PoseidonGrainLFSR, PoseidonSparseRounds, PrimeField, serial_batch_inversion_and_mul};
 use itertools::Itertools;
 use snarkvm_utilities::timing_span;
 
@@ -110,6 +110,23 @@ pub trait PoseidonDefaultField {
             }
             None => bail!("No Poseidon parameters were found for this rate"),
         }
+    }
+
+    /// Applies the permutation of `sparse_rounds` to 8 states at once, where `state[j][l]` is
+    /// element `j` of state `l`, and returns `Some(())`; or returns `None` and leaves `state` as
+    /// it is, and the caller applies the permutation to each state.
+    ///
+    /// An override returns states bit-identical to that permutation's.
+    #[doc(hidden)]
+    #[inline]
+    fn poseidon_permute_8<const RATE: usize>(
+        _sparse_rounds: &PoseidonSparseRounds<Self, RATE>,
+        _state: &mut [[Self; 8]],
+    ) -> Option<()>
+    where
+        Self: PrimeField,
+    {
+        None
     }
 }
 

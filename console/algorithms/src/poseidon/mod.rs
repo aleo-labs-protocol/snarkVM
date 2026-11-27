@@ -234,6 +234,91 @@ mod tests {
         }
     }
 
+    /// Whether `hash_many_8_lanes` runs a rate-8 hash in lanes on this CPU, from the CPU's features and the
+    /// environment.
+    fn lanes_expected() -> bool {
+        #[cfg(target_arch = "x86_64")]
+        let expected = std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512ifma")
+            && std::env::var_os("SNARKVM_NO_IFMA").is_none_or(|value| value.is_empty());
+        #[cfg(not(target_arch = "x86_64"))]
+        let expected = false;
+        expected
+    }
+
+    /// Checks `hash_many_8` and `hash_many_8_lanes` on `inputs` against `reference_hash_many` on each input, and
+    /// that the lanes run exactly when `lanes` says.
+    fn check_hash_many_8<const RATE: usize>(
+        poseidon: &Poseidon<CurrentEnvironment, RATE>,
+        inputs: &[Vec<Field<CurrentEnvironment>>; 8],
+        num_outputs: u16,
+        lanes: bool,
+    ) {
+        let inputs = inputs.each_ref().map(Vec::as_slice);
+        let expected = inputs.map(|input| reference_hash_many(poseidon, input, num_outputs));
+        let lengths = inputs.map(<[_]>::len);
+        assert_eq!(poseidon.hash_many_8(inputs, num_outputs), expected, "{lengths:?} outputs {num_outputs}");
+        let in_lanes = poseidon.hash_many_8_lanes(inputs, num_outputs);
+        assert_eq!(in_lanes.is_some(), lanes, "{lengths:?} outputs {num_outputs}");
+        if let Some(in_lanes) = in_lanes {
+            assert_eq!(in_lanes, expected, "{lengths:?} outputs {num_outputs}");
+        }
+    }
+
+    /// Checks the hashes of 8 inputs at once against the dense sponge on each input, for every input length in
+    /// `lengths`: 8 random inputs, and 8 inputs of 0, 1 and p - 1 in a different order in each lane.
+    fn check_hash_8<const RATE: usize>(lengths: impl Iterator<Item = usize>, rng: &mut TestRng) {
+        type F = Field<CurrentEnvironment>;
+        let a = Poseidon::<CurrentEnvironment, RATE>::setup("LanesA").unwrap();
+        let b = Poseidon::<CurrentEnvironment, RATE>::setup("LanesB").unwrap();
+        // `a` with the dense permutation and its own cache, for parameters without a sparse form.
+        let dense = Poseidon {
+            sparse_rounds: None,
+            empty_hash: OnceLock::new(),
+            prefix_states: Arc::new(std::array::from_fn(|_| OnceLock::new())),
+            ..a.clone()
+        };
+        let edges = [F::zero(), F::one(), -F::one()];
+        // Rates are at most 8, so the conversion cannot fail.
+        let rate = u16::try_from(RATE).unwrap();
+        for len in lengths {
+            let random: [Vec<F>; 8] = std::array::from_fn(|_| (0..len).map(|_| F::rand(rng)).collect());
+            let edge: [Vec<F>; 8] = std::array::from_fn(|l| (0..len).map(|j| edges[(j + l / 3 * j + l) % 3]).collect());
+            for inputs in [&random, &edge] {
+                for num_outputs in [0u16, 1, 2, rate - 1, rate, rate + 1, 2 * rate + 1] {
+                    // A hash runs in lanes if it has a permutation after its first block.
+                    let permutes = num_outputs > 0 && (len > 0 || num_outputs > rate);
+                    let lanes = RATE == 8 && lanes_expected() && permutes;
+                    check_hash_many_8(&a, inputs, num_outputs, lanes);
+                    check_hash_many_8(&b, inputs, num_outputs, lanes);
+                    check_hash_many_8(&dense, inputs, num_outputs, false);
+                }
+                let slices = inputs.each_ref().map(Vec::as_slice);
+                let hashes = a.hash_8(slices).unwrap();
+                let scalars = a.hash_to_scalar_8(slices).unwrap();
+                for (l, input) in inputs.iter().enumerate() {
+                    assert_eq!(hashes[l], a.hash(input).unwrap(), "len {len} lane {l}");
+                    assert_eq!(scalars[l], a.hash_to_scalar(input).unwrap(), "len {len} lane {l}");
+                }
+            }
+            // One input of another length keeps the 8 hashes out of the lanes.
+            for l in [0, 3, 7] {
+                let mut inputs = random.clone();
+                inputs[l].push(F::rand(rng));
+                check_hash_many_8(&a, &inputs, 1, false);
+                check_hash_many_8(&a, &inputs, rate + 1, false);
+            }
+        }
+    }
+
+    #[test]
+    fn test_hash_8() {
+        let rng = &mut TestRng::default();
+        check_hash_8::<2>([0, 1, 2, 3, 7].into_iter(), rng);
+        check_hash_8::<4>([0, 1, 4, 5, 13].into_iter(), rng);
+        check_hash_8::<8>(0..=(PREFIX_STATES + 2 * 8 + 1), rng);
+    }
+
     #[test]
     fn test_prefix_states() {
         let rng = &mut TestRng::default();

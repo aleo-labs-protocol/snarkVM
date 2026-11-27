@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Lane programs over `Fp384` with AVX-512 IFMA, and the entry points that dispatch to them.
+//! Lane programs over `Fp384` and `Fp256` with AVX-512 IFMA, and the entry points that dispatch to
+//! them.
 //!
 //! # Representation
 //!
@@ -24,17 +25,21 @@
 //! `kernel::mont` by an operand in `Fp384`'s form, which divides by 2^416. A result is canonical,
 //! in `[0, p)`, when it is stored.
 //!
+//! The `poseidon` program is over `Fp256`, and holds an integer in 5 limbs: its module gives its
+//! representation and bounds.
+//!
 //! # Fallback
 //!
 //! An entry point whose scalar path is in this crate falls back to it, and always returns the
 //! result. Any other entry point returns `None` when it does not run, and its caller runs the
 //! scalar path.
 //!
-//! The programs run only after `is_supported` detects AVX-512F and AVX-512 IFMA at run time;
-//! `std` caches the detection. Every program carries `target_feature` for both, and every
-//! `unsafe` block names the check it relies on. On other architectures, no program runs. The
-//! environment variable `SNARKVM_NO_IFMA`, set to a non-empty value, also keeps every entry point
-//! on the scalar path; `is_supported` reads it once, on its first call.
+//! The programs run only after `is_supported`, or `is_supported_fp256` for a program over `Fp256`,
+//! detects AVX-512F and AVX-512 IFMA at run time; `std` caches the detection. Every program
+//! carries `target_feature` for both, and every `unsafe` block names the check it relies on. On
+//! other architectures, no program runs. The environment variable `SNARKVM_NO_IFMA`, set to a
+//! non-empty value, also keeps every entry point on the scalar path; the first call of either
+//! check reads it once.
 
 #![allow(unsafe_code)]
 
@@ -50,6 +55,8 @@ mod kernel;
 mod layout;
 #[cfg(target_arch = "x86_64")]
 mod miller;
+#[cfg(target_arch = "x86_64")]
+pub(crate) mod poseidon;
 #[cfg(all(test, target_arch = "x86_64"))]
 mod tests;
 
@@ -58,9 +65,12 @@ use crate::{
     Fp2Parameters,
     Fp12,
     Fp12Parameters,
+    Fp256,
+    Fp256Parameters,
     Fp384,
     Fp384Parameters,
     One,
+    PoseidonSparseRounds,
     Zero,
     fp6_3over2::Fp6Parameters,
     fp12_2over3over2::Fp2Params,
@@ -86,6 +96,20 @@ pub fn is_supported<P: Fp384Parameters>() -> bool {
 fn disabled() -> bool {
     static DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *DISABLED.get_or_init(|| std::env::var_os("SNARKVM_NO_IFMA").is_some_and(|value| !value.is_empty()))
+}
+
+/// Whether the lane programs over `Fp256` run for `P` on this CPU: `p < 2^253`, `SNARKVM_NO_IFMA`
+/// is unset or empty in the environment, and the CPU supports AVX-512F and AVX-512 IFMA.
+pub fn is_supported_fp256<P: Fp256Parameters>() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        P::MODULUS_BITS <= 253
+            && !disabled()
+            && is_x86_feature_detected!("avx512f")
+            && is_x86_feature_detected!("avx512ifma")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    false
 }
 
 /// Whether the lane programs run for the tower `P` over `Fp384<Q>`: `is_supported::<Q>()`, and the
@@ -224,6 +248,38 @@ pub fn glv_mul_8<P: Fp384Parameters>(
     #[cfg(not(target_arch = "x86_64"))]
     {
         let _ = beta;
+        None
+    }
+}
+
+/// Applies the permutation of `sparse_rounds` to 8 states at once, where `state[j][l]` is element
+/// `j` of state `l`, and returns `Some(())`; or returns `None` and leaves `state` as it is if
+/// `is_supported_fp256::<P>()` is false, `RATE` is not 8, `state` does not hold 9 elements, the
+/// S-box is not `x^17`, or the permutation has more than 64 partial rounds.
+///
+/// Each state leaves as the permutation by full rounds and sparse partial rounds leaves it:
+/// canonical, and bit-identical to the scalar permutation.
+pub fn poseidon_permute_8<P: Fp256Parameters, const RATE: usize>(
+    sparse_rounds: &PoseidonSparseRounds<Fp256<P>, RATE>,
+    state: &mut [[Fp256<P>; 8]],
+) -> Option<()> {
+    if !is_supported_fp256::<P>() {
+        return None;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        let state: &mut [[Fp256<P>; 8]; 9] = state.try_into().ok()?;
+        let rounds = sparse_rounds
+            .lane_rounds()
+            .get_or_init(|| poseidon::LaneRounds::new(sparse_rounds).map(Box::new))
+            .as_deref()?;
+        // SAFETY: `is_supported_fp256` detected both target features that `permute_8_avx512` enables.
+        unsafe { poseidon::permute_8_avx512(rounds, state) };
+        Some(())
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = (sparse_rounds, state);
         None
     }
 }

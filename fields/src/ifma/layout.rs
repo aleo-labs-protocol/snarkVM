@@ -26,11 +26,12 @@ use std::arch::x86_64::*;
 /// The low 52 bits.
 pub(super) const MASK: u64 = (1 << 52) - 1;
 
-/// Returns the radix-2^52 limbs of an integer below 2^416 in `N` words, `N` 6 or 7.
-pub(super) const fn radix_52<const N: usize>(x: &[u64; N]) -> [u64; 8] {
-    let mut limbs = [0; 8];
+/// Returns the `L` radix-2^52 limbs of an integer below `2^(52 L)` in `N` words, with
+/// `52 (L - 1) < 64 N`.
+pub(super) const fn radix_52<const N: usize, const L: usize>(x: &[u64; N]) -> [u64; L] {
+    let mut limbs = [0; L];
     let mut k = 0;
-    while k < 8 {
+    while k < L {
         let (w, s) = (52 * k / 64, 52 * k % 64);
         let mut limb = x[w] >> s;
         if s > 12 && w + 1 < N {
@@ -121,9 +122,9 @@ pub(super) fn permute(e: &[__m512i; 8], index: __m512i, f: &[__m512i; 8]) -> [__
 /// Returns `x + y`, limb by limb.
 #[inline]
 #[target_feature(enable = "avx512f")]
-pub(super) fn add(x: &[__m512i; 8], y: &[__m512i; 8]) -> [__m512i; 8] {
-    let mut v = [_mm512_setzero_si512(); 8];
-    for k in 0..8 {
+pub(super) fn add<const L: usize>(x: &[__m512i; L], y: &[__m512i; L]) -> [__m512i; L] {
+    let mut v = [_mm512_setzero_si512(); L];
+    for k in 0..L {
         v[k] = _mm512_add_epi64(x[k], y[k]);
     }
     v
@@ -176,7 +177,7 @@ pub(super) fn low_half(x: &[__m512i; 8]) -> [__m512i; 8] {
 /// Returns `(lo >> R | hi << L) & MASK`.
 #[inline]
 #[target_feature(enable = "avx512f")]
-fn join<const R: u32, const L: u32>(lo: __m512i, hi: __m512i) -> __m512i {
+pub(super) fn join<const R: u32, const L: u32>(lo: __m512i, hi: __m512i) -> __m512i {
     let mask = _mm512_set1_epi64(MASK as i64);
     _mm512_ternarylogic_epi64::<0xA8>(_mm512_srli_epi64::<R>(lo), _mm512_slli_epi64::<L>(hi), mask)
 }
