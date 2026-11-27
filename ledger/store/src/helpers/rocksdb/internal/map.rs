@@ -2034,6 +2034,17 @@ mod tests {
             assert!(error.to_string().contains("Resync the store"), "{error}");
         }
 
+        /// A healthy database has the background error count, at zero, and no stored error.
+        #[test]
+        fn test_healthy_database_reports_no_background_error() {
+            let (map, _) = setup(&ROWS);
+            map.compact_slice(0, 1).unwrap();
+            let count = map.database.property_int_value(rocksdb::properties::BACKGROUND_ERRORS).unwrap();
+            assert_eq!(count, Some(0));
+            assert_eq!(map.background_error_count(), 0);
+            assert_eq!(map.background_error(), None);
+        }
+
         /// A write outside the batch lands at once and survives the abort of a batch in progress.
         #[test]
         fn test_put_outside_batch_ignores_the_batch() {
