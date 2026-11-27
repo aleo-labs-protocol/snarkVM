@@ -469,7 +469,7 @@ version = "0.2"
 version = "7.1"
 
 [workspace.dependencies.parking_lot]
-version = "0.12"
+version = "0.13"
 
 [workspace.dependencies.paste]
 version = "1"
