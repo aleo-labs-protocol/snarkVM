@@ -382,8 +382,8 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
         #[cfg(test)]
         gate.as_deref(),
     )?;
-    // The watermark read at the start decides whether the next run is due already. An insert that
-    // has moved the watermark since then compares equal to it.
+    // The next run is due now if the watermark was at its due height when this run started. If the
+    // watermark has moved since, the next insert leaves that watermark and finds the run due itself.
     signal.due_at.store(finished.insert_trigger(watermark), Ordering::SeqCst);
     if to_compact > 0 {
         info!("Compacted {to_compact} of {total} authority slices in {:.1} s", progress.elapsed_secs());
@@ -397,7 +397,9 @@ struct Signal {
     /// Set at shutdown, so no compaction starts and the running one stops after its current step.
     stop: AtomicBool,
     /// What an insert compares the watermark it leaves with: 0 while a run is due, else the
-    /// watermark from which the next one is. See [`AuthorityCompaction::insert_trigger`].
+    /// watermark from which the next one is. See [`AuthorityCompaction::insert_trigger`]. The
+    /// default, 0, says that a run is due; no insert reads it, because the open of a store that
+    /// compacts stores a value before it returns the store.
     due_at: AtomicU32,
 }
 
@@ -492,6 +494,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // nothing either, and only a run that was due before it is due.
         let advanced_to = || height > retention && oldest_retained_authority_height(height, retention) >= due_at;
         if due_at == 0 || advanced_to() {
+            // The run stays due if this start is refused, whatever later inserts leave.
+            let _ =
+                self.authority_compaction.signal.due_at.compare_exchange(due_at, 0, Ordering::SeqCst, Ordering::SeqCst);
             self.start_compaction(None);
         }
     }
@@ -996,17 +1001,19 @@ mod tests {
             }
         }
 
-        /// Ensures a run compacts every slice of the authority map, which rewrites the files that
-        /// hold the slice, and that no deleted row is left in a file once it has finished.
+        /// Ensures a run compacts every slice of the authority map, in order and each by its own key
+        /// range: each slice's compaction drops the row deleted in that slice, and no other.
         #[test]
         fn test_run_compacts_every_slice() {
             // The certificate map counts as compacted, so the thread compacts only the slices.
             let storage_mode = new_pruned_storage(DUE, Some(AuthorityCompaction::default()));
             let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
             let database = RocksDB::open(CurrentNetwork::ID, storage_mode.clone()).unwrap();
-            // Two rows in each slice, by the first byte of their keys. One is deleted after a flush,
-            // so the run's own flush writes the deletions to a file. That leaves too few files for
-            // a compaction of RocksDB's own, which would drop the deletions before the run does.
+            // Each slice gets files of its own: two rows, by the first byte of their keys, and the
+            // deletion of one. RocksDB must not merge the files itself, and the rows of other maps
+            // go to a file first, so no file of a slice spans another slice.
+            database.set_options(&[("disable_auto_compactions", "true")]).unwrap();
+            database.flush().unwrap();
             let authority = snarkvm_ledger_authority::test_helpers::sample_beacon_authority(&mut TestRng::default());
             let hash = |slice: u16, row: u32| -> <CurrentNetwork as Network>::BlockHash {
                 Field::<CurrentNetwork>::from_u32(u32::from(slice) * 0x40 + row).into()
@@ -1014,22 +1021,18 @@ mod tests {
             for slice in 0..SLICES {
                 storage.authority_map().insert(hash(slice, 0), authority.clone()).unwrap();
                 storage.authority_map().insert(hash(slice, 1), authority.clone()).unwrap();
-            }
-            database.flush().unwrap();
-            for slice in 0..SLICES {
+                database.flush().unwrap();
                 storage.authority_map().remove(&hash(slice, 1)).unwrap();
+                database.flush().unwrap();
             }
-            let files = || database.live_files().unwrap();
-            let names = || files().into_iter().map(|file| file.name).collect::<Vec<_>>();
-            let deletions = || files().iter().map(|file| file.num_deletions).sum::<u64>();
+            let deletions = || database.live_files().unwrap().iter().map(|file| file.num_deletions).sum::<u64>();
+            assert_eq!(deletions(), u64::from(SLICES));
 
             let (store, gate) = open_with_gate(&storage_mode);
-            // The thread flushes and stores the run before it waits for its first slice.
+            // The thread stores the run before it waits for its first slice.
             wait_until(|| stored(&store) != AuthorityCompaction::default());
-            assert_eq!(stored(&store), cursor(0));
-            assert_eq!(deletions(), u64::from(SLICES));
+            assert_eq!((stored(&store), deletions()), (cursor(0), u64::from(SLICES)));
             for slice in 0..SLICES {
-                let before = names();
                 if slice + 1 < SLICES {
                     compact_slices(&gate, 1);
                     assert_eq!(stored(&store), cursor(slice + 1));
@@ -1037,13 +1040,12 @@ mod tests {
                     gate.release(1);
                     wait_finished(&store);
                 }
-                assert_ne!(names(), before, "slice {slice} was not compacted");
+                assert_eq!(deletions(), u64::from(SLICES - slice - 1), "after slice {slice}");
             }
             assert_eq!(gate.compacted(), usize::from(SLICES));
             assert_eq!(stored(&store), finished(DUE));
             assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), 2 * DUE);
 
-            assert_eq!(deletions(), 0);
             assert_eq!(storage.authority_map().len_confirmed(), usize::from(SLICES));
             for slice in 0..SLICES {
                 assert!(storage.authority_map().contains_key_confirmed(&hash(slice, 0)).unwrap());
@@ -1215,6 +1217,41 @@ mod tests {
                 assert_eq!((stored(&store), gate.passed()), (AuthorityCompaction::default(), 0));
                 check_next_insert_starts_the_run(&store, &blocks);
             }
+        }
+
+        /// Ensures a run whose start the floor refused stays due after a rollback, when the next
+        /// inserts leave a watermark below the stored one.
+        #[test]
+        fn test_refused_start_stays_due_after_a_rollback() {
+            let store = open(true);
+            let blocks = sample_chain();
+            store.authority_compaction.last.lock().started = Some(Instant::now());
+            let before = compactions();
+            for block in &blocks[..=TRIGGER as usize] {
+                store.insert(block).unwrap();
+            }
+            assert_eq!(compactions(), before);
+
+            clear_floor(&store);
+            store.remove_last_n(2).unwrap();
+            store.insert(&blocks[TRIGGER as usize - 1]).unwrap();
+            assert_eq!((compactions(), stored(&store)), (before + 1, finished(DUE)));
+        }
+
+        /// Ensures a resumed run that finishes behind the watermark by an interval or more leaves
+        /// the next run due, so the next insert after the floor starts it although it prunes
+        /// nothing.
+        #[test]
+        fn test_next_run_is_due_when_an_old_run_finishes() {
+            let storage_mode = new_pruned_storage(3 * DUE, Some(cursor(1)));
+            let store = open_with(&storage_mode, Some(TEST_RETENTION));
+            assert_eq!(stored(&store), finished(DUE));
+            assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), 0);
+
+            clear_floor(&store);
+            let before = compactions();
+            store.insert(&sample_block_chain(1, &mut TestRng::default())[0]).unwrap();
+            assert_eq!((compactions(), stored(&store)), (before + 1, finished(3 * DUE)));
         }
 
         /// Ensures that once a start has found nothing due, inserts start nothing until the
