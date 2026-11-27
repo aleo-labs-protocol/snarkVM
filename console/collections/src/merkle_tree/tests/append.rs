@@ -736,40 +736,6 @@ fn test_append_within_power_of_two_keeps_allocation() -> Result<()> {
     Ok(())
 }
 
-/// Use `cargo test profiler --features timer` to run this test.
-#[ignore]
-#[test]
-fn test_profiler() -> Result<()> {
-    const DEPTH: u8 = 32;
-    const NUM_LEAVES: &[usize] = &[1000, 10000];
-
-    /// Generates the specified number of random Merkle tree leaves.
-    macro_rules! generate_leaves {
-        ($num_leaves:expr, $rng:expr) => {{ (0..$num_leaves).map(|_| Field::<CurrentEnvironment>::rand($rng).to_bits_le()).collect::<Vec<_>>() }};
-    }
-
-    type LH = BHP1024<CurrentEnvironment>;
-    type PH = BHP512<CurrentEnvironment>;
-
-    let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
-    let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
-
-    let mut rng = TestRng::default();
-
-    for num_leaves in NUM_LEAVES {
-        // New
-        let leaves = generate_leaves!(*num_leaves, &mut rng);
-        let mut merkle_tree =
-            MerkleTree::<CurrentEnvironment, LH, PH, DEPTH>::new(&leaf_hasher, &path_hasher, &leaves)?;
-
-        // Append
-        let new_leaf = generate_leaves!(1, &mut rng);
-        merkle_tree.append(&new_leaf)?;
-    }
-
-    bail!("\n\nRemember to #[ignore] this test!\n\n")
-}
-
 // fn merkle_path_serialization_test<P: MerkleParameters, L: ToBytes + Send + Sync + Clone + Eq>(
 //     leaves: &[L],
 //     parameters: &P,
