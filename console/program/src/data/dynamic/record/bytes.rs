@@ -106,9 +106,17 @@ impl<N: Network> DynamicRecord<N> {
 
 impl<N: Network> ToBytes for DynamicRecord<N> {
     /// Writes the record to a buffer.
+    ///
+    /// Writes encoding version 1 when the entry data is absent, and encoding version 2 when it is present.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the serialization format version.
-        1u8.write_le(&mut writer)?;
+        let encoding_version = match self.data {
+            // Version 1 omits the entry data.
+            None => 1u8,
+            // Version 2 includes the entry data.
+            Some(_) => 2u8,
+        };
+        encoding_version.write_le(&mut writer)?;
 
         // Write the owner.
         self.owner.write_le(&mut writer)?;
@@ -120,7 +128,38 @@ impl<N: Network> ToBytes for DynamicRecord<N> {
         self.nonce.write_le(&mut writer)?;
 
         // Write the record version field.
-        self.version.write_le(&mut writer)
+        self.version.write_le(&mut writer)?;
+
+        // Write the entry data, when it is present.
+        match &self.data {
+            // Version 2 writes the plaintext entry map.
+            Some(data) => Self::write_data_le(&mut writer, data),
+            // Version 1 omits the entry map.
+            None => Ok(()),
+        }
+    }
+}
+
+impl<N: Network> DynamicRecord<N> {
+    /// Writes a version-2 plaintext entry map.
+    fn write_data_le<W: Write>(mut writer: W, data: &RecordData<N>) -> IoResult<()> {
+        // Write the number of entries.
+        u8::try_from(data.len()).or_halt_with::<N>("Dynamic record length exceeds u8::MAX").write_le(&mut writer)?;
+        // Write each entry.
+        for (entry_name, entry_value) in data {
+            // Write the entry name.
+            entry_name.write_le(&mut writer)?;
+            // Write the entry value (in 2 steps to prevent infinite recursion).
+            let bytes = entry_value.to_bytes_le().map_err(|e| error(e.to_string()))?;
+            // Write the number of bytes.
+            u16::try_from(bytes.len())
+                .or_halt_with::<N>("Dynamic record entry exceeds u16::MAX bytes")
+                .write_le(&mut writer)?;
+            // Write the bytes.
+            bytes.write_le(&mut writer)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -145,6 +184,7 @@ mod tests {
         assert_eq!(expected.root(), candidate.root());
         assert_eq!(expected.nonce(), candidate.nonce());
         assert_eq!(expected.version(), candidate.version());
+        assert_eq!(expected.data(), candidate.data());
     }
 
     #[test]
@@ -193,28 +233,19 @@ mod tests {
         check_bytes(&record);
     }
 
-    /// Encodes a dynamic record using the version-2 layout (header plus entry map).
-    fn write_v2(record: &DynamicRecord<CurrentNetwork>) -> Vec<u8> {
+    /// Encodes a dynamic record using the version-1 layout (header only, without the entry map).
+    fn write_v1(record: &DynamicRecord<CurrentNetwork>) -> Vec<u8> {
         let mut writer = Vec::new();
-        2u8.write_le(&mut writer).unwrap();
+        1u8.write_le(&mut writer).unwrap();
         record.owner().write_le(&mut writer).unwrap();
         record.root().write_le(&mut writer).unwrap();
         record.nonce().write_le(&mut writer).unwrap();
         record.version().write_le(&mut writer).unwrap();
-
-        let data = record.data().as_ref().expect("expected populated dynamic record data");
-        u8::try_from(data.len()).unwrap().write_le(&mut writer).unwrap();
-        for (entry_name, entry_value) in data {
-            entry_name.write_le(&mut writer).unwrap();
-            let bytes = entry_value.to_bytes_le().unwrap();
-            u16::try_from(bytes.len()).unwrap().write_le(&mut writer).unwrap();
-            bytes.write_le(&mut writer).unwrap();
-        }
         writer
     }
 
     #[test]
-    fn test_read_le_version_2_recovers_data() {
+    fn test_write_le_version_2_roundtrip_with_data() {
         let rng = &mut TestRng::default();
         let data = indexmap::indexmap! {
             Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
@@ -230,13 +261,53 @@ mod tests {
         .unwrap();
         let expected = DynamicRecord::from_record(&record).unwrap();
 
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&write_v2(&expected)[..]).unwrap();
+        // The writer emits version 2 when the entry data is present.
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        assert_eq!(expected_bytes[0], 2);
+
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap();
         assert_eq!(expected.owner(), candidate.owner());
         assert_eq!(expected.root(), candidate.root());
         assert_eq!(expected.nonce(), candidate.nonce());
         assert_eq!(expected.version(), candidate.version());
         assert_eq!(expected.data(), candidate.data());
         assert_eq!(candidate.data().as_ref(), Some(&data));
+    }
+
+    #[test]
+    fn test_write_le_version_1_roundtrip_without_data() {
+        let rng = &mut TestRng::default();
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        // Drop the entry data, keeping the root that covers it.
+        let expected = DynamicRecord::from_record(&record).unwrap();
+        let expected = DynamicRecord::new_unchecked(
+            *expected.owner(),
+            *expected.root(),
+            *expected.nonce(),
+            *expected.version(),
+            None,
+        );
+
+        // The writer emits version 1 when the entry data is absent.
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        assert_eq!(expected_bytes[0], 1);
+
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap();
+        assert_eq!(expected.owner(), candidate.owner());
+        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.nonce(), candidate.nonce());
+        assert_eq!(expected.version(), candidate.version());
+        assert!(candidate.data().is_none());
     }
 
     #[test]
@@ -256,7 +327,8 @@ mod tests {
         let expected = DynamicRecord::from_record(&record).unwrap();
         assert!(expected.data().is_some());
 
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected.to_bytes_le().unwrap()[..]).unwrap();
+        // Encode the record with data using the version-1 layout.
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&write_v1(&expected)[..]).unwrap();
         assert!(candidate.data().is_none());
     }
 
@@ -275,7 +347,7 @@ mod tests {
         )
         .unwrap();
         let expected = DynamicRecord::from_record(&record).unwrap();
-        let mut bytes = write_v2(&expected);
+        let mut bytes = expected.to_bytes_le().unwrap();
         // Overwrite the root (bytes after the encoding version and owner).
         let root_offset = 1 + expected.owner().to_bytes_le().unwrap().len();
         let root_bytes = Field::<CurrentNetwork>::from_u64(12345).to_bytes_le().unwrap();
@@ -300,7 +372,7 @@ mod tests {
         )
         .unwrap();
         let expected = DynamicRecord::from_record(&record).unwrap();
-        let bytes = write_v2(&expected);
+        let bytes = expected.to_bytes_le().unwrap();
 
         // Locate the sole data entry by its own encoding: the two bytes in front of it
         // are the `u16` that delimits its region.
@@ -352,7 +424,7 @@ mod tests {
         )
         .unwrap();
         let expected = DynamicRecord::from_record(&record).unwrap();
-        let mut bytes = write_v2(&expected);
+        let mut bytes = expected.to_bytes_le().unwrap();
 
         // The entry count sits after the encoding version, owner, root, nonce, and version field.
         let count_at = 1
@@ -425,7 +497,7 @@ mod tests {
         )
         .unwrap();
         let expected = DynamicRecord::from_record(&record).unwrap();
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&write_v2(&expected)[..]).unwrap();
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected.to_bytes_le().unwrap()[..]).unwrap();
         assert_eq!(expected.data(), candidate.data());
     }
 }
