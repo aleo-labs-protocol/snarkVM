@@ -27,6 +27,18 @@ macro_rules! run_tests {
     };
 }
 
+/// Generates one test per `name: (DEPTH, ARITY)` entry, which runs `$run_test::<DEPTH, ARITY>` with a fresh RNG.
+macro_rules! kary_merkle_tree_tests {
+    ($run_test:ident, [$($name:ident: ($depth:expr, $arity:expr)),* $(,)?]) => {
+        $(
+            #[test]
+            fn $name() -> Result<()> {
+                $run_test::<$depth, $arity>(&mut TestRng::default())
+            }
+        )*
+    };
+}
+
 /// Runs the following test:
 /// 1. Construct the Merkle tree for the leaves.
 /// 2. Check that the Merkle proof for every leaf is valid.
@@ -349,97 +361,119 @@ fn test_kary_merkle_tree_poseidon() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_kary_merkle_tree_keccak() -> Result<()> {
-    fn run_test<const DEPTH: u8, const ARITY: u8>(rng: &mut TestRng) -> Result<()> {
-        type LH = Keccak256;
-        type PH = Keccak256;
+fn run_test_keccak<const DEPTH: u8, const ARITY: u8>(rng: &mut TestRng) -> Result<()> {
+    type LH = Keccak256;
+    type PH = Keccak256;
 
-        let leaf_hasher = Keccak256::default();
-        let path_hasher = Keccak256::default();
+    let leaf_hasher = Keccak256::default();
+    let path_hasher = Keccak256::default();
 
-        let max_leaves = (ARITY as u128).saturating_pow(DEPTH as u32);
+    let max_leaves = (ARITY as u128).saturating_pow(DEPTH as u32);
 
-        for i in 0..ITERATIONS {
-            // Determine the number of leaves.
-            let num_leaves = rng.random_range(0..10_000u128).min(max_leaves);
-            println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
+    for i in 0..ITERATIONS {
+        // Determine the number of leaves.
+        let num_leaves = rng.random_range(0..10_000u128).min(max_leaves);
+        println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
 
-            // Check the Merkle tree.
-            check_kary_merkle_tree::<LH, PH, DEPTH, ARITY>(
-                &leaf_hasher,
-                &path_hasher,
-                &(0..num_leaves)
-                    .map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le())
-                    .collect::<Vec<Vec<bool>>>(),
-            )?;
-        }
-        Ok(())
+        // Check the Merkle tree.
+        check_kary_merkle_tree::<LH, PH, DEPTH, ARITY>(
+            &leaf_hasher,
+            &path_hasher,
+            &(0..num_leaves).map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le()).collect::<Vec<Vec<bool>>>(),
+        )?;
     }
-
-    let mut rng = TestRng::default();
-
-    // Ensure DEPTH = 0 fails.
-    assert!(run_test::<0, 2>(&mut rng).is_err());
-    // Ensure ARITY = 1 fails.
-    assert!(run_test::<1, 1>(&mut rng).is_err());
-    // Spot check important depths and arity.
-    run_tests!(&mut rng, [2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 18]);
-    // Run some custom depth and arities.
-    assert!(run_test::<32, 4>(&mut rng).is_ok());
-    assert!(run_test::<32, 14>(&mut rng).is_ok());
-
-    // Limit the size of depth and arity combinations to prevent overflows.
-    assert!(run_test::<32, 16>(&mut rng).is_err());
-    assert!(run_test::<48, 48>(&mut rng).is_err());
     Ok(())
 }
 
 #[test]
-fn test_kary_merkle_tree_sha3() -> Result<()> {
-    fn run_test<const DEPTH: u8, const ARITY: u8>(rng: &mut TestRng) -> Result<()> {
-        type LH = Sha3_256;
-        type PH = Sha3_256;
-
-        let leaf_hasher = Sha3_256::default();
-        let path_hasher = Sha3_256::default();
-
-        let max_leaves = (ARITY as u128).saturating_pow(DEPTH as u32);
-
-        for i in 0..ITERATIONS {
-            // Determine the number of leaves.
-            let num_leaves = rng.random_range(0..10_000u128).min(max_leaves);
-            println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
-
-            // Check the Merkle tree.
-            check_kary_merkle_tree::<LH, PH, DEPTH, ARITY>(
-                &leaf_hasher,
-                &path_hasher,
-                &(0..num_leaves)
-                    .map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le())
-                    .collect::<Vec<Vec<bool>>>(),
-            )?;
-        }
-        Ok(())
-    }
-
+fn test_kary_merkle_tree_keccak_invalid() -> Result<()> {
     let mut rng = TestRng::default();
 
     // Ensure DEPTH = 0 fails.
-    assert!(run_test::<0, 2>(&mut rng).is_err());
+    assert!(run_test_keccak::<0, 2>(&mut rng).is_err());
     // Ensure ARITY = 1 fails.
-    assert!(run_test::<1, 1>(&mut rng).is_err());
-    // Spot check important depths and arity.
-    run_tests!(&mut rng, [2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 18]);
-    // Run some custom depth and arities.
-    assert!(run_test::<32, 4>(&mut rng).is_ok());
-    assert!(run_test::<32, 14>(&mut rng).is_ok());
+    assert!(run_test_keccak::<1, 1>(&mut rng).is_err());
 
     // Limit the size of depth and arity combinations to prevent overflows.
-    assert!(run_test::<32, 16>(&mut rng).is_err());
-    assert!(run_test::<48, 48>(&mut rng).is_err());
+    assert!(run_test_keccak::<32, 16>(&mut rng).is_err());
+    assert!(run_test_keccak::<48, 48>(&mut rng).is_err());
     Ok(())
 }
+
+// Spot check important depths and arity, and run some custom depth and arities.
+kary_merkle_tree_tests!(run_test_keccak, [
+    test_kary_merkle_tree_keccak_depth_2_arity_2: (2, 2),
+    test_kary_merkle_tree_keccak_depth_3_arity_3: (3, 3),
+    test_kary_merkle_tree_keccak_depth_4_arity_4: (4, 4),
+    test_kary_merkle_tree_keccak_depth_5_arity_5: (5, 5),
+    test_kary_merkle_tree_keccak_depth_6_arity_6: (6, 6),
+    test_kary_merkle_tree_keccak_depth_7_arity_7: (7, 7),
+    test_kary_merkle_tree_keccak_depth_8_arity_8: (8, 8),
+    test_kary_merkle_tree_keccak_depth_9_arity_9: (9, 9),
+    test_kary_merkle_tree_keccak_depth_10_arity_10: (10, 10),
+    test_kary_merkle_tree_keccak_depth_15_arity_15: (15, 15),
+    test_kary_merkle_tree_keccak_depth_16_arity_16: (16, 16),
+    test_kary_merkle_tree_keccak_depth_18_arity_18: (18, 18),
+    test_kary_merkle_tree_keccak_depth_32_arity_4: (32, 4),
+    test_kary_merkle_tree_keccak_depth_32_arity_14: (32, 14),
+]);
+
+fn run_test_sha3<const DEPTH: u8, const ARITY: u8>(rng: &mut TestRng) -> Result<()> {
+    type LH = Sha3_256;
+    type PH = Sha3_256;
+
+    let leaf_hasher = Sha3_256::default();
+    let path_hasher = Sha3_256::default();
+
+    let max_leaves = (ARITY as u128).saturating_pow(DEPTH as u32);
+
+    for i in 0..ITERATIONS {
+        // Determine the number of leaves.
+        let num_leaves = rng.random_range(0..10_000u128).min(max_leaves);
+        println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
+
+        // Check the Merkle tree.
+        check_kary_merkle_tree::<LH, PH, DEPTH, ARITY>(
+            &leaf_hasher,
+            &path_hasher,
+            &(0..num_leaves).map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le()).collect::<Vec<Vec<bool>>>(),
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn test_kary_merkle_tree_sha3_invalid() -> Result<()> {
+    let mut rng = TestRng::default();
+
+    // Ensure DEPTH = 0 fails.
+    assert!(run_test_sha3::<0, 2>(&mut rng).is_err());
+    // Ensure ARITY = 1 fails.
+    assert!(run_test_sha3::<1, 1>(&mut rng).is_err());
+
+    // Limit the size of depth and arity combinations to prevent overflows.
+    assert!(run_test_sha3::<32, 16>(&mut rng).is_err());
+    assert!(run_test_sha3::<48, 48>(&mut rng).is_err());
+    Ok(())
+}
+
+// Spot check important depths and arity, and run some custom depth and arities.
+kary_merkle_tree_tests!(run_test_sha3, [
+    test_kary_merkle_tree_sha3_depth_2_arity_2: (2, 2),
+    test_kary_merkle_tree_sha3_depth_3_arity_3: (3, 3),
+    test_kary_merkle_tree_sha3_depth_4_arity_4: (4, 4),
+    test_kary_merkle_tree_sha3_depth_5_arity_5: (5, 5),
+    test_kary_merkle_tree_sha3_depth_6_arity_6: (6, 6),
+    test_kary_merkle_tree_sha3_depth_7_arity_7: (7, 7),
+    test_kary_merkle_tree_sha3_depth_8_arity_8: (8, 8),
+    test_kary_merkle_tree_sha3_depth_9_arity_9: (9, 9),
+    test_kary_merkle_tree_sha3_depth_10_arity_10: (10, 10),
+    test_kary_merkle_tree_sha3_depth_15_arity_15: (15, 15),
+    test_kary_merkle_tree_sha3_depth_16_arity_16: (16, 16),
+    test_kary_merkle_tree_sha3_depth_18_arity_18: (18, 18),
+    test_kary_merkle_tree_sha3_depth_32_arity_4: (32, 4),
+    test_kary_merkle_tree_sha3_depth_32_arity_14: (32, 14),
+]);
 
 #[test]
 fn test_merkle_tree_depth_2_arity_3_bhp() -> Result<()> {
