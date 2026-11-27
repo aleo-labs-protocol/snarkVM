@@ -26,6 +26,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tracing::error;
 
 /// The advance of the watermark, in heights, after which a map is compacted again. Unit tests use a
 /// few blocks.
@@ -132,11 +133,11 @@ fn certificate_compacted_below<N: Network, B: BlockStorage<N>>(storage: &B, wate
 }
 
 /// Returns whether the certificate map is due for a compaction after a startup pass that removed
-/// the rows below `below`: once pruning has advanced an interval since the last finished
-/// compaction, or the `retention` window if that is shorter. The pass's own removals do not decide
-/// it: a compaction that was killed left its rows removed and its work undone. Until then the
-/// deleted rows cost the next pass a longer scan. A pass that removed more rows than it kept has
-/// pruned more than the window, so the compaction that clears the slices it rewrote is always due.
+/// the rows below `below`: pruning has advanced an interval since the last finished compaction, or
+/// the `retention` window if that is shorter. What the pass removed does not decide it, so a
+/// compaction that was killed runs again. The window caps the interval so that a pass that removed
+/// more rows than it kept, and so rewrote slices, is followed by the compaction that clears their
+/// old copies.
 fn certificate_compaction_due<N: Network, B: BlockStorage<N>>(storage: &B, below: u32, retention: u32) -> bool {
     below - certificate_compacted_below(storage, below) >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS.min(retention)
 }
@@ -446,7 +447,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         // The watermark after this insert, unless it is ahead already: after a rollback or a
         // reopen with a larger window an insert prunes nothing, and nothing is due.
-        if height - retention + 1 >= self.authority_compaction.signal.due_at.load(Ordering::SeqCst) {
+        let watermark = oldest_retained_authority_height(height, retention);
+        if watermark >= self.authority_compaction.signal.due_at.load(Ordering::SeqCst) {
             self.start_compaction(None);
         }
     }
@@ -469,6 +471,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         #[cfg(test)]
         let gate = AUTHORITY_COMPACTION_GATE.with(|gate| gate.borrow().clone());
+        #[cfg(test)]
+        let inline = gate.is_none();
         let (storage, state) = (self.storage.clone(), Arc::downgrade(compaction));
         let compact = move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -494,7 +498,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         #[cfg(test)]
         {
             AUTHORITY_COMPACTIONS.with(|count| count.set(count.get() + 1));
-            if AUTHORITY_COMPACTION_GATE.with(|gate| gate.borrow().is_none()) {
+            if inline {
                 drop(last);
                 compact();
                 return true;
@@ -548,6 +552,11 @@ impl Gate {
         self.passed.load(Ordering::SeqCst)
     }
 
+    #[cfg(feature = "rocks")]
+    fn compacted(&self) -> usize {
+        self.compacted.load(Ordering::SeqCst)
+    }
+
     fn hold_certificate_compaction(&self, stopping: impl Fn() -> bool) {
         if self.hold_certificate.compare_exchange(1, 2, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
             while !stopping() {
@@ -572,7 +581,7 @@ impl Gate {
 thread_local! {
     /// The number of certificate map compactions started on this thread.
     static CERTIFICATE_COMPACTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    /// The number of authority map compactions started on this thread.
+    /// The number of compactions started on this thread.
     static AUTHORITY_COMPACTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// How this thread's stores compact: inline (`None`), or on a thread driven by the gate.
     static AUTHORITY_COMPACTION_GATE: std::cell::RefCell<Option<Arc<Gate>>> = const { std::cell::RefCell::new(None) };
@@ -706,6 +715,16 @@ mod tests {
             open_with(&new_storage(), prunes.then_some(TEST_RETENTION))
         }
 
+        /// The state a run stores when it finishes with `compacted_below` as its target.
+        fn finished(compacted_below: u32) -> AuthorityCompaction {
+            AuthorityCompaction { compacted_below, ..Default::default() }
+        }
+
+        /// The state the first run of a store that is due at [`DUE`] stores with `next` slices done.
+        fn cursor(next: u16) -> AuthorityCompaction {
+            AuthorityCompaction { target: DUE, slices: SLICES, next, ..Default::default() }
+        }
+
         /// The stored compaction state.
         fn stored(store: &Store) -> AuthorityCompaction {
             AuthorityCompaction::read(&store.storage, u32::MAX)
@@ -770,9 +789,9 @@ mod tests {
 
         /// Releases `slices` more slices and waits until they are compacted and recorded.
         fn compact_slices(gate: &Gate, slices: usize) {
-            let target = gate.compacted.load(Ordering::SeqCst) + slices;
+            let target = gate.compacted() + slices;
             gate.release(slices);
-            wait_until(|| gate.compacted.load(Ordering::SeqCst) >= target);
+            wait_until(|| gate.compacted() >= target);
         }
 
         /// Ensures the real thread path starts at open, stops on request, and is not restarted.
@@ -860,7 +879,7 @@ mod tests {
                 let before = compactions();
                 let store = open_with(&storage_mode, Some(TEST_RETENTION));
                 assert_eq!(compactions(), before + 1, "{bytes:?}");
-                assert_eq!(stored(&store), AuthorityCompaction { compacted_below: DUE, ..Default::default() });
+                assert_eq!(stored(&store), finished(DUE));
             }
         }
 
@@ -869,7 +888,6 @@ mod tests {
         /// unfinished.
         #[test]
         fn test_open_starts_a_compaction_only_if_due() {
-            let finished = |compacted_below| AuthorityCompaction { compacted_below, ..Default::default() };
             let unfinished = AuthorityCompaction { compacted_below: DUE, target: DUE + 1, slices: SLICES, next: 1 };
             for (watermark, state, prunes, starts) in [
                 // Never compacted.
@@ -913,20 +931,15 @@ mod tests {
             let (store, gate) = open_due_with_gate();
             // The thread stores the run before it waits for its first slice.
             wait_until(|| stored(&store) != AuthorityCompaction::default());
-            assert_eq!(stored(&store), AuthorityCompaction { target: DUE, slices: SLICES, ..Default::default() });
+            assert_eq!(stored(&store), cursor(0));
             for done in 1..SLICES {
                 compact_slices(&gate, 1);
-                assert_eq!(stored(&store), AuthorityCompaction {
-                    target: DUE,
-                    slices: SLICES,
-                    next: done,
-                    ..Default::default()
-                });
+                assert_eq!(stored(&store), cursor(done));
             }
             gate.release(1);
             wait_finished(&store);
-            assert_eq!(gate.compacted.load(Ordering::SeqCst), usize::from(SLICES));
-            assert_eq!(stored(&store), AuthorityCompaction { compacted_below: DUE, ..Default::default() });
+            assert_eq!(gate.compacted(), usize::from(SLICES));
+            assert_eq!(stored(&store), finished(DUE));
             assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), 2 * DUE);
         }
 
@@ -938,8 +951,7 @@ mod tests {
             let (store, gate) = open_with_gate(&storage_mode);
             compact_slices(&gate, 1);
             store.stop_background_work();
-            let cursor = AuthorityCompaction { target: DUE, slices: SLICES, next: 1, ..Default::default() };
-            assert_eq!(stored(&store), cursor);
+            assert_eq!(stored(&store), cursor(1));
             drop(store);
 
             // The watermark has moved on; the run keeps its target.
@@ -950,7 +962,7 @@ mod tests {
             gate.release(usize::from(SLICES));
             wait_finished(&store);
             assert_eq!(gate.passed(), usize::from(SLICES) - 1);
-            assert_eq!(stored(&store), AuthorityCompaction { compacted_below: DUE, ..Default::default() });
+            assert_eq!(stored(&store), finished(DUE));
             drop(store);
 
             let before = compactions();
@@ -969,9 +981,8 @@ mod tests {
             fail(&gate);
             gate.release(usize::from(SLICES));
             wait_finished(&store);
-            let cursor = AuthorityCompaction { target: DUE, slices: SLICES, next: 1, ..Default::default() };
-            assert_eq!(stored(&store), cursor);
-            assert_eq!((gate.passed(), gate.compacted.load(Ordering::SeqCst)), (2, 1));
+            assert_eq!(stored(&store), cursor(1));
+            assert_eq!((gate.passed(), gate.compacted()), (2, 1));
             assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), DUE);
 
             // The error says which slice failed and what happens next.
@@ -981,7 +992,7 @@ mod tests {
                 .unwrap_err()
                 .to_string();
             assert!(error.contains(expected), "{error}");
-            assert_eq!(stored(&store), cursor);
+            assert_eq!(stored(&store), cursor(1));
 
             // The run stays due, and the floor holds its retry back.
             assert!(!store.start_compaction(None));
@@ -991,7 +1002,7 @@ mod tests {
             assert!(gated(&gate, || store.start_compaction(None)));
             wait_finished(&store);
             assert_eq!(gate.passed(), usize::from(SLICES) - 1);
-            assert_eq!(stored(&store), AuthorityCompaction { compacted_below: DUE, ..Default::default() });
+            assert_eq!(stored(&store), finished(DUE));
         }
 
         /// Ensures a slice during which a RocksDB background job failed stops the run.
@@ -1211,12 +1222,7 @@ mod tests {
                 let expected = before + usize::from(prunes && block.height() >= TRIGGER);
                 assert_eq!(compactions(), expected, "at block {}", block.height());
             }
-            let expected = if prunes {
-                AuthorityCompaction { compacted_below: DUE, ..Default::default() }
-            } else {
-                Default::default()
-            };
-            assert_eq!(stored(&store), expected);
+            assert_eq!(stored(&store), if prunes { finished(DUE) } else { Default::default() });
         }
 
         /// Ensures insert-time pruning compacts the authority map after the interval, through both

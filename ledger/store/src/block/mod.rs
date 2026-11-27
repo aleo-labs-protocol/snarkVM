@@ -61,7 +61,7 @@ use anyhow::{Context, Result};
 use std::{borrow::Cow, sync::Arc};
 #[cfg(feature = "rocks")]
 use std::{fs, io::BufWriter};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use rayon::prelude::*;
 
@@ -1483,7 +1483,7 @@ pub struct BlockStore<N: Network, B: BlockStorage<N>> {
     block_cache: Arc<Option<RwLock<BlockCache<N>>>>,
     /// The authority retention window in blocks if this store prunes authority data.
     authority_retention: Option<u32>,
-    /// The state of the background authority map compaction.
+    /// The state of the background compaction.
     authority_compaction: Arc<CompactionState>,
 }
 

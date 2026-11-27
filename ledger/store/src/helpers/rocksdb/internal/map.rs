@@ -748,10 +748,10 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
     }
 }
 
-/// The number of key-range slices [`DataMap::retain_all`] rewrites (see [`slice_bounds`]).
+/// The number of key-range slices [`DataMap::retain_all`] works in (see [`slice_bounds`]).
 const RETAIN_SLICES: usize = if cfg!(test) { 4 } else { 256 };
 
-/// The number of threads that rewrite slices concurrently.
+/// The number of threads that work on slices concurrently.
 const RETAIN_THREADS: usize = if cfg!(test) { 2 } else { 4 };
 
 /// The iterator readahead of a slice scan, in bytes.
