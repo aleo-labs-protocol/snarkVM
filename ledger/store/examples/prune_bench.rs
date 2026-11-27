@@ -1151,6 +1151,15 @@ Build:
 
         // After the floor the next insert retries.
         if let Some(file) = &args.floor_file {
+            // Nothing of this store runs during the wait: RocksDB's own jobs end first.
+            let timer = Instant::now();
+            while (property(db, "rocksdb.num-running-compactions") > 0
+                || property(db, "rocksdb.compaction-pending") > 0)
+                && timer.elapsed() < Duration::from_secs(600)
+            {
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            println!("{} RocksDB idle after {:.0} s", stamp(), timer.elapsed().as_secs_f64());
             println!("{} waiting for the floor ({} s after the start) and for {file}", stamp(), args.floor_secs);
             while floor_from.elapsed().as_secs_f64() < args.floor_secs || !Path::new(file).exists() {
                 std::thread::sleep(Duration::from_secs(1));
