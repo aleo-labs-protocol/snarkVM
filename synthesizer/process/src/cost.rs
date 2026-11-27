@@ -330,26 +330,8 @@ fn inner_deployment_cost_v3_v5<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: Option<ConsensusVersion>,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    // Determine the number of bytes in the deployment.
-    let size_in_bytes = deployment.size_in_bytes()?;
-    // Retrieve the program ID.
-    let program_id = deployment.program_id();
-    // Determine the number of characters in the program ID.
-    let num_characters = u32::try_from(program_id.name().to_string().len())?;
-    // Compute the number of combined variables in the program.
-    let num_combined_variables = deployment.num_combined_variables()?;
-    // Compute the number of combined constraints in the program.
-    let num_combined_constraints = deployment.num_combined_constraints()?;
-
-    // Compute the storage cost in microcredits, with a quadratic penalty above 512 kB.
-    let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
-
-    // Compute the synthesis cost in microcredits.
-    // Note: The circuit sizes are the ones the verifying keys claim, and a caller may price a deployment
-    // before they are checked against the deployment limits, so the product saturates.
-    let synthesis_cost =
-        num_combined_variables.saturating_add(num_combined_constraints).saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER)
-            / N::ARC_0005_COMPUTE_DISCOUNT;
+    // Compute the storage, synthesis and namespace costs in microcredits.
+    let (storage_cost, synthesis_cost, namespace_cost) = deployment_cost_terms_v3_v5(deployment)?;
 
     // Compute a Stack for the deployment.
     let stack = Stack::new(process, deployment.program())?;
@@ -381,12 +363,6 @@ fn inner_deployment_cost_v3_v5<N: Network>(
         );
     }
 
-    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
-    let namespace_cost = 10u64
-        .checked_pow(10u32.saturating_sub(num_characters))
-        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
-        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
-
     // Compute the minimum cost in microcredits.
     let minimum_cost = storage_cost
         .checked_add(synthesis_cost)
@@ -395,6 +371,49 @@ fn inner_deployment_cost_v3_v5<N: Network>(
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
     Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
+/// Returns the `(storage, synthesis, namespace)` costs in microcredits of a deployment, as priced by
+/// deployment costs V3 and V5. These are the terms that need no stack: each comes from the deployment's
+/// bytes, the circuit sizes recorded in its verifying keys, or its program name.
+fn deployment_cost_terms_v3_v5<N: Network>(deployment: &Deployment<N>) -> Result<(u64, u64, u64)> {
+    deployment_cost_terms_from_sizes(
+        deployment.size_in_bytes()?,
+        deployment.program_id(),
+        deployment.num_combined_variables()?,
+        deployment.num_combined_constraints()?,
+    )
+}
+
+/// Returns the `(storage, synthesis, namespace)` costs of `deployment_cost_terms_v3_v5`, from the
+/// deployment's size in bytes, its program ID, and its combined circuit sizes.
+fn deployment_cost_terms_from_sizes<N: Network>(
+    size_in_bytes: u64,
+    program_id: &ProgramID<N>,
+    num_combined_variables: u64,
+    num_combined_constraints: u64,
+) -> Result<(u64, u64, u64)> {
+    // Determine the number of characters in the program ID.
+    let num_characters = u32::try_from(program_id.name().to_string().len())?;
+
+    // Compute the storage cost in microcredits, with a quadratic penalty above 512 kB.
+    let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
+
+    // Compute the synthesis cost in microcredits.
+    // Note: The circuit sizes are the ones the verifying keys claim, and a caller may price a deployment
+    // before they are checked against the deployment limits, so the product saturates.
+    let synthesis_cost =
+        num_combined_variables.saturating_add(num_combined_constraints).saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER)
+            / N::ARC_0005_COMPUTE_DISCOUNT;
+
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
+    // Note: the exponent is at most 10, so `checked_pow` cannot fail.
+    let namespace_cost = 10u64
+        .checked_pow(10u32.saturating_sub(num_characters))
+        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
+        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
+
+    Ok((storage_cost, synthesis_cost, namespace_cost))
 }
 
 /// Returns the minimum cost in microcredits to publish the given deployment (V3).
@@ -648,6 +667,40 @@ fn deployment_storage_cost<N: Network>(size_in_bytes: u64) -> Result<u64> {
             .and_then(|x| x.checked_div(DEPLOYMENT_STORAGE_PENALTY_THRESHOLD))
             .ok_or_else(|| anyhow!("The storage cost computation overflowed for a deployment"))
     }
+}
+
+/// Returns the **frozen minimum** in microcredits for a deployment that is frozen by the
+/// deployment freeze: the storage, synthesis and namespace terms of the deployment cost.
+///
+/// The constructor term is left out, because computing it builds the program's stack, and a
+/// frozen deployment must be handled without touching its program. The function-finalize and view
+/// bounds that `deployment_cost` checks are left out for the same reason. Every term here comes
+/// from the deployment's bytes, the circuit sizes recorded in its verifying keys, and its name.
+///
+/// The synthesis term uses the circuit sizes that the verifying keys claim. A frozen deployment's
+/// verifying keys are never verified, so those sizes are unchecked, and the floor this guarantees
+/// is the storage and namespace terms. Sizes whose synthesis term overflows `u64` return an error.
+///
+/// The terms are those of `inner_deployment_cost_v3_v5`, which prices deployments from `V22`. The
+/// freeze is enforced only from a later version, so no other cost version is needed.
+pub fn frozen_deployment_minimum_cost<N: Network>(deployment: &Deployment<N>) -> Result<u64> {
+    let num_combined_variables = deployment.num_combined_variables()?;
+    let num_combined_constraints = deployment.num_combined_constraints()?;
+    // The synthesis term saturates, so reject sizes whose product overflows before pricing them.
+    num_combined_variables
+        .saturating_add(num_combined_constraints)
+        .checked_mul(N::SYNTHESIS_FEE_MULTIPLIER)
+        .ok_or(anyhow!("The synthesis cost computation overflowed for a frozen deployment"))?;
+    let (storage_cost, synthesis_cost, namespace_cost) = deployment_cost_terms_from_sizes(
+        deployment.size_in_bytes()?,
+        deployment.program_id(),
+        num_combined_variables,
+        num_combined_constraints,
+    )?;
+    storage_cost
+        .checked_add(synthesis_cost)
+        .and_then(|x| x.checked_add(namespace_cost))
+        .ok_or(anyhow!("The frozen minimum cost computation overflowed for a deployment"))
 }
 
 // Finalize costs for compute heavy operations, derived as:
@@ -1492,6 +1545,8 @@ mod tests {
         types::Address,
     };
     use snarkvm_synthesizer_program::Program;
+    use snarkvm_synthesizer_snark::VerifyingKey;
+    use std::sync::Arc;
 
     // Test program with two functions just below and above the size threshold.
     const SIZE_BOUNDARY_PROGRAM: &str = r#"
@@ -2006,6 +2061,51 @@ function dummy:",
         // Run the tests for all networks.
         run_test::<MainnetV0, AleoV0>();
         run_test::<TestnetV0, AleoTestnetV0>();
+    }
+
+    /// The frozen minimum uses the circuit sizes the verifying keys claim. Sizes whose synthesis term
+    /// overflows `u64` return an error, and smaller sizes are priced as `deployment_cost` prices them.
+    #[test]
+    fn test_frozen_deployment_minimum_cost_overflow() {
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        let program = Program::from_str(
+            r"
+program frozen_overflow.aleo;
+
+function noop:",
+        )
+        .unwrap();
+        let deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+
+        // Returns the deployment, with its verifying key claiming `size` variables and `size` constraints.
+        let mut with_claimed_size = |size: u64| {
+            let mut keys = deployment.verifying_keys().clone();
+            let mut circuit_key = (*keys[0].1.0).clone();
+            circuit_key.circuit_info.num_constraints = usize::try_from(size).unwrap();
+            keys[0].1.0 = VerifyingKey::new(Arc::new(circuit_key), size);
+            let mut deployment = Deployment::new(deployment.edition(), program.clone(), keys, None, None).unwrap();
+            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+            deployment.set_program_owner_raw(Some(Address::rand(rng)));
+            deployment
+        };
+
+        // The synthesis term is `2 * size * SYNTHESIS_FEE_MULTIPLIER` before the discount.
+        assert_eq!(MainnetV0::SYNTHESIS_FEE_MULTIPLIER, 25);
+
+        // At `u64::MAX / 25` the synthesis term overflows, and the frozen minimum is an error.
+        let overflowing = with_claimed_size(u64::MAX / 25);
+        let error = frozen_deployment_minimum_cost(&overflowing).unwrap_err();
+        assert!(error.to_string().contains("synthesis cost computation overflowed"), "{error}");
+
+        // At `u64::MAX / 100` it fits, and the frozen minimum is `deployment_cost` without the constructor term.
+        let fitting = with_claimed_size(u64::MAX / 100);
+        let frozen_minimum = frozen_deployment_minimum_cost(&fitting).unwrap();
+        let (_, (storage_cost, synthesis_cost, _, namespace_cost)) =
+            deployment_cost(&process, &fitting, ConsensusVersion::latest()).unwrap();
+        assert_eq!(frozen_minimum, storage_cost + synthesis_cost + namespace_cost);
+        assert_eq!(synthesis_cost, 2 * (u64::MAX / 100) * 25 / MainnetV0::ARC_0005_COMPUTE_DISCOUNT);
     }
 
     #[test]

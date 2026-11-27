@@ -43,8 +43,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let ret = vm.add_next_block_inner(block);
                         SequentialOperationResult::AddNextBlock(ret)
                     }
-                    SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
-                        let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
+                    SequentialOperation::AtomicSpeculate(a, b, c, d, e, f, g) => {
+                        let ret = vm.atomic_speculate_inner(a, b, c, d, e, f, g);
                         SequentialOperationResult::AtomicSpeculate(ret)
                     }
                 };
@@ -94,7 +94,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 /// An operation intended to be executed only in a sequential fashion.
 pub enum SequentialOperation<N: Network> {
     AddNextBlock(Block<N>),
-    AtomicSpeculate(FinalizeGlobalState, i64, Option<u64>, Vec<Ratify<N>>, Solutions<N>, Vec<Transaction<N>>),
+    /// The last field is whether deployments are frozen in this block, read once by the caller.
+    AtomicSpeculate(FinalizeGlobalState, i64, Option<u64>, Vec<Ratify<N>>, Solutions<N>, Vec<Transaction<N>>, bool),
 }
 
 impl<N: Network> fmt::Display for SequentialOperation<N> {
@@ -189,7 +190,8 @@ mod tests {
         let responses = (0..8)
             .map(|_| {
                 let (response_tx, response_rx) = oneshot::channel();
-                let op = SequentialOperation::AtomicSpeculate(state, 0, None, vec![], Solutions::from(None), vec![]);
+                let op =
+                    SequentialOperation::AtomicSpeculate(state, 0, None, vec![], Solutions::from(None), vec![], false);
                 vm.sequential_ops_tx
                     .as_ref()
                     .unwrap()

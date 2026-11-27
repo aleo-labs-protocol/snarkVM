@@ -601,6 +601,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.current_block.read().hash()
     }
 
+    /// Returns the latest block hash and height, read together from the same block.
+    pub fn latest_hash_and_height(&self) -> (N::BlockHash, u32) {
+        let block = self.current_block.read();
+        (block.hash(), block.height())
+    }
+
     /// Returns the latest block header.
     pub fn latest_header(&self) -> Header<N> {
         *self.current_block.read().header()

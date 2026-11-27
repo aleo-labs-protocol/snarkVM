@@ -529,6 +529,7 @@ jobs:
             runs: |
               nextest run -p snarkvm-synthesizer --lib --run-ignored only -E test(/::memory_intensive::/) -j 2
               nextest run -p snarkvm-synthesizer-process --features rocks -j 4
+              nextest run -p snarkvm-synthesizer-process --lib --run-ignored only -E test(test_verifying_keys_match_program)
           - name: synthesizer-integration
             runs: nextest run -p snarkvm-synthesizer -j 4 --test *
           - name: synthesizer-program

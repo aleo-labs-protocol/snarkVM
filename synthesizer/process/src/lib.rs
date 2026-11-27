@@ -25,6 +25,8 @@ extern crate snarkvm_console as console;
 mod cost;
 pub use cost::*;
 
+pub mod deployment_freeze;
+
 mod stack;
 pub use stack::*;
 
@@ -204,10 +206,8 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
     #[inline]
     pub fn add_program(&self, program: &Program<N>) -> Result<()> {
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
-        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
-        if program.id() != &credits_program_id {
+        // If the program is not built in ('credits.aleo' or the freeze program), compute the program stack, and add it to the process.
+        if !deployment_freeze::is_built_in_program(program.id()) {
             self.add_stack(Stack::new(self.process, program)?);
         }
         Ok(())
@@ -218,10 +218,8 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
     #[inline]
     pub fn add_program_with_edition(&self, program: &Program<N>, edition: u16) -> Result<()> {
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
-        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
-        if program.id() != &credits_program_id {
+        // If the program is not built in ('credits.aleo' or the freeze program), compute the program stack, and add it to the process.
+        if !deployment_freeze::is_built_in_program(program.id()) {
             let stack = Stack::new_raw(self.process, program, edition)?;
             stack.initialize_and_check(self.process)?;
             self.add_stack(stack);
@@ -235,15 +233,13 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
     #[inline]
     pub fn add_programs_with_editions(&self, programs: &[(Program<N>, u16)]) -> Result<()> {
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // Defer cleanup of the uncommitted stacks.
         defer! {
             self.revert_stacks()
         }
-        // Initialize raw stacks for each of the programs, skipping `credits.aleo`.
+        // Initialize raw stacks for each of the programs, skipping the built-in programs.
         for (program, edition) in programs {
-            if program.id() != &credits_program_id {
+            if !deployment_freeze::is_built_in_program(program.id()) {
                 self.stage_stack(Stack::new_raw(self.process, program, *edition)?)
             }
         }
@@ -331,6 +327,8 @@ impl<N: Network> Process<N> {
 
         // Add the 'credits.aleo' stack to the process.
         process.lock().add_stack(stack);
+        // Add the built-in freeze program, which imports 'credits.aleo', with its committed verifying key.
+        process.lock().add_stack(deployment_freeze::deployment_freeze_stack(&process, true)?);
 
         drop(timer);
         // Return the process.
@@ -424,6 +422,8 @@ impl<N: Network> Process<N> {
 
         // Add the stack to the process.
         process.lock().add_stack(stack);
+        // Add the built-in freeze program, which imports 'credits.aleo', with its committed verifying key.
+        process.lock().add_stack(deployment_freeze::deployment_freeze_stack(&process, true)?);
 
         timing_event!("Process::load");
         drop(timer);
@@ -469,6 +469,8 @@ impl<N: Network> Process<N> {
 
         // Add the stack to the process.
         process.lock().add_stack(stack);
+        // Add the built-in freeze program, which imports 'credits.aleo', with its committed verifying key.
+        process.lock().add_stack(deployment_freeze::deployment_freeze_stack(&process, true)?);
 
         timing_event!("Process::load_v0");
         drop(timer);
@@ -496,6 +498,8 @@ impl<N: Network> Process<N> {
 
         // Add the stack to the process.
         process.lock().add_stack(stack);
+        // Add the built-in freeze program, which imports 'credits.aleo', without its verifying key, as for 'credits.aleo' here.
+        process.lock().add_stack(deployment_freeze::deployment_freeze_stack(&process, false)?);
 
         // Return the process.
         Ok(process)
