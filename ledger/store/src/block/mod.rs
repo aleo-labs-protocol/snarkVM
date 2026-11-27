@@ -396,9 +396,9 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(
     Ok(Some(floor))
 }
 
-/// Removes the certificate indexes of blocks below `below` by rewriting the certificate map with
-/// only the other rows, then compacts the map if it is due. It runs on every startup that prunes,
-/// since inserts leave these rows behind.
+/// Removes the certificate indexes of blocks below `below`, in one pass over the certificate map,
+/// then compacts the map if it is due. It runs on every startup that prunes, since inserts leave
+/// these rows behind.
 fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
     debug!("Removing certificate indexes of pruned blocks below block {below}");
     let timer = std::time::Instant::now();
