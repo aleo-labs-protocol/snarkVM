@@ -765,7 +765,7 @@ const POINT_DELETE_MAX_ROWS: usize = if cfg!(test) { 4 } else { 262_144 };
 /// [`MAX_COMPACTION_SLICES`] slices.
 const COMPACTION_FILES_PER_SLICE: usize = 16;
 /// The most slices a sliced compaction runs.
-const MAX_COMPACTION_SLICES: usize = 256;
+pub(crate) const MAX_COMPACTION_SLICES: usize = 256;
 
 /// The number of slices a map of `files` live SST files is compacted in.
 fn slices_for_files(files: usize) -> usize {
@@ -2086,9 +2086,16 @@ mod tests {
             let rewrites = || RANGE_REWRITES.with(|count| count.get());
             // The slice `[0x10]..[0x11]` holds `total` rows, of which the last `removed` go, so a scan
             // has counted every kept row when it reaches the cap.
-            for (total, removed, rewritten) in
-                [(8, 0, false), (8, 1, false), (8, 4, false), (8, 5, true), (8, 8, true), (20, 4, false), (20, 5, true)]
-            {
+            for (total, removed, rewritten) in [
+                (8, 0, false),
+                (8, 1, false),
+                (8, 4, false),
+                (7, 4, true),
+                (8, 5, true),
+                (8, 8, true),
+                (20, 4, false),
+                (20, 5, true),
+            ] {
                 let case = format!("{removed} of {total}");
                 let in_slice = (0..total).map(|i: u8| ([0x10, i], u32::from(i)));
                 // The rows around the slice would go too, if the write reached them.

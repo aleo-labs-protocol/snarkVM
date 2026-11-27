@@ -271,7 +271,8 @@ impl RocksDB {
     }
 
     /// Returns the number of background flushes and compactions that have failed since the database
-    /// opened. The count never falls, so only a rise during a job says that the job failed.
+    /// opened. The count never falls, so only a rise during a job says that the job failed. A failed
+    /// flush can stop the database without raising it.
     pub(crate) fn background_error_count(&self) -> u64 {
         self.rocksdb.property_int_value(rocksdb::properties::BACKGROUND_ERRORS).ok().flatten().unwrap_or(0)
     }

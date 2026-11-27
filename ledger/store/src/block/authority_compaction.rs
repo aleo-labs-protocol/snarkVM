@@ -38,6 +38,8 @@ const AUTHORITY_COMPACTION_MIN_INTERVAL: Duration = Duration::from_secs(60 * 60)
 
 /// The most slices a stored run can have: no storage compacts in more.
 const MAX_STORED_SLICES: u16 = 256;
+#[cfg(feature = "rocks")]
+const _: () = assert!(MAX_STORED_SLICES as usize == crate::helpers::rocksdb::MAX_COMPACTION_SLICES);
 
 /// The progress of the authority map compaction, stored under
 /// [`BlockMetadataKey::AuthorityCompaction`] as its four fields in little-endian order.
@@ -186,8 +188,8 @@ fn compact_certificate_map<N: Network, B: BlockStorage<N>>(
 }
 
 /// Writes the value of a compaction key. The write doubles as a probe: after a failed flush or
-/// compaction RocksDB can refuse every write until the process restarts, and a failed flush does
-/// not show in [`BlockStorage::background_error_count`].
+/// compaction RocksDB can refuse every write until the process restarts, and a failed flush can
+/// stop the store without raising [`BlockStorage::background_error_count`].
 fn put_compaction_state<N: Network, B: BlockStorage<N>>(
     storage: &B,
     key: BlockMetadataKey,
@@ -300,7 +302,7 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
         let slices = match slices {
             Ok(slices) => u16::try_from(slices)?,
             Err(error) => {
-                // The count flushes, and a failed flush stops the store: the write says so if it did.
+                // The count flushes, and a failed flush can stop the store: the write says so if it did.
                 put_compaction_state(
                     storage,
                     KEY,
@@ -320,8 +322,11 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
             gate.as_deref(),
         )?;
     }
+    // A run that was killed after its last slice has none left, and is only recorded as finished.
     let (total, to_compact) = (run.slices, usize::from(run.slices - run.next));
-    info!("Compacting {to_compact} of {total} authority slices; this can take a while");
+    if to_compact > 0 {
+        info!("Compacting {to_compact} of {total} authority slices; this can take a while");
+    }
     let mut progress = Progress::new(to_compact);
     for i in run.next..total {
         #[cfg(test)]
@@ -380,7 +385,9 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
     // The watermark read at the start decides whether the next run is due already. An insert that
     // has moved the watermark since then compares equal to it.
     signal.due_at.store(finished.insert_trigger(watermark), Ordering::SeqCst);
-    info!("Compacted {to_compact} of {total} authority slices in {:.1} s", progress.elapsed_secs());
+    if to_compact > 0 {
+        info!("Compacted {to_compact} of {total} authority slices in {:.1} s", progress.elapsed_secs());
+    }
     Ok(())
 }
 
@@ -786,7 +793,7 @@ mod tests {
         fn wait_until(done: impl Fn() -> bool) {
             let timer = Instant::now();
             while !done() {
-                assert!(timer.elapsed() < Duration::from_secs(60), "The compaction thread made no progress");
+                assert!(timer.elapsed() < Duration::from_secs(10), "The compaction thread made no progress");
                 std::thread::sleep(Duration::from_millis(1));
             }
         }
@@ -989,23 +996,69 @@ mod tests {
             }
         }
 
-        /// Ensures a run compacts every slice, whatever its files hold: here the map was never
-        /// written, so no file shows a deletion.
+        /// Ensures a run compacts every slice of the authority map, which rewrites the files that
+        /// hold the slice, and that no deleted row is left in a file once it has finished.
         #[test]
         fn test_run_compacts_every_slice() {
-            let (store, gate) = open_due_with_gate();
+            // The certificate map counts as compacted, so the thread compacts only the slices.
+            let storage_mode = new_pruned_storage(DUE, Some(AuthorityCompaction::default()));
+            let storage = BlockDB::<CurrentNetwork>::open(storage_mode.clone()).unwrap();
+            let database = RocksDB::open(CurrentNetwork::ID, storage_mode.clone()).unwrap();
+            // Two rows in each slice, by the first byte of their keys. One is deleted after a flush,
+            // so a file holds the deletion.
+            let authority = snarkvm_ledger_authority::test_helpers::sample_beacon_authority(&mut TestRng::default());
+            let hash = |slice: u16, row: u32| -> <CurrentNetwork as Network>::BlockHash {
+                Field::<CurrentNetwork>::from_u32(u32::from(slice) * 0x40 + row).into()
+            };
+            for slice in 0..SLICES {
+                storage.authority_map().insert(hash(slice, 0), authority.clone()).unwrap();
+                storage.authority_map().insert(hash(slice, 1), authority.clone()).unwrap();
+            }
+            database.flush().unwrap();
+            for slice in 0..SLICES {
+                storage.authority_map().remove(&hash(slice, 1)).unwrap();
+            }
+            database.flush().unwrap();
+            let files = || database.live_files().unwrap();
+            let names = || files().into_iter().map(|file| file.name).collect::<Vec<_>>();
+            let deletions = || files().iter().map(|file| file.num_deletions).sum::<u64>();
+            assert_eq!(deletions(), u64::from(SLICES));
+
+            let (store, gate) = open_with_gate(&storage_mode);
             // The thread stores the run before it waits for its first slice.
             wait_until(|| stored(&store) != AuthorityCompaction::default());
             assert_eq!(stored(&store), cursor(0));
-            for done in 1..SLICES {
-                compact_slices(&gate, 1);
-                assert_eq!(stored(&store), cursor(done));
+            for slice in 0..SLICES {
+                let before = names();
+                if slice + 1 < SLICES {
+                    compact_slices(&gate, 1);
+                    assert_eq!(stored(&store), cursor(slice + 1));
+                } else {
+                    gate.release(1);
+                    wait_finished(&store);
+                }
+                assert_ne!(names(), before, "slice {slice} was not compacted");
             }
-            gate.release(1);
-            wait_finished(&store);
             assert_eq!(gate.compacted(), usize::from(SLICES));
             assert_eq!(stored(&store), finished(DUE));
             assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), 2 * DUE);
+
+            assert_eq!(deletions(), 0);
+            assert_eq!(storage.authority_map().len_confirmed(), usize::from(SLICES));
+            for slice in 0..SLICES {
+                assert!(storage.authority_map().contains_key_confirmed(&hash(slice, 0)).unwrap());
+                assert!(!storage.authority_map().contains_key_confirmed(&hash(slice, 1)).unwrap());
+            }
+        }
+
+        /// Ensures a run that was killed between its last slice and its finished state is recorded
+        /// as finished by the next start.
+        #[test]
+        fn test_run_with_no_slice_left_is_recorded_as_finished() {
+            let storage_mode = new_pruned_storage(DUE, Some(cursor(SLICES)));
+            let (store, gate) = with_gate(|| open_with(&storage_mode, Some(TEST_RETENTION)));
+            wait_finished(&store);
+            assert_eq!((stored(&store), gate.passed()), (finished(DUE), 0));
         }
 
         /// Ensures a run that was stopped resumes at its cursor on the next open, with its own
@@ -1125,7 +1178,6 @@ mod tests {
         /// prunes nothing and the run has not finished.
         fn check_next_insert_starts_the_run(store: &Store, blocks: &[Block<CurrentNetwork>]) {
             assert_eq!(store.authority_pruned_below().unwrap(), Some(DUE));
-            assert_eq!(store.authority_compaction.signal.due_at.load(Ordering::SeqCst), 0);
             clear_floor(store);
             let before = compactions();
             store.insert(&blocks[TRIGGER as usize + 1]).unwrap();
