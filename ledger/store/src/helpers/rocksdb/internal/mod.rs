@@ -269,6 +269,24 @@ impl RocksDB {
         options.set_exclusive_manual_compaction(false);
         self.rocksdb.compact_range_opt(Some(lower), Some(end), &options);
     }
+
+    /// Returns the number of background flushes and compactions that have failed since the database
+    /// opened. The count never falls, so only a rise during a job says that the job failed.
+    pub(crate) fn background_error_count(&self) -> u64 {
+        self.rocksdb.property_int_value(rocksdb::properties::BACKGROUND_ERRORS).ok().flatten().unwrap_or(0)
+    }
+
+    /// Returns the error RocksDB's background work is stopped on, if one is set now.
+    pub(crate) fn background_error(&self) -> Option<String> {
+        let mut options = rocksdb::WaitForCompactOptions::default();
+        // Without a timeout the call waits for every running job. With one, it returns a stored error
+        // at once, and times out while jobs run without one.
+        options.set_timeout(1);
+        match self.rocksdb.wait_for_compact(&options) {
+            Err(error) if error.kind() != rocksdb::ErrorKind::TimedOut => Some(error.to_string()),
+            _ => None,
+        }
+    }
 }
 
 impl crate::sealed::Sealed for RocksDB {}

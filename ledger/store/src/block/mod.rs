@@ -197,6 +197,11 @@ pub fn check_authority_retention_blocks<N: Network>(retention_blocks: u32) -> Re
 pub enum BlockMetadataKey {
     /// The authority-pruning watermark. See [`BlockStore::authority_pruned_below`].
     AuthorityPruned,
+    /// The progress of the authority map compaction. Advisory: a missing or unreadable value means
+    /// the map was never compacted.
+    AuthorityCompaction,
+    /// The watermark the certificate map was last compacted at. Advisory, as `AuthorityCompaction`.
+    CertificateCompaction,
 }
 
 /// Returns the lowest block height whose authority data a node pruning with `retention_blocks` retains
@@ -462,8 +467,9 @@ pub trait BlockStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Se
     type ConfirmedTransactionsMap: for<'a> Map<'a, N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
     /// The rejected deployment or execution map.
     type RejectedDeploymentOrExecutionMap: for<'a> Map<'a, Field<N>, Rejected<N>>;
-    /// The block metadata map: block-store state that shares the block store's atomic batches. Values
-    /// are raw bytes so that later keys can hold other types than the watermark's `u32`.
+    /// The block metadata map: block-store state that shares the block store's atomic batches, except
+    /// the compaction keys (see `put_compaction_state`). Values are raw bytes so that later keys can
+    /// hold other types than the watermark's `u32`.
     type BlockMetadataMap: for<'a> Map<'a, BlockMetadataKey, Vec<u8>>;
     /// The transaction storage.
     type TransactionStorage: TransactionStorage<N, TransitionStorage = Self::TransitionStorage>;
@@ -521,9 +527,10 @@ pub trait BlockStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Se
         false
     }
 
-    /// Plans a sliced compaction of the authority map. See `DataMap::compaction_plan`.
-    fn authority_compaction_plan(&self) -> Result<Vec<bool>> {
-        Ok(Vec::new())
+    /// Returns the number of slices to compact the authority map in. See
+    /// `DataMap::compaction_slice_count`.
+    fn authority_compaction_slices(&self) -> Result<usize> {
+        Ok(0)
     }
 
     /// Compacts one slice of the authority map. See `DataMap::compact_slice`.
@@ -534,6 +541,23 @@ pub trait BlockStorage<N: Network>: crate::sealed::Sealed + 'static + Clone + Se
     /// Keeps only the certificate rows whose value `retain` accepts and returns the numbers of kept
     /// and removed rows. Bypasses the atomic batch: only the startup pass calls it, before any insert.
     fn retain_certificate_indexes(&self, retain: impl Fn(&(u32, u64)) -> bool + Sync) -> Result<(usize, usize)>;
+
+    /// Writes the compaction state `value` under `key` now, outside any atomic batch: a batch in
+    /// progress or paused neither holds the write back nor discards it. Only the compaction thread
+    /// calls it, and only with the compaction keys. Storage that does not compact does nothing.
+    fn put_compaction_state(&self, _key: BlockMetadataKey, _value: Vec<u8>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Returns the number of background jobs of the storage engine that have failed since it opened.
+    fn background_error_count(&self) -> u64 {
+        0
+    }
+
+    /// Returns the error the storage engine's background work is stopped on, if it reports one.
+    fn background_error(&self) -> Option<String> {
+        None
+    }
 
     /// Returns the committed authority-pruning watermark `W`: the authority data of every height in
     /// `1..W` has been pruned. `None` if nothing has been pruned.
@@ -1487,8 +1511,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Initializes the block storage and its cache. With `authority_retention`, prunes the authority data
     /// older than that many blocks, and keeps pruning as blocks are inserted. A secondary instance does
     /// not prune: its primary does, and the secondary sees the result when it catches up. A pruning
-    /// RocksDB store also compacts its authority map on a background thread, at open if it has pruned
-    /// before and then as it prunes, which [`Self::stop_background_work`] stops.
+    /// RocksDB store also compacts its authority map on a background thread, each time pruning has
+    /// advanced an interval since the last compaction, which [`Self::stop_background_work`] stops.
     ///
     /// Whether this store prunes or not, reads report the authorities below its watermark as pruned.
     pub fn open_with_authority_retention<S: Into<StorageMode>>(
@@ -1548,8 +1572,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             authority_retention,
             authority_compaction: Default::default(),
         };
-        if store.authority_retention.is_some() && store.authority_pruned_below()?.is_some() {
-            store.compact_authorities();
+        if store.authority_retention.is_some() {
+            store.start_due_compaction()?;
         }
         Ok(store)
     }
@@ -1567,7 +1591,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage
             .insert(stored_state_root(block.height(), *tree.root()), block, self.authority_retention)
             .or_else(|error| Self::undo_append(&mut tree, error))?;
-        self.count_insert_time_pruning(block.height());
+        self.compact_if_due(block.height());
         // Add the block to the block cache.
         self.cache_block(block)
     }
@@ -1614,7 +1638,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             return Err(error);
         }
         self.storage.unpause_atomic_writes::<false>().or_else(|error| Self::undo_append(&mut tree, error))?;
-        self.count_insert_time_pruning(block.height());
+        self.compact_if_due(block.height());
         // Add the block to the block cache.
         self.cache_block(block)
     }
@@ -2803,10 +2827,12 @@ mod tests {
         assert!(storage.authority_map().contains_key_confirmed(&hash_at(1)).unwrap());
     }
 
-    /// Ensures the watermark keeps its stored key, which existing stores hold.
+    /// Ensures the block metadata keys keep their stored encodings, which existing stores hold.
     #[test]
-    fn test_authority_pruned_key_encoding() {
+    fn test_block_metadata_key_encoding() {
         assert_eq!(bincode::serialize(&BlockMetadataKey::AuthorityPruned).unwrap(), 0u32.to_le_bytes());
+        assert_eq!(bincode::serialize(&BlockMetadataKey::AuthorityCompaction).unwrap(), 1u32.to_le_bytes());
+        assert_eq!(bincode::serialize(&BlockMetadataKey::CertificateCompaction).unwrap(), 2u32.to_le_bytes());
     }
 
     /// Ensures readers see only the committed watermark, not one pending in a batch.

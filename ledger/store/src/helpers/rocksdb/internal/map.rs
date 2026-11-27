@@ -70,6 +70,16 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
         schema::raise_storage_version(&self.database, self.database.network_id, version)
     }
 
+    /// See `RocksDB::background_error_count`.
+    pub(crate) fn background_error_count(&self) -> u64 {
+        self.database.background_error_count()
+    }
+
+    /// See `RocksDB::background_error`.
+    pub(crate) fn background_error(&self) -> Option<String> {
+        self.database.background_error()
+    }
+
     /// Reads RocksDB internal properties and publishes them to the metrics registry.
     /// Any map can be used since they all share the same underlying `RocksDB` instance.
     #[cfg(feature = "metrics")]
@@ -777,28 +787,23 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         self.database.compact_prefix(self.prefix()?)
     }
 
-    /// Plans a sliced compaction of this map after flushing the database: one entry per slice (see
-    /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. The maps
-    /// share one column family, so a file is judged by all the deletions in it: on a live node a
-    /// flushed file spans this map and holds deletions, and marks every slice.
-    pub(crate) fn compaction_plan(&self) -> Result<Vec<bool>> {
+    /// Returns the number of slices (see [`slice_bounds`]) a sliced compaction of this map runs,
+    /// from the live SST files that overlap the map after flushing the database.
+    pub(crate) fn compaction_slice_count(&self) -> Result<usize> {
         self.database.flush()?;
         // Slice 0 of 1 is the whole map.
         let (lower, end) = self.slice_key_range(0, 1)?;
-        let overlaps = |file: &rocksdb::LiveFile, lower: &[u8], end: &[u8]| {
-            file.start_key.as_deref().is_none_or(|start| start <= end)
-                && file.end_key.as_deref().is_none_or(|last| last >= lower)
+        let overlaps = |file: &rocksdb::LiveFile| {
+            file.start_key.as_deref().is_none_or(|start| start <= end.as_slice())
+                && file.end_key.as_deref().is_none_or(|last| last >= lower.as_slice())
         };
-        let mut files: Vec<_> =
-            self.database.live_files()?.into_iter().filter(|file| overlaps(file, &lower, &end)).collect();
-        let slices = compaction_slices(files.len());
-        files.retain(|file| file.num_deletions > 0);
-        (0..slices)
-            .map(|i| {
-                let (lower, end) = self.slice_key_range(i, slices)?;
-                Ok(files.iter().any(|file| overlaps(file, &lower, &end)))
-            })
-            .collect()
+        Ok(compaction_slices(self.database.live_files()?.iter().filter(|file| overlaps(file)).count()))
+    }
+
+    /// Writes the row now, outside the atomic batch, whether or not one is in progress.
+    pub(crate) fn put_outside_batch(&self, key: &K, value: &V) -> Result<()> {
+        let raw_key = self.create_prefixed_key(key)?;
+        Ok(self.database.put(raw_key, bincode::serialize(value)?)?)
     }
 
     /// Compacts slice `i` of `slices` of this map's keys (see [`slice_bounds`]), rewriting
@@ -2029,28 +2034,16 @@ mod tests {
             assert!(error.to_string().contains("Resync the store"), "{error}");
         }
 
-        /// A plan marks only the slices whose flushed files hold deletions. Each plan flushes once;
-        /// with at most three flushed files, no automatic compaction merges them.
+        /// A write outside the batch lands at once and survives the abort of a batch in progress.
         #[test]
-        fn test_compaction_plan_marks_slices_with_deletions() {
-            let (map, neighbours) = setup(&ROWS);
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-            // A neighbour map's deletion below the prefix marks nothing.
-            map.database.delete(&neighbours[0]).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-            map.remove(&[0xff, 0xff]).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false, false, false, true]);
-            // Compacting the slice drops the tombstone.
-            map.compact_slice(3, 4).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-
-            // A file of deletions straddling a slice boundary marks both slices. The rows are flushed
-            // first, so the deletions land in a file of their own.
-            let (map, _) = setup(&ROWS);
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-            map.remove(&[0x7f, 0xff]).unwrap();
-            map.remove(&[0x80, 0]).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false, true, true, false]);
+        fn test_put_outside_batch_ignores_the_batch() {
+            let (map, _) = setup(&[]);
+            map.start_atomic();
+            map.insert([0, 1], 1).unwrap();
+            map.put_outside_batch(&[0, 2], &2).unwrap();
+            assert_eq!(map.get_confirmed(&[0, 2]).unwrap().as_deref(), Some(&2));
+            map.abort_atomic();
+            assert_eq!(rows(&map), vec![([0, 2], 2)]);
         }
 
         #[test]
