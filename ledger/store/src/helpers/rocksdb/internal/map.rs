@@ -70,6 +70,16 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
         schema::raise_storage_version(&self.database, self.database.network_id, version)
     }
 
+    /// See `RocksDB::background_error_count`.
+    pub(crate) fn background_error_count(&self) -> u64 {
+        self.database.background_error_count()
+    }
+
+    /// See `RocksDB::background_error`.
+    pub(crate) fn background_error(&self) -> Option<String> {
+        self.database.background_error()
+    }
+
     /// Reads RocksDB internal properties and publishes them to the metrics registry.
     /// Any map can be used since they all share the same underlying `RocksDB` instance.
     #[cfg(feature = "metrics")]
@@ -738,20 +748,24 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
     }
 }
 
-/// The number of key-range slices [`DataMap::retain_all`] rewrites (see [`slice_bounds`]).
+/// The number of key-range slices [`DataMap::retain_all`] works in (see [`slice_bounds`]).
 const RETAIN_SLICES: usize = if cfg!(test) { 4 } else { 256 };
 
-/// The number of threads that rewrite slices concurrently.
+/// The number of threads that work on slices concurrently.
 const RETAIN_THREADS: usize = if cfg!(test) { 2 } else { 4 };
 
 /// The iterator readahead of a slice scan, in bytes.
 const RETAIN_READAHEAD: usize = 4 << 20;
 
+/// The most rows [`DataMap::retain_range`] removes with point deletes, which bounds the memory of
+/// its delete batch: 38 bytes per row of a 32-byte key. Unit tests use a few rows.
+const POINT_DELETE_MAX_ROWS: usize = if cfg!(test) { 4 } else { 262_144 };
+
 /// A sliced compaction runs one slice per this many live SST files of the map, with at most
 /// [`MAX_COMPACTION_SLICES`] slices.
 const COMPACTION_FILES_PER_SLICE: usize = 16;
 /// The most slices a sliced compaction runs.
-const MAX_COMPACTION_SLICES: usize = 256;
+pub(crate) const MAX_COMPACTION_SLICES: usize = 256;
 
 /// The number of slices a map of `files` live SST files is compacted in.
 fn slices_for_files(files: usize) -> usize {
@@ -777,28 +791,23 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         self.database.compact_prefix(self.prefix()?)
     }
 
-    /// Plans a sliced compaction of this map after flushing the database: one entry per slice (see
-    /// [`slice_bounds`]), `true` if a live SST file overlapping the slice holds deletions. The maps
-    /// share one column family, so a file is judged by all the deletions in it: on a live node a
-    /// flushed file spans this map and holds deletions, and marks every slice.
-    pub(crate) fn compaction_plan(&self) -> Result<Vec<bool>> {
+    /// Returns the number of slices (see [`slice_bounds`]) a sliced compaction of this map runs,
+    /// from the live SST files that overlap the map after flushing the database.
+    pub(crate) fn compaction_slice_count(&self) -> Result<usize> {
         self.database.flush()?;
         // Slice 0 of 1 is the whole map.
         let (lower, end) = self.slice_key_range(0, 1)?;
-        let overlaps = |file: &rocksdb::LiveFile, lower: &[u8], end: &[u8]| {
-            file.start_key.as_deref().is_none_or(|start| start <= end)
-                && file.end_key.as_deref().is_none_or(|last| last >= lower)
+        let overlaps = |file: &rocksdb::LiveFile| {
+            file.start_key.as_deref().is_none_or(|start| start <= end.as_slice())
+                && file.end_key.as_deref().is_none_or(|last| last >= lower.as_slice())
         };
-        let mut files: Vec<_> =
-            self.database.live_files()?.into_iter().filter(|file| overlaps(file, &lower, &end)).collect();
-        let slices = compaction_slices(files.len());
-        files.retain(|file| file.num_deletions > 0);
-        (0..slices)
-            .map(|i| {
-                let (lower, end) = self.slice_key_range(i, slices)?;
-                Ok(files.iter().any(|file| overlaps(file, &lower, &end)))
-            })
-            .collect()
+        Ok(compaction_slices(self.database.live_files()?.iter().filter(|file| overlaps(file)).count()))
+    }
+
+    /// Writes the row now, outside the atomic batch, whether or not one is in progress.
+    pub(crate) fn put_outside_batch(&self, key: &K, value: &V) -> Result<()> {
+        let raw_key = self.create_prefixed_key(key)?;
+        Ok(self.database.put(raw_key, bincode::serialize(value)?)?)
     }
 
     /// Compacts slice `i` of `slices` of this map's keys (see [`slice_bounds`]), rewriting
@@ -841,8 +850,8 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         Ok((lower, upper))
     }
 
-    /// Keeps only the rows whose value `retain` accepts, rewriting the map in [`RETAIN_SLICES`]
-    /// key-range slices (see [`slice_bounds`]) on [`RETAIN_THREADS`] threads, and returns the
+    /// Keeps only the rows whose value `retain` accepts, in [`RETAIN_SLICES`] key-range slices (see
+    /// [`slice_bounds`] and [`Self::retain_range`]) on [`RETAIN_THREADS`] threads, and returns the
     /// numbers of kept and removed rows. Each slice is one write, so an interrupted run leaves every
     /// slice untouched or done, and a rerun changes nothing. Bypasses the atomic batch, so it
     /// refuses to run while one is in progress.
@@ -871,7 +880,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
                 counts.removed += removed;
                 if let Some((elapsed, remaining)) = progress.advance() {
                     tracing::info!(
-                        "Rewrote {} of {RETAIN_SLICES} slices, kept {} rows, removed {}, in {elapsed:.0} s, about {remaining:.0} s left",
+                        "Scanned {} of {RETAIN_SLICES} slices, kept {} rows, removed {}, in {elapsed:.0} s, about {remaining:.0} s left",
                         progress.done(),
                         counts.kept,
                         counts.removed
@@ -886,36 +895,60 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     }
 
     /// Keeps only the rows whose value `retain` accepts among those whose keys, after the map prefix,
-    /// are in `start..end` (`None`: the map's end), in one write: a range delete followed by puts of
-    /// the kept rows. Writes nothing if no row goes. Returns the numbers of kept and removed rows.
+    /// are in `start..end` (`None`: the map's end), in one write, and returns the numbers of kept and
+    /// removed rows. A slice that loses at most half its rows, and at most
+    /// [`POINT_DELETE_MAX_ROWS`], gets one delete per removed row; any other is rewritten (see
+    /// [`Self::rewrite_range`]), which costs less from there on. Writes nothing if no row goes.
     pub(crate) fn retain_range(
         &self,
         start: &[u8],
         end: Option<&[u8]>,
-        mut retain: impl FnMut(&V) -> bool,
+        retain: impl Fn(&V) -> bool,
     ) -> Result<(usize, usize)> {
         ensure!(!self.batch_in_progress.load(Ordering::SeqCst), "retain_range bypasses the atomic batch");
         let (lower, upper) = self.key_range(start, end)?;
 
-        let mut options = rocksdb::ReadOptions::default();
-        options.set_total_order_seek(true);
-        options.set_iterate_lower_bound(lower.clone());
-        options.set_iterate_upper_bound(upper.clone());
-        options.set_readahead_size(RETAIN_READAHEAD);
-        // A one-off scan; keep the block cache for the maps the node reads.
-        options.fill_cache(false);
-        let mut iter = self.database.raw_iterator_opt(options);
-        iter.seek(&lower);
+        // Collect only the deletes: a slice that turns out to need the rewrite is scanned again,
+        // from the page cache. Past the cap the slice is rewritten whatever the rest of it holds,
+        // so the scan stops there.
+        let mut batch = rocksdb::WriteBatch::default();
+        let (mut kept, mut removed) = (0, 0);
+        let mut iter = self.range_iterator(&lower, &upper);
+        while let Some((key, value)) = iter.item() {
+            if retain(&Self::decode_row(value)?) {
+                kept += 1;
+            } else {
+                removed += 1;
+                if removed > POINT_DELETE_MAX_ROWS {
+                    break;
+                }
+                batch.delete(key);
+            }
+            iter.next();
+        }
+        iter.status()?;
+        if removed > POINT_DELETE_MAX_ROWS || removed > kept {
+            drop((iter, batch));
+            return self.rewrite_range(&lower, &upper, retain);
+        }
+        if removed > 0 {
+            self.database.write(batch)?;
+        }
+        Ok((kept, removed))
+    }
 
+    /// Keeps only the rows in `lower..upper` whose value `retain` accepts, in one write: a range
+    /// delete followed by puts of the kept rows. Returns the numbers of kept and removed rows.
+    fn rewrite_range(&self, lower: &[u8], upper: &[u8], retain: impl Fn(&V) -> bool) -> Result<(usize, usize)> {
+        #[cfg(test)]
+        RANGE_REWRITES.with(|count| count.set(count.get() + 1));
         // The range delete applies before the puts that follow it.
         let mut batch = rocksdb::WriteBatch::default();
-        batch.delete_range(&lower, &upper);
+        batch.delete_range(lower, upper);
         let (mut kept, mut removed) = (0, 0);
+        let mut iter = self.range_iterator(lower, upper);
         while let Some((key, value)) = iter.item() {
-            let decoded = unchecked_deserialize::<V>(value).map_err(|error| {
-                anyhow::anyhow!("Malformed row ({error}): the store is inconsistent. Resync the store.")
-            })?;
-            if retain(&decoded) {
+            if retain(&Self::decode_row(value)?) {
                 batch.put(key, value);
                 kept += 1;
             } else {
@@ -928,6 +961,26 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
             self.database.write(batch)?;
         }
         Ok((kept, removed))
+    }
+
+    /// An iterator over the rows in `lower..upper`, positioned at the first one.
+    fn range_iterator(&self, lower: &[u8], upper: &[u8]) -> rocksdb::DBRawIterator<'_> {
+        let mut options = rocksdb::ReadOptions::default();
+        options.set_total_order_seek(true);
+        options.set_iterate_lower_bound(lower);
+        options.set_iterate_upper_bound(upper);
+        options.set_readahead_size(RETAIN_READAHEAD);
+        // A one-off scan; keep the block cache for the maps the node reads.
+        options.fill_cache(false);
+        let mut iter = self.database.raw_iterator_opt(options);
+        iter.seek(lower);
+        iter
+    }
+
+    /// Decodes the value of a row that a range scan read.
+    fn decode_row(value: &[u8]) -> Result<V> {
+        unchecked_deserialize::<V>(value)
+            .map_err(|error| anyhow::anyhow!("Malformed row ({error}): the store is inconsistent. Resync the store."))
     }
 
     #[inline]
@@ -953,6 +1006,12 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
             None => Ok(None),
         }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The number of slices `DataMap::retain_range` has rewritten on this thread.
+    static RANGE_REWRITES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> fmt::Debug for DataMap<K, V> {
@@ -2020,6 +2079,64 @@ mod tests {
             assert!(map.retain_range(&[0x80, 0], Some(&[0x80, 0]), |_| true).is_err());
         }
 
+        /// A slice that loses at most half its rows, and no more than the cap, gets point deletes;
+        /// any other is rewritten. Both leave the same rows, and a rerun writes nothing.
+        #[test]
+        fn test_slice_gets_point_deletes_or_a_rewrite() {
+            let rewrites = || RANGE_REWRITES.with(|count| count.get());
+            // The slice `[0x10]..[0x11]` holds `total` rows, of which the last `removed` go, so a scan
+            // has counted every kept row when it reaches the cap.
+            for (total, removed, rewritten) in [
+                (8, 0, false),
+                (8, 1, false),
+                (8, 4, false),
+                (7, 4, true),
+                (8, 5, true),
+                (8, 8, true),
+                (20, 4, false),
+                (20, 5, true),
+            ] {
+                let case = format!("{removed} of {total}");
+                let in_slice = (0..total).map(|i: u8| ([0x10, i], u32::from(i)));
+                // The rows around the slice would go too, if the write reached them.
+                let outside = [([0x0f, 0xff], u32::MAX), ([0x11, 0], u32::MAX)];
+                let (map, neighbours) = setup(&in_slice.clone().chain(outside).collect::<Vec<Row>>());
+                let mut expected: Vec<Row> = in_slice.take(usize::from(total - removed)).chain(outside).collect();
+                expected.sort();
+                let counts = (usize::from(total - removed), usize::from(removed));
+
+                let before = rewrites();
+                let retain = |value: &u32| *value < u32::from(total - removed);
+                assert_eq!(map.retain_range(&[0x10], Some(&[0x11]), retain).unwrap(), counts, "{case}");
+                assert_eq!(rewrites() - before, usize::from(rewritten), "{case}");
+                assert_eq!(rows(&map), expected, "{case}");
+                assert_neighbours_intact(&map, &neighbours);
+
+                assert_eq!(map.retain_range(&[0x10], Some(&[0x11]), retain).unwrap(), (counts.0, 0), "{case}");
+                assert_eq!(rewrites() - before, usize::from(rewritten), "{case}");
+                assert_eq!(rows(&map), expected, "{case}");
+            }
+        }
+
+        /// Past the cap the first scan of a slice stops, since the slice is rewritten whatever the
+        /// rest of it holds.
+        #[test]
+        fn test_scan_stops_past_the_point_delete_cap() {
+            // The rows to remove sort first.
+            let removed = POINT_DELETE_MAX_ROWS + 2;
+            let all: Vec<Row> = (0..40).map(|i: u8| ([0x10, i], u32::from(usize::from(i) >= removed))).collect();
+            let (map, _) = setup(&all);
+            let calls = std::cell::Cell::new(0);
+            let retain = |value: &u32| {
+                calls.set(calls.get() + 1);
+                *value > 0
+            };
+            assert_eq!(map.retain_range(&[], None, retain).unwrap(), (all.len() - removed, removed));
+            // The first scan saw one row more than the cap, the rewrite every row.
+            assert_eq!(calls.get(), POINT_DELETE_MAX_ROWS + 1 + all.len());
+            assert_eq!(rows(&map), all[removed..]);
+        }
+
         #[test]
         fn test_malformed_row_says_to_resync() {
             let (map, _) = setup(&ROWS);
@@ -2029,28 +2146,27 @@ mod tests {
             assert!(error.to_string().contains("Resync the store"), "{error}");
         }
 
-        /// A plan marks only the slices whose flushed files hold deletions. Each plan flushes once;
-        /// with at most three flushed files, no automatic compaction merges them.
+        /// A healthy database has the background error count, at zero, and no stored error.
         #[test]
-        fn test_compaction_plan_marks_slices_with_deletions() {
-            let (map, neighbours) = setup(&ROWS);
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-            // A neighbour map's deletion below the prefix marks nothing.
-            map.database.delete(&neighbours[0]).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-            map.remove(&[0xff, 0xff]).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false, false, false, true]);
-            // Compacting the slice drops the tombstone.
-            map.compact_slice(3, 4).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-
-            // A file of deletions straddling a slice boundary marks both slices. The rows are flushed
-            // first, so the deletions land in a file of their own.
+        fn test_healthy_database_reports_no_background_error() {
             let (map, _) = setup(&ROWS);
-            assert_eq!(map.compaction_plan().unwrap(), vec![false; 4]);
-            map.remove(&[0x7f, 0xff]).unwrap();
-            map.remove(&[0x80, 0]).unwrap();
-            assert_eq!(map.compaction_plan().unwrap(), vec![false, true, true, false]);
+            map.compact_slice(0, 1).unwrap();
+            let count = map.database.property_int_value(rocksdb::properties::BACKGROUND_ERRORS).unwrap();
+            assert_eq!(count, Some(0));
+            assert_eq!(map.background_error_count(), 0);
+            assert_eq!(map.background_error(), None);
+        }
+
+        /// A write outside the batch lands at once and survives the abort of a batch in progress.
+        #[test]
+        fn test_put_outside_batch_ignores_the_batch() {
+            let (map, _) = setup(&[]);
+            map.start_atomic();
+            map.insert([0, 1], 1).unwrap();
+            map.put_outside_batch(&[0, 2], &2).unwrap();
+            assert_eq!(map.get_confirmed(&[0, 2]).unwrap().as_deref(), Some(&2));
+            map.abort_atomic();
+            assert_eq!(rows(&map), vec![([0, 2], 2)]);
         }
 
         #[test]
