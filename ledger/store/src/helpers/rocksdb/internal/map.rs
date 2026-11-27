@@ -2084,21 +2084,22 @@ mod tests {
         #[test]
         fn test_slice_gets_point_deletes_or_a_rewrite() {
             let rewrites = || RANGE_REWRITES.with(|count| count.get());
-            // The slice `[0x10]..[0x11]` holds `total` rows, of which the first `removed` go.
+            // The slice `[0x10]..[0x11]` holds `total` rows, of which the last `removed` go, so a scan
+            // has counted every kept row when it reaches the cap.
             for (total, removed, rewritten) in
                 [(8, 0, false), (8, 1, false), (8, 4, false), (8, 5, true), (8, 8, true), (20, 4, false), (20, 5, true)]
             {
                 let case = format!("{removed} of {total}");
                 let in_slice = (0..total).map(|i: u8| ([0x10, i], u32::from(i)));
                 // The rows around the slice would go too, if the write reached them.
-                let outside = [([0x0f, 0xff], 0), ([0x11, 0], 0)];
+                let outside = [([0x0f, 0xff], u32::MAX), ([0x11, 0], u32::MAX)];
                 let (map, neighbours) = setup(&in_slice.clone().chain(outside).collect::<Vec<Row>>());
-                let mut expected: Vec<Row> = in_slice.skip(usize::from(removed)).chain(outside).collect();
+                let mut expected: Vec<Row> = in_slice.take(usize::from(total - removed)).chain(outside).collect();
                 expected.sort();
                 let counts = (usize::from(total - removed), usize::from(removed));
 
                 let before = rewrites();
-                let retain = |value: &u32| *value >= u32::from(removed);
+                let retain = |value: &u32| *value < u32::from(total - removed);
                 assert_eq!(map.retain_range(&[0x10], Some(&[0x11]), retain).unwrap(), counts, "{case}");
                 assert_eq!(rewrites() - before, usize::from(rewritten), "{case}");
                 assert_eq!(rows(&map), expected, "{case}");
