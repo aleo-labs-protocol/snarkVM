@@ -52,7 +52,13 @@ mod bench {
         fmt::Write as _,
         io::{BufRead, BufReader, Read, Seek, SeekFrom, Write as _},
         path::{Path, PathBuf},
-        sync::{Condvar, Mutex, OnceLock},
+        sync::{
+            Arc,
+            Condvar,
+            Mutex,
+            OnceLock,
+            atomic::{AtomicBool, AtomicU64, Ordering},
+        },
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
@@ -107,6 +113,32 @@ Node commands (all take [--retention <blocks>], default the network's window):
   --tree-cache writes the block tree cache, as a node does at shutdown, so the next open does not
   rebuild the tree: after the open in exit-mid-slice and stop-latency, at the end in the others.
 
+Certificate pass candidates (raw writes to the certificate map, bench only; the store's own pass is
+`restart`). 256 key-range slices on 4 threads with the store's read options, one WriteBatch per slice:
+  cert-pass <db_dir> --below <height> --mode none|scan|point|rewrite|design [--cap <keys>] [--threads <n>]
+            [--flush] [--compact plain|force] [--then-open] [--bg-compact plain|force]
+            [--load none|scan|write:<heights_per_sec>] [--source <sample>]
+        Removes the rows of heights in 1..<below>. scan: counts only. rewrite: the store's write, a
+        range delete of the slice and puts of the kept rows. point: one delete per removed row.
+        design: collects delete keys up to --cap (default 262144); writes them if the slice loses at
+        most half its rows and no more than the cap, otherwise scans again and rewrites.
+        --flush flushes after the pass, timed apart. --compact compacts the certificate prefix after
+        it: plain is the store's compact_range, force also rewrites the bottom level.
+        --then-open then opens the store as a node, prints the time since the process started, and
+        stops the compaction thread. --bg-compact runs the compaction on a thread while --load runs:
+        scan repeats the certificate scan; write stores heights after the tip, one batch each.
+  cert-state <db_dir>          The certificate prefix: live files by level and approximate bytes.
+  slice-bench <db_dir> --belows <h,h,..> [--reps <n>] [--big-keys <n> --big-slices <k> --big-below <h>]
+        One slice at a time from a warm page cache, a different slice for every write: the scan
+        alone, the scan that fills the batch, the write, the batch size, for point and rewrite.
+        --big-keys builds and writes one batch of that many deletes, then of that many puts, from
+        rows collected over <k> slices.
+  fault-cert <db_dir> --below <height> --kind none|chmod|cmd [--fault-on <sh>] [--fault-off <sh>]
+             [--stop-by-flush] [--skip-force]
+        Point-deletes below <height>, flushes, breaks the disk (chmod: the ledger directory loses
+        write permission; cmd: runs the shell commands), then starts manual compactions one after
+        the other, printing for each the time to return, rocksdb.background-errors and a probe put.
+
 Output: production log lines are printed as `[UTC +seconds since start] LEVEL message`; the bench's
 own figures start with `===` or `RESULT`. Disk bytes come from /proc/self/io (Linux only).
 
@@ -142,12 +174,19 @@ Build:
         start: Instant,
         compaction: Mutex<Compaction>,
         changed: Condvar,
+        /// Every production log line of this process.
+        lines: Mutex<Vec<String>>,
     }
 
     static EVENTS: OnceLock<Events> = OnceLock::new();
 
     fn events() -> &'static Events {
-        EVENTS.get_or_init(|| Events { start: Instant::now(), compaction: Default::default(), changed: Condvar::new() })
+        EVENTS.get_or_init(|| Events {
+            start: Instant::now(),
+            compaction: Default::default(),
+            changed: Condvar::new(),
+            lines: Default::default(),
+        })
     }
 
     impl Events {
@@ -175,7 +214,14 @@ Build:
             state.clone()
         }
 
+        /// The last number of the last log line that starts with `prefix`.
+        fn logged_number(&self, prefix: &str) -> Option<f64> {
+            let lines = self.lines.lock().expect("no panic while the lock is held");
+            lines.iter().rev().find(|line| line.starts_with(prefix)).and_then(|line| numbers(line).last().copied())
+        }
+
         fn update(&self, message: &str) {
+            self.lines.lock().expect("no panic while the lock is held").push(message.to_string());
             let n = numbers(message);
             let at = |i: usize| n.get(i).copied().unwrap_or(0.0);
             let now = Instant::now();
@@ -371,11 +417,15 @@ Build:
         }
     }
 
-    fn authority_prefix() -> [u8; PREFIX_LEN] {
+    fn map_prefix(map: BlockMap) -> [u8; PREFIX_LEN] {
         let mut prefix = [0u8; PREFIX_LEN];
         prefix[..2].copy_from_slice(&N::ID.to_le_bytes());
-        prefix[2..].copy_from_slice(&u16::from(MapID::Block(BlockMap::Authority)).to_le_bytes());
+        prefix[2..].copy_from_slice(&u16::from(MapID::Block(map)).to_le_bytes());
         prefix
+    }
+
+    fn authority_prefix() -> [u8; PREFIX_LEN] {
+        map_prefix(BlockMap::Authority)
     }
 
     /// The last manual compaction RocksDB's LOG reports in the authority map: the LOG line's
@@ -787,6 +837,35 @@ Build:
         }
     }
 
+    /// Adds the id, reverse-id, authority and certificate rows of `height` to `batch`. Returns the
+    /// authority bytes and the number of certificate rows.
+    fn put_height(
+        batch: &mut rocksdb::WriteBatch,
+        height: u32,
+        source: &Source,
+        rng: &mut SplitMix,
+    ) -> Result<(u64, u64)> {
+        let mut bytes = [0u8; 32];
+        random_key(rng, &mut bytes);
+        let hash: <N as Network>::BlockHash = Field::<N>::from_bytes_le(&bytes)?.into();
+        let (authority, cert_count) = source.authority(height, rng);
+        batch.put(raw_key(BlockMap::ID, &height)?, bincode::serialize(&hash)?);
+        batch.put(raw_key(BlockMap::ReverseID, &hash)?, bincode::serialize(&height)?);
+        let authority_bytes = authority.len() as u64;
+        batch.put(raw_key(BlockMap::Authority, &hash)?, authority);
+        let mut certs = 0;
+        if height > 0 {
+            for i in 0..cert_count {
+                random_key(rng, &mut bytes);
+                let id = Field::<N>::from_bytes_le(&bytes)?;
+                let index = (height, u64::from(height) * 2 + u64::from(i % 2));
+                batch.put(raw_key(BlockMap::Certificate, &id)?, bincode::serialize(&index)?);
+                certs += 1;
+            }
+        }
+        Ok((authority_bytes, certs))
+    }
+
     /// Writes id, reverse-id, authority and certificate rows for `heights`; those below `split` take
     /// their authorities from `old`.
     fn write_heights(
@@ -800,26 +879,13 @@ Build:
         write_options.disable_wal(true);
         // The seed of the original `build`, varied by the first height so `extend` repeats no key.
         let mut rng = SplitMix(7 ^ (u64::from(heights.start) << 32));
-        let mut bytes = [0u8; 32];
         let mut batch = rocksdb::WriteBatch::default();
         let (timer, mut authority_bytes, mut certs) = (Instant::now(), 0u64, 0u64);
         for height in heights.clone() {
-            random_key(&mut rng, &mut bytes);
-            let hash: <N as Network>::BlockHash = Field::<N>::from_bytes_le(&bytes)?.into();
-            let (authority, cert_count) = if height < split { old } else { recent }.authority(height, &mut rng);
-            batch.put(raw_key(BlockMap::ID, &height)?, bincode::serialize(&hash)?);
-            batch.put(raw_key(BlockMap::ReverseID, &hash)?, bincode::serialize(&height)?);
-            authority_bytes += authority.len() as u64;
-            batch.put(raw_key(BlockMap::Authority, &hash)?, authority);
-            if height > 0 {
-                for i in 0..cert_count {
-                    random_key(&mut rng, &mut bytes);
-                    let id = Field::<N>::from_bytes_le(&bytes)?;
-                    let index = (height, u64::from(height) * 2 + u64::from(i % 2));
-                    batch.put(raw_key(BlockMap::Certificate, &id)?, bincode::serialize(&index)?);
-                    certs += 1;
-                }
-            }
+            let source = if height < split { old } else { recent };
+            let (bytes, count) = put_height(&mut batch, height, source, &mut rng)?;
+            authority_bytes += bytes;
+            certs += count;
             if batch.size_in_bytes() > 256 << 20 {
                 raw.db.write_opt(std::mem::take(&mut batch), &write_options)?;
             }
@@ -996,6 +1062,785 @@ Build:
     }
 
     // ---------------------------------------------------------------------------------------------
+    // The certificate pass on the raw database: the store's rewrite and the candidates.
+
+    /// `RETAIN_SLICES`, `RETAIN_THREADS` and `RETAIN_READAHEAD` of the store's `retain_all`.
+    const CERT_SLICES: usize = 256;
+    const CERT_THREADS: usize = 4;
+    const CERT_READAHEAD: usize = 4 << 20;
+
+    /// The first key after every key of a map, as the store's `prefix_end`.
+    fn prefix_end(prefix: [u8; PREFIX_LEN]) -> [u8; PREFIX_LEN] {
+        (u32::from_be_bytes(prefix) + 1).to_be_bytes()
+    }
+
+    /// The raw key bounds `lower..upper` of the slices `i..i + count` of `slices`, as the store's
+    /// `slice_bounds` and `key_range` give them.
+    fn slice_range(prefix: [u8; PREFIX_LEN], i: usize, count: usize, slices: usize) -> (Vec<u8>, Vec<u8>) {
+        let start = |i: usize| ((i * 65536 / slices) as u16).to_be_bytes();
+        let lower = [&prefix[..], &start(i)[..]].concat();
+        let upper = match i + count < slices {
+            true => [&prefix[..], &start(i + count)[..]].concat(),
+            false => prefix_end(prefix).to_vec(),
+        };
+        (lower, upper)
+    }
+
+    /// The first and the last possible key of slice `i` of `slices`, as the store's
+    /// `slice_key_range` gives them to a sliced compaction.
+    fn slice_key_range(prefix: [u8; PREFIX_LEN], i: usize, slices: usize) -> (Vec<u8>, Vec<u8>) {
+        let start = |i: usize| (i * 65536 / slices) as u16;
+        let end = match i + 1 < slices {
+            true => [&prefix[..], &(start(i + 1) - 1).to_be_bytes(), &[0xff; 30][..]].concat(),
+            false => [&prefix[..], &[0xff; 32][..]].concat(),
+        };
+        ([&prefix[..], &start(i).to_be_bytes()[..]].concat(), end)
+    }
+
+    /// The peak and the current resident memory in MB; zero where `/proc` is absent.
+    fn memory_mb() -> (f64, f64) {
+        let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+        let field = |name: &str| {
+            let line = status.lines().find(|line| line.starts_with(name));
+            line.and_then(|line| numbers(line).first().copied()).unwrap_or(0.0) / 1024.0
+        };
+        (field("VmHWM:"), field("VmRSS:"))
+    }
+
+    /// Restarts the peak resident memory at the current value (Linux; a no-op elsewhere).
+    fn reset_peak_memory() {
+        let _ = std::fs::write("/proc/self/clear_refs", "5");
+    }
+
+    /// Samples the size of a directory once a second and keeps the largest.
+    struct PeakDirSize {
+        stop: Arc<AtomicBool>,
+        peak: Arc<AtomicU64>,
+        handle: std::thread::JoinHandle<()>,
+    }
+
+    impl PeakDirSize {
+        fn start(dir: PathBuf) -> Self {
+            let (stop, peak) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicU64::new(dir_size(&dir))));
+            let handle = std::thread::spawn({
+                let (stop, peak) = (stop.clone(), peak.clone());
+                move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        peak.fetch_max(dir_size(&dir), Ordering::Relaxed);
+                        std::thread::sleep(Duration::from_secs(1));
+                    }
+                    peak.fetch_max(dir_size(&dir), Ordering::Relaxed);
+                }
+            });
+            Self { stop, peak, handle }
+        }
+
+        fn finish(self) -> u64 {
+            self.stop.store(true, Ordering::Relaxed);
+            let _ = self.handle.join();
+            self.peak.load(Ordering::Relaxed)
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum PassMode {
+        /// No pass.
+        None,
+        /// Counts the rows.
+        Scan,
+        /// One delete per removed row.
+        Point,
+        /// The store's write: a range delete of the slice, then puts of the kept rows.
+        Rewrite,
+        /// Deletes if the slice loses at most half its rows and no more than the cap; otherwise a
+        /// second scan that rewrites.
+        Design,
+    }
+
+    impl PassMode {
+        fn parse(name: &str) -> Result<Self> {
+            Ok(match name {
+                "none" => Self::None,
+                "scan" => Self::Scan,
+                "point" => Self::Point,
+                "rewrite" => Self::Rewrite,
+                "design" => Self::Design,
+                other => bail!("unknown mode {other}"),
+            })
+        }
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct SliceStats {
+        kept: u64,
+        removed: u64,
+        /// The key and value bytes of the rows read.
+        row_bytes: u64,
+        scan_secs: f64,
+        /// The second scan of a slice that `design` rewrites.
+        rescan_secs: f64,
+        write_secs: f64,
+        /// The size of the batch written.
+        batch_bytes: usize,
+        /// The size of a delete batch that `design` built and dropped.
+        dropped_bytes: usize,
+        wrote_deletes: bool,
+        wrote_rewrite: bool,
+        /// The deletion entries the scan stepped over, and every entry it stepped over, rows included.
+        tombstones: u64,
+        entries: u64,
+    }
+
+    /// Visits the rows in `lower..upper` with the read options of the store's `retain_range`.
+    fn scan_range(db: &RocksDB, lower: &[u8], upper: &[u8], mut visit: impl FnMut(&[u8], &[u8])) -> Result<()> {
+        let mut options = rocksdb::ReadOptions::default();
+        options.set_total_order_seek(true);
+        options.set_iterate_lower_bound(lower.to_vec());
+        options.set_iterate_upper_bound(upper.to_vec());
+        options.set_readahead_size(CERT_READAHEAD);
+        options.fill_cache(false);
+        let mut iter = db.raw_iterator_opt(options);
+        iter.seek(lower);
+        while let Some((key, value)) = iter.item() {
+            visit(key, value);
+            iter.next();
+        }
+        iter.status()?;
+        Ok(())
+    }
+
+    /// Whether a certificate row's value, `(height, round)` in bincode, is of a height in `1..below`.
+    fn is_removable(value: &[u8], below: u32) -> bool {
+        value.first_chunk::<4>().is_some_and(|height| (1..below).contains(&u32::from_le_bytes(*height)))
+    }
+
+    /// Runs one mode of the certificate pass on the rows in `lower..upper`, in one write.
+    fn pass_range(
+        db: &RocksDB,
+        lower: &[u8],
+        upper: &[u8],
+        below: u32,
+        mode: PassMode,
+        cap: usize,
+    ) -> Result<SliceStats> {
+        use rocksdb::perf::{PerfContext, PerfMetric};
+
+        let mut stats = SliceStats::default();
+        let mut perf = PerfContext::default();
+        perf.reset();
+        let timer = Instant::now();
+        let mut batch = rocksdb::WriteBatch::default();
+        if mode == PassMode::Rewrite {
+            // The range delete applies before the puts that follow it.
+            batch.delete_range(lower, upper);
+        }
+        scan_range(db, lower, upper, |key, value| {
+            stats.row_bytes += (key.len() + value.len()) as u64;
+            if is_removable(value, below) {
+                stats.removed += 1;
+                if mode == PassMode::Point || (mode == PassMode::Design && batch.len() < cap) {
+                    batch.delete(key);
+                }
+            } else {
+                stats.kept += 1;
+                if mode == PassMode::Rewrite {
+                    batch.put(key, value);
+                }
+            }
+        })?;
+        stats.scan_secs = timer.elapsed().as_secs_f64();
+        stats.tombstones = perf.metric(PerfMetric::InternalDeleteSkippedCount);
+        stats.entries = perf.metric(PerfMetric::InternalKeySkippedCount);
+
+        let deletes_fit = stats.removed <= stats.kept && stats.removed <= cap as u64;
+        match mode {
+            PassMode::None | PassMode::Scan => {}
+            _ if stats.removed == 0 => {}
+            PassMode::Design if !deletes_fit => {
+                stats.dropped_bytes = batch.size_in_bytes();
+                drop(batch);
+                let rewrite = pass_range(db, lower, upper, below, PassMode::Rewrite, cap)?;
+                stats.rescan_secs = rewrite.scan_secs;
+                stats.write_secs = rewrite.write_secs;
+                stats.batch_bytes = rewrite.batch_bytes;
+                stats.wrote_rewrite = true;
+            }
+            _ => {
+                stats.batch_bytes = batch.size_in_bytes();
+                let timer = Instant::now();
+                db.write(batch)?;
+                stats.write_secs = timer.elapsed().as_secs_f64();
+                stats.wrote_rewrite = mode == PassMode::Rewrite;
+                stats.wrote_deletes = mode != PassMode::Rewrite;
+            }
+        }
+        Ok(stats)
+    }
+
+    /// Runs one mode of the certificate pass over the map, in 256 slices on `threads` threads.
+    fn cert_pass(db: &RocksDB, below: u32, mode: PassMode, cap: usize, threads: usize) -> Result<Vec<SliceStats>> {
+        use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+        let prefix = map_prefix(BlockMap::Certificate);
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build()?;
+        pool.install(|| {
+            (0..CERT_SLICES)
+                .into_par_iter()
+                .map(|i| {
+                    // The counters are per thread.
+                    rocksdb::perf::set_perf_stats(rocksdb::perf::PerfStatsLevel::EnableCount);
+                    let (lower, upper) = slice_range(prefix, i, 1, CERT_SLICES);
+                    pass_range(db, &lower, &upper, below, mode, cap)
+                })
+                .collect()
+        })
+    }
+
+    /// Runs a pass with its measurements around it and prints them.
+    fn measured_pass(
+        db: &RocksDB,
+        log: &Path,
+        label: &str,
+        below: u32,
+        mode: PassMode,
+        cap: usize,
+        threads: usize,
+    ) -> Result<Vec<SliceStats>> {
+        reset_peak_memory();
+        let (_, rss_before) = memory_mb();
+        let (timer, io, stalls) = (Instant::now(), disk_io(), stall_count(log));
+        let slices = cert_pass(db, below, mode, cap, threads)?;
+        let (secs, io_after, (peak, _)) = (timer.elapsed().as_secs_f64(), disk_io(), memory_mb());
+
+        let sum = |f: &dyn Fn(&SliceStats) -> f64| slices.iter().map(f).sum::<f64>();
+        let count = |f: &dyn Fn(&SliceStats) -> bool| slices.iter().filter(|s| f(s)).count();
+        let largest = |f: &dyn Fn(&SliceStats) -> usize| slices.iter().map(f).max().unwrap_or(0);
+        let (kept, removed) = (sum(&|s| s.kept as f64), sum(&|s| s.removed as f64));
+        let mut walls: Vec<f64> = slices.iter().map(|s| s.scan_secs + s.rescan_secs + s.write_secs).collect();
+        walls.sort_by(f64::total_cmp);
+        println!(
+            "RESULT cert-pass label={label} mode={mode:?} below={below} cap={cap} threads={threads} secs={secs:.2} \
+             rows={:.0} kept={kept:.0} removed={removed:.0} removed_fraction={:.4} row_bytes={:.0} \
+             slices_deleted={} slices_rewritten={} slices_untouched={} \
+             scan_thread_s={:.2} rescan_thread_s={:.2} write_thread_s={:.2} slice_s_median={:.3} slice_s_max={:.3} \
+             batch_bytes_total={:.0} batch_bytes_max={} dropped_bytes_total={:.0} dropped_bytes_max={} \
+             tombstones_skipped={:.0} entries_stepped={:.0} disk_read_gb={:.3} disk_write_gb={:.3} stalls={} \
+             rss_before_mb={rss_before:.0} rss_peak_mb={peak:.0}",
+            kept + removed,
+            removed / (kept + removed).max(1.0),
+            sum(&|s| s.row_bytes as f64),
+            count(&|s| s.wrote_deletes),
+            count(&|s| s.wrote_rewrite),
+            count(&|s| !s.wrote_deletes && !s.wrote_rewrite),
+            sum(&|s| s.scan_secs),
+            sum(&|s| s.rescan_secs),
+            sum(&|s| s.write_secs),
+            walls[walls.len() / 2],
+            walls[walls.len() - 1],
+            sum(&|s| s.batch_bytes as f64),
+            largest(&|s| s.batch_bytes),
+            sum(&|s| s.dropped_bytes as f64),
+            largest(&|s| s.dropped_bytes),
+            sum(&|s| s.tombstones as f64),
+            sum(&|s| s.entries as f64),
+            gb(io_after.read.saturating_sub(io.read)),
+            gb(io_after.write.saturating_sub(io.write)),
+            stall_count(log).saturating_sub(stalls),
+        );
+        Ok(slices)
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum CompactKind {
+        /// The store's `compact_prefix`: a plain `compact_range`.
+        Plain,
+        /// The store's `compact_key_range`: bottom-level files are rewritten too.
+        Force,
+    }
+
+    impl CompactKind {
+        fn parse(name: &str) -> Result<Self> {
+            Ok(match name {
+                "plain" => Self::Plain,
+                "force" => Self::Force,
+                other => bail!("unknown compaction {other}"),
+            })
+        }
+    }
+
+    /// Compacts slice `i` of `slices` of a map; slice 0 of 1 is the map.
+    fn compact_map(db: &RocksDB, map: BlockMap, kind: CompactKind, i: usize, slices: usize) {
+        let prefix = map_prefix(map);
+        match kind {
+            CompactKind::Plain => {
+                let (lower, upper) = slice_range(prefix, i, 1, slices);
+                db.compact_range(Some(&lower), Some(&upper));
+            }
+            CompactKind::Force => {
+                let (lower, end) = slice_key_range(prefix, i, slices);
+                let mut options = rocksdb::CompactOptions::default();
+                options.set_bottommost_level_compaction(rocksdb::BottommostLevelCompaction::ForceOptimized);
+                options.set_exclusive_manual_compaction(false);
+                db.compact_range_opt(Some(&lower), Some(&end), &options);
+            }
+        }
+    }
+
+    /// Compacts the certificate map and prints the time, the disk bytes and the error count.
+    fn measured_compaction(db: &RocksDB, log: &Path, label: &str, kind: CompactKind) -> f64 {
+        let (timer, io, stalls) = (Instant::now(), disk_io(), stall_count(log));
+        let errors = property(db, "rocksdb.background-errors");
+        compact_map(db, BlockMap::Certificate, kind, 0, 1);
+        let (secs, io_after) = (timer.elapsed().as_secs_f64(), disk_io());
+        println!(
+            "RESULT cert-compact label={label} kind={kind:?} secs={secs:.2} disk_read_gb={:.3} disk_write_gb={:.3} \
+             stalls={} background_errors={errors}->{}",
+            gb(io_after.read.saturating_sub(io.read)),
+            gb(io_after.write.saturating_sub(io.write)),
+            stall_count(log).saturating_sub(stalls),
+            property(db, "rocksdb.background-errors"),
+        );
+        secs
+    }
+
+    /// Prints the live files that overlap the certificate prefix, by level, and RocksDB's size
+    /// estimate for the prefix. A file's entries and deletions are those RocksDB has loaded: after a
+    /// restart, at most about 20 files.
+    fn cert_state(db: &RocksDB, ledger_dir: &Path, label: &str) -> Result<()> {
+        let prefix = map_prefix(BlockMap::Certificate);
+        let end = prefix_end(prefix);
+        let mut levels = std::collections::BTreeMap::<i32, (usize, usize, u64, u64)>::new();
+        for file in db.live_files()? {
+            let after = file.start_key.as_deref().is_some_and(|start| start >= &end[..]);
+            let before = file.end_key.as_deref().is_some_and(|last| last < &prefix[..]);
+            if !after && !before {
+                let level = levels.entry(file.level).or_default();
+                *level = (level.0 + 1, level.1 + file.size, level.2 + file.num_entries, level.3 + file.num_deletions);
+            }
+        }
+        let total = levels.values().fold((0, 0, 0, 0), |a, l| (a.0 + l.0, a.1 + l.1, a.2 + l.2, a.3 + l.3));
+        let by_level: Vec<String> =
+            levels.iter().map(|(level, l)| format!("L{level}:{}f/{}B/{}e/{}d", l.0, l.1, l.2, l.3)).collect();
+        println!(
+            "RESULT cert-state label={label} approximate_bytes={} files={} file_bytes={} file_entries={} \
+             file_deletions={} levels=[{}] total_sst_bytes={} ledger_dir_bytes={} memtable_bytes={}",
+            db.get_approximate_sizes(&[rocksdb::Range::new(&prefix, &end)])[0],
+            total.0,
+            total.1,
+            total.2,
+            total.3,
+            by_level.join(","),
+            property(db, "rocksdb.total-sst-files-size"),
+            dir_size(ledger_dir),
+            property(db, "rocksdb.cur-size-all-mem-tables"),
+        );
+        Ok(())
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Load {
+        None,
+        /// Repeats the certificate scan.
+        Scan,
+        /// Stores this many heights per second after the tip, one batch each; zero is unthrottled.
+        Write(f64),
+    }
+
+    impl Load {
+        fn parse(name: &str) -> Result<Self> {
+            Ok(match name {
+                "none" => Self::None,
+                "scan" => Self::Scan,
+                other => Self::Write(other.strip_prefix("write:").context("unknown load")?.parse()?),
+            })
+        }
+    }
+
+    /// Compacts the certificate map on a thread while `load` runs on this one, and prints the
+    /// compaction's time and the load's latencies.
+    fn compact_under_load(
+        db_dir: &str,
+        db: &RocksDB,
+        log: &Path,
+        kind: CompactKind,
+        load: Load,
+        source: Option<&str>,
+        below: u32,
+    ) -> Result<()> {
+        // Opened before the compaction starts, so the load starts with it.
+        let writer = match load {
+            Load::Write(_) => {
+                let raw = Raw::open(db_dir)?;
+                let tip = raw.tip()?.context("empty store")?;
+                Some((raw, tip, Source::parse(source.context("--load write needs --source <sample>")?)?))
+            }
+            _ => None,
+        };
+        let done = AtomicBool::new(false);
+        let (io, stalls) = (disk_io(), stall_count(log));
+        let errors = property(db, "rocksdb.background-errors");
+        let (secs, mut latencies, load_secs) = std::thread::scope(|scope| -> Result<_> {
+            let compaction = scope.spawn(|| {
+                let timer = Instant::now();
+                compact_map(db, BlockMap::Certificate, kind, 0, 1);
+                done.store(true, Ordering::SeqCst);
+                timer.elapsed().as_secs_f64()
+            });
+            let (timer, mut latencies) = (Instant::now(), Vec::<f64>::new());
+            match load {
+                Load::None => {}
+                Load::Scan => {
+                    while !done.load(Ordering::SeqCst) {
+                        let timer = Instant::now();
+                        cert_pass(db, below, PassMode::Scan, 0, CERT_THREADS)?;
+                        latencies.push(timer.elapsed().as_secs_f64());
+                    }
+                }
+                Load::Write(per_sec) => {
+                    let (_, tip, source) = writer.as_ref().context("no writer")?;
+                    let mut rng = SplitMix(11 ^ (u64::from(*tip) << 32));
+                    let mut height = *tip;
+                    while !done.load(Ordering::SeqCst) {
+                        height += 1;
+                        let mut batch = rocksdb::WriteBatch::default();
+                        put_height(&mut batch, height, source, &mut rng)?;
+                        let write = Instant::now();
+                        db.write(batch)?;
+                        latencies.push(write.elapsed().as_secs_f64());
+                        if per_sec > 0.0 {
+                            let due = Duration::from_secs_f64(latencies.len() as f64 / per_sec);
+                            std::thread::sleep(due.saturating_sub(timer.elapsed()));
+                        }
+                    }
+                }
+            }
+            let load_secs = timer.elapsed().as_secs_f64();
+            let secs = compaction.join().map_err(|_| anyhow::anyhow!("the compaction thread panicked"))?;
+            Ok((secs, latencies, load_secs))
+        })?;
+        latencies.sort_by(f64::total_cmp);
+        let at = |p: f64| latencies.get(((latencies.len().max(1) - 1) as f64 * p) as usize).copied().unwrap_or(0.0);
+        let io_after = disk_io();
+        println!(
+            "RESULT bg-compact kind={kind:?} load={load:?} compaction_s={secs:.2} load_s={load_secs:.2} load_ops={} \
+             op_ms_p50={:.3} op_ms_p99={:.3} op_ms_max={:.3} disk_read_gb={:.3} disk_write_gb={:.3} stalls={} \
+             background_errors={errors}->{}",
+            latencies.len(),
+            at(0.5) * 1e3,
+            at(0.99) * 1e3,
+            at(1.0) * 1e3,
+            gb(io_after.read.saturating_sub(io.read)),
+            gb(io_after.write.saturating_sub(io.write)),
+            stall_count(log).saturating_sub(stalls),
+            property(db, "rocksdb.background-errors"),
+        );
+        Ok(())
+    }
+
+    struct PassArgs {
+        below: u32,
+        mode: PassMode,
+        cap: usize,
+        threads: usize,
+        flush: bool,
+        compact: Option<CompactKind>,
+        then_open: bool,
+        bg_compact: Option<CompactKind>,
+        load: Load,
+        source: Option<String>,
+        retention: u32,
+    }
+
+    /// `cert-pass`: a pass, then optionally a flush, a compaction, the store's own open, and a
+    /// compaction under load.
+    fn cert_pass_command(db_dir: &str, args: &PassArgs) -> Result<()> {
+        let mode = storage_mode(db_dir);
+        let ledger_dir = aleo_ledger_dir(N::ID, &mode);
+        let log = ledger_dir.join("LOG");
+        let timer = Instant::now();
+        let db = RocksDB::open(N::ID, mode.clone())?;
+        println!("{} opened the database at {db_dir} in {:.2} s", stamp(), timer.elapsed().as_secs_f64());
+        let peak = PeakDirSize::start(ledger_dir.clone());
+        // A run that times the open reads nothing it does not need before it.
+        if !args.then_open {
+            cert_state(&db, &ledger_dir, "before")?;
+        }
+        if args.mode != PassMode::None {
+            measured_pass(&db, &log, "pass", args.below, args.mode, args.cap, args.threads)?;
+        }
+        if args.flush {
+            let (timer, io) = (Instant::now(), disk_io());
+            db.flush()?;
+            println!(
+                "RESULT cert-flush secs={:.2} disk_write_gb={:.3}",
+                timer.elapsed().as_secs_f64(),
+                gb(disk_io().write.saturating_sub(io.write))
+            );
+        }
+        if let Some(kind) = args.compact {
+            measured_compaction(&db, &log, "after-pass", kind);
+        }
+        if !args.then_open && (args.mode != PassMode::None || args.compact.is_some()) {
+            cert_state(&db, &ledger_dir, "after")?;
+        }
+        if args.then_open {
+            let before_open = events().start.elapsed().as_secs_f64();
+            let window = Window::start(&log);
+            let store = Store::open_with_authority_retention(mode.clone(), Some(args.retention))?;
+            let total = events().start.elapsed().as_secs_f64();
+            let open = window.report("store open (block tree, block cache, startup pruning)", &log);
+            let logged = |prefix: &str| events().logged_number(prefix).map_or("none".into(), |n| format!("{n}"));
+            println!(
+                "RESULT open mode={:?} compact={:?} process_start_to_open_s={total:.2} before_store_open_s={before_open:.2} \
+                 store_open_s={open:.2} store_walk_s={} store_cert_scan_nothing_removed_s={} store_cert_rewrite_s={} \
+                 store_cert_compaction_s={} watermark={:?}",
+                args.mode,
+                args.compact,
+                logged("Pruned the authority data below block"),
+                logged("No certificate indexes of pruned blocks to remove"),
+                logged("Removed "),
+                logged("Compacted the certificate map"),
+                store.authority_pruned_below()?,
+            );
+            std::io::stdout().flush()?;
+            let timer = Instant::now();
+            store.stop_background_work();
+            println!("{} stop_background_work() returned after {:.3} s", stamp(), timer.elapsed().as_secs_f64());
+            cert_state(&db, &ledger_dir, "after-open")?;
+        }
+        if let Some(kind) = args.bg_compact {
+            compact_under_load(db_dir, &db, &log, kind, args.load, args.source.as_deref(), args.below)?;
+            cert_state(&db, &ledger_dir, "after-bg-compact")?;
+        }
+        let (peak_mb, rss_mb) = memory_mb();
+        println!(
+            "RESULT process secs={:.2} rss_peak_mb={peak_mb:.0} rss_mb={rss_mb:.0} peak_ledger_dir_bytes={} \
+             ledger_dir_bytes={} background_errors={}",
+            events().start.elapsed().as_secs_f64(),
+            peak.finish(),
+            dir_size(&ledger_dir),
+            property(&db, "rocksdb.background-errors"),
+        );
+        Ok(())
+    }
+
+    /// `slice-bench`: the cost of one slice by removal fraction, from a warm page cache, and of one
+    /// large batch.
+    fn slice_bench(
+        db_dir: &str,
+        belows: &[u32],
+        reps: usize,
+        big_keys: usize,
+        big_slices: usize,
+        big_below: u32,
+    ) -> Result<()> {
+        let db = RocksDB::open(N::ID, storage_mode(db_dir))?;
+        rocksdb::perf::set_perf_stats(rocksdb::perf::PerfStatsLevel::EnableCount);
+        let prefix = map_prefix(BlockMap::Certificate);
+        let mut next = 0;
+        let ms = |secs: f64| secs * 1e3;
+        for &below in belows {
+            for mode in [PassMode::Point, PassMode::Rewrite] {
+                for _ in 0..reps {
+                    ensure!(next < CERT_SLICES, "more runs than slices");
+                    let (lower, upper) = slice_range(prefix, next, 1, CERT_SLICES);
+                    // The first scan loads the page cache.
+                    let first = pass_range(&db, &lower, &upper, below, PassMode::Scan, 0)?;
+                    let scan = pass_range(&db, &lower, &upper, below, PassMode::Scan, 0)?;
+                    let run = pass_range(&db, &lower, &upper, below, mode, usize::MAX)?;
+                    // The next start's scan of this slice, with the write still in the memtable.
+                    let after = pass_range(&db, &lower, &upper, below, PassMode::Scan, 0)?;
+                    println!(
+                        "RESULT slice-bench below={below} mode={mode:?} slice={next} kept={} removed={} \
+                         removed_fraction={:.4} first_scan_ms={:.2} warm_scan_ms={:.2} scan_and_build_ms={:.2} \
+                         write_ms={:.2} batch_bytes={} row_bytes={} scan_after_ms={:.2} scan_after_tombstones={} \
+                         scan_after_entries={} scan_after_rows={}",
+                        run.kept,
+                        run.removed,
+                        run.removed as f64 / (run.kept + run.removed).max(1) as f64,
+                        ms(first.scan_secs),
+                        ms(scan.scan_secs),
+                        ms(run.scan_secs),
+                        ms(run.write_secs),
+                        run.batch_bytes,
+                        run.row_bytes,
+                        ms(after.scan_secs),
+                        after.tombstones,
+                        after.entries,
+                        after.kept + after.removed,
+                    );
+                    next += 1;
+                }
+            }
+        }
+        if big_keys > 0 {
+            ensure!(next + big_slices <= CERT_SLICES, "the large batch needs {big_slices} untouched slices");
+            let (lower, upper) = slice_range(prefix, next, big_slices, CERT_SLICES);
+            let (mut removed, mut kept) = (Vec::<Vec<u8>>::new(), Vec::<(Vec<u8>, Vec<u8>)>::new());
+            let timer = Instant::now();
+            scan_range(&db, &lower, &upper, |key, value| {
+                if is_removable(value, big_below) {
+                    if removed.len() < big_keys {
+                        removed.push(key.to_vec());
+                    }
+                } else if kept.len() < big_keys {
+                    kept.push((key.to_vec(), value.to_vec()));
+                }
+            })?;
+            let scan_secs = timer.elapsed().as_secs_f64();
+            let timer = Instant::now();
+            let mut deletes = rocksdb::WriteBatch::default();
+            removed.iter().for_each(|key| deletes.delete(key));
+            let (build_deletes, delete_bytes) = (timer.elapsed().as_secs_f64(), deletes.size_in_bytes());
+            let timer = Instant::now();
+            db.write(deletes)?;
+            let write_deletes = timer.elapsed().as_secs_f64();
+            let timer = Instant::now();
+            let mut puts = rocksdb::WriteBatch::default();
+            kept.iter().for_each(|(key, value)| puts.put(key, value));
+            let (build_puts, put_bytes) = (timer.elapsed().as_secs_f64(), puts.size_in_bytes());
+            let timer = Instant::now();
+            db.write(puts)?;
+            let write_puts = timer.elapsed().as_secs_f64();
+            println!(
+                "RESULT big-batch below={big_below} slices={big_slices} scan_ms={:.1} deletes={} delete_batch_bytes={delete_bytes} \
+                 build_deletes_ms={:.2} write_deletes_ms={:.2} puts={} put_batch_bytes={put_bytes} build_puts_ms={:.2} \
+                 write_puts_ms={:.2}",
+                ms(scan_secs),
+                removed.len(),
+                ms(build_deletes),
+                ms(write_deletes),
+                kept.len(),
+                ms(build_puts),
+                ms(write_puts),
+            );
+        }
+        Ok(())
+    }
+
+    struct FaultArgs {
+        below: u32,
+        kind: String,
+        fault_on: Option<String>,
+        fault_off: Option<String>,
+        stop_by_flush: bool,
+        /// Skips the compactions that rewrite the bottom level, which take minutes on a healthy store.
+        skip_force: bool,
+    }
+
+    /// `fault-cert`: what manual compactions do on a broken disk and on a store RocksDB has stopped.
+    fn fault_cert(db_dir: &str, args: &FaultArgs) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = storage_mode(db_dir);
+        let ledger_dir = aleo_ledger_dir(N::ID, &mode);
+        let log = ledger_dir.join("LOG");
+        let db = RocksDB::open(N::ID, mode)?;
+        // Work for the compactions, flushed so that none of them starts with a flush.
+        measured_pass(&db, &log, "setup", args.below, PassMode::Point, usize::MAX, CERT_THREADS)?;
+        db.flush()?;
+        // RocksDB's own compactions end first, so the first failure is the manual compaction's.
+        let timer = Instant::now();
+        while property(&db, "rocksdb.num-running-compactions") > 0 && timer.elapsed() < Duration::from_secs(300) {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        println!("{} RocksDB's own compactions ended after {:.1} s", stamp(), timer.elapsed().as_secs_f64());
+        cert_state(&db, &ledger_dir, "before")?;
+
+        let errors = || property(&db, "rocksdb.background-errors");
+        let outcome = |result: std::result::Result<(), rocksdb::Error>| match result {
+            Ok(()) => "ok".to_string(),
+            Err(error) => format!("ERR({error})"),
+        };
+        // A key outside every map: the network ID 0xffff has no maps.
+        let key = [&[0xff, 0xff, 0xff, 0xfe][..], b"prune_bench_probe"].concat();
+        let probe = |label: &str| {
+            let timer = Instant::now();
+            let put = outcome(db.put(&key, utc().as_bytes()));
+            println!(
+                "{} PROBE at={label} put={put} put_s={:.3} background_errors={} running_compactions={} write_stopped={}",
+                stamp(),
+                timer.elapsed().as_secs_f64(),
+                errors(),
+                property(&db, "rocksdb.num-running-compactions"),
+                property(&db, "rocksdb.is-write-stopped"),
+            );
+        };
+        let step = |label: &str, work: &dyn Fn() -> String| {
+            let (before, io, timer) = (errors(), disk_io(), Instant::now());
+            let result = work();
+            println!(
+                "{} STEP {label}: returned after {:.3} s, result={result}, background_errors {before} -> {}, disk_write_gb={:.3}",
+                stamp(),
+                timer.elapsed().as_secs_f64(),
+                errors(),
+                gb(disk_io().write.saturating_sub(io.write)),
+            );
+            probe(&format!("after-{}", label.split(' ').next().unwrap_or_default()));
+        };
+        let shell = |command: &Option<String>| -> Result<()> {
+            if let Some(command) = command {
+                let status = std::process::Command::new("sh").arg("-c").arg(command).status()?;
+                println!("{} ran `{command}`: {status}", stamp());
+            }
+            Ok(())
+        };
+        let compact = |map: BlockMap, kind: CompactKind, i: usize, slices: usize| {
+            compact_map(&db, map, kind, i, slices);
+            "returned (the call reports no status)".to_string()
+        };
+
+        probe("healthy");
+        match args.kind.as_str() {
+            "none" => {}
+            "chmod" => std::fs::set_permissions(&ledger_dir, std::fs::Permissions::from_mode(0o555))?,
+            "cmd" => shell(&args.fault_on)?,
+            other => bail!("unknown fault {other}"),
+        }
+        println!("{} FAULT {} on", stamp(), args.kind);
+        probe("fault-on");
+        if args.stop_by_flush {
+            step("F1 flush", &|| outcome(db.flush()));
+        }
+        step("C1 plain compact_range of the certificate prefix", &|| {
+            compact(BlockMap::Certificate, CompactKind::Plain, 0, 1)
+        });
+        step("C2 plain compact_range of the certificate prefix again", &|| {
+            compact(BlockMap::Certificate, CompactKind::Plain, 0, 1)
+        });
+        if !args.skip_force {
+            step("C3 ForceOptimized, authority slice 0 of 24", &|| {
+                compact(BlockMap::Authority, CompactKind::Force, 0, 24)
+            });
+            step("C4 ForceOptimized, certificate prefix", &|| compact(BlockMap::Certificate, CompactKind::Force, 0, 1));
+        }
+        step("W1 wait_for_compact, 10 s timeout", &|| {
+            let mut options = rocksdb::WaitForCompactOptions::default();
+            options.set_timeout(10_000_000);
+            outcome(db.wait_for_compact(&options))
+        });
+        match args.kind.as_str() {
+            "chmod" => std::fs::set_permissions(&ledger_dir, std::fs::Permissions::from_mode(0o755))?,
+            "cmd" => shell(&args.fault_off)?,
+            _ => {}
+        }
+        println!("{} FAULT {} off", stamp(), args.kind);
+        probe("fault-off");
+        step("C5 plain compact_range of the certificate prefix, fault removed", &|| {
+            compact(BlockMap::Certificate, CompactKind::Plain, 0, 1)
+        });
+        step("F2 flush", &|| outcome(db.flush()));
+        cert_state(&db, &ledger_dir, "after")?;
+        println!(
+            "RESULT fault-cert kind={} stop_by_flush={} background_errors={}",
+            args.kind,
+            args.stop_by_flush,
+            errors()
+        );
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------------------------------
 
     fn flag(args: &[String], name: &str) -> bool {
         args.iter().any(|a| a == name)
@@ -1059,6 +1904,49 @@ Build:
                 seal(&raw)
             }
             "settle" => settle_db(&Raw::open(db_dir)?.db),
+            "cert-pass" => {
+                let kind =
+                    |name: &str| flag_value::<String>(&args, name)?.map(|kind| CompactKind::parse(&kind)).transpose();
+                let pass = PassArgs {
+                    below: flag_value(&args, "--below")?.context("--below <height> is required")?,
+                    mode: PassMode::parse(&flag_value::<String>(&args, "--mode")?.context("--mode is required")?)?,
+                    cap: flag_value(&args, "--cap")?.unwrap_or(262_144),
+                    threads: flag_value(&args, "--threads")?.unwrap_or(CERT_THREADS),
+                    flush: flag(&args, "--flush"),
+                    compact: kind("--compact")?,
+                    then_open: flag(&args, "--then-open"),
+                    bg_compact: kind("--bg-compact")?,
+                    load: Load::parse(&flag_value::<String>(&args, "--load")?.unwrap_or("none".into()))?,
+                    source: flag_value(&args, "--source")?,
+                    retention,
+                };
+                cert_pass_command(db_dir, &pass)
+            }
+            "cert-state" => {
+                let mode = storage_mode(db_dir);
+                cert_state(&RocksDB::open(N::ID, mode.clone())?, &aleo_ledger_dir(N::ID, &mode), "now")
+            }
+            "slice-bench" => {
+                let belows = flag_value::<String>(&args, "--belows")?.unwrap_or_default();
+                let belows =
+                    belows.split(',').filter(|b| !b.is_empty()).map(str::parse).collect::<Result<Vec<u32>, _>>()?;
+                slice_bench(
+                    db_dir,
+                    &belows,
+                    flag_value(&args, "--reps")?.unwrap_or(3),
+                    flag_value(&args, "--big-keys")?.unwrap_or(0),
+                    flag_value(&args, "--big-slices")?.unwrap_or(8),
+                    flag_value(&args, "--big-below")?.unwrap_or(0),
+                )
+            }
+            "fault-cert" => fault_cert(db_dir, &FaultArgs {
+                below: flag_value(&args, "--below")?.context("--below <height> is required")?,
+                kind: flag_value(&args, "--kind")?.context("--kind is required")?,
+                fault_on: flag_value(&args, "--fault-on")?,
+                fault_off: flag_value(&args, "--fault-off")?,
+                stop_by_flush: flag(&args, "--stop-by-flush"),
+                skip_force: flag(&args, "--skip-force"),
+            }),
             "status" => status(&Raw::open(db_dir)?),
             other => bail!("unknown command {other}; see --help"),
         }
