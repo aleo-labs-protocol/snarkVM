@@ -27,8 +27,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The advance of the watermark, in heights, after which the authority map is compacted again. Unit
-/// tests use a few blocks.
+/// The advance of the watermark, in heights, after which a map is compacted again. Unit tests use a
+/// few blocks.
 const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 100_000 };
 
 /// The least time between two starts of the compaction, which is also how soon a failed run is
@@ -132,10 +132,18 @@ fn certificate_compacted_below<N: Network, B: BlockStorage<N>>(storage: &B, wate
 }
 
 /// Returns whether the certificate map is due for a compaction after a startup pass that removed
-/// the rows below `below`. The pass's own removals do not decide it: a compaction that was killed
-/// left its rows removed and its work undone.
-pub(super) fn certificate_compaction_due<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> bool {
-    storage.compacts_authority_map() && below > certificate_compacted_below(storage, below)
+/// the rows below `below`: once pruning has advanced an interval since the last finished
+/// compaction, or the `retention` window if that is shorter. The pass's own removals do not decide
+/// it: a compaction that was killed left its rows removed and its work undone. Until then the
+/// deleted rows cost the next pass a longer scan. A pass that removed more rows than it kept has
+/// pruned more than the window, so the compaction that clears the slices it rewrote is always due.
+pub(super) fn certificate_compaction_due<N: Network, B: BlockStorage<N>>(
+    storage: &B,
+    below: u32,
+    retention: u32,
+) -> bool {
+    storage.compacts_authority_map()
+        && below - certificate_compacted_below(storage, below) >= AUTHORITY_COMPACTION_INTERVAL_BLOCKS.min(retention)
 }
 
 /// Compacts the certificate map after a startup pass that removed the rows below `below`, so the
@@ -944,9 +952,45 @@ mod tests {
             );
         }
 
-        /// Ensures the certificate map is compacted at an open whose watermark is past the one its
-        /// last finished compaction recorded, whether or not the startup pass removed rows, so a
-        /// compaction that was killed before it was recorded runs again.
+        /// Opens a pruning store on `storage_mode` and returns it with the number of certificate map
+        /// compactions the open ran.
+        fn open_counting_certificate_compactions(storage_mode: &StorageMode) -> (Store, usize) {
+            let before = CERTIFICATE_COMPACTIONS.with(|count| count.get());
+            let store = open_with(storage_mode, Some(TEST_RETENTION));
+            let compactions = CERTIFICATE_COMPACTIONS.with(|count| count.get()) - before;
+            (store, compactions)
+        }
+
+        /// Ensures the certificate map is compacted only at an open whose watermark is an interval
+        /// past the one its last finished compaction recorded, so a node restarted often compacts
+        /// at the restart that completes the interval.
+        #[test]
+        fn test_certificate_compaction_waits_for_the_interval() {
+            let storage_mode = new_storage();
+            let blocks = sample_chain();
+            let mut inserted = 0;
+            // Each start finds a few more heights pruned.
+            for (watermark, compacts) in [(0, false), (3, false), (6, false), (DUE + 1, true), (DUE + 2, false)] {
+                let (store, compactions) = open_counting_certificate_compactions(&storage_mode);
+                assert_eq!(compactions, usize::from(compacts), "at watermark {watermark}");
+                let recorded = if watermark > DUE { DUE + 1 } else { 0 };
+                assert_eq!(certificate_compacted_below(&store.storage, u32::MAX), recorded);
+                // The next start's watermark is three heights on.
+                let tip = (TEST_RETENTION + watermark + 2).min(TRIGGER + 2) as usize;
+                for block in &blocks[inserted..=tip] {
+                    store.insert(block).unwrap();
+                }
+                inserted = tip + 1;
+            }
+
+            // A window shorter than the interval takes its place.
+            let storage = BlockDB::<CurrentNetwork>::open(new_storage()).unwrap();
+            assert!(!certificate_compaction_due(&storage, 3, 4));
+            assert!(certificate_compaction_due(&storage, 3, 3));
+        }
+
+        /// Ensures the certificate map is compacted whether or not the startup pass removed rows,
+        /// so a compaction that was killed before it was recorded runs again.
         #[test]
         fn test_certificate_compaction_reruns_until_recorded() {
             const KEY: BlockMetadataKey = BlockMetadataKey::CertificateCompaction;
@@ -960,12 +1004,7 @@ mod tests {
             assert!(store.storage.block_metadata_map().get_confirmed(&KEY).unwrap().is_none());
             drop(store);
 
-            let reopen = || {
-                let before = CERTIFICATE_COMPACTIONS.with(|count| count.get());
-                let store = open_with(&storage_mode, Some(TEST_RETENTION));
-                let compactions = CERTIFICATE_COMPACTIONS.with(|count| count.get()) - before;
-                (store, compactions)
-            };
+            let reopen = || open_counting_certificate_compactions(&storage_mode);
             let (store, compactions) = reopen();
             assert_eq!(compactions, 1);
             assert_eq!(certificate_compacted_below(&store.storage, watermark), watermark);

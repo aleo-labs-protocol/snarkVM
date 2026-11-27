@@ -356,7 +356,7 @@ fn prune_expired_authorities<N: Network, B: BlockStorage<N>>(
     let watermark = speculative_authority_pruned_below(storage)?;
     let floor = oldest_retained_authority_height(latest_height, retention_blocks);
     if let Some(below) = prune_authority_range(storage, watermark, floor)? {
-        prune_certificate_indexes(storage, below)?;
+        prune_certificate_indexes(storage, below, retention_blocks)?;
     }
     Ok(())
 }
@@ -399,7 +399,11 @@ fn prune_authority_range<N: Network, B: BlockStorage<N>>(
 /// Removes the certificate indexes of blocks below `below`, in one pass over the certificate map,
 /// then compacts the map if it is due. It runs on every startup that prunes, since inserts leave
 /// these rows behind.
-fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below: u32) -> Result<()> {
+fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(
+    storage: &B,
+    below: u32,
+    retention_blocks: u32,
+) -> Result<()> {
     debug!("Removing certificate indexes of pruned blocks below block {below}");
     let timer = std::time::Instant::now();
     let (kept, removed) = storage.retain_certificate_indexes(|index| !is_pruned_height(below, index.0))?;
@@ -413,7 +417,7 @@ fn prune_certificate_indexes<N: Network, B: BlockStorage<N>>(storage: &B, below:
     }
 
     // A failed compaction costs the next scan time, not the open.
-    if authority_compaction::certificate_compaction_due(storage, below)
+    if authority_compaction::certificate_compaction_due(storage, below, retention_blocks)
         && let Err(error) = authority_compaction::compact_certificate_map(storage, below)
     {
         error!("Failed to compact the certificate map: {error:#}");
