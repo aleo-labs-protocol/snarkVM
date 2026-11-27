@@ -61,7 +61,10 @@ use snarkvm_synthesizer_program::{
 };
 
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 /// It is public for other snarkVM crates, but it is not part of the API, and semver does not cover it.
 #[doc(hidden)]
@@ -69,10 +72,10 @@ use std::collections::{HashMap, HashSet};
 pub struct FinalizeTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
     /// Note that in a finalize context, all registers are finalize types.
-    inputs: IndexMap<u64, FinalizeType<N>>,
+    inputs: Arc<IndexMap<u64, FinalizeType<N>>>,
     /// The mapping of all destination registers to their defined types.
     /// Note that in a finalize context, all registers are finalize types.
-    destinations: IndexMap<u64, FinalizeType<N>>,
+    destinations: Arc<IndexMap<u64, FinalizeType<N>>>,
 }
 
 impl<N: Network> FinalizeTypes<N> {
