@@ -235,3 +235,172 @@ pub(crate) mod nonnative_params {
         (min_cost_num_of_limbs, min_cost_limb_size)
     }
 }
+
+/// Injective encodings of transcript data into native field elements.
+///
+/// Each encoding is injective only once the number of encoded items is fixed;
+/// callers must ensure the transcript has already bound that number.
+pub(crate) mod compact {
+    use super::AlgebraicSponge;
+    use snarkvm_curves::AffineCurve;
+    use snarkvm_fields::{PrimeField, Zero};
+    use snarkvm_utilities::{BigInteger, bytes_from_bits_le};
+
+    /// Maps each element to the native element with the same canonical integer.
+    pub(crate) fn nonnative_to_native<F: PrimeField, Target: PrimeField>(
+        elements: impl IntoIterator<Item = Target>,
+    ) -> Vec<F> {
+        // A modulus with fewer bits is a smaller modulus, so every canonical
+        // `Target` integer is a canonical `F` integer.
+        const {
+            assert!(Target::SIZE_IN_BITS < F::SIZE_IN_BITS);
+            assert!(<Target::BigInteger as BigInteger>::NUM_LIMBS <= <F::BigInteger as BigInteger>::NUM_LIMBS);
+        }
+        elements
+            .into_iter()
+            .map(|element| {
+                let mut repr = F::BigInteger::default();
+                repr.as_mut().iter_mut().zip(element.to_bigint().as_ref()).for_each(|(limb, source)| *limb = *source);
+                // The integer is below the `Target` modulus, which the assertion above puts
+                // below the `F` modulus.
+                F::from_bigint(repr).expect("a canonical nonnative integer is a canonical native integer")
+            })
+            .collect()
+    }
+
+    /// Absorbs each element as the native element with the same canonical
+    /// integer.
+    pub(crate) fn absorb_scalars<F: PrimeField, const RATE: usize, Target: PrimeField>(
+        sponge: &mut impl AlgebraicSponge<F, RATE>,
+        elements: impl IntoIterator<Item = Target>,
+    ) {
+        sponge.absorb_native_field_elements(&nonnative_to_native::<F, Target>(elements));
+    }
+
+    /// Returns the point's x-coordinate and two flags: whether y is the larger
+    /// of `±y` (as `AffineCurve::from_x_coordinate` reads it), and whether the
+    /// point is the identity. The identity maps to `(0, [false, true])`
+    /// whatever coordinates it stores.
+    pub(crate) fn compress_point<G: AffineCurve>(point: &G) -> (G::BaseField, [bool; 2]) {
+        if point.is_zero() {
+            return (G::BaseField::zero(), [false, true]);
+        }
+        let y = point.to_y_coordinate();
+        (point.to_x_coordinate(), [y > -y, false])
+    }
+
+    /// Absorbs each point's x-coordinate, then the flags of all points packed
+    /// two bits per point, least significant bit first.
+    pub(crate) fn absorb_points<F: PrimeField, const RATE: usize, G: AffineCurve<BaseField = F>>(
+        sponge: &mut impl AlgebraicSponge<F, RATE>,
+        points: impl IntoIterator<Item = G>,
+    ) {
+        absorb_points_and_bits(sponge, points, [])
+    }
+
+    /// `absorb_points`, with `extra_bits` packed after the points' flags.
+    pub(crate) fn absorb_points_and_bits<F: PrimeField, const RATE: usize, G: AffineCurve<BaseField = F>>(
+        sponge: &mut impl AlgebraicSponge<F, RATE>,
+        points: impl IntoIterator<Item = G>,
+        extra_bits: impl IntoIterator<Item = bool>,
+    ) {
+        let points = points.into_iter();
+        let mut xs = Vec::with_capacity(points.size_hint().0);
+        let mut bits = Vec::with_capacity(2 * points.size_hint().0);
+        for point in points {
+            let (x, flags) = compress_point(&point);
+            xs.push(x);
+            bits.extend(flags);
+        }
+        bits.extend(extra_bits);
+        sponge.absorb_native_field_elements(&xs);
+        sponge.absorb_bytes(&bytes_from_bits_le(&bits));
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::crypto_hash::PoseidonSponge;
+        use itertools::Itertools;
+        use snarkvm_curves::{
+            AffineCurve,
+            ProjectiveCurve,
+            bls12_377::{Fq, Fr, G1Affine, G1Projective},
+        };
+        use snarkvm_fields::{One, Zero};
+        use snarkvm_utilities::rand::{TestRng, Uniform};
+
+        type Sponge = PoseidonSponge<Fq, 2, 1>;
+
+        fn decode_point((x, [greatest, infinity]): (Fq, [bool; 2])) -> Option<G1Affine> {
+            if infinity { Some(G1Affine::zero()) } else { G1Affine::from_x_coordinate(x, greatest) }
+        }
+
+        fn squeeze_after(points: &[G1Affine]) -> Fq {
+            let mut sponge = Sponge::new();
+            absorb_points(&mut sponge, points.iter().copied());
+            sponge.squeeze_native_field_elements(1)[0]
+        }
+
+        #[test]
+        fn nonnative_to_native_keeps_the_integer() {
+            let rng = &mut TestRng::default();
+            let mut elements = vec![Fr::zero(), Fr::one(), Fr::from(2u64), -Fr::from(2u64), -Fr::one()];
+            elements.extend((0..32).map(|_| Fr::rand(rng)));
+            let native = nonnative_to_native::<Fq, _>(elements.iter().copied());
+            assert_eq!(native.len(), elements.len());
+            for (element, native) in elements.iter().zip_eq(&native) {
+                let (source, target) = (element.to_bigint(), native.to_bigint());
+                assert_eq!(&target.as_ref()[..source.as_ref().len()], source.as_ref());
+                assert!(target.as_ref()[source.as_ref().len()..].iter().all(|limb| *limb == 0));
+            }
+            // `r - 1`, the largest `Fr`, maps to the integer `r - 1` and not to `-1` in
+            // `Fq`.
+            assert_ne!(native[4], -Fq::one());
+        }
+
+        #[test]
+        fn compress_point_is_injective() {
+            let rng = &mut TestRng::default();
+            let mut points = vec![
+                G1Affine::zero(),
+                // Same `(x, y)` as the identity's stored coordinates, off the prime-order subgroup.
+                G1Affine::from_x_coordinate(Fq::zero(), true).unwrap(),
+                G1Affine::from_x_coordinate(Fq::zero(), false).unwrap(),
+            ];
+            for _ in 0..16 {
+                let point = G1Projective::rand(rng).to_affine();
+                points.extend([point, -point]);
+            }
+            let encodings = points.iter().map(compress_point).collect::<Vec<_>>();
+            for (point, encoding) in points.iter().zip_eq(&encodings) {
+                assert_eq!(decode_point(*encoding), Some(*point));
+            }
+            for (i, a) in encodings.iter().enumerate() {
+                assert!(encodings[i + 1..].iter().all(|b| a != b));
+            }
+            // The identity ignores the coordinates it stores.
+            assert_eq!(
+                compress_point(&G1Affine::from_coordinates_unchecked((Fq::from(5u64), Fq::from(7u64), true))),
+                encodings[0]
+            );
+        }
+
+        #[test]
+        fn absorb_points_binds_each_flag() {
+            let rng = &mut TestRng::default();
+            // 189 points need two flag elements, so the last point's flags sit in the
+            // second.
+            let points = (0..189).map(|_| G1Projective::rand(rng).to_affine()).collect::<Vec<_>>();
+            let base = squeeze_after(&points);
+            for i in [0, 187, 188] {
+                let mut negated = points.clone();
+                negated[i] = -negated[i];
+                assert_ne!(squeeze_after(&negated), base, "the sign of point {i} is unbound");
+            }
+            let on_curve = G1Affine::from_x_coordinate(Fq::zero(), true).unwrap();
+            assert_ne!(squeeze_after(&[G1Affine::zero()]), squeeze_after(&[on_curve]));
+            assert_ne!(squeeze_after(&[on_curve]), squeeze_after(&[-on_curve]));
+        }
+    }
+}

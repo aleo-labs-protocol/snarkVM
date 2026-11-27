@@ -79,6 +79,15 @@ pub struct TestComponents<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> {
     _sponge: PhantomData<S>,
 }
 
+/// Runs `check` with the legacy and the compact encodings of the opening
+/// proofs, asserts that the verdicts agree, and returns the verdict.
+pub(crate) fn check_both_encodings<Error>(mut check: impl FnMut(bool) -> Result<bool, Error>) -> Result<bool, Error> {
+    let legacy = check(false)?;
+    let compact = check(true)?;
+    assert_eq!(legacy, compact, "the randomizer encodings disagree");
+    Ok(compact)
+}
+
 pub fn bad_degree_bound_test<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -> Result<(), PCError> {
     let rng = &mut TestRng::default();
     let max_degree = 100;
@@ -135,8 +144,9 @@ pub fn bad_degree_bound_test<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -
             rands.iter(),
             &mut sponge_for_open,
         )?;
-        let mut sponge_for_check = S::new();
-        let result = SonicKZG10::batch_check(&vk, &comms, &query_set, &values, &proof, &mut sponge_for_check)?;
+        let result = check_both_encodings(|compact| {
+            SonicKZG10::batch_check_with(&vk, &comms, &query_set, &values, &proof, &mut S::new(), compact)
+        })?;
         assert!(result, "proof was incorrect, Query set: {query_set:#?}");
     }
     Ok(())
@@ -231,8 +241,9 @@ pub fn lagrange_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>()
             rands.iter(),
             &mut sponge_for_open,
         )?;
-        let mut sponge_for_check = S::new();
-        let result = SonicKZG10::batch_check(&vk, &comms, &query_set, &values, &proof, &mut sponge_for_check)?;
+        let result = check_both_encodings(|compact| {
+            SonicKZG10::batch_check_with(&vk, &comms, &query_set, &values, &proof, &mut S::new(), compact)
+        })?;
         if !result {
             println!("Failed with {num_polynomials} polynomials, num_points_in_query_set: {num_points_in_query_set:?}");
             println!("Degree of polynomials:");
@@ -361,8 +372,9 @@ where
             rands.iter(),
             &mut sponge_for_open,
         )?;
-        let mut sponge_for_check = S::new();
-        let result = SonicKZG10::batch_check(&vk, &comms, &query_set, &values, &proof, &mut sponge_for_check)?;
+        let result = check_both_encodings(|compact| {
+            SonicKZG10::batch_check_with(&vk, &comms, &query_set, &values, &proof, &mut S::new(), compact)
+        })?;
         if !result {
             println!("Failed with {num_polynomials} polynomials, num_points_in_query_set: {num_points_in_query_set:?}");
             println!("Degree of polynomials:");
@@ -524,16 +536,18 @@ fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
             &mut sponge_for_open,
         )?;
         println!("Generated proof");
-        let mut sponge_for_check = S::new();
-        let result = SonicKZG10::check_combinations(
-            &vk,
-            &linear_combinations,
-            &comms,
-            &query_set,
-            &values,
-            &proof,
-            &mut sponge_for_check,
-        )?;
+        let result = check_both_encodings(|compact| {
+            SonicKZG10::check_combinations_with(
+                &vk,
+                &linear_combinations,
+                &comms,
+                &query_set,
+                &values,
+                &proof,
+                &mut S::new(),
+                compact,
+            )
+        })?;
         if !result {
             println!("Failed with {num_polynomials} polynomials, num_points_in_query_set: {num_points_in_query_set:?}");
         }
