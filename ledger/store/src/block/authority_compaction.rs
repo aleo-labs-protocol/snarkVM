@@ -281,7 +281,26 @@ fn compact_authority_slices<N: Network, B: BlockStorage<N>>(
         return Ok(());
     }
     if run.slices == 0 {
-        let slices = u16::try_from(storage.authority_compaction_slices()?)?;
+        let slices = storage.authority_compaction_slices();
+        #[cfg(test)]
+        let slices = match gate.as_deref().is_some_and(|gate| gate.fail_flush.swap(false, Ordering::SeqCst)) {
+            true => Err(anyhow!("injected flush failure")),
+            false => slices,
+        };
+        let slices = match slices {
+            Ok(slices) => u16::try_from(slices)?,
+            Err(error) => {
+                // The count flushes, and a failed flush stops the store: the write says so if it did.
+                put_compaction_state(
+                    storage,
+                    KEY,
+                    run.to_bytes(),
+                    #[cfg(test)]
+                    gate.as_deref(),
+                )?;
+                return Err(error);
+            }
+        };
         run = AuthorityCompaction { target: watermark, slices, next: 0, ..run };
         put_compaction_state(
             storage,
@@ -489,7 +508,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => error!("{error:#}"),
                 Err(_) => {
-                    error!("The authority map compaction panicked");
+                    error!("The background compaction panicked");
                     std::process::abort();
                 }
             }
@@ -510,7 +529,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
                 true
             }
             Err(error) => {
-                error!("Failed to start the authority map compaction: {error}");
+                error!("Failed to start the background compaction: {error}");
                 last.started = None;
                 false
             }
@@ -536,6 +555,8 @@ struct Gate {
     fail_job: AtomicBool,
     /// Makes the next write of the compaction state fail.
     fail_put: AtomicBool,
+    /// Makes the next slice count, which flushes the database, fail.
+    fail_flush: AtomicBool,
     /// 1 holds the certificate map compaction back until a stop is requested, as a compaction that
     /// is running when the request arrives; 2 says that it is being held.
     hold_certificate: std::sync::atomic::AtomicUsize,
@@ -1040,6 +1061,26 @@ mod tests {
                 "A RocksDB background job failed during authority slice 1 of 4; see the RocksDB LOG. The compaction \
                  retries within 60 min or at the next start.",
             );
+        }
+
+        /// Ensures a run whose slice count fails, as when its flush fails, says that the store
+        /// refuses writes if it does since, and reports the failure itself if it does not.
+        #[test]
+        fn test_failed_flush_reports_a_store_that_refuses_writes() {
+            let storage = BlockDB::<CurrentNetwork>::open(new_pruned_storage(DUE, None)).unwrap();
+            let (signal, state) = (Signal::default(), Arc::new(CompactionState::default()));
+            let gate = Arc::new(Gate::default());
+            let run = || {
+                gate.fail_flush.store(true, Ordering::SeqCst);
+                compact_authority_slices(&storage, &signal, &Arc::downgrade(&state), Some(gate.clone()))
+                    .unwrap_err()
+                    .to_string()
+            };
+            gate.fail_put.store(true, Ordering::SeqCst);
+            assert_eq!(run(), "The ledger store refuses writes after a storage error: injected. Restart the node.");
+            assert_eq!(run(), "injected flush failure");
+            // Neither attempt stored a run.
+            assert_eq!(AuthorityCompaction::read(&storage, DUE), AuthorityCompaction::default());
         }
 
         /// Ensures a store that refuses the cursor write stops the run.
