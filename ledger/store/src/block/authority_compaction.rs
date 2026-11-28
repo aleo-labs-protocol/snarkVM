@@ -30,7 +30,7 @@ use tracing::error;
 
 /// The advance of the watermark, in heights, after which a map is compacted again. Unit tests use a
 /// few blocks.
-const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 100_000 };
+const AUTHORITY_COMPACTION_INTERVAL_BLOCKS: u32 = if cfg!(test) { 8 } else { 100 };
 
 /// The least time between two starts of the compaction, which is also how soon a failed run is
 /// retried. It is not persisted: a restart resumes at once.
