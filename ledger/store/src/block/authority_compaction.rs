@@ -188,8 +188,9 @@ fn compact_certificate_map<N: Network, B: BlockStorage<N>>(
 }
 
 /// Writes the value of a compaction key. The write doubles as a probe: after a failed flush or
-/// compaction RocksDB can refuse every write until the process restarts, and a failed flush can
-/// stop the store without raising [`BlockStorage::background_error_count`].
+/// compaction RocksDB can refuse every write, until space is freed if the volume was full and
+/// otherwise until the process restarts, and a failed flush can stop the store without raising
+/// [`BlockStorage::background_error_count`].
 fn put_compaction_state<N: Network, B: BlockStorage<N>>(
     storage: &B,
     key: BlockMetadataKey,
@@ -197,7 +198,10 @@ fn put_compaction_state<N: Network, B: BlockStorage<N>>(
     #[cfg(test)] gate: Option<&Gate>,
 ) -> Result<()> {
     let refused = |error: anyhow::Error| {
-        anyhow!("The ledger store refuses writes after a storage error: {error:#}. Restart the node.")
+        anyhow!(
+            "The ledger store refuses writes after a storage error: {error:#}. Free disk space if the volume is full; \
+             otherwise restart the node."
+        )
     };
     #[cfg(test)]
     if gate.is_some_and(|gate| gate.fail_put.swap(false, Ordering::SeqCst)) {
@@ -1149,7 +1153,9 @@ mod tests {
                     .to_string()
             };
             gate.fail_put.store(true, Ordering::SeqCst);
-            assert_eq!(run(), "The ledger store refuses writes after a storage error: injected. Restart the node.");
+            let refused = "The ledger store refuses writes after a storage error: injected. Free disk space if the \
+                           volume is full; otherwise restart the node.";
+            assert_eq!(run(), refused);
             assert_eq!(run(), "injected flush failure");
             // Neither attempt stored a run.
             assert_eq!(AuthorityCompaction::read(&storage, DUE), AuthorityCompaction::default());
@@ -1285,7 +1291,8 @@ mod tests {
         fn test_refused_cursor_write_stops_the_run() {
             check_failed_slice_stops_the_run(
                 |gate| gate.fail_put.store(true, Ordering::SeqCst),
-                "The ledger store refuses writes after a storage error: injected. Restart the node.",
+                "The ledger store refuses writes after a storage error: injected. Free disk space if the volume is \
+                 full; otherwise restart the node.",
             );
         }
 
