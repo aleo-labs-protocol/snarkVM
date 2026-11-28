@@ -232,6 +232,37 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         self.certificate_map.compact()
     }
 
+    fn compacts_authority_map(&self) -> bool {
+        true
+    }
+
+    fn authority_compaction_slices(&self) -> Result<usize> {
+        self.authority_map.compaction_slice_count()
+    }
+
+    fn compact_authority_slice(&self, i: usize, slices: usize) -> Result<()> {
+        self.authority_map.compact_slice(i, slices)
+    }
+
+    /// Keeps only the certificate rows whose value `retain` accepts. See `DataMap::retain_all`.
+    fn retain_certificate_indexes(&self, retain: impl Fn(&(u32, u64)) -> bool + Sync) -> Result<(usize, usize)> {
+        self.certificate_map.retain_all(retain)
+    }
+
+    fn put_compaction_state(&self, key: BlockMetadataKey, value: Vec<u8>) -> Result<()> {
+        self.block_metadata_map.put_outside_batch(&key, &value)
+    }
+
+    fn background_error_count(&self) -> u64 {
+        // Any map can be used to retrieve the common RocksDB instance.
+        self.id_map().background_error_count()
+    }
+
+    fn background_error(&self) -> Option<String> {
+        // Any map can be used to retrieve the common RocksDB instance.
+        self.id_map().background_error()
+    }
+
     /// Returns the block metadata map.
     fn block_metadata_map(&self) -> &Self::BlockMetadataMap {
         &self.block_metadata_map
